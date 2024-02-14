@@ -53,9 +53,13 @@ local filename = 'mimir-overview.json';
           'Status',
           [
             // Write failures.
-            if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate else $.queries.distributor.writeFailuresRate,
+            if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate('native') else $.queries.distributor.writeFailuresRate('native'),
+            // Write failures but from classic histograms.
+            '%s < ($show_classic_histograms * +Inf)' % if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate('classic') else $.queries.distributor.writeFailuresRate('classic'),
             // Read failures.
-            if $._config.gateway_enabled then $.queries.gateway.readFailuresRate else $.queries.query_frontend.readFailuresRate,
+            if $._config.gateway_enabled then $.queries.gateway.readFailuresRate('native') else $.queries.query_frontend.readFailuresRate('native'),
+            // Read failures but from classic histograms.
+            '%s < ($show_classic_histograms * +Inf)' % if $._config.gateway_enabled then $.queries.gateway.readFailuresRate('classic') else $.queries.query_frontend.readFailuresRate('classic'),
             // Rule evaluation failures.
             $.queries.ruler.evaluations.failuresRate,
             // Alerting notifications.
@@ -84,7 +88,7 @@ local filename = 'mimir-overview.json';
             // Object storage failures.
             $.queries.storage.failuresRate,
           ],
-          ['Writes', 'Reads', 'Rule evaluations', 'Alerting notifications', 'Object storage']
+          ['Writes', 'Writes historic', 'Reads', 'Reads historic', 'Rule evaluations', 'Alerting notifications', 'Object storage']
         )
       )
       .addPanel(
@@ -162,12 +166,16 @@ local filename = 'mimir-overview.json';
         ||| % helpers),
       )
       .addPanel(
-        $.panel(std.stripChars('Read requests / sec %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) +
-        $.qpsPanel(
+        $.qpsPanelNativeHistogram(
+          std.stripChars('Read requests / sec %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' '),
           if $._config.gateway_enabled then
-            $.queries.gateway.readRequestsPerSecond
+            $.queries.gateway.readRequestsPerSecondMetric
           else
-            $.queries.query_frontend.readRequestsPerSecond
+            $.queries.query_frontend.readRequestsPerSecondMetric,
+          if $._config.gateway_enabled then
+            $.queries.gateway.readRequestsPerSecondSelector
+          else
+            $.queries.query_frontend.readRequestsPerSecondSelector
         )
       )
       .addPanel(

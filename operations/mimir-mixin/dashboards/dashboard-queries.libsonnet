@@ -37,7 +37,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       readRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
 
       // Write failures rate as percentage of total requests.
-      writeFailuresRate: |||
+      writeFailuresRate(sampleType='native'):: |||
         (
             # gRPC errors are not tracked as 5xx but "error".
             sum(%(countFailQuery)s)
@@ -48,12 +48,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
         /
         sum(%(countQuery)s)
       ||| % {
-        countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"').native,
-        countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).native,
+        countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"')[sampleType],
+        countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector)[sampleType],
       },
 
       // Read failures rate as percentage of total requests.
-      readFailuresRate: |||
+      readFailuresRate(sampleType='native'):: |||
         (
             # gRPC errors are not tracked as 5xx but "error".
             sum(%(countFailQuery)s)
@@ -64,8 +64,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         /
         sum(%(countQuery)s)
       ||| % {
-        countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector+',status_code=~"5.*|error"').native,
-        countQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector).native,
+        countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector+',status_code=~"5.*|error"')[sampleType],
+        countQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector)[sampleType],
       },
     },
 
@@ -78,7 +78,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
 
       // Write failures rate as percentage of total requests.
-      writeFailuresRate: |||
+      writeFailuresRate(sampleType='native'):: |||
         (
             # gRPC errors are not tracked as 5xx but "error".
             sum(%(countFailQuery)s)
@@ -89,13 +89,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
         /
         sum(%(countQuery)s)
       ||| % {
-        countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"').native,
-        countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).native,
+        countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"')[sampleType],
+        countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector)[sampleType],
       },
     },
 
     query_frontend: {
+      local p = self,
       readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
+      readRequestsPerSecondMetric: 'cortex_request_duration_seconds',
+      readRequestsPerSecondSelector: '%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
       instantQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query"}[$__rate_interval]))' % variables,
       rangeQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query_range"}[$__rate_interval]))' % variables,
       labelNamesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_labels"}[$__rate_interval]))' % variables,
@@ -107,16 +110,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       otherQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~".*(query|query_range|label.*|series|read|metadata|query_exemplars)"}[$__rate_interval]))' % variables,
 
       // Read failures rate as percentage of total requests.
-      readFailuresRate: |||
+      readFailuresRate(sampleType='native'):: |||
         (
-            sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s",status_code=~"5.*"}[$__rate_interval]))
+            sum(%(countFailQuery)s)
             or
             # Handle the case no failure has been tracked yet.
             vector(0)
         )
         /
-        sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}[$__rate_interval]))
-      ||| % variables,
+        sum(%(countQuery)s)
+      ||| % {
+        countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector+',status_code=~"5.*|error"')[sampleType],
+        countQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector)[sampleType],
+      },
     },
 
     ruler: {
