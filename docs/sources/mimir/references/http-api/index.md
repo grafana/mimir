@@ -1239,7 +1239,7 @@ Displays a web page with the list of tenants with blocks in the storage configur
 GET /compactor/tenant/{tenant}/planned_jobs
 ```
 
-Displays a web page listing planned compaction jobs computed from current bucket-index for a given tenant.
+Displays a web page listing planned compaction jobs computed from the bucket index for the given tenant.
 
 ## Overrides-exporter
 
