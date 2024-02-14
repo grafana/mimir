@@ -61,8 +61,8 @@ func TestPlannedJobsHandler(t *testing.T) {
 	// Mark block for no-compaction.
 	require.NoError(t, block.MarkForNoCompact(context.Background(), log.NewNopLogger(), userBucket, blockMarkedForNoCompact, block.CriticalNoCompactReason, "testing", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
 
-	headersWithJsonAccept := http.Header{}
-	headersWithJsonAccept.Set("Accept", "application/json")
+	headersWithJSONAccept := http.Header{}
+	headersWithJSONAccept.Set("Accept", "application/json")
 
 	t.Run("tenants handler html", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -74,7 +74,7 @@ func TestPlannedJobsHandler(t *testing.T) {
 
 	t.Run("tenants handler json", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		c.TenantsHandler(resp, &http.Request{Header: headersWithJsonAccept})
+		c.TenantsHandler(resp, &http.Request{Header: headersWithJSONAccept})
 
 		require.Equal(t, http.StatusOK, resp.Code)
 		require.Contains(t, resp.Body.String(), `"tenants":["testuser"]`)
@@ -100,7 +100,7 @@ func TestPlannedJobsHandler(t *testing.T) {
 	t.Run("compaction jobs json", func(t *testing.T) {
 		resp := httptest.NewRecorder()
 
-		req := mux.SetURLVars(&http.Request{Header: headersWithJsonAccept}, map[string]string{
+		req := mux.SetURLVars(&http.Request{Header: headersWithJSONAccept}, map[string]string{
 			"tenant":       user,
 			"split_count":  "0",
 			"merge_shards": "3",
