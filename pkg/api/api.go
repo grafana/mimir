@@ -380,6 +380,7 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	a.indexPage.AddLinks(defaultWeight, "Compactor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/compactor/ring"},
+		{Desc: "Tenants & compaction jobs", Path: "/compactor/tenants"},
 	})
 	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/api/v1/upload/block/{block}/start", http.HandlerFunc(c.StartBlockUpload), true, false, http.MethodPost)
@@ -388,6 +389,8 @@ func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	a.RegisterRoute("/api/v1/upload/block/{block}/check", http.HandlerFunc(c.GetBlockUploadStateHandler), true, false, http.MethodGet)
 	a.RegisterRoute("/compactor/delete_tenant", http.HandlerFunc(c.DeleteTenant), true, true, "POST")
 	a.RegisterRoute("/compactor/delete_tenant_status", http.HandlerFunc(c.DeleteTenantStatus), true, true, "GET")
+	a.RegisterRoute("/compactor/tenants", http.HandlerFunc(c.TenantsHandler), false, true, "GET")
+	a.RegisterRoute("/compactor/tenant/{tenant}/planned_jobs", http.HandlerFunc(c.PlannedJobsHandler), false, true, "GET")
 }
 
 func (a *API) DisableServerHTTPTimeouts(next http.Handler) http.Handler {
