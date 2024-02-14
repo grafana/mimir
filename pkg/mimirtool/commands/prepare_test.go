@@ -1,8 +1,9 @@
 package commands
 
 import (
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestPrepareCfg(t *testing.T) {
