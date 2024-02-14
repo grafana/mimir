@@ -596,7 +596,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   },
 
   // Assumes that there is a dashboard variable named show_classic_histograms, values are 0 or 1
-  latencyPanelNativeHistogram(metricName, selector, multiplier='1e3'):: {
+  latencyPanelNativeHistogram(title, metricName, selector, multiplier='1e3'):: $.timeseriesPanel(title) {
     nullPointMode: 'null as zero',
     targets: [
       {
@@ -614,7 +614,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           multiplier: multiplier,
         },
         format: 'time_series',
-        legendFormat: '99th percentile',
+        legendFormat: 'Historic 99th percentile',
         refId: 'A_classic',
       },
       {
@@ -632,7 +632,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           multiplier: multiplier,
         },
         format: 'time_series',
-        legendFormat: '50th percentile',
+        legendFormat: 'Historic 50th percentile',
         refId: 'B_classic',
       },
       {
@@ -660,7 +660,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             multiplier: multiplier,
           },
         format: 'time_series',
-        legendFormat: 'Average',
+        legendFormat: 'Historic average',
         refId: 'C_classic',
       },
     ],

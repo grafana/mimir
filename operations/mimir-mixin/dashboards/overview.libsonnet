@@ -131,11 +131,16 @@ local filename = 'mimir-overview.json';
         )
       )
       .addPanel(
-        $.panel(std.stripChars('Write latency %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) + (
+        $.latencyPanelNativeHistogram(
+          std.stripChars('Write latency %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' '),
           if $._config.gateway_enabled then
-            utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
+            $.queries.gateway.writeRequestsPerSecondMetric
           else
-            utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/distributor.Distributor/Push|/httpgrpc.*|%s' % $.queries.write_http_routes_regex)])
+            $.queries.distributor.writeRequestsPerSecondMetric,
+          if $._config.gateway_enabled then
+            $.queries.gateway.writeRequestsPerSecondSelector
+          else
+            $.queries.distributor.writeRequestsPerSecondSelector
         )
       )
       .addPanel(
