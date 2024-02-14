@@ -1157,6 +1157,10 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
 
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+
 	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
 
