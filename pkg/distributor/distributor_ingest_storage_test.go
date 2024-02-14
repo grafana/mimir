@@ -36,9 +36,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 	// Mock distributor current time (used to get stable metrics assertion).
 	now := time.Now()
 	mtime.NowForce(now)
-	t.Cleanup(func() {
-		mtime.NowReset()
-	})
+	t.Cleanup(mtime.NowReset)
 
 	// To keep assertions simple, all tests send the same request.
 	createRequest := func() *mimirpb.WriteRequest {

@@ -119,9 +119,7 @@ func TestDistributor_Push(t *testing.T) {
 
 	now := time.Now()
 	mtime.NowForce(now)
-	t.Cleanup(func() {
-		mtime.NowReset()
-	})
+	t.Cleanup(mtime.NowReset)
 
 	type samplesIn struct {
 		num              int
