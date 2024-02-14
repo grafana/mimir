@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
@@ -89,6 +90,14 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	res, err := c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
+
+	// Check OTLP source is correctly set on internal metrics
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_distributor_received_requests_total"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "source", "API_OTLP"),
+		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_distributor_requests_in_total"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "source", "API_OTLP"),
+		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
 	// Query the series.
 	result, err := c.Query(fmt.Sprintf("series_1%s", sfx), now)

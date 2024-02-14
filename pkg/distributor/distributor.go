@@ -289,7 +289,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_requests_total",
 			Help: "The total number of received requests, excluding rejected and deduped requests.",
-		}, []string{"user"}),
+		}, []string{"user", "source"}),
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_samples_total",
 			Help: "The total number of received samples, excluding rejected and deduped samples.",
@@ -305,7 +305,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		incomingRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_requests_in_total",
 			Help: "The total number of requests that have come in to the distributor, including rejected or deduped requests.",
-		}, []string{"user"}),
+		}, []string{"user", "source"}),
 		incomingSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_samples_in_total",
 			Help: "The total number of samples that have come in to the distributor, including rejected or deduped samples.",
@@ -564,11 +564,9 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 	d.HATracker.cleanupHATrackerMetricsForUser(userID)
 
-	d.receivedRequests.DeleteLabelValues(userID)
 	d.receivedSamples.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
-	d.incomingRequests.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
@@ -576,6 +574,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
 	filter := prometheus.Labels{"user": userID}
+	d.receivedRequests.DeletePartialMatch(filter)
+	d.incomingRequests.DeletePartialMatch(filter)
 	d.dedupedSamples.DeletePartialMatch(filter)
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
@@ -908,7 +908,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		}
 
 		now := mtime.Now()
-		d.receivedRequests.WithLabelValues(userID).Add(1)
+		d.receivedRequests.WithLabelValues(userID, req.GetSource().String()).Add(1)
 		d.activeUsers.UpdateUserTimestamp(userID, now)
 
 		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
@@ -1065,7 +1065,7 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 			span.SetTag("write.metadata", len(req.Metadata))
 		}
 
-		d.incomingRequests.WithLabelValues(userID).Inc()
+		d.incomingRequests.WithLabelValues(userID, req.GetSource().String()).Inc()
 		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
 		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
 		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))

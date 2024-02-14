@@ -173,6 +173,7 @@ func OTLPHandler(
 			"exemplar_count", exemplarCount,
 		)
 
+		req.Source = mimirpb.API_OTLP
 		req.Timeseries = metrics
 
 		if enableOtelMetadataStorage {
