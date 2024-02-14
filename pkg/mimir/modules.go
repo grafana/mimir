@@ -368,6 +368,7 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 	}
 
 	t.IngesterPartitionRingWatcher = ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
 
 	// Expose a web page to view the partitions ring state.
 	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher))
@@ -481,7 +482,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, t.IngesterPartitionInstanceRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -1088,7 +1089,7 @@ func (t *Mimir) setupModuleManager() error {
 		MemberlistKV:             {API, Vault},
 		RuntimeConfig:            {API},
 		IngesterRing:             {API, RuntimeConfig, MemberlistKV, Vault},
-		IngesterPartitionRing:    {MemberlistKV, API},
+		IngesterPartitionRing:    {MemberlistKV, IngesterRing, API},
 		Overrides:                {RuntimeConfig},
 		OverridesExporter:        {Overrides, MemberlistKV, Vault},
 		Distributor:              {DistributorService, API, ActiveGroupsCleanupService, Vault},

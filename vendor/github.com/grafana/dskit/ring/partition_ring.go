@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
 
 	"golang.org/x/exp/slices"
@@ -245,6 +246,17 @@ func (r *PartitionRing) PartitionsCount() int {
 	return len(r.desc.Partitions)
 }
 
+// ActivePartitionsCount returns the number of active partitions in the ring.
+func (r *PartitionRing) ActivePartitionsCount() int {
+	count := 0
+	for _, partition := range r.desc.Partitions {
+		if partition.IsActive() {
+			count++
+		}
+	}
+	return count
+}
+
 // Partitions returns the partitions in the ring.
 // The returned slice is a deep copy, so the caller can freely manipulate it.
 func (r *PartitionRing) Partitions() []PartitionDesc {
@@ -339,4 +351,61 @@ func (r *PartitionRing) String() string {
 	}
 
 	return fmt.Sprintf("PartitionRing{ownersCount: %d, partitionsCount: %d, partitions: {%s}}", len(r.desc.Owners), len(r.desc.Partitions), buf.String())
+}
+
+// ActivePartitionBatchRing wraps PartitionRing and implements DoBatchRing to lookup ACTIVE partitions.
+type ActivePartitionBatchRing struct {
+	ring *PartitionRing
+}
+
+func NewActivePartitionBatchRing(ring *PartitionRing) *ActivePartitionBatchRing {
+	return &ActivePartitionBatchRing{
+		ring: ring,
+	}
+}
+
+// InstancesCount returns the number of active partitions in the ring.
+//
+// InstancesCount implements DoBatchRing.InstancesCount.
+func (r *ActivePartitionBatchRing) InstancesCount() int {
+	return r.ring.ActivePartitionsCount()
+}
+
+// ReplicationFactor returns 1 as partitions replication factor: an entry (looked by key via Get())
+// is always stored in 1 and only 1 partition.
+//
+// ReplicationFactor implements DoBatchRing.ReplicationFactor.
+func (r *ActivePartitionBatchRing) ReplicationFactor() int {
+	return 1
+}
+
+// Get implements DoBatchRing.Get.
+func (r *ActivePartitionBatchRing) Get(key uint32, _ Operation, bufInstances []InstanceDesc, _, _ []string) (ReplicationSet, error) {
+	partitionID, err := r.ring.ActivePartitionForKey(key)
+	if err != nil {
+		return ReplicationSet{}, err
+	}
+
+	// Ensure we have enough capacity in bufInstances.
+	if cap(bufInstances) < 1 {
+		bufInstances = []InstanceDesc{{}}
+	} else {
+		bufInstances = bufInstances[:1]
+	}
+
+	partitionIDString := strconv.Itoa(int(partitionID))
+
+	bufInstances[0] = InstanceDesc{
+		Addr:      partitionIDString,
+		Timestamp: 0,
+		State:     ACTIVE,
+		Id:        partitionIDString,
+	}
+
+	return ReplicationSet{
+		Instances:            bufInstances,
+		MaxErrors:            0,
+		MaxUnavailableZones:  0,
+		ZoneAwarenessEnabled: false,
+	}, nil
 }
