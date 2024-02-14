@@ -1940,7 +1940,7 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 		labelValueSeriesCountMap := make(map[string]uint64, len(labelValueSeriesCountMapByZone))
 
 		for labelValue, seriesCountMapByZone := range labelValueSeriesCountMapByZone {
-			labelValueSeriesCountMap[labelValue] = approximateFromZones(zoneCount, replicationFactor, seriesCountMapByZone)
+			labelValueSeriesCountMap[labelValue] = approximateFromZones(zoneCount > 1, replicationFactor, seriesCountMapByZone)
 		}
 
 		cardinalityItems = append(cardinalityItems, &ingester_client.LabelValueSeriesCount{
@@ -2137,13 +2137,16 @@ func (r *activeSeriesResponse) result() []labels.Labels {
 
 // approximateFromZones computes a zonal value while factoring in replication.
 // e.g. series cardinality or ingestion rate.
-func approximateFromZones[T ~float64 | ~uint64](zoneCount int, replicationFactor int, seriesCountMapByZone map[string]T) T {
+//
+// If Mimir isn't deployed in a multi-zone configuration, approximateFromZones
+// divides the sum of all values by the replication factor to come up with an approximation.
+func approximateFromZones[T ~float64 | ~uint64](isMultiZone bool, replicationFactor int, seriesCountMapByZone map[string]T) T {
 	// If we have more than one zone, we return the max value across zones.
 	// Values can be different across zones due to incomplete replication or
 	// other issues. Any inconsistency should always be an underestimation of
 	// the real value, so we take the max to get the best available
 	// approximation.
-	if zoneCount > 1 {
+	if isMultiZone {
 		var max T
 		for _, seriesCount := range seriesCountMapByZone {
 			if seriesCount > max {
@@ -2162,7 +2165,7 @@ func approximateFromZones[T ~float64 | ~uint64](zoneCount int, replicationFactor
 	for _, seriesCount := range seriesCountMapByZone {
 		sum += seriesCount
 	}
-	return sum / T(replicationFactor)
+	return T(math.Round(float64(sum) / float64(replicationFactor)))
 }
 
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching
@@ -2281,15 +2284,9 @@ func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.
 
 // UserStats returns statistics about the current user.
 func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.CountMethod) (*UserStats, error) {
-	//nolint:staticcheck
-	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	// If we have a single zone, we can't tolerate any errors.
-	if replicationSet.ZoneCount() == 1 {
-		replicationSet.MaxErrors = 0
 	}
 
 	type zonedUserStatsResponse struct {
@@ -2297,50 +2294,97 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 		resp *ingester_client.UserStatsResponse
 	}
 
-	ingesterCountMethod, err := toIngesterCountMethod(countMethod)
-	if err != nil {
-		return nil, err
+	// When ingest storage is disabled, if ingesters are running in a single zone we can't tolerate any errors.
+	// In this case we expect exactly 1 replication set.
+	if !d.cfg.IngestStorageConfig.Enabled && len(replicationSets) == 1 && replicationSets[0].ZoneCount() == 1 {
+		replicationSets[0].MaxErrors = 0
 	}
-	req := &ingester_client.UserStatsRequest{
-		CountMethod: ingesterCountMethod,
-	}
-	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, d.queryQuorumConfig(ctx, replicationSet), func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
-		poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
-		if err != nil {
-			return zonedUserStatsResponse{}, err
-		}
 
-		client := poolClient.(ingester_client.IngesterClient)
-		resp, err := client.UserStats(ctx, req)
-		if err != nil {
-			return zonedUserStatsResponse{}, err
-		}
-		return zonedUserStatsResponse{zone: desc.Zone, resp: resp}, nil
-	}, func(zusr zonedUserStatsResponse) {})
+	ingesterCountMethod, err := toIngesterCountMethod(countMethod)
 	if err != nil {
 		return nil, err
 	}
 
 	var (
-		zoneIngestionRate     = map[string]float64{}
-		zoneAPIIngestionRate  = map[string]float64{}
-		zoneRuleIngestionRate = map[string]float64{}
-		zoneNumSeries         = map[string]uint64{}
+		req          = &ingester_client.UserStatsRequest{CountMethod: ingesterCountMethod}
+		quorumConfig = d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
+
+		responsesByReplicationSetMx = sync.Mutex{}
+		responsesByReplicationSet   = make(map[int][]zonedUserStatsResponse, len(replicationSets))
 	)
 
-	// collect responses by zone
-	for _, r := range resps {
-		zoneIngestionRate[r.zone] += r.resp.IngestionRate
-		zoneAPIIngestionRate[r.zone] += r.resp.ApiIngestionRate
-		zoneRuleIngestionRate[r.zone] += r.resp.RuleIngestionRate
-		zoneNumSeries[r.zone] += r.resp.NumSeries
+	// Fetch user stats from each ingester and collect responses by ReplicationSet.
+	//
+	// When ingest storage is enabled we expect 1 ReplicationSet for each partition. A series is sharded only to 1
+	// partition and the number of successful responses for each partition (ReplicationSet) may be different when
+	// ingesters request minimization is disabled. For this reason, we collect responses by ReplicationSet, so that
+	// we can later estimate the number of series with a higher accuracy.
+	err = concurrency.ForEachJob(ctx, len(replicationSets), 0, func(ctx context.Context, replicationSetIdx int) error {
+		replicationSet := replicationSets[replicationSetIdx]
+
+		resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, quorumConfig, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
+			poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
+			if err != nil {
+				return zonedUserStatsResponse{}, err
+			}
+
+			client := poolClient.(ingester_client.IngesterClient)
+			resp, err := client.UserStats(ctx, req)
+			if err != nil {
+				return zonedUserStatsResponse{}, err
+			}
+
+			return zonedUserStatsResponse{zone: desc.Zone, resp: resp}, nil
+		}, func(zonedUserStatsResponse) {})
+
+		if err != nil {
+			return err
+		}
+
+		// Collect the response.
+		responsesByReplicationSetMx.Lock()
+		responsesByReplicationSet[replicationSetIdx] = resps
+		responsesByReplicationSetMx.Unlock()
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
-	totalStats := &UserStats{
-		IngestionRate:     approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneIngestionRate),
-		APIIngestionRate:  approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneAPIIngestionRate),
-		RuleIngestionRate: approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneRuleIngestionRate),
-		NumSeries:         approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneNumSeries),
+	// We need to take the lock because the ring.DoUntilQuorum() returns as soon as quorum is reached
+	// but there's no guarantee that once it returns there are no in-flight callback functions.
+	responsesByReplicationSetMx.Lock()
+	defer responsesByReplicationSetMx.Unlock()
+
+	totalStats := &UserStats{}
+
+	for replicationSetIdx, resps := range responsesByReplicationSet {
+		var (
+			replicationSet        = replicationSets[replicationSetIdx]
+			zoneIngestionRate     = map[string]float64{}
+			zoneAPIIngestionRate  = map[string]float64{}
+			zoneRuleIngestionRate = map[string]float64{}
+			zoneNumSeries         = map[string]uint64{}
+		)
+
+		// Collect responses by zone.
+		for _, r := range resps {
+			zoneIngestionRate[r.zone] += r.resp.IngestionRate
+			zoneAPIIngestionRate[r.zone] += r.resp.ApiIngestionRate
+			zoneRuleIngestionRate[r.zone] += r.resp.RuleIngestionRate
+			zoneNumSeries[r.zone] += r.resp.NumSeries
+		}
+
+		// When the ingest storage is enabled a partition is owned by only 1 ingester per zone,
+		// so regardless the number of zones we have it's behaving like multi-zone is always enabled.
+		isMultiZone := d.cfg.IngestStorageConfig.Enabled || replicationSet.ZoneCount() > 1
+
+		totalStats.IngestionRate += approximateFromZones(isMultiZone, d.ingestersRing.ReplicationFactor(), zoneIngestionRate)
+		totalStats.APIIngestionRate += approximateFromZones(isMultiZone, d.ingestersRing.ReplicationFactor(), zoneAPIIngestionRate)
+		totalStats.RuleIngestionRate += approximateFromZones(isMultiZone, d.ingestersRing.ReplicationFactor(), zoneRuleIngestionRate)
+		totalStats.NumSeries += approximateFromZones(isMultiZone, d.ingestersRing.ReplicationFactor(), zoneNumSeries)
 	}
 
 	return totalStats, nil
