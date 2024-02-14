@@ -158,6 +158,56 @@ The following command deletes the Alertmanager configuration in the Grafana Mimi
 mimirtool alertmanager delete
 ```
 
+#### Prepare Alertmanager configuration for UTF-8 in Alertmanager 0.27 and later
+
+Starting with Alertmanager v0.27.0, Alertmanager has a new parser for matchers to support UTF-8
+characters in Alertmanager, and this parser has a number of backwards incompatible changes. While
+most matchers will be forward-compatible, some will not. Alertmanager is operating a transition
+period where it supports both UTF-8 and classic matchers, and your configuration will continue
+to work in Mimir until your Mimir installation enables UTF-8 strict mode. All Mimir installations
+should enable UTF-8 strict mode before the end of the transition period, so we recommend you use
+the prepare command to prepare your Alertmanager configuration for this change.
+
+The prepare command automatically translates any matchers that are incompatible with the UTF-8
+parser into equivalent matchers that are compatible by enforcing double quoting on the right hand side
+of the matcher. This does not change their behavior, rather UTF-8 matchers require double quoting where
+whitespace and reserved characters are present. However, it's much easier to enforce double quoting
+on all matchers instead of just the few that are incompatible.
+
+The command takes as input an existing configuration and template files, and prints as output
+the prepared configuration file and template files:
+
+```bash
+mimirtool alertmanager prepare <config_file> [template_files...]
+```
+
+You can also output the prepared configuration and template files to a folder which can be
+reviewed before being loaded back into the Alertmanager at a later time. It is recommended to output
+the prepared files to a different folder than the original files so you always have the original files
+as a backup. For example, the following command outputs the prepared configuration and template files
+to a folder called `prepared`:
+
+```bash
+mimirtool alertmanager prepare <config_file> [template_files...] --output-dir="prepared"
+```
+
+Within the output dir, the configuration file is named `config.yaml` and the template files ends in
+`.tpl`, where each template is written out to its own file. Note that using the `--output-dir` flag
+only writes the output to files and no longer print the config to the console.
+
+Once your configuration has been prepared, verify it using the verify command and the
+`--utf8-strict-mode` flag:
+
+```bash
+mimirtool alertmanager verify <config_file> [template_files...] --utf8-strict-mode
+```
+
+You should see a warning "UTF-8 mode enabled" to let you know that UTF-8 strict mode was enabled
+when validating your configuration.
+
+If the command exits without error, and you are satisifed with the changes made to the prepared
+configuration and template files, re-upload it using the `load` command.
+
 #### Validate Alertmanager configuration
 
 The following command validates an Alertmanager configuration file. It does not load the configuration to the Alertmanager instance.
