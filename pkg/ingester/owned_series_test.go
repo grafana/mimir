@@ -31,6 +31,7 @@ import (
 
 const ownedServiceTestUser = "test-user"
 const ownedServiceSeriesCount = 10
+const ownedServiceTestUserSeriesLimit = 10000
 
 type ownedSeriesTestContext struct {
 	seriesToWrite []series
@@ -42,8 +43,7 @@ type ownedSeriesTestContext struct {
 	db          *userTSDB
 	kvStore     *watchingKV
 
-	buf          *concurrency.SyncBuffer
-	tenantShards map[string]int
+	buf *concurrency.SyncBuffer
 }
 
 func (c *ownedSeriesTestContext) pushUserSeries(t *testing.T) {
@@ -57,10 +57,17 @@ func (c *ownedSeriesTestContext) checkUpdateReasonForUser(t *testing.T, expected
 	require.Equal(t, expectedReason, c.db.requiresOwnedSeriesUpdate.Load())
 }
 
-func (c *ownedSeriesTestContext) checkUserSeriesOwnedAndShardsByTestedIngester(t *testing.T, series, shards int) {
-	cnt, sh := c.db.ownedSeriesAndShards()
-	require.Equal(t, series, cnt)
-	require.Equal(t, shards, sh)
+func (c *ownedSeriesTestContext) checkTestedIngesterOwnedSeriesState(t *testing.T, series, shards, limit int) {
+	os := c.db.ownedSeriesState()
+	require.Equal(t, series, os.count)
+	require.Equal(t, shards, os.shardSize)
+	require.Equal(t, limit, os.localLimit)
+}
+
+func (c *ownedSeriesTestContext) checkCalculatedLocalLimit(t *testing.T, expectedLimit int) {
+	_, minLimit := c.db.getSeriesAndMinForSeriesLimit()
+	localLimit := c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, minLimit)
+	require.Equal(t, expectedLimit, localLimit)
 }
 
 func (c *ownedSeriesTestContext) updateOwnedSeriesAndCheckResult(t *testing.T, ringChanged bool, expectedUpdatedTenants int, expectedReason string) {
@@ -128,128 +135,264 @@ func TestOwnedSeriesService(t *testing.T) {
 		require.Greater(t, seriesTokens[i], seriesTokens[i-1])
 	}
 
-	testCases := map[string]func(t *testing.T, c *ownedSeriesTestContext){
-		"empty ingester": func(t *testing.T, c *ownedSeriesTestContext) {
-			require.Equal(t, 0, c.ownedSeries.updateAllTenants(context.Background(), false))
+	testCases := map[string]struct {
+		limits   map[string]*validation.Limits
+		testFunc func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits)
+	}{
+		"empty ingester": {
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				require.Equal(t, 0, c.ownedSeries.updateAllTenants(context.Background(), false))
+			},
 		},
 
-		"update due to new user": func(t *testing.T, c *ownedSeriesTestContext) {
-			c.pushUserSeries(t)
-			c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonNewUser)
-			// First ingester owns all the series, even without any ownedSeries run. This is because each created series is automatically counted as "owned".
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
-			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
-			c.checkUpdateReasonForUser(t, "")
-			// First ingester still owns all the series.
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
+		"update due to new user": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 0,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				c.pushUserSeries(t)
+				c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonNewUser)
+				// First ingester owns all the series, even without any ownedSeries run. This is because each created series is automatically counted as "owned".
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
+				c.checkUpdateReasonForUser(t, "")
+				// Rerunning shouldn't trigger a recompute, since no reason is set
+				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
+				// First ingester still owns all the series.
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+			},
 		},
 
-		"no ring change after adding ingester": func(t *testing.T, c *ownedSeriesTestContext) {
-			c.pushUserSeries(t)
-			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
-			c.registerSecondIngesterOwningHalfOfTheTokens(t)
+		"no ring change after adding ingester": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 0,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				c.pushUserSeries(t)
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
+				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
-			// Since our user doesn't have any new reason set for recomputing owned series, and we pass ringChanged=false, no recompute will happen.
-			c.checkUpdateReasonForUser(t, "")
-			c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 2, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
+
+				// Since our user doesn't have any new reason set for recomputing owned series, and we pass ringChanged=false, no recompute will happen.
+				c.checkUpdateReasonForUser(t, "")
+				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+			},
 		},
 
-		"ring change after adding ingester": func(t *testing.T, c *ownedSeriesTestContext) {
-			c.pushUserSeries(t)
-			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
+		"ring change after adding ingester": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 0,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				c.pushUserSeries(t)
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
+				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
-			c.registerSecondIngesterOwningHalfOfTheTokens(t)
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 2, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
-			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonRingChanged)
-			c.checkUpdateReasonForUser(t, "")
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount/2, 0)
+				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonRingChanged)
+				c.checkUpdateReasonForUser(t, "")
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, ownedServiceTestUserSeriesLimit/2)
+			},
 		},
 
-		"unchanged ring, but tenant shard changed from 0 to 2": func(t *testing.T, c *ownedSeriesTestContext) {
-			c.pushUserSeries(t)
-			c.registerSecondIngesterOwningHalfOfTheTokens(t)
-			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
+		"unchanged ring, but tenant shard changed from 0 to 2": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 0,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				c.pushUserSeries(t)
+				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount/2, 0)
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 2, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
-			// Now don't change the ring, but change shard size from 0 to 2, which is also our number of ingesters.
-			// This will not change owned series (because we only have 2 ingesters, and both are already used), but will trigger recompute.
-			c.tenantShards[ownedServiceTestUser] = 2
+				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, ownedServiceTestUserSeriesLimit/2)
 
-			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-			c.checkUpdateReasonForUser(t, "")
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount/2, 2)
+				// Now don't change the ring, but change shard size from 0 to 2, which is also our number of ingesters.
+				// This will not change owned series (because we only have 2 ingesters, and both are already used), but will trigger recompute.
+				limits[ownedServiceTestUser].IngestionTenantShardSize = 2
+
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
+				c.checkUpdateReasonForUser(t, "")
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit/2)
+			},
 		},
 
-		"change tenant shard size from 2 to 1, removing our ingester from the shard": func(t *testing.T, c *ownedSeriesTestContext) {
-			c.tenantShards[ownedServiceTestUser] = 2
+		"change tenant shard size from 2 to 1, removing our ingester from the shard": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 2,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				c.pushUserSeries(t)
+				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
-			c.pushUserSeries(t)
-			c.registerSecondIngesterOwningHalfOfTheTokens(t)
-			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount/2, 2)
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 2, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
-			// now change to 1. This will only keep "second ingester" in the shard, so our tested ingester will own 0 series.
-			c.tenantShards[ownedServiceTestUser] = 1
+				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit/2)
 
-			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-			c.checkUpdateReasonForUser(t, "")
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, 0, 1)
+				// now change to 1. This will only keep "second ingester" in the shard, so our tested ingester will own 0 series.
+				limits[ownedServiceTestUser].IngestionTenantShardSize = 1
+
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
+				c.checkUpdateReasonForUser(t, "")
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+			},
 		},
 
-		"change tenant shard size from 1 to 2, adding our ingester to the shard": func(t *testing.T, c *ownedSeriesTestContext) {
-			c.tenantShards[ownedServiceTestUser] = 1
+		"change tenant shard size from 1 to 2, adding our ingester to the shard": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 1,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				c.pushUserSeries(t)
+				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
-			c.pushUserSeries(t)
-			c.registerSecondIngesterOwningHalfOfTheTokens(t)
-			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, 0, 1)
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 2, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
-			// now change shard size to 2, which will add our tested ingester
-			c.tenantShards[ownedServiceTestUser] = 2
+				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
 
-			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-			c.checkUpdateReasonForUser(t, "")
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount/2, 2)
+				// now change shard size to 2, which will add our tested ingester
+				limits[ownedServiceTestUser].IngestionTenantShardSize = 2
+
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
+				c.checkUpdateReasonForUser(t, "")
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit/2)
+			},
 		},
 
-		"unregister second ingester owning all series": func(t *testing.T, c *ownedSeriesTestContext) {
-			c.tenantShards[ownedServiceTestUser] = 1
+		"unregister second ingester owning all series": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 1,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				c.pushUserSeries(t)
+				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
-			c.pushUserSeries(t)
-			c.registerSecondIngesterOwningHalfOfTheTokens(t)
-			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, 0, 1)
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 2, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
-			// Now unregister second ingester.
-			c.removeSecondIngester(t)
+				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
 
-			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonRingChanged)
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 1)
+				// Now unregister second ingester.
+				c.removeSecondIngester(t)
+
+				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonRingChanged)
+				c.checkUpdateReasonForUser(t, "")
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+			},
 		},
 
-		"early compaction removes all series": func(t *testing.T, c *ownedSeriesTestContext) {
-			c.pushUserSeries(t)
+		"double series limit, double shard size": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 1,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				c.pushUserSeries(t)
+				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
-			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 2, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
-			// Run early compaction. This removes all series from memory.
-			c.ing.compactBlocks(context.Background(), true, time.Now().Add(1*time.Minute).UnixMilli(), nil)
-			require.Equal(t, uint64(0), c.db.Head().NumSeries())
+				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit) // other ingester owns all series
 
-			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonEarlyCompaction)
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, 0, 0)
+				// Double the series limit AND shard size, so that the local limit stays the same.
+				limits[ownedServiceTestUser].IngestionTenantShardSize *= 2
+				limits[ownedServiceTestUser].MaxGlobalSeriesPerUser *= 2
+
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
+				c.checkUpdateReasonForUser(t, "")
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit)
+			},
 		},
 
-		"recompute after previous ring check failed": func(t *testing.T, c *ownedSeriesTestContext) {
-			c.pushUserSeries(t)
+		"early compaction removes all series": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 0,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				c.pushUserSeries(t)
+				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
 
-			// This overwrites "new user" reason.
-			c.db.requiresOwnedSeriesUpdate.Store(recomputeOwnedSeriesReasonRingChanged)
-			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonRingChanged)
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
+				// Run early compaction. This removes all series from memory.
+				c.ing.compactBlocks(context.Background(), true, time.Now().Add(1*time.Minute).UnixMilli(), nil)
+				require.Equal(t, uint64(0), c.db.Head().NumSeries())
+
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonEarlyCompaction)
+				c.checkUpdateReasonForUser(t, "")
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, ownedServiceTestUserSeriesLimit)
+			},
+		},
+
+		"recompute after previous ring check failed": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 0,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				c.pushUserSeries(t)
+
+				// This overwrites "new user" reason.
+				c.db.requiresOwnedSeriesUpdate.Store(recomputeOwnedSeriesReasonGetTokenRangesFailed)
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonGetTokenRangesFailed)
+				c.checkUpdateReasonForUser(t, "")
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+			},
 		},
 	}
 
@@ -267,6 +410,7 @@ func TestOwnedSeriesService(t *testing.T) {
 			cfg.IngesterRing.ZoneAwarenessEnabled = true
 			cfg.IngesterRing.InstanceZone = "zone"
 			cfg.IngesterRing.ReplicationFactor = 1 // Currently we require RF=number of zones, and we will only work with single zone.
+			cfg.IngesterRing.HeartbeatPeriod = 100 * time.Millisecond
 
 			// Start the ring watching. We need watcher to be running when we're doing ring updates, otherwise our update-and-watch function will fail.
 			rng, err := ring.New(cfg.IngesterRing.ToRingConfig(), "ingester", IngesterRingKey, log.NewNopLogger(), nil)
@@ -284,14 +428,25 @@ func TestOwnedSeriesService(t *testing.T) {
 
 			c.registerTestedIngesterIntoRing(t, cfg.IngesterRing.InstanceID, cfg.IngesterRing.InstanceAddr, cfg.IngesterRing.InstanceZone)
 
-			c.ing = setupIngester(t, cfg)
+			overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
+			require.NoError(t, err)
 
-			c.tenantShards = map[string]int{}
+			c.ing = setupIngesterWithOverrides(t, cfg, overrides, nil) // no need to pass the ring -- we'll test a completely separate OSS
+
 			c.buf = &concurrency.SyncBuffer{}
 
-			c.ownedSeries = newOwnedSeriesService(10*time.Minute, cfg.IngesterRing.InstanceID, rng, log.NewLogfmtLogger(c.buf), nil, func(user string) int { return c.tenantShards[user] }, c.ing.getTSDBUsers, c.ing.getTSDB)
+			c.ownedSeries = newOwnedSeriesService(
+				10*time.Minute,
+				cfg.IngesterRing.InstanceID,
+				rng,
+				log.NewLogfmtLogger(c.buf),
+				nil,
+				c.ing.limits.IngestionTenantShardSize,
+				c.ing.getTSDBUsers,
+				c.ing.getTSDB,
+			)
 
-			tc(t, &c)
+			tc.testFunc(t, &c, tc.limits)
 		})
 	}
 }
@@ -388,58 +543,50 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
 					IngestionTenantShardSize: 1,
-					MaxGlobalSeriesPerUser:   10000,
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
 				},
 			},
 			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
 				// assert starting limits
-				_, shards := c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit := c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// add other ingesters
 				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
 					desc.AddIngester("ingester-1-2", "localhost", "zone-1", []uint32{2}, ring.ACTIVE, time.Now())
 				})
 
-				// wait for the test ingester to update the ring
-				time.Sleep(2 * time.Second)
-				require.Equal(t, 3, c.ing.limiter.ring.InstancesCount())
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 3, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// run owned series update (ringChanged=true)
 				c.ownedSeries.updateAllTenants(context.Background(), true)
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// remove an ingester
 				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
 					desc.RemoveIngester("ingester-1-2")
 				})
 
-				// wait for the test ingester to update the ring
-				time.Sleep(2 * time.Second)
-				require.Equal(t, 2, c.ing.limiter.ring.InstancesCount())
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 2, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// run owned series update (ringChanged=true)
 				c.ownedSeries.updateAllTenants(context.Background(), true)
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 			},
 		},
 		"single zone, shards > ingesters, add and then remove ingester": {
@@ -448,58 +595,50 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
 					IngestionTenantShardSize: 2,
-					MaxGlobalSeriesPerUser:   10000,
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
 				},
 			},
 			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
 				// assert starting limits
-				_, shards := c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit := c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// add other ingesters
 				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
 					desc.AddIngester("ingester-1-1", "localhost", "zone-1", []uint32{1}, ring.ACTIVE, time.Now())
 				})
 
-				// wait for the test ingester to update the ring
-				time.Sleep(2 * time.Second)
-				require.Equal(t, 2, c.ing.limiter.ring.InstancesCount())
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 2, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// run owned series update (ringChanged=true)
 				c.ownedSeries.updateAllTenants(context.Background(), true)
 
 				// assert limit updated
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 5000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/2)
 
 				// remove an ingester
 				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
 					desc.RemoveIngester("ingester-1-1")
 				})
 
-				// wait for the test ingester to update the ring
-				time.Sleep(2 * time.Second)
-				require.Equal(t, 1, c.ing.limiter.ring.InstancesCount())
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 1, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
 				// assert limit updated
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// run owned series update (ringChanged=true)
 				c.ownedSeries.updateAllTenants(context.Background(), true)
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 			},
 		},
 		"single zone, shards = 0, add and then remove ingester": {
@@ -508,58 +647,50 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
 					IngestionTenantShardSize: 0,
-					MaxGlobalSeriesPerUser:   10000,
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
 				},
 			},
 			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
 				// assert starting limits
-				_, shards := c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit := c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// add other ingesters
 				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
 					desc.AddIngester("ingester-1-1", "localhost", "zone-1", []uint32{1}, ring.ACTIVE, time.Now())
 				})
 
-				// wait for the test ingester to update the ring
-				time.Sleep(2 * time.Second)
-				require.Equal(t, 2, c.ing.limiter.ring.InstancesCount())
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 2, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// run owned series update (ringChanged=true)
 				c.ownedSeries.updateAllTenants(context.Background(), true)
 
 				// assert limit updated
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 5000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/2)
 
 				// remove an ingester
 				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
 					desc.RemoveIngester("ingester-1-1")
 				})
 
-				// wait for the test ingester to update the ring
-				time.Sleep(2 * time.Second)
-				require.Equal(t, 1, c.ing.limiter.ring.InstancesCount())
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, 1, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
 				// assert limit updated
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// run owned series update (ringChanged=true)
 				c.ownedSeries.updateAllTenants(context.Background(), true)
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 			},
 		},
 		"single zone, shards < ingesters, increase shards": {
@@ -568,30 +699,24 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
 					IngestionTenantShardSize: 1,
-					MaxGlobalSeriesPerUser:   10000,
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
 				},
 			},
 			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
 				// assert starting limits
-				_, shards := c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit := c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// increase tenant ingestion shard size
 				limits[ownedServiceTestUser].IngestionTenantShardSize = 2
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// run owned series update (ringChanged=false)
 				c.ownedSeries.updateAllTenants(context.Background(), false)
 
 				// assert limit updated
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 5000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/2)
 			},
 		},
 		"single zone, shards = ingesters, increase shards": {
@@ -600,30 +725,24 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
 					IngestionTenantShardSize: 2,
-					MaxGlobalSeriesPerUser:   10000,
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
 				},
 			},
 			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
 				// assert starting limits
-				_, shards := c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit := c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 5000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/2)
 
 				// increase tenant ingestion shard size
 				limits[ownedServiceTestUser].IngestionTenantShardSize = 3
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 5000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/2)
 
 				// run owned series update (ringChanged=false)
 				c.ownedSeries.updateAllTenants(context.Background(), false)
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 5000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/2)
 			},
 		},
 		"multi zone, shards < ingesters, scale up and scale down": {
@@ -632,17 +751,15 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
 					IngestionTenantShardSize: 3, // one ingester per zone
-					MaxGlobalSeriesPerUser:   10000,
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
 				},
 			},
 			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
 				// assert starting limits
-				_, shards := c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit := c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// we'd normally scale up all zones at once, but doing it one by one lets us
-				// put the test ingester in a variety of scenarioe (e.g.: what if it's in the only
+				// put the test ingester in a variety of scenarios (e.g.: what if it's in the only
 				// zone that's scale up? the only zone scaled down? etc.)
 
 				// scale up zone by zone
@@ -654,22 +771,19 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 					})
 					ingesterCount += 2
 
-					// wait for the test ingester to update the ring
-					time.Sleep(2 * time.Second)
-					require.Equal(t, ingesterCount, c.ing.limiter.ring.InstancesCount())
+					// wait for the ingester to see the updated ring
+					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+						return c.ing.lifecycler.InstancesCount()
+					})
 
 					// assert limit unchanged
-					_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-					localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-					assert.Equal(t, 10000, localLimit)
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 					// run owned series update (ringChanged=true)
 					c.ownedSeries.updateAllTenants(context.Background(), true)
 
 					// assert limit unchanged
-					_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-					localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-					assert.Equal(t, 10000, localLimit)
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 				}
 
 				// scale down zone by zone
@@ -682,93 +796,86 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 					})
 					ingesterCount -= 4
 
-					// wait for the test ingester to update the ring
-					time.Sleep(2 * time.Second)
-					require.Equal(t, ingesterCount, c.ing.limiter.ring.InstancesCount())
+					// wait for the ingester to see the updated ring
+					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+						return c.ing.lifecycler.InstancesCount()
+					})
 
 					// assert limit unchanged
-					_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-					localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-					assert.Equal(t, 10000, localLimit)
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 					// run owned series update (ringChanged=true)
 					c.ownedSeries.updateAllTenants(context.Background(), true)
 
 					// assert limit unchanged
-					_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-					localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-					assert.Equal(t, 10000, localLimit)
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 				}
 			},
 		},
 		"multi zone, shards > ingesters, scale up and scale down": {
 			numZones:                 3,
-			startingIngestersPerZone: 3,
+			startingIngestersPerZone: 1,
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
 					IngestionTenantShardSize: 15, // 5 ingesters per zone
-					MaxGlobalSeriesPerUser:   10000,
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
 				},
 			},
 			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
 				// assert starting limits
-				_, shards := c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit := c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 3333, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// we'd normally scale up all zones at once, but doing it one by one lets us
 				// put the test ingester in a variety of scenarioe (e.g.: what if it's in the only
 				// zone that's scale up? the only zone scaled down? etc.)
 
 				// scale up zone 1
-				ingesterCount := 9
+				ingesterCount := 3
 				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
+					desc.AddIngester("ingester-1-1", "localhost", "zone-1", []uint32{1}, ring.ACTIVE, time.Now())
+					desc.AddIngester("ingester-1-2", "localhost", "zone-1", []uint32{2}, ring.ACTIVE, time.Now())
 					desc.AddIngester("ingester-1-3", "localhost", "zone-1", []uint32{3}, ring.ACTIVE, time.Now())
 					desc.AddIngester("ingester-1-4", "localhost", "zone-1", []uint32{4}, ring.ACTIVE, time.Now())
 				})
-				ingesterCount += 2
+				ingesterCount += 4
 
-				// wait for the test ingester to update the ring
-				time.Sleep(2 * time.Second)
-				require.Equal(t, ingesterCount, c.ing.limiter.ring.InstancesCount())
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 3333, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// run owned series update (ringChanged=true)
 				c.ownedSeries.updateAllTenants(context.Background(), true)
 
 				// assert limit updated
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 2000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/5)
 
 				// scale up other zones
 				for i := 2; i <= 3; i++ {
 					updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
+						desc.AddIngester(fmt.Sprintf("ingester-%d-1", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{1}, ring.ACTIVE, time.Now())
+						desc.AddIngester(fmt.Sprintf("ingester-%d-2", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{2}, ring.ACTIVE, time.Now())
 						desc.AddIngester(fmt.Sprintf("ingester-%d-3", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{3}, ring.ACTIVE, time.Now())
 						desc.AddIngester(fmt.Sprintf("ingester-%d-4", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{4}, ring.ACTIVE, time.Now())
 					})
-					ingesterCount += 2
+					ingesterCount += 4
 
-					// wait for the test ingester to update the ring
-					time.Sleep(2 * time.Second)
-					require.Equal(t, ingesterCount, c.ing.limiter.ring.InstancesCount())
+					// wait for the ingester to see the updated ring
+					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+						return c.ing.lifecycler.InstancesCount()
+					})
 
 					// assert limit unchanged
-					_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-					localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-					assert.Equal(t, 2000, localLimit)
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/5)
 
 					// run owned series update (ringChanged=true)
 					c.ownedSeries.updateAllTenants(context.Background(), true)
 
 					// assert limit unchanged
-					_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-					localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-					assert.Equal(t, 2000, localLimit)
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/5)
 				}
 
 				// scale down zone 1
@@ -780,22 +887,19 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				})
 				ingesterCount -= 4
 
-				// wait for the test ingester to update the ring
-				time.Sleep(2 * time.Second)
-				require.Equal(t, ingesterCount, c.ing.limiter.ring.InstancesCount())
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
 				// assert limit updated
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// run owned series update (ringChanged=true)
 				c.ownedSeries.updateAllTenants(context.Background(), true)
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// scale down other zones
 				for i := 2; i <= 3; i++ {
@@ -807,28 +911,25 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 					})
 					ingesterCount -= 4
 
-					// wait for the test ingester to update the ring
-					time.Sleep(2 * time.Second)
-					require.Equal(t, ingesterCount, c.ing.limiter.ring.InstancesCount())
+					// wait for the ingester to see the updated ring
+					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+						return c.ing.lifecycler.InstancesCount()
+					})
 
 					// assert limit unchanged
-					_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-					localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-					assert.Equal(t, 10000, localLimit)
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 					// run owned series update (ringChanged=true)
 					c.ownedSeries.updateAllTenants(context.Background(), true)
 
 					// assert limit unchanged
-					_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-					localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-					assert.Equal(t, 10000, localLimit)
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 				}
 			},
 		},
 		"multi zone, shards = 0, scale up and scale down": {
 			numZones:                 3,
-			startingIngestersPerZone: 3,
+			startingIngestersPerZone: 1,
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
 					IngestionTenantShardSize: 0,
@@ -837,63 +938,59 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			},
 			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
 				// assert starting limits
-				_, shards := c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit := c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 3333, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// we'd normally scale up all zones at once, but doing it one by one lets us
 				// put the test ingester in a variety of scenarioe (e.g.: what if it's in the only
 				// zone that's scale up? the only zone scaled down? etc.)
 
 				// scale up zone 1
-				ingesterCount := 9
+				ingesterCount := 3
 				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
+					desc.AddIngester("ingester-1-1", "localhost", "zone-1", []uint32{1}, ring.ACTIVE, time.Now())
+					desc.AddIngester("ingester-1-2", "localhost", "zone-1", []uint32{2}, ring.ACTIVE, time.Now())
 					desc.AddIngester("ingester-1-3", "localhost", "zone-1", []uint32{3}, ring.ACTIVE, time.Now())
 					desc.AddIngester("ingester-1-4", "localhost", "zone-1", []uint32{4}, ring.ACTIVE, time.Now())
 				})
-				ingesterCount += 2
+				ingesterCount += 4
 
-				// wait for the test ingester to update the ring
-				time.Sleep(2 * time.Second)
-				require.Equal(t, ingesterCount, c.ing.limiter.ring.InstancesCount())
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 3333, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// run owned series update (ringChanged=true)
 				c.ownedSeries.updateAllTenants(context.Background(), true)
 
 				// assert limit updated
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 2000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/5)
 
 				// scale up other zones
 				for i := 2; i <= 3; i++ {
 					updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
+						desc.AddIngester(fmt.Sprintf("ingester-%d-1", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{1}, ring.ACTIVE, time.Now())
+						desc.AddIngester(fmt.Sprintf("ingester-%d-2", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{2}, ring.ACTIVE, time.Now())
 						desc.AddIngester(fmt.Sprintf("ingester-%d-3", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{3}, ring.ACTIVE, time.Now())
 						desc.AddIngester(fmt.Sprintf("ingester-%d-4", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{4}, ring.ACTIVE, time.Now())
 					})
-					ingesterCount += 2
+					ingesterCount += 4
 
-					// wait for the test ingester to update the ring
-					time.Sleep(2 * time.Second)
-					require.Equal(t, ingesterCount, c.ing.limiter.ring.InstancesCount())
+					// wait for the ingester to see the updated ring
+					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+						return c.ing.lifecycler.InstancesCount()
+					})
 
 					// assert limit unchanged
-					_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-					localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-					assert.Equal(t, 2000, localLimit)
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/5)
 
 					// run owned series update (ringChanged=true)
 					c.ownedSeries.updateAllTenants(context.Background(), true)
 
 					// assert limit unchanged
-					_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-					localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-					assert.Equal(t, 2000, localLimit)
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/5)
 				}
 
 				// scale down zone 1
@@ -905,22 +1002,19 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				})
 				ingesterCount -= 4
 
-				// wait for the test ingester to update the ring
-				time.Sleep(2 * time.Second)
-				require.Equal(t, ingesterCount, c.ing.limiter.ring.InstancesCount())
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
 
 				// assert limit updated
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// run owned series update (ringChanged=true)
 				c.ownedSeries.updateAllTenants(context.Background(), true)
 
 				// assert limit unchanged
-				_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-				localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-				assert.Equal(t, 10000, localLimit)
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 				// scale down other zones
 				for i := 2; i <= 3; i++ {
@@ -932,22 +1026,19 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 					})
 					ingesterCount -= 4
 
-					// wait for the test ingester to update the ring
-					time.Sleep(2 * time.Second)
-					require.Equal(t, ingesterCount, c.ing.limiter.ring.InstancesCount())
+					// wait for the ingester to see the updated ring
+					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+						return c.ing.lifecycler.InstancesCount()
+					})
 
 					// assert limit unchanged
-					_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-					localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-					assert.Equal(t, 10000, localLimit)
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 
 					// run owned series update (ringChanged=true)
 					c.ownedSeries.updateAllTenants(context.Background(), true)
 
 					// assert limit unchanged
-					_, shards = c.db.getSeriesAndShardsForSeriesLimit()
-					localLimit = c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, shards)
-					assert.Equal(t, 10000, localLimit)
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit)
 				}
 			},
 		},
@@ -960,7 +1051,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			cfg.IngesterRing.ZoneAwarenessEnabled = true
 			cfg.IngesterRing.InstanceZone = "zone-1"
 			cfg.IngesterRing.ReplicationFactor = tc.numZones // RF needs to equal number of zones
-			cfg.IngesterRing.HeartbeatPeriod = time.Second
+			cfg.IngesterRing.HeartbeatPeriod = 100 * time.Millisecond
 			cfg.UpdateIngesterOwnedSeries = true
 			cfg.UseIngesterOwnedSeriesForLimits = true
 
@@ -979,7 +1070,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				kvStore: wkv,
 			}
 
-			// add initial ingesters to ring (one for each zone)
+			// add initial ingesters to ring
 			updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
 				for i := 1; i <= tc.numZones; i++ {
 					for j := 0; j < tc.startingIngestersPerZone; j++ {
@@ -995,24 +1086,22 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			c.ing = setupIngesterWithOverrides(t, cfg, overrides, rng)
 
 			// verify limiter sees the expected number of ingesters
-			require.Equal(t, tc.numZones*tc.startingIngestersPerZone, c.ing.limiter.ring.InstancesCount())
+			require.Equal(t, tc.numZones*tc.startingIngestersPerZone, c.ing.lifecycler.InstancesCount())
 
 			// write series to create TSDB
-			seriesToWrite := []series{
+			c.seriesToWrite = []series{
 				{
 					lbls:      labels.FromStrings(labels.MetricName, "test", "label", "value"),
 					value:     float64(0),
 					timestamp: time.Now().UnixMilli(),
 				},
 			}
-			require.NoError(t, pushSeriesToIngester(user.InjectOrgID(context.Background(), ownedServiceTestUser), t, c.ing, seriesToWrite))
+			c.pushUserSeries(t)
 
 			// populate test context
 			c.ownedSeries = c.ing.ownedSeriesService
 			require.NotNil(t, c.ownedSeries)
 			require.NotNil(t, c.ownedSeries.ingestersRing)
-			c.db = c.ing.getTSDB(ownedServiceTestUser)
-			require.NotNil(t, c.db)
 
 			// run test
 			tc.testFunc(t, &c, tc.limits)
@@ -1027,16 +1116,6 @@ func userToken(user, zone string, skip int) uint32 {
 		_ = r.Uint32()
 	}
 	return r.Uint32()
-}
-
-func setupIngester(t *testing.T, cfg Config) *Ingester {
-	ing, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing))
-	})
-	return ing
 }
 
 func setupIngesterWithOverrides(t *testing.T, cfg Config, overrides *validation.Overrides, ingesterRing ring.ReadRing) *Ingester {

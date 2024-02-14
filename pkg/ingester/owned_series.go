@@ -140,8 +140,8 @@ func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringCha
 
 	reason := db.getAndClearReasonForRecomputeOwnedSeries() // Clear reason, so that other reasons can be set while we run update here.
 	if reason == "" {
-		_, ownedShardSize := db.ownedSeriesAndShards()
-		if shardSize != ownedShardSize {
+		os := db.ownedSeriesState()
+		if shardSize != os.shardSize {
 			reason = recomputeOwnedSeriesReasonShardSizeChanged
 		}
 	}

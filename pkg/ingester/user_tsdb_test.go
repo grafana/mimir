@@ -197,7 +197,7 @@ func TestNextForcedHeadCompactionRange(t *testing.T) {
 	}
 }
 
-func TestGetSeriesAndShardsForSeriesLimit(t *testing.T) {
+func TestGetSeriesAndMinForSeriesLimit(t *testing.T) {
 	tsdbDB, err := tsdb.Open(t.TempDir(), log.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -211,61 +211,72 @@ func TestGetSeriesAndShardsForSeriesLimit(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Mock limits
-	limits := validation.Limits{IngestionTenantShardSize: 100}
+	limits := validation.Limits{MaxGlobalSeriesPerUser: 5000}
 	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
 
 	db := userTSDB{
-		db:                   tsdbDB,
-		limiter:              NewLimiter(overrides, newIngesterRingLimiterStrategy(&ringCountMock{instancesCount: 100}, 3, false, "", overrides.IngestionTenantShardSize)),
-		ownedSeriesCount:     555,
-		ownedSeriesShardSize: 333,
+		db:      tsdbDB,
+		limiter: NewLimiter(overrides, nil),
+
+		ownedSeries: ownedSeriesState{
+			count:      555,
+			localLimit: 10000,
+		},
 	}
 
 	t.Run("using series in Head", func(t *testing.T) {
 		db.useOwnedSeriesForLimits = false
 
-		cnt, shards := db.getSeriesAndShardsForSeriesLimit()
+		cnt, minLimit := db.getSeriesAndMinForSeriesLimit()
 		require.Equal(t, 1, cnt)
-		require.Equal(t, 100, shards)
+		require.Equal(t, 0, minLimit)
 	})
 
 	t.Run("using owned series", func(t *testing.T) {
 		db.useOwnedSeriesForLimits = true
 
-		cnt, shards := db.getSeriesAndShardsForSeriesLimit()
+		cnt, minLimit := db.getSeriesAndMinForSeriesLimit()
 		require.Equal(t, 555, cnt)
-		require.Equal(t, 333, shards)
+		require.Equal(t, 10000, minLimit)
 	})
 }
 
 func TestRecomputeOwnedSeries(t *testing.T) {
+	limits := validation.Limits{MaxGlobalSeriesPerUser: 0}
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
+
+	limiter := NewLimiter(overrides, newIngesterRingLimiterStrategy(nil, 3, true, "zone", overrides.IngestionTenantShardSize))
+
 	t.Run("happy path", func(t *testing.T) {
-		db := userTSDB{userID: "test"}
+		db := userTSDB{userID: "test", limiter: limiter}
 		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
 			return 10
 		})
 		require.True(t, success)
 		require.Equal(t, 1, attempts)
-		require.Equal(t, 10, db.ownedSeriesCount)
-		require.Equal(t, 5, db.ownedSeriesShardSize)
+		require.Equal(t, 10, db.ownedSeries.count)
+		require.Equal(t, 5, db.ownedSeries.shardSize)
+		require.Equal(t, math.MaxInt32, db.ownedSeries.localLimit)
 	})
 
 	t.Run("increase during computation, but within limit", func(t *testing.T) {
-		db := userTSDB{userID: "test"}
+		db := userTSDB{userID: "test", limiter: limiter}
 		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
-			db.ownedSeriesCount += recomputeOwnedSeriesMaxSeriesDiff / 2
+			db.ownedSeries.count += recomputeOwnedSeriesMaxSeriesDiff / 2
 			return 10
 		})
 
 		require.True(t, success)
 		require.Equal(t, 1, attempts)
-		require.Equal(t, 10, db.ownedSeriesCount)
-		require.Equal(t, 5, db.ownedSeriesShardSize)
+		require.Equal(t, 10, db.ownedSeries.count)
+		require.Equal(t, 5, db.ownedSeries.shardSize)
+		require.Equal(t, math.MaxInt32, db.ownedSeries.localLimit)
 	})
 
 	t.Run("increase during computation, last increase is within limit", func(t *testing.T) {
-		db := userTSDB{userID: "test"}
+		db := userTSDB{userID: "test", limiter: limiter}
 
 		// All but last modifications of ownedSeries during compute will exceed the limit.
 		mods := make([]int, recomputeOwnedSeriesMaxAttempts)
@@ -275,18 +286,19 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		mods[len(mods)-1] = recomputeOwnedSeriesMaxSeriesDiff
 
 		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
-			db.ownedSeriesCount += mods[0]
+			db.ownedSeries.count += mods[0]
 			mods = mods[1:]
 			return 10
 		})
 		require.True(t, success)
 		require.Equal(t, recomputeOwnedSeriesMaxAttempts, attempts)
-		require.Equal(t, 10, db.ownedSeriesCount)
-		require.Equal(t, 5, db.ownedSeriesShardSize)
+		require.Equal(t, 10, db.ownedSeries.count)
+		require.Equal(t, 5, db.ownedSeries.shardSize)
+		require.Equal(t, math.MaxInt32, db.ownedSeries.localLimit)
 	})
 
-	t.Run("increase during computation, last increase is within limit, computation should retry", func(t *testing.T) {
-		db := userTSDB{userID: "test"}
+	t.Run("increase during computation, last increase is above limit, computation should retry", func(t *testing.T) {
+		db := userTSDB{userID: "test", limiter: limiter}
 
 		// All modifications of ownedSeries will exceed the limit.
 		mods := make([]int, recomputeOwnedSeriesMaxAttempts)
@@ -295,13 +307,14 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		}
 
 		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
-			db.ownedSeriesCount += mods[0]
+			db.ownedSeries.count += mods[0]
 			mods = mods[1:]
 			return 10
 		})
 		require.False(t, success)
 		require.Equal(t, recomputeOwnedSeriesMaxAttempts, attempts)
-		require.Equal(t, 10, db.ownedSeriesCount)
-		require.Equal(t, 5, db.ownedSeriesShardSize)
+		require.Equal(t, 10, db.ownedSeries.count)
+		require.Equal(t, 5, db.ownedSeries.shardSize)
+		require.Equal(t, math.MaxInt32, db.ownedSeries.localLimit)
 	})
 }

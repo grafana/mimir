@@ -57,7 +57,7 @@ func TestLimiter_maxSeriesPerUser(t *testing.T) {
 	}
 
 	runMaxFn := func(limiter *Limiter) int {
-		return limiter.maxSeriesPerUser("test", limiter.getShardSize("test"))
+		return limiter.maxSeriesPerUser("test", 0)
 	}
 
 	t.Run("ingester ring", func(t *testing.T) {
@@ -661,7 +661,8 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 		ringReplicationFactor  int
 		ringIngesterCount      int
 		series                 int
-		shardSizeForLimitCheck int
+		tenantShardSize        int
+		minLocalLimit          int
 		expected               bool
 	}{
 		"limit is disabled": {
@@ -678,7 +679,7 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			series:                 299,
 			expected:               true,
 		},
-		"current number of series is above the limit": {
+		"current number of series is above the limit, min limit not set": {
 			maxGlobalSeriesPerUser: 1000,
 			ringReplicationFactor:  3,
 			ringIngesterCount:      10,
@@ -690,7 +691,7 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			ringReplicationFactor:  3,
 			ringIngesterCount:      10,
 			series:                 999,
-			shardSizeForLimitCheck: 3,
+			tenantShardSize:        3,
 			expected:               true,
 		},
 		"current number of series is at the limit with non-zero shard size to the check": {
@@ -698,8 +699,16 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			ringReplicationFactor:  3,
 			ringIngesterCount:      10,
 			series:                 1000,
-			shardSizeForLimitCheck: 3,
+			tenantShardSize:        3,
 			expected:               false,
+		},
+		"current number of series is above the limit, but below min limit": {
+			maxGlobalSeriesPerUser: 1000,
+			ringReplicationFactor:  3,
+			ringIngesterCount:      10,
+			series:                 300,
+			minLocalLimit:          400,
+			expected:               true,
 		},
 	}
 
@@ -712,13 +721,14 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 
 			// Mock limits
 			limits, err := validation.NewOverrides(validation.Limits{
-				MaxGlobalSeriesPerUser: testData.maxGlobalSeriesPerUser,
+				MaxGlobalSeriesPerUser:   testData.maxGlobalSeriesPerUser,
+				IngestionTenantShardSize: testData.tenantShardSize,
 			}, nil)
 			require.NoError(t, err)
 
 			strategy := newIngesterRingLimiterStrategy(ring, testData.ringReplicationFactor, false, "", limits.IngestionTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
-			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, testData.shardSizeForLimitCheck)
+			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, testData.minLocalLimit)
 
 			assert.Equal(t, testData.expected, actual)
 		})
@@ -730,8 +740,9 @@ func TestLimiter_AssertMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 		maxGlobalSeriesPerUser int
 		partitionStates        []ring.PartitionState
 		series                 int
-		shardSizeForLimitCheck int
+		tenantShardSize        int
 		expected               bool
+		minLocalLimit          int
 	}{
 		"limit is disabled": {
 			maxGlobalSeriesPerUser: 0,
@@ -755,15 +766,22 @@ func TestLimiter_AssertMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 			maxGlobalSeriesPerUser: 1000,
 			partitionStates:        []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionActive, ring.PartitionActive, ring.PartitionActive},
 			series:                 499,
-			shardSizeForLimitCheck: 2,
+			tenantShardSize:        2,
 			expected:               true,
 		},
 		"current number of series is at the limit with non-zero shard size to the check": {
 			maxGlobalSeriesPerUser: 1000,
 			partitionStates:        []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionActive, ring.PartitionActive, ring.PartitionActive},
 			series:                 500,
-			shardSizeForLimitCheck: 2,
+			tenantShardSize:        2,
 			expected:               false,
+		},
+		"current number of series is above the limit, but below min limit": {
+			maxGlobalSeriesPerUser: 900,
+			partitionStates:        []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionActive},
+			series:                 350,
+			expected:               true,
+			minLocalLimit:          400,
 		},
 	}
 
@@ -771,12 +789,12 @@ func TestLimiter_AssertMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			pr := buildPartitionRingFromPartitionStates(testData.partitionStates...)
 
-			limits, err := validation.NewOverrides(validation.Limits{MaxGlobalSeriesPerUser: testData.maxGlobalSeriesPerUser}, nil)
+			limits, err := validation.NewOverrides(validation.Limits{MaxGlobalSeriesPerUser: testData.maxGlobalSeriesPerUser, IngestionPartitionsTenantShardSize: testData.tenantShardSize}, nil)
 			require.NoError(t, err)
 
 			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
-			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, testData.shardSizeForLimitCheck)
+			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, testData.minLocalLimit)
 
 			assert.Equal(t, testData.expected, actual)
 		})
