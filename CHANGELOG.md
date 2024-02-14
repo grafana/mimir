@@ -93,6 +93,7 @@
 * [BUGFIX] Query-frontend: "query stats" log unsuccessful replies from downstream as "failed". #7296
 * [BUGFIX] Packaging: remove reload from systemd file as mimir does not take into account SIGHUP. #7345
 * [BUGFIX] Compactor: do not allow out-of-order blocks to prevent timely compaction. #7342
+* [BUGFIX] Update `google.golang.org/grpc` to resolve occasional issues with gRPC server closing its side of connection before it was drained by the client. #7380
 
 ### Mixin
 
