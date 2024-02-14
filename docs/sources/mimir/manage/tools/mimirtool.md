@@ -205,7 +205,7 @@ mimirtool alertmanager verify <config_file> [template_files...] --utf8-strict-mo
 You should see a warning "UTF-8 mode enabled" to let you know that UTF-8 strict mode was enabled
 when validating your configuration.
 
-If the command exits without error, and you are satisifed with the changes made to the prepared
+If the command exits without error, and you are satisfied with the changes made to the prepared
 configuration and template files, re-upload it using the `load` command.
 
 #### Validate Alertmanager configuration
