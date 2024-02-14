@@ -15,7 +15,7 @@
             },
             "startsAt": "2024-02-07T09:00:51.0982886+01:00",
             "endsAt": "2024-02-07T09:10:51.0982886+01:00",
-            "generatorURL": "https://generatorurl.com/graph?g0.expr=up",
+            "generatorURL": "https://localhost/graph?g0.expr=up",
             "fingerprint": "fingerprint2"
         }
     ],

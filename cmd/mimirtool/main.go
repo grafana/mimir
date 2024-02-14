@@ -30,7 +30,6 @@ var (
 	remoteReadCommand     commands.RemoteReadCommand
 	ruleCommand           commands.RuleCommand
 	backfillCommand       commands.BackfillCommand
-	templateCommand       commands.TemplateCommand
 )
 
 func main() {
@@ -49,7 +48,6 @@ func main() {
 	pushGateway.Register(app, envVars)
 	remoteReadCommand.Register(app, envVars)
 	ruleCommand.Register(app, envVars, prometheus.DefaultRegisterer)
-	templateCommand.Register(app, envVars)
 
 	app.Command("version", "Get the version of the mimirtool CLI").Action(func(k *kingpin.ParseContext) error {
 		fmt.Fprintln(os.Stdout, mimirversion.Print("Mimirtool"))

@@ -48,10 +48,6 @@ Mimirtool is a command-line tool that operators and tenants can use to execute a
 
   For more information about the `backfill` command, refer to [Backfill]({{< relref "#backfill" >}})
 
-- The `template` command enables you to render your alertmanager template.
-
-  For more information about the `template` command, refer to [template]({{< relref "#template" >}})
-
 Mimirtool interacts with:
 
 - User-facing APIs provided by Grafana Mimir.
@@ -177,6 +173,19 @@ The following command verifies if alerts in an Alertmanager cluster are deduplic
 ```bash
 mimirtool alerts verify
 ```
+
+#### Render template
+
+You can render your alertmanager template by using the subcommand `render`.
+
+The following command render a template and prints it to the terminal.
+
+```bash
+# assuming we have written the templates out to the folder templates
+mimirtool alertmanager render --template-glob "templates/*" --template-data "alert_data1.json" --template-text '{{ template "my_message" . }}'
+```
+
+It can also take a glob path that will be expended.
 
 ### Rules
 
@@ -1009,20 +1018,6 @@ INFO[0000] uploading block file                     block=01G8CB7GTTC5ZXY23WTXHS
 INFO[0000] block uploaded successfully              block=01G8CB7GTTC5ZXY23WTXHSYQXQ path=/var/prometheus/01G8CB7GTTC5ZXY23WTXHSYQXQ
 INFO[0001] finished uploading blocks                already_exists=1 failed=0 succeeded=2
 ```
-
-### Template
-
-You can render your alertmanager template by using the subcommand `render`.
-
-##### Example
-
-The following command render a template and prints it to the terminal.
-
-```bash
-mimirtool template render --template.glob  "alertmanager_template1.tmpl" --template.data "alert_data1.json" --template.text '{{ template "my_message" . }}'
-```
-
-It can also take a glob path that will be expended.
 
 ## License
 

@@ -10,5 +10,5 @@ Details:
 • Environment: {{ .Labels.environment }}
 • Description: {{ .Annotations.description }}
 {{ end }}
-<a href="{{ grafanaExploreURL "https://foo.bar" "xyz" "now-12h" "now" (queryFromGeneratorURL (index .Alerts 0).GeneratorURL) }}">Grafana Explorer URL</a>
+<a href="{{ grafanaExploreURL "https://example.com" "xyz" "now-12h" "now" (queryFromGeneratorURL (index .Alerts 0).GeneratorURL) }}">Grafana Explorer URL</a>
 {{ end }}

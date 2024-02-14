@@ -77,7 +77,7 @@ Details:
 • Environment: lab
 • Description: blablablabla
 
-<a href="https://foo.bar/explore?left=%7B%22range%22%3A%7B%22from%22%3A%22now-12h%22%2C%22to%22%3A%22now%22%7D%2C%22queries%22%3A%5B%7B%22datasource%22%3A%7B%22type%22%3A%22prometheus%22%2C%22uid%22%3A%22xyz%22%7D%2C%22expr%22%3A%22up%22%2C%22instant%22%3Afalse%2C%22range%22%3Atrue%2C%22refId%22%3A%22A%22%7D%5D%7D">Grafana Explorer URL</a>
+<a href="https://example.com/explore?left=%7B%22range%22%3A%7B%22from%22%3A%22now-12h%22%2C%22to%22%3A%22now%22%7D%2C%22queries%22%3A%5B%7B%22datasource%22%3A%7B%22type%22%3A%22prometheus%22%2C%22uid%22%3A%22xyz%22%7D%2C%22expr%22%3A%22up%22%2C%22instant%22%3Afalse%2C%22range%22%3Atrue%2C%22refId%22%3A%22A%22%7D%5D%7D">Grafana Explorer URL</a>
 `,
 		},
 	}

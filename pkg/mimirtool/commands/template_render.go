@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-
+// Provenance-includes-location: https://github.com/prometheus/alertmanager/blob/main/cli/template_render.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors.
 package commands
 
 import (
@@ -36,7 +38,7 @@ var defaultData = template.Data{
 			},
 			StartsAt:     time.Now().Add(-5 * time.Minute),
 			EndsAt:       time.Now(),
-			GeneratorURL: "https://generatorurl.com",
+			GeneratorURL: "https://example.com",
 			Fingerprint:  "fingerprint1",
 		},
 		template.Alert{
@@ -55,7 +57,7 @@ var defaultData = template.Data{
 			},
 			StartsAt:     time.Now().Add(-10 * time.Minute),
 			EndsAt:       time.Now(),
-			GeneratorURL: "https://generatorurl.com",
+			GeneratorURL: "https://example.com",
 			Fingerprint:  "fingerprint2",
 		},
 	},
@@ -96,7 +98,7 @@ func (cmd *TemplateRenderCmd) render(_ *kingpin.ParseContext) error {
 }
 
 func TemplateRender(cmd *TemplateRenderCmd) (string, error) {
-	tmpl, err := template.FromGlobs(cmd.templateFilesGlobs, MimirAlertManager.WithCustomFunctions(cmd.tenantID))
+	tmpl, err := template.FromGlobs(cmd.templateFilesGlobs, mimiram.WithCustomFunctions(cmd.tenantID))
 	if err != nil {
 		return "", err
 	}
