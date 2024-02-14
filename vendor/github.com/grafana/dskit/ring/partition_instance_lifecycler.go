@@ -187,14 +187,21 @@ func (l *PartitionInstanceLifecycler) starting(ctx context.Context) error {
 }
 
 func (l *PartitionInstanceLifecycler) running(ctx context.Context) error {
+	reconcile := func() {
+		l.reconcileOwnedPartition(ctx, time.Now())
+		l.reconcileOtherPartitions(ctx, time.Now())
+	}
+
+	// Run a reconciliation as soon as the lifecycler, in order to not having to wait for the 1st timer tick.
+	reconcile()
+
 	reconcileTicker := time.NewTicker(l.cfg.PollingInterval)
 	defer reconcileTicker.Stop()
 
 	for {
 		select {
 		case <-reconcileTicker.C:
-			l.reconcileOwnedPartition(ctx, time.Now())
-			l.reconcileOtherPartitions(ctx, time.Now())
+			reconcile()
 
 		case f := <-l.actorChan:
 			f()
