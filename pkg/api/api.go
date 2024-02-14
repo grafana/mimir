@@ -380,7 +380,7 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	a.indexPage.AddLinks(defaultWeight, "Compactor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/compactor/ring"},
-		{Desc: "Tenants & Compaction Jobs", Path: "/compactor/tenants"},
+		{Desc: "Tenants & compaction jobs", Path: "/compactor/tenants"},
 	})
 	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/api/v1/upload/block/{block}/start", http.HandlerFunc(c.StartBlockUpload), true, false, http.MethodPost)
