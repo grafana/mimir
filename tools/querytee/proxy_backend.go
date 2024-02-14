@@ -43,7 +43,7 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 				return errors.New("the query-tee proxy does not follow redirects")
 			},
 			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
+				//Proxy: http.ProxyFromEnvironment,
 				TLSClientConfig: &tls.Config{
 					InsecureSkipVerify: skipTLSVerify,
 				},
