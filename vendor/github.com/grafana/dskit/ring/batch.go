@@ -53,6 +53,10 @@ func isHTTPStatus4xx(err error) bool {
 type DoBatchRing interface {
 	// Get returns a ReplicationSet containing the instances to which the input key should be sharded to
 	// for the input Operation.
+	//
+	// The input buffers may be referenced in the returned ReplicationSet. This means that it's unsafe to call
+	// Get() multiple times passing the same buffers if ReplicationSet is retained between two different Get()
+	// calls. In this cas, you can pass nil buffers.
 	Get(key uint32, op Operation, bufInstances []InstanceDesc, bufStrings1, bufStrings2 []string) (ReplicationSet, error)
 
 	// ReplicationFactor returns the number of instances each key is expected to be sharded to.
