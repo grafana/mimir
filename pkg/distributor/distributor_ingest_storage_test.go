@@ -156,7 +156,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				require.Error(t, err)
 				assert.Nil(t, res)
 
-				if testData.expectedErr == context.DeadlineExceeded {
+				if errors.Is(testData.expectedErr, context.DeadlineExceeded) {
 					// The context.DeadlineExceeded is not expected to be wrapped in a gRPC error.
 					assert.ErrorIs(t, err, testData.expectedErr)
 				} else {
