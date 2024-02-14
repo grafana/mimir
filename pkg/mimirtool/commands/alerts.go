@@ -94,11 +94,11 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 		cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided.").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 	}
 
-	prepareCmd := alertCmd.Command("migrate-utf8", "Migrate the Alertmanager tenant configuration for UTF-8.").Action(a.migrateConfig)
-	prepareCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
-	prepareCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
-	prepareCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
-	prepareCmd.Flag("output-dir", "The directory where the prepared configuration and templates will be written to and disables printing to console.").ExistingDirVar(&a.OutputDir)
+	migrateCmd := alertCmd.Command("migrate-utf8", "Migrate the Alertmanager tenant configuration for UTF-8.").Action(a.migrateConfig)
+	migrateCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
+	migrateCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
+	migrateCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
+	migrateCmd.Flag("output-dir", "The directory where the migrated configuration and templates will be written to and disables printing to console.").ExistingDirVar(&a.OutputDir)
 
 	verifyalertCmd := alertCmd.Command("verify", "Verify Alertmanager tenant configuration and template files.").Action(a.verifyAlertmanagerConfig)
 	verifyalertCmd.Arg("config", "Alertmanager configuration to verify").Required().StringVar(&a.AlertmanagerConfigFile)
