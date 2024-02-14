@@ -3805,10 +3805,9 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 	}, ingester.IngesterRingKey, ingester.IngesterRingKey, logger, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingestersRing))
-	t.Cleanup(func() {
-		// The ring client doesn't stop quickly, so we don't wait.
-		ingestersRing.StopAsync()
-	})
+
+	// The ring client doesn't stop quickly, so we don't wait.
+	t.Cleanup(ingestersRing.StopAsync)
 
 	test.Poll(t, time.Second, cfg.totalIngesters(), func() interface{} {
 		return ingestersRing.InstancesCount()
