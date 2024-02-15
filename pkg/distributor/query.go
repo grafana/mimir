@@ -155,22 +155,23 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 		}
 
 		return r.GetReplicationSetsForOperation(readNoExtend)
-	} else {
-		shardSize := d.limits.IngestionTenantShardSize(userID)
-		r := d.ingestersRing
-
-		// If tenant uses shuffle sharding, we should only query ingesters which are part of the tenant's subring.
-		if lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod; shardSize > 0 && lookbackPeriod > 0 {
-			r = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
-		}
-
-		replicationSet, err := r.GetReplicationSetForOperation(readNoExtend)
-		if err != nil {
-			return nil, err
-		}
-
-		return []ring.ReplicationSet{replicationSet}, nil
 	}
+
+	// Lookup ingesters ring because ingest storage is disabled.
+	shardSize := d.limits.IngestionTenantShardSize(userID)
+	r := d.ingestersRing
+
+	// If tenant uses shuffle sharding, we should only query ingesters which are part of the tenant's subring.
+	if lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod; shardSize > 0 && lookbackPeriod > 0 {
+		r = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
+	}
+
+	replicationSet, err := r.GetReplicationSetForOperation(readNoExtend)
+	if err != nil {
+		return nil, err
+	}
+
+	return []ring.ReplicationSet{replicationSet}, nil
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.
