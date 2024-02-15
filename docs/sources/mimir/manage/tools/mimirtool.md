@@ -176,16 +176,21 @@ mimirtool alerts verify
 
 #### Render template
 
-You can render your alertmanager template by using the subcommand `render`.
+You can render your Alertmanager template with the `render` command.
+
+The argument to the `--template-glob` option is a glob that expands to the alert template paths.
+
+The argument to the `--template-data` option is a JSON file containing Alertmanager template data.
+
+The argument to the `--template-text` option is a Go template.
+The command renders this template with the templates found be expanding `--template-glob`.
 
 The following command render a template and prints it to the terminal.
+It assumes you have written the templates to the directory `templates`.
 
 ```bash
-# assuming we have written the templates out to the folder templates
-mimirtool alertmanager render --template-glob "templates/*" --template-data "alert_data1.json" --template-text '{{ template "my_message" . }}'
+mimirtool alertmanager render --template-glob 'templates/*' --template-data alert_data1.json --template-text '{{ template "my_message" . }}'
 ```
-
-It can also take a glob path that will be expended.
 
 ### Rules
 
