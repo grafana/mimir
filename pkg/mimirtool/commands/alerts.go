@@ -94,6 +94,12 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 		cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided.").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 	}
 
+	migrateCmd := alertCmd.Command("migrate-utf8", "Migrate the Alertmanager tenant configuration for UTF-8.").Action(a.migrateConfig)
+	migrateCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
+	migrateCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
+	migrateCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
+	migrateCmd.Flag("output-dir", "The directory where the migrated configuration and templates will be written to and disables printing to console.").ExistingDirVar(&a.OutputDir)
+
 	verifyalertCmd := alertCmd.Command("verify", "Verify Alertmanager tenant configuration and template files.").Action(a.verifyAlertmanagerConfig)
 	verifyalertCmd.Arg("config", "Alertmanager configuration to verify").Required().StringVar(&a.AlertmanagerConfigFile)
 	verifyalertCmd.Arg("template-files", "The template files to verify").ExistingFilesVar(&a.TemplateFiles)
@@ -224,6 +230,22 @@ func (a *AlertmanagerCommand) deleteConfig(_ *kingpin.ParseContext) error {
 		return err
 	}
 	return nil
+}
+
+func (a *AlertmanagerCommand) migrateConfig(_ *kingpin.ParseContext) error {
+	cfg, templates, err := a.readAlertManagerConfig()
+	if err != nil {
+		return err
+	}
+	cfg, err = migrateCfg(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to migrate cfg: %w", err)
+	}
+	if a.OutputDir == "" {
+		p := printer.New(a.DisableColor)
+		return p.PrintAlertmanagerConfig(cfg, templates)
+	}
+	return a.outputAlertManagerConfigTemplates(cfg, templates)
 }
 
 func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames, reg prometheus.Registerer) {
