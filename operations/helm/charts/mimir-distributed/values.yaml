@@ -776,7 +776,8 @@ distributor:
     enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
-    # pollingInterval: 10
+    # -- Setting pollingInterval here will override the global value
+    # pollingInterval:10
     targetCPUUtilizationPercentage: 100
     targetMemoryUtilizationPercentage: 100
     # -- if empty global setting will be used
@@ -1178,7 +1179,8 @@ ruler:
     enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
-    pollingInterval: 10
+    # -- Setting pollingInterval here will override the global value
+    # pollingInterval: 10
     targetCPUUtilizationPercentage: 100
     targetMemoryUtilizationPercentage: 100
     # -- if empty global setting will be used
@@ -1291,7 +1293,8 @@ querier:
     enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
-    pollingInterval: 10
+    # -- Setting pollingInterval here will override the global value
+    # pollingInterval: 10
     querySchedulerInflightRequestsThreshold: 12
     # -- if empty global setting will be used
     prometheusAddress: ""
@@ -1404,7 +1407,8 @@ query_frontend:
     enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
-    pollingInterval: 10
+    # -- Setting pollingInterval here will override the global value
+    # pollingInterval: 10
     targetCPUUtilizationPercentage: 75
     targetMemoryUtilizationPercentage: 100
     # -- if empty global setting will be used

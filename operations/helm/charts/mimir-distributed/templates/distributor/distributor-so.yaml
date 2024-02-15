@@ -17,7 +17,7 @@ spec:
       {{- end }}
   maxReplicaCount: {{ .Values.distributor.kedaAutoscaling.maxReplicaCount }}
   minReplicaCount: {{ .Values.distributor.kedaAutoscaling.minReplicaCount }}
-  pollingInterval: {{ .Values.distributor.kedaAutoscaling.pollingInterval }}
+  pollingInterval: {{ if not .Values.distributor.kedaAutoscaling.pollingInterval }}{{ .Values.kedaAutoscaling.pollingInterval }}{{- else }}{{ .Values.distributor.kedaAutoscaling.pollingInterval }}{{- end }}
   scaleTargetRef:
     name: {{ include "mimir.resourceName" (dict "ctx" . "component" "distributor") }}
     apiVersion: apps/v1

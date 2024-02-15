@@ -20,7 +20,7 @@ spec:
       {{- end }}
   maxReplicaCount: {{ .Values.querier.kedaAutoscaling.maxReplicaCount }}
   minReplicaCount: {{ .Values.querier.kedaAutoscaling.minReplicaCount }}
-  pollingInterval: {{ .Values.querier.kedaAutoscaling.pollingInterval }}
+  pollingInterval: {{ if not .Values.querier.kedaAutoscaling.pollingInterval }}{{ .Values.kedaAutoscaling.pollingInterval }}{{- else }}{{ .Values.querier.kedaAutoscaling.pollingInterval }}{{- end }}  
   scaleTargetRef:
     name: {{ include "mimir.resourceName" (dict "ctx" . "component" "querier") }}
     apiVersion: apps/v1

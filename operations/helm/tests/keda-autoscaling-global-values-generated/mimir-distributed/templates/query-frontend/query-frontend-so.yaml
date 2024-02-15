@@ -23,7 +23,7 @@ spec:
             value: 10
   maxReplicaCount: 10
   minReplicaCount: 1
-  pollingInterval: 10
+  pollingInterval: 20
   scaleTargetRef:
     name: keda-autoscaling-global-values-mimir-query-frontend
     apiVersion: apps/v1

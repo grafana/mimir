@@ -33,7 +33,7 @@ spec:
           stabilizationWindowSeconds: 60
   maxReplicaCount: 10
   minReplicaCount: 2
-  pollingInterval: 10
+  pollingInterval: 10  
   scaleTargetRef:
     name: keda-autoscaling-values-mimir-querier
     apiVersion: apps/v1

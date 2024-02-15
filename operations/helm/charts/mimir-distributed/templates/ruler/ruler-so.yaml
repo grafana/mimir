@@ -17,7 +17,7 @@ spec:
       {{- end }}
   maxReplicaCount: {{ .Values.ruler.kedaAutoscaling.maxReplicaCount }}
   minReplicaCount: {{ .Values.ruler.kedaAutoscaling.minReplicaCount }}
-  pollingInterval: {{ .Values.ruler.kedaAutoscaling.pollingInterval }}
+  pollingInterval: {{ if not .Values.ruler.kedaAutoscaling.pollingInterval }}{{ .Values.kedaAutoscaling.pollingInterval }}{{- else }}{{ .Values.ruler.kedaAutoscaling.pollingInterval }}{{- end }}
   scaleTargetRef:
     name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ruler") }}
     apiVersion: apps/v1

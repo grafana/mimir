@@ -17,7 +17,7 @@ spec:
       {{- end }}
   maxReplicaCount: {{ .Values.query_frontend.kedaAutoscaling.maxReplicaCount }}
   minReplicaCount: {{ .Values.query_frontend.kedaAutoscaling.minReplicaCount }}
-  pollingInterval: {{ .Values.query_frontend.kedaAutoscaling.pollingInterval }}
+  pollingInterval: {{ if not .Values.query_frontend.kedaAutoscaling.pollingInterval }}{{ .Values.kedaAutoscaling.pollingInterval }}{{- else }}{{ .Values.query_frontend.kedaAutoscaling.pollingInterval }}{{- end }}
   scaleTargetRef:
     name: {{ include "mimir.resourceName" (dict "ctx" . "component" "query-frontend") }}
     apiVersion: apps/v1
