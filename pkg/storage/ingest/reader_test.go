@@ -124,16 +124,15 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		// the 2nd record consumption will be delayed.
 		consumer := consumerFunc(func(ctx context.Context, records []record) error {
 			for _, record := range records {
-				consumedRecords.Inc()
-
-				assert.Equal(t, fmt.Sprintf("record-%d", consumedRecords.Load()), string(record.content))
-				t.Logf("consumed record: %s", string(record.content))
-
 				// Introduce a delay before returning from the consume function once
 				// the 2nd record has been consumed.
-				if consumedRecords.Load() == 2 {
+				if consumedRecords.Load()+1 == 2 {
 					time.Sleep(time.Second)
 				}
+
+				consumedRecords.Inc()
+				assert.Equal(t, fmt.Sprintf("record-%d", consumedRecords.Load()), string(record.content))
+				t.Logf("consumed record: %s", string(record.content))
 			}
 
 			return nil
