@@ -432,6 +432,60 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedErr:              ring.ErrTooManyUnhealthyInstances,
 		},
+		"should succeed if there are ingesters in LEAVING state in both zones, but they own different partitions": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 5, ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.LEAVING, ring.ACTIVE, ring.LEAVING}},
+				"zone-b": {numIngesters: 5, happyIngesters: 5, ringStates: []ring.InstanceState{ring.ACTIVE, ring.LEAVING, ring.ACTIVE, ring.LEAVING, ring.ACTIVE}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			preferZone:               "zone-a",
+			minimizeIngesterRequests: true,
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 2 /* zone-a ingesters (excluding LEAVING one) */ + 3, /* zone-b ingesters as fallback for the LEAVING ones */
+		},
+		"should succeed if there are ingesters in JOINING state in both zones, but they own different partitions": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 5, ringStates: []ring.InstanceState{ring.JOINING, ring.ACTIVE, ring.JOINING, ring.ACTIVE, ring.JOINING}},
+				"zone-b": {numIngesters: 5, happyIngesters: 5, ringStates: []ring.InstanceState{ring.ACTIVE, ring.JOINING, ring.ACTIVE, ring.JOINING, ring.ACTIVE}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			preferZone:               "zone-a",
+			minimizeIngesterRequests: true,
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 2 /* zone-a ingesters (excluding JOINING one) */ + 3, /* zone-b ingesters as fallback for the JOINING ones */
+		},
 	}
 
 	for testName, testData := range tests {
