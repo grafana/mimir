@@ -10,7 +10,6 @@ package ingester
 
 import (
 	"context"
-	"expvar"
 	"flag"
 	"fmt"
 	"io"
@@ -129,6 +128,25 @@ var (
 	reasonIngesterMaxInMemorySeries            = globalerror.IngesterMaxInMemorySeries.LabelValue()
 	reasonIngesterMaxInflightPushRequests      = globalerror.IngesterMaxInflightPushRequests.LabelValue()
 	reasonIngesterMaxInflightPushRequestsBytes = globalerror.IngesterMaxInflightPushRequestsBytes.LabelValue()
+)
+
+// Usage-stats expvars. Initialized as package-global in order to avoid race conditions and panics
+// when initializing expvars per-ingester in multiple parallel tests at once.
+var (
+	// updated in Ingester.updateUsageStats.
+	memorySeriesStats                  = usagestats.GetAndResetInt(memorySeriesStatsName)
+	memoryTenantsStats                 = usagestats.GetAndResetInt(memoryTenantsStatsName)
+	tenantsWithOutOfOrderEnabledStat   = usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName)
+	minOutOfOrderTimeWindowSecondsStat = usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName)
+	maxOutOfOrderTimeWindowSecondsStat = usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName)
+
+	// updated in Ingester.PushWithCleanup.
+	appendedSamplesStats   = usagestats.GetAndResetCounter(appendedSamplesStatsName)
+	appendedExemplarsStats = usagestats.GetAndResetCounter(appendedExemplarsStatsName)
+
+	// Set in newIngester.
+	replicationFactor = usagestats.GetInt(replicationFactorStatsName)
+	ringStoreName     = usagestats.GetString(ringStoreStatsName)
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -307,15 +325,6 @@ type Ingester struct {
 	inflightPushRequests      atomic.Int64
 	inflightPushRequestsBytes atomic.Int64
 
-	// Anonymous usage statistics tracked by ingester.
-	memorySeriesStats                  *expvar.Int
-	memoryTenantsStats                 *expvar.Int
-	appendedSamplesStats               *usagestats.Counter
-	appendedExemplarsStats             *usagestats.Counter
-	tenantsWithOutOfOrderEnabledStat   *expvar.Int
-	minOutOfOrderTimeWindowSecondsStat *expvar.Int
-	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
-
 	utilizationBasedLimiter utilizationBasedLimiter
 
 	errorSamplers ingesterErrSamplers
@@ -337,8 +346,8 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	}
 
 	// Track constant usage stats.
-	usagestats.GetInt(replicationFactorStatsName).Set(int64(cfg.IngesterRing.ReplicationFactor))
-	usagestats.GetString(ringStoreStatsName).Set(cfg.IngesterRing.KVStore.Store)
+	replicationFactor.Set(int64(cfg.IngesterRing.ReplicationFactor))
+	ringStoreName.Set(cfg.IngesterRing.KVStore.Store)
 
 	return &Ingester{
 		cfg:    cfg,
@@ -353,14 +362,6 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-
-		memorySeriesStats:                  usagestats.GetAndResetInt(memorySeriesStatsName),
-		memoryTenantsStats:                 usagestats.GetAndResetInt(memoryTenantsStatsName),
-		appendedSamplesStats:               usagestats.GetAndResetCounter(appendedSamplesStatsName),
-		appendedExemplarsStats:             usagestats.GetAndResetCounter(appendedExemplarsStatsName),
-		tenantsWithOutOfOrderEnabledStat:   usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName),
-		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
-		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
 
 		errorSamplers: newIngesterErrSamplers(cfg.ErrorSampleRate),
 	}, nil
@@ -794,11 +795,11 @@ func (i *Ingester) updateUsageStats() {
 	}
 
 	// Track anonymous usage stats.
-	i.memorySeriesStats.Set(memorySeriesCount)
-	i.memoryTenantsStats.Set(memoryUsersCount)
-	i.tenantsWithOutOfOrderEnabledStat.Set(tenantsWithOutOfOrderEnabledCount)
-	i.minOutOfOrderTimeWindowSecondsStat.Set(int64(minOutOfOrderTimeWindow.Seconds()))
-	i.maxOutOfOrderTimeWindowSecondsStat.Set(int64(maxOutOfOrderTimeWindow.Seconds()))
+	memorySeriesStats.Set(memorySeriesCount)
+	memoryTenantsStats.Set(memoryUsersCount)
+	tenantsWithOutOfOrderEnabledStat.Set(tenantsWithOutOfOrderEnabledCount)
+	minOutOfOrderTimeWindowSecondsStat.Set(int64(minOutOfOrderTimeWindow.Seconds()))
+	maxOutOfOrderTimeWindowSecondsStat.Set(int64(maxOutOfOrderTimeWindow.Seconds()))
 }
 
 // applyTSDBSettings goes through all tenants and applies
@@ -1071,8 +1072,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(stats.failedSamplesCount))
 	i.metrics.ingestedExemplars.Add(float64(stats.succeededExemplarsCount))
 	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
-	i.appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
-	i.appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
+	appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
+	appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
