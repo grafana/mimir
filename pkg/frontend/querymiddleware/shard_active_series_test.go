@@ -423,20 +423,28 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
 
 func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
 	b.Run("encoding=none", func(b *testing.B) {
-		benchmarkActiveSeriesMiddlewareMergeResponses(b, "")
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1)
 	})
 
 	b.Run("encoding=snappy", func(b *testing.B) {
-		benchmarkActiveSeriesMiddlewareMergeResponses(b, encodingTypeSnappyFramed)
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, encodingTypeSnappyFramed, 1)
+	})
+
+	b.Run("seriesCount=1_000", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1_000)
+	})
+
+	b.Run("seriesCount=10_000", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 10_000)
 	})
 }
 
-func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string) {
+func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string, numSeries int) {
 	type activeSeriesResponse struct {
 		Data []labels.Labels `json:"data"`
 	}
 
-	bcs := []int{2, 4, 8, 16, 32, 64, 128, 256, 512}
+	bcs := []int{4, 16, 64, 128}
 
 	for _, numResponses := range bcs {
 		b.Run(fmt.Sprintf("num-responses-%d", numResponses), func(b *testing.B) {
@@ -447,7 +455,14 @@ func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string
 				for i := 0; i < numResponses; i++ {
 
 					var apiResp activeSeriesResponse
-					apiResp.Data = append(apiResp.Data, labels.FromStrings("__name__", "m_"+fmt.Sprint(i), "job", "prometheus"+fmt.Sprint(i), "instance", "instance"+fmt.Sprint(i)))
+					for k := 0; k < numSeries; k++ {
+						apiResp.Data = append(apiResp.Data, labels.FromStrings(
+							"__name__", "m_"+fmt.Sprint(i),
+							"job", "prometheus"+fmt.Sprint(i),
+							"instance", "instance"+fmt.Sprint(i),
+							"series", fmt.Sprintf("series_%d", k),
+						))
+					}
 					body, _ := json.Marshal(&apiResp)
 
 					responses = append(responses, &http.Response{
