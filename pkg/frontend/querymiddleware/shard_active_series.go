@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -319,13 +320,25 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 				return err
 			}
 
+			ticker := time.NewTicker(1 * time.Second)
+			defer ticker.Stop()
 			for it.ReadArray() {
-				item := labelBuilderPool.Get().(*labels.Builder)
-				it.ReadMapCB(func(iterator *jsoniter.Iterator, s string) bool {
-					item.Set(s, iterator.ReadString())
-					return true
-				})
-				items <- item
+				select {
+				case <-ticker.C:
+					if err := ctx.Err(); err != nil {
+						if cause := context.Cause(ctx); cause != nil {
+							return fmt.Errorf("aborted streaming because context was cancelled: %w", cause)
+						}
+						return ctx.Err()
+					}
+				default:
+					item := labelBuilderPool.Get().(*labels.Builder)
+					it.ReadMapCB(func(iterator *jsoniter.Iterator, s string) bool {
+						item.Set(s, iterator.ReadString())
+						return true
+					})
+					items <- item
+				}
 			}
 
 			return it.Error
