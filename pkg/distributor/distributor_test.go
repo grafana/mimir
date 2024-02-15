@@ -2231,7 +2231,11 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			t.Parallel()
 
 			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
+
 				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
+
 					now := model.Now()
 
 					testConfig := prepConfig{
@@ -2488,6 +2492,8 @@ func TestDistributor_LabelNames(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			for _, ingestStorageEnabled := range []bool{false, true} {
 				ingestStorageEnabled := ingestStorageEnabled
 
@@ -2572,7 +2578,11 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			t.Parallel()
 
 			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
+
 				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
+
 					testConfig := prepConfig{
 						numIngesters:    numIngesters,
 						happyIngesters:  numIngesters,
@@ -2661,6 +2671,8 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			for _, ingestStorageEnabled := range []bool{false, true} {
 				ingestStorageEnabled := ingestStorageEnabled
 
@@ -2745,7 +2757,11 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 			t.Parallel()
 
 			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
+
 				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
+
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "label-names-values")
 					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
@@ -2805,7 +2821,11 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 	t.Run("should group values of labels by label name and return only distinct label values", func(t *testing.T) {
 		for _, ingestStorageEnabled := range []bool{false, true} {
+			ingestStorageEnabled := ingestStorageEnabled
+
 			t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+				t.Parallel()
+
 				// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 				ctx := user.InjectOrgID(context.Background(), "label-names-values")
 				ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)

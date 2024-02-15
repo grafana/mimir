@@ -97,7 +97,11 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 			t.Parallel()
 
 			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
+
 				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
+
 					testConfig := prepConfig{
 						numIngesters:    numIngesters,
 						happyIngesters:  numIngesters,
