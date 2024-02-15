@@ -1788,6 +1788,14 @@ func TestIngester_Push(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			memorySeriesStats.Set(0)
+			memoryTenantsStats.Set(0)
+			tenantsWithOutOfOrderEnabledStat.Set(0)
+			minOutOfOrderTimeWindowSecondsStat.Set(0)
+			maxOutOfOrderTimeWindowSecondsStat.Set(0)
+			appendedSamplesStatsBefore := appendedSamplesStats.Total()
+			appendedExemplarsStatsBefore := appendedExemplarsStats.Total()
+
 			registry := prometheus.NewRegistry()
 
 			// Create a mocked ingester
@@ -1903,8 +1911,8 @@ func TestIngester_Push(t *testing.T) {
 
 			assert.Equal(t, int64(len(testData.expectedIngested)), usagestats.GetInt(memorySeriesStatsName).Value())
 			assert.Equal(t, int64(expectedTenantsCount), usagestats.GetInt(memoryTenantsStatsName).Value())
-			assert.Equal(t, int64(expectedSamplesCount), usagestats.GetCounter(appendedSamplesStatsName).Total())
-			assert.Equal(t, int64(expectedExemplarsCount), usagestats.GetCounter(appendedExemplarsStatsName).Total())
+			assert.Equal(t, int64(expectedSamplesCount)+appendedSamplesStatsBefore, usagestats.GetCounter(appendedSamplesStatsName).Total())
+			assert.Equal(t, int64(expectedExemplarsCount)+appendedExemplarsStatsBefore, usagestats.GetCounter(appendedExemplarsStatsName).Total())
 			assert.Equal(t, int64(0), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
 			assert.Equal(t, int64(0), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
 			assert.Equal(t, int64(0), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
