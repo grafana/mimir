@@ -22,7 +22,6 @@ message WriteRequest {
   enum SourceEnum {
     API = 0;
     RULE = 1;
-    API_OTLP = 2;
   }
   SourceEnum Source = 2;
   repeated MetricMetadata metadata = 3 [(gogoproto.nullable) = true];

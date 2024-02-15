@@ -91,7 +91,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	// Check OTLP source is correctly set on internal metrics
+	// Check metric to track OTLP requests
 	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_distributor_otlp_requests_total"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
@@ -144,6 +144,10 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	res, err = c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
+
+	// Check metric to track OTLP requests
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_distributor_otlp_requests_total"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
 	result, err = c.Query(fmt.Sprintf("series%s", sfx), now)
 	require.NoError(t, err)

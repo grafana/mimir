@@ -182,7 +182,6 @@ func OTLPHandler(
 		)
 
 		req.Timeseries = metrics
-		req.Source = mimirpb.API_OTLP
 
 		if enableOtelMetadataStorage {
 			metadata := otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())

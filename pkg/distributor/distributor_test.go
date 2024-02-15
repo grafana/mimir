@@ -5150,8 +5150,6 @@ func countMockIngestersCalled(ingesters []*mockIngester, name string) int {
 // requests get modified by the mechanisms that can modify them: relabel rules, drop labels, ha-dedupe, forwarding, limits.
 func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 	tenant := "tenant1"
-	source := mimirpb.API.String()
-
 	getCtx := func() context.Context {
 		return user.InjectOrgID(context.Background(), tenant)
 	}
@@ -5186,7 +5184,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		return fmt.Sprintf(`
 				# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected or deduped requests.
 				# TYPE cortex_distributor_requests_in_total counter
-				cortex_distributor_requests_in_total{source="%s", user="%s"} %d
+				cortex_distributor_requests_in_total{user="%s"} %d
 				# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected or deduped samples.
 				# TYPE cortex_distributor_samples_in_total counter
 				cortex_distributor_samples_in_total{user="%s"} %d
@@ -5198,7 +5196,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				cortex_distributor_metadata_in_total{user="%s"} %d
 				# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected and deduped requests.
 				# TYPE cortex_distributor_received_requests_total counter
-				cortex_distributor_received_requests_total{source="%s", user="%s"} %d
+				cortex_distributor_received_requests_total{user="%s"} %d
 				# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
 				# TYPE cortex_distributor_received_samples_total counter
 				cortex_distributor_received_samples_total{user="%s"} %d
@@ -5208,7 +5206,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 				# TYPE cortex_distributor_received_metadata_total counter
 				cortex_distributor_received_metadata_total{user="%s"} %d
-	`, source, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, source, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata), []string{
+	`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata), []string{
 				"cortex_distributor_requests_in_total",
 				"cortex_distributor_samples_in_total",
 				"cortex_distributor_exemplars_in_total",
