@@ -3881,7 +3881,11 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 
 			ingester.partitionReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, ingester.partitionID(), ingester.instanceID(), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
 			require.NoError(t, err)
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester.partitionReader))
+
+			// We start it async, and then we wait until running in a defer so that multiple partition
+			// readers will be started concurrently.
+			require.NoError(t, ingester.partitionReader.StartAsync(context.Background()))
+
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester.partitionReader))
 			})
@@ -3889,6 +3893,14 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 
 		ingesters = append(ingesters, ingester)
 	}
+
+	// Wait until all partition readers have started.
+	if cfg.ingestStorageEnabled {
+		for _, ingester := range ingesters {
+			require.NoError(t, ingester.partitionReader.AwaitRunning(context.Background()))
+		}
+	}
+
 	return ingesters
 }
 
