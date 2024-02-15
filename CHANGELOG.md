@@ -95,6 +95,7 @@
 * [BUGFIX] Packaging: remove reload from systemd file as mimir does not take into account SIGHUP. #7345
 * [BUGFIX] Compactor: do not allow out-of-order blocks to prevent timely compaction. #7342
 * [BUGFIX] Update `google.golang.org/grpc` to resolve occasional issues with gRPC server closing its side of connection before it was drained by the client. #7380
+* [BUGFIX] Query-frontend: abort response streaming for `active_series` requests when the request context is canceled. #7378
 
 ### Mixin
 
