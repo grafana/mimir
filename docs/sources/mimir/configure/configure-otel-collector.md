@@ -64,6 +64,8 @@ service:
       exporters: [..., prometheusremotewrite]
 ```
 
+## OTLP
+
 Mimir supports native OTLP over HTTP. To configure the collector to use the OTLP interface, you use the [`otlphttp`](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) exporter:
 
 ```yaml
