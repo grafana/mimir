@@ -823,7 +823,7 @@ github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus/alertmanager v0.26.1-0.20240214111828-d352d16e277a
+# github.com/prometheus/alertmanager v0.26.1-0.20240215111258-80b3cb072fbd
 ## explicit; go 1.21
 github.com/prometheus/alertmanager/api
 github.com/prometheus/alertmanager/api/metrics

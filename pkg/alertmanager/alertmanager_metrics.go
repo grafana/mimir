@@ -110,7 +110,7 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 			[]string{"user", "integration"}, nil),
 		numNotificationSuppressedTotal: prometheus.NewDesc(
 			"cortex_alertmanager_notifications_suppressed_total",
-			"The total number of notifications suppressed for being outside of active time intervals or within muted time intervals.",
+			"The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.",
 			[]string{"user", "reason"}, nil),
 		notificationLatencySeconds: prometheus.NewDesc(
 			"cortex_alertmanager_notification_latency_seconds",
