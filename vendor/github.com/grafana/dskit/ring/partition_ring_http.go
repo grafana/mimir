@@ -38,26 +38,54 @@ func (h *PartitionRingPageHandler) ServeHTTP(w http.ResponseWriter, req *http.Re
 	)
 
 	// Prepare the data to render partitions in the page.
-	partitionsData := make([]partitionPageData, 0, len(ringDesc.Partitions))
+	partitionsByID := make(map[int32]partitionPageData, len(ringDesc.Partitions))
 	for id, partition := range ringDesc.Partitions {
 		owners := ring.PartitionOwnerIDsCopy(id)
 		slices.Sort(owners)
 
-		partitionsData = append(partitionsData, partitionPageData{
+		partitionsByID[id] = partitionPageData{
 			ID:             id,
 			State:          partition.State.CleanName(),
-			StateTimestamp: time.Unix(partition.StateTimestamp, 0),
+			StateTimestamp: partition.GetStateTime(),
 			OwnerIDs:       owners,
-		})
+		}
 	}
 
-	// Sort partitions by ID.
-	sort.Slice(partitionsData, func(i, j int) bool {
-		return partitionsData[i].ID < partitionsData[j].ID
+	// Look for owners of non-existing partitions. We want to provide visibility for such case
+	// and we report the partition in corrupted state.
+	for ownerID, owner := range ringDesc.Owners {
+		partition, exists := partitionsByID[owner.OwnedPartition]
+
+		if !exists {
+			partition = partitionPageData{
+				ID:             owner.OwnedPartition,
+				State:          "Corrupt",
+				StateTimestamp: time.Time{},
+				OwnerIDs:       []string{ownerID},
+			}
+
+			partitionsByID[owner.OwnedPartition] = partition
+		}
+
+		if !slices.Contains(partition.OwnerIDs, ownerID) {
+			partition.OwnerIDs = append(partition.OwnerIDs, ownerID)
+			partitionsByID[owner.OwnedPartition] = partition
+		}
+	}
+
+	// Covert partitions to a list and sort it by ID.
+	partitions := make([]partitionPageData, 0, len(partitionsByID))
+
+	for _, partition := range partitionsByID {
+		partitions = append(partitions, partition)
+	}
+
+	sort.Slice(partitions, func(i, j int) bool {
+		return partitions[i].ID < partitions[j].ID
 	})
 
 	renderHTTPResponse(w, partitionRingPageData{
-		Partitions: partitionsData,
+		Partitions: partitions,
 	}, partitionRingPageTemplate, req)
 }
 

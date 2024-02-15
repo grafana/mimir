@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -196,6 +197,7 @@ type Config struct {
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
+	PreferAvailabilityZone                     string        `yaml:"-"`
 
 	// IngestStorageConfig is dynamically injected because defined outside of distributor config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
@@ -1503,10 +1505,39 @@ func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSe
 	return ring.DoUntilQuorum(ctx, replicationSet, d.queryQuorumConfig(ctx, replicationSet), wrappedF, cleanup)
 }
 
+// queryQuorumConfig returns the config to use with "do until quorum" functions when running queries.
+//
+// Deprecated: use queryQuorumConfigForReplicationSets() instead.
 func (d *Distributor) queryQuorumConfig(ctx context.Context, replicationSet ring.ReplicationSet) ring.DoUntilQuorumConfig {
-	logger := spanlogger.FromContext(ctx, d.log)
+	return d.queryQuorumConfigForReplicationSets(ctx, []ring.ReplicationSet{replicationSet})
+}
 
-	zoneSorter := func(zones []string) []string {
+// queryQuorumConfigForReplicationSets returns the config to use with "do until quorum" functions when running queries.
+func (d *Distributor) queryQuorumConfigForReplicationSets(ctx context.Context, replicationSets []ring.ReplicationSet) ring.DoUntilQuorumConfig {
+	var zoneSorter ring.ZoneSorter
+
+	if d.cfg.IngestStorageConfig.Enabled {
+		zoneSorter = queryIngesterPartitionsRingZoneSorter(d.cfg.PreferAvailabilityZone)
+	} else {
+		// We expect to always have exactly 1 replication set when ingest storage is disabled.
+		// To keep the code safer, we run with no zone sorter if that's not the case.
+		if len(replicationSets) == 1 {
+			zoneSorter = queryIngestersRingZoneSorter(replicationSets[0])
+		}
+	}
+
+	return ring.DoUntilQuorumConfig{
+		MinimizeRequests: d.cfg.MinimizeIngesterRequests,
+		HedgingDelay:     d.cfg.MinimiseIngesterRequestsHedgingDelay,
+		ZoneSorter:       zoneSorter,
+		Logger:           spanlogger.FromContext(ctx, d.log),
+	}
+}
+
+// queryIngestersRingZoneSorter returns a ring.ZoneSorter that should be used to sort ingester zones
+// to attempt to query first, when ingest storage is disabled.
+func queryIngestersRingZoneSorter(replicationSet ring.ReplicationSet) ring.ZoneSorter {
+	return func(zones []string) []string {
 		inactiveCount := make(map[string]int, len(zones))
 
 		for _, i := range replicationSet.Instances {
@@ -1521,18 +1552,39 @@ func (d *Distributor) queryQuorumConfig(ctx context.Context, replicationSet ring
 
 		return zones
 	}
+}
 
-	return ring.DoUntilQuorumConfig{
-		MinimizeRequests: d.cfg.MinimizeIngesterRequests,
-		HedgingDelay:     d.cfg.MinimiseIngesterRequestsHedgingDelay,
-		ZoneSorter:       zoneSorter,
-		Logger:           logger,
+// queryIngesterPartitionsRingZoneSorter returns a ring.ZoneSorter that should be used to sort
+// ingester zones to attempt to query first, when ingest storage is enabled.
+//
+// The sorter gives preference to preferredZone if non empty, and then randomize the other zones.
+func queryIngesterPartitionsRingZoneSorter(preferredZone string) ring.ZoneSorter {
+	return func(zones []string) []string {
+		// Shuffle the zones to distribute load evenly.
+		if len(zones) > 2 || (preferredZone == "" && len(zones) > 1) {
+			rand.Shuffle(len(zones), func(i, j int) {
+				zones[i], zones[j] = zones[j], zones[i]
+			})
+		}
+
+		if preferredZone != "" {
+			// Give priority to the preferred zone.
+			for i, z := range zones {
+				if z == preferredZone {
+					zones[0], zones[i] = zones[i], zones[0]
+					break
+				}
+			}
+		}
+
+		return zones
 	}
 }
 
 // LabelValuesForLabelName returns all of the label values that are associated with a given label name.
 func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1569,7 +1621,8 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 
 // LabelNamesAndValues query ingesters for label names and values and returns labels with distinct list of values.
 func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelNamesAndValuesResponse, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1722,7 +1775,8 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
 func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelValuesCardinalityResponse, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1872,7 +1926,8 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 // ActiveSeries queries the ingester replication set for active series matching
 // the given selector. It combines and deduplicates the results.
 func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2080,7 +2135,8 @@ func approximateFromZones[T ~float64 | ~uint64](zoneCount int, replicationFactor
 
 // LabelNames returns all of the label names.
 func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2116,7 +2172,8 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 
 // MetricsForLabelMatchers gets the metrics that match said matchers
 func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2155,7 +2212,8 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 
 // MetricsMetadata returns all metric metadata of a user.
 func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2192,7 +2250,8 @@ func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.
 
 // UserStats returns statistics about the current user.
 func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.CountMethod) (*UserStats, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}

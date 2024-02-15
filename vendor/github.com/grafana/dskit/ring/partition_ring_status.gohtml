@@ -19,10 +19,16 @@
         </thead>
         <tbody>
         {{ range $partition := .Partitions }}
-            <tr {{ if mod $partition.ID 2 }}bgcolor="#BEBEBE"{{ end }}>
+            <tr {{ if eq .State "Corrupt" }}bgcolor="#FFDEDE"{{ else if mod $partition.ID 2 }}bgcolor="#BEBEBE"{{ end }}>
                 <td>{{ .ID }}</td>
                 <td>{{ .State }}</td>
-                <td>{{ .StateTimestamp | formatTimestamp }}</td>
+                <td>
+                    {{ if not .StateTimestamp.IsZero }}
+                        {{ .StateTimestamp | formatTimestamp }}
+                    {{ else }}
+                        N/A
+                    {{ end }}
+                </td>
                 <td>
                     {{ range $ownerID := $partition.OwnerIDs }}
                         {{$ownerID}} <br />
