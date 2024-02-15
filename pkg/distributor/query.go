@@ -134,7 +134,7 @@ func (d *Distributor) getIngesterReplicationSetForQuery(ctx context.Context) (ri
 // getIngesterReplicationSetForQuery returns a list of ring.ReplicationSet, containing ingester instances,
 // that must be queried for a read operation.
 //
-// If multiple ring.ReplicationSe are returned, each must be queried separately, and results merged.
+// If multiple ring.ReplicationSets are returned, each must be queried separately, and results merged.
 // getIngesterReplicationSetForQuery returns exactly one replication set if ingest storage is disabled.
 func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([]ring.ReplicationSet, error) {
 	userID, err := tenant.TenantID(ctx)
