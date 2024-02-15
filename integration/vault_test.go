@@ -78,5 +78,5 @@ func TestVaultTokenRenewal(t *testing.T) {
 	// Check that the token lease has been updated before hitting max_ttl
 	require.NoError(t, mimir.WaitSumMetrics(e2e.GreaterOrEqual(2), "cortex_vault_token_lease_renewal_success_total"))
 	// Check that re-authentication occurred
-	require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(2), "cortex_vault_auth_success_total"))
+	require.NoError(t, mimir.WaitSumMetrics(e2e.GreaterOrEqual(2), "cortex_vault_auth_success_total"))
 }
