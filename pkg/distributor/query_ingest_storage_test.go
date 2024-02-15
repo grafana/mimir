@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -296,6 +297,140 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo1", "foo2"),
 			expectedQueriedIngesters: 2, /* zone-a only with shuffle-shard of 2 */
+		},
+		"should succeed if all ingesters owning a partition are LEAVING but LEAVING partition is NOT part of the tenant's shard when shuffle sharding is enabled": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 5, ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.LEAVING, ring.ACTIVE}},
+				"zone-b": {numIngesters: 5, happyIngesters: 5, ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.LEAVING, ring.ACTIVE}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			shuffleShardSize:         2, // shuffle-sharding chooses partitions 1 and 2 for this tenant
+			preferZone:               "zone-a",
+			minimizeIngesterRequests: true,
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo1", "foo2"),
+			expectedQueriedIngesters: 2, /* zone-a only with shuffle-shard of 2 */
+		},
+		"should fallback to ingesters in the non-preferred zone for partitions owned by LEAVING ingesters in the preferred zone": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 5, ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE}},
+				"zone-b": {numIngesters: 5, happyIngesters: 5},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			preferZone:               "zone-a",
+			minimizeIngesterRequests: true,
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 4 /* zone-a ingesters (excluding LEAVING one) */ + 1, /* zone-b ingester as a fallback for the LEAVING one */
+		},
+		"should fallback to ingesters in the non-preferred zone for partitions owned by JOINING ingesters in the preferred zone": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 5, ringStates: []ring.InstanceState{ring.JOINING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE}},
+				"zone-b": {numIngesters: 5, happyIngesters: 5},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			preferZone:               "zone-a",
+			minimizeIngesterRequests: true,
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 4 /* zone-a ingesters (excluding JOINING one) */ + 1, /* zone-b ingester as a fallback for the LEAVING one */
+		},
+		"should fail if all the ingesters owning a partition are in LEAVING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 5, ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE}},
+				"zone-b": {numIngesters: 5, happyIngesters: 5, ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			preferZone:               "zone-a",
+			minimizeIngesterRequests: true,
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedErr:              ring.ErrTooManyUnhealthyInstances,
+		},
+		"should fail if all the ingesters owning a partition are in JOINING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 5, ringStates: []ring.InstanceState{ring.JOINING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE}},
+				"zone-b": {numIngesters: 5, happyIngesters: 5, ringStates: []ring.InstanceState{ring.JOINING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			preferZone:               "zone-a",
+			minimizeIngesterRequests: true,
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedErr:              ring.ErrTooManyUnhealthyInstances,
 		},
 	}
 

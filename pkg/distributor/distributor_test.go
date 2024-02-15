@@ -3736,7 +3736,7 @@ func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc 
 		ingesterDescs[addr] = ring.InstanceDesc{
 			Addr:                addr,
 			Zone:                ingesters[i].zone,
-			State:               cfg.ingesterRingState(ingesters[i].zone, i),
+			State:               cfg.ingesterRingState(ingesters[i].zone, ingesters[i].id),
 			Timestamp:           time.Now().Unix(),
 			RegisteredTimestamp: time.Now().Add(-2 * time.Hour).Unix(), // registered before the shuffle sharding lookback period, so we don't start including other ingesters
 			Tokens:              tokens,
