@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -421,6 +422,42 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
 	}
 }
 
+func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
+	s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(fmt.Errorf("test ran to completion"))
+
+	body, err := json.Marshal(&activeSeriesResponse{Data: []labels.Labels{
+		// Make this large enough to ensure the whole response isn't buffered.
+		labels.FromStrings("lbl1", strings.Repeat("a", os.Getpagesize())),
+		labels.FromStrings("lbl2", "val2"),
+		labels.FromStrings("lbl3", "val3"),
+	}})
+	require.NoError(t, err)
+
+	responses := []*http.Response{
+		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
+		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
+	}
+
+	resp := s.mergeResponses(ctx, responses, "")
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
+
+	var buf bytes.Buffer
+	_, err = io.CopyN(&buf, resp.Body, int64(os.Getpagesize()))
+	require.NoError(t, err)
+
+	cancelCause := "request canceled while streaming response"
+	cancel(fmt.Errorf(cancelCause))
+
+	_, err = io.Copy(&buf, resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), cancelCause)
+}
+
 func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
 	b.Run("encoding=none", func(b *testing.B) {
 		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1)
@@ -439,10 +476,11 @@ func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
 	})
 }
 
+type activeSeriesResponse struct {
+	Data []labels.Labels `json:"data"`
+}
+
 func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string, numSeries int) {
-	type activeSeriesResponse struct {
-		Data []labels.Labels `json:"data"`
-	}
 
 	bcs := []int{4, 16, 64, 128}
 
