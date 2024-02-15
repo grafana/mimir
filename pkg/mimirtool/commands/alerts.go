@@ -110,7 +110,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	renderCmd.Flag("template-text", "The template that will be rendered.").Required().StringVar(&trCmd.templateText)
 	renderCmd.Flag("template-type", "The type of the template. Can be either text (default) or html.").EnumVar(&trCmd.templateType, "html", "text")
 	renderCmd.Flag("template-data", "Full path to a file which contains the data of the alert(-s) with which the --template-text will be rendered. Must be in JSON. File must be formatted according to the following layout: https://pkg.go.dev/github.com/prometheus/alertmanager/template#Data. If none has been specified then a predefined, simple alert will be used for rendering.").FileVar(&trCmd.templateData)
-	renderCmd.Flag("id", "Basic auth username to use when contacting Prometheus or Grafana Mimir, also set as tenant ID; alternatively, set "+envVars.TenantID+".").
+	renderCmd.Flag("id", "Basic auth username to use when rendering template used by the function `tenantID`, also set as tenant ID; alternatively, set "+envVars.TenantID+".").
 		Envar(envVars.TenantID).
 		Default("").
 		StringVar(&trCmd.tenantID)
