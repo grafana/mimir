@@ -428,20 +428,17 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
 
-		//nolint:staticcheck
-		legacyPartitionID, err := ingest.IngesterZonalPartition(cfg.IngesterRing.InstanceID)
-		if err != nil {
-			return nil, errors.Wrap(err, "calculating ingester legacy partition ID")
-		}
-
-		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, legacyPartitionID, i, log.With(logger, "component", "ingest_reader"), registerer)
-		if err != nil {
-			return nil, errors.Wrap(err, "creating ingest storage reader")
-		}
-
 		i.ingestPartitionID, err = ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
 		if err != nil {
 			return nil, errors.Wrap(err, "calculating ingester partition ID")
+		}
+
+		// We use the ingester instance ID as consumer group. This means that we have N consumer groups
+		// where N is the total number of ingesters. Each ingester is part of their own consumer group
+		// so that they all replay the owned partition with no gaps.
+		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, i, log.With(logger, "component", "ingest_reader"), registerer)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}
 
 		partitionRingKV := cfg.IngesterPartitionRing.kvMock

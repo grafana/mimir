@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -28,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReached(t *testing.T) {
@@ -56,12 +54,11 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 					for _, minimizeIngesterRequests := range []bool{true, false} {
 						t.Run(fmt.Sprintf("request minimization enabled: %v", minimizeIngesterRequests), func(t *testing.T) {
 							userCtx := user.InjectOrgID(context.Background(), "user")
-							limits := &validation.Limits{}
-							flagext.DefaultValues(limits)
+							limits := prepareDefaultLimits()
 							limits.MaxChunksPerQuery = limit
 
 							// Prepare distributors.
-							ds, ingesters, reg := prepare(t, prepConfig{
+							ds, ingesters, reg, _ := prepare(t, prepConfig{
 								numIngesters:    3,
 								happyIngesters:  3,
 								numDistributors: 1,
@@ -108,7 +105,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 							writeReq = &mimirpb.WriteRequest{}
 							for i := 0; i < limit; i++ {
 								writeReq.Timeseries = append(writeReq.Timeseries,
-									makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: fmt.Sprintf("another_series_%d", i)}}, 0, 0),
+									makeTimeseries([]string{model.MetricNameLabel, fmt.Sprintf("another_series_%d", i)}, makeSamples(0, 0), nil),
 								)
 							}
 
@@ -143,11 +140,10 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 	for _, minimizeIngesterRequests := range []bool{true, false} {
 		t.Run(fmt.Sprintf("request minimization enabled: %v", minimizeIngesterRequests), func(t *testing.T) {
 			userCtx := user.InjectOrgID(context.Background(), "user")
-			limits := &validation.Limits{}
-			flagext.DefaultValues(limits)
+			limits := prepareDefaultLimits()
 
 			// Prepare distributors.
-			ds, ingesters, reg := prepare(t, prepConfig{
+			ds, ingesters, reg, _ := prepare(t, prepConfig{
 				numIngesters:    3,
 				happyIngesters:  3,
 				numDistributors: 1,
@@ -186,7 +182,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 			// Push more series to exceed the limit once we'll query back all series.
 			writeReq = &mimirpb.WriteRequest{}
 			writeReq.Timeseries = append(writeReq.Timeseries,
-				makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "another_series"}}, 0, 0),
+				makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil),
 			)
 
 			writeRes, err = ds[0].Push(userCtx, writeReq)
@@ -214,13 +210,12 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	const seriesToAdd = 10
 
 	ctx := user.InjectOrgID(context.Background(), "user")
-	limits := &validation.Limits{}
-	flagext.DefaultValues(limits)
+	limits := prepareDefaultLimits()
 
 	// Prepare distributors.
 	// Use replication factor of 1 so that we always wait the response from all ingesters.
 	// This guarantees us to always read the same chunks and have a stable test.
-	ds, _, reg := prepare(t, prepConfig{
+	ds, _, reg, _ := prepare(t, prepConfig{
 		numIngesters:      3,
 		happyIngesters:    3,
 		numDistributors:   1,
@@ -234,7 +229,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	// Push a single series to allow us to calculate the chunk size to calculate the limit for the test.
 	writeReq := &mimirpb.WriteRequest{}
 	writeReq.Timeseries = append(writeReq.Timeseries,
-		makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "another_series"}}, 0, 0),
+		makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil),
 	)
 	writeRes, err := ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
@@ -266,7 +261,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	// Push another series to exceed the chunk bytes limit once we'll query back all series.
 	writeReq = &mimirpb.WriteRequest{}
 	writeReq.Timeseries = append(writeReq.Timeseries,
-		makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "another_series_1"}}, 0, 0),
+		makeTimeseries([]string{model.MetricNameLabel, "another_series_1"}, makeSamples(0, 0), nil),
 	)
 
 	writeRes, err = ds[0].Push(ctx, writeReq)

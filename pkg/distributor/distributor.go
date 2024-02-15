@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -156,13 +157,16 @@ type Distributor struct {
 	// Pool of []byte used when marshalling write requests.
 	writeRequestBytePool sync.Pool
 
-	// ingesterDoBatchPushWorkers is the Go function passed to ring.DoBatchWithOptions.
+	// doBatchPushWorkers is the Go function passed to ring.DoBatchWithOptions.
 	// It can be nil, in which case a simple `go f()` will be used.
 	// See Config.ReusableIngesterPushWorkers on how to configure this.
-	ingesterDoBatchPushWorkers func(func())
+	doBatchPushWorkers func(func())
 
 	// ingestStorageWriter is the writer used when ingest storage is enabled.
 	ingestStorageWriter *ingest.Writer
+
+	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
+	partitionsRing *ring.PartitionInstanceRing
 }
 
 // Config contains the configuration required to
@@ -248,7 +252,7 @@ const (
 )
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -270,6 +274,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		cfg:                   cfg,
 		log:                   log,
 		ingestersRing:         ingestersRing,
+		partitionsRing:        partitionsRing,
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
@@ -462,7 +467,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	if cfg.ReusableIngesterPushWorkers > 0 {
 		wp := concurrency.NewReusableGoroutinesPool(cfg.ReusableIngesterPushWorkers)
-		d.ingesterDoBatchPushWorkers = wp.Go
+		d.doBatchPushWorkers = wp.Go
 		// Closing the pool doesn't stop the workload it's running, we're doing this just to avoid leaking goroutines in tests.
 		subservices = append(subservices, services.NewBasicService(
 			nil,
@@ -1344,14 +1349,26 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	// Get both series and metadata keys in one slice.
 	keys, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
-	// Get a subring if tenant has shuffle shard size configured.
-	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
+
+	// Get the tenant's subring to use to either write to ingesters or partitions.
+	var tenantRing ring.DoBatchRing
+	if d.cfg.IngestStorageConfig.Enabled {
+		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.IngestionPartitionsTenantShardSize(userID))
+		if err != nil {
+			return err
+		}
+
+		tenantRing = ring.NewActivePartitionBatchRing(subring.PartitionRing())
+	} else {
+		tenantRing = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
+	}
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
-	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, subRing, keys,
-		func(ingester ring.InstanceDesc, indexes []int) error {
+
+	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
+		func(instance ring.InstanceDesc, indexes []int) error {
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			// Do not cancel the remoteRequestContext in this callback:
@@ -1359,9 +1376,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 			localCtx, _ := remoteRequestContext()
 			var err error
 			if d.cfg.IngestStorageConfig.Enabled {
-				err = d.sendToStorage(localCtx, userID, ingester, req)
+				err = d.sendToStorage(localCtx, userID, instance, req)
 			} else {
-				err = d.sendToIngester(localCtx, ingester, req)
+				err = d.sendToIngester(localCtx, instance, req)
 			}
 
 			if errors.Is(err, context.DeadlineExceeded) {
@@ -1376,7 +1393,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 				cancel()
 			},
 			IsClientError: isClientError,
-			Go:            d.ingesterDoBatchPushWorkers,
+			Go:            d.doBatchPushWorkers,
 		},
 	)
 
@@ -1455,16 +1472,16 @@ func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.Instance
 	return wrapIngesterPushError(err, ingester.Id)
 }
 
-// sendToStorage sends received data to the object storage, computing the partition based on the input ingester.
-// This function is used when ingest storage is enabled.
-func (d *Distributor) sendToStorage(ctx context.Context, userID string, ingester ring.InstanceDesc, req *mimirpb.WriteRequest) error {
-	//nolint:staticcheck
-	partitionID, err := ingest.IngesterZonalPartition(ingester.Id)
+// sendToStorage sends received data to the configured ingest storage. This function is used when ingest storage is enabled.
+func (d *Distributor) sendToStorage(ctx context.Context, userID string, partition ring.InstanceDesc, req *mimirpb.WriteRequest) error {
+	// The partition ID is stored in the ring.InstanceDesc Id.
+	partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
 	if err != nil {
 		return err
 	}
 
-	return d.ingestStorageWriter.WriteSync(ctx, partitionID, userID, req)
+	err = d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), userID, req)
+	return wrapPartitionPushError(err, int32(partitionID))
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
