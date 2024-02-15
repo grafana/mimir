@@ -26,6 +26,7 @@ type alertmanagerMetrics struct {
 	numFailedNotifications             *prometheus.Desc
 	numNotificationRequestsTotal       *prometheus.Desc
 	numNotificationRequestsFailedTotal *prometheus.Desc
+	numNotificationSuppressedTotal     *prometheus.Desc
 	notificationLatencySeconds         *prometheus.Desc
 
 	// exported metrics, gathered from Alertmanager nflog
@@ -107,6 +108,10 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 			"cortex_alertmanager_notification_requests_failed_total",
 			"The total number of failed notification requests.",
 			[]string{"user", "integration"}, nil),
+		numNotificationSuppressedTotal: prometheus.NewDesc(
+			"cortex_alertmanager_notifications_suppressed_total",
+			"The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.",
+			[]string{"user", "reason"}, nil),
 		notificationLatencySeconds: prometheus.NewDesc(
 			"cortex_alertmanager_notification_latency_seconds",
 			"The latency of notifications in seconds.",
@@ -287,6 +292,7 @@ func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.numFailedNotifications
 	out <- m.numNotificationRequestsTotal
 	out <- m.numNotificationRequestsFailedTotal
+	out <- m.numNotificationSuppressedTotal
 	out <- m.notificationLatencySeconds
 	out <- m.markerAlerts
 	out <- m.nflogGCDuration
@@ -339,6 +345,7 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerTenant(out, m.numFailedNotifications, "alertmanager_notifications_failed_total", dskit_metrics.WithLabels("integration", "reason"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfCountersPerTenant(out, m.numNotificationRequestsTotal, "alertmanager_notification_requests_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfCountersPerTenant(out, m.numNotificationRequestsFailedTotal, "alertmanager_notification_requests_failed_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.numNotificationSuppressedTotal, "alertmanager_notifications_suppressed_total", dskit_metrics.WithLabels("reason"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfHistograms(out, m.notificationLatencySeconds, "alertmanager_notification_latency_seconds")
 	data.SendSumOfGaugesPerTenantWithLabels(out, m.markerAlerts, "alertmanager_alerts", "state")
 
