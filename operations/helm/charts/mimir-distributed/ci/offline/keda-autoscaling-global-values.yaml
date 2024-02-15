@@ -4,7 +4,8 @@ kubeVersionOverride: "1.20"
 kedaAutoscaling:
   prometheusAddress: "https://mimir.example.com/prometheus"
   pollingInterval: 20
-
+  customHeaders:
+    X-Scope-OrgID: tenant
 
 distributor:
   kedaAutoscaling:
@@ -13,8 +14,6 @@ distributor:
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
-    customHeaders:
-      X-Scope-OrgID: tenant-1
 
 ruler:
   kedaAutoscaling:
@@ -23,8 +22,6 @@ ruler:
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
-    customHeaders:
-      X-Scope-OrgID: tenant-1
 
 querier:
   kedaAutoscaling:
@@ -32,8 +29,6 @@ querier:
     minReplicaCount: 2
     maxReplicaCount: 10
     querySchedulerInflightRequestsThreshold: 6
-    customHeaders:
-      X-Scope-OrgID: tenant-1
 
 query_frontend:
   kedaAutoscaling:
@@ -42,5 +37,3 @@ query_frontend:
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
-    customHeaders:
-      X-Scope-OrgID: tenant-1

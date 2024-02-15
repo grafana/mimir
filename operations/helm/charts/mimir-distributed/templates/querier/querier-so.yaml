@@ -32,6 +32,8 @@ spec:
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.querier.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.querier.kedaAutoscaling.customHeaders)) | quote }}
+      {{- else if .Values.kedaAutoscaling.customHeaders }}
+      customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
     name: cortex_querier_hpa_default
     type: prometheus
@@ -41,6 +43,8 @@ spec:
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.querier.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.querier.kedaAutoscaling.customHeaders)) | quote }}
+      {{- else if .Values.kedaAutoscaling.customHeaders }}
+      customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus

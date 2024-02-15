@@ -29,6 +29,8 @@ spec:
       threshold: {{ mulf (include "mimir.parseCPU" (dict "value" $cpu_request)) (divf .Values.distributor.kedaAutoscaling.targetCPUUtilizationPercentage 100) | floor | int64 | quote }}
       {{- if .Values.distributor.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.distributor.kedaAutoscaling.customHeaders)) | quote }}
+      {{- else if .Values.kedaAutoscaling.customHeaders }}
+      customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
     type: prometheus
   - metadata:
@@ -37,6 +39,8 @@ spec:
       threshold: {{ mulf (include "mimir.siToBytes" (dict "value" $mem_request)) (divf .Values.distributor.kedaAutoscaling.targetMemoryUtilizationPercentage 100) | floor | int64 | quote }}
       {{- if .Values.distributor.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.distributor.kedaAutoscaling.customHeaders)) | quote }}
+      {{- else if .Values.kedaAutoscaling.customHeaders }}
+      customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
     type: prometheus
 {{- end }}

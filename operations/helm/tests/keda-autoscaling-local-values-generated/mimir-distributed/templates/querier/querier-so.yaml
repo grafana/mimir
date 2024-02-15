@@ -43,13 +43,13 @@ spec:
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="citestns",quantile="0.5"}[1m]))
       serverAddress: "https://mimir3.example.com/localprometheus"
       threshold: "6"
-      customHeaders: "X-Scope-OrgID=tenant-1"
+      customHeaders: "X-Scope-OrgID=tenant-3"
     name: cortex_querier_hpa_default
     type: prometheus
   - metadata:
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="citestns"}[1m]))
       serverAddress: "https://mimir3.example.com/localprometheus"
       threshold: "6"
-      customHeaders: "X-Scope-OrgID=tenant-1"
+      customHeaders: "X-Scope-OrgID=tenant-3"
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus

@@ -4,6 +4,8 @@ kubeVersionOverride: "1.20"
 kedaAutoscaling:
   prometheusAddress: "https://mimir.example.com/prometheus"
   pollingInterval: 10
+  customHeaders:
+    X-Scope-OrgID: tenant
 
 distributor:
   kedaAutoscaling:
@@ -27,7 +29,7 @@ ruler:
     targetMemoryUtilizationPercentage: 80
     prometheusAddress: "https://mimir2.example.com/localprometheus"
     customHeaders:
-      X-Scope-OrgID: tenant-1
+      X-Scope-OrgID: tenant-2
 
 querier:
   kedaAutoscaling:
@@ -38,7 +40,7 @@ querier:
     querySchedulerInflightRequestsThreshold: 6
     prometheusAddress: "https://mimir3.example.com/localprometheus"
     customHeaders:
-      X-Scope-OrgID: tenant-1
+      X-Scope-OrgID: tenant-3
 
 query_frontend:
   kedaAutoscaling:
@@ -50,4 +52,4 @@ query_frontend:
     targetMemoryUtilizationPercentage: 80
     prometheusAddress: "https://mimir4.example.com/localprometheus"
     customHeaders:
-      X-Scope-OrgID: tenant-1
+      X-Scope-OrgID: tenant-4
