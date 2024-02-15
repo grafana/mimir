@@ -8,9 +8,11 @@ metadata:
     {{- toYaml .Values.query_frontend.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  {{- if not .Values.query_frontend.kedaAutoscaling.enabled }}
   # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
   {{- if or (or (kindIs "int64" .Values.query_frontend.replicas) (kindIs "float64" .Values.query_frontend.replicas)) (.Values.query_frontend.replicas) }}
   replicas: {{ .Values.query_frontend.replicas }}
+  {{- end }}
   {{- end }}
   selector:
     matchLabels:

@@ -18,6 +18,11 @@ ingest_storage:
 ingester:
   return_only_grpc_errors: true
 
+  partition_ring:
+    min_partition_owners_count:       2
+    min_partition_owners_duration:    10s
+    delete_inactive_partition_after:  1m
+
 blocks_storage:
   s3:
     bucket_name:       mimir-blocks
@@ -43,7 +48,13 @@ blocks_storage:
 
 memberlist:
   # Use write replicas as seed nodes.
-  join_members: [ mimir-write-1, mimir-write-2, mimir-write-3 ]
+  join_members:
+    - mimir-write-zone-a-1
+    - mimir-write-zone-b-1
+    - mimir-write-zone-a-2
+    - mimir-write-zone-b-2
+    - mimir-write-zone-a-3
+    - mimir-write-zone-b-3
 
 ruler:
   rule_path: /data/ruler
@@ -82,6 +93,7 @@ overrides_exporter:
 
 limits:
   native_histograms_ingestion_enabled: true
+  ingestion_rate: 100000
 
 runtime_config:
   file: ./config/runtime.yaml

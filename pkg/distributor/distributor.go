@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -156,13 +158,16 @@ type Distributor struct {
 	// Pool of []byte used when marshalling write requests.
 	writeRequestBytePool sync.Pool
 
-	// ingesterDoBatchPushWorkers is the Go function passed to ring.DoBatchWithOptions.
+	// doBatchPushWorkers is the Go function passed to ring.DoBatchWithOptions.
 	// It can be nil, in which case a simple `go f()` will be used.
 	// See Config.ReusableIngesterPushWorkers on how to configure this.
-	ingesterDoBatchPushWorkers func(func())
+	doBatchPushWorkers func(func())
 
 	// ingestStorageWriter is the writer used when ingest storage is enabled.
 	ingestStorageWriter *ingest.Writer
+
+	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
+	partitionsRing *ring.PartitionInstanceRing
 }
 
 // Config contains the configuration required to
@@ -192,6 +197,7 @@ type Config struct {
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
+	PreferAvailabilityZone                     string        `yaml:"-"`
 
 	// IngestStorageConfig is dynamically injected because defined outside of distributor config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
@@ -206,7 +212,7 @@ type Config struct {
 	PushWrappers []PushWrapper `yaml:"-"`
 
 	WriteRequestsBufferPoolingEnabled           bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
-	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"experimental"`
+	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"deprecated"` // TODO Remove the configuration option in Mimir 2.14, keeping the same behavior as if it's enabled
 	ReusableIngesterPushWorkers                 int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
 }
 
@@ -223,7 +229,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
-	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
+	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", true, "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 
 	cfg.DefaultLimits.RegisterFlags(f)
@@ -248,7 +254,7 @@ const (
 )
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -270,6 +276,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		cfg:                   cfg,
 		log:                   log,
 		ingestersRing:         ingestersRing,
+		partitionsRing:        partitionsRing,
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
@@ -462,7 +469,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	if cfg.ReusableIngesterPushWorkers > 0 {
 		wp := concurrency.NewReusableGoroutinesPool(cfg.ReusableIngesterPushWorkers)
-		d.ingesterDoBatchPushWorkers = wp.Go
+		d.doBatchPushWorkers = wp.Go
 		// Closing the pool doesn't stop the workload it's running, we're doing this just to avoid leaking goroutines in tests.
 		subservices = append(subservices, services.NewBasicService(
 			nil,
@@ -687,6 +694,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	middlewares = append(middlewares, d.metricsMiddleware)
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
+	middlewares = append(middlewares, d.prePushSortAndFilterMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.cfg.PushWrappers...)
 
@@ -814,6 +822,44 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 				req.Timeseries[tsIdx].RemoveLabel(labelName)
 			}
 
+			if len(ts.Labels) == 0 {
+				removeTsIndexes = append(removeTsIndexes, tsIdx)
+				continue
+			}
+		}
+
+		if len(removeTsIndexes) > 0 {
+			for _, removeTsIndex := range removeTsIndexes {
+				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
+			}
+			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
+		}
+
+		cleanupInDefer = false
+		return next(ctx, pushReq)
+	}
+}
+
+// prePushSortAndFilterMiddleware is responsible for sorting labels and
+// filtering empty values. This is a protection mechanism for ingesters.
+func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
+	return func(ctx context.Context, pushReq *Request) error {
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				pushReq.CleanUp()
+			}
+		}()
+
+		req, err := pushReq.WriteRequest()
+		if err != nil {
+			return err
+		}
+
+		var removeTsIndexes []int
+		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
+			ts := req.Timeseries[tsIdx]
+
 			// Prometheus strips empty values before storing; drop them now, before sharding to ingesters.
 			req.Timeseries[tsIdx].RemoveEmptyLabelValues()
 
@@ -823,10 +869,11 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 			}
 
 			// We rely on sorted labels in different places:
-			// 1) When computing token for labels, and sharding by all labels. Here different order of labels returns
-			// different tokens, which is bad.
-			// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
-			// later in the validation phase, we ignore them here.
+			// 1) When computing token for labels. Here different order of
+			// labels returns different tokens, which is bad.
+			// 2) In validation code, when checking for duplicate label names.
+			// As duplicate label names are rejected later in the validation
+			// phase, we ignore them here.
 			// 3) Ingesters expect labels to be sorted in the Push request.
 			req.Timeseries[tsIdx].SortLabelsIfNeeded()
 		}
@@ -1304,14 +1351,26 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	// Get both series and metadata keys in one slice.
 	keys, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
-	// Get a subring if tenant has shuffle shard size configured.
-	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
+
+	// Get the tenant's subring to use to either write to ingesters or partitions.
+	var tenantRing ring.DoBatchRing
+	if d.cfg.IngestStorageConfig.Enabled {
+		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.IngestionPartitionsTenantShardSize(userID))
+		if err != nil {
+			return err
+		}
+
+		tenantRing = ring.NewActivePartitionBatchRing(subring.PartitionRing())
+	} else {
+		tenantRing = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
+	}
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
-	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, subRing, keys,
-		func(ingester ring.InstanceDesc, indexes []int) error {
+
+	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
+		func(instance ring.InstanceDesc, indexes []int) error {
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			// Do not cancel the remoteRequestContext in this callback:
@@ -1319,9 +1378,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 			localCtx, _ := remoteRequestContext()
 			var err error
 			if d.cfg.IngestStorageConfig.Enabled {
-				err = d.sendToStorage(localCtx, userID, ingester, req)
+				err = d.sendToStorage(localCtx, userID, instance, req)
 			} else {
-				err = d.sendToIngester(localCtx, ingester, req)
+				err = d.sendToIngester(localCtx, instance, req)
 			}
 
 			if errors.Is(err, context.DeadlineExceeded) {
@@ -1336,7 +1395,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 				cancel()
 			},
 			IsClientError: isClientError,
-			Go:            d.ingesterDoBatchPushWorkers,
+			Go:            d.doBatchPushWorkers,
 		},
 	)
 
@@ -1415,15 +1474,16 @@ func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.Instance
 	return wrapIngesterPushError(err, ingester.Id)
 }
 
-// sendToStorage sends received data to the object storage, computing the partition based on the input ingester.
-// This function is used when ingest storage is enabled.
-func (d *Distributor) sendToStorage(ctx context.Context, userID string, ingester ring.InstanceDesc, req *mimirpb.WriteRequest) error {
-	partitionID, err := ingest.IngesterPartition(ingester.Id)
+// sendToStorage sends received data to the configured ingest storage. This function is used when ingest storage is enabled.
+func (d *Distributor) sendToStorage(ctx context.Context, userID string, partition ring.InstanceDesc, req *mimirpb.WriteRequest) error {
+	// The partition ID is stored in the ring.InstanceDesc Id.
+	partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
 	if err != nil {
 		return err
 	}
 
-	return d.ingestStorageWriter.WriteSync(ctx, partitionID, userID, req)
+	err = d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), userID, req)
+	return wrapPartitionPushError(err, int32(partitionID))
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
@@ -1445,10 +1505,39 @@ func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSe
 	return ring.DoUntilQuorum(ctx, replicationSet, d.queryQuorumConfig(ctx, replicationSet), wrappedF, cleanup)
 }
 
+// queryQuorumConfig returns the config to use with "do until quorum" functions when running queries.
+//
+// Deprecated: use queryQuorumConfigForReplicationSets() instead.
 func (d *Distributor) queryQuorumConfig(ctx context.Context, replicationSet ring.ReplicationSet) ring.DoUntilQuorumConfig {
-	logger := spanlogger.FromContext(ctx, d.log)
+	return d.queryQuorumConfigForReplicationSets(ctx, []ring.ReplicationSet{replicationSet})
+}
 
-	zoneSorter := func(zones []string) []string {
+// queryQuorumConfigForReplicationSets returns the config to use with "do until quorum" functions when running queries.
+func (d *Distributor) queryQuorumConfigForReplicationSets(ctx context.Context, replicationSets []ring.ReplicationSet) ring.DoUntilQuorumConfig {
+	var zoneSorter ring.ZoneSorter
+
+	if d.cfg.IngestStorageConfig.Enabled {
+		zoneSorter = queryIngesterPartitionsRingZoneSorter(d.cfg.PreferAvailabilityZone)
+	} else {
+		// We expect to always have exactly 1 replication set when ingest storage is disabled.
+		// To keep the code safer, we run with no zone sorter if that's not the case.
+		if len(replicationSets) == 1 {
+			zoneSorter = queryIngestersRingZoneSorter(replicationSets[0])
+		}
+	}
+
+	return ring.DoUntilQuorumConfig{
+		MinimizeRequests: d.cfg.MinimizeIngesterRequests,
+		HedgingDelay:     d.cfg.MinimiseIngesterRequestsHedgingDelay,
+		ZoneSorter:       zoneSorter,
+		Logger:           spanlogger.FromContext(ctx, d.log),
+	}
+}
+
+// queryIngestersRingZoneSorter returns a ring.ZoneSorter that should be used to sort ingester zones
+// to attempt to query first, when ingest storage is disabled.
+func queryIngestersRingZoneSorter(replicationSet ring.ReplicationSet) ring.ZoneSorter {
+	return func(zones []string) []string {
 		inactiveCount := make(map[string]int, len(zones))
 
 		for _, i := range replicationSet.Instances {
@@ -1463,18 +1552,39 @@ func (d *Distributor) queryQuorumConfig(ctx context.Context, replicationSet ring
 
 		return zones
 	}
+}
 
-	return ring.DoUntilQuorumConfig{
-		MinimizeRequests: d.cfg.MinimizeIngesterRequests,
-		HedgingDelay:     d.cfg.MinimiseIngesterRequestsHedgingDelay,
-		ZoneSorter:       zoneSorter,
-		Logger:           logger,
+// queryIngesterPartitionsRingZoneSorter returns a ring.ZoneSorter that should be used to sort
+// ingester zones to attempt to query first, when ingest storage is enabled.
+//
+// The sorter gives preference to preferredZone if non empty, and then randomize the other zones.
+func queryIngesterPartitionsRingZoneSorter(preferredZone string) ring.ZoneSorter {
+	return func(zones []string) []string {
+		// Shuffle the zones to distribute load evenly.
+		if len(zones) > 2 || (preferredZone == "" && len(zones) > 1) {
+			rand.Shuffle(len(zones), func(i, j int) {
+				zones[i], zones[j] = zones[j], zones[i]
+			})
+		}
+
+		if preferredZone != "" {
+			// Give priority to the preferred zone.
+			for i, z := range zones {
+				if z == preferredZone {
+					zones[0], zones[i] = zones[i], zones[0]
+					break
+				}
+			}
+		}
+
+		return zones
 	}
 }
 
 // LabelValuesForLabelName returns all of the label values that are associated with a given label name.
 func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1511,7 +1621,8 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 
 // LabelNamesAndValues query ingesters for label names and values and returns labels with distinct list of values.
 func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelNamesAndValuesResponse, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1664,7 +1775,8 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
 func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelValuesCardinalityResponse, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1814,7 +1926,8 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 // ActiveSeries queries the ingester replication set for active series matching
 // the given selector. It combines and deduplicates the results.
 func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2022,7 +2135,8 @@ func approximateFromZones[T ~float64 | ~uint64](zoneCount int, replicationFactor
 
 // LabelNames returns all of the label names.
 func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2058,7 +2172,8 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 
 // MetricsForLabelMatchers gets the metrics that match said matchers
 func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2097,7 +2212,8 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 
 // MetricsMetadata returns all metric metadata of a user.
 func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2134,7 +2250,8 @@ func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.
 
 // UserStats returns statistics about the current user.
 func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.CountMethod) (*UserStats, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	//nolint:staticcheck
+	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}

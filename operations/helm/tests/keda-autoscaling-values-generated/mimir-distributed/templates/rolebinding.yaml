@@ -1,0 +1,20 @@
+---
+# Source: mimir-distributed/templates/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keda-autoscaling-values-mimir
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: keda-autoscaling-values-mimir
+subjects:
+- kind: ServiceAccount
+  name: keda-autoscaling-values-mimir
+- kind: ServiceAccount
+  name: keda-autoscaling-values-mimir-distributed

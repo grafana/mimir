@@ -77,36 +77,6 @@ receivers:
   - name: test
 `
 
-	mimirAlertmanagerDisagreementConfigYaml = `route:
-  receiver: test
-  group_by: [foo]
-  routes:
-    - matchers:
-      - foo="\xf0\x9f\x99\x82"
-receivers:
-  - name: test
-`
-
-	mimirAlertmanagerIncompatibleConfigYaml = `route:
-  receiver: test
-  group_by: [foo]
-  routes:
-    - matchers:
-      - foo=
-receivers:
-  - name: test
-`
-
-	mimirAlertmanagerInvalidConfigYaml = `route:
-  receiver: test
-  group_by: [foo]
-  routes:
-    - matchers:
-      - foo=,,
-receivers:
-  - name: test
-`
-
 	mimirRulerUserConfigYaml = `groups:
 - name: rule
   interval: 100s
@@ -277,6 +247,10 @@ blocks_storage:
 			// and faster integration tests.
 			"-ingest-storage.kafka.last-produced-offset-poll-interval": "50ms",
 			"-ingest-storage.kafka.last-produced-offset-retry-timeout": "1s",
+
+			// Do not wait before switching an INACTIVE partition to ACTIVE.
+			"-ingester.partition-ring.min-partition-owners-count":    "0",
+			"-ingester.partition-ring.min-partition-owners-duration": "0s",
 		}
 	}
 )

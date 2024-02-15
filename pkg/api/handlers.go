@@ -76,6 +76,18 @@ func (pc *IndexPageContent) AddLinks(weight int, groupDesc string, links []Index
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 
+	// Append the links to the group if already existing.
+	for i, group := range pc.elements {
+		if group.Desc != groupDesc {
+			continue
+		}
+
+		group.Links = append(group.Links, links...)
+		pc.elements[i] = group
+		return
+	}
+
+	// The group hasn't been found. We create a new one.
 	pc.elements = append(pc.elements, IndexPageLinkGroup{weight: weight, Desc: groupDesc, Links: links})
 }
 

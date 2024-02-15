@@ -820,6 +820,8 @@ type shardingStrategy interface {
 	// blocksCleanerOwnsUser must be concurrency-safe
 	blocksCleanerOwnsUser(userID string) (bool, error)
 	ownJob(job *Job) (bool, error)
+	// instanceOwningJob returns instance owning the job based on ring. It ignores per-instance allowed tenants.
+	instanceOwningJob(job *Job) (ring.InstanceDesc, error)
 }
 
 // splitAndMergeShardingStrategy is used by split-and-merge compactor when configured with sharding.
@@ -876,14 +878,33 @@ func (s *splitAndMergeShardingStrategy) ownJob(job *Job) (bool, error) {
 	return instanceOwnsTokenInRing(r, s.ringLifecycler.GetInstanceAddr(), job.ShardingKey())
 }
 
-func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
+func (s *splitAndMergeShardingStrategy) instanceOwningJob(job *Job) (ring.InstanceDesc, error) {
+	r := s.ring.ShuffleShard(job.UserID(), s.configProvider.CompactorTenantShardSize(job.UserID()))
+
+	rs, err := instancesForKey(r, job.ShardingKey())
+	if err != nil {
+		return ring.InstanceDesc{}, err
+	}
+
+	if len(rs.Instances) != 1 {
+		return ring.InstanceDesc{}, fmt.Errorf("unexpected number of compactors in the shard (expected 1, got %d)", len(rs.Instances))
+	}
+
+	return rs.Instances[0], nil
+}
+
+func instancesForKey(r ring.ReadRing, key string) (ring.ReplicationSet, error) {
 	// Hash the key.
 	hasher := fnv.New32a()
 	_, _ = hasher.Write([]byte(key))
 	hash := hasher.Sum32()
 
+	return r.Get(hash, RingOp, nil, nil, nil)
+}
+
+func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
 	// Check whether this compactor instance owns the token.
-	rs, err := r.Get(hash, RingOp, nil, nil, nil)
+	rs, err := instancesForKey(r, key)
 	if err != nil {
 		return false, err
 	}

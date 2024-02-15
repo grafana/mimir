@@ -81,7 +81,7 @@ func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.ReadClos
 	req.URL.Path = path.Join(b.endpoint.Path, req.URL.Path)
 
 	// Set the correct host header for the backend
-	req.Header.Set("Host", b.endpoint.Host)
+	req.Host = b.endpoint.Host
 
 	// Replace the auth:
 	// - If the endpoint has user and password, use it.

@@ -50,6 +50,10 @@ mimir {
     // the KEDA threshold
     k.util.resourcesRequests(2, '3.2Gi') +
     k.util.resourcesLimits(null, '6Gi'),
+  query_frontend_container+::
+    // Test a CPU request set in milli-CPUs to verify this gets converted into an integer for
+    // the KEDA threshold.
+    k.util.resourcesRequests('2500m', '600Mi'),
   ruler_querier_container+::
     // Test a <1 non-integer CPU request, to verify that this gets converted into an integer for
     // the KEDA threshold

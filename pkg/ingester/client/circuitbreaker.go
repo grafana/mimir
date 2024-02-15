@@ -5,6 +5,7 @@ package client
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/failsafe-go/failsafe-go"
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
@@ -40,6 +41,22 @@ var (
 		"/cortex.Ingester/LabelValuesCardinality":  {},
 	}
 )
+
+type ErrCircuitBreakerOpen struct {
+	remainingDelay time.Duration
+}
+
+func (e ErrCircuitBreakerOpen) RemainingDelay() time.Duration {
+	return e.remainingDelay
+}
+
+func (e ErrCircuitBreakerOpen) Error() string {
+	return circuitbreaker.ErrOpen.Error()
+}
+
+func (e ErrCircuitBreakerOpen) Unwrap() error {
+	return circuitbreaker.ErrOpen
+}
 
 func NewCircuitBreaker(inst ring.InstanceDesc, cfg CircuitBreakerConfig, metrics *Metrics, logger log.Logger) grpc.UnaryClientInterceptor {
 	// Initialize each of the known labels for circuit breaker metrics for this particular ingester
@@ -88,6 +105,7 @@ func NewCircuitBreaker(inst ring.InstanceDesc, cfg CircuitBreakerConfig, metrics
 
 		if err != nil && errors.Is(err, circuitbreaker.ErrOpen) {
 			countOpen.Inc()
+			return ErrCircuitBreakerOpen{remainingDelay: breaker.RemainingDelay()}
 		}
 
 		return err

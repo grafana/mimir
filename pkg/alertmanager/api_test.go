@@ -1116,6 +1116,34 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			},
 			expected: errPasswordFileNotAllowed,
 		},
+		"*DiscordConfig.HTTPConfig": {
+			input: &config.DiscordConfig{
+				HTTPConfig: &commoncfg.HTTPClientConfig{
+					BearerTokenFile: "/file",
+				},
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"DiscordConfig.HTTPConfig": {
+			input: &config.DiscordConfig{
+				HTTPConfig: &commoncfg.HTTPClientConfig{
+					BearerTokenFile: "/file",
+				},
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"*DiscordConfig.WebhookURLFile": {
+			input: &config.DiscordConfig{
+				WebhookURLFile: "/file",
+			},
+			expected: errWebhookURLFileNotAllowed,
+		},
+		"DiscordConfig.WebhookURLFile": {
+			input: config.DiscordConfig{
+				WebhookURLFile: "/file",
+			},
+			expected: errWebhookURLFileNotAllowed,
+		},
 		"*EmailConfig.AuthPasswordFile": {
 			input: &config.EmailConfig{
 				AuthPasswordFile: "/file",
@@ -1127,6 +1155,34 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 				AuthPasswordFile: "/file",
 			},
 			expected: errPasswordFileNotAllowed,
+		},
+		"*MSTeams.HTTPConfig": {
+			input: &config.MSTeamsConfig{
+				HTTPConfig: &commoncfg.HTTPClientConfig{
+					BearerTokenFile: "/file",
+				},
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"MSTeams.HTTPConfig": {
+			input: &config.MSTeamsConfig{
+				HTTPConfig: &commoncfg.HTTPClientConfig{
+					BearerTokenFile: "/file",
+				},
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"*MSTeams.WebhookURLFile": {
+			input: &config.MSTeamsConfig{
+				WebhookURLFile: "/file",
+			},
+			expected: errWebhookURLFileNotAllowed,
+		},
+		"MSTeams.WebhookURLFile": {
+			input: config.MSTeamsConfig{
+				WebhookURLFile: "/file",
+			},
+			expected: errWebhookURLFileNotAllowed,
 		},
 		"struct containing *HTTPClientConfig as direct child": {
 			input: config.GlobalConfig{

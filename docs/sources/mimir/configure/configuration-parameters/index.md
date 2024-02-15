@@ -141,10 +141,10 @@ api:
   # CLI flag: -api.skip-label-name-validation-header-enabled
   [skip_label_name_validation_header_enabled: <boolean> | default = false]
 
-  # (experimental) If true, store metadata when ingesting metrics via OTLP. This
+  # (deprecated) If true, store metadata when ingesting metrics via OTLP. This
   # makes metric descriptions and types available for metrics ingested via OTLP.
   # CLI flag: -distributor.enable-otlp-metadata-storage
-  [enable_otel_metadata_translation: <boolean> | default = false]
+  [enable_otel_metadata_translation: <boolean> | default = true]
 
   # (advanced) HTTP URL path under which the Alertmanager ui and api will be
   # served.
@@ -928,9 +928,10 @@ instance_limits:
 # CLI flag: -distributor.write-requests-buffer-pooling-enabled
 [write_requests_buffer_pooling_enabled: <boolean> | default = true]
 
-# (experimental) Use experimental method of limiting push requests.
+# (deprecated) When enabled, in-flight write requests limit is checked as soon
+# as the gRPC request is received, before the request is decoded and parsed.
 # CLI flag: -distributor.limit-inflight-requests-using-grpc-method-limiter
-[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = false]
+[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = true]
 
 # (advanced) Number of pre-allocated workers used to forward push requests to
 # the ingesters. If 0, no workers will be used and a new goroutine will be
@@ -1167,9 +1168,10 @@ instance_limits:
 # CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
 [log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
 
-# (experimental) Use experimental method of limiting push requests.
+# (deprecated) When enabled, in-flight write requests limit is checked as soon
+# as the gRPC request is received, before the request is decoded and parsed.
 # CLI flag: -ingester.limit-inflight-requests-using-grpc-method-limiter
-[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = false]
+[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = true]
 
 # (experimental) Each error will be logged once in this many times. Use 0 to log
 # all of them.
@@ -3930,6 +3932,12 @@ tsdb:
   # percentage (0-100).
   # CLI flag: -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage
   [early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 15]
+
+  # (experimental) Allows head compaction to happen when the min block range can
+  # no longer be appended, without requiring 1.5x the chunk range worth of data
+  # in the head.
+  # CLI flag: -blocks-storage.tsdb.timely-head-compaction-enabled
+  [timely_head_compaction_enabled: <boolean> | default = false]
 ```
 
 ### compactor

@@ -10,7 +10,13 @@ prometheus:
       scrape_configs:
         - job_name: mimir-read-write-mode/mimir-write
           static_configs:
-            - targets: ['mimir-write-1:8080', 'mimir-write-2:8080', 'mimir-write-3:8080']
+            - targets:
+              - 'mimir-write-zone-a-1:8080'
+              - 'mimir-write-zone-b-1:8080'
+              - 'mimir-write-zone-a-2:8080'
+              - 'mimir-write-zone-b-2:8080'
+              - 'mimir-write-zone-a-3:8080'
+              - 'mimir-write-zone-b-3:8080'
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-read-write-mode'
@@ -31,4 +37,4 @@ prometheus:
                 container: 'mimir-backend'
 
       remote_write:
-        - url: http://mimir-write-1:8080/api/v1/push
+        - url: http://mimir-write-zone-a-1:8080/api/v1/push
