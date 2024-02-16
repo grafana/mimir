@@ -33,7 +33,7 @@ const ownedServiceTestUser = "test-user"
 const ownedServiceSeriesCount = 10
 const ownedServiceTestUserSeriesLimit = 10000
 
-const ringHeartbeatPeriod = 100 * time.Millisecond
+const defaultHeartbeatPeriod = 100 * time.Millisecond
 
 type ownedSeriesTestContext struct {
 	seriesToWrite []series
@@ -49,6 +49,8 @@ type ownedSeriesTestContext struct {
 
 	// when true, the test ingester will be second in the shuffle shard, and the "second" ingester will be first
 	swapShardOrder bool
+
+	ringHeartbeatPeriod time.Duration
 }
 
 func (c *ownedSeriesTestContext) pushUserSeries(t *testing.T) {
@@ -150,16 +152,17 @@ func TestOwnedSeriesService(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		limits         map[string]*validation.Limits
-		swapShardOrder bool
-		testFunc       func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits)
+		limits              map[string]*validation.Limits
+		swapShardOrder      bool
+		ringHeartbeatPeriod time.Duration
+		skipMsg             string
+		testFunc            func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits)
 	}{
 		"empty ingester": {
 			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
 				require.Equal(t, 0, c.ownedSeries.updateAllTenants(context.Background(), false))
 			},
 		},
-
 		"new user trigger": {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
@@ -188,7 +191,6 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
 			},
 		},
-
 		"shard size = 1, scale ingesters up and down": {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
@@ -208,7 +210,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -226,7 +228,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.removeSecondIngester(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 1, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 1, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -241,7 +243,6 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 			},
 		},
-
 		"shard size = 1, scale ingesters up and down, series move to new ingster": {
 			swapShardOrder: true,
 			limits: map[string]*validation.Limits{
@@ -262,7 +263,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -280,7 +281,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.removeSecondIngester(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 1, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 1, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -295,7 +296,6 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 			},
 		},
-
 		"shard size = 0, scale ingesters up and down": {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
@@ -315,7 +315,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -328,7 +328,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.removeSecondIngester(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 1, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 1, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -338,7 +338,6 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 			},
 		},
-
 		"unchanged ring, shard size from 0 to ingester count": {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
@@ -355,7 +354,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -373,7 +372,6 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 			},
 		},
-
 		"unchanged ring, shard size < ingesters, shard size up and down": {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
@@ -390,7 +388,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -412,7 +410,6 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 			},
 		},
-
 		"unchanged ring, shard size < ingesters, shard size up and down, series start on other ingester": {
 			swapShardOrder: true,
 			limits: map[string]*validation.Limits{
@@ -430,7 +427,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -456,7 +453,6 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 			},
 		},
-
 		"unchanged ring and shards, series limit up and down": {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
@@ -487,7 +483,6 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 			},
 		},
-
 		"unchanged ring, series limit and shard size up and down in tandem": {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
@@ -504,7 +499,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -528,7 +523,6 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 			},
 		},
-
 		"early compaction trigger": {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
@@ -554,7 +548,6 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 			},
 		},
-
 		"previous ring check failed": {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
@@ -576,10 +569,53 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 			},
 		},
+		"shard size = 0, scale ingesters up, don't wait for lifecycler heartbeat": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 0,
+				},
+			},
+			ringHeartbeatPeriod: 5 * time.Second,
+			skipMsg:             "This test illustrates a known issue with running the owned series recompute before the lifecycler has a chance to heartbeat.",
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+
+				// The owned series service talks to the ring directly, but the ingester limiter gets info about the ring from the lifecycler. The lifecycler
+				// only updates when it heartbeats the ring, which is off-cycle with the owned series service cycle. This means that if the number of ingesters
+				// or shards changes and the owned series service loop runs BEFORE the lifecycler has had a chance to heartbeat and update its view of the ring,
+				// the owned series count will be correctly recomputed, but we will continue to cache the local limit from BEFORE the ring/shard change.
+				// This will be corrected on the subsequent run of the owned series service (it will see that the local limit has changed and update the cached value)
+				// but for the time in between we will be running with the old local limit.
+
+				c.pushUserSeries(t)
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
+				c.checkUpdateReasonForUser(t, "")
+
+				// initial state: all series are owned by the first ingester.
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+
+				// add an ingester
+				c.registerSecondIngesterOwningHalfOfTheTokens(t)
+
+				// run an owned series update before the lifecycler has a chance to heartbeat
+				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonLocalLimitChanged)                // this will fail, because the reason will be RingChanged
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, ownedServiceTestUserSeriesLimit/2) // this will fail, because the limiter still returns the old local limit
+				c.checkUpdateReasonForUser(t, "")
+			},
+		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			if tc.skipMsg != "" {
+				t.Skip(tc.skipMsg)
+			}
+
+			heartbeatPeriod := defaultHeartbeatPeriod
+			if tc.ringHeartbeatPeriod != 0 {
+				heartbeatPeriod = tc.ringHeartbeatPeriod
+			}
+
 			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
@@ -592,7 +628,7 @@ func TestOwnedSeriesService(t *testing.T) {
 			cfg.IngesterRing.ZoneAwarenessEnabled = true
 			cfg.IngesterRing.InstanceZone = "zone"
 			cfg.IngesterRing.ReplicationFactor = 1 // Currently we require RF=number of zones, and we will only work with single zone.
-			cfg.IngesterRing.HeartbeatPeriod = ringHeartbeatPeriod
+			cfg.IngesterRing.HeartbeatPeriod = heartbeatPeriod
 
 			// Start the ring watching. We need watcher to be running when we're doing ring updates, otherwise our update-and-watch function will fail.
 			rng, err := ring.New(cfg.IngesterRing.ToRingConfig(), "ingester", IngesterRingKey, log.NewNopLogger(), nil)
@@ -603,10 +639,11 @@ func TestOwnedSeriesService(t *testing.T) {
 			})
 
 			c := ownedSeriesTestContext{
-				seriesToWrite:  seriesToWrite,
-				seriesTokens:   seriesTokens,
-				kvStore:        wkv,
-				swapShardOrder: tc.swapShardOrder,
+				seriesToWrite:       seriesToWrite,
+				seriesTokens:        seriesTokens,
+				kvStore:             wkv,
+				swapShardOrder:      tc.swapShardOrder,
+				ringHeartbeatPeriod: heartbeatPeriod,
 			}
 
 			c.registerTestedIngesterIntoRing(t, cfg.IngesterRing.InstanceID, cfg.IngesterRing.InstanceAddr, cfg.IngesterRing.InstanceZone)
@@ -617,7 +654,7 @@ func TestOwnedSeriesService(t *testing.T) {
 			c.ing = setupIngesterWithOverrides(t, cfg, overrides, nil) // no need to pass the ring -- we'll test a completely separate OSS
 
 			// wait for the ingester lifecycler to sync the initial ring
-			test.Poll(t, 2*ringHeartbeatPeriod, 1, func() interface{} {
+			test.Poll(t, 2*c.ringHeartbeatPeriod, 1, func() interface{} {
 				return c.ing.lifecycler.InstancesCount()
 			})
 
@@ -724,6 +761,8 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 		numZones                 int
 		startingIngestersPerZone int
 		limits                   map[string]*validation.Limits
+		ringHeartbeatPeriod      time.Duration
+		skipMsg                  string
 		testFunc                 func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits)
 	}{
 		"single zone, shard size = 1, scale ingesters up and down": {
@@ -745,7 +784,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				})
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -762,7 +801,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				})
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 1, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 1, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -793,7 +832,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				})
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -810,7 +849,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				})
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, 1, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, 1, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -979,7 +1018,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 					ingesterCount += 4
 
 					// wait for the ingester to see the updated ring
-					test.Poll(t, 2*ringHeartbeatPeriod, ingesterCount, func() interface{} {
+					test.Poll(t, 2*c.ringHeartbeatPeriod, ingesterCount, func() interface{} {
 						return c.ing.lifecycler.InstancesCount()
 					})
 
@@ -1002,7 +1041,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 					ingesterCount -= 4
 
 					// wait for the ingester to see the updated ring
-					test.Poll(t, 2*ringHeartbeatPeriod, ingesterCount, func() interface{} {
+					test.Poll(t, 2*c.ringHeartbeatPeriod, ingesterCount, func() interface{} {
 						return c.ing.lifecycler.InstancesCount()
 					})
 
@@ -1043,7 +1082,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				ingesterCount += 4
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, ingesterCount, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, ingesterCount, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -1065,7 +1104,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 					ingesterCount += 4
 
 					// wait for the ingester to see the updated ring
-					test.Poll(t, 2*ringHeartbeatPeriod, ingesterCount, func() interface{} {
+					test.Poll(t, 2*c.ringHeartbeatPeriod, ingesterCount, func() interface{} {
 						return c.ing.lifecycler.InstancesCount()
 					})
 
@@ -1087,7 +1126,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				ingesterCount -= 4
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*ringHeartbeatPeriod, ingesterCount, func() interface{} {
+				test.Poll(t, 2*c.ringHeartbeatPeriod, ingesterCount, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -1110,7 +1149,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 					ingesterCount -= 4
 
 					// wait for the ingester to see the updated ring
-					test.Poll(t, 2*ringHeartbeatPeriod, ingesterCount, func() interface{} {
+					test.Poll(t, 2*c.ringHeartbeatPeriod, ingesterCount, func() interface{} {
 						return c.ing.lifecycler.InstancesCount()
 					})
 
@@ -1123,16 +1162,59 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				}
 			},
 		},
+		"single zone, shard size = 0, scale ingesters up, don't wait for lifecycler heartbeat": {
+			numZones:                 1,
+			startingIngestersPerZone: 1,
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					IngestionTenantShardSize: 0,
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+				},
+			},
+			ringHeartbeatPeriod: 5 * time.Second,
+			skipMsg:             "This test illustrates a known issue with running the owned series recompute before the lifecycler has a chance to heartbeat.",
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+
+				// The owned series service talks to the ring directly, but the ingester limiter gets info about the ring from the lifecycler. The lifecycler
+				// only updates when it heartbeats the ring, which is off-cycle with the owned series service cycle. This means that if the number of ingesters
+				// or shards changes and the owned series service loop runs BEFORE the lifecycler has had a chance to heartbeat and update its view of the ring,
+				// the owned series count will be correctly recomputed, but we will continue to cache the local limit from BEFORE the ring/shard change.
+				// This will be corrected on the subsequent run of the owned series service (it will see that the local limit has changed and update the cached value)
+				// but for the time in between we will be running with the old local limit.
+
+				// initial limit
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "")
+
+				// add other ingesters
+				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
+					desc.AddIngester("ingester-1-1", "localhost", "zone-1", []uint32{101}, ring.ACTIVE, time.Now())
+				})
+
+				// run an owned series update before the lifecycler has a chance to heartbeat (ringChanged=true, expect recalculation)
+				require.Equal(t, 1, c.ownedSeries.updateAllTenants(context.Background(), true))
+
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/2, "limit should be updated") // this will fail, because the limiter still returns the old local limit to be cached
+			},
+		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			if tc.skipMsg != "" {
+				t.Skip(tc.skipMsg)
+			}
+
+			heartbeatPeriod := defaultHeartbeatPeriod
+			if tc.ringHeartbeatPeriod != 0 {
+				heartbeatPeriod = tc.ringHeartbeatPeriod
+			}
+
 			cfg := defaultIngesterTestConfig(t)
 			cfg.IngesterRing.InstanceID = "ingester-1-0"
 			cfg.IngesterRing.ZoneAwarenessEnabled = true
 			cfg.IngesterRing.InstanceZone = "zone-1"
 			cfg.IngesterRing.ReplicationFactor = tc.numZones // RF needs to equal number of zones
-			cfg.IngesterRing.HeartbeatPeriod = ringHeartbeatPeriod
+			cfg.IngesterRing.HeartbeatPeriod = heartbeatPeriod
 			cfg.UpdateIngesterOwnedSeries = true
 			cfg.UseIngesterOwnedSeriesForLimits = true
 
@@ -1148,7 +1230,8 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			})
 
 			c := ownedSeriesTestContext{
-				kvStore: wkv,
+				kvStore:             wkv,
+				ringHeartbeatPeriod: heartbeatPeriod,
 			}
 
 			// add initial ingesters to ring
@@ -1167,7 +1250,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			c.ing = setupIngesterWithOverrides(t, cfg, overrides, rng)
 
 			// wait for the ingester lifecycler to sync the initial ring
-			test.Poll(t, 2*ringHeartbeatPeriod, tc.numZones*tc.startingIngestersPerZone, func() interface{} {
+			test.Poll(t, 2*c.ringHeartbeatPeriod, tc.numZones*tc.startingIngestersPerZone, func() interface{} {
 				return c.ing.lifecycler.InstancesCount()
 			})
 
