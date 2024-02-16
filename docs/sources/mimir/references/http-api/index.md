@@ -317,6 +317,7 @@ Requires [authentication](#authentication).
 ```
 POST /otlp/v1/metrics
 ```
+
 {{% admonition type="note" %}}
 To send OTLP data to Grafana Cloud, refer to [Send data using OpenTelemetry Protocol (OTLP)](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/).
 {{% /admonition %}}
