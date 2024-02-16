@@ -21,7 +21,6 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
@@ -510,11 +509,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					config.PreferAvailabilityZone = testData.preferZone
 					config.MinimizeIngesterRequests = testData.minimizeIngesterRequests
 				},
-			}
-
-			// Detect the number of partitions from test scenario.
-			for _, zone := range testData.ingesterStateByZone {
-				cfg.ingestStoragePartitions = util_math.Max(cfg.ingestStoragePartitions, int32(util_math.Max(zone.numIngesters, len(zone.states))))
 			}
 
 			distributors, ingesters, distributorRegistries, _ := prepare(t, cfg)

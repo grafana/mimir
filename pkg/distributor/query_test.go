@@ -114,7 +114,6 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 
 					if ingestStorageEnabled {
 						testConfig.ingestStorageEnabled = true
-						testConfig.ingestStoragePartitions = numIngesters
 						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
 					} else {
 						testConfig.shuffleShardSize = testData.shuffleShardSize
