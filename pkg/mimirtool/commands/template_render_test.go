@@ -30,22 +30,22 @@ func TestTemplateRender(t *testing.T) {
 		{
 			name: "testing basic message template",
 			templateOptions: TemplateRenderCmd{
-				templateFilesGlobs: []string{"testdata/template/alertmanager_template1.tmpl"},
-				templateType:       "text",
-				templateText:       `{{ template "my_message" . }}`,
-				templateData:       jsonFiles[0],
-				tenantID:           "",
+				TemplateFilesGlobs: []string{"testdata/template/alertmanager_template1.tmpl"},
+				TemplateType:       "text",
+				TemplateText:       `{{ template "my_message" . }}`,
+				TemplateData:       jsonFiles[0],
+				TenantID:           "",
 			},
 			result: `[AlertNameExample | testing_purpose | lab]`,
 		},
 		{
 			name: "testing basic description template",
 			templateOptions: TemplateRenderCmd{
-				templateFilesGlobs: []string{"testdata/template/alertmanager_template1.tmpl"},
-				templateType:       "text",
-				templateText:       `{{ template "my_description" . }}`,
-				templateData:       jsonFiles[1],
-				tenantID:           "",
+				TemplateFilesGlobs: []string{"testdata/template/alertmanager_template1.tmpl"},
+				TemplateType:       "text",
+				TemplateText:       `{{ template "my_description" . }}`,
+				TemplateData:       jsonFiles[1],
+				TenantID:           "",
 			},
 			result: `
 Alertname: AlertNameExample
@@ -62,11 +62,11 @@ Details:
 		{
 			name: "testing custom description template", // Using Specific Mimir Template function
 			templateOptions: TemplateRenderCmd{
-				templateFilesGlobs: []string{"testdata/template/alertmanager_template2.tmpl"},
-				templateType:       "text",
-				templateText:       `{{ template "my_description" . }}`,
-				templateData:       jsonFiles[2],
-				tenantID:           "",
+				TemplateFilesGlobs: []string{"testdata/template/alertmanager_template2.tmpl"},
+				TemplateType:       "text",
+				TemplateText:       `{{ template "my_description" . }}`,
+				TemplateData:       jsonFiles[2],
+				TenantID:           "",
 			},
 			result: `
 Alertname: AlertNameExample2

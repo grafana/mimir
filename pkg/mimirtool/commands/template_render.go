@@ -81,11 +81,11 @@ var defaultData = template.Data{
 
 // TemplateRenderCmd Render a given definition in a template file to standard output
 type TemplateRenderCmd struct {
-	templateFilesGlobs []string
-	templateType       string
-	templateText       string
-	templateData       *os.File
-	tenantID           string // Needed in the function WithCustomFunctions
+	TemplateFilesGlobs []string
+	TemplateType       string
+	TemplateText       string
+	TemplateData       *os.File
+	TenantID           string // Needed in the function WithCustomFunctions
 }
 
 func (cmd *TemplateRenderCmd) render(_ *kingpin.ParseContext) error {
@@ -98,21 +98,21 @@ func (cmd *TemplateRenderCmd) render(_ *kingpin.ParseContext) error {
 }
 
 func TemplateRender(cmd *TemplateRenderCmd) (string, error) {
-	tmpl, err := template.FromGlobs(cmd.templateFilesGlobs, mimiram.WithCustomFunctions(cmd.tenantID))
+	tmpl, err := template.FromGlobs(cmd.TemplateFilesGlobs, mimiram.WithCustomFunctions(cmd.TenantID))
 	if err != nil {
 		return "", err
 	}
 
 	f := tmpl.ExecuteTextString
-	if cmd.templateType == "html" {
+	if cmd.TemplateType == "html" {
 		f = tmpl.ExecuteHTMLString
 	}
 
 	var data template.Data
-	if cmd.templateData == nil {
+	if cmd.TemplateData == nil {
 		data = defaultData
 	} else {
-		content, err := io.ReadAll(cmd.templateData)
+		content, err := io.ReadAll(cmd.TemplateData)
 		if err != nil {
 			return "", err
 		}
@@ -121,7 +121,7 @@ func TemplateRender(cmd *TemplateRenderCmd) (string, error) {
 		}
 	}
 
-	rendered, err := f(cmd.templateText, data)
+	rendered, err := f(cmd.TemplateText, data)
 	if err != nil {
 		return "", err
 	}
