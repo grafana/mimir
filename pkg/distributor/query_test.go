@@ -36,7 +36,7 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 	now := model.Now()
 
 	fixtures := []mimirpb.PreallocTimeseries{
-		// Note: it's importa to write at least a sample, otherwise the exemplar timestamp validation doesn't pass.
+		// Note: it's important to write at least a sample, otherwise the exemplar timestamp validation doesn't pass.
 		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "a"}, makeSamples(int64(now), 1), makeExemplars([]string{"trace_id", "A"}, int64(now), 0)),
 		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "b"}, makeSamples(int64(now), 2), makeExemplars([]string{"trace_id", "B"}, int64(now), 0)),
 		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "a"}, makeSamples(int64(now), 3), makeExemplars([]string{"trace_id", "C"}, int64(now), 0)),
