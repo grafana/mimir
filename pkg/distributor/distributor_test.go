@@ -3067,6 +3067,22 @@ func TestDistributor_UserStats(t *testing.T) {
 			// in the estimation. The actual estimation is computed as: (3 series * 5 ingesters) / 3 RF = 5.
 			expectedSeries: 5,
 		},
+		"single zone, 6 ingesters, 2 ingesters in LEAVING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 6, happyIngesters: 6, ringStates: []ring.InstanceState{ring.LEAVING, ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+				},
+			},
+			expectedErr: ring.ErrTooManyUnhealthyInstances,
+		},
 		"single zone, 6 ingesters, 1 ingester is UNHEALTHY": {
 			ingesterStateByZone: map[string]ingesterZoneState{
 				"single-zone": {numIngesters: 6, happyIngesters: 5},
@@ -3250,6 +3266,29 @@ func TestDistributor_UserStats(t *testing.T) {
 				},
 			},
 			expectedErr: errFail,
+		},
+		"multi zone, 6 ingesters, 1 LEAVING ingester per zone, but the LEAVING ingesters are not part of tenant's shard": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.ACTIVE, ring.LEAVING}},
+				"zone-b": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.ACTIVE, ring.LEAVING}},
+				"zone-c": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.ACTIVE, ring.LEAVING}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6", "series_7"), // Not belonging to tenant's shard.
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6", "series_7"), // Not belonging to tenant's shard.
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6", "series_7"), // Not belonging to tenant's shard.
+				},
+			},
+			shardSize:      1, // Tenant's shard made of: ingester-zone-a-0, ingester-zone-b-0 and ingester-zone-c-0.
+			expectedSeries: 5,
 		},
 		"multi zone, 6 ingesters, 1 UNHEALTHY ingester per zone, but the UNHEALTHY ingesters are not part of tenant's shard": {
 			ingesterStateByZone: map[string]ingesterZoneState{
