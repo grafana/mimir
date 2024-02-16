@@ -187,7 +187,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, params) })
+	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, r.Header.Get("User-Agent"), params) })
 	defer f.at.Delete(activityIndex)
 
 	startTime := time.Now()
@@ -427,7 +427,7 @@ func statsValue(name string, d time.Duration) string {
 	return name + ";dur=" + durationInMs
 }
 
-func httpRequestActivity(request *http.Request, requestParams url.Values) string {
+func httpRequestActivity(request *http.Request, userAgent string, requestParams url.Values) string {
 	tenantID := "(unknown)"
 	if tenantIDs, err := tenant.TenantIDs(request.Context()); err == nil {
 		tenantID = tenant.JoinTenantIDs(tenantIDs)
@@ -439,5 +439,5 @@ func httpRequestActivity(request *http.Request, requestParams url.Values) string
 	}
 
 	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
-	return strings.Join([]string{tenantID, request.Method, request.URL.Path, params}, " ")
+	return fmt.Sprintf("user:%s UA:%s req:%s %s %s", tenantID, userAgent, request.Method, request.URL.Path, params)
 }
