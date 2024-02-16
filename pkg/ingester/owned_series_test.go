@@ -33,6 +33,8 @@ const ownedServiceTestUser = "test-user"
 const ownedServiceSeriesCount = 10
 const ownedServiceTestUserSeriesLimit = 10000
 
+const ringHeartbeatPeriod = 100 * time.Millisecond
+
 type ownedSeriesTestContext struct {
 	seriesToWrite []series
 	seriesTokens  []uint32
@@ -206,7 +208,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 2, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -224,7 +226,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.removeSecondIngester(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 1, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 1, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -260,7 +262,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 2, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -278,7 +280,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.removeSecondIngester(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 1, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 1, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -313,7 +315,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 2, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -326,7 +328,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.removeSecondIngester(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 1, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 1, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -353,7 +355,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 2, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -388,7 +390,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 2, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -428,7 +430,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 2, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -502,7 +504,7 @@ func TestOwnedSeriesService(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 2, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -590,7 +592,7 @@ func TestOwnedSeriesService(t *testing.T) {
 			cfg.IngesterRing.ZoneAwarenessEnabled = true
 			cfg.IngesterRing.InstanceZone = "zone"
 			cfg.IngesterRing.ReplicationFactor = 1 // Currently we require RF=number of zones, and we will only work with single zone.
-			cfg.IngesterRing.HeartbeatPeriod = 100 * time.Millisecond
+			cfg.IngesterRing.HeartbeatPeriod = ringHeartbeatPeriod
 
 			// Start the ring watching. We need watcher to be running when we're doing ring updates, otherwise our update-and-watch function will fail.
 			rng, err := ring.New(cfg.IngesterRing.ToRingConfig(), "ingester", IngesterRingKey, log.NewNopLogger(), nil)
@@ -615,7 +617,7 @@ func TestOwnedSeriesService(t *testing.T) {
 			c.ing = setupIngesterWithOverrides(t, cfg, overrides, nil) // no need to pass the ring -- we'll test a completely separate OSS
 
 			// wait for the ingester lifecycler to sync the initial ring
-			test.Poll(t, 2*time.Second, 1, func() interface{} {
+			test.Poll(t, 2*ringHeartbeatPeriod, 1, func() interface{} {
 				return c.ing.lifecycler.InstancesCount()
 			})
 
@@ -743,7 +745,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				})
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 2, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -760,7 +762,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				})
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 1, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 1, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -791,7 +793,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				})
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 2, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 2, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -808,7 +810,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				})
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, 1, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, 1, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -977,7 +979,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 					ingesterCount += 4
 
 					// wait for the ingester to see the updated ring
-					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+					test.Poll(t, 2*ringHeartbeatPeriod, ingesterCount, func() interface{} {
 						return c.ing.lifecycler.InstancesCount()
 					})
 
@@ -1000,7 +1002,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 					ingesterCount -= 4
 
 					// wait for the ingester to see the updated ring
-					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+					test.Poll(t, 2*ringHeartbeatPeriod, ingesterCount, func() interface{} {
 						return c.ing.lifecycler.InstancesCount()
 					})
 
@@ -1041,7 +1043,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				ingesterCount += 4
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, ingesterCount, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -1063,7 +1065,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 					ingesterCount += 4
 
 					// wait for the ingester to see the updated ring
-					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+					test.Poll(t, 2*ringHeartbeatPeriod, ingesterCount, func() interface{} {
 						return c.ing.lifecycler.InstancesCount()
 					})
 
@@ -1085,7 +1087,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				ingesterCount -= 4
 
 				// wait for the ingester to see the updated ring
-				test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+				test.Poll(t, 2*ringHeartbeatPeriod, ingesterCount, func() interface{} {
 					return c.ing.lifecycler.InstancesCount()
 				})
 
@@ -1108,7 +1110,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 					ingesterCount -= 4
 
 					// wait for the ingester to see the updated ring
-					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+					test.Poll(t, 2*ringHeartbeatPeriod, ingesterCount, func() interface{} {
 						return c.ing.lifecycler.InstancesCount()
 					})
 
@@ -1130,7 +1132,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			cfg.IngesterRing.ZoneAwarenessEnabled = true
 			cfg.IngesterRing.InstanceZone = "zone-1"
 			cfg.IngesterRing.ReplicationFactor = tc.numZones // RF needs to equal number of zones
-			cfg.IngesterRing.HeartbeatPeriod = 100 * time.Millisecond
+			cfg.IngesterRing.HeartbeatPeriod = ringHeartbeatPeriod
 			cfg.UpdateIngesterOwnedSeries = true
 			cfg.UseIngesterOwnedSeriesForLimits = true
 
@@ -1165,7 +1167,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			c.ing = setupIngesterWithOverrides(t, cfg, overrides, rng)
 
 			// wait for the ingester lifecycler to sync the initial ring
-			test.Poll(t, 2*time.Second, tc.numZones*tc.startingIngestersPerZone, func() interface{} {
+			test.Poll(t, 2*ringHeartbeatPeriod, tc.numZones*tc.startingIngestersPerZone, func() interface{} {
 				return c.ing.lifecycler.InstancesCount()
 			})
 
