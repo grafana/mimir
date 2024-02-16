@@ -2306,11 +2306,9 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 	}
 
 	var (
-		req          = &ingester_client.UserStatsRequest{CountMethod: ingesterCountMethod}
-		quorumConfig = d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
-
-		responsesByReplicationSetMx = sync.Mutex{}
-		responsesByReplicationSet   = make(map[int][]zonedUserStatsResponse, len(replicationSets))
+		req                       = &ingester_client.UserStatsRequest{CountMethod: ingesterCountMethod}
+		quorumConfig              = d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
+		responsesByReplicationSet = make([][]zonedUserStatsResponse, len(replicationSets))
 	)
 
 	// Fetch user stats from each ingester and collect responses by ReplicationSet.
@@ -2341,10 +2339,9 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 			return err
 		}
 
-		// Collect the response.
-		responsesByReplicationSetMx.Lock()
+		// Collect the response. No need to lock around responsesByReplicationSetMx access because each goroutine
+		// accesses a different index.
 		responsesByReplicationSet[replicationSetIdx] = resps
-		responsesByReplicationSetMx.Unlock()
 
 		return nil
 	})
@@ -2353,13 +2350,10 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 		return nil, err
 	}
 
-	// We need to take the lock because the ring.DoUntilQuorum() returns as soon as quorum is reached
-	// but there's no guarantee that once it returns there are no in-flight callback functions.
-	responsesByReplicationSetMx.Lock()
-	defer responsesByReplicationSetMx.Unlock()
-
 	totalStats := &UserStats{}
 
+	// If we reach this point it's guaranteed no error occurred in concurrency.ForEachJob() and so all jobs have been
+	// processed and there are no more goroutines accessing responsesByReplicationSet.
 	for replicationSetIdx, resps := range responsesByReplicationSet {
 		var (
 			replicationSet        = replicationSets[replicationSetIdx]
