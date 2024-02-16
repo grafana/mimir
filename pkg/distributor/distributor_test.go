@@ -2379,20 +2379,29 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 				t.Run(scenarioName, func(t *testing.T) {
 					t.Parallel()
 
-					// Create distributor and ingesters.
-					limits := prepareDefaultLimits()
-					limits.ActiveSeriesResultsMaxSizeBytes = responseSizeLimitBytes
-					distributors, ingesters, _, _ := prepare(t, prepConfig{
+					testConfig := prepConfig{
 						numIngesters:         numIngesters,
 						happyIngesters:       numIngesters,
 						numDistributors:      1,
-						shuffleShardSize:     testData.shuffleShardSize,
-						limits:               limits,
 						ingestStorageEnabled: scenarioData.ingestStorageEnabled,
 						configure: func(config *Config) {
 							config.MinimizeIngesterRequests = scenarioData.minimizeIngesterRequests
 						},
-					})
+						limits: func() *validation.Limits {
+							limits := prepareDefaultLimits()
+							limits.ActiveSeriesResultsMaxSizeBytes = responseSizeLimitBytes
+							return limits
+						}(),
+					}
+
+					if scenarioData.ingestStorageEnabled {
+						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+					} else {
+						testConfig.shuffleShardSize = testData.shuffleShardSize
+					}
+
+					// Create distributor and ingesters.
+					distributors, ingesters, _, _ := prepare(t, testConfig)
 					d := distributors[0]
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
