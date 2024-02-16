@@ -101,12 +101,7 @@ func durationByBlock(text *textproto.Reader) (map[string]time.Duration, error) {
 			return nil, fmt.Errorf("cannot parse block duration: %s: %w", parts[4], err)
 		}
 
-		duration = duration.Round(time.Minute)
-		if duration < time.Hour {
-			fmt.Printf("DURATION: %s\n", duration)
-		}
-
-
+		duration = duration.Round(time.Hour)
 		byBlock[block] = duration
 	}
 
