@@ -45,6 +45,8 @@ var (
 	errStreamClosed = cancellation.NewErrorf("stream closed")
 )
 
+// QueryExemplars returns exemplars with timestamp between from and to, for the series matching the input series
+// label matchers. The exemplars in the response are sorted by series labels.
 func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*ingester_client.ExemplarQueryResponse, error) {
 	var result *ingester_client.ExemplarQueryResponse
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryExemplars", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
@@ -53,17 +55,19 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 			return err
 		}
 
-		// We ask for all ingesters without passing matchers because exemplar queries take in an array of label matchers.
-		//nolint:staticcheck
-		replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
+		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 		if err != nil {
 			return err
 		}
 
-		result, err = d.queryIngestersExemplars(ctx, replicationSet, req)
+		results, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.ExemplarQueryResponse, error) {
+			return client.QueryExemplars(ctx, req)
+		})
 		if err != nil {
 			return err
 		}
+
+		result = mergeExemplarQueryResponses(results)
 
 		if s := opentracing.SpanFromContext(ctx); s != nil {
 			s.LogKV("series", len(result.Timeseries))
@@ -135,7 +139,6 @@ func (d *Distributor) getIngesterReplicationSetForQuery(ctx context.Context) (ri
 // that must be queried for a read operation.
 //
 // If multiple ring.ReplicationSets are returned, each must be queried separately, and results merged.
-// getIngesterReplicationSetForQuery returns exactly one replication set if ingest storage is disabled.
 func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([]ring.ReplicationSet, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -197,21 +200,6 @@ func mergeExemplarSets(a, b []mimirpb.Exemplar) []mimirpb.Exemplar {
 	result = append(result, a[i:]...)
 	result = append(result, b[j:]...)
 	return result
-}
-
-// queryIngestersExemplars queries the ingesters for exemplars.
-func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.ExemplarQueryRequest) (*ingester_client.ExemplarQueryResponse, error) {
-	// Fetch exemplars from multiple ingesters in parallel, using the replicationSet
-	// to deal with consistency.
-
-	results, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.ExemplarQueryResponse, error) {
-		return client.QueryExemplars(ctx, req)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return mergeExemplarQueryResponses(results), nil
 }
 
 func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryResponse) *ingester_client.ExemplarQueryResponse {

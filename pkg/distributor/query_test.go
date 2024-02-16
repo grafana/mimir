@@ -25,9 +25,145 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
+
+func TestDistributor_QueryExemplars(t *testing.T) {
+	const numIngesters = 5
+
+	now := model.Now()
+
+	fixtures := []mimirpb.PreallocTimeseries{
+		// Note: it's important to write at least a sample, otherwise the exemplar timestamp validation doesn't pass.
+		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "a"}, makeSamples(int64(now), 1), makeExemplars([]string{"trace_id", "A"}, int64(now), 0)),
+		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "b"}, makeSamples(int64(now), 2), makeExemplars([]string{"trace_id", "B"}, int64(now), 0)),
+		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "a"}, makeSamples(int64(now), 3), makeExemplars([]string{"trace_id", "C"}, int64(now), 0)),
+		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "b"}, makeSamples(int64(now), 4), makeExemplars([]string{"trace_id", "D"}, int64(now), 0)),
+	}
+
+	tests := map[string]struct {
+		shuffleShardSize  int
+		multiMatchers     [][]*labels.Matcher
+		maxSeriesPerQuery int
+		expectedResult    []mimirpb.TimeSeries
+		expectedIngesters int
+		expectedErr       error
+	}{
+		"should return an empty response if no series match": {
+			multiMatchers: [][]*labels.Matcher{
+				{mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown")},
+			},
+			expectedResult:    []mimirpb.TimeSeries{},
+			expectedIngesters: numIngesters,
+		},
+		"should filter series by single matcher": {
+			multiMatchers: [][]*labels.Matcher{
+				{mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "series_1")},
+			},
+			expectedResult: []mimirpb.TimeSeries{
+				{Labels: fixtures[0].Labels, Exemplars: fixtures[0].Exemplars},
+				{Labels: fixtures[1].Labels, Exemplars: fixtures[1].Exemplars},
+			},
+			expectedIngesters: numIngesters,
+		},
+		"should filter metrics by multiple matchers": {
+			multiMatchers: [][]*labels.Matcher{
+				{mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "series_1"), mustNewMatcher(labels.MatchEqual, "namespace", "a")},
+			},
+			expectedResult: []mimirpb.TimeSeries{
+				{Labels: fixtures[0].Labels, Exemplars: fixtures[0].Exemplars},
+			},
+			expectedIngesters: numIngesters,
+		},
+		"should query only ingesters belonging to tenant's shard if shuffle shard size is set": {
+			multiMatchers: [][]*labels.Matcher{
+				{mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "series_1")},
+			},
+			expectedResult: []mimirpb.TimeSeries{
+				{Labels: fixtures[0].Labels, Exemplars: fixtures[0].Exemplars},
+				{Labels: fixtures[1].Labels, Exemplars: fixtures[1].Exemplars},
+			},
+			shuffleShardSize:  3,
+			expectedIngesters: 3,
+		},
+	}
+
+	for testName, testData := range tests {
+		testData := testData
+
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
+
+				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
+
+					testConfig := prepConfig{
+						numIngesters:    numIngesters,
+						happyIngesters:  numIngesters,
+						numDistributors: 1,
+						limits:          prepareDefaultLimits(),
+					}
+
+					// Enable exemplars ingestion.
+					testConfig.limits.MaxGlobalExemplarsPerUser = 1000
+
+					if ingestStorageEnabled {
+						testConfig.ingestStorageEnabled = true
+						testConfig.ingestStoragePartitions = numIngesters
+						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+					} else {
+						testConfig.shuffleShardSize = testData.shuffleShardSize
+					}
+
+					// Create distributor
+					ds, ingesters, _, _ := prepare(t, testConfig)
+
+					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+					ctx := user.InjectOrgID(context.Background(), "test")
+					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+					// Push fixtures.
+					for _, series := range fixtures {
+						// Clone the series so that it's safe to be reused.
+						clonedSeries, err := clonePreallocTimeseries(series)
+						require.NoError(t, err)
+
+						_, err = ds[0].Push(ctx, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{clonedSeries}})
+						require.NoError(t, err)
+					}
+
+					// Query exemplars.
+					res, err := ds[0].QueryExemplars(ctx, now, now, testData.multiMatchers...)
+					if testData.expectedErr != nil {
+						require.ErrorIs(t, err, testData.expectedErr)
+						return
+					}
+
+					require.NoError(t, err)
+					assert.Equal(t, testData.expectedResult, res.Timeseries)
+
+					// Check how many ingesters have been queried.
+					if ingestStorageEnabled {
+						// When ingest storage is enabled, we request quorum 1 for each partition.
+						// In this test each ingester owns a different partition, so we expect all
+						// ingesters to be queried.
+						assert.Equal(t, testData.expectedIngesters, countMockIngestersCalled(ingesters, "QueryExemplars"))
+					} else {
+						// Due to the quorum the distributor could cancel the last request towards ingesters
+						// if all other ones are successful, so we're good either has been queried X or X-1
+						// ingesters.
+						assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "QueryExemplars"))
+					}
+				})
+			}
+		})
+	}
+}
 
 func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReached(t *testing.T) {
 	const limit = 30 // Chunks are duplicated due to replication factor.

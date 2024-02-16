@@ -57,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -1553,10 +1554,6 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 				assert.Nil(t, resp)
 				checkGRPCError(t, tc.expectedErr, expectedDetails, err)
 			}
-
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
-			})
 		})
 	}
 }
@@ -2228,43 +2225,74 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
-			now := model.Now()
+			t.Parallel()
 
-			// Create distributor
-			ds, ingesters, _, _ := prepare(t, prepConfig{
-				numIngesters:     numIngesters,
-				happyIngesters:   numIngesters,
-				numDistributors:  1,
-				shuffleShardSize: testData.shuffleShardSize,
-			})
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
 
-			// Push fixtures
-			ctx := user.InjectOrgID(context.Background(), "test")
+				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
 
-			for _, series := range fixtures {
-				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := ds[0].Push(ctx, req)
-				require.NoError(t, err)
+					now := model.Now()
+
+					testConfig := prepConfig{
+						numIngesters:    numIngesters,
+						happyIngesters:  numIngesters,
+						numDistributors: 1,
+					}
+
+					if ingestStorageEnabled {
+						testConfig.ingestStorageEnabled = true
+						testConfig.ingestStoragePartitions = numIngesters
+						testConfig.limits = prepareDefaultLimits()
+						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+					} else {
+						testConfig.shuffleShardSize = testData.shuffleShardSize
+					}
+
+					// Create distributor
+					ds, ingesters, _, _ := prepare(t, testConfig)
+
+					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+					ctx := user.InjectOrgID(context.Background(), "test")
+					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+					// Push fixtures
+					for _, series := range fixtures {
+						req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+						_, err := ds[0].Push(ctx, req)
+						require.NoError(t, err)
+					}
+
+					// Set up limiter
+					ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(testData.maxSeriesPerQuery, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+
+					metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.matchers...)
+					if testData.expectedError != nil {
+						require.ErrorIs(t, err, testData.expectedError)
+						return
+					}
+
+					require.NoError(t, err)
+					assert.ElementsMatch(t, testData.expectedResult, metrics)
+
+					// Check how many ingesters have been queried.
+					if ingestStorageEnabled {
+						// When ingest storage is enabled, we request quorum 1 for each partition.
+						// In this test each ingester owns a different partition, so we expect all
+						// ingesters to be queried.
+						assert.Equal(t, testData.expectedIngesters, countMockIngestersCalled(ingesters, "MetricsForLabelMatchers"))
+					} else {
+						// Due to the quorum the distributor could cancel the last request towards ingesters
+						// if all other ones are successful, so we're good either has been queried X or X-1
+						// ingesters.
+						assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "MetricsForLabelMatchers"))
+					}
+				})
 			}
-
-			// Set up limiter
-			ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(testData.maxSeriesPerQuery, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
-
-			metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.matchers...)
-			if testData.expectedError != nil {
-				require.ErrorIs(t, err, testData.expectedError)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.ElementsMatch(t, testData.expectedResult, metrics)
-
-			// Check how many ingesters have been queried.
-			// Due to the quorum the distributor could cancel the last request towards ingesters
-			// if all other ones are successful, so we're good either has been queried X or X-1
-			// ingesters.
-			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "MetricsForLabelMatchers"))
 		})
 	}
 }
@@ -2461,35 +2489,67 @@ func TestDistributor_LabelNames(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
-			now := model.Now()
+			t.Parallel()
 
-			// Create distributor
-			ds, ingesters, _, _ := prepare(t, prepConfig{
-				numIngesters:     numIngesters,
-				happyIngesters:   numIngesters,
-				numDistributors:  1,
-				shuffleShardSize: testData.shuffleShardSize,
-			})
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
 
-			// Push fixtures
-			ctx := user.InjectOrgID(context.Background(), "test")
+				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
 
-			for _, series := range fixtures {
-				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := ds[0].Push(ctx, req)
-				require.NoError(t, err)
+					now := model.Now()
+
+					testConfig := prepConfig{
+						numIngesters:    numIngesters,
+						happyIngesters:  numIngesters,
+						numDistributors: 1,
+					}
+
+					if ingestStorageEnabled {
+						testConfig.ingestStorageEnabled = true
+						testConfig.ingestStoragePartitions = numIngesters
+
+						testConfig.limits = prepareDefaultLimits()
+						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+					} else {
+						testConfig.shuffleShardSize = testData.shuffleShardSize
+					}
+
+					// Create distributor
+					ds, ingesters, _, _ := prepare(t, testConfig)
+
+					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+					ctx := user.InjectOrgID(context.Background(), "test")
+					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+					// Push fixtures
+					for _, series := range fixtures {
+						req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+						_, err := ds[0].Push(ctx, req)
+						require.NoError(t, err)
+					}
+
+					names, err := ds[0].LabelNames(ctx, now, now, testData.matchers...)
+					require.NoError(t, err)
+					assert.ElementsMatch(t, testData.expectedResult, names)
+
+					// Check how many ingesters have been queried.
+					if ingestStorageEnabled {
+						// When ingest storage is enabled, we request quorum 1 for each partition.
+						// In this test each ingester owns a different partition, so we expect all
+						// ingesters to be queried.
+						assert.Equal(t, testData.expectedIngesters, countMockIngestersCalled(ingesters, "LabelNames"))
+					} else {
+						// Due to the quorum the distributor could cancel the last request towards ingesters
+						// if all other ones are successful, so we're good either has been queried X or X-1
+						// ingesters.
+						assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "LabelNames"))
+					}
+				})
 			}
-
-			names, err := ds[0].LabelNames(ctx, now, now, testData.matchers...)
-			require.NoError(t, err)
-			assert.ElementsMatch(t, testData.expectedResult, names)
-
-			// Check how many ingesters have been queried.
-			// Due to the quorum the distributor could cancel the last request towards ingesters
-			// if all other ones are successful, so we're good either has been queried X or X-1
-			// ingesters.
-			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "LabelNames"))
 		})
 	}
 }
@@ -2512,44 +2572,74 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
-			// Create distributor
-			ds, _, _, _ := prepare(t, prepConfig{
-				numIngesters:     numIngesters,
-				happyIngesters:   numIngesters,
-				numDistributors:  1,
-				shuffleShardSize: testData.shuffleShardSize,
-				limits:           nil,
-			})
+			t.Parallel()
 
-			// Push metadata
-			ctx := user.InjectOrgID(context.Background(), "test")
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
 
-			req := makeWriteRequest(0, 0, 10, false, true, "foo")
-			_, err := ds[0].Push(ctx, req)
-			require.NoError(t, err)
+				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
 
-			// Check how many ingesters are queried as part of the shuffle sharding subring.
-			//nolint:staticcheck
-			replicationSet, err := ds[0].getIngesterReplicationSetForQuery(ctx)
-			require.NoError(t, err)
-			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
+					testConfig := prepConfig{
+						numIngesters:    numIngesters,
+						happyIngesters:  numIngesters,
+						numDistributors: 1,
+					}
 
-			// Assert on metric metadata
-			metadata, err := ds[0].MetricsMetadata(ctx, client.DefaultMetricsMetadataRequest())
-			require.NoError(t, err)
+					if ingestStorageEnabled {
+						testConfig.ingestStorageEnabled = true
+						testConfig.ingestStoragePartitions = numIngesters
+						testConfig.limits = prepareDefaultLimits()
+						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+					} else {
+						testConfig.shuffleShardSize = testData.shuffleShardSize
+					}
 
-			expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))
-			for _, m := range req.Metadata {
-				expectedMetadata = append(expectedMetadata, scrape.MetricMetadata{
-					Metric: m.MetricFamilyName,
-					Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
-					Help:   m.Help,
-					Unit:   m.Unit,
+					// Create distributor
+					ds, ingesters, _, _ := prepare(t, testConfig)
+
+					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+					ctx := user.InjectOrgID(context.Background(), "test")
+					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+					// Push metadata
+					req := makeWriteRequest(0, 0, 10, false, true, "foo")
+					_, err := ds[0].Push(ctx, req)
+					require.NoError(t, err)
+
+					// Assert on metric metadata
+					metadata, err := ds[0].MetricsMetadata(ctx, client.DefaultMetricsMetadataRequest())
+					require.NoError(t, err)
+
+					expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))
+					for _, m := range req.Metadata {
+						expectedMetadata = append(expectedMetadata, scrape.MetricMetadata{
+							Metric: m.MetricFamilyName,
+							Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
+							Help:   m.Help,
+							Unit:   m.Unit,
+						})
+					}
+
+					assert.ElementsMatch(t, metadata, expectedMetadata)
+
+					// Check how many ingesters have been queried.
+					if ingestStorageEnabled {
+						// When ingest storage is enabled, we request quorum 1 for each partition.
+						// In this test each ingester owns a different partition, so we expect all
+						// ingesters to be queried.
+						assert.Equal(t, testData.expectedIngesters, countMockIngestersCalled(ingesters, "MetricsMetadata"))
+					} else {
+						// Due to the quorum the distributor could cancel the last request towards ingesters
+						// if all other ones are successful, so we're good either has been queried X or X-1
+						// ingesters.
+						assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "MetricsMetadata"))
+					}
 				})
 			}
-
-			assert.ElementsMatch(t, metadata, expectedMetadata)
 		})
 	}
 }
@@ -2578,35 +2668,50 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 		},
 	}
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
-			ctx := user.InjectOrgID(context.Background(), "label-names-values")
+			t.Parallel()
 
-			// Create distributor
-			limits := validation.Limits{}
-			flagext.DefaultValues(&limits)
-			limits.LabelNamesAndValuesResultsMaxSizeBytes = testData.sizeLimitBytes
-			ds, _, _, _ := prepare(t, prepConfig{
-				numIngesters:    3,
-				happyIngesters:  3,
-				numDistributors: 1,
-				limits:          &limits,
-			})
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
-			})
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
 
-			// Push fixtures
-			for _, series := range fixtures {
-				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := ds[0].Push(ctx, req)
-				require.NoError(t, err)
-			}
+				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
 
-			_, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
-			if len(testData.expectedError) == 0 {
-				require.NoError(t, err)
-			} else {
-				require.EqualError(t, err, testData.expectedError)
+					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+					ctx := user.InjectOrgID(context.Background(), "label-names-values")
+					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+					// Create distributor
+					limits := validation.Limits{}
+					flagext.DefaultValues(&limits)
+					limits.LabelNamesAndValuesResultsMaxSizeBytes = testData.sizeLimitBytes
+					ds, _, _, _ := prepare(t, prepConfig{
+						numIngesters:    3,
+						happyIngesters:  3,
+						numDistributors: 1,
+						limits:          &limits,
+
+						// Ingest storage config is ignored when disabled.
+						ingestStorageEnabled:    ingestStorageEnabled,
+						ingestStoragePartitions: 3,
+					})
+
+					// Push fixtures
+					for _, series := range fixtures {
+						req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+						_, err := ds[0].Push(ctx, req)
+						require.NoError(t, err)
+					}
+
+					_, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
+					if len(testData.expectedError) == 0 {
+						require.NoError(t, err)
+					} else {
+						require.EqualError(t, err, testData.expectedError)
+					}
+				})
 			}
 		})
 	}
@@ -2646,30 +2751,45 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 	}
 
 	for testName, testCase := range tests {
+		testCase := testCase
+
 		t.Run(testName, func(t *testing.T) {
-			ctx := user.InjectOrgID(context.Background(), "label-names-values")
+			t.Parallel()
 
-			// Create distributor
-			ds, _, _, _ := prepare(t, prepConfig{
-				numIngesters:      12,
-				happyIngesters:    12,
-				numDistributors:   1,
-				replicationFactor: 3,
-			})
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
-			})
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
 
-			// Push fixtures
-			for _, series := range fixtures {
-				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := ds[0].Push(ctx, req)
-				require.NoError(t, err)
+				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
+
+					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+					ctx := user.InjectOrgID(context.Background(), "label-names-values")
+					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+					// Create distributor
+					ds, _, _, _ := prepare(t, prepConfig{
+						numIngesters:      12,
+						happyIngesters:    12,
+						numDistributors:   1,
+						replicationFactor: 3,
+
+						// Ingest storage config is ignored when disabled.
+						ingestStorageEnabled:    ingestStorageEnabled,
+						ingestStoragePartitions: 12,
+					})
+
+					// Push fixtures
+					for _, series := range fixtures {
+						req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+						_, err := ds[0].Push(ctx, req)
+						require.NoError(t, err)
+					}
+
+					response, err := ds[0].LabelValuesForLabelName(ctx, testCase.from, testCase.to, labels.MetricName, testCase.matchers...)
+					require.NoError(t, err)
+					assert.ElementsMatch(t, response, testCase.expectedLabelValues)
+				})
 			}
-
-			response, err := ds[0].LabelValuesForLabelName(ctx, testCase.from, testCase.to, labels.MetricName, testCase.matchers...)
-			require.NoError(t, err)
-			assert.ElementsMatch(t, response, testCase.expectedLabelValues)
 		})
 	}
 }
@@ -2698,58 +2818,82 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 			Values:    []string{"200", "500"},
 		},
 	}
-	tests := map[string]struct {
-		zones              []string
-		zonesResponseDelay map[string]time.Duration
-	}{
-		"should group values of labels by label name and return only distinct label values": {},
-		"should return the results if zone awareness is enabled and only 2 zones return the results": {
-			zones:              []string{"A", "B", "C"},
-			zonesResponseDelay: map[string]time.Duration{"C": 10 * time.Second},
-		},
-	}
 
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			ctx := user.InjectOrgID(context.Background(), "label-names-values")
+	t.Run("should group values of labels by label name and return only distinct label values", func(t *testing.T) {
+		for _, ingestStorageEnabled := range []bool{false, true} {
+			ingestStorageEnabled := ingestStorageEnabled
 
-			// Create distributor
-			ds, _, _, _ := prepare(t, prepConfig{
-				numIngesters:                       12,
-				happyIngesters:                     12,
-				numDistributors:                    1,
-				replicationFactor:                  3,
-				ingesterZones:                      testData.zones,
-				labelNamesStreamZonesResponseDelay: testData.zonesResponseDelay,
-			})
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
-			})
+			t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+				t.Parallel()
 
-			// Push fixtures
-			for _, series := range fixtures {
-				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := ds[0].Push(ctx, req)
+				// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+				ctx := user.InjectOrgID(context.Background(), "label-names-values")
+				ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+				// Create distributor
+				ds, _, _, _ := prepare(t, prepConfig{
+					numIngesters:            12,
+					happyIngesters:          12,
+					numDistributors:         1,
+					replicationFactor:       3,
+					ingestStorageEnabled:    ingestStorageEnabled,
+					ingestStoragePartitions: 12,
+				})
+
+				// Push fixtures
+				for _, series := range fixtures {
+					req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+					_, err := ds[0].Push(ctx, req)
+					require.NoError(t, err)
+				}
+
+				response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
 				require.NoError(t, err)
-			}
+				require.Len(t, response.Items, len(expectedLabelValues))
 
-			// Assert on metric metadata
-			timeBeforeExecution := time.Now()
-			response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
-			require.NoError(t, err)
-			if len(testData.zonesResponseDelay) > 0 {
-				executionDuration := time.Since(timeBeforeExecution)
-				require.Less(t, executionDuration, 5*time.Second, "Execution must be completed earlier than in 5 seconds")
-			}
-			require.Len(t, response.Items, len(expectedLabelValues))
+				// sort label values to make stable assertion
+				for _, item := range response.Items {
+					slices.Sort(item.Values)
+				}
+				assert.ElementsMatch(t, response.Items, expectedLabelValues)
+			})
+		}
+	})
 
-			// sort label values to make stable assertion
-			for _, item := range response.Items {
-				slices.Sort(item.Values)
-			}
-			assert.ElementsMatch(t, response.Items, expectedLabelValues)
+	t.Run("should return the results if zone awareness is enabled and only 2 zones return the results", func(t *testing.T) {
+		ctx := user.InjectOrgID(context.Background(), "label-names-values")
+		slowZoneDelay := 10 * time.Second
+
+		// Create distributor
+		ds, _, _, _ := prepare(t, prepConfig{
+			numIngesters:                       12,
+			happyIngesters:                     12,
+			numDistributors:                    1,
+			replicationFactor:                  3,
+			ingesterZones:                      []string{"A", "B", "C"},
+			labelNamesStreamZonesResponseDelay: map[string]time.Duration{"C": slowZoneDelay},
 		})
-	}
+
+		// Push fixtures
+		for _, series := range fixtures {
+			req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+			_, err := ds[0].Push(ctx, req)
+			require.NoError(t, err)
+		}
+
+		// Assert on metric metadata
+		timeBeforeExecution := time.Now()
+		response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
+		require.NoError(t, err)
+		require.Less(t, time.Since(timeBeforeExecution), slowZoneDelay/2, "Execution must be completed before the slow zone ingesters respond")
+		require.Len(t, response.Items, len(expectedLabelValues))
+
+		// sort label values to make stable assertion
+		for _, item := range response.Items {
+			slices.Sort(item.Values)
+		}
+		assert.ElementsMatch(t, response.Items, expectedLabelValues)
+	})
 }
 
 // This test asserts that distributor waits for all ingester responses to be completed even if ZoneAwareness is enabled.
@@ -2810,9 +2954,6 @@ func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []series) (cont
 			"ZONE-B": 1 * time.Second,
 			"ZONE-C": 2 * time.Second,
 		},
-	})
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
 	})
 
 	// Push fixtures
@@ -3597,6 +3738,7 @@ type prepConfig struct {
 	// Ingest storage specific configuration.
 	ingestStorageEnabled    bool
 	ingestStoragePartitions int32 // Number of partitions.
+	ingestStorageKafka      *kfake.Cluster
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -3656,18 +3798,18 @@ func (c prepConfig) validate(t testing.TB) {
 	}
 }
 
-func prepareIngesters(cfg prepConfig) []*mockIngester {
+func prepareIngesters(t testing.TB, cfg prepConfig) []*mockIngester {
 	if len(cfg.ingesterStateByZone) != 0 {
 		ingesters := []*mockIngester(nil)
 		for zone, state := range cfg.ingesterStateByZone {
-			ingesters = append(ingesters, prepareIngesterZone(zone, state, cfg)...)
+			ingesters = append(ingesters, prepareIngesterZone(t, zone, state, cfg)...)
 		}
 		return ingesters
 	}
 	ingesters := []*mockIngester(nil)
 	numZones := len(cfg.ingesterZones)
 	if numZones == 0 {
-		return prepareIngesterZone("", ingesterZoneState{numIngesters: cfg.numIngesters, happyIngesters: cfg.happyIngesters}, cfg)
+		return prepareIngesterZone(t, "", ingesterZoneState{numIngesters: cfg.numIngesters, happyIngesters: cfg.happyIngesters}, cfg)
 	}
 	for zoneIdx, zone := range cfg.ingesterZones {
 		state := ingesterZoneState{
@@ -3688,13 +3830,13 @@ func prepareIngesters(cfg prepConfig) []*mockIngester {
 			state.numIngesters++
 		}
 
-		ingesters = append(ingesters, prepareIngesterZone(zone, state, cfg)...)
+		ingesters = append(ingesters, prepareIngesterZone(t, zone, state, cfg)...)
 	}
 	return ingesters
 
 }
 
-func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) []*mockIngester {
+func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg prepConfig) []*mockIngester {
 	ingesters := []*mockIngester(nil)
 
 	if state.states == nil {
@@ -3712,7 +3854,8 @@ func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) [
 		if len(cfg.labelNamesStreamZonesResponseDelay) > 0 {
 			labelNamesStreamResponseDelay = cfg.labelNamesStreamZonesResponseDelay[zone]
 		}
-		ingesters = append(ingesters, &mockIngester{
+
+		ingester := &mockIngester{
 			id:                            i,
 			happy:                         s == ingesterStateHappy,
 			queryDelay:                    cfg.queryDelay,
@@ -3722,8 +3865,42 @@ func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) [
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
 			circuitBreakerOpen:            cfg.circuitBreakerOpen,
-		})
+		}
+
+		// Init the partition reader if the ingest storage is enabled.
+		// This is required to let each mocked ingester to consume their own partition.
+		if cfg.ingestStorageEnabled {
+			var err error
+
+			kafkaCfg := ingest.KafkaConfig{}
+			flagext.DefaultValues(&kafkaCfg)
+			kafkaCfg.Address = cfg.ingestStorageKafka.ListenAddrs()[0]
+			kafkaCfg.Topic = kafkaTopic
+			kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
+			kafkaCfg.LastProducedOffsetRetryTimeout = 100 * time.Millisecond
+
+			ingester.partitionReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, ingester.partitionID(), ingester.instanceID(), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
+			require.NoError(t, err)
+
+			// We start it async, and then we wait until running in a defer so that multiple partition
+			// readers will be started concurrently.
+			require.NoError(t, ingester.partitionReader.StartAsync(context.Background()))
+
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester.partitionReader))
+			})
+		}
+
+		ingesters = append(ingesters, ingester)
 	}
+
+	// Wait until all partition readers have started.
+	if cfg.ingestStorageEnabled {
+		for _, ingester := range ingesters {
+			require.NoError(t, ingester.partitionReader.AwaitRunning(context.Background()))
+		}
+	}
+
 	return ingesters
 }
 
@@ -3779,10 +3956,19 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 	cfg.validate(t)
 
 	logger := log.NewNopLogger()
-	ingesters := prepareIngesters(cfg)
+
+	// Init a fake Kafka cluster if ingest storage is enabled.
+	if cfg.ingestStorageEnabled && cfg.ingestStorageKafka == nil {
+		cfg.ingestStorageKafka, _ = testkafka.CreateCluster(t, cfg.ingestStoragePartitions, kafkaTopic)
+	}
+
+	// Create the mocked ingesters.
+	ingesters := prepareIngesters(t, cfg)
+
 	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
+	// Add ingesters to the ring.
 	err := kvStore.CAS(ctx, ingester.IngesterRingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			return prepareRingInstances(cfg, ingesters), true, nil
@@ -3815,6 +4001,8 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		return ingestersRing.InstancesCount()
 	})
 
+	// Mock the ingester clients pool in order to return our mocked ingester instance instead of a
+	// real gRPC client.
 	factory := ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
 		for _, ing := range ingesters {
 			if ing.address() == inst.Addr {
@@ -3824,14 +4012,9 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		return nil, fmt.Errorf("ingester with address %s not found", inst.Addr)
 	})
 
-	// Initialize the ingest storage backend.
+	// Initialize the ingest storage's partitions ring.
 	var partitionsRing *ring.PartitionInstanceRing
-	var kafkaCluster *kfake.Cluster
-
 	if cfg.ingestStorageEnabled {
-		// Init a fake Kafka cluster.
-		kafkaCluster, _ = testkafka.CreateCluster(t, cfg.ingestStoragePartitions, kafkaTopic)
-
 		// Init the partitions ring.
 		partitionsStore := kvStore.WithCodec(ring.GetPartitionRingCodec())
 		require.NoError(t, partitionsStore.CAS(ctx, ingester.PartitionRingKey, func(_ interface{}) (interface{}, bool, error) {
@@ -3867,7 +4050,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		ingestCfg.Enabled = cfg.ingestStorageEnabled
 		if cfg.ingestStorageEnabled {
 			ingestCfg.KafkaConfig.Topic = kafkaTopic
-			ingestCfg.KafkaConfig.Address = kafkaCluster.ListenAddrs()[0]
+			ingestCfg.KafkaConfig.Address = cfg.ingestStorageKafka.ListenAddrs()[0]
 			ingestCfg.KafkaConfig.LastProducedOffsetPollInterval = 100 * time.Millisecond
 		}
 
@@ -3927,7 +4110,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		populateIngestersData(t, ingesters, cfg.ingesterDataByZone, cfg.ingesterDataTenantID)
 	}
 
-	return distributors, ingesters, distributorRegistries, kafkaCluster
+	return distributors, ingesters, distributorRegistries, cfg.ingestStorageKafka
 }
 
 func populateIngestersData(t testing.TB, ingesters []*mockIngester, dataPerZone map[string][]*mimirpb.WriteRequest, tenantID string) {
@@ -4279,6 +4462,10 @@ type mockIngester struct {
 	tokens                        []uint32
 	id                            int
 	circuitBreakerOpen            bool
+
+	// partitionReader is responsible to consume a partition from Kafka when the
+	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
+	partitionReader *ingest.PartitionReader
 }
 
 func (i *mockIngester) instanceID() string {
@@ -4356,25 +4543,23 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 		return nil, err
 	}
 
-	for _, series := range req.Timeseries {
+	for _, unsafeSeries := range req.Timeseries {
+		// Make a copy because the request Timeseries are reused. It's important to make a copy
+		// even if the timeseries already exists in our local map, because we may still retain
+		// some request's memory when merging exemplars.
+		series, err := clonePreallocTimeseries(unsafeSeries)
+		if err != nil {
+			return nil, err
+		}
+
 		hash := mimirpb.ShardByAllLabelAdapters(orgid, series.Labels)
 		existing, ok := i.timeseries[hash]
 		if !ok {
-			// Make a copy because the request Timeseries are reused
-			item := mimirpb.TimeSeries{
-				Labels:     make([]mimirpb.LabelAdapter, len(series.TimeSeries.Labels)),
-				Samples:    make([]mimirpb.Sample, len(series.TimeSeries.Samples)),
-				Histograms: make([]mimirpb.Histogram, len(series.TimeSeries.Histograms)),
-			}
-
-			copy(item.Labels, series.TimeSeries.Labels)
-			copy(item.Samples, series.TimeSeries.Samples)
-			copy(item.Histograms, series.TimeSeries.Histograms)
-
-			i.timeseries[hash] = &mimirpb.PreallocTimeseries{TimeSeries: &item}
+			i.timeseries[hash] = &series
 		} else {
 			existing.Samples = append(existing.Samples, series.Samples...)
 			existing.Histograms = append(existing.Histograms, series.Histograms...)
+			existing.Exemplars = append(existing.Exemplars, series.Exemplars...)
 		}
 	}
 
@@ -4403,7 +4588,11 @@ func makeWireChunk(c chunk.EncodedChunk) client.Chunk {
 	return chunk
 }
 
-func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, _ ...grpc.CallOption) (client.Ingester_QueryStreamClient, error) {
+func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest, _ ...grpc.CallOption) (client.Ingester_QueryStreamClient, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	time.Sleep(i.queryDelay)
 
 	i.Lock()
@@ -4559,7 +4748,83 @@ func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, 
 	}, nil
 }
 
-func (i *mockIngester) MetricsForLabelMatchers(_ context.Context, req *client.MetricsForLabelMatchersRequest, _ ...grpc.CallOption) (*client.MetricsForLabelMatchersResponse, error) {
+func (i *mockIngester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest, _ ...grpc.CallOption) (*client.ExemplarQueryResponse, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	i.trackCall("QueryExemplars")
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	from, through, multiMatchers, err := client.FromExemplarQueryRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &client.ExemplarQueryResponse{}
+
+	for _, series := range i.timeseries {
+		seriesMatches := false
+		seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+
+		// Check if the series matches any of the matchers in the request.
+		for _, matchers := range multiMatchers {
+			matcherMatches := true
+
+			for _, matcher := range matchers {
+				if !matcher.Matches(seriesLabels.Get(matcher.Name)) {
+					matcherMatches = false
+					break
+				}
+			}
+
+			if matcherMatches {
+				seriesMatches = true
+				break
+			}
+		}
+
+		if !seriesMatches {
+			continue
+		}
+
+		// Filter exemplars by time range.
+		var exemplars []mimirpb.Exemplar
+		for _, exemplar := range series.Exemplars {
+			if exemplar.TimestampMs >= from && exemplar.TimestampMs <= through {
+				exemplars = append(exemplars, exemplar)
+			}
+		}
+
+		if len(exemplars) > 0 {
+			res.Timeseries = append(res.Timeseries, mimirpb.TimeSeries{
+				Labels:    series.Labels,
+				Exemplars: exemplars,
+			})
+		}
+	}
+
+	// Sort series by labels because the real ingester returns sorted ones.
+	slices.SortFunc(res.Timeseries, func(a, b mimirpb.TimeSeries) int {
+		aKey := client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(a.Labels))
+		bKey := client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(b.Labels))
+		return strings.Compare(aKey, bKey)
+	})
+
+	return res, nil
+}
+
+func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest, _ ...grpc.CallOption) (*client.MetricsForLabelMatchersResponse, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -4585,7 +4850,11 @@ func (i *mockIngester) MetricsForLabelMatchers(_ context.Context, req *client.Me
 	return &response, nil
 }
 
-func (i *mockIngester) LabelValues(_ context.Context, req *client.LabelValuesRequest, _ ...grpc.CallOption) (*client.LabelValuesResponse, error) {
+func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesRequest, _ ...grpc.CallOption) (*client.LabelValuesResponse, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -4632,7 +4901,11 @@ func (i *mockIngester) LabelValues(_ context.Context, req *client.LabelValuesReq
 	return &client.LabelValuesResponse{LabelValues: response}, nil
 }
 
-func (i *mockIngester) LabelNames(_ context.Context, req *client.LabelNamesRequest, _ ...grpc.CallOption) (*client.LabelNamesResponse, error) {
+func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesRequest, _ ...grpc.CallOption) (*client.LabelNamesResponse, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -4660,7 +4933,11 @@ func (i *mockIngester) LabelNames(_ context.Context, req *client.LabelNamesReque
 	return &response, nil
 }
 
-func (i *mockIngester) MetricsMetadata(context.Context, *client.MetricsMetadataRequest, ...grpc.CallOption) (*client.MetricsMetadataResponse, error) {
+func (i *mockIngester) MetricsMetadata(ctx context.Context, _ *client.MetricsMetadataRequest, _ ...grpc.CallOption) (*client.MetricsMetadataResponse, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -4680,7 +4957,11 @@ func (i *mockIngester) MetricsMetadata(context.Context, *client.MetricsMetadataR
 	return resp, nil
 }
 
-func (i *mockIngester) LabelNamesAndValues(_ context.Context, _ *client.LabelNamesAndValuesRequest, _ ...grpc.CallOption) (client.Ingester_LabelNamesAndValuesClient, error) {
+func (i *mockIngester) LabelNamesAndValues(ctx context.Context, _ *client.LabelNamesAndValuesRequest, _ ...grpc.CallOption) (client.Ingester_LabelNamesAndValuesClient, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 	results := map[string]map[string]struct{}{}
@@ -4727,7 +5008,11 @@ func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesRespo
 	return result, nil
 }
 
-func (i *mockIngester) LabelValuesCardinality(_ context.Context, req *client.LabelValuesCardinalityRequest, _ ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
+func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.LabelValuesCardinalityRequest, _ ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -4797,7 +5082,11 @@ func (s *labelValuesCardinalityStream) Recv() (*client.LabelValuesCardinalityRes
 	return result, nil
 }
 
-func (i *mockIngester) ActiveSeries(_ context.Context, req *client.ActiveSeriesRequest, _ ...grpc.CallOption) (client.Ingester_ActiveSeriesClient, error) {
+func (i *mockIngester) ActiveSeries(ctx context.Context, req *client.ActiveSeriesRequest, _ ...grpc.CallOption) (client.Ingester_ActiveSeriesClient, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -4864,6 +5153,35 @@ func (i *mockIngester) countCalls(name string) int {
 	defer i.Unlock()
 
 	return i.calls[name]
+}
+
+func (i *mockIngester) enforceReadConsistency(ctx context.Context) error {
+	// Strong read consistency is required to be enforced only if ingest storage is enabled.
+	if i.partitionReader == nil {
+		return nil
+	}
+
+	level, ok := api.ReadConsistencyFromContext(ctx)
+	if !ok || level != api.ReadConsistencyStrong {
+		return nil
+	}
+
+	return i.partitionReader.WaitReadConsistency(ctx)
+}
+
+type mockIngesterPusherAdapter struct {
+	ingester *mockIngester
+}
+
+func newMockIngesterPusherAdapter(ingester *mockIngester) *mockIngesterPusherAdapter {
+	return &mockIngesterPusherAdapter{
+		ingester: ingester,
+	}
+}
+
+// Push implements ingest.Pusher.
+func (c *mockIngesterPusherAdapter) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+	return c.ingester.Push(ctx, req)
 }
 
 // noopIngester is a mocked ingester which does nothing.
@@ -6210,4 +6528,24 @@ func (m *mockInstanceClient) Check(_ context.Context, _ *grpc_health_v1.HealthCh
 func (m *mockInstanceClient) Push(ctx context.Context, _ *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	m.md, _ = metadata.FromOutgoingContext(ctx)
 	return nil, nil
+}
+
+func cloneTimeseries(orig *mimirpb.TimeSeries) (*mimirpb.TimeSeries, error) {
+	data, err := orig.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
+	cloned := &mimirpb.TimeSeries{}
+	err = cloned.Unmarshal(data)
+	return cloned, err
+}
+
+func clonePreallocTimeseries(orig mimirpb.PreallocTimeseries) (mimirpb.PreallocTimeseries, error) {
+	clonedSeries, err := cloneTimeseries(orig.TimeSeries)
+	if err != nil {
+		return mimirpb.PreallocTimeseries{}, err
+	}
+
+	return mimirpb.PreallocTimeseries{TimeSeries: clonedSeries}, nil
 }
