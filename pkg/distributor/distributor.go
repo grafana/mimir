@@ -1486,27 +1486,6 @@ func (d *Distributor) sendToStorage(ctx context.Context, userID string, partitio
 	return wrapPartitionPushError(err, int32(partitionID))
 }
 
-// forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
-//
-// Deprecated: use forReplicationSets() instead.
-func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSet ring.ReplicationSet, f func(context.Context, ingester_client.IngesterClient) (T, error)) ([]T, error) {
-	wrappedF := func(ctx context.Context, ing *ring.InstanceDesc) (T, error) {
-		client, err := d.ingesterPool.GetClientForInstance(*ing)
-		if err != nil {
-			var empty T
-			return empty, err
-		}
-
-		return f(ctx, client.(ingester_client.IngesterClient))
-	}
-
-	cleanup := func(_ T) {
-		// Nothing to do.
-	}
-
-	return ring.DoUntilQuorum(ctx, replicationSet, d.queryQuorumConfig(ctx, replicationSet), wrappedF, cleanup)
-}
-
 // forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.
 // Return an error if any f fails for any of the input replicationSets.
 func forReplicationSets[R any](ctx context.Context, d *Distributor, replicationSets []ring.ReplicationSet, f func(context.Context, ingester_client.IngesterClient) (R, error)) ([]R, error) {
