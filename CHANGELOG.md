@@ -170,6 +170,7 @@
 
 ### Mimirtool
 
+* [ENHANCEMENT] Add template render command to render locally a template. #7325
 * [FEATURE] Add command `migrate-utf8` to migrate Alertmanager configurations for Alertmanager versions 0.27.0 and later. #7383
 * [ENHANCEMENT] Add `--extra-headers` option to `mimirtool rules` command to add extra headers to requests for auth. #7141
 * [ENHANCEMENT] Analyze Prometheus: set tenant header. #6737

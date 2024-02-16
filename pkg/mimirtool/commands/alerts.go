@@ -103,6 +103,17 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	verifyalertCmd := alertCmd.Command("verify", "Verify Alertmanager tenant configuration and template files.").Action(a.verifyAlertmanagerConfig)
 	verifyalertCmd.Arg("config", "Alertmanager configuration to verify").Required().StringVar(&a.AlertmanagerConfigFile)
 	verifyalertCmd.Arg("template-files", "The template files to verify").ExistingFilesVar(&a.TemplateFiles)
+
+	trCmd := &TemplateRenderCmd{}
+	renderCmd := alertCmd.Command("render", "Render a given definition in a template file to standard output.").Action(trCmd.render)
+	renderCmd.Flag("template.glob", "Glob of paths that will be expanded and used for rendering.").Required().StringsVar(&trCmd.TemplateFilesGlobs)
+	renderCmd.Flag("template.text", "The template that will be rendered.").Required().StringVar(&trCmd.TemplateText)
+	renderCmd.Flag("template.type", "The type of the template. Can be either text (default) or html.").EnumVar(&trCmd.TemplateType, "html", "text")
+	renderCmd.Flag("template.data", "Full path to a file which contains the data of the alert(-s) with which the --template-text will be rendered. Must be in JSON. File must be formatted according to the following layout: https://pkg.go.dev/github.com/prometheus/alertmanager/template#Data. If none has been specified then a predefined, simple alert will be used for rendering.").FileVar(&trCmd.TemplateData)
+	renderCmd.Flag("id", "Basic auth username to use when rendering template used by the function `tenantID`, also set as tenant ID; alternatively, set "+envVars.TenantID+".").
+		Envar(envVars.TenantID).
+		Default("").
+		StringVar(&trCmd.TenantID)
 }
 
 func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext) error {

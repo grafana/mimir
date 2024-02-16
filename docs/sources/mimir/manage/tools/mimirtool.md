@@ -217,6 +217,24 @@ The following command verifies if alerts in an Alertmanager cluster are deduplic
 mimirtool alerts verify
 ```
 
+#### Render template
+
+You can render your Alertmanager template with the `render` command.
+
+The argument to the `--template.glob` option is a glob that expands to the alert template paths.
+
+The argument to the `--template.data` option is a JSON file containing Alertmanager template data.
+
+The argument to the `--template.text` option is a Go template.
+The command renders this template with the templates found be expanding `--template-glob`.
+
+The following command render a template and prints it to the terminal.
+It assumes you have written the templates to the directory `templates`.
+
+```bash
+mimirtool alertmanager render --template.glob 'templates/*' --template.data alert_data1.json --template.text '{{ template "my_message" . }}'
+```
+
 ### Rules
 
 The rules command features sub-commands for working with Prometheus rule files and with the APIs in the Grafana Mimir ruler.
