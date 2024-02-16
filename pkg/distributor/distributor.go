@@ -1507,7 +1507,8 @@ func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSe
 	return ring.DoUntilQuorum(ctx, replicationSet, d.queryQuorumConfig(ctx, replicationSet), wrappedF, cleanup)
 }
 
-// forReplicationSets runs f, in parallel, for all ingesters in the input replication sets.
+// forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.
+// Return an error if any f fails for any of the input replicationSets.
 func forReplicationSets[R any](ctx context.Context, d *Distributor, replicationSets []ring.ReplicationSet, f func(context.Context, ingester_client.IngesterClient) (R, error)) ([]R, error) {
 	wrappedF := func(ctx context.Context, ingester *ring.InstanceDesc) (R, error) {
 		client, err := d.ingesterPool.GetClientForInstance(*ingester)
@@ -1957,14 +1958,15 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 // ActiveSeries queries the ingester replication set for active series matching
 // the given selector. It combines and deduplicates the results.
 func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error) {
-	//nolint:staticcheck
-	replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if replicationSet.ZoneCount() == 1 {
-		replicationSet.MaxErrors = 0
+	// When ingest storage is disabled, if ingesters are running in a single zone we can't tolerate any errors.
+	// In this case we expect exactly 1 replication set.
+	if !d.cfg.IngestStorageConfig.Enabled && len(replicationSets) == 1 && replicationSets[0].ZoneCount() == 1 {
+		replicationSets[0].MaxErrors = 0
 	}
 
 	req, err := ingester_client.ToActiveSeriesRequest(matchers)
@@ -2031,8 +2033,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 		return ignored{}, nil
 	}
 
-	//nolint:staticcheck
-	_, err = forReplicationSet(ctx, d, replicationSet, ingesterQuery)
+	_, err = forReplicationSets(ctx, d, replicationSets, ingesterQuery)
 	if err != nil {
 		return nil, err
 	}
