@@ -519,19 +519,12 @@ func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
-					// Find the max number of ingesters in a zone. It will be used as the number of partitions.
-					numPartitions := 0
-					for _, state := range testData.ingesterStateByZone {
-						numPartitions = max(numPartitions, max(state.numIngesters, len(state.states)))
-					}
-
 					// Create distributor
 					distributors, _, _, _ := prepare(t, prepConfig{
-						numDistributors:         1,
-						ingesterStateByZone:     testData.ingesterStateByZone,
-						ingesterDataByZone:      testData.ingesterDataByZone,
-						ingestStorageEnabled:    true,
-						ingestStoragePartitions: int32(numPartitions),
+						numDistributors:      1,
+						ingesterStateByZone:  testData.ingesterStateByZone,
+						ingesterDataByZone:   testData.ingesterDataByZone,
+						ingestStorageEnabled: true,
 						configure: func(config *Config) {
 							config.PreferAvailabilityZone = preferredZone
 							config.MinimizeIngesterRequests = minimizeIngesterRequests

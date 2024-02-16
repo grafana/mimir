@@ -2246,7 +2246,6 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 
 					if ingestStorageEnabled {
 						testConfig.ingestStorageEnabled = true
-						testConfig.ingestStoragePartitions = numIngesters
 						testConfig.limits = prepareDefaultLimits()
 						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
 					} else {
@@ -2510,7 +2509,6 @@ func TestDistributor_LabelNames(t *testing.T) {
 
 					if ingestStorageEnabled {
 						testConfig.ingestStorageEnabled = true
-						testConfig.ingestStoragePartitions = numIngesters
 
 						testConfig.limits = prepareDefaultLimits()
 						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
@@ -2591,7 +2589,6 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 
 					if ingestStorageEnabled {
 						testConfig.ingestStorageEnabled = true
-						testConfig.ingestStoragePartitions = numIngesters
 						testConfig.limits = prepareDefaultLimits()
 						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
 					} else {
@@ -2688,14 +2685,11 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 					flagext.DefaultValues(&limits)
 					limits.LabelNamesAndValuesResultsMaxSizeBytes = testData.sizeLimitBytes
 					ds, _, _, _ := prepare(t, prepConfig{
-						numIngesters:    3,
-						happyIngesters:  3,
-						numDistributors: 1,
-						limits:          &limits,
-
-						// Ingest storage config is ignored when disabled.
-						ingestStorageEnabled:    ingestStorageEnabled,
-						ingestStoragePartitions: 3,
+						numIngesters:         3,
+						happyIngesters:       3,
+						numDistributors:      1,
+						limits:               &limits,
+						ingestStorageEnabled: ingestStorageEnabled,
 					})
 
 					// Push fixtures
@@ -2768,14 +2762,11 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 
 					// Create distributor
 					ds, _, _, _ := prepare(t, prepConfig{
-						numIngesters:      12,
-						happyIngesters:    12,
-						numDistributors:   1,
-						replicationFactor: 3,
-
-						// Ingest storage config is ignored when disabled.
-						ingestStorageEnabled:    ingestStorageEnabled,
-						ingestStoragePartitions: 12,
+						numIngesters:         12,
+						happyIngesters:       12,
+						numDistributors:      1,
+						replicationFactor:    3,
+						ingestStorageEnabled: ingestStorageEnabled,
 					})
 
 					// Push fixtures
@@ -2832,12 +2823,11 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 				// Create distributor
 				ds, _, _, _ := prepare(t, prepConfig{
-					numIngesters:            12,
-					happyIngesters:          12,
-					numDistributors:         1,
-					replicationFactor:       3,
-					ingestStorageEnabled:    ingestStorageEnabled,
-					ingestStoragePartitions: 12,
+					numIngesters:         12,
+					happyIngesters:       12,
+					numDistributors:      1,
+					replicationFactor:    3,
+					ingestStorageEnabled: ingestStorageEnabled,
 				})
 
 				// Push fixtures
@@ -4105,7 +4095,7 @@ type prepConfig struct {
 
 	// Ingest storage specific configuration.
 	ingestStorageEnabled    bool
-	ingestStoragePartitions int32 // Number of partitions.
+	ingestStoragePartitions int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
 	ingestStorageKafka      *kfake.Cluster
 }
 
@@ -4136,6 +4126,19 @@ func (c prepConfig) totalZones() int {
 		return evenlyAssignedZones
 	}
 	return len(c.ingesterStateByZone)
+}
+
+// maxIngestersPerZone returns the max number of ingester per zone. For example,
+// if a zone has 2 ingesters and another zone has 3 ingesters, this function will
+// return 3.
+func (c prepConfig) maxIngestersPerZone() int {
+	maxIngestersPerZone := c.numIngesters
+
+	for _, state := range c.ingesterStateByZone {
+		maxIngestersPerZone = max(maxIngestersPerZone, max(state.numIngesters, len(state.states)))
+	}
+
+	return maxIngestersPerZone
 }
 
 func (c prepConfig) ingesterRingState(zone string, id int) ring.InstanceState {
@@ -4320,6 +4323,14 @@ func prepareDefaultLimits() *validation.Limits {
 func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*prometheus.Registry, *kfake.Cluster) {
 	ctx := context.Background()
 
+	// Apply default config.
+	if cfg.replicationFactor == 0 {
+		cfg.replicationFactor = 3
+	}
+	if cfg.ingestStorageEnabled && cfg.ingestStoragePartitions == 0 {
+		cfg.ingestStoragePartitions = int32(cfg.maxIngestersPerZone())
+	}
+
 	cfg.validate(t)
 
 	logger := log.NewNopLogger()
@@ -4343,19 +4354,13 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 	)
 	require.NoError(t, err)
 
-	// Use a default replication factor of 3 if there isn't a provided replication factor.
-	rf := cfg.replicationFactor
-	if rf == 0 {
-		rf = 3
-	}
-
 	ingestersHeartbeatTimeout := 60 * time.Minute
 	ingestersRing, err := ring.New(ring.Config{
 		KVStore: kv.Config{
 			Mock: kvStore,
 		},
 		HeartbeatTimeout:     ingestersHeartbeatTimeout,
-		ReplicationFactor:    rf,
+		ReplicationFactor:    cfg.replicationFactor,
 		ZoneAwarenessEnabled: cfg.totalZones() > 1,
 	}, ingester.IngesterRingKey, ingester.IngesterRingKey, logger, nil)
 	require.NoError(t, err)
