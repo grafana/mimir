@@ -948,6 +948,179 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "limit should be unchanged")
 			},
 		},
+		"multi zone, shard size = num zones, scale ingesters up and down": {
+			numZones:                 3,
+			startingIngestersPerZone: 1,
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					IngestionTenantShardSize: 3, // one ingester per zone
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				// initial limit
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "")
+
+				// we'd normally scale up all zones at once, but doing it one by one lets us
+				// put the test ingester in a variety of scenarios (e.g.: what if it's in the only
+				// zone that's scaled up? the only zone scaled down? etc.)
+
+				// scale up zone by zone
+				ingesterCount := 3
+				for i := 1; i <= 3; i++ {
+					updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
+						desc.AddIngester(fmt.Sprintf("ingester-%d-1", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{uint32(100*i + 1)}, ring.ACTIVE, time.Now())
+						desc.AddIngester(fmt.Sprintf("ingester-%d-2", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{uint32(100*i + 2)}, ring.ACTIVE, time.Now())
+						desc.AddIngester(fmt.Sprintf("ingester-%d-3", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{uint32(100*i + 3)}, ring.ACTIVE, time.Now())
+						desc.AddIngester(fmt.Sprintf("ingester-%d-4", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{uint32(100*i + 4)}, ring.ACTIVE, time.Now())
+					})
+					ingesterCount += 4
+
+					// wait for the ingester to see the updated ring
+					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+						return c.ing.lifecycler.InstancesCount()
+					})
+
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "limit should be unchanged")
+
+					// run owned series update (ringChanged=true, but should be a no-op since token ranges didn't change)
+					require.Equal(t, 0, c.ownedSeries.updateAllTenants(context.Background(), true))
+
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "limit should be unchanged")
+				}
+
+				// scale down zone by zone
+				for i := 1; i <= 3; i++ {
+					updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
+						desc.RemoveIngester(fmt.Sprintf("ingester-%d-4", i))
+						desc.RemoveIngester(fmt.Sprintf("ingester-%d-3", i))
+						desc.RemoveIngester(fmt.Sprintf("ingester-%d-2", i))
+						desc.RemoveIngester(fmt.Sprintf("ingester-%d-1", i))
+					})
+					ingesterCount -= 4
+
+					// wait for the ingester to see the updated ring
+					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+						return c.ing.lifecycler.InstancesCount()
+					})
+
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "limit should be unchanged")
+
+					// run owned series update (ringChanged=true, but should be a no-op since token ranges didn't change)
+					require.Equal(t, 0, c.ownedSeries.updateAllTenants(context.Background(), true))
+
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "limit should be unchanged")
+				}
+			},
+		},
+		"multi zone, shard size > ingesters, scale ingesters up and down": {
+			numZones:                 3,
+			startingIngestersPerZone: 1,
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					IngestionTenantShardSize: 15, // 5 ingesters per zone (don't use 0 so we exercise shuffle shard logic in limiter)
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				// initial limit
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "")
+
+				// we'd normally scale up all zones at once, but doing it one by one lets us
+				// put the test ingester in a variety of scenarios (e.g.: what if it's in the only
+				// zone that's scaled up? the only zone scaled down? etc.)
+
+				// scale up zone 1
+				ingesterCount := 3
+				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
+					desc.AddIngester("ingester-1-1", "localhost", "zone-1", []uint32{101}, ring.ACTIVE, time.Now())
+					desc.AddIngester("ingester-1-2", "localhost", "zone-1", []uint32{102}, ring.ACTIVE, time.Now())
+					desc.AddIngester("ingester-1-3", "localhost", "zone-1", []uint32{103}, ring.ACTIVE, time.Now())
+					desc.AddIngester("ingester-1-4", "localhost", "zone-1", []uint32{104}, ring.ACTIVE, time.Now())
+				})
+				ingesterCount += 4
+
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
+
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "limit shouldn't be reduced before owned series update")
+
+				// run owned series update (ringChanged=true, recalculation expected)
+				require.Equal(t, 1, c.ownedSeries.updateAllTenants(context.Background(), true))
+
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/5, "limit should be updated")
+
+				// scale up other zones
+				for i := 2; i <= 3; i++ {
+					updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
+						desc.AddIngester(fmt.Sprintf("ingester-%d-1", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{uint32(100*i + 1)}, ring.ACTIVE, time.Now())
+						desc.AddIngester(fmt.Sprintf("ingester-%d-2", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{uint32(100*i + 2)}, ring.ACTIVE, time.Now())
+						desc.AddIngester(fmt.Sprintf("ingester-%d-3", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{uint32(100*i + 3)}, ring.ACTIVE, time.Now())
+						desc.AddIngester(fmt.Sprintf("ingester-%d-4", i), "localhost", fmt.Sprintf("zone-%d", i), []uint32{uint32(100*i + 4)}, ring.ACTIVE, time.Now())
+					})
+					ingesterCount += 4
+
+					// wait for the ingester to see the updated ring
+					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+						return c.ing.lifecycler.InstancesCount()
+					})
+
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/5, "limit should be unchanged")
+
+					// run owned series update (ringChanged=true, but should be a no-op since token ranges didn't change)
+					require.Equal(t, 0, c.ownedSeries.updateAllTenants(context.Background(), true))
+
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit/5, "limit should be unchanged")
+				}
+
+				// scale down zone 1
+				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
+					desc.RemoveIngester("ingester-1-4")
+					desc.RemoveIngester("ingester-1-3")
+					desc.RemoveIngester("ingester-1-2")
+					desc.RemoveIngester("ingester-1-1")
+				})
+				ingesterCount -= 4
+
+				// wait for the ingester to see the updated ring
+				test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+					return c.ing.lifecycler.InstancesCount()
+				})
+
+				// higher limit should take effect immediately
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "higher limit should take effect immediately")
+
+				// run owned series update (ringChanged=true, recalculation expected)
+				require.Equal(t, 1, c.ownedSeries.updateAllTenants(context.Background(), true))
+
+				c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "limit should be unchanged")
+
+				// scale down other zones
+				for i := 2; i <= 3; i++ {
+					updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
+						desc.RemoveIngester(fmt.Sprintf("ingester-%d-4", i))
+						desc.RemoveIngester(fmt.Sprintf("ingester-%d-3", i))
+						desc.RemoveIngester(fmt.Sprintf("ingester-%d-2", i))
+						desc.RemoveIngester(fmt.Sprintf("ingester-%d-1", i))
+					})
+					ingesterCount -= 4
+
+					// wait for the ingester to see the updated ring
+					test.Poll(t, 2*time.Second, ingesterCount, func() interface{} {
+						return c.ing.lifecycler.InstancesCount()
+					})
+
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "limit should be unchanged")
+
+					// run owned series update (ringChanged=true, but should be a no-op since token ranges didn't change)
+					require.Equal(t, 0, c.ownedSeries.updateAllTenants(context.Background(), true))
+
+					c.checkCalculatedLocalLimit(t, ownedServiceTestUserSeriesLimit, "limit should be unchanged")
+				}
+			},
+		},
 	}
 
 	for name, tc := range testCases {
