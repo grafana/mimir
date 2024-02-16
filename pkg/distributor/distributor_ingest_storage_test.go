@@ -25,7 +25,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -544,11 +543,8 @@ func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
 						}(),
 					})
 
-					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
-					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
-
 					// Fetch user stats.
+					ctx := user.InjectOrgID(context.Background(), "test")
 					res, err := distributors[0].UserStats(ctx, cardinality.InMemoryMethod)
 
 					if testData.expectedErr != nil {
