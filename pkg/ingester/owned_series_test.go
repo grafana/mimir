@@ -1269,7 +1269,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			require.NotNil(t, c.ownedSeries)
 			require.NotNil(t, c.ownedSeries.ingestersRing)
 
-			// run an intial owned series update to clear any pending updates due to e.g. new user
+			// run an initial owned series update to clear any pending updates due to e.g. new user
 			c.ownedSeries.updateAllTenants(context.Background(), true)
 			c.checkUpdateReasonForUser(t, "")
 

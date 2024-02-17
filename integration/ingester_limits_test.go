@@ -307,24 +307,22 @@ func (g *RampingMetricsGenerator) run(startSeries, maxSeries, rampSeries, period
 	defer ticker.Stop()
 
 	iteration := 0
-	numSeries := startSeries
 	series := make([]prompb.TimeSeries, 0, maxSeries)
 	for {
-		select {
-		case <-ticker.C:
-			now := time.Now()
-			series = series[:0]
-			numSeries = startSeries + (iteration * rampSeries)
-			for i := 0; i < numSeries; i++ {
-				s, _, _ := generateFloatSeries(fmt.Sprintf("test_series_%d", i), now)
-				series = append(series, s[0])
-			}
-			g.client.Push(series)
-			iteration++
+		<-ticker.C
 
-			if numSeries >= maxSeries {
-				return
-			}
+		now := time.Now()
+		numSeries := startSeries + (iteration * rampSeries)
+		series = series[:0]
+		for i := 0; i < numSeries; i++ {
+			s, _, _ := generateFloatSeries(fmt.Sprintf("test_series_%d", i), now)
+			series = append(series, s[0])
+		}
+		_, _ = g.client.Push(series)
+		iteration++
+
+		if numSeries >= maxSeries {
+			return
 		}
 	}
 }
