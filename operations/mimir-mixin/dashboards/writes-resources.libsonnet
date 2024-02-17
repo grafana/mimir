@@ -8,15 +8,15 @@ local filename = 'mimir-writes-resources.json';
     .addRow(
       $.row('Summary')
       .addPanel(
-        $.panel('CPU') +
+        $.timeseriesPanel('CPU') +
         $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
         $.stack,
       )
       .addPanel(
-        $.panel('Memory (workingset)') +
+        $.timeseriesPanel('Memory (workingset)') +
         $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
         $.stack +
-        { yaxes: $.yaxes('bytes') },
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('write') +
@@ -51,14 +51,22 @@ local filename = 'mimir-writes-resources.json';
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.panel('In-memory series') +
+        $.timeseriesPanel('In-memory series') +
         $.queryPanel(
           'sum by(%s) (cortex_ingester_memory_series{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)],
           '{{%s}}' % $._config.per_instance_label
         ) +
         {
-          tooltip: { sort: 2 },  // Sort descending.
-          fill: 0,
+          options+: {
+            tooltip+: { sort: 'desc' },
+          },
+          fieldConfig+: {
+            defaults+: {
+              custom+: {
+                fillOpacity: 0,
+              },
+            },
+          },
         },
       )
       .addPanel(
