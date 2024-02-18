@@ -2394,6 +2394,12 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
 	matchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 
+	// flusher doesn't actually start the ingester services
+	initialLocalLimit := 0
+	if i.limiter != nil {
+		initialLocalLimit = i.limiter.maxSeriesPerUser(userID, 0)
+	}
+
 	userDB := &userTSDB{
 		userID:                  userID,
 		activeSeries:            activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout),
@@ -2407,8 +2413,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
 
 		ownedSeries: ownedSeriesState{
-			shardSize:  i.limits.IngestionTenantShardSize(userID), // initialize series shard size so that it's correct even before we update ownedSeries for the first time (during WAL replay).
-			localLimit: i.limiter.maxSeriesPerUser(userID, 0),
+			shardSize:  i.limits.IngestionTenantShardSize(userID), // initialize series shard size so that it's correct even before we update ownedSeries for the first time
+			localLimit: initialLocalLimit,
 		},
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
