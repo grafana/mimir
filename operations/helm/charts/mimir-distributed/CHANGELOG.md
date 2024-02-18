@@ -28,7 +28,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [FEATURE] Added experimental feature for deploying [KEDA](https://keda.sh) ScaledObjects as part of the helm chart for the components: distributor, querier, query-frontend and ruler. Autoscaling can be enabled via `distributor.kedaAutoscaling`, `ruler.kedaAutoscaling`, `query_frontend.kedaAutoscaling`, and `querier.kedaAutoscaling`. Global configuration of `promtheusAddress`, `pollingInterval` and `customHeaders` can be found in `kedaAutoscaling`section. Requires metamonitoring or custom installed Prometheus compatible solution, for more details on metamonitoring see [Monitor the health of your system](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/). See [grafana/mimir#7367](https://github.com/grafana/mimir/issues/7367) for a migration procedure. #7282 #7392
+* [FEATURE] Added experimental feature for deploying [KEDA](https://keda.sh) ScaledObjects as part of the helm chart for the components: distributor, querier, query-frontend and ruler. #7282 #7392
+  * Autoscaling can be enabled via `distributor.kedaAutoscaling`, `ruler.kedaAutoscaling`, `query_frontend.kedaAutoscaling`, and `querier.kedaAutoscaling`.
+  * Global configuration of `promtheusAddress`, `pollingInterval` and `customHeaders` can be found in `kedaAutoscaling`section.
+  * Requires metamonitoring or custom installed Prometheus compatible solution, for more details on metamonitoring see [Monitor the health of your system](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/). See [grafana/mimir#7367](https://github.com/grafana/mimir/issues/7367) for a migration procedure.
 * [CHANGE] Rollout-operator: remove default CPU limit. #7125
 * [CHANGE] Ring: relaxed the hash ring heartbeat period and timeout for distributor, ingester, store-gateway and compactor: #6860
   * `-distributor.ring.heartbeat-period` set to `1m`
