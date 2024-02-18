@@ -210,15 +210,8 @@ func TestGetSeriesAndMinForSeriesLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	// Mock limits
-	limits := validation.Limits{MaxGlobalSeriesPerUser: 5000}
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
-
 	db := userTSDB{
-		db:      tsdbDB,
-		limiter: NewLimiter(overrides, nil),
-
+		db: tsdbDB,
 		ownedSeries: ownedSeriesState{
 			count:      555,
 			localLimit: 10000,
