@@ -506,10 +506,9 @@ rbac:
       type: RuntimeDefault
 
 # -- KEDA Autoscaling configuration
-# Can be overridden by individual components configuration
 kedaAutoscaling:
   # If empty, the helm chart uses the metamonitoring URL
-  prometheusAddress: "" 
+  prometheusAddress: ""
   customHeaders: {}
   pollingInterval: 10
 
@@ -776,15 +775,8 @@ distributor:
     enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
-    # -- Setting pollingInterval here will override the global value
-    # pollingInterval:10
     targetCPUUtilizationPercentage: 100
     targetMemoryUtilizationPercentage: 100
-    # -- if empty global setting will be used
-    prometheusAddress: ""
-    customHeaders:
-      {}
-      # X-Scope-OrgID: ""
     behavior:
       scaleDown:
         policies:
@@ -1179,15 +1171,8 @@ ruler:
     enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
-    # -- Setting pollingInterval here will override the global value
-    # pollingInterval: 10
     targetCPUUtilizationPercentage: 100
     targetMemoryUtilizationPercentage: 100
-    # -- if empty global setting will be used
-    prometheusAddress: ""
-    customHeaders:
-      {}
-      # X-Scope-OrgID: ""
     behavior:
       scaleDown:
         policies:
@@ -1293,14 +1278,7 @@ querier:
     enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
-    # -- Setting pollingInterval here will override the global value
-    # pollingInterval: 10
     querySchedulerInflightRequestsThreshold: 12
-    # -- if empty global setting will be used
-    prometheusAddress: ""
-    customHeaders:
-      {}
-      # X-Scope-OrgID: ""
     behavior:
       scaleDown:
         policies:
@@ -1407,15 +1385,8 @@ query_frontend:
     enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
-    # -- Setting pollingInterval here will override the global value
-    # pollingInterval: 10
     targetCPUUtilizationPercentage: 75
     targetMemoryUtilizationPercentage: 100
-    # -- if empty global setting will be used
-    prometheusAddress: ""
-    customHeaders:
-      {}
-      # X-Scope-OrgID: ""
     behavior:
       scaleDown:
         policies:
