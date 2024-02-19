@@ -401,10 +401,6 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.subservicesWatcher = services.NewFailureWatcher()
 	i.subservicesWatcher.WatchService(i.lifecycler)
 
-	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
-		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, i.lifecycler.ID, ingestersRing, log.With(i.logger, "component", "owned series"), registerer, i.limits.IngestionTenantShardSize, i.getTSDBUsers, i.getTSDB)
-	}
-
 	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {
 		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(cfg.ReadPathCPUUtilizationLimit,
 			cfg.ReadPathMemoryUtilizationLimit, cfg.LogUtilizationBasedLimiterCPUSamples,
@@ -419,6 +415,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.compactionIdleTimeout)
 
 	var limiterStrategy limiterRingStrategy
+	var ownedSeriesRingSupport ownedSeriesRing
 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
@@ -453,8 +450,14 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 
 		limiterStrategy = newPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
+		ownedSeriesRingSupport = newOwnedSeriesPartitionRing(i.ingestPartitionID, partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
 	} else {
 		limiterStrategy = newIngesterRingLimiterStrategy(ingestersRing, cfg.IngesterRing.ReplicationFactor, cfg.IngesterRing.ZoneAwarenessEnabled, cfg.IngesterRing.InstanceZone, i.limits.IngestionTenantShardSize)
+		ownedSeriesRingSupport = newOwnedSeriesIngesterRing(i.lifecycler.ID, ingestersRing, i.limits.IngestionTenantShardSize)
+	}
+
+	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
+		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, ownedSeriesRingSupport, log.With(i.logger, "component", "owned series"), registerer, i.getTSDBUsers, i.getTSDB)
 	}
 
 	i.limiter = NewLimiter(limits, limiterStrategy)
@@ -538,7 +541,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		case err != nil:
 			return fmt.Errorf("can't read ring: %v", err)
 		default:
-			// We pass ringChanged=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
+			// We pass checkRingForChanges=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
 			oss.updateAllTenants(ctx, true)
 		}
 	}
