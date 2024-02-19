@@ -1510,13 +1510,6 @@ func forReplicationSets[R any](ctx context.Context, d *Distributor, replicationS
 	})
 }
 
-// queryQuorumConfig returns the config to use with "do until quorum" functions when running queries.
-//
-// Deprecated: use queryQuorumConfigForReplicationSets() instead.
-func (d *Distributor) queryQuorumConfig(ctx context.Context, replicationSet ring.ReplicationSet) ring.DoUntilQuorumConfig {
-	return d.queryQuorumConfigForReplicationSets(ctx, []ring.ReplicationSet{replicationSet})
-}
-
 // queryQuorumConfigForReplicationSets returns the config to use with "do until quorum" functions when running queries.
 func (d *Distributor) queryQuorumConfigForReplicationSets(ctx context.Context, replicationSets []ring.ReplicationSet) ring.DoUntilQuorumConfig {
 	var zoneSorter ring.ZoneSorter
