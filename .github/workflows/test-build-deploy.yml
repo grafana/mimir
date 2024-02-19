@@ -338,17 +338,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: Race-enabled Mimir
+      - name: Load race-enabled mimir into Docker
+        run: |
+          docker load -i ./mimir_race_image
+          export IMAGE_TAG_RACE=$(make image-tag-race)
+          docker run "grafana/mimir:distroless-$IMAGE_TAG_RACE" --version
       - name: Preload Images
         # We download docker images used by integration tests so that all images are available
         # locally and the download time doesn't account in the test execution time, which is subject
         # to a timeout
         run: go run ./tools/pre-pull-images | xargs -n1 -P4 docker pull
-      - name: Load race-enabled mimir distroless into Docker
-        run: |
-          docker load -i ./mimir_race_image
-          export IMAGE_TAG_RACE=$(make image-tag-race)
-          docker run "grafana/mimir:distroless-$IMAGE_TAG_RACE" --version
-      - name: Integration Tests With Distroless Docker Image
+      - name: Integration Tests
         run: |
           export IMAGE_TAG_RACE=$(make image-tag-race)
           export MIMIR_IMAGE="grafana/mimir:distroless-$IMAGE_TAG_RACE"
@@ -382,11 +382,8 @@ jobs:
       - name: Check Whether In Deploy Process
         id: check_deploy
         run: |
-          if [[ "${{ startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') }}" == 'true' && "${{ github.event_name == 'push' }}" == 'true' && "${{ github.repository == 'grafana/mimir' }}" == 'true' ]]; then
-            echo "is_deploy=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_deploy=false" >> $GITHUB_OUTPUT
-          fi
+          is_deploy=${{ (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r')) && github.event_name == 'push' && github.repository == 'grafana/mimir' }}
+          echo "is_deploy=$is_deploy" >> $GITHUB_OUTPUT
     outputs:
       is_deploy: ${{ steps.check_deploy.outputs.is_deploy }}
   

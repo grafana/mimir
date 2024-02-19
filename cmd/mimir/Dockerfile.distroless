@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-FROM       gcr.io/distroless/base-nossl-debian12
+ARG        BASEIMG=gcr.io/distroless/static-debian12
+FROM       ${BASEIMG}
 # Expose TARGETOS and TARGETARCH variables. These are supported by Docker when using BuildKit, but must be "enabled" using ARG.
 ARG        TARGETOS
 ARG        TARGETARCH
