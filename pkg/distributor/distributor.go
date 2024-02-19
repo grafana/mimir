@@ -1818,7 +1818,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	err = concurrency.ForEachJob(ctx, len(replicationSets), 0, func(ctx context.Context, replicationSetIdx int) error {
 		replicationSet := replicationSets[replicationSetIdx]
 
-		_, err = ring.DoUntilQuorum[any](ctx, replicationSet, quorumConfig, func(ctx context.Context, desc *ring.InstanceDesc) (any, error) {
+		_, err := ring.DoUntilQuorum[any](ctx, replicationSet, quorumConfig, func(ctx context.Context, desc *ring.InstanceDesc) (any, error) {
 			poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 			if err != nil {
 				return nil, err
