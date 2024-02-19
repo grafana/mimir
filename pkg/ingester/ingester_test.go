@@ -4604,7 +4604,7 @@ func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Confi
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), rng))
 	})
 
-	ingester, err := New(ingesterCfg, overrides, rng, nil, registerer, noDebugNoopLogger{})
+	ingester, err := New(ingesterCfg, overrides, rng, nil, nil, registerer, noDebugNoopLogger{})
 	if err != nil {
 		return nil, err
 	}
@@ -4798,7 +4798,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			// setup the tsdbs dir
 			testData.setup(t, tempDir)
 
-			ingester, err := New(ingesterCfg, overrides, nil, nil, nil, log.NewNopLogger())
+			ingester, err := New(ingesterCfg, overrides, nil, nil, nil, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			startErr := services.StartAndAwaitRunning(context.Background(), ingester)
@@ -5938,7 +5938,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 	ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
 	ingesterCfg.BlocksStorageConfig.TSDB.Retention = 2 * 24 * time.Hour // Make sure that no newly created blocks are deleted.
 
-	ingester, err := New(ingesterCfg, overrides, nil, nil, nil, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, overrides, nil, nil, nil, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
 

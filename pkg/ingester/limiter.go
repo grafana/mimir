@@ -8,43 +8,33 @@ package ingester
 import (
 	"math"
 
+	"github.com/grafana/dskit/ring"
+
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// RingCount is the interface exposed by a ring implementation which allows
-// to count members
-type RingCount interface {
-	InstancesCount() int
-	InstancesInZoneCount(zone string) int
-	ZonesCount() int
+// limiterTenantLimits provides access to limits used by Limiter.
+type limiterTenantLimits interface {
+	MaxGlobalSeriesPerUser(userID string) int
+	MaxGlobalSeriesPerMetric(userID string) int
+	MaxGlobalMetadataPerMetric(userID string) int
+	MaxGlobalMetricsWithMetadataPerUser(userID string) int
+	MaxGlobalExemplarsPerUser(userID string) int
 }
 
-// Limiter implements primitives to get the maximum number of series
-// an ingester can handle for a specific tenant
+// Limiter implements primitives to get the maximum number of series, exemplars, metadata, etc.
+// that an ingester can handle for a specific tenant
 type Limiter struct {
-	limits               *validation.Overrides
-	ring                 RingCount
-	replicationFactor    int
-	zoneAwarenessEnabled bool
-	ingesterZone         string
+	limits       limiterTenantLimits
+	ringStrategy limiterRingStrategy
 }
 
 // NewLimiter makes a new in-memory series limiter
-func NewLimiter(
-	limits *validation.Overrides,
-	ring RingCount,
-	replicationFactor int,
-	zoneAwarenessEnabled bool,
-	ingesterZone string,
-) *Limiter {
+func NewLimiter(limits limiterTenantLimits, limiterRingSupport limiterRingStrategy) *Limiter {
 	return &Limiter{
-		limits:               limits,
-		ring:                 ring,
-		replicationFactor:    replicationFactor,
-		zoneAwarenessEnabled: zoneAwarenessEnabled,
-		ingesterZone:         ingesterZone,
+		limits:       limits,
+		ringStrategy: limiterRingSupport,
 	}
 }
 
@@ -92,10 +82,14 @@ func (l *Limiter) maxMetadataPerUser(userID string) int {
 	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.getShardSize(userID), l.limits.MaxGlobalMetricsWithMetadataPerUser)
 }
 
+func (l *Limiter) maxExemplarsPerUser(userID string) int {
+	return l.ringStrategy.convertGlobalToLocalLimit(l.getShardSize(userID), l.limits.MaxGlobalExemplarsPerUser(userID))
+}
+
 func (l *Limiter) convertGlobalToLocalLimitOrUnlimited(userID string, userShardSize int, globalLimitFn func(string) int) int {
 	// We can assume that series/metadata are evenly distributed across ingesters
 	globalLimit := globalLimitFn(userID)
-	localLimit := l.convertGlobalToLocalLimit(userShardSize, globalLimit)
+	localLimit := l.ringStrategy.convertGlobalToLocalLimit(userShardSize, globalLimit)
 
 	// If the limit is disabled
 	if localLimit == 0 {
@@ -105,21 +99,62 @@ func (l *Limiter) convertGlobalToLocalLimitOrUnlimited(userID string, userShardS
 	return localLimit
 }
 
-func (l *Limiter) convertGlobalToLocalLimit(userShardSize int, globalLimit int) int {
+func (l *Limiter) getShardSize(userID string) int {
+	return l.ringStrategy.getShardSize(userID)
+}
+
+// limiterRingStrategy provides computations based on ingester or partitions ring.
+type limiterRingStrategy interface {
+	// convertGlobalToLocalLimit converts global limit to local, per-ingester limit, using given user's shard size (ingesters or partitions).
+	convertGlobalToLocalLimit(userShardSize int, globalLimit int) int
+
+	// getShardSize returns shard size applicable for given ring.
+	getShardSize(userID string) int
+}
+
+// ingesterRingLimiterRingCount is the interface exposed by a ring implementation which allows
+// to count members
+type ingesterRingLimiterRingCount interface {
+	InstancesCount() int
+	InstancesInZoneCount(zone string) int
+	ZonesCount() int
+}
+
+type ingesterRingLimiterStrategy struct {
+	ring                 ingesterRingLimiterRingCount
+	replicationFactor    int
+	zoneAwarenessEnabled bool
+	ingesterZone         string
+
+	getIngestionTenantShardSize func(userID string) int
+}
+
+func newIngesterRingLimiterStrategy(ring ingesterRingLimiterRingCount, replicationFactor int, zoneAwarenessEnabled bool, ingesterZone string, getIngestionTenantShardSize func(userID string) int) *ingesterRingLimiterStrategy {
+	return &ingesterRingLimiterStrategy{
+		ring:                        ring,
+		replicationFactor:           replicationFactor,
+		zoneAwarenessEnabled:        zoneAwarenessEnabled,
+		ingesterZone:                ingesterZone,
+		getIngestionTenantShardSize: getIngestionTenantShardSize,
+	}
+}
+
+func (is *ingesterRingLimiterStrategy) convertGlobalToLocalLimit(userShardSize int, globalLimit int) int {
 	if globalLimit == 0 {
 		return 0
 	}
 
-	zonesCount := l.getZonesCount()
+	zonesCount := is.getZonesCount()
+
 	var ingestersInZoneCount int
 	if zonesCount > 1 {
 		// In this case zone-aware replication is enabled, and ingestersInZoneCount is initially set to
 		// the total number of ingesters in the corresponding zone
-		ingestersInZoneCount = l.ring.InstancesInZoneCount(l.ingesterZone)
+		ingestersInZoneCount = is.ring.InstancesInZoneCount(is.ingesterZone)
 	} else {
 		// In this case zone-aware replication is disabled, and ingestersInZoneCount is initially set to
 		// the total number of ingesters
-		ingestersInZoneCount = l.ring.InstancesCount()
+		ingestersInZoneCount = is.ring.InstancesCount()
 	}
 	// If shuffle sharding is enabled and the total number of ingesters in the zone is greater than the
 	// expected number of ingesters per sharded zone, then we should honor the latter because series/metadata
@@ -138,16 +173,66 @@ func (l *Limiter) convertGlobalToLocalLimit(userShardSize int, globalLimit int) 
 	// Global limit is equally distributed among all the active zones.
 	// The portion of global limit related to each zone is then equally distributed
 	// among all the ingesters belonging to that zone.
-	return int((float64(globalLimit*l.replicationFactor) / float64(zonesCount)) / float64(ingestersInZoneCount))
+	return int((float64(globalLimit*is.replicationFactor) / float64(zonesCount)) / float64(ingestersInZoneCount))
 }
 
-func (l *Limiter) getShardSize(userID string) int {
-	return l.limits.IngestionTenantShardSize(userID)
-}
-
-func (l *Limiter) getZonesCount() int {
-	if l.zoneAwarenessEnabled {
-		return util_math.Max(l.ring.ZonesCount(), 1)
+func (is *ingesterRingLimiterStrategy) getZonesCount() int {
+	if is.zoneAwarenessEnabled {
+		return util_math.Max(is.ring.ZonesCount(), 1)
 	}
 	return 1
+}
+
+func (is *ingesterRingLimiterStrategy) getShardSize(userID string) int {
+	return is.getIngestionTenantShardSize(userID)
+}
+
+type partitionRingLimiterStrategy struct {
+	partitionRingWatcher        *ring.PartitionRingWatcher
+	getPartitionTenantShardSize func(userID string) int
+}
+
+func newPartitionRingLimiter(watcher *ring.PartitionRingWatcher, getPartitionTenantShardSize func(userID string) int) *partitionRingLimiterStrategy {
+	return &partitionRingLimiterStrategy{
+		partitionRingWatcher:        watcher,
+		getPartitionTenantShardSize: getPartitionTenantShardSize,
+	}
+}
+
+func (ps *partitionRingLimiterStrategy) convertGlobalToLocalLimit(userShardSize int, globalLimit int) int {
+	if globalLimit == 0 {
+		return 0
+	}
+
+	pr := ps.partitionRingWatcher.PartitionRing()
+	activePartitionsCount := pr.ActivePartitionsCount()
+
+	// If user has shuffle-sharding enabled, we cannot use more than user's shard size number of partitions.
+	// If number of active partitions is smaller than shard size, we can only use that number of partitions.
+	if userShardSize > 0 {
+		activePartitionsCount = util_math.Min(activePartitionsCount, userShardSize)
+	}
+
+	// If we haven't found any active partitions (e.g. partition was just added but this ingester hasn't seen it yet),
+	// ignore global limit.
+	if activePartitionsCount == 0 {
+		return 0
+	}
+
+	// Global limit is equally distributed among all active partitions.
+	return int(float64(globalLimit) / float64(activePartitionsCount))
+}
+
+func (ps *partitionRingLimiterStrategy) getShardSize(userID string) int {
+	return ps.getPartitionTenantShardSize(userID)
+}
+
+type forFlushStrategy struct{}
+
+func (f forFlushStrategy) convertGlobalToLocalLimit(_ int, _ int) int {
+	return 0
+}
+
+func (f forFlushStrategy) getShardSize(userID string) int {
+	return 0
 }

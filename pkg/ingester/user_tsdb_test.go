@@ -217,7 +217,7 @@ func TestGetSeriesAndShardsForSeriesLimit(t *testing.T) {
 
 	db := userTSDB{
 		db:                   tsdbDB,
-		limiter:              NewLimiter(overrides, nil, 3, true, "zone"),
+		limiter:              NewLimiter(overrides, nil),
 		ownedSeriesCount:     555,
 		ownedSeriesShardSize: 333,
 	}

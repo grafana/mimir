@@ -295,7 +295,8 @@ func runLimiterMaxFunctionTest(
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(overrides, ring, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled, "zone")
+			strategy := newIngesterRingLimiterStrategy(ring, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled, "zone", overrides.IngestionTenantShardSize)
+			limiter := NewLimiter(overrides, strategy)
 			actual := runMaxFn(limiter)
 			assert.Equal(t, testData.expectedValue, actual)
 		})
@@ -346,7 +347,8 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false, "")
+			strategy := newIngesterRingLimiterStrategy(ring, testData.ringReplicationFactor, false, "", limits.IngestionTenantShardSize)
+			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxSeriesPerMetric("test", testData.series)
 
 			assert.Equal(t, testData.expected, actual)
@@ -397,7 +399,8 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false, "")
+			strategy := newIngesterRingLimiterStrategy(ring, testData.ringReplicationFactor, false, "", limits.IngestionTenantShardSize)
+			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxMetadataPerMetric("test", testData.metadata)
 
 			assert.Equal(t, testData.expected, actual)
@@ -449,7 +452,8 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false, "")
+			strategy := newIngesterRingLimiterStrategy(ring, testData.ringReplicationFactor, false, "", limits.IngestionTenantShardSize)
+			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, limiter.getShardSize("test"))
 
 			assert.Equal(t, testData.expected, actual)
@@ -501,7 +505,8 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false, "")
+			strategy := newIngesterRingLimiterStrategy(ring, testData.ringReplicationFactor, false, "", limits.IngestionTenantShardSize)
+			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxMetricsWithMetadataPerUser("test", testData.metadata)
 
 			assert.Equal(t, testData.expected, actual)
