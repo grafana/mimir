@@ -189,6 +189,7 @@
 
 * [CHANGE] No longer mark OTLP distributor endpoint as experimental. #7348
 * [ENHANCEMENT] Added runbook for `KubePersistentVolumeFillingUp` alert. #7297
+* [ENHANCEMENT] Add Grafana Cloud recommendations to OTLP documentation. #7375
 * [BUGFIX] Fixed typo on single zone->zone aware replication Helm page. #7327
 
 ### Tools
