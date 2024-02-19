@@ -1573,9 +1573,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 			minExemplarTS: 0,
 			maxExemplarTS: 0,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			req: makeWriteRequestWith(
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
-			}},
+			),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{TimeSeries: &mimirpb.TimeSeries{
 					Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test1"}},
@@ -1589,10 +1589,10 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 			minExemplarTS: 0,
 			maxExemplarTS: math.MaxInt64,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			req: makeWriteRequestWith(
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
-			}},
+			),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
@@ -1604,10 +1604,10 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 			minExemplarTS: 300000,
 			maxExemplarTS: math.MaxInt64,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			req: makeWriteRequestWith(
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
-			}},
+			),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{TimeSeries: &mimirpb.TimeSeries{
 					Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
@@ -1627,17 +1627,15 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 			minExemplarTS: 300000,
 			maxExemplarTS: math.MaxInt64,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-				{
-					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
-						Exemplars: []mimirpb.Exemplar{
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
-						},
+			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
 					},
 				},
-			}},
+			}),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
@@ -1660,17 +1658,15 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 			minExemplarTS: 300000,
 			maxExemplarTS: math.MaxInt64,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-				{
-					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
-						Exemplars: []mimirpb.Exemplar{
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
-						},
+			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
 					},
 				},
-			}},
+			}),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
@@ -1693,17 +1689,15 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 			minExemplarTS: 0,
 			maxExemplarTS: 100000,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-				{
-					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
-						Exemplars: []mimirpb.Exemplar{
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
-						},
+			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
 					},
 				},
-			}},
+			}),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
@@ -3858,46 +3852,359 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
-			// Create distributor
-			ds, ingesters, _, _ := prepare(t, prepConfig{
-				numIngesters:      numIngesters,
-				happyIngesters:    testData.happyIngesters,
-				numDistributors:   1,
-				replicationFactor: replicationFactor,
-				ingesterZones:     testData.ingesterZones,
-			})
+			t.Parallel()
 
-			// Push fixtures
-			ctx := user.InjectOrgID(context.Background(), "label-values-cardinality")
+			for _, minimizeIngesterRequests := range []bool{false, true} {
+				minimizeIngesterRequests := minimizeIngesterRequests
 
-			for _, series := range fixtures {
-				req := mockWriteRequest(series.labels, series.value, series.timestamp)
-				_, err := ds[0].Push(ctx, req)
-				require.NoError(t, err)
-			}
+				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
+					t.Parallel()
 
-			// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
-			// the final ingester may not have received series yet.
-			// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
-			test.Poll(t, time.Second, testData.expectedResult, func() interface{} {
-				seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers, cardinality.InMemoryMethod)
-				require.NoError(t, err)
-				assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal)
-				// Make sure the resultant label names are sorted
-				sort.Slice(cardinalityMap.Items, func(l, r int) bool {
-					return cardinalityMap.Items[l].LabelName < cardinalityMap.Items[r].LabelName
+					// Create distributor
+					ds, ingesters, _, _ := prepare(t, prepConfig{
+						numIngesters:      numIngesters,
+						happyIngesters:    testData.happyIngesters,
+						numDistributors:   1,
+						replicationFactor: replicationFactor,
+						ingesterZones:     testData.ingesterZones,
+						configure: func(config *Config) {
+							config.MinimizeIngesterRequests = minimizeIngesterRequests
+						},
+					})
+
+					// Push fixtures
+					ctx := user.InjectOrgID(context.Background(), "label-values-cardinality")
+
+					for _, series := range fixtures {
+						req := mockWriteRequest(series.labels, series.value, series.timestamp)
+						_, err := ds[0].Push(ctx, req)
+						require.NoError(t, err)
+					}
+
+					// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
+					// the final ingester may not have received series yet.
+					// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
+					test.Poll(t, time.Second, testData.expectedResult, func() interface{} {
+						seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers, cardinality.InMemoryMethod)
+						require.NoError(t, err)
+						assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal)
+						// Make sure the resultant label names are sorted
+						sort.Slice(cardinalityMap.Items, func(l, r int) bool {
+							return cardinalityMap.Items[l].LabelName < cardinalityMap.Items[r].LabelName
+						})
+						return cardinalityMap
+					})
+
+					// Make sure enough ingesters were queried
+					assert.GreaterOrEqual(t, countMockIngestersCalled(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
 				})
-				return cardinalityMap
-			})
-
-			// Make sure enough ingesters were queried
-			assert.GreaterOrEqual(t, countMockIngestersCalled(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
+			}
 		})
 	}
 }
 
-func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
+func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testing.T) {
+	var (
+		// Define fixtures used in tests.
+		series1 = makeTimeseries([]string{labels.MetricName, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil)
+		series2 = makeTimeseries([]string{labels.MetricName, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil)
+		series3 = makeTimeseries([]string{labels.MetricName, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil)
+		series4 = makeTimeseries([]string{labels.MetricName, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil)
+		series5 = makeTimeseries([]string{labels.MetricName, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil)
+		series6 = makeTimeseries([]string{labels.MetricName, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil)
+		other1  = makeTimeseries([]string{labels.MetricName, "other_1", "job", "job-1", "service", "service-1"}, makeSamples(0, 0), nil)
+
+		// To keep assertions simple, all tests push all series, and then request the cardinality of the same label names,
+		// so we expect the same response from each successful test.
+		reqLabelNames = []model.LabelName{"job", "service"}
+		expectedRes   = []*client.LabelValueSeriesCount{
+			{
+				LabelName:        "job",
+				LabelValueSeries: map[string]uint64{"job-a": 3, "job-b": 2, "job-c": 1},
+			}, {
+				LabelName:        "service",
+				LabelValueSeries: map[string]uint64{"service-1": 4, "service-2": 1},
+			},
+		}
+	)
+
+	tests := map[string]struct {
+		ingesterStateByZone map[string]ingesterZoneState
+		ingesterDataByZone  map[string][]*mimirpb.WriteRequest
+		shardSize           int
+		expectedErr         error
+	}{
+		"single zone, 3 ingesters, series successfully replicated to 3 ingesters": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 3, happyIngesters: 3},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+				},
+			},
+		},
+		"single zone, 6 ingesters, series successfully replicated to 3 ingesters": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 6, happyIngesters: 6},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
+					makeWriteRequestWith(series4, series5, series6),
+					makeWriteRequestWith(series4, series5, series6),
+				},
+			},
+		},
+		"single zone, 6 ingesters, 2 ingesters in LEAVING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 6, happyIngesters: 6, ringStates: []ring.InstanceState{ring.LEAVING, ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
+					makeWriteRequestWith(series4, series5, series6),
+					makeWriteRequestWith(series4, series5, series6),
+				},
+			},
+			expectedErr: ring.ErrTooManyUnhealthyInstances,
+		},
+		"single zone, 6 ingesters, 1 ingester is UNHEALTHY": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 6, happyIngesters: 5},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
+					makeWriteRequestWith(series4, series5, series6),
+					nil,
+				},
+			},
+			expectedErr: errFail,
+		},
+		"multi zone, 3 ingesters, every series successfully replicated to 3 ingesters": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 1, happyIngesters: 1},
+				"zone-b": {numIngesters: 1, happyIngesters: 1},
+				"zone-c": {numIngesters: 1, happyIngesters: 1},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+				},
+				"zone-c": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+				},
+			},
+		},
+		"multi zone, 3 ingesters, every series successfully replicated only to 2 ingesters across 2 zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 1, happyIngesters: 1},
+				"zone-b": {numIngesters: 1, happyIngesters: 1},
+				"zone-c": {numIngesters: 1, happyIngesters: 1},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+				},
+				"zone-c": {
+					nil,
+				},
+			},
+		},
+		"multi zone, 6 ingesters, all ingesters in 1 zone are in LEAVING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.LEAVING, ring.LEAVING}},
+				"zone-b": {numIngesters: 2, happyIngesters: 2},
+				"zone-c": {numIngesters: 2, happyIngesters: 2},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5),
+					makeWriteRequestWith(series6),
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+				"zone-c": {
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
+				},
+			},
+		},
+		"multi zone, 6 ingesters, all ingesters in 2 zones are in LEAVING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.LEAVING, ring.LEAVING}},
+				"zone-b": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.LEAVING, ring.LEAVING}},
+				"zone-c": {numIngesters: 2, happyIngesters: 2},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5),
+					makeWriteRequestWith(series6),
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+				"zone-c": {
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
+				},
+			},
+			expectedErr: ring.ErrTooManyUnhealthyInstances,
+		},
+		"multi zone, 6 ingesters, all ingesters in 1 zone are UNHEALTHY": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 0},
+				"zone-b": {numIngesters: 2, happyIngesters: 2},
+				"zone-c": {numIngesters: 2, happyIngesters: 2},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					nil,
+					nil,
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+				"zone-c": {
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
+				},
+			},
+		},
+		"multi zone, 6 ingesters, 1 UNHEALTHY ingester in 2 zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 1},
+				"zone-b": {numIngesters: 2, happyIngesters: 1},
+				"zone-c": {numIngesters: 2, happyIngesters: 2},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5),
+					nil,
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					nil,
+				},
+				"zone-c": {
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
+				},
+			},
+			expectedErr: errFail,
+		},
+		"multi zone, 6 ingesters, 1 LEAVING ingester per zone, but the LEAVING ingesters are not part of tenant's shard": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.ACTIVE, ring.LEAVING}},
+				"zone-b": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.ACTIVE, ring.LEAVING}},
+				"zone-c": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.ACTIVE, ring.LEAVING}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					makeWriteRequestWith(other1), // Not belonging to tenant's shard.
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					makeWriteRequestWith(other1), // Not belonging to tenant's shard.
+				},
+				"zone-c": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					makeWriteRequestWith(other1), // Not belonging to tenant's shard.
+				},
+			},
+			shardSize: 1, // Tenant's shard made of: ingester-zone-a-0, ingester-zone-b-0 and ingester-zone-c-0.
+		},
+		"multi zone, 6 ingesters, 1 UNHEALTHY ingester per zone, but the UNHEALTHY ingesters are not part of tenant's shard": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {states: []ingesterState{ingesterStateHappy, ingesterStateFailed}},
+				"zone-b": {states: []ingesterState{ingesterStateHappy, ingesterStateFailed}},
+				"zone-c": {states: []ingesterState{ingesterStateHappy, ingesterStateFailed}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					nil,
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					nil,
+				},
+				"zone-c": {
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					nil,
+				},
+			},
+			shardSize: 1, // Tenant's shard made of: ingester-zone-a-0, ingester-zone-b-0 and ingester-zone-c-0.
+		},
+	}
+
+	for testName, testData := range tests {
+		testData := testData
+
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			for _, minimizeIngesterRequests := range []bool{false, true} {
+				minimizeIngesterRequests := minimizeIngesterRequests
+
+				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
+					t.Parallel()
+
+					// Create distributor.
+					distributors, _, _, _ := prepare(t, prepConfig{
+						ingesterStateByZone: testData.ingesterStateByZone,
+						ingesterDataByZone:  testData.ingesterDataByZone,
+						numDistributors:     1,
+						shuffleShardSize:    testData.shardSize,
+						configure: func(config *Config) {
+							config.MinimizeIngesterRequests = minimizeIngesterRequests
+						},
+					})
+
+					// Fetch label values cardinality.
+					ctx := user.InjectOrgID(context.Background(), "test")
+					_, res, err := distributors[0].LabelValuesCardinality(ctx, reqLabelNames, nil, cardinality.InMemoryMethod)
+
+					if testData.expectedErr != nil {
+						require.ErrorIs(t, err, testData.expectedErr)
+						return
+					}
+
+					require.NoError(t, err)
+					assert.ElementsMatch(t, expectedRes, res.Items)
+				})
+			}
+		})
+	}
+}
+
+func TestDistributor_LabelValuesCardinality_Limit(t *testing.T) {
 	fixtures := []struct {
 		labels    labels.Labels
 		value     float64
@@ -4990,6 +5297,10 @@ func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, 
 	return request
 }
 
+func makeWriteRequestWith(series ...mimirpb.PreallocTimeseries) *mimirpb.WriteRequest {
+	return &mimirpb.WriteRequest{Timeseries: series}
+}
+
 func makeTimeseries(seriesLabels []string, samples []mimirpb.Sample, exemplars []mimirpb.Exemplar) mimirpb.PreallocTimeseries {
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
@@ -5152,27 +5463,15 @@ func makeWriteRequestForGenerators(series int, lsg labelSetGen, elsg labelSetGen
 }
 
 func makeWriteRequestExemplar(seriesLabels []string, timestamp int64, exemplarLabels []string) *mimirpb.WriteRequest {
-	return &mimirpb.WriteRequest{
-		Timeseries: []mimirpb.PreallocTimeseries{
-			makeExemplarTimeseries(seriesLabels, timestamp, exemplarLabels),
-		},
-	}
+	return makeWriteRequestWith(makeExemplarTimeseries(seriesLabels, timestamp, exemplarLabels))
 }
 
 func makeWriteRequestHistogram(seriesLabels []string, timestamp int64, histogram *histogram.Histogram) *mimirpb.WriteRequest {
-	return &mimirpb.WriteRequest{
-		Timeseries: []mimirpb.PreallocTimeseries{
-			makeHistogramTimeseries(seriesLabels, timestamp, histogram),
-		},
-	}
+	return makeWriteRequestWith(makeHistogramTimeseries(seriesLabels, timestamp, histogram))
 }
 
 func makeWriteRequestFloatHistogram(seriesLabels []string, timestamp int64, histogram *histogram.FloatHistogram) *mimirpb.WriteRequest {
-	return &mimirpb.WriteRequest{
-		Timeseries: []mimirpb.PreallocTimeseries{
-			makeFloatHistogramTimeseries(seriesLabels, timestamp, histogram),
-		},
-	}
+	return makeWriteRequestWith(makeFloatHistogramTimeseries(seriesLabels, timestamp, histogram))
 }
 
 func makeExemplarTimeseries(seriesLabels []string, timestamp int64, exemplarLabels []string) mimirpb.PreallocTimeseries {

@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/extract"
@@ -549,6 +550,308 @@ func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
 
 					require.NoError(t, err)
 					assert.Equal(t, testData.expectedSeries, res.NumSeries)
+				})
+			}
+		})
+	}
+}
+
+func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngestStorage(t *testing.T) {
+	const preferredZone = "zone-a"
+
+	var (
+		// Define fixtures used in tests.
+		series1 = makeTimeseries([]string{labels.MetricName, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil)
+		series2 = makeTimeseries([]string{labels.MetricName, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil)
+		series3 = makeTimeseries([]string{labels.MetricName, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil)
+		series4 = makeTimeseries([]string{labels.MetricName, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil)
+		series5 = makeTimeseries([]string{labels.MetricName, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil)
+		series6 = makeTimeseries([]string{labels.MetricName, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil)
+
+		// To keep assertions simple, all tests push all series, and then request the cardinality of the same label names,
+		// so we expect the same response from each successful test.
+		reqLabelNames = []model.LabelName{"job", "service"}
+		expectedRes   = []*client.LabelValueSeriesCount{
+			{
+				LabelName:        "job",
+				LabelValueSeries: map[string]uint64{"job-a": 3, "job-b": 2, "job-c": 1},
+			}, {
+				LabelName:        "service",
+				LabelValueSeries: map[string]uint64{"service-1": 4, "service-2": 1},
+			},
+		}
+	)
+
+	tests := map[string]struct {
+		ingesterStateByZone map[string]ingesterZoneState
+		ingesterDataByZone  map[string][]*mimirpb.WriteRequest
+		shardSize           int
+		expectedErr         error
+	}{
+		"partitions RF=1 (1 zone), 3 ingesters": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 3, happyIngesters: 3},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequestWith(series1, series2),
+					makeWriteRequestWith(series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+			},
+		},
+		"partitions RF=1 (1 zone), 6 ingesters": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 6, happyIngesters: 6},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequestWith(series1),
+					makeWriteRequestWith(series2),
+					makeWriteRequestWith(series3),
+					makeWriteRequestWith(series4),
+					makeWriteRequestWith(series5),
+					makeWriteRequestWith(series6),
+				},
+			},
+		},
+		"partitions RF=1 (1 zone), 6 ingesters, 1 ingester in LEAVING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 6, happyIngesters: 6, ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					nil,
+					makeWriteRequestWith(series2),
+					makeWriteRequestWith(series3),
+					makeWriteRequestWith(series4),
+					makeWriteRequestWith(series5),
+					makeWriteRequestWith(series6),
+				},
+			},
+			expectedErr: ring.ErrTooManyUnhealthyInstances,
+		},
+		"partitions RF=1 (1 zone), 6 ingesters, 1 ingester is UNHEALTHY": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 6, happyIngesters: 5},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequestWith(series1),
+					makeWriteRequestWith(series2),
+					makeWriteRequestWith(series3),
+					makeWriteRequestWith(series4),
+					makeWriteRequestWith(series5),
+					nil,
+				},
+			},
+			expectedErr: errFail,
+		},
+		"partitions RF=2 (2 zones), 4 ingesters": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2},
+				"zone-b": {numIngesters: 2, happyIngesters: 2},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+			},
+		},
+		"partitions RF=2 (2 zones), 4 ingesters, all ingesters in the preferred zone (zone-a) are in LEAVING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.LEAVING, ring.LEAVING}},
+				"zone-b": {numIngesters: 2, happyIngesters: 2},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+			},
+		},
+		"partitions RF=2 (2 zones), 4 ingesters, all ingesters in the non-preferred zone (zone-b) are in LEAVING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2},
+				"zone-b": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.LEAVING, ring.LEAVING}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+			},
+		},
+		"partitions RF=2 (2 zones), 4 ingesters, ingesters owning different partitions are in LEAVING state across both zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE}},
+				"zone-b": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.ACTIVE, ring.LEAVING}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+			},
+		},
+		"partitions RF=2 (2 zones), 4 ingesters, ingesters owning the same partition are in LEAVING state in both zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE}},
+				"zone-b": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+			},
+			expectedErr: ring.ErrTooManyUnhealthyInstances,
+		},
+		"partitions RF=2 (2 zones), 4 ingesters, all ingesters in the preferred zone (zone-a) are UNHEALTHY": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 0},
+				"zone-b": {numIngesters: 2, happyIngesters: 2},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					nil,
+					nil,
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+			},
+		},
+		"partitions RF=2 (2 zones), 4 ingesters, all ingesters in the non-preferred zone (zone-b) are UNHEALTHY": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2},
+				"zone-b": {numIngesters: 2, happyIngesters: 0},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
+				},
+				"zone-b": {
+					nil,
+					nil,
+				},
+			},
+		},
+		"partitions RF=2 (2 zones), 4 ingesters, ingesters owning different partitions are UNHEALTHY across both zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {states: []ingesterState{ingesterStateFailed, ingesterStateHappy}},
+				"zone-b": {states: []ingesterState{ingesterStateHappy, ingesterStateFailed}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					nil,
+					makeWriteRequestWith(series5, series6),
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					nil,
+				},
+			},
+		},
+		"partitions RF=2 (2 zones), 4 ingesters, ingesters owning the same partition are UNHEALTHY in both zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {states: []ingesterState{ingesterStateHappy, ingesterStateFailed}},
+				"zone-b": {states: []ingesterState{ingesterStateHappy, ingesterStateFailed}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					nil,
+				},
+				"zone-b": {
+					makeWriteRequestWith(series1, series2, series3, series4),
+					nil,
+				},
+			},
+			expectedErr: errFail,
+		},
+		"partitions RF=2 (2 zones), 4 ingesters, ingesters owning the same partition are UNHEALTHY in both zones but the partition is not part of the tenant's shard": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {states: []ingesterState{ingesterStateFailed, ingesterStateHappy}},
+				"zone-b": {states: []ingesterState{ingesterStateFailed, ingesterStateHappy}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					nil,
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+				},
+				"zone-b": {
+					nil,
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+				},
+			},
+			shardSize: 1, // Tenant's shard made of: partition 1.
+		},
+	}
+
+	for testName, testData := range tests {
+		testData := testData
+
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			for _, minimizeIngesterRequests := range []bool{false, true} {
+				minimizeIngesterRequests := minimizeIngesterRequests
+
+				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
+					t.Parallel()
+
+					// Create distributor
+					distributors, _, _, _ := prepare(t, prepConfig{
+						numDistributors:      1,
+						ingesterStateByZone:  testData.ingesterStateByZone,
+						ingesterDataByZone:   testData.ingesterDataByZone,
+						ingestStorageEnabled: true,
+						configure: func(config *Config) {
+							config.PreferAvailabilityZone = preferredZone
+							config.MinimizeIngesterRequests = minimizeIngesterRequests
+						},
+						limits: func() *validation.Limits {
+							limits := prepareDefaultLimits()
+							limits.IngestionPartitionsTenantShardSize = testData.shardSize
+							return limits
+						}(),
+					})
+
+					// Fetch label values cardinality.
+					ctx := user.InjectOrgID(context.Background(), "test")
+					_, res, err := distributors[0].LabelValuesCardinality(ctx, reqLabelNames, nil, cardinality.InMemoryMethod)
+
+					if testData.expectedErr != nil {
+						require.ErrorIs(t, err, testData.expectedErr)
+						return
+					}
+
+					require.NoError(t, err)
+					assert.ElementsMatch(t, expectedRes, res.Items)
 				})
 			}
 		})
