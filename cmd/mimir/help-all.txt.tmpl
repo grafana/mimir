@@ -809,6 +809,8 @@ Usage of ./cmd/mimir/mimir:
     	How frequently the TSDB blocks are scanned and new ones are shipped to the storage. 0 means shipping is disabled. (default 1m0s)
   -blocks-storage.tsdb.stripe-size int
     	The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance. (default 16384)
+  -blocks-storage.tsdb.timely-head-compaction-enabled
+    	[experimental] Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.
   -blocks-storage.tsdb.wal-compression-enabled
     	True to enable TSDB WAL compression.
   -blocks-storage.tsdb.wal-replay-concurrency int
@@ -1066,7 +1068,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.drop-label string
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
   -distributor.enable-otlp-metadata-storage
-    	[experimental] If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.
+    	[deprecated] If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP. (default true)
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string
@@ -1152,7 +1154,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.instance-limits.max-ingestion-rate float
     	Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
   -distributor.limit-inflight-requests-using-grpc-method-limiter
-    	[experimental] Use experimental method of limiting push requests.
+    	[deprecated] When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed. (default true)
   -distributor.max-recv-msg-size int
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.metric-relabeling-enabled
@@ -1336,7 +1338,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
   -ingester.limit-inflight-requests-using-grpc-method-limiter
-    	[experimental] Use experimental method of limiting push requests.
+    	[deprecated] When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed. (default true)
   -ingester.log-utilization-based-limiter-cpu-samples
     	[experimental] Enable logging of utilization based limiter CPU samples.
   -ingester.max-global-exemplars-per-user int

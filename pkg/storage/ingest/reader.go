@@ -24,9 +24,6 @@ import (
 	"go.uber.org/atomic"
 )
 
-// consumerGroup is only used to store commit offsets, not for actual consuming.
-const consumerGroup = "mimir"
-
 type record struct {
 	tenantID string
 	content  []byte
@@ -41,8 +38,9 @@ type PartitionReader struct {
 	services.Service
 	dependencies *services.Manager
 
-	kafkaCfg    KafkaConfig
-	partitionID int32
+	kafkaCfg      KafkaConfig
+	partitionID   int32
+	consumerGroup string
 
 	client *kgo.Client
 
@@ -61,16 +59,17 @@ type PartitionReader struct {
 	reg    prometheus.Registerer
 }
 
-func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, consumerGroup string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	consumer := newPusherConsumer(pusher, reg, logger)
-	return newPartitionReader(kafkaCfg, partitionID, consumer, logger, reg)
+	return newPartitionReader(kafkaCfg, partitionID, consumerGroup, consumer, logger, reg)
 }
 
-func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, consumerGroup string, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	r := &PartitionReader{
 		kafkaCfg:              kafkaCfg,
 		partitionID:           partitionID,
 		consumer:              consumer,
+		consumerGroup:         consumerGroup,
 		metrics:               newReaderMetrics(partitionID, reg),
 		commitInterval:        time.Second,
 		consumedOffsetWatcher: newPartitionOffsetWatcher(),
@@ -94,7 +93,7 @@ func (r *PartitionReader) start(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "creating kafka reader client")
 	}
-	r.committer = newConsumerCommitter(r.kafkaCfg, kadm.NewClient(r.client), r.partitionID, r.commitInterval, r.logger)
+	r.committer = newConsumerCommitter(r.kafkaCfg, kadm.NewClient(r.client), r.partitionID, r.consumerGroup, r.commitInterval, r.logger)
 
 	r.offsetReader = newPartitionOffsetReader(r.client, r.kafkaCfg.Topic, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.reg, r.logger)
 
@@ -330,7 +329,7 @@ func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, 
 	adm := kadm.NewClient(cl)
 	defer adm.Close()
 
-	offsets, err := adm.FetchOffsets(ctx, consumerGroup)
+	offsets, err := adm.FetchOffsets(ctx, r.consumerGroup)
 	if errors.Is(err, kerr.UnknownTopicOrPartition) {
 		// In case we are booting up for the first time ever against this topic.
 		return endOffset, nil
@@ -384,6 +383,7 @@ type partitionCommitter struct {
 	kafkaCfg       KafkaConfig
 	commitInterval time.Duration
 	partitionID    int32
+	consumerGroup  string
 
 	toCommit  *atomic.Int64
 	admClient *kadm.Client
@@ -391,11 +391,12 @@ type partitionCommitter struct {
 	logger log.Logger
 }
 
-func newConsumerCommitter(kafkaCfg KafkaConfig, admClient *kadm.Client, partitionID int32, commitInterval time.Duration, logger log.Logger) *partitionCommitter {
+func newConsumerCommitter(kafkaCfg KafkaConfig, admClient *kadm.Client, partitionID int32, consumerGroup string, commitInterval time.Duration, logger log.Logger) *partitionCommitter {
 	c := &partitionCommitter{
 		logger:         logger,
 		kafkaCfg:       kafkaCfg,
 		partitionID:    partitionID,
+		consumerGroup:  consumerGroup,
 		toCommit:       atomic.NewInt64(-1),
 		admClient:      admClient,
 		commitInterval: commitInterval,
@@ -435,7 +436,7 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) {
 	// Leader epoch is -1 because we don't know it. This lets Kafka figure it out.
 	toCommit.AddOffset(r.kafkaCfg.Topic, r.partitionID, offset+1, -1)
 
-	committed, err := r.admClient.CommitOffsets(ctx, consumerGroup, toCommit)
+	committed, err := r.admClient.CommitOffsets(ctx, r.consumerGroup, toCommit)
 	if err != nil || !committed.Ok() {
 		level.Error(r.logger).Log("msg", "encountered error while committing offsets", "err", err, "commit_err", committed.Error(), "offset", offset)
 	} else {

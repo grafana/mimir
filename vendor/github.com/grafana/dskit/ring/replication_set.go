@@ -405,6 +405,16 @@ func (r ReplicationSet) Includes(addr string) bool {
 	return false
 }
 
+// GetIDs returns the IDs of all instances within the replication set. Returned slice
+// order is not guaranteed.
+func (r ReplicationSet) GetIDs() []string {
+	ids := make([]string, 0, len(r.Instances))
+	for _, desc := range r.Instances {
+		ids = append(ids, desc.Id)
+	}
+	return ids
+}
+
 // GetAddresses returns the addresses of all instances within the replication set. Returned slice
 // order is not guaranteed.
 func (r ReplicationSet) GetAddresses() []string {

@@ -1045,10 +1045,6 @@ func TestComputeCompactionJobs(t *testing.T) {
 
 	const user = "test"
 
-	cfgProvider := newMockConfigProvider()
-	cfgProvider.splitGroups[user] = 0 // No grouping of jobs for split-compaction. All jobs will be in single split compaction.
-	cfgProvider.splitAndMergeShards[user] = 3
-
 	twoHoursMS := 2 * time.Hour.Milliseconds()
 	dayMS := 24 * time.Hour.Milliseconds()
 
@@ -1077,9 +1073,10 @@ func TestComputeCompactionJobs(t *testing.T) {
 	// Mark block for no-compaction.
 	require.NoError(t, block.MarkForNoCompact(context.Background(), log.NewNopLogger(), userBucket, blockMarkedForNoCompact, block.CriticalNoCompactReason, "testing", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, log.NewNopLogger(), nil)
-	split, merge, err := cleaner.estimateCompactionJobsFrom(context.Background(), user, userBucket, &index)
+	// No grouping of jobs for split-compaction. All jobs will be in single split compaction.
+	jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, &index, cfg.CompactionBlockRanges, 3, 0)
 	require.NoError(t, err)
+	split, merge := computeSplitAndMergeJobs(jobs)
 	require.Equal(t, 1, split)
 	require.Equal(t, 2, merge)
 }

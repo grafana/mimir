@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
+	"github.com/grafana/dskit/spanprofiler"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -684,35 +685,37 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                      *api.API
-	Server                   *server.Server
-	IngesterRing             *ring.Ring
-	TenantLimits             validation.TenantLimits
-	Overrides                *validation.Overrides
-	ActiveGroupsCleanup      *util.ActiveGroupsCleanupService
-	Distributor              *distributor.Distributor
-	Ingester                 *ingester.Ingester
-	Flusher                  *flusher.Flusher
-	FrontendV1               *frontendv1.Frontend
-	RuntimeConfig            *runtimeconfig.Manager
-	QuerierQueryable         prom_storage.SampleAndChunkQueryable
-	ExemplarQueryable        prom_storage.ExemplarQueryable
-	MetadataSupplier         querier.MetadataSupplier
-	QuerierEngine            *promql.Engine
-	QueryFrontendTripperware querymiddleware.Tripperware
-	QueryFrontendCodec       querymiddleware.Codec
-	Ruler                    *ruler.Ruler
-	RulerDirectStorage       rulestore.RuleStore
-	RulerCachedStorage       rulestore.RuleStore
-	Alertmanager             *alertmanager.MultitenantAlertmanager
-	Compactor                *compactor.MultitenantCompactor
-	StoreGateway             *storegateway.StoreGateway
-	StoreQueryable           prom_storage.Queryable
-	MemberlistKV             *memberlist.KVInitService
-	ActivityTracker          *activitytracker.ActivityTracker
-	Vault                    *vault.Vault
-	UsageStatsReporter       *usagestats.Reporter
-	BuildInfoHandler         http.Handler
+	API                           *api.API
+	Server                        *server.Server
+	IngesterRing                  *ring.Ring
+	IngesterPartitionRingWatcher  *ring.PartitionRingWatcher
+	IngesterPartitionInstanceRing *ring.PartitionInstanceRing
+	TenantLimits                  validation.TenantLimits
+	Overrides                     *validation.Overrides
+	ActiveGroupsCleanup           *util.ActiveGroupsCleanupService
+	Distributor                   *distributor.Distributor
+	Ingester                      *ingester.Ingester
+	Flusher                       *flusher.Flusher
+	FrontendV1                    *frontendv1.Frontend
+	RuntimeConfig                 *runtimeconfig.Manager
+	QuerierQueryable              prom_storage.SampleAndChunkQueryable
+	ExemplarQueryable             prom_storage.ExemplarQueryable
+	MetadataSupplier              querier.MetadataSupplier
+	QuerierEngine                 *promql.Engine
+	QueryFrontendTripperware      querymiddleware.Tripperware
+	QueryFrontendCodec            querymiddleware.Codec
+	Ruler                         *ruler.Ruler
+	RulerDirectStorage            rulestore.RuleStore
+	RulerCachedStorage            rulestore.RuleStore
+	Alertmanager                  *alertmanager.MultitenantAlertmanager
+	Compactor                     *compactor.MultitenantCompactor
+	StoreGateway                  *storegateway.StoreGateway
+	StoreQueryable                prom_storage.Queryable
+	MemberlistKV                  *memberlist.KVInitService
+	ActivityTracker               *activitytracker.ActivityTracker
+	Vault                         *vault.Vault
+	UsageStatsReporter            *usagestats.Reporter
+	BuildInfoHandler              http.Handler
 }
 
 // New makes a new Mimir.
@@ -756,7 +759,14 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	}
 
 	mimir.setupObjstoreTracing()
-	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
+
+	// Injects span profiler into the tracer for cross-referencing between traces and profiles.
+	// Note, for performance reasons, span profiler only labels root spans.
+	tracer := spanprofiler.NewTracer(opentracing.GlobalTracer())
+	// We are passing the wrapped tracer to both opentracing and opentelemetry until after the ecosystem
+	// gets converged into the latter.
+	opentracing.SetGlobalTracer(tracer)
+	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(tracer))
 
 	mimir.Cfg.Server.Router = mux.NewRouter()
 
@@ -828,9 +838,9 @@ func (t *Mimir) Run() error {
 	// implementation provided by module.Ring over the BasicLifecycler
 	// available in ingesters
 	if t.IngesterRing != nil {
-		t.API.RegisterRing(t.IngesterRing)
+		t.API.RegisterIngesterRing(t.IngesterRing)
 	} else if t.Ingester != nil {
-		t.API.RegisterRing(t.Ingester.RingHandler())
+		t.API.RegisterIngesterRing(t.Ingester.RingHandler())
 	}
 
 	// get all services, create service manager and tell it to start

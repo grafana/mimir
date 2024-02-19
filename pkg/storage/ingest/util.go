@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -18,7 +17,7 @@ import (
 
 var (
 	// Regular expression used to parse the ingester numeric ID.
-	ingesterIDRegexp = regexp.MustCompile("-(zone-.-)?([0-9]+)$")
+	ingesterIDRegexp = regexp.MustCompile("-([0-9]+)$")
 
 	// The Prometheus summary objectives used when tracking latency.
 	latencySummaryObjectives = map[float64]float64{
@@ -31,37 +30,20 @@ var (
 	}
 )
 
-// IngesterPartition returns the partition ID to use to write to a specific ingester partition.
-// The input ingester ID is expected to end either with "zone-X-Y" or only "-Y" where "X" is a letter in the range [a,d]
-// and "Y" is a positive integer number. This means that this function supports up to 4 zones starting
-// with letter "a" or no zones at all.
-func IngesterPartition(ingesterID string) (int32, error) {
+// IngesterPartitionID returns the partition ID owner the the given ingester.
+func IngesterPartitionID(ingesterID string) (int32, error) {
 	match := ingesterIDRegexp.FindStringSubmatch(ingesterID)
 	if len(match) == 0 {
-		return 0, fmt.Errorf("name doesn't match regular expression %s %q", ingesterID, ingesterIDRegexp.String())
-	}
-
-	// Convert the zone ID to a number starting from 0.
-	var zoneID int32
-	if wholeZoneStr := match[1]; len(wholeZoneStr) > 1 {
-		if !strings.HasPrefix(wholeZoneStr, "zone-") {
-			return 0, fmt.Errorf("invalid zone ID %s in %s", wholeZoneStr, ingesterID)
-		}
-
-		zoneID = rune(wholeZoneStr[len(wholeZoneStr)-2]) - 'a'
-		if zoneID < 0 || zoneID > 4 {
-			return 0, fmt.Errorf("zone ID is not between a and d %s", ingesterID)
-		}
+		return 0, fmt.Errorf("ingester ID %s doesn't match regular expression %q", ingesterID, ingesterIDRegexp.String())
 	}
 
 	// Parse the ingester sequence number.
-	ingesterSeq, err := strconv.Atoi(match[2])
+	ingesterSeq, err := strconv.Atoi(match[1])
 	if err != nil {
-		return 0, fmt.Errorf("no ingester sequence in name %s", ingesterID)
+		return 0, fmt.Errorf("no ingester sequence number in ingester ID %s", ingesterID)
 	}
 
-	partitionID := int32(ingesterSeq<<2) | (zoneID & 0b11)
-	return partitionID, nil
+	return int32(ingesterSeq), nil
 }
 
 func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger) []kgo.Opt {

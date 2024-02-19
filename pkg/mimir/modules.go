@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/dns"
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/ring"
@@ -70,6 +71,7 @@ const (
 	API                        string = "api"
 	SanityCheck                string = "sanity-check"
 	IngesterRing               string = "ingester-ring"
+	IngesterPartitionRing      string = "ingester-partitions-ring"
 	RuntimeConfig              string = "runtime-config"
 	Overrides                  string = "overrides"
 	OverridesExporter          string = "overrides-exporter"
@@ -185,7 +187,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 		return nil, nil
 	}
 
-	v, err := vault.NewVault(t.Cfg.Vault)
+	v, err := vault.NewVault(t.Cfg.Vault, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +266,14 @@ func (t *Mimir) initVault() (services.Service, error) {
 		}
 	}
 
-	return nil, nil
+	runFunc := func(ctx context.Context) error {
+		err := t.Vault.KeepRenewingTokenLease(ctx)
+		// We don't want to turn Mimir into an unready state if Vault fails here
+		<-ctx.Done()
+		return err
+	}
+
+	return services.NewBasicService(nil, runFunc, nil), nil
 }
 
 func (t *Mimir) initSanityCheck() (services.Service, error) {
@@ -346,6 +355,25 @@ func (t *Mimir) initIngesterRing() (serv services.Service, err error) {
 		return nil, err
 	}
 	return t.IngesterRing, nil
+}
+
+func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
+	if !t.Cfg.IngestStorage.Enabled {
+		return nil, nil
+	}
+
+	kvClient, err := kv.NewClient(t.Cfg.Ingester.IngesterRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(t.Registerer, ingester.PartitionRingName+"-watcher"), util_log.Logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating KV store for ingester partitions ring watcher")
+	}
+
+	t.IngesterPartitionRingWatcher = ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
+
+	// Expose a web page to view the partitions ring state.
+	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher))
+
+	return t.IngesterPartitionRingWatcher, nil
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
@@ -452,9 +480,10 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.StreamingChunksPerIngesterSeriesBufferSize = t.Cfg.Querier.StreamingChunksPerIngesterSeriesBufferSize
 	t.Cfg.Distributor.MinimizeIngesterRequests = t.Cfg.Querier.MinimizeIngesterRequests
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
+	t.Cfg.Distributor.PreferAvailabilityZone = t.Cfg.Querier.PreferAvailabilityZone
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, t.IngesterPartitionInstanceRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -950,6 +979,9 @@ func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	// Append to the list of codecs instead of overwriting the value to allow third parties to inject their own codecs.
 	t.Cfg.MemberlistKV.Codecs = append(t.Cfg.MemberlistKV.Codecs, ring.GetCodec())
+	if t.Cfg.IngestStorage.Enabled {
+		t.Cfg.MemberlistKV.Codecs = append(t.Cfg.MemberlistKV.Codecs, ring.GetPartitionRingCodec())
+	}
 
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
 		"cortex_",
@@ -1023,6 +1055,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
+	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRing, modules.UserInvisibleModule)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(ActiveGroupsCleanupService, t.initActiveGroupsCleanupService, modules.UserInvisibleModule)
@@ -1057,14 +1090,15 @@ func (t *Mimir) setupModuleManager() error {
 		MemberlistKV:             {API, Vault},
 		RuntimeConfig:            {API},
 		IngesterRing:             {API, RuntimeConfig, MemberlistKV, Vault},
+		IngesterPartitionRing:    {MemberlistKV, IngesterRing, API},
 		Overrides:                {RuntimeConfig},
 		OverridesExporter:        {Overrides, MemberlistKV, Vault},
 		Distributor:              {DistributorService, API, ActiveGroupsCleanupService, Vault},
-		DistributorService:       {IngesterRing, Overrides, Vault},
+		DistributorService:       {IngesterRing, IngesterPartitionRing, Overrides, Vault},
 		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService, Vault},
-		IngesterService:          {IngesterRing, Overrides, RuntimeConfig, MemberlistKV},
+		IngesterService:          {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                  {Overrides, API},
-		Queryable:                {Overrides, DistributorService, IngesterRing, API, StoreQueryable, MemberlistKV},
+		Queryable:                {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
 		Querier:                  {TenantFederation, Vault},
 		StoreQueryable:           {Overrides, MemberlistKV},
 		QueryFrontendTripperware: {API, Overrides},
