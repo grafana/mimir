@@ -132,7 +132,7 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 						clonedSeries, err := clonePreallocTimeseries(series)
 						require.NoError(t, err)
 
-						_, err = ds[0].Push(ctx, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{clonedSeries}})
+						_, err = ds[0].Push(ctx, makeWriteRequestWith(clonedSeries))
 						require.NoError(t, err)
 					}
 
@@ -315,10 +315,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 			}
 
 			// Push more series to exceed the limit once we'll query back all series.
-			writeReq = &mimirpb.WriteRequest{}
-			writeReq.Timeseries = append(writeReq.Timeseries,
-				makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil),
-			)
+			writeReq = makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil))
 
 			writeRes, err = ds[0].Push(userCtx, writeReq)
 			assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
@@ -362,10 +359,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
 	}
 	// Push a single series to allow us to calculate the chunk size to calculate the limit for the test.
-	writeReq := &mimirpb.WriteRequest{}
-	writeReq.Timeseries = append(writeReq.Timeseries,
-		makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil),
-	)
+	writeReq := makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil))
 	writeRes, err := ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 	assert.Nil(t, err)
@@ -394,10 +388,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	assert.Len(t, queryRes.Chunkseries, seriesToAdd)
 
 	// Push another series to exceed the chunk bytes limit once we'll query back all series.
-	writeReq = &mimirpb.WriteRequest{}
-	writeReq.Timeseries = append(writeReq.Timeseries,
-		makeTimeseries([]string{model.MetricNameLabel, "another_series_1"}, makeSamples(0, 0), nil),
-	)
+	writeReq = makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series_1"}, makeSamples(0, 0), nil))
 
 	writeRes, err = ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)

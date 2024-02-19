@@ -594,9 +594,9 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"single-zone": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2),
+					makeWriteRequestWith(series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 			},
 		},
@@ -606,12 +606,12 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"single-zone": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series2}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series6}},
+					makeWriteRequestWith(series1),
+					makeWriteRequestWith(series2),
+					makeWriteRequestWith(series3),
+					makeWriteRequestWith(series4),
+					makeWriteRequestWith(series5),
+					makeWriteRequestWith(series6),
 				},
 			},
 		},
@@ -622,11 +622,11 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"single-zone": {
 					nil,
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series2}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series6}},
+					makeWriteRequestWith(series2),
+					makeWriteRequestWith(series3),
+					makeWriteRequestWith(series4),
+					makeWriteRequestWith(series5),
+					makeWriteRequestWith(series6),
 				},
 			},
 			expectedErr: ring.ErrTooManyUnhealthyInstances,
@@ -637,11 +637,11 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"single-zone": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series2}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5}},
+					makeWriteRequestWith(series1),
+					makeWriteRequestWith(series2),
+					makeWriteRequestWith(series3),
+					makeWriteRequestWith(series4),
+					makeWriteRequestWith(series5),
 					nil,
 				},
 			},
@@ -654,12 +654,12 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 			},
 		},
@@ -670,12 +670,12 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 			},
 		},
@@ -686,12 +686,12 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 			},
 		},
@@ -702,12 +702,12 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 			},
 		},
@@ -718,12 +718,12 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 			},
 			expectedErr: ring.ErrTooManyUnhealthyInstances,
@@ -739,8 +739,8 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 					nil,
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 			},
 		},
@@ -751,8 +751,8 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 				"zone-b": {
 					nil,
@@ -768,10 +768,10 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
 					nil,
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series5, series6),
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
+					makeWriteRequestWith(series1, series2, series3, series4),
 					nil,
 				},
 			},
@@ -783,11 +783,11 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
+					makeWriteRequestWith(series1, series2, series3, series4),
 					nil,
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
+					makeWriteRequestWith(series1, series2, series3, series4),
 					nil,
 				},
 			},
@@ -801,11 +801,11 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
 					nil,
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
 				},
 				"zone-b": {
 					nil,
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
 				},
 			},
 			shardSize: 1, // Tenant's shard made of: partition 1.

@@ -1573,9 +1573,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 			minExemplarTS: 0,
 			maxExemplarTS: 0,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			req: makeWriteRequestWith(
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
-			}},
+			),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{TimeSeries: &mimirpb.TimeSeries{
 					Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test1"}},
@@ -1589,10 +1589,10 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 			minExemplarTS: 0,
 			maxExemplarTS: math.MaxInt64,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			req: makeWriteRequestWith(
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
-			}},
+			),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
@@ -1604,10 +1604,10 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 			minExemplarTS: 300000,
 			maxExemplarTS: math.MaxInt64,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			req: makeWriteRequestWith(
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
-			}},
+			),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{TimeSeries: &mimirpb.TimeSeries{
 					Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
@@ -1627,17 +1627,15 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 			minExemplarTS: 300000,
 			maxExemplarTS: math.MaxInt64,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-				{
-					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
-						Exemplars: []mimirpb.Exemplar{
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
-						},
+			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
 					},
 				},
-			}},
+			}),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
@@ -1660,17 +1658,15 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 			minExemplarTS: 300000,
 			maxExemplarTS: math.MaxInt64,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-				{
-					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
-						Exemplars: []mimirpb.Exemplar{
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
-						},
+			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
 					},
 				},
-			}},
+			}),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
@@ -1693,17 +1689,15 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 			minExemplarTS: 0,
 			maxExemplarTS: 100000,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-				{
-					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
-						Exemplars: []mimirpb.Exemplar{
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
-						},
+			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
 					},
 				},
-			}},
+			}),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
@@ -3949,9 +3943,9 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"single-zone": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
 				},
 			},
 		},
@@ -3961,12 +3955,12 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"single-zone": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4, series5, series6}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4, series5, series6}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
+					makeWriteRequestWith(series4, series5, series6),
+					makeWriteRequestWith(series4, series5, series6),
 				},
 			},
 		},
@@ -3976,12 +3970,12 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"single-zone": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4, series5, series6}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4, series5, series6}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
+					makeWriteRequestWith(series4, series5, series6),
+					makeWriteRequestWith(series4, series5, series6),
 				},
 			},
 			expectedErr: ring.ErrTooManyUnhealthyInstances,
@@ -3992,11 +3986,11 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"single-zone": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4, series5, series6}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
+					makeWriteRequestWith(series4, series5, series6),
 					nil,
 				},
 			},
@@ -4010,13 +4004,13 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
 				},
 				"zone-c": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
 				},
 			},
 		},
@@ -4028,10 +4022,10 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
 				},
 				"zone-c": {
 					nil,
@@ -4046,16 +4040,16 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5),
+					makeWriteRequestWith(series6),
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 				"zone-c": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
 				},
 			},
 		},
@@ -4067,16 +4061,16 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5),
+					makeWriteRequestWith(series6),
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 				"zone-c": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
 				},
 			},
 			expectedErr: ring.ErrTooManyUnhealthyInstances,
@@ -4093,12 +4087,12 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 					nil,
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4),
+					makeWriteRequestWith(series5, series6),
 				},
 				"zone-c": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
 				},
 			},
 		},
@@ -4110,16 +4104,16 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5),
 					nil,
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4}},
+					makeWriteRequestWith(series1, series2, series3, series4),
 					nil,
 				},
 				"zone-c": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3),
+					makeWriteRequestWith(series4, series5, series6),
 				},
 			},
 			expectedErr: errFail,
@@ -4132,16 +4126,16 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{other1}}, // Not belonging to tenant's shard.
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					makeWriteRequestWith(other1), // Not belonging to tenant's shard.
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{other1}}, // Not belonging to tenant's shard.
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					makeWriteRequestWith(other1), // Not belonging to tenant's shard.
 				},
 				"zone-c": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{other1}}, // Not belonging to tenant's shard.
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
+					makeWriteRequestWith(other1), // Not belonging to tenant's shard.
 				},
 			},
 			shardSize: 1, // Tenant's shard made of: ingester-zone-a-0, ingester-zone-b-0 and ingester-zone-c-0.
@@ -4154,15 +4148,15 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 			},
 			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
 				"zone-a": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
 					nil,
 				},
 				"zone-b": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
 					nil,
 				},
 				"zone-c": {
-					&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1, series2, series3, series4, series5, series6}},
+					makeWriteRequestWith(series1, series2, series3, series4, series5, series6),
 					nil,
 				},
 			},
@@ -5303,6 +5297,14 @@ func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, 
 	return request
 }
 
+func makeWriteRequestWith(series ...mimirpb.PreallocTimeseries) *mimirpb.WriteRequest {
+	req := &mimirpb.WriteRequest{}
+	for _, item := range series {
+		req.Timeseries = append(req.Timeseries, item)
+	}
+	return req
+}
+
 func makeTimeseries(seriesLabels []string, samples []mimirpb.Sample, exemplars []mimirpb.Exemplar) mimirpb.PreallocTimeseries {
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
@@ -5465,27 +5467,15 @@ func makeWriteRequestForGenerators(series int, lsg labelSetGen, elsg labelSetGen
 }
 
 func makeWriteRequestExemplar(seriesLabels []string, timestamp int64, exemplarLabels []string) *mimirpb.WriteRequest {
-	return &mimirpb.WriteRequest{
-		Timeseries: []mimirpb.PreallocTimeseries{
-			makeExemplarTimeseries(seriesLabels, timestamp, exemplarLabels),
-		},
-	}
+	return makeWriteRequestWith(makeExemplarTimeseries(seriesLabels, timestamp, exemplarLabels))
 }
 
 func makeWriteRequestHistogram(seriesLabels []string, timestamp int64, histogram *histogram.Histogram) *mimirpb.WriteRequest {
-	return &mimirpb.WriteRequest{
-		Timeseries: []mimirpb.PreallocTimeseries{
-			makeHistogramTimeseries(seriesLabels, timestamp, histogram),
-		},
-	}
+	return makeWriteRequestWith(makeHistogramTimeseries(seriesLabels, timestamp, histogram))
 }
 
 func makeWriteRequestFloatHistogram(seriesLabels []string, timestamp int64, histogram *histogram.FloatHistogram) *mimirpb.WriteRequest {
-	return &mimirpb.WriteRequest{
-		Timeseries: []mimirpb.PreallocTimeseries{
-			makeFloatHistogramTimeseries(seriesLabels, timestamp, histogram),
-		},
-	}
+	return makeWriteRequestWith(makeFloatHistogramTimeseries(seriesLabels, timestamp, histogram))
 }
 
 func makeExemplarTimeseries(seriesLabels []string, timestamp int64, exemplarLabels []string) mimirpb.PreallocTimeseries {
