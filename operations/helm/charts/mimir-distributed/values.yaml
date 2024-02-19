@@ -2921,6 +2921,8 @@ gateway:
       httpSnippet: ""
       # -- Allows to set a custom resolver
       resolver: null
+      # -- Configures whether or not NGINX bind IPv6
+      enableIPv6: true
       # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating.
       file: |
         worker_processes  5;  ## Default: 1
@@ -2976,7 +2978,9 @@ gateway:
           proxy_read_timeout 300;
           server {
             listen {{ include "mimir.serverHttpListenPort" . }};
+            {{- if .Values.gateway.nginx.config.enableIPv6 }}
             listen [::]:{{ include "mimir.serverHttpListenPort" . }};
+            {{- end }}
 
             {{- if .Values.gateway.nginx.basicAuth.enabled }}
             auth_basic           "Mimir";
