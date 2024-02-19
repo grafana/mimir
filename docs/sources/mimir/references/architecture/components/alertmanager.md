@@ -15,7 +15,9 @@ The Mimir Alertmanager adds multi-tenancy support and horizontal scalability to 
 The Mimir Alertmanager is an optional component that accepts alert notifications from the [Mimir ruler]({{< relref "./ruler" >}}).
 The Alertmanager deduplicates and groups alert notifications, and routes them to a notification channel, such as email, PagerDuty, or OpsGenie.
 
-> **Note:** To run Mimir Alertmanager as a part of [monolithic deployment]({{< relref "/../deployment-modes/#monolithic-mode" >}})run mimir with the command `./mimir -target=all,alertmanager`.
+{{< admonition type="note" >}}
+To run Mimir Alertmanager as a part of [monolithic deployment]({{< relref "../deployment-modes#monolithic-mode" >}}), run Mimir with the option `-target=all,alertmanager`.
+{{< /admonition >}}
 
 ## Multi-tenancy
 
