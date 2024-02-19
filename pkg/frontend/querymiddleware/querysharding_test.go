@@ -936,7 +936,7 @@ func TestQueryshardingDeterminism(t *testing.T) {
 // A single generator instance generates different label sets.
 func labelsForShardsGenerator(base []labels.Label, shards uint64) func(shard uint64) labels.Labels {
 	i := 0
-	builder := labels.ScratchBuilder{}
+	builder := labels.NewScratchBuilder(0)
 	return func(shard uint64) labels.Labels {
 		for {
 			i++

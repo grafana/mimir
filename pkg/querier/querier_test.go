@@ -999,7 +999,7 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 
 	require.Len(t, m, 1)
 	series := m[0]
-	require.Equal(t, q.labels, series.Metric)
+	require.True(t, labels.Equal(q.labels, series.Metric))
 	require.Equal(t, q.samples(from, through, step), len(series.Floats)+len(series.Histograms))
 	var ts int64
 	for _, point := range series.Floats {

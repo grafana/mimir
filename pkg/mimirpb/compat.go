@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
 
@@ -92,6 +93,14 @@ func (req *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []
 // Don't do this on any performance sensitive paths.
 func FromLabelAdaptersToMetric(ls []LabelAdapter) model.Metric {
 	return util.LabelsToMetric(FromLabelAdaptersToLabels(ls))
+}
+
+// FromLabelAdaptersToBuilder converts []LabelAdapter to labels.Builder.
+func FromLabelAdaptersToScratchBuilder(ls []LabelAdapter, builder *labels.ScratchBuilder) {
+	builder.Reset()
+	for _, v := range ls {
+		builder.Add(v.Name, v.Value)
+	}
 }
 
 // FromLabelAdaptersToString formats label adapters as a metric name with labels, while preserving

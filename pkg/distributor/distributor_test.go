@@ -1290,7 +1290,7 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 			timeseries := ingesters[i].series()
 			assert.Equal(t, 1, len(timeseries))
 			for _, v := range timeseries {
-				assert.Equal(t, tc.expectedSeries, mimirpb.FromLabelAdaptersToLabels(v.Labels))
+				assert.True(t, labels.Equal(tc.expectedSeries, mimirpb.FromLabelAdaptersToLabels(v.Labels)))
 			}
 		}
 	}
@@ -2382,7 +2382,7 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			assert.ElementsMatch(t, test.expectedSeries, series)
+			assertMatchingLabelSlices(t, test.expectedSeries, series)
 
 			// Check that query stats are set correctly.
 			assert.Equal(t, uint64(len(test.expectedSeries)), qStats.GetFetchedSeriesCount())
@@ -2392,6 +2392,25 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 		})
 	}
 
+}
+
+func assertMatchingLabelSlices(tb testing.TB, a, b []labels.Labels) {
+	tb.Helper()
+	mapA := map[string]struct{}{}
+	for i := range a {
+		mapA[a[i].String()] = struct{}{}
+	}
+	for i := range b {
+		s := b[i].String()
+		if _, found := mapA[s]; found {
+			delete(mapA, s)
+		} else {
+			tb.Errorf("entry in b not found in a: %s", s)
+		}
+	}
+	for s := range mapA {
+		tb.Errorf("entry in a not found in b: %s", s)
+	}
 }
 
 func BenchmarkDistributor_ActiveSeries(b *testing.B) {

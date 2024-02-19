@@ -12,12 +12,14 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/google/go-cmp/cmp"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -1796,10 +1798,17 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 			indexReader := newBucketIndexReader(block, selectAllStrategy{})
 			defer indexReader.Close()
 
-			assert.Equal(t, querySeries(indexReader), querySeries(indexReaderOmittingMatchers))
+			requireEqual(t, querySeries(indexReader), querySeries(indexReaderOmittingMatchers))
 		})
 	}
 
+}
+
+// Wrapper to instruct go-cmp package to compare a list of structs with unexported fields.
+func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+	testutil.RequireEqualWithOptions(t, expected, actual,
+		[]cmp.Option{cmp.AllowUnexported(seriesChunkRefsSet{}), cmp.AllowUnexported(seriesChunkRefs{})},
+		msgAndArgs...)
 }
 
 func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
@@ -2181,7 +2190,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 					require.NoError(t, err)
 					lset := extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
 					require.NoError(t, ss.Err())
-					assert.Equal(t, testCase.expectedLabelSets, lset)
+					testutil.RequireEqual(t, testCase.expectedLabelSets, lset)
 					assert.Equal(t, testCase.expectedSeriesReadFromBlockWithColdCache, statsColdCache.export().seriesFetched)
 
 					// Run 2 with a warm cache

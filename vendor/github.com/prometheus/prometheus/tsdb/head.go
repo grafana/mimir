@@ -762,6 +762,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 	h.startWALReplayStatus(startFrom, endAt)
 
+	syms := labels.NewSymbolTable() // One table for the whole WAL.
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 	if err == nil && startFrom >= snapIdx {
 		sr, err := wlog.NewSegmentsReader(dir)
@@ -776,7 +777,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -809,7 +810,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks)
+		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks)
 		if err := sr.Close(); err != nil {
 			level.Warn(h.logger).Log("msg", "Error while closing the wal segments reader", "err", err)
 		}
@@ -837,7 +838,7 @@ func (h *Head) Init(minValidTime int64) error {
 			}
 
 			sr := wlog.NewSegmentBufReader(s)
-			err = h.loadWBL(wlog.NewReader(sr), multiRef, lastMmapRef)
+			err = h.loadWBL(wlog.NewReader(sr), syms, multiRef, lastMmapRef)
 			if err := sr.Close(); err != nil {
 				level.Warn(h.logger).Log("msg", "Error while closing the wbl segments reader", "err", err)
 			}
@@ -1791,6 +1792,21 @@ func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	return nil
 }
 
+// Fetch a series from the map, given a function which says whether it's the right Labels.
+func (m *seriesHashmap) getByFunc(hash uint64, cmp func(labels.Labels) bool) *memSeries {
+	if s, found := m.unique[hash]; found {
+		if cmp(s.lset) {
+			return s
+		}
+	}
+	for _, s := range m.conflicts[hash] {
+		if cmp(s.lset) {
+			return s
+		}
+	}
+	return nil
+}
+
 func (m *seriesHashmap) set(hash uint64, s *memSeries) {
 	if existing, found := m.unique[hash]; !found || labels.Equal(existing.lset, s.lset) {
 		m.unique[hash] = s
@@ -1997,6 +2013,16 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 
 	s.locks[i].RLock()
 	series := s.hashes[i].get(hash, lset)
+	s.locks[i].RUnlock()
+
+	return series
+}
+
+func (s *stripeSeries) getByHashFunc(hash uint64, cmp func(labels.Labels) bool) *memSeries {
+	i := hash & uint64(s.size-1)
+
+	s.locks[i].RLock()
+	series := s.hashes[i].getByFunc(hash, cmp)
 	s.locks[i].RUnlock()
 
 	return series
