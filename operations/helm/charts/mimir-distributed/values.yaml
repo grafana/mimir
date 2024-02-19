@@ -507,7 +507,7 @@ rbac:
 
 # -- KEDA Autoscaling configuration
 kedaAutoscaling:
-  # If empty, the helm chart uses the metamonitoring URL
+  # -- A Prometheus-compatible URL. Cadvisor and Mimir metrics for the Mimir pods are expected in this server. For more information on the required metrics see [Monitor system health](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/) If empty, the helm chart uses the metamonitoring URL from metaMonitoring.grafanaAgent.metrics.remote.url. If that is empty, then the Mimir cluster is used.
   prometheusAddress: ""
   customHeaders: {}
   pollingInterval: 10
