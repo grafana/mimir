@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
@@ -50,20 +51,25 @@ func (bs *batchStream) at() (int64, float64) {
 	return b.Timestamps[b.Index], b.Values[b.Index]
 }
 
-func (bs *batchStream) atHistogram() (int64, *histogram.Histogram) {
+func (bs *batchStream) atHistogram() (int64, unsafe.Pointer) {
 	b := &(*bs)[0]
-	return b.Timestamps[b.Index], (*histogram.Histogram)(b.PointerValues[b.Index])
+	return b.Timestamps[b.Index], b.PointerValues[b.Index]
 }
 
-func (bs *batchStream) atFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (bs *batchStream) atFloatHistogram() (int64, unsafe.Pointer) {
 	b := &(*bs)[0]
-	return b.Timestamps[b.Index], (*histogram.FloatHistogram)(b.PointerValues[b.Index])
+	return b.Timestamps[b.Index], b.PointerValues[b.Index]
 }
 
 // mergeStreams merges streams of Batches of the same series over time.
 // Samples are simply merged by time when they are the same type (float/histogram/...), with the left stream taking precedence if the timestamps are equal.
 // When sample are different type, batches are not merged. In case of equal timestamps, histograms take precedence since they have more information.
-func mergeStreams(left, right batchStream, result batchStream, size int) batchStream {
+// If copyPointerValuesLeft or copyPointerValuesRight are true, pointers of the copies of the histograms and float histograms from left or right batchStream
+// will be stored in the result batchStream.
+// hPointerValuesPool and fhPointerValuesPool are pools of pointers corresponding to histograms and float histograms. They return instances of histogram.Histogram
+// and histogram.FloatHistogram that are used for creating copies. If they are nil, new instances of histogram.Histogram and histogram.FloatHistogram are used for
+// creating copies.
+func mergeStreams(left, right, result batchStream, size int, copyPointerValuesLeft, copyPointerValuesRight bool, hPointerValuesPool, fhPointerValuesPool *zeropool.Pool[unsafe.Pointer]) batchStream {
 
 	// Reset the Index and Length of existing batches.
 	for i := range result {
@@ -89,7 +95,7 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 		b.ValueType = valueType
 	}
 
-	populate := func(s batchStream, valueType chunkenc.ValueType) {
+	populate := func(s batchStream, valueType chunkenc.ValueType, copyPointerValues bool) {
 		if b.Index == 0 {
 			// Starting to write this Batch, it is safe to set the value type
 			b.ValueType = valueType
@@ -103,11 +109,37 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 		case chunkenc.ValFloat:
 			b.Timestamps[b.Index], b.Values[b.Index] = s.at()
 		case chunkenc.ValHistogram:
-			t, v := s.atHistogram()
-			b.Timestamps[b.Index], b.PointerValues[b.Index] = t, unsafe.Pointer(v)
+			t, pH := s.atHistogram()
+			if copyPointerValues {
+				fromH := (*histogram.Histogram)(pH)
+				if fromH != nil {
+					var toH *histogram.Histogram
+					if hPointerValuesPool == nil {
+						toH = &histogram.Histogram{}
+					} else {
+						toH = (*histogram.Histogram)(hPointerValuesPool.Get())
+					}
+					fromH.CopyTo(toH)
+					pH = unsafe.Pointer(toH)
+				}
+			}
+			b.Timestamps[b.Index], b.PointerValues[b.Index] = t, pH
 		case chunkenc.ValFloatHistogram:
-			t, v := s.atFloatHistogram()
-			b.Timestamps[b.Index], b.PointerValues[b.Index] = t, unsafe.Pointer(v)
+			t, pFH := s.atFloatHistogram()
+			if copyPointerValues {
+				fromFH := (*histogram.FloatHistogram)(pFH)
+				if fromFH != nil {
+					var toFH *histogram.FloatHistogram
+					if fhPointerValuesPool == nil {
+						toFH = &histogram.FloatHistogram{}
+					} else {
+						toFH = (*histogram.FloatHistogram)(fhPointerValuesPool.Get())
+					}
+					fromFH.CopyTo(toFH)
+					pFH = unsafe.Pointer(toFH)
+				}
+			}
+			b.Timestamps[b.Index], b.PointerValues[b.Index] = t, pFH
 		}
 		b.Index++
 	}
@@ -115,17 +147,17 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 	for lt, rt := left.hasNext(), right.hasNext(); lt != chunkenc.ValNone && rt != chunkenc.ValNone; lt, rt = left.hasNext(), right.hasNext() {
 		t1, t2 := left.atTime(), right.atTime()
 		if t1 < t2 {
-			populate(left, lt)
+			populate(left, lt, copyPointerValuesLeft)
 			left.next()
 		} else if t1 > t2 {
-			populate(right, rt)
+			populate(right, rt, copyPointerValuesRight)
 			right.next()
 		} else {
 			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
-				// Prefer histograms over floats. Take left side if both have histograms.
-				populate(right, rt)
+				// Prefer histograms to floats. Take left side if both have histograms.
+				populate(right, rt, copyPointerValuesRight)
 			} else {
-				populate(left, lt)
+				populate(left, lt, copyPointerValuesLeft)
 			}
 			left.next()
 			right.next()
@@ -134,15 +166,15 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 
 	// This function adds all the samples from the provided
 	// batchStream into the result in the same order.
-	addToResult := func(bs batchStream) {
+	addToResult := func(bs batchStream, reusePointerValues bool) {
 		for t := bs.hasNext(); t != chunkenc.ValNone; t = bs.hasNext() {
-			populate(bs, t)
+			populate(bs, t, reusePointerValues)
 			bs.next()
 		}
 	}
 
-	addToResult(left)
-	addToResult(right)
+	addToResult(left, copyPointerValuesLeft)
+	addToResult(right, copyPointerValuesRight)
 
 	// The Index is the place at which new sample
 	// has to be appended, hence it tells the length.

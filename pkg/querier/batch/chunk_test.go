@@ -153,7 +153,7 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 		expectedTS := int64(i * int(step/time.Millisecond))
 		assertPoint(expectedTS, iter.Seek(expectedTS))
 
-		for j := i + 1; j < i+points/10; j++ {
+		for j := i + 1; j < i+points/10 && j < points; j++ {
 			expectedTS := int64(j * int(step/time.Millisecond))
 			assertPoint(expectedTS, iter.Next())
 		}
@@ -207,11 +207,13 @@ func (i *mockIterator) Timestamp() int64 {
 	return 0
 }
 
-func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType) chunk.Batch {
-	batch := chunk.Batch{
-		Length:    chunk.BatchSize,
-		ValueType: valueType,
+func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, b *chunk.Batch) *chunk.Batch {
+	batch := b
+	if batch == nil {
+		batch = &chunk.Batch{}
 	}
+	batch.Length = chunk.BatchSize
+	batch.ValueType = valueType
 	for i := 0; i < chunk.BatchSize; i++ {
 		batch.Timestamps[i] = int64(i)
 	}
