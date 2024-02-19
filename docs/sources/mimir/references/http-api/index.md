@@ -320,6 +320,10 @@ Requires [authentication](#authentication).
 POST /otlp/v1/metrics
 ```
 
+{{% admonition type="note" %}}
+To send OTLP data to Grafana Cloud, refer to [Send data using OpenTelemetry Protocol (OTLP)](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/).
+{{% /admonition %}}
+
 Entrypoint for the [OTLP HTTP](https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md).
 
 This endpoint accepts an HTTP POST request with a body that contains a request encoded with [Protocol Buffers](https://developers.google.com/protocol-buffers) and optionally compressed with [GZIP](https://www.gnu.org/software/gzip/).
