@@ -3858,9 +3858,17 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			for _, minimizeIngesterRequests := range []bool{false, true} {
+				minimizeIngesterRequests := minimizeIngesterRequests
+
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
+					t.Parallel()
+
 					// Create distributor
 					ds, ingesters, _, _ := prepare(t, prepConfig{
 						numIngesters:      numIngesters,
