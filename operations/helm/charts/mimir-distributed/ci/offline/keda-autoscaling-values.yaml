@@ -13,40 +13,28 @@ distributor:
     enabled: true
     minReplicaCount: 1
     maxReplicaCount: 10
-    pollingInterval: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
-    customHeaders:
-      X-Scope-OrgID: tenant-1
 
 ruler:
   kedaAutoscaling:
     enabled: true
     minReplicaCount: 1
     maxReplicaCount: 10
-    pollingInterval: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
-    customHeaders:
-      X-Scope-OrgID: tenant-1
 
 querier:
   kedaAutoscaling:
     enabled: true
     minReplicaCount: 2
     maxReplicaCount: 10
-    pollingInterval: 10
     querySchedulerInflightRequestsThreshold: 6
-    customHeaders:
-      X-Scope-OrgID: tenant-1
 
 query_frontend:
   kedaAutoscaling:
     enabled: true
     minReplicaCount: 1
     maxReplicaCount: 10
-    pollingInterval: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
-    customHeaders:
-      X-Scope-OrgID: tenant-1
