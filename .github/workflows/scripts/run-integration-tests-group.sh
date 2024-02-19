@@ -7,6 +7,7 @@ INTEGRATION_DIR=$(realpath "${SCRIPT_DIR}/../../../integration/")
 # Parse args.
 INDEX=""
 TOTAL=""
+TAGPREFIX=""
 
 while [[ $# -gt 0 ]]
 do
@@ -20,6 +21,11 @@ do
       INDEX="$2"
       shift # skip --index
       shift # skip index value
+      ;;
+    --tagprefix)
+      TAGPREFIX="$2"
+      shift # skip --image
+      shift # skip image value
       ;;
     *)  break
       ;;
@@ -36,11 +42,25 @@ if [[ -z "$TOTAL" ]]; then
     exit 1
 fi
 
+if [[ -z "$TAGPREFIX" ]]; then
+    echo "No image provided."
+    exit 1
+fi
+
+export IMAGE_TAG_RACE=$(make image-tag-race)
+export MIMIR_IMAGE="grafana/mimir:$TAGPREFIX$IMAGE_TAG_RACE"
+export IMAGE_TAG=$(make image-tag)
+export MIMIRTOOL_IMAGE="grafana/mimirtool:$IMAGE_TAG"
+export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
+
+echo "Running integration tests with image: $MIMIR_IMAGE (Mimir), $MIMIRTOOL_IMAGE (Mimirtool)"
+echo "Running integration tests (group $INDEX of $TOTAL) with Go version: $(go version)"
+
 # List all tests.
 ALL_TESTS=$(go test -tags=requires_docker,stringlabels -list 'Test.*' "${INTEGRATION_DIR}/..." | grep -E '^Test.*' | sort)
 
 # Filter tests by the requested group.
-GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTAL == INDEX')
+GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL="$TOTAL" -v INDEX="$INDEX" 'NR % TOTAL == INDEX')
 
 echo "This group will run the following tests:"
 echo "$GROUP_TESTS"
