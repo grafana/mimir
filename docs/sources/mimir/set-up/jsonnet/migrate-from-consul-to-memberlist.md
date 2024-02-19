@@ -121,7 +121,11 @@ We use `multikv_migration_teardown` to preserve runtime configuration for `multi
 
 All `cortex_multikv_*` metrics are only exposed by components that use `multi` KV store. As components restart, these metrics will disappear.
 
-> **Note**: setting `multikv_migration_enabled: false` while keeping `memberlist_ring_enabled: true` will also remove Consul! That's expected, since Consul is not used anymore – mirroring to it was disabled in step 4.
+{{< admonition type="note" >}}
+Setting `multikv_migration_enabled: false` while keeping `memberlist_ring_enabled: true` removes the Consul workload.
+
+That's expected, since Consul isn't used anymore—you disabled mirroring to it in step 4.
+{{< /admonition >}}
 
 If you need to keep consul running, you can explicitly set `consul_enabled: true` in `_config`.
 

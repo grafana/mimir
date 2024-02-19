@@ -11,8 +11,9 @@ weight: 40
 
 # Migrate from microservices to read-write mode without downtime
 
-> **Warning:**
-> Read-Write mode is considered experimental, as well as migrating between the modes.
+{{< admonition type="warning" >}}
+Read-Write mode, and migrating between modes, is experimental.
+{{< /admonition >}}
 
 At a high level, the steps involved are as follows:
 
@@ -293,10 +294,11 @@ Wait the next TSDB head compaction for ingesters (2 hours).
 
 ### Step 7.2: Scale down ingesters
 
-> **Warning:**
-> You must follow the shutdown ingester procedure to avoid data loss.
+{{< admonition type="warning" >}}
+You must follow the shutdown ingester procedure to avoid data loss.
+{{< /admonition >}}
 
-Follow the procedure for [shutting down ingesters](< relref "../../run-production-environment/scaling-out.md#scaling-down-ingesters-deployed-in-multiple-zones" >}}) in `ingester-zone-a`.
+Follow the procedure for [shutting down ingesters]({{< relref "../../manage/run-production-environment/scaling-out.md#scaling-down-ingesters-deployed-in-multiple-zones" >}}) in `ingester-zone-a`.
 
 Scale down zone-a replicas (this can be done before waiting for step 4 in the shutdown procedure):
 

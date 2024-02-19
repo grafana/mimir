@@ -17,7 +17,7 @@ Mimir Jsonnet supports autoscaling for the following components:
 - [Querier]({{< relref "../../references/architecture/components/querier" >}})
 - [Distributor]({{< relref "../../references/architecture/components/distributor" >}})
 
-Autoscaling, which is based on Prometheus metrics and [KEDA (Kubernetes-based Event Driven Autoscaler)](https://keda.sh), uses Kubernetes’ Horizontal Pod Autoscaler (HPA).
+Autoscaling, which is based on Prometheus metrics and [Kubernetes-based Event Driven Autoscaler (KEDA)](https://keda.sh), uses Kubernetes’ Horizontal Pod Autoscaler (HPA).
 
 HPA is not configured directly in Jsonnet but it's created and updated by KEDA.
 KEDA is an operator, running in the Kubernetes cluster, which is responsible to simplify the setup of HPA with custom metrics (Prometheus in our case).
@@ -80,7 +80,11 @@ mimir {
 }
 ```
 
-> **Note**: KEDA will not be installed by Mimir jsonnet. You can follow the [Deploying KEDA](https://keda.sh/docs/latest/deploy/) instructions to install it in your Kubernetes cluster.
+{{< admonition type="note" >}}
+The Mimir Jsonet doesn't install KEDA.
+
+To install KEDA, follow the instructions in [Deploying KEDA](https://keda.sh/docs/latest/deploy/).
+{{< /admonition >}}
 
 ## How to disable autoscaling
 
