@@ -100,8 +100,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
 			})
 
-			//nolint:staticcheck
-			partitionID, err := ingest.IngesterZonalPartition(cfg.IngesterRing.InstanceID)
+			partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
 			require.NoError(t, err)
 			require.NoError(t, writer.WriteSync(ctx, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}, Source: mimirpb.API}))
 
@@ -308,6 +307,31 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 		res := httptest.NewRecorder()
 		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
 		require.Equal(t, http.StatusConflict, res.Code)
+
+		// We expect the partition to be in PENDING state.
+		require.Eventually(t, func() bool {
+			return slices.Equal(watcher.PartitionRing().PendingPartitionIDs(), []int32{0})
+		}, time.Second, 10*time.Millisecond)
+	})
+
+	t.Run("DELETE is ignored if the partition is in PENDING state", func(t *testing.T) {
+		t.Parallel()
+
+		// To keep the partition in PENDING state we set a minimum number of owners
+		// higher than the actual number of ingesters we're going to run.
+		cfg := defaultIngesterTestConfig(t)
+		cfg.IngesterPartitionRing.MinOwnersCount = 2
+
+		ingester, watcher := setup(t, cfg)
+
+		// Pre-condition: the partition is PENDING.
+		require.Eventually(t, func() bool {
+			return slices.Equal(watcher.PartitionRing().PendingPartitionIDs(), []int32{0})
+		}, time.Second, 10*time.Millisecond)
+
+		res := httptest.NewRecorder()
+		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-partition-downscale", nil))
+		require.Equal(t, http.StatusOK, res.Code)
 
 		// We expect the partition to be in PENDING state.
 		require.Eventually(t, func() bool {

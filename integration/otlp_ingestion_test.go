@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
@@ -90,6 +91,10 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
+	// Check metric to track OTLP requests
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_distributor_otlp_requests_total"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
+
 	// Query the series.
 	result, err := c.Query(fmt.Sprintf("series_1%s", sfx), now)
 	require.NoError(t, err)
@@ -139,6 +144,10 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	res, err = c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
+
+	// Check metric to track OTLP requests
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_distributor_otlp_requests_total"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
 	result, err = c.Query(fmt.Sprintf("series%s", sfx), now)
 	require.NoError(t, err)

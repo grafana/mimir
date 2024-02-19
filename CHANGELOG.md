@@ -49,6 +49,8 @@
 * [FEATURE] Alertmanager: Added `-alertmanager.utf8-strict-mode-enabled` to control support for any UTF-8 character as part of Alertmanager configuration/API matchers and labels. It's default value is set to `false`. #6898
 * [FEATURE] Querier: added `histogram_avg()` function support to PromQL. #7293
 * [FEATURE] Ingester: added `-blocks-storage.tsdb.timely-head-compaction` flag, which enables more timely head compaction, and defaults to `false`. #7372
+* [FEATURE] Compactor: Added `/compactor/tenants` and `/compactor/tenant/{tenant}/planned_jobs` endpoints that provide functionality that was provided by `tools/compaction-planner` -- listing of planned compaction jobs based on tenants' bucket index. #7381
+* [ENHANCEMENT] Distributor: Add a new metric `cortex_distributor_otlp_requests_total` to track the total number of OTLP requests. #7385
 * [ENHANCEMENT] Vault: add lifecycle manager for token used to authenticate to Vault. This ensures the client token is always valid. Includes a gauge (`cortex_vault_token_lease_renewal_active`) to check whether token renewal is active, and the counters `cortex_vault_token_lease_renewal_success_total` and `cortex_vault_auth_success_total` to see the total number of successful lease renewals / authentications. #7337
 * [ENHANCEMENT] Store-gateway: add no-compact details column on store-gateway tenants admin UI. #6848
 * [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
@@ -67,6 +69,7 @@
 * [ENHANCEMENT] Store-gateway: add `source`, `level`, and `out_or_order` to `cortex_bucket_store_series_blocks_queried` metric that indicates the number of blocks that were queried from store gateways by block metadata. #7112 #7262 #7267
 * [ENHANCEMENT] Compactor: After updating bucket-index, compactor now also computes estimated number of compaction jobs based on current bucket-index, and reports the result in `cortex_bucket_index_estimated_compaction_jobs` metric. If computation of jobs fails, `cortex_bucket_index_estimated_compaction_jobs_errors_total` is updated instead. #7299
 * [ENHANCEMENT] Mimir: Integrate profiling into tracing instrumentation. #7363
+* [ENHANCEMENT] Alertmanager: Adds metric `cortex_alertmanager_notifications_suppressed_total` that counts the total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals. #7384
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
 * [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
@@ -93,6 +96,9 @@
 * [BUGFIX] Query-frontend: "query stats" log unsuccessful replies from downstream as "failed". #7296
 * [BUGFIX] Packaging: remove reload from systemd file as mimir does not take into account SIGHUP. #7345
 * [BUGFIX] Compactor: do not allow out-of-order blocks to prevent timely compaction. #7342
+* [BUGFIX] Update `google.golang.org/grpc` to resolve occasional issues with gRPC server closing its side of connection before it was drained by the client. #7380
+* [BUGFIX] Query-frontend: abort response streaming for `active_series` requests when the request context is canceled. #7378
+* [BUGFIX] Compactor: improve compaction of sporadic blocks. #7329
 
 ### Mixin
 
@@ -164,6 +170,8 @@
 
 ### Mimirtool
 
+* [FEATURE] Add command `migrate-utf8` to migrate Alertmanager configurations for Alertmanager versions 0.27.0 and later. #7383
+* [ENHANCEMENT] Add template render command to render locally a template. #7325
 * [ENHANCEMENT] Add `--extra-headers` option to `mimirtool rules` command to add extra headers to requests for auth. #7141
 * [ENHANCEMENT] Analyze Prometheus: set tenant header. #6737
 * [ENHANCEMENT] Add argument `--output-dir` to `mimirtool alertmanager get` where the config and templates will be written to and can be loaded via `mimirtool alertmanager load` #6760
@@ -174,6 +182,8 @@
 * [ENHANCEMENT] Include comparison of all expected and actual values when any float sample does not match. #6756
 
 ### Query-tee
+
+* [BUGFIX] Fix issue where `Host` HTTP header was not being correctly changed for the proxy targets. #7386
 
 ### Documentation
 

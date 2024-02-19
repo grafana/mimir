@@ -158,6 +158,49 @@ The following command deletes the Alertmanager configuration in the Grafana Mimi
 mimirtool alertmanager delete
 ```
 
+#### Migrate Alertmanager configuration for UTF-8 in Alertmanager 0.27 and later
+
+The migrate-utf8 command translates any matchers that are incompatible with the UTF-8 parser into
+equivalent matchers that are compatible by enforcing double quoting on the right hand side
+of the matcher. The translation does not change their behavior.
+
+The command takes as input an existing configuration and template files, and prints as output
+the migrated configuration and template files:
+
+```bash
+mimirtool alertmanager migrate-utf8 <config_file> [template_files...]
+```
+
+You can also output the migrated configuration and template files to a folder which can be
+reviewed before being loaded back into the Alertmanager at a later time. We recommended you output
+the migrated files to a different folder than the original files so you always have the original files
+as a backup. For example, the following command outputs the migrated configuration and template files
+to a folder called `migrated`:
+
+```bash
+mimirtool alertmanager migrate-utf8 <config_file> [template_files...] --output-dir="migrated"
+```
+
+Within the output dir, the configuration file is named `config.yaml` and the template files ends in
+`.tpl`, where each template is written out to its own file.
+
+{{< admonition type="note" >}}
+When you use the `--output-dir` flag, the command only writes the output to files and doesn't print the configuration to the console.
+{{< /admonition >}}
+
+Once you have migrated your configuration, verify it using the verify command and the
+`--utf8-strict-mode` flag:
+
+```bash
+mimirtool alertmanager verify <config_file> [template_files...] --utf8-strict-mode
+```
+
+The command prints a warning with the text `UTF-8 mode enabled` to let you know the command is using
+UTF-8 strict mode to validate your configuration.
+
+If the command exits without error, and you're satisfied with the changes made to the migrated
+configuration and template files, reload it using the `load` command.
+
 #### Validate Alertmanager configuration
 
 The following command validates an Alertmanager configuration file. It does not load the configuration to the Alertmanager instance.
@@ -172,6 +215,24 @@ The following command verifies if alerts in an Alertmanager cluster are deduplic
 
 ```bash
 mimirtool alerts verify
+```
+
+#### Render template
+
+You can render your Alertmanager template with the `render` command.
+
+The argument to the `--template.glob` option is a glob that expands to the alert template paths.
+
+The argument to the `--template.data` option is a JSON file containing Alertmanager template data.
+
+The argument to the `--template.text` option is a Go template.
+The command renders this template with the templates found be expanding `--template-glob`.
+
+The following command render a template and prints it to the terminal.
+It assumes you have written the templates to the directory `templates`.
+
+```bash
+mimirtool alertmanager render --template.glob 'templates/*' --template.data alert_data1.json --template.text '{{ template "my_message" . }}'
 ```
 
 ### Rules

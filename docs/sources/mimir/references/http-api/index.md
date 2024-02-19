@@ -97,6 +97,8 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Check block upload](#check-block-upload) | Compactor | `GET /api/v1/upload/block/{block}/check` |
 | [Tenant delete request](#tenant-delete-request) | Compactor | `POST /compactor/delete_tenant` |
 | [Tenant delete status](#tenant-delete-status) | Compactor | `GET /compactor/delete_tenant_status` |
+| [Compactor tenants](#compactor-tenants) | Compactor | `GET /compactor/tenants` |
+| [Compactor tenant planned jobs](#compactor-tenant-planned-jobs) | Compactor | `GET /compactor/tenant/{tenant}/planned_jobs` |
 | [Overrides-exporter ring status](#overrides-exporter-ring-status) | Overrides-exporter | `GET /overrides-exporter/ring` |
 {{% /responsive-table %}}
 
@@ -1226,6 +1228,22 @@ Returns status of tenant deletion.
 The `blocks_deleted` field will be set to `true` if all the tenant's blocks have been deleted.
 
 Requires [authentication](#authentication).
+
+### Compactor tenants
+
+```
+GET /compactor/tenants
+```
+
+Displays a web page with the list of tenants that have blocks in the storage configured for the compactor.
+
+### Compactor tenant planned jobs
+
+```
+GET /compactor/tenant/{tenant}/planned_jobs
+```
+
+Displays a web page listing planned compaction jobs computed from the bucket index for the given tenant.
 
 ## Overrides-exporter
 

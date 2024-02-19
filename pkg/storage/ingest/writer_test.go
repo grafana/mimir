@@ -364,36 +364,6 @@ func runAsyncAfter(wg *sync.WaitGroup, waitFor chan struct{}, fn func()) {
 	}()
 }
 
-// runAsyncAndAssertCompletionOrder runs all executors functions concurrently and asserts that the functions
-// completes in the given order.
-func runAsyncAndAssertCompletionOrder(t *testing.T, executors ...func()) {
-	var (
-		// Keep track of the actual execution order.
-		actualOrderMx = sync.Mutex{}
-		actualOrder   = make([]int, 0, len(executors))
-		expectedOrder = make([]int, 0, len(executors))
-		wg            = sync.WaitGroup{}
-	)
-
-	for i, executor := range executors {
-		i := i
-		executor := executor
-		expectedOrder = append(expectedOrder, i)
-
-		runAsync(&wg, func() {
-			executor()
-
-			actualOrderMx.Lock()
-			actualOrder = append(actualOrder, i)
-			actualOrderMx.Unlock()
-		})
-	}
-
-	wg.Wait()
-
-	assert.Equal(t, expectedOrder, actualOrder)
-}
-
 func createTestContextWithTimeout(t *testing.T, timeout time.Duration) context.Context {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	t.Cleanup(cancel)

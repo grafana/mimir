@@ -20,28 +20,35 @@ func CreateCluster(t testing.TB, numPartitions int32, topicName string) (*kfake.
 	addrs := cluster.ListenAddrs()
 	require.Len(t, addrs, 1)
 
-	const consumerGroup = "mimir"
-	addSupportForConsumerGroups(t, cluster, topicName, numPartitions, consumerGroup)
+	addSupportForConsumerGroups(t, cluster, topicName, numPartitions)
 
 	return cluster, addrs[0]
 }
 
 // addSupportForConsumerGroups adds very bare-bones support for one consumer group.
 // It expects that only one partition is consumed at a time.
-func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName string, numPartitions int32, consumerGroup string) {
-	committedOffsets := make([]int64, numPartitions+1)
+func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName string, numPartitions int32) {
+	committedOffsets := map[string][]int64{}
+
+	ensureConsumerGroupExists := func(consumerGroup string) {
+		if _, ok := committedOffsets[consumerGroup]; ok {
+			return
+		}
+		committedOffsets[consumerGroup] = make([]int64, numPartitions+1)
+	}
 
 	cluster.ControlKey(kmsg.OffsetCommit.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
 		cluster.KeepControl()
 		commitR := request.(*kmsg.OffsetCommitRequest)
-		assert.Equal(t, consumerGroup, commitR.Group)
+		consumerGroup := commitR.Group
+		ensureConsumerGroupExists(consumerGroup)
 		assert.Len(t, commitR.Topics, 1, "test only has support for one topic per request")
 		topic := commitR.Topics[0]
 		assert.Equal(t, topicName, topic.Topic)
 		assert.Len(t, topic.Partitions, 1, "test only has support for one partition per request")
 
 		partitionID := topic.Partitions[0].Partition
-		committedOffsets[partitionID] = topic.Partitions[0].Offset
+		committedOffsets[consumerGroup][partitionID] = topic.Partitions[0].Offset
 
 		resp := request.ResponseKind().(*kmsg.OffsetCommitResponse)
 		resp.Default()
@@ -59,7 +66,8 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 		cluster.KeepControl()
 		commitR := request.(*kmsg.OffsetFetchRequest)
 		assert.Len(t, commitR.Groups, 1, "test only has support for one consumer group per request")
-		assert.Equal(t, commitR.Groups[0].Group, consumerGroup)
+		consumerGroup := commitR.Groups[0].Group
+		ensureConsumerGroupExists(consumerGroup)
 
 		const allPartitions = -1
 		var partitionID int32
@@ -78,13 +86,13 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 			for i := int32(1); i < numPartitions+1; i++ {
 				partitionsResp = append(partitionsResp, kmsg.OffsetFetchResponseGroupTopicPartition{
 					Partition: i,
-					Offset:    committedOffsets[i],
+					Offset:    committedOffsets[consumerGroup][i],
 				})
 			}
 		} else {
 			partitionsResp = append(partitionsResp, kmsg.OffsetFetchResponseGroupTopicPartition{
 				Partition: partitionID,
-				Offset:    committedOffsets[partitionID],
+				Offset:    committedOffsets[consumerGroup][partitionID],
 			})
 		}
 

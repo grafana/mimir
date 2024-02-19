@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -421,22 +422,67 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
 	}
 }
 
+func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
+	s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(fmt.Errorf("test ran to completion"))
+
+	body, err := json.Marshal(&activeSeriesResponse{Data: []labels.Labels{
+		// Make this large enough to ensure the whole response isn't buffered.
+		labels.FromStrings("lbl1", strings.Repeat("a", os.Getpagesize())),
+		labels.FromStrings("lbl2", "val2"),
+		labels.FromStrings("lbl3", "val3"),
+	}})
+	require.NoError(t, err)
+
+	responses := []*http.Response{
+		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
+		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
+	}
+
+	resp := s.mergeResponses(ctx, responses, "")
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
+
+	var buf bytes.Buffer
+	_, err = io.CopyN(&buf, resp.Body, int64(os.Getpagesize()))
+	require.NoError(t, err)
+
+	cancelCause := "request canceled while streaming response"
+	cancel(fmt.Errorf(cancelCause))
+
+	_, err = io.Copy(&buf, resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), cancelCause)
+}
+
 func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
 	b.Run("encoding=none", func(b *testing.B) {
-		benchmarkActiveSeriesMiddlewareMergeResponses(b, "")
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1)
 	})
 
 	b.Run("encoding=snappy", func(b *testing.B) {
-		benchmarkActiveSeriesMiddlewareMergeResponses(b, encodingTypeSnappyFramed)
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, encodingTypeSnappyFramed, 1)
+	})
+
+	b.Run("seriesCount=1_000", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1_000)
+	})
+
+	b.Run("seriesCount=10_000", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 10_000)
 	})
 }
 
-func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string) {
-	type activeSeriesResponse struct {
-		Data []labels.Labels `json:"data"`
-	}
+type activeSeriesResponse struct {
+	Data []labels.Labels `json:"data"`
+}
 
-	bcs := []int{2, 4, 8, 16, 32, 64, 128, 256, 512}
+func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string, numSeries int) {
+
+	bcs := []int{4, 16, 64, 128}
 
 	for _, numResponses := range bcs {
 		b.Run(fmt.Sprintf("num-responses-%d", numResponses), func(b *testing.B) {
@@ -447,7 +493,14 @@ func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string
 				for i := 0; i < numResponses; i++ {
 
 					var apiResp activeSeriesResponse
-					apiResp.Data = append(apiResp.Data, labels.FromStrings("__name__", "m_"+fmt.Sprint(i), "job", "prometheus"+fmt.Sprint(i), "instance", "instance"+fmt.Sprint(i)))
+					for k := 0; k < numSeries; k++ {
+						apiResp.Data = append(apiResp.Data, labels.FromStrings(
+							"__name__", "m_"+fmt.Sprint(i),
+							"job", "prometheus"+fmt.Sprint(i),
+							"instance", "instance"+fmt.Sprint(i),
+							"series", fmt.Sprintf("series_%d", k),
+						))
+					}
 					body, _ := json.Marshal(&apiResp)
 
 					responses = append(responses, &http.Response{

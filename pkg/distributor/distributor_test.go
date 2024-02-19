@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kfake"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
@@ -56,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -63,6 +65,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	util_test "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -117,9 +120,7 @@ func TestDistributor_Push(t *testing.T) {
 
 	now := time.Now()
 	mtime.NowForce(now)
-	t.Cleanup(func() {
-		mtime.NowReset()
-	})
+	t.Cleanup(mtime.NowReset)
 
 	type samplesIn struct {
 		num              int
@@ -351,12 +352,11 @@ func TestDistributor_Push(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			limits := &validation.Limits{}
-			flagext.DefaultValues(limits)
+			limits := prepareDefaultLimits()
 			limits.IngestionRate = 20
 			limits.IngestionBurstSize = 20
 
-			ds, _, regs := prepare(t, prepConfig{
+			ds, _, regs, _ := prepare(t, prepConfig{
 				numIngesters:    tc.numIngesters,
 				happyIngesters:  tc.happyIngesters,
 				numDistributors: 1,
@@ -397,12 +397,11 @@ func TestDistributor_Push(t *testing.T) {
 }
 
 func TestDistributor_PushWithDoBatchWorkers(t *testing.T) {
-	limits := &validation.Limits{}
-	flagext.DefaultValues(limits)
+	limits := prepareDefaultLimits()
 	limits.IngestionRate = 20
 	limits.IngestionBurstSize = 20
 
-	ds, _, _ := prepare(t, prepConfig{
+	ds, _, _, _ := prepare(t, prepConfig{
 		numIngesters:    3,
 		happyIngesters:  3,
 		numDistributors: 1,
@@ -415,10 +414,10 @@ func TestDistributor_PushWithDoBatchWorkers(t *testing.T) {
 	require.Len(t, ds, 1)
 	distributor := ds[0]
 
-	require.NotNil(t, distributor.ingesterDoBatchPushWorkers)
+	require.NotNil(t, distributor.doBatchPushWorkers)
 	counter := atomic.NewInt64(0)
-	originalIngesterDoBatchPushWorkers := distributor.ingesterDoBatchPushWorkers
-	distributor.ingesterDoBatchPushWorkers = func(f func()) {
+	originalIngesterDoBatchPushWorkers := distributor.doBatchPushWorkers
+	distributor.doBatchPushWorkers = func(f func()) {
 		counter.Inc()
 		originalIngesterDoBatchPushWorkers(f)
 	}
@@ -437,7 +436,7 @@ func TestDistributor_ContextCanceledRequest(t *testing.T) {
 	mtime.NowForce(now)
 	t.Cleanup(mtime.NowReset)
 
-	ds, ings, _ := prepare(t, prepConfig{
+	ds, ings, _, _ := prepare(t, prepConfig{
 		numIngesters:    3,
 		happyIngesters:  3,
 		numDistributors: 1,
@@ -461,7 +460,7 @@ func TestDistributor_ContextCanceledRequest(t *testing.T) {
 }
 
 func TestDistributor_MetricsCleanup(t *testing.T) {
-	dists, _, regs := prepare(t, prepConfig{
+	dists, _, regs, _ := prepare(t, prepConfig{
 		numDistributors: 1,
 	})
 	d := dists[0]
@@ -630,14 +629,13 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			limits := &validation.Limits{}
-			flagext.DefaultValues(limits)
+			limits := prepareDefaultLimits()
 			limits.RequestRate = testData.requestRate
 			limits.RequestBurstSize = testData.requestBurstSize
 			limits.ServiceOverloadStatusCodeOnRateLimitEnabled = testData.enableServiceOverloadError
 
 			// Start all expected distributors
-			distributors, _, _ := prepare(t, prepConfig{
+			distributors, _, _, _ := prepare(t, prepConfig{
 				numIngesters:    3,
 				happyIngesters:  3,
 				numDistributors: testData.distributors,
@@ -738,14 +736,13 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			limits := &validation.Limits{}
-			flagext.DefaultValues(limits)
+			limits := prepareDefaultLimits()
 			limits.IngestionRate = testData.ingestionRate
 			limits.IngestionBurstSize = testData.ingestionBurstSize
 			limits.IngestionBurstFactor = testData.ingestionBurstFactor
 
 			// Start all expected distributors
-			distributors, _, _ := prepare(t, prepConfig{
+			distributors, _, _, _ := prepare(t, prepConfig{
 				numIngesters:    3,
 				happyIngesters:  3,
 				numDistributors: testData.distributors,
@@ -911,11 +908,10 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			limits := &validation.Limits{}
-			flagext.DefaultValues(limits)
+			limits := prepareDefaultLimits()
 
 			// Start all expected distributors
-			distributors, _, regs := prepare(t, prepConfig{
+			distributors, _, regs, _ := prepare(t, prepConfig{
 				numIngesters:    3,
 				happyIngesters:  3,
 				numDistributors: 1,
@@ -1018,7 +1014,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			limits.AcceptHASamples = true
 			limits.MaxLabelValueLength = 15
 
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, _, _ := prepare(t, prepConfig{
 				numIngesters:    3,
 				happyIngesters:  3,
 				numDistributors: 1,
@@ -1045,7 +1041,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 }
 
 func TestDistributor_PushWithCircuitBreakers(t *testing.T) {
-	ds, _, _ := prepare(t, prepConfig{
+	ds, _, _, _ := prepare(t, prepConfig{
 		numIngesters:       3,
 		happyIngesters:     3,
 		numDistributors:    1,
@@ -1178,7 +1174,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			cfg.shuffleShardSize = tc.shuffleShardSize
 
-			ds, ingesters, reg := prepare(t, cfg)
+			ds, ingesters, reg, _ := prepare(t, cfg)
 
 			request := makeWriteRequest(0, tc.samples, tc.metadata, false, true, metricName)
 			writeResponse, err := ds[0].Push(ctx, request)
@@ -1276,7 +1272,7 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 		limits.DropLabels = tc.removeLabels
 		limits.AcceptHASamples = tc.removeReplica
 
-		ds, ingesters, _ := prepare(t, prepConfig{
+		ds, ingesters, _, _ := prepare(t, prepConfig{
 			numIngesters:    2,
 			happyIngesters:  2,
 			numDistributors: 1,
@@ -1343,7 +1339,7 @@ func TestDistributor_Push_ShouldGuaranteeShardingTokenConsistencyOverTheTime(t *
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			ds, ingesters, _ := prepare(t, prepConfig{
+			ds, ingesters, _, _ := prepare(t, prepConfig{
 				numIngesters:    2,
 				happyIngesters:  2,
 				numDistributors: 1,
@@ -1399,7 +1395,7 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, _, _ := prepare(t, prepConfig{
 				numIngesters:     2,
 				happyIngesters:   2,
 				numDistributors:  1,
@@ -1470,10 +1466,9 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			limits := &validation.Limits{}
-			flagext.DefaultValues(limits)
+			limits := prepareDefaultLimits()
 			limits.MaxGlobalExemplarsPerUser = 10
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, _, _ := prepare(t, prepConfig{
 				limits:           limits,
 				numIngesters:     2,
 				happyIngesters:   2,
@@ -1537,13 +1532,12 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			limits := &validation.Limits{}
-			flagext.DefaultValues(limits)
+			limits := prepareDefaultLimits()
 			limits.CreationGracePeriod = model.Duration(time.Minute)
 			limits.MaxNativeHistogramBuckets = tc.bucketLimit
 			limits.ReduceNativeHistogramOverMaxBuckets = false
 
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, _, _ := prepare(t, prepConfig{
 				numIngesters:     2,
 				happyIngesters:   2,
 				numDistributors:  1,
@@ -1560,10 +1554,6 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 				assert.Nil(t, resp)
 				checkGRPCError(t, tc.expectedErr, expectedDetails, err)
 			}
-
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
-			})
 		})
 	}
 }
@@ -1734,10 +1724,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 	now := mtime.Now()
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			limits := &validation.Limits{}
-			flagext.DefaultValues(limits)
+			limits := prepareDefaultLimits()
 			tc.prepareConfig(limits)
-			ds, _, regs := prepare(t, prepConfig{
+			ds, _, regs, _ := prepare(t, prepConfig{
 				limits:          limits,
 				numDistributors: 1,
 			})
@@ -1841,11 +1830,10 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 	now := mtime.Now()
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			limits := &validation.Limits{}
-			flagext.DefaultValues(limits)
+			limits := prepareDefaultLimits()
 			tc.prepareConfig(limits)
 			limits.ReduceNativeHistogramOverMaxBuckets = true
-			ds, _, regs := prepare(t, prepConfig{
+			ds, _, regs, _ := prepare(t, prepConfig{
 				limits:          limits,
 				numDistributors: 1,
 			})
@@ -2101,7 +2089,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			require.NoError(b, err)
 
 			// Start the distributor.
-			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, nil, log.NewNopLogger())
+			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -2141,7 +2129,7 @@ func TestSlowQueries(t *testing.T) {
 				expectedErr = errFail
 			}
 
-			ds, _, reg := prepare(t, prepConfig{
+			ds, _, reg, _ := prepare(t, prepConfig{
 				numIngesters:    nIngesters,
 				happyIngesters:  happy,
 				numDistributors: 1,
@@ -2237,43 +2225,73 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
-			now := model.Now()
+			t.Parallel()
 
-			// Create distributor
-			ds, ingesters, _ := prepare(t, prepConfig{
-				numIngesters:     numIngesters,
-				happyIngesters:   numIngesters,
-				numDistributors:  1,
-				shuffleShardSize: testData.shuffleShardSize,
-			})
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
 
-			// Push fixtures
-			ctx := user.InjectOrgID(context.Background(), "test")
+				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
 
-			for _, series := range fixtures {
-				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := ds[0].Push(ctx, req)
-				require.NoError(t, err)
+					now := model.Now()
+
+					testConfig := prepConfig{
+						numIngesters:    numIngesters,
+						happyIngesters:  numIngesters,
+						numDistributors: 1,
+					}
+
+					if ingestStorageEnabled {
+						testConfig.ingestStorageEnabled = true
+						testConfig.limits = prepareDefaultLimits()
+						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+					} else {
+						testConfig.shuffleShardSize = testData.shuffleShardSize
+					}
+
+					// Create distributor
+					ds, ingesters, _, _ := prepare(t, testConfig)
+
+					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+					ctx := user.InjectOrgID(context.Background(), "test")
+					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+					// Push fixtures
+					for _, series := range fixtures {
+						req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+						_, err := ds[0].Push(ctx, req)
+						require.NoError(t, err)
+					}
+
+					// Set up limiter
+					ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(testData.maxSeriesPerQuery, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+
+					metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.matchers...)
+					if testData.expectedError != nil {
+						require.ErrorIs(t, err, testData.expectedError)
+						return
+					}
+
+					require.NoError(t, err)
+					assert.ElementsMatch(t, testData.expectedResult, metrics)
+
+					// Check how many ingesters have been queried.
+					if ingestStorageEnabled {
+						// When ingest storage is enabled, we request quorum 1 for each partition.
+						// In this test each ingester owns a different partition, so we expect all
+						// ingesters to be queried.
+						assert.Equal(t, testData.expectedIngesters, countMockIngestersCalled(ingesters, "MetricsForLabelMatchers"))
+					} else {
+						// Due to the quorum the distributor could cancel the last request towards ingesters
+						// if all other ones are successful, so we're good either has been queried X or X-1
+						// ingesters.
+						assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "MetricsForLabelMatchers"))
+					}
+				})
 			}
-
-			// Set up limiter
-			ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(testData.maxSeriesPerQuery, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
-
-			metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.matchers...)
-			if testData.expectedError != nil {
-				require.ErrorIs(t, err, testData.expectedError)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.ElementsMatch(t, testData.expectedResult, metrics)
-
-			// Check how many ingesters have been queried.
-			// Due to the quorum the distributor could cancel the last request towards ingesters
-			// if all other ones are successful, so we're good either has been queried X or X-1
-			// ingesters.
-			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "MetricsForLabelMatchers"))
 		})
 	}
 }
@@ -2334,10 +2352,9 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Create distributor and ingesters.
-			limits := &validation.Limits{}
-			flagext.DefaultValues(limits)
+			limits := prepareDefaultLimits()
 			limits.ActiveSeriesResultsMaxSizeBytes = responseSizeLimitBytes
-			distributors, ingesters, _ := prepare(t, prepConfig{
+			distributors, ingesters, _, _ := prepare(t, prepConfig{
 				numIngesters:     numIngesters,
 				happyIngesters:   numIngesters,
 				numDistributors:  1,
@@ -2382,7 +2399,7 @@ func BenchmarkDistributor_ActiveSeries(b *testing.B) {
 	const numSeries = 10e3
 
 	// Create distributor and ingesters.
-	distributors, _, _ := prepare(b, prepConfig{
+	distributors, _, _, _ := prepare(b, prepConfig{
 		numIngesters:    numIngesters,
 		happyIngesters:  numIngesters,
 		numDistributors: 1,
@@ -2471,35 +2488,66 @@ func TestDistributor_LabelNames(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
-			now := model.Now()
+			t.Parallel()
 
-			// Create distributor
-			ds, ingesters, _ := prepare(t, prepConfig{
-				numIngesters:     numIngesters,
-				happyIngesters:   numIngesters,
-				numDistributors:  1,
-				shuffleShardSize: testData.shuffleShardSize,
-			})
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
 
-			// Push fixtures
-			ctx := user.InjectOrgID(context.Background(), "test")
+				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
 
-			for _, series := range fixtures {
-				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := ds[0].Push(ctx, req)
-				require.NoError(t, err)
+					now := model.Now()
+
+					testConfig := prepConfig{
+						numIngesters:    numIngesters,
+						happyIngesters:  numIngesters,
+						numDistributors: 1,
+					}
+
+					if ingestStorageEnabled {
+						testConfig.ingestStorageEnabled = true
+
+						testConfig.limits = prepareDefaultLimits()
+						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+					} else {
+						testConfig.shuffleShardSize = testData.shuffleShardSize
+					}
+
+					// Create distributor
+					ds, ingesters, _, _ := prepare(t, testConfig)
+
+					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+					ctx := user.InjectOrgID(context.Background(), "test")
+					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+					// Push fixtures
+					for _, series := range fixtures {
+						req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+						_, err := ds[0].Push(ctx, req)
+						require.NoError(t, err)
+					}
+
+					names, err := ds[0].LabelNames(ctx, now, now, testData.matchers...)
+					require.NoError(t, err)
+					assert.ElementsMatch(t, testData.expectedResult, names)
+
+					// Check how many ingesters have been queried.
+					if ingestStorageEnabled {
+						// When ingest storage is enabled, we request quorum 1 for each partition.
+						// In this test each ingester owns a different partition, so we expect all
+						// ingesters to be queried.
+						assert.Equal(t, testData.expectedIngesters, countMockIngestersCalled(ingesters, "LabelNames"))
+					} else {
+						// Due to the quorum the distributor could cancel the last request towards ingesters
+						// if all other ones are successful, so we're good either has been queried X or X-1
+						// ingesters.
+						assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "LabelNames"))
+					}
+				})
 			}
-
-			names, err := ds[0].LabelNames(ctx, now, now, testData.matchers...)
-			require.NoError(t, err)
-			assert.ElementsMatch(t, testData.expectedResult, names)
-
-			// Check how many ingesters have been queried.
-			// Due to the quorum the distributor could cancel the last request towards ingesters
-			// if all other ones are successful, so we're good either has been queried X or X-1
-			// ingesters.
-			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "LabelNames"))
 		})
 	}
 }
@@ -2522,43 +2570,73 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
-			// Create distributor
-			ds, _, _ := prepare(t, prepConfig{
-				numIngesters:     numIngesters,
-				happyIngesters:   numIngesters,
-				numDistributors:  1,
-				shuffleShardSize: testData.shuffleShardSize,
-				limits:           nil,
-			})
+			t.Parallel()
 
-			// Push metadata
-			ctx := user.InjectOrgID(context.Background(), "test")
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
 
-			req := makeWriteRequest(0, 0, 10, false, true, "foo")
-			_, err := ds[0].Push(ctx, req)
-			require.NoError(t, err)
+				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
 
-			// Check how many ingesters are queried as part of the shuffle sharding subring.
-			replicationSet, err := ds[0].GetIngesters(ctx)
-			require.NoError(t, err)
-			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
+					testConfig := prepConfig{
+						numIngesters:    numIngesters,
+						happyIngesters:  numIngesters,
+						numDistributors: 1,
+					}
 
-			// Assert on metric metadata
-			metadata, err := ds[0].MetricsMetadata(ctx, client.DefaultMetricsMetadataRequest())
-			require.NoError(t, err)
+					if ingestStorageEnabled {
+						testConfig.ingestStorageEnabled = true
+						testConfig.limits = prepareDefaultLimits()
+						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+					} else {
+						testConfig.shuffleShardSize = testData.shuffleShardSize
+					}
 
-			expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))
-			for _, m := range req.Metadata {
-				expectedMetadata = append(expectedMetadata, scrape.MetricMetadata{
-					Metric: m.MetricFamilyName,
-					Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
-					Help:   m.Help,
-					Unit:   m.Unit,
+					// Create distributor
+					ds, ingesters, _, _ := prepare(t, testConfig)
+
+					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+					ctx := user.InjectOrgID(context.Background(), "test")
+					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+					// Push metadata
+					req := makeWriteRequest(0, 0, 10, false, true, "foo")
+					_, err := ds[0].Push(ctx, req)
+					require.NoError(t, err)
+
+					// Assert on metric metadata
+					metadata, err := ds[0].MetricsMetadata(ctx, client.DefaultMetricsMetadataRequest())
+					require.NoError(t, err)
+
+					expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))
+					for _, m := range req.Metadata {
+						expectedMetadata = append(expectedMetadata, scrape.MetricMetadata{
+							Metric: m.MetricFamilyName,
+							Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
+							Help:   m.Help,
+							Unit:   m.Unit,
+						})
+					}
+
+					assert.ElementsMatch(t, metadata, expectedMetadata)
+
+					// Check how many ingesters have been queried.
+					if ingestStorageEnabled {
+						// When ingest storage is enabled, we request quorum 1 for each partition.
+						// In this test each ingester owns a different partition, so we expect all
+						// ingesters to be queried.
+						assert.Equal(t, testData.expectedIngesters, countMockIngestersCalled(ingesters, "MetricsMetadata"))
+					} else {
+						// Due to the quorum the distributor could cancel the last request towards ingesters
+						// if all other ones are successful, so we're good either has been queried X or X-1
+						// ingesters.
+						assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "MetricsMetadata"))
+					}
 				})
 			}
-
-			assert.ElementsMatch(t, metadata, expectedMetadata)
 		})
 	}
 }
@@ -2587,35 +2665,47 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 		},
 	}
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
-			ctx := user.InjectOrgID(context.Background(), "label-names-values")
+			t.Parallel()
 
-			// Create distributor
-			limits := validation.Limits{}
-			flagext.DefaultValues(&limits)
-			limits.LabelNamesAndValuesResultsMaxSizeBytes = testData.sizeLimitBytes
-			ds, _, _ := prepare(t, prepConfig{
-				numIngesters:    3,
-				happyIngesters:  3,
-				numDistributors: 1,
-				limits:          &limits,
-			})
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
-			})
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
 
-			// Push fixtures
-			for _, series := range fixtures {
-				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := ds[0].Push(ctx, req)
-				require.NoError(t, err)
-			}
+				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
 
-			_, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
-			if len(testData.expectedError) == 0 {
-				require.NoError(t, err)
-			} else {
-				require.EqualError(t, err, testData.expectedError)
+					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+					ctx := user.InjectOrgID(context.Background(), "label-names-values")
+					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+					// Create distributor
+					limits := validation.Limits{}
+					flagext.DefaultValues(&limits)
+					limits.LabelNamesAndValuesResultsMaxSizeBytes = testData.sizeLimitBytes
+					ds, _, _, _ := prepare(t, prepConfig{
+						numIngesters:         3,
+						happyIngesters:       3,
+						numDistributors:      1,
+						limits:               &limits,
+						ingestStorageEnabled: ingestStorageEnabled,
+					})
+
+					// Push fixtures
+					for _, series := range fixtures {
+						req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+						_, err := ds[0].Push(ctx, req)
+						require.NoError(t, err)
+					}
+
+					_, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
+					if len(testData.expectedError) == 0 {
+						require.NoError(t, err)
+					} else {
+						require.EqualError(t, err, testData.expectedError)
+					}
+				})
 			}
 		})
 	}
@@ -2655,30 +2745,42 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 	}
 
 	for testName, testCase := range tests {
+		testCase := testCase
+
 		t.Run(testName, func(t *testing.T) {
-			ctx := user.InjectOrgID(context.Background(), "label-names-values")
+			t.Parallel()
 
-			// Create distributor
-			ds, _, _ := prepare(t, prepConfig{
-				numIngesters:      12,
-				happyIngesters:    12,
-				numDistributors:   1,
-				replicationFactor: 3,
-			})
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
-			})
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				ingestStorageEnabled := ingestStorageEnabled
 
-			// Push fixtures
-			for _, series := range fixtures {
-				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := ds[0].Push(ctx, req)
-				require.NoError(t, err)
+				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+					t.Parallel()
+
+					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+					ctx := user.InjectOrgID(context.Background(), "label-names-values")
+					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+					// Create distributor
+					ds, _, _, _ := prepare(t, prepConfig{
+						numIngesters:         12,
+						happyIngesters:       12,
+						numDistributors:      1,
+						replicationFactor:    3,
+						ingestStorageEnabled: ingestStorageEnabled,
+					})
+
+					// Push fixtures
+					for _, series := range fixtures {
+						req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+						_, err := ds[0].Push(ctx, req)
+						require.NoError(t, err)
+					}
+
+					response, err := ds[0].LabelValuesForLabelName(ctx, testCase.from, testCase.to, labels.MetricName, testCase.matchers...)
+					require.NoError(t, err)
+					assert.ElementsMatch(t, response, testCase.expectedLabelValues)
+				})
 			}
-
-			response, err := ds[0].LabelValuesForLabelName(ctx, testCase.from, testCase.to, labels.MetricName, testCase.matchers...)
-			require.NoError(t, err)
-			assert.ElementsMatch(t, response, testCase.expectedLabelValues)
 		})
 	}
 }
@@ -2707,58 +2809,81 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 			Values:    []string{"200", "500"},
 		},
 	}
-	tests := map[string]struct {
-		zones              []string
-		zonesResponseDelay map[string]time.Duration
-	}{
-		"should group values of labels by label name and return only distinct label values": {},
-		"should return the results if zone awareness is enabled and only 2 zones return the results": {
-			zones:              []string{"A", "B", "C"},
-			zonesResponseDelay: map[string]time.Duration{"C": 10 * time.Second},
-		},
-	}
 
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			ctx := user.InjectOrgID(context.Background(), "label-names-values")
+	t.Run("should group values of labels by label name and return only distinct label values", func(t *testing.T) {
+		for _, ingestStorageEnabled := range []bool{false, true} {
+			ingestStorageEnabled := ingestStorageEnabled
 
-			// Create distributor
-			ds, _, _ := prepare(t, prepConfig{
-				numIngesters:                       12,
-				happyIngesters:                     12,
-				numDistributors:                    1,
-				replicationFactor:                  3,
-				ingesterZones:                      testData.zones,
-				labelNamesStreamZonesResponseDelay: testData.zonesResponseDelay,
-			})
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
-			})
+			t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+				t.Parallel()
 
-			// Push fixtures
-			for _, series := range fixtures {
-				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := ds[0].Push(ctx, req)
+				// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+				ctx := user.InjectOrgID(context.Background(), "label-names-values")
+				ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+				// Create distributor
+				ds, _, _, _ := prepare(t, prepConfig{
+					numIngesters:         12,
+					happyIngesters:       12,
+					numDistributors:      1,
+					replicationFactor:    3,
+					ingestStorageEnabled: ingestStorageEnabled,
+				})
+
+				// Push fixtures
+				for _, series := range fixtures {
+					req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+					_, err := ds[0].Push(ctx, req)
+					require.NoError(t, err)
+				}
+
+				response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
 				require.NoError(t, err)
-			}
+				require.Len(t, response.Items, len(expectedLabelValues))
 
-			// Assert on metric metadata
-			timeBeforeExecution := time.Now()
-			response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
-			require.NoError(t, err)
-			if len(testData.zonesResponseDelay) > 0 {
-				executionDuration := time.Since(timeBeforeExecution)
-				require.Less(t, executionDuration, 5*time.Second, "Execution must be completed earlier than in 5 seconds")
-			}
-			require.Len(t, response.Items, len(expectedLabelValues))
+				// sort label values to make stable assertion
+				for _, item := range response.Items {
+					slices.Sort(item.Values)
+				}
+				assert.ElementsMatch(t, response.Items, expectedLabelValues)
+			})
+		}
+	})
 
-			// sort label values to make stable assertion
-			for _, item := range response.Items {
-				slices.Sort(item.Values)
-			}
-			assert.ElementsMatch(t, response.Items, expectedLabelValues)
+	t.Run("should return the results if zone awareness is enabled and only 2 zones return the results", func(t *testing.T) {
+		ctx := user.InjectOrgID(context.Background(), "label-names-values")
+		slowZoneDelay := 10 * time.Second
+
+		// Create distributor
+		ds, _, _, _ := prepare(t, prepConfig{
+			numIngesters:                       12,
+			happyIngesters:                     12,
+			numDistributors:                    1,
+			replicationFactor:                  3,
+			ingesterZones:                      []string{"A", "B", "C"},
+			labelNamesStreamZonesResponseDelay: map[string]time.Duration{"C": slowZoneDelay},
 		})
-	}
+
+		// Push fixtures
+		for _, series := range fixtures {
+			req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+			_, err := ds[0].Push(ctx, req)
+			require.NoError(t, err)
+		}
+
+		// Assert on metric metadata
+		timeBeforeExecution := time.Now()
+		response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
+		require.NoError(t, err)
+		require.Less(t, time.Since(timeBeforeExecution), slowZoneDelay/2, "Execution must be completed before the slow zone ingesters respond")
+		require.Len(t, response.Items, len(expectedLabelValues))
+
+		// sort label values to make stable assertion
+		for _, item := range response.Items {
+			slices.Sort(item.Values)
+		}
+		assert.ElementsMatch(t, response.Items, expectedLabelValues)
+	})
 }
 
 // This test asserts that distributor waits for all ingester responses to be completed even if ZoneAwareness is enabled.
@@ -2807,7 +2932,7 @@ func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []series) (cont
 	ctx := user.InjectOrgID(context.Background(), "cardinality-user")
 
 	// Create distributor
-	ds, _, _ := prepare(t, prepConfig{
+	ds, _, _, _ := prepare(t, prepConfig{
 		numIngesters:      150,
 		happyIngesters:    150,
 		numDistributors:   1,
@@ -2819,9 +2944,6 @@ func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []series) (cont
 			"ZONE-B": 1 * time.Second,
 			"ZONE-C": 2 * time.Second,
 		},
-	})
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
 	})
 
 	// Push fixtures
@@ -2849,6 +2971,381 @@ func createSeries(count int) []series {
 	return fixtures
 }
 
+func TestDistributor_UserStats(t *testing.T) {
+	tests := map[string]struct {
+		ingesterStateByZone map[string]ingesterZoneState
+		ingesterDataByZone  map[string][]*mimirpb.WriteRequest
+		shardSize           int
+		expectedSeries      uint64
+		expectedErr         error
+	}{
+		"single zone, 3 ingesters, every series successfully replicated to 3 ingesters": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 3, happyIngesters: 3},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+				},
+			},
+			expectedSeries: 3,
+		},
+		"single zone, 3 ingesters, every series successfully replicated only to 2 ingesters": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 3, happyIngesters: 3},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_2", "series_3"),
+				},
+			},
+			// We pushed 3 series, but the estimated count is 2 because every series has been
+			// successfully replicated only to 2 ingesters.
+			expectedSeries: 2,
+		},
+		"single zone, 6 ingesters, every series successfully replicated to 3 ingesters": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 6, happyIngesters: 6},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6", "series_7", "series_8", "series_9"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6", "series_7", "series_8", "series_9"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6", "series_7", "series_8", "series_9"),
+				},
+			},
+			expectedSeries: 9,
+		},
+		"single zone, 6 ingesters, most series successfully replicated to 3 ingesters": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 6, happyIngesters: 6},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6", "series_7", "series_8", "series_9"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6", "series_7", "series_8", "series_9"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6", "series_7", "series_8"), // series_9 has not been replicated here.
+				},
+			},
+			expectedSeries: 9,
+		},
+		"single zone, 6 ingesters, 1 ingester in LEAVING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 6, happyIngesters: 6, ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+				},
+			},
+			// We pushed 6 series but the LEAVING ingester isn't queried so its series are not counted
+			// in the estimation. The actual estimation is computed as: (3 series * 5 ingesters) / 3 RF = 5.
+			expectedSeries: 5,
+		},
+		"single zone, 6 ingesters, 2 ingesters in LEAVING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 6, happyIngesters: 6, ringStates: []ring.InstanceState{ring.LEAVING, ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+				},
+			},
+			expectedErr: ring.ErrTooManyUnhealthyInstances,
+		},
+		"single zone, 6 ingesters, 1 ingester is UNHEALTHY": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"single-zone": {numIngesters: 6, happyIngesters: 5},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"single-zone": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+					nil,
+				},
+			},
+			expectedErr: errFail,
+		},
+		"multi zone, 3 ingesters, every series successfully replicated to 3 ingesters": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 1, happyIngesters: 1},
+				"zone-b": {numIngesters: 1, happyIngesters: 1},
+				"zone-c": {numIngesters: 1, happyIngesters: 1},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+				},
+			},
+			expectedSeries: 3,
+		},
+		"multi zone, 3 ingesters, every series successfully replicated only to 2 ingesters across 2 zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 1, happyIngesters: 1},
+				"zone-b": {numIngesters: 1, happyIngesters: 1},
+				"zone-c": {numIngesters: 1, happyIngesters: 1},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+				},
+				"zone-c": {
+					nil,
+				},
+			},
+			expectedSeries: 3,
+		},
+		"multi zone, 3 ingesters, every series successfully replicated only to 2 ingesters across 3 zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 1, happyIngesters: 1},
+				"zone-b": {numIngesters: 1, happyIngesters: 1},
+				"zone-c": {numIngesters: 1, happyIngesters: 1},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_3"),
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_2", "series_3"),
+				},
+			},
+			// We pushed 3 series but every series has been successfully replicated only to 2 ingesters (in different zones).
+			expectedSeries: 2,
+		},
+		"multi zone, 6 ingesters, every series successfully replicated to 1 ingester per zone": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2},
+				"zone-b": {numIngesters: 2, happyIngesters: 2},
+				"zone-c": {numIngesters: 2, happyIngesters: 2},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4"),
+					makeWriteRequest(0, 1, 0, false, false, "series_5", "series_6"),
+				},
+			},
+			expectedSeries: 6,
+		},
+		"multi zone, 6 ingesters, all ingesters in 1 zone are in LEAVING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.LEAVING, ring.LEAVING}},
+				"zone-b": {numIngesters: 2, happyIngesters: 2},
+				"zone-c": {numIngesters: 2, happyIngesters: 2},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4"),
+					makeWriteRequest(0, 1, 0, false, false, "series_5", "series_6"),
+				},
+			},
+			expectedSeries: 6,
+		},
+		"multi zone, 6 ingesters, all ingesters in 2 zones are in LEAVING state": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.LEAVING, ring.LEAVING}},
+				"zone-b": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.LEAVING, ring.LEAVING}},
+				"zone-c": {numIngesters: 2, happyIngesters: 2},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4"),
+					makeWriteRequest(0, 1, 0, false, false, "series_5", "series_6"),
+				},
+			},
+			expectedErr: ring.ErrTooManyUnhealthyInstances,
+		},
+		"multi zone, 6 ingesters, all ingesters in 1 zone are UNHEALTHY": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 0},
+				"zone-b": {numIngesters: 2, happyIngesters: 2},
+				"zone-c": {numIngesters: 2, happyIngesters: 2},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					nil,
+					nil,
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_6"),
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4"),
+					makeWriteRequest(0, 1, 0, false, false, "series_5", "series_6"),
+				},
+			},
+			expectedSeries: 6,
+		},
+		"multi zone, 6 ingesters, 1 UNHEALTHY ingester in 2 zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 1},
+				"zone-b": {numIngesters: 2, happyIngesters: 1},
+				"zone-c": {numIngesters: 2, happyIngesters: 2},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					nil,
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+					nil,
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4"),
+					makeWriteRequest(0, 1, 0, false, false, "series_5", "series_6"),
+				},
+			},
+			expectedErr: errFail,
+		},
+		"multi zone, 6 ingesters, 1 LEAVING ingester per zone, but the LEAVING ingesters are not part of tenant's shard": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.ACTIVE, ring.LEAVING}},
+				"zone-b": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.ACTIVE, ring.LEAVING}},
+				"zone-c": {numIngesters: 2, happyIngesters: 2, ringStates: []ring.InstanceState{ring.ACTIVE, ring.LEAVING}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6", "series_7"), // Not belonging to tenant's shard.
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6", "series_7"), // Not belonging to tenant's shard.
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					makeWriteRequest(0, 1, 0, false, false, "series_6", "series_7"), // Not belonging to tenant's shard.
+				},
+			},
+			shardSize:      1, // Tenant's shard made of: ingester-zone-a-0, ingester-zone-b-0 and ingester-zone-c-0.
+			expectedSeries: 5,
+		},
+		"multi zone, 6 ingesters, 1 UNHEALTHY ingester per zone, but the UNHEALTHY ingesters are not part of tenant's shard": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {states: []ingesterState{ingesterStateHappy, ingesterStateFailed}},
+				"zone-b": {states: []ingesterState{ingesterStateHappy, ingesterStateFailed}},
+				"zone-c": {states: []ingesterState{ingesterStateHappy, ingesterStateFailed}},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					nil,
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					nil,
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3", "series_4", "series_5"),
+					nil,
+				},
+			},
+			shardSize:      1, // Tenant's shard made of: ingester-zone-a-0, ingester-zone-b-0 and ingester-zone-c-0.
+			expectedSeries: 5,
+		},
+	}
+
+	for testName, testData := range tests {
+		testData := testData
+
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			for _, minimizeIngesterRequests := range []bool{false, true} {
+				minimizeIngesterRequests := minimizeIngesterRequests
+
+				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
+					t.Parallel()
+
+					// Create distributor
+					distributors, _, _, _ := prepare(t, prepConfig{
+						numDistributors:     1,
+						replicationFactor:   3,
+						ingesterStateByZone: testData.ingesterStateByZone,
+						ingesterDataByZone:  testData.ingesterDataByZone,
+						shuffleShardSize:    testData.shardSize,
+						configure: func(config *Config) {
+							config.MinimizeIngesterRequests = minimizeIngesterRequests
+						},
+					})
+
+					// Fetch user stats.
+					ctx := user.InjectOrgID(context.Background(), "test")
+					res, err := distributors[0].UserStats(ctx, cardinality.InMemoryMethod)
+
+					if testData.expectedErr != nil {
+						require.ErrorIs(t, err, testData.expectedErr)
+						return
+					}
+
+					require.NoError(t, err)
+					assert.Equal(t, int(testData.expectedSeries), int(res.NumSeries))
+				})
+			}
+		})
+	}
+}
+
 func TestDistributor_LabelValuesCardinality(t *testing.T) {
 	const numIngesters = 3
 	const replicationFactor = 3
@@ -2864,28 +3361,25 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		labelNames                []model.LabelName
-		matchers                  []*labels.Matcher
-		ingestersSeriesCountTotal uint64
-		expectedResult            *client.LabelValuesCardinalityResponse
-		expectedIngesters         int
-		happyIngesters            int
-		expectedSeriesCountTotal  uint64
-		ingesterZones             []string
+		labelNames               []model.LabelName
+		matchers                 []*labels.Matcher
+		expectedResult           *client.LabelValuesCardinalityResponse
+		expectedIngesters        int
+		happyIngesters           int
+		expectedSeriesCountTotal uint64
+		ingesterZones            []string
 	}{
-		"should return an empty map if no label names": {
-			labelNames:                []model.LabelName{},
-			matchers:                  []*labels.Matcher{},
-			ingestersSeriesCountTotal: 0,
-			expectedResult:            &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}},
-			expectedIngesters:         numIngesters,
-			happyIngesters:            numIngesters,
-			expectedSeriesCountTotal:  0,
+		"should return an empty map on no label names provided": {
+			labelNames:               []model.LabelName{},
+			matchers:                 []*labels.Matcher{},
+			expectedResult:           &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}},
+			expectedIngesters:        numIngesters,
+			happyIngesters:           numIngesters,
+			expectedSeriesCountTotal: 3,
 		},
 		"should return a map with the label values and series occurrences of a single label name": {
-			labelNames:                []model.LabelName{labels.MetricName},
-			matchers:                  []*labels.Matcher{},
-			ingestersSeriesCountTotal: 100,
+			labelNames: []model.LabelName{labels.MetricName},
+			matchers:   []*labels.Matcher{},
 			expectedResult: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
@@ -2894,13 +3388,12 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			},
 			expectedIngesters:        numIngesters - 1,
 			happyIngesters:           numIngesters,
-			expectedSeriesCountTotal: 100,
+			expectedSeriesCountTotal: 3,
 			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-C"},
 		},
 		"should return a map with the label values and series occurrences of a single label name, during single zone failure": {
-			labelNames:                []model.LabelName{labels.MetricName},
-			matchers:                  []*labels.Matcher{},
-			ingestersSeriesCountTotal: 100,
+			labelNames: []model.LabelName{labels.MetricName},
+			matchers:   []*labels.Matcher{},
 			expectedResult: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
@@ -2909,13 +3402,12 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			},
 			expectedIngesters:        numIngesters - 1,
 			happyIngesters:           numIngesters - 1,
-			expectedSeriesCountTotal: 100,
+			expectedSeriesCountTotal: 3,
 			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-C"},
 		},
 		"should return a map with the label values and series occurrences of all the label names": {
-			labelNames:                []model.LabelName{labels.MetricName, "status"},
-			matchers:                  []*labels.Matcher{},
-			ingestersSeriesCountTotal: 100,
+			labelNames: []model.LabelName{labels.MetricName, "status"},
+			matchers:   []*labels.Matcher{},
 			expectedResult: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{
 					{
@@ -2930,20 +3422,19 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			},
 			expectedIngesters:        numIngesters,
 			happyIngesters:           numIngesters,
-			expectedSeriesCountTotal: 100,
+			expectedSeriesCountTotal: 3,
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Create distributor
-			ds, ingesters, _ := prepare(t, prepConfig{
-				numIngesters:              numIngesters,
-				happyIngesters:            testData.happyIngesters,
-				numDistributors:           1,
-				replicationFactor:         replicationFactor,
-				ingestersSeriesCountTotal: testData.ingestersSeriesCountTotal,
-				ingesterZones:             testData.ingesterZones,
+			ds, ingesters, _, _ := prepare(t, prepConfig{
+				numIngesters:      numIngesters,
+				happyIngesters:    testData.happyIngesters,
+				numDistributors:   1,
+				replicationFactor: replicationFactor,
+				ingesterZones:     testData.ingesterZones,
 			})
 
 			// Push fixtures
@@ -3011,7 +3502,7 @@ func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
 			limits := validation.Limits{}
 			flagext.DefaultValues(&limits)
 			limits.LabelValuesMaxCardinalityLabelNamesPerRequest = testData.maxLabelNamesPerRequest
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, _, _ := prepare(t, prepConfig{
 				numIngesters:    3,
 				happyIngesters:  3,
 				numDistributors: 1,
@@ -3042,7 +3533,7 @@ func TestDistributor_LabelValuesCardinality_Concurrency(t *testing.T) {
 
 	t.Run("should fail with an error if at least one ingester's LabelValuesCardinality and/or UserStats operations fails", func(t *testing.T) {
 		// Create distributor
-		ds, ingesters, _ := prepare(t, prepConfig{
+		ds, ingesters, _, _ := prepare(t, prepConfig{
 			numIngesters:    numIngesters,
 			happyIngesters:  numIngesters,
 			numDistributors: 1,
@@ -3184,7 +3675,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			limits.MaxLabelValueLength = 15
 			limits.HAMaxClusters = 1
 
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
 				limits:          &limits,
 				enableTracker:   tc.enableHaTracker,
@@ -3249,7 +3740,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	limits.MaxLabelValueLength = 15
 
 	// Prepare distributor and wrap the mock push function with its middlewares.
-	ds, _, _ := prepare(t, prepConfig{
+	ds, _, _, _ := prepare(t, prepConfig{
 		numDistributors: 1,
 		limits:          &limits,
 		enableTracker:   true,
@@ -3379,24 +3870,24 @@ func TestRelabelMiddleware(t *testing.T) {
 			},
 			relabelingEnabled: true,
 			reqs: []*mimirpb.WriteRequest{{
-				Timeseries: []mimirpb.PreallocTimeseries{makeWriteRequestTimeseries(
-					[]mimirpb.LabelAdapter{
-						{Name: model.MetricNameLabel, Value: "metric1"},
-						{Name: "label1", Value: "value1"},
+				Timeseries: []mimirpb.PreallocTimeseries{makeTimeseries(
+					[]string{
+						model.MetricNameLabel, "metric1",
+						"label1", "value1",
 					},
-					123,
-					1.23,
+					makeSamples(123, 1.23),
+					nil,
 				)},
 			}},
 			expectedReqs: []*mimirpb.WriteRequest{{
-				Timeseries: []mimirpb.PreallocTimeseries{makeWriteRequestTimeseries(
-					[]mimirpb.LabelAdapter{
-						{Name: model.MetricNameLabel, Value: "metric1"},
-						{Name: "label1", Value: "value1"},
-						{Name: "tenant_id", Value: "user"},
+				Timeseries: []mimirpb.PreallocTimeseries{makeTimeseries(
+					[]string{
+						model.MetricNameLabel, "metric1",
+						"label1", "value1",
+						"tenant_id", "user",
 					},
-					123,
-					1.23,
+					makeSamples(123, 1.23),
+					nil,
 				)},
 			}},
 			expectErrs: []bool{false},
@@ -3431,7 +3922,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			limits.MetricRelabelConfigs = tc.relabelConfigs
 			limits.DropLabels = tc.dropLabels
 			limits.MetricRelabelingEnabled = tc.relabelingEnabled
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
 				limits:          &limits,
 			})
@@ -3506,7 +3997,7 @@ func TestSortAndFilterMiddleware(t *testing.T) {
 
 			var limits validation.Limits
 			flagext.DefaultValues(&limits)
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
 				limits:          &limits,
 			})
@@ -3577,13 +4068,14 @@ type prepConfig struct {
 	// ingesterStateByZone supersedes numIngesters, happyIngesters, and ingesterZones
 	ingesterStateByZone map[string]ingesterZoneState
 
-	// ingesterDataPerZone:
+	// ingesterDataByZone:
 	//   map[zone-a][0] -> ingester-zone-a-0 write request
 	//   map[zone-a][1] -> ingester-zone-a-1 write request
-	// Each zone in ingesterDataPerZone can be shorter than the actual number of ingesters for the zone, but it cannot be longer.
+	// Each zone in ingesterDataByZone can be shorter than the actual number of ingesters for the zone, but it cannot be longer.
 	// If a request is nil, sending a request to the ingester is skipped.
-	ingesterDataPerZone map[string][]*mimirpb.WriteRequest
-	// ingesterDataTenantID is the tenant under which ingesterDataPerZone is pushed
+	ingesterDataByZone map[string][]*mimirpb.WriteRequest
+
+	// ingesterDataTenantID is the tenant under which ingesterDataByZone is pushed
 	ingesterDataTenantID string
 
 	queryDelay       time.Duration
@@ -3591,17 +4083,20 @@ type prepConfig struct {
 	shuffleShardSize int
 	limits           *validation.Limits
 	numDistributors  int
-	useIngestStorage bool
 
 	replicationFactor                  int
 	enableTracker                      bool
-	ingestersSeriesCountTotal          uint64
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
 
 	configure func(*Config)
 
 	timeOut            bool
 	circuitBreakerOpen bool
+
+	// Ingest storage specific configuration.
+	ingestStorageEnabled    bool
+	ingestStoragePartitions int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
+	ingestStorageKafka      *kfake.Cluster
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -3633,6 +4128,19 @@ func (c prepConfig) totalZones() int {
 	return len(c.ingesterStateByZone)
 }
 
+// maxIngestersPerZone returns the max number of ingester per zone. For example,
+// if a zone has 2 ingesters and another zone has 3 ingesters, this function will
+// return 3.
+func (c prepConfig) maxIngestersPerZone() int {
+	maxIngestersPerZone := c.numIngesters
+
+	for _, state := range c.ingesterStateByZone {
+		maxIngestersPerZone = max(maxIngestersPerZone, max(state.numIngesters, len(state.states)))
+	}
+
+	return maxIngestersPerZone
+}
+
 func (c prepConfig) ingesterRingState(zone string, id int) ring.InstanceState {
 	if len(c.ingesterStateByZone[zone].ringStates) == 0 {
 		return ring.ACTIVE
@@ -3649,30 +4157,30 @@ func (c prepConfig) validate(t testing.TB) {
 		for zone, state := range c.ingesterStateByZone {
 			ingestersInZone := state.numIngesters
 			if state.states != nil {
-				require.Zero(t, state.numIngesters, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
-				require.Zero(t, state.happyIngesters, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
+				require.Zero(t, state.numIngesters, "ingesterStateByZone's states and numIngesters/happyIngesters are exclusive")
+				require.Zero(t, state.happyIngesters, "ingesterStateByZone's states and numIngesters/happyIngesters are exclusive")
 				ingestersInZone = len(state.states)
 			}
 			if len(state.ringStates) > 0 {
 				require.Len(t, state.ringStates, ingestersInZone, "ringStates cannot be longer than the number of ingesters in the zone")
 			}
-			require.LessOrEqual(t, len(c.ingesterDataPerZone[zone]), ingestersInZone, "ingesterDataPerZone cannot be longer than the number of ingesters in the zone")
+			require.LessOrEqual(t, len(c.ingesterDataByZone[zone]), ingestersInZone, "ingesterDataPerZone cannot be longer than the number of ingesters in the zone")
 		}
 	}
 }
 
-func prepareIngesters(cfg prepConfig) []*mockIngester {
+func prepareIngesters(t testing.TB, cfg prepConfig) []*mockIngester {
 	if len(cfg.ingesterStateByZone) != 0 {
 		ingesters := []*mockIngester(nil)
 		for zone, state := range cfg.ingesterStateByZone {
-			ingesters = append(ingesters, prepareIngesterZone(zone, state, cfg)...)
+			ingesters = append(ingesters, prepareIngesterZone(t, zone, state, cfg)...)
 		}
 		return ingesters
 	}
 	ingesters := []*mockIngester(nil)
 	numZones := len(cfg.ingesterZones)
 	if numZones == 0 {
-		return prepareIngesterZone("", ingesterZoneState{numIngesters: cfg.numIngesters, happyIngesters: cfg.happyIngesters}, cfg)
+		return prepareIngesterZone(t, "", ingesterZoneState{numIngesters: cfg.numIngesters, happyIngesters: cfg.happyIngesters}, cfg)
 	}
 	for zoneIdx, zone := range cfg.ingesterZones {
 		state := ingesterZoneState{
@@ -3693,13 +4201,13 @@ func prepareIngesters(cfg prepConfig) []*mockIngester {
 			state.numIngesters++
 		}
 
-		ingesters = append(ingesters, prepareIngesterZone(zone, state, cfg)...)
+		ingesters = append(ingesters, prepareIngesterZone(t, zone, state, cfg)...)
 	}
 	return ingesters
 
 }
 
-func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) []*mockIngester {
+func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg prepConfig) []*mockIngester {
 	ingesters := []*mockIngester(nil)
 
 	if state.states == nil {
@@ -3717,18 +4225,52 @@ func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) [
 		if len(cfg.labelNamesStreamZonesResponseDelay) > 0 {
 			labelNamesStreamResponseDelay = cfg.labelNamesStreamZonesResponseDelay[zone]
 		}
-		ingesters = append(ingesters, &mockIngester{
+
+		ingester := &mockIngester{
 			id:                            i,
 			happy:                         s == ingesterStateHappy,
 			queryDelay:                    cfg.queryDelay,
 			pushDelay:                     cfg.pushDelay,
-			seriesCountTotal:              cfg.ingestersSeriesCountTotal,
 			zone:                          zone,
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
 			circuitBreakerOpen:            cfg.circuitBreakerOpen,
-		})
+		}
+
+		// Init the partition reader if the ingest storage is enabled.
+		// This is required to let each mocked ingester to consume their own partition.
+		if cfg.ingestStorageEnabled {
+			var err error
+
+			kafkaCfg := ingest.KafkaConfig{}
+			flagext.DefaultValues(&kafkaCfg)
+			kafkaCfg.Address = cfg.ingestStorageKafka.ListenAddrs()[0]
+			kafkaCfg.Topic = kafkaTopic
+			kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
+			kafkaCfg.LastProducedOffsetRetryTimeout = 100 * time.Millisecond
+
+			ingester.partitionReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, ingester.partitionID(), ingester.instanceID(), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
+			require.NoError(t, err)
+
+			// We start it async, and then we wait until running in a defer so that multiple partition
+			// readers will be started concurrently.
+			require.NoError(t, ingester.partitionReader.StartAsync(context.Background()))
+
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester.partitionReader))
+			})
+		}
+
+		ingesters = append(ingesters, ingester)
 	}
+
+	// Wait until all partition readers have started.
+	if cfg.ingestStorageEnabled {
+		for _, ingester := range ingesters {
+			require.NoError(t, ingester.partitionReader.AwaitRunning(context.Background()))
+		}
+	}
+
 	return ingesters
 }
 
@@ -3741,7 +4283,7 @@ func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc 
 		ingesterDescs[addr] = ring.InstanceDesc{
 			Addr:                addr,
 			Zone:                ingesters[i].zone,
-			State:               cfg.ingesterRingState(ingesters[i].zone, i),
+			State:               cfg.ingesterRingState(ingesters[i].zone, ingesters[i].id),
 			Timestamp:           time.Now().Unix(),
 			RegisteredTimestamp: time.Now().Add(-2 * time.Hour).Unix(), // registered before the shuffle sharding lookback period, so we don't start including other ingesters
 			Tokens:              tokens,
@@ -3751,42 +4293,88 @@ func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc 
 	return &ring.Desc{Ingesters: ingesterDescs}
 }
 
-func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*prometheus.Registry) {
+func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.PartitionRingDesc {
+	desc := ring.NewPartitionRingDesc()
+
+	// When we add partitions we simulate the case they were switched to ACTIVE before
+	// the shuffle sharding lookback period, so that we don't extend partitions
+	// when shuffle sharding is in use.
+	timeBeforeShuffleShardingLookbackPeriod := time.Now().Add(-2 * time.Hour)
+
+	// Add all partitions.
+	for partitionID := int32(0); partitionID < cfg.ingestStoragePartitions; partitionID++ {
+		desc.AddPartition(partitionID, ring.PartitionActive, timeBeforeShuffleShardingLookbackPeriod)
+	}
+
+	// Add all ingesters are partition owners.
+	for _, ingester := range ingesters {
+		desc.AddOrUpdateOwner(ingester.instanceID(), ring.OwnerActive, ingester.partitionID(), timeBeforeShuffleShardingLookbackPeriod)
+	}
+
+	return desc
+}
+
+func prepareDefaultLimits() *validation.Limits {
+	limits := &validation.Limits{}
+	flagext.DefaultValues(limits)
+	return limits
+}
+
+func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*prometheus.Registry, *kfake.Cluster) {
+	ctx := context.Background()
+
+	// Apply default config.
+	if cfg.replicationFactor == 0 {
+		cfg.replicationFactor = 3
+	}
+	if cfg.ingestStorageEnabled && cfg.ingestStoragePartitions == 0 {
+		cfg.ingestStoragePartitions = int32(cfg.maxIngestersPerZone())
+	}
+
 	cfg.validate(t)
 
 	logger := log.NewNopLogger()
-	ingesters := prepareIngesters(cfg)
+
+	// Init a fake Kafka cluster if ingest storage is enabled.
+	if cfg.ingestStorageEnabled && cfg.ingestStorageKafka == nil {
+		cfg.ingestStorageKafka, _ = testkafka.CreateCluster(t, cfg.ingestStoragePartitions, kafkaTopic)
+	}
+
+	// Create the mocked ingesters.
+	ingesters := prepareIngesters(t, cfg)
+
 	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
+	// Add ingesters to the ring.
+	err := kvStore.CAS(ctx, ingester.IngesterRingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			return prepareRingInstances(cfg, ingesters), true, nil
 		},
 	)
 	require.NoError(t, err)
 
-	// Use a default replication factor of 3 if there isn't a provided replication factor.
-	rf := cfg.replicationFactor
-	if rf == 0 {
-		rf = 3
-	}
-
+	ingestersHeartbeatTimeout := 60 * time.Minute
 	ingestersRing, err := ring.New(ring.Config{
 		KVStore: kv.Config{
 			Mock: kvStore,
 		},
-		HeartbeatTimeout:     60 * time.Minute,
-		ReplicationFactor:    rf,
+		HeartbeatTimeout:     ingestersHeartbeatTimeout,
+		ReplicationFactor:    cfg.replicationFactor,
 		ZoneAwarenessEnabled: cfg.totalZones() > 1,
 	}, ingester.IngesterRingKey, ingester.IngesterRingKey, logger, nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingestersRing))
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingestersRing))
+
+	// The ring client doesn't stop quickly, so we don't wait.
+	t.Cleanup(ingestersRing.StopAsync)
 
 	test.Poll(t, time.Second, cfg.totalIngesters(), func() interface{} {
 		return ingestersRing.InstancesCount()
 	})
 
+	// Mock the ingester clients pool in order to return our mocked ingester instance instead of a
+	// real gRPC client.
 	factory := ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
 		for _, ing := range ingesters {
 			if ing.address() == inst.Addr {
@@ -3796,22 +4384,47 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		return nil, fmt.Errorf("ingester with address %s not found", inst.Addr)
 	})
 
+	// Initialize the ingest storage's partitions ring.
+	var partitionsRing *ring.PartitionInstanceRing
+	if cfg.ingestStorageEnabled {
+		// Init the partitions ring.
+		partitionsStore := kvStore.WithCodec(ring.GetPartitionRingCodec())
+		require.NoError(t, partitionsStore.CAS(ctx, ingester.PartitionRingKey, func(_ interface{}) (interface{}, bool, error) {
+			return preparePartitionsRing(cfg, ingesters), true, nil
+		}))
+
+		// Init the watcher.
+		watcher := ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, partitionsStore, logger, prometheus.NewPedanticRegistry())
+		require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher))
+		})
+
+		partitionsRing = ring.NewPartitionInstanceRing(watcher, ingestersRing, ingestersHeartbeatTimeout)
+	}
+
 	if cfg.limits == nil {
-		cfg.limits = &validation.Limits{}
-		flagext.DefaultValues(cfg.limits)
+		cfg.limits = prepareDefaultLimits()
 	}
 	cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
 
+	// Create distributors.
 	distributors := make([]*Distributor, 0, cfg.numDistributors)
-	registries := make([]*prometheus.Registry, 0, cfg.numDistributors)
+	distributorRegistries := make([]*prometheus.Registry, 0, cfg.numDistributors)
 	for i := 0; i < cfg.numDistributors; i++ {
-
 		var (
 			distributorCfg Config
 			clientConfig   client.Config
 			ingestCfg      ingest.Config
 		)
 		flagext.DefaultValues(&distributorCfg, &clientConfig, &ingestCfg)
+
+		ingestCfg.Enabled = cfg.ingestStorageEnabled
+		if cfg.ingestStorageEnabled {
+			ingestCfg.KafkaConfig.Topic = kafkaTopic
+			ingestCfg.KafkaConfig.Address = cfg.ingestStorageKafka.ListenAddrs()[0]
+			ingestCfg.KafkaConfig.LastProducedOffsetPollInterval = 100 * time.Millisecond
+		}
 
 		distributorCfg.IngesterClientFactory = factory
 		distributorCfg.DistributorRing.Common.HeartbeatPeriod = 100 * time.Millisecond
@@ -3821,7 +4434,6 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
 		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
 		distributorCfg.IngestStorageConfig = ingestCfg
-		distributorCfg.IngestStorageConfig.Enabled = cfg.useIngestStorage
 
 		if cfg.configure != nil {
 			cfg.configure(&distributorCfg)
@@ -3847,13 +4459,15 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		require.NoError(t, err)
 
 		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, reg, log.NewNopLogger())
+		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
-
-		require.NoError(t, services.StartAndAwaitRunning(context.Background(), d))
+		require.NoError(t, services.StartAndAwaitRunning(ctx, d))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), d))
+		})
 
 		distributors = append(distributors, d)
-		registries = append(registries, reg)
+		distributorRegistries = append(distributorRegistries, reg)
 	}
 
 	// If the distributors ring is setup, wait until the first distributor
@@ -3864,13 +4478,11 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		})
 	}
 
-	if len(cfg.ingesterDataPerZone) != 0 {
-		populateIngestersData(t, ingesters, cfg.ingesterDataPerZone, cfg.ingesterDataTenantID)
+	if len(cfg.ingesterDataByZone) != 0 {
+		populateIngestersData(t, ingesters, cfg.ingesterDataByZone, cfg.ingesterDataTenantID)
 	}
 
-	t.Cleanup(func() { stopAll(distributors, ingestersRing) })
-
-	return distributors, ingesters, registries
+	return distributors, ingesters, distributorRegistries, cfg.ingestStorageKafka
 }
 
 func populateIngestersData(t testing.TB, ingesters []*mockIngester, dataPerZone map[string][]*mimirpb.WriteRequest, tenantID string) {
@@ -3897,35 +4509,26 @@ func populateIngestersData(t testing.TB, ingesters []*mockIngester, dataPerZone 
 	}
 }
 
-func stopAll(ds []*Distributor, r *ring.Ring) {
-	for _, d := range ds {
-		services.StopAndAwaitTerminated(context.Background(), d) //nolint:errcheck
-	}
-
-	// Mock consul doesn't stop quickly, so don't wait.
-	r.StopAsync()
-}
-
 func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, histograms bool, metrics ...string) *mimirpb.WriteRequest {
 	request := &mimirpb.WriteRequest{}
 	for _, metric := range metrics {
 		for i := 0; i < samples; i++ {
-			req := makeWriteRequestTimeseries(
-				[]mimirpb.LabelAdapter{
-					{Name: model.MetricNameLabel, Value: metric},
-					{Name: "bar", Value: "baz"},
-					{Name: "sample", Value: fmt.Sprintf("%d", i)},
+			req := makeTimeseries(
+				[]string{
+					model.MetricNameLabel, metric,
+					"bar", "baz",
+					"sample", fmt.Sprintf("%d", i),
 				},
-				startTimestampMs+int64(i),
-				float64(i),
+				makeSamples(startTimestampMs+int64(i), float64(i)),
+				nil,
 			)
 
 			if exemplars {
-				req.Exemplars = makeWriteRequestExamplars(
-					[]mimirpb.LabelAdapter{
-						{Name: "traceID", Value: "123456"},
-						{Name: "foo", Value: "bar"},
-						{Name: "exemplar", Value: fmt.Sprintf("%d", i)},
+				req.Exemplars = makeExemplars(
+					[]string{
+						"traceID", "123456",
+						"foo", "bar",
+						"exemplar", fmt.Sprintf("%d", i),
 					},
 					startTimestampMs+int64(i),
 					float64(i),
@@ -3934,9 +4537,9 @@ func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, 
 
 			if histograms {
 				if i%2 == 0 {
-					req.Histograms = makeWriteRequestHistograms(startTimestampMs+int64(i), generateTestHistogram(i))
+					req.Histograms = makeHistograms(startTimestampMs+int64(i), generateTestHistogram(i))
 				} else {
-					req.Histograms = makeWriteRequestFloatHistograms(startTimestampMs+int64(i), generateTestFloatHistogram(i))
+					req.Histograms = makeFloatHistograms(startTimestampMs+int64(i), generateTestFloatHistogram(i))
 				}
 			}
 
@@ -3956,33 +4559,36 @@ func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, 
 	return request
 }
 
-func makeWriteRequestTimeseries(labels []mimirpb.LabelAdapter, ts int64, value float64) mimirpb.PreallocTimeseries {
+func makeTimeseries(seriesLabels []string, samples []mimirpb.Sample, exemplars []mimirpb.Exemplar) mimirpb.PreallocTimeseries {
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels: labels,
-			Samples: []mimirpb.Sample{
-				{
-					Value:       value,
-					TimestampMs: ts,
-				},
-			},
+			Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(seriesLabels...)),
+			Samples:   samples,
+			Exemplars: exemplars,
 		},
 	}
 }
 
-func makeWriteRequestExamplars(labels []mimirpb.LabelAdapter, ts int64, value float64) []mimirpb.Exemplar {
-	return []mimirpb.Exemplar{{
-		Labels:      labels,
+func makeSamples(ts int64, value float64) []mimirpb.Sample {
+	return []mimirpb.Sample{{
 		Value:       value,
 		TimestampMs: ts,
 	}}
 }
 
-func makeWriteRequestHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
+func makeExemplars(exemplarLabels []string, ts int64, value float64) []mimirpb.Exemplar {
+	return []mimirpb.Exemplar{{
+		Labels:      mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(exemplarLabels...)),
+		Value:       value,
+		TimestampMs: ts,
+	}}
+}
+
+func makeHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
 	return []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, histogram)}
 }
 
-func makeWriteRequestFloatHistograms(ts int64, histogram *histogram.FloatHistogram) []mimirpb.Histogram {
+func makeFloatHistograms(ts int64, histogram *histogram.FloatHistogram) []mimirpb.Histogram {
 	return []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(ts, histogram)}
 }
 
@@ -4095,9 +4701,9 @@ func makeWriteRequestForGenerators(series int, lsg labelSetGen, elsg labelSetGen
 			}}
 		}
 		if i%2 == 0 {
-			ts.Histograms = makeWriteRequestHistograms(int64(100+i), generateTestHistogram(i))
+			ts.Histograms = makeHistograms(int64(100+i), generateTestHistogram(i))
 		} else {
-			ts.Histograms = makeWriteRequestFloatHistograms(int64(100+i), generateTestFloatHistogram(i))
+			ts.Histograms = makeFloatHistograms(int64(100+i), generateTestFloatHistogram(i))
 		}
 		request.Timeseries = append(request.Timeseries, ts)
 
@@ -4156,7 +4762,7 @@ func makeHistogramTimeseries(seriesLabels []string, timestamp int64, histogram *
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels:     mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(seriesLabels...)),
-			Histograms: makeWriteRequestHistograms(timestamp, histogram),
+			Histograms: makeHistograms(timestamp, histogram),
 		},
 	}
 }
@@ -4165,7 +4771,7 @@ func makeFloatHistogramTimeseries(seriesLabels []string, timestamp int64, histog
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels:     mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(seriesLabels...)),
-			Histograms: makeWriteRequestFloatHistograms(timestamp, histogram),
+			Histograms: makeFloatHistograms(timestamp, histogram),
 		},
 	}
 }
@@ -4221,17 +4827,34 @@ type mockIngester struct {
 	queryDelay                    time.Duration
 	pushDelay                     time.Duration
 	calls                         map[string]int
-	seriesCountTotal              uint64
 	zone                          string
 	labelNamesStreamResponseDelay time.Duration
 	timeOut                       bool
 	tokens                        []uint32
 	id                            int
 	circuitBreakerOpen            bool
+
+	// partitionReader is responsible to consume a partition from Kafka when the
+	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
+	partitionReader *ingest.PartitionReader
+}
+
+func (i *mockIngester) instanceID() string {
+	return fmt.Sprintf("ingester-%s-%d", i.zone, i.id)
+}
+
+// partitionID returns the partition ID owned by this ingester when ingest storage is used.
+func (i *mockIngester) partitionID() int32 {
+	id, err := ingest.IngesterPartitionID(i.instanceID())
+	if err != nil {
+		panic(err)
+	}
+
+	return id
 }
 
 func (i *mockIngester) address() string {
-	return fmt.Sprintf("ingester-%s-%d", i.zone, i.id)
+	return i.instanceID()
 }
 
 func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
@@ -4291,25 +4914,23 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 		return nil, err
 	}
 
-	for _, series := range req.Timeseries {
+	for _, unsafeSeries := range req.Timeseries {
+		// Make a copy because the request Timeseries are reused. It's important to make a copy
+		// even if the timeseries already exists in our local map, because we may still retain
+		// some request's memory when merging exemplars.
+		series, err := clonePreallocTimeseries(unsafeSeries)
+		if err != nil {
+			return nil, err
+		}
+
 		hash := mimirpb.ShardByAllLabelAdapters(orgid, series.Labels)
 		existing, ok := i.timeseries[hash]
 		if !ok {
-			// Make a copy because the request Timeseries are reused
-			item := mimirpb.TimeSeries{
-				Labels:     make([]mimirpb.LabelAdapter, len(series.TimeSeries.Labels)),
-				Samples:    make([]mimirpb.Sample, len(series.TimeSeries.Samples)),
-				Histograms: make([]mimirpb.Histogram, len(series.TimeSeries.Histograms)),
-			}
-
-			copy(item.Labels, series.TimeSeries.Labels)
-			copy(item.Samples, series.TimeSeries.Samples)
-			copy(item.Histograms, series.TimeSeries.Histograms)
-
-			i.timeseries[hash] = &mimirpb.PreallocTimeseries{TimeSeries: &item}
+			i.timeseries[hash] = &series
 		} else {
 			existing.Samples = append(existing.Samples, series.Samples...)
 			existing.Histograms = append(existing.Histograms, series.Histograms...)
+			existing.Exemplars = append(existing.Exemplars, series.Exemplars...)
 		}
 	}
 
@@ -4338,7 +4959,11 @@ func makeWireChunk(c chunk.EncodedChunk) client.Chunk {
 	return chunk
 }
 
-func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, _ ...grpc.CallOption) (client.Ingester_QueryStreamClient, error) {
+func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest, _ ...grpc.CallOption) (client.Ingester_QueryStreamClient, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	time.Sleep(i.queryDelay)
 
 	i.Lock()
@@ -4494,7 +5119,83 @@ func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, 
 	}, nil
 }
 
-func (i *mockIngester) MetricsForLabelMatchers(_ context.Context, req *client.MetricsForLabelMatchersRequest, _ ...grpc.CallOption) (*client.MetricsForLabelMatchersResponse, error) {
+func (i *mockIngester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest, _ ...grpc.CallOption) (*client.ExemplarQueryResponse, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	i.trackCall("QueryExemplars")
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	from, through, multiMatchers, err := client.FromExemplarQueryRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &client.ExemplarQueryResponse{}
+
+	for _, series := range i.timeseries {
+		seriesMatches := false
+		seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+
+		// Check if the series matches any of the matchers in the request.
+		for _, matchers := range multiMatchers {
+			matcherMatches := true
+
+			for _, matcher := range matchers {
+				if !matcher.Matches(seriesLabels.Get(matcher.Name)) {
+					matcherMatches = false
+					break
+				}
+			}
+
+			if matcherMatches {
+				seriesMatches = true
+				break
+			}
+		}
+
+		if !seriesMatches {
+			continue
+		}
+
+		// Filter exemplars by time range.
+		var exemplars []mimirpb.Exemplar
+		for _, exemplar := range series.Exemplars {
+			if exemplar.TimestampMs >= from && exemplar.TimestampMs <= through {
+				exemplars = append(exemplars, exemplar)
+			}
+		}
+
+		if len(exemplars) > 0 {
+			res.Timeseries = append(res.Timeseries, mimirpb.TimeSeries{
+				Labels:    series.Labels,
+				Exemplars: exemplars,
+			})
+		}
+	}
+
+	// Sort series by labels because the real ingester returns sorted ones.
+	slices.SortFunc(res.Timeseries, func(a, b mimirpb.TimeSeries) int {
+		aKey := client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(a.Labels))
+		bKey := client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(b.Labels))
+		return strings.Compare(aKey, bKey)
+	})
+
+	return res, nil
+}
+
+func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest, _ ...grpc.CallOption) (*client.MetricsForLabelMatchersResponse, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -4520,7 +5221,11 @@ func (i *mockIngester) MetricsForLabelMatchers(_ context.Context, req *client.Me
 	return &response, nil
 }
 
-func (i *mockIngester) LabelValues(_ context.Context, req *client.LabelValuesRequest, _ ...grpc.CallOption) (*client.LabelValuesResponse, error) {
+func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesRequest, _ ...grpc.CallOption) (*client.LabelValuesResponse, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -4567,7 +5272,11 @@ func (i *mockIngester) LabelValues(_ context.Context, req *client.LabelValuesReq
 	return &client.LabelValuesResponse{LabelValues: response}, nil
 }
 
-func (i *mockIngester) LabelNames(_ context.Context, req *client.LabelNamesRequest, _ ...grpc.CallOption) (*client.LabelNamesResponse, error) {
+func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesRequest, _ ...grpc.CallOption) (*client.LabelNamesResponse, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -4595,7 +5304,11 @@ func (i *mockIngester) LabelNames(_ context.Context, req *client.LabelNamesReque
 	return &response, nil
 }
 
-func (i *mockIngester) MetricsMetadata(context.Context, *client.MetricsMetadataRequest, ...grpc.CallOption) (*client.MetricsMetadataResponse, error) {
+func (i *mockIngester) MetricsMetadata(ctx context.Context, _ *client.MetricsMetadataRequest, _ ...grpc.CallOption) (*client.MetricsMetadataResponse, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -4615,7 +5328,11 @@ func (i *mockIngester) MetricsMetadata(context.Context, *client.MetricsMetadataR
 	return resp, nil
 }
 
-func (i *mockIngester) LabelNamesAndValues(_ context.Context, _ *client.LabelNamesAndValuesRequest, _ ...grpc.CallOption) (client.Ingester_LabelNamesAndValuesClient, error) {
+func (i *mockIngester) LabelNamesAndValues(ctx context.Context, _ *client.LabelNamesAndValuesRequest, _ ...grpc.CallOption) (client.Ingester_LabelNamesAndValuesClient, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 	results := map[string]map[string]struct{}{}
@@ -4662,7 +5379,11 @@ func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesRespo
 	return result, nil
 }
 
-func (i *mockIngester) LabelValuesCardinality(_ context.Context, req *client.LabelValuesCardinalityRequest, _ ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
+func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.LabelValuesCardinalityRequest, _ ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -4732,7 +5453,11 @@ func (s *labelValuesCardinalityStream) Recv() (*client.LabelValuesCardinalityRes
 	return result, nil
 }
 
-func (i *mockIngester) ActiveSeries(_ context.Context, req *client.ActiveSeriesRequest, _ ...grpc.CallOption) (client.Ingester_ActiveSeriesClient, error) {
+func (i *mockIngester) ActiveSeries(ctx context.Context, req *client.ActiveSeriesRequest, _ ...grpc.CallOption) (client.Ingester_ActiveSeriesClient, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -4801,6 +5526,35 @@ func (i *mockIngester) countCalls(name string) int {
 	return i.calls[name]
 }
 
+func (i *mockIngester) enforceReadConsistency(ctx context.Context) error {
+	// Strong read consistency is required to be enforced only if ingest storage is enabled.
+	if i.partitionReader == nil {
+		return nil
+	}
+
+	level, ok := api.ReadConsistencyFromContext(ctx)
+	if !ok || level != api.ReadConsistencyStrong {
+		return nil
+	}
+
+	return i.partitionReader.WaitReadConsistency(ctx)
+}
+
+type mockIngesterPusherAdapter struct {
+	ingester *mockIngester
+}
+
+func newMockIngesterPusherAdapter(ingester *mockIngester) *mockIngesterPusherAdapter {
+	return &mockIngesterPusherAdapter{
+		ingester: ingester,
+	}
+}
+
+// Push implements ingest.Pusher.
+func (c *mockIngesterPusherAdapter) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+	return c.ingester.Push(ctx, req)
+}
+
 // noopIngester is a mocked ingester which does nothing.
 type noopIngester struct {
 	client.IngesterClient
@@ -4842,14 +5596,23 @@ func (i *mockIngester) AllUserStats(context.Context, *client.UserStatsRequest, .
 	return &i.stats, nil
 }
 
-func (i *mockIngester) UserStats(context.Context, *client.UserStatsRequest, ...grpc.CallOption) (*client.UserStatsResponse, error) {
+func (i *mockIngester) UserStats(ctx context.Context, _ *client.UserStatsRequest, _ ...grpc.CallOption) (*client.UserStatsResponse, error) {
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	i.trackCall("UserStats")
+
 	if !i.happy {
 		return nil, errFail
 	}
 
 	return &client.UserStatsResponse{
 		IngestionRate:     0,
-		NumSeries:         i.seriesCountTotal,
+		NumSeries:         uint64(len(i.timeseries)),
 		ApiIngestionRate:  0,
 		RuleIngestionRate: 0,
 	}, nil
@@ -4993,7 +5756,7 @@ func TestDistributorValidation(t *testing.T) {
 			limits.MaxLabelNamesPerSeries = 2
 			limits.MaxGlobalExemplarsPerUser = 10
 
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, _, _ := prepare(t, prepConfig{
 				numIngesters:    3,
 				happyIngesters:  3,
 				numDistributors: 1,
@@ -5049,7 +5812,7 @@ func TestDistributor_Push_Relabel(t *testing.T) {
 		flagext.DefaultValues(&limits)
 		limits.MetricRelabelConfigs = tc.metricRelabelConfigs
 
-		ds, ingesters, _ := prepare(t, prepConfig{
+		ds, ingesters, _, _ := prepare(t, prepConfig{
 			numIngesters:    2,
 			happyIngesters:  2,
 			numDistributors: 1,
@@ -5104,7 +5867,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		}
 	}
 	getDistributor := func(config prepConfig) (*Distributor, *prometheus.Registry) {
-		ds, _, regs := prepare(t, config)
+		ds, _, regs, _ := prepare(t, config)
 		return ds[0], regs[0]
 	}
 	type expectedMetricsCfg struct {
@@ -5472,7 +6235,7 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 	// But there are still resources occupied within the distributor while it's
 	// waiting for all ingesters to return. So we want the instance limits to accurately reflect that.
 
-	distributors, ingesters, _ := prepare(t, prepConfig{
+	distributors, ingesters, _, _ := prepare(t, prepConfig{
 		numIngesters:      3,
 		happyIngesters:    3,
 		numDistributors:   1,
@@ -5503,7 +6266,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 		numDistributors:   1,
 		replicationFactor: 1, // push each series to single ingester only
 	}
-	d, ingesters, _ := prepare(t, config)
+	d, ingesters, _, _ := prepare(t, config)
 
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{
@@ -5611,7 +6374,7 @@ func TestHandlePushError(t *testing.T) {
 		numDistributors:   1,
 		replicationFactor: 1, // push each series to single ingester only
 	}
-	d, _, _ := prepare(t, config)
+	d, _, _, _ := prepare(t, config)
 	ctx := context.Background()
 
 	for testName, testData := range test {
@@ -5831,7 +6594,7 @@ func TestStartFinishRequest(t *testing.T) {
 			flagext.DefaultValues(&limits)
 
 			// Prepare distributor and wrap the mock push function with its middlewares.
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
 				limits:          &limits,
 				enableTracker:   true,
@@ -5909,7 +6672,7 @@ func TestSendMessageMetadata(t *testing.T) {
 		return mock, nil
 	})
 
-	d, err := New(distributorCfg, clientConfig, validation.MockDefaultOverrides(), nil, ingestersRing, false, nil, log.NewNopLogger())
+	d, err := New(distributorCfg, clientConfig, validation.MockDefaultOverrides(), nil, ingestersRing, nil, false, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NotNil(t, d)
 
@@ -5933,7 +6696,7 @@ func TestSendMessageMetadata(t *testing.T) {
 	require.Equal(t, []string{strconv.Itoa(req.Size())}, mock.md[grpcutil.MetadataMessageSize])
 }
 
-func TestQueryQuorumConfig_ZoneSorting(t *testing.T) {
+func TestQueryIngestersRingZoneSorter(t *testing.T) {
 	testCases := map[string]struct {
 		instances []ring.InstanceDesc
 		verify    func(t *testing.T, sortedZones []string)
@@ -6039,10 +6802,6 @@ func TestQueryQuorumConfig_ZoneSorting(t *testing.T) {
 		},
 	}
 
-	d := &Distributor{
-		cfg: Config{},
-	}
-
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			replicationSet := ring.ReplicationSet{
@@ -6050,9 +6809,70 @@ func TestQueryQuorumConfig_ZoneSorting(t *testing.T) {
 				ZoneAwarenessEnabled: true,
 			}
 
-			cfg := d.queryQuorumConfig(context.Background(), replicationSet)
-			sorted := cfg.ZoneSorter(uniqueZones(testCase.instances))
+			sorted := queryIngestersRingZoneSorter(replicationSet)(uniqueZones(testCase.instances))
+			testCase.verify(t, sorted)
+		})
+	}
+}
 
+func TestQueryIngesterPartitionsRingZoneSorter(t *testing.T) {
+	testCases := map[string]struct {
+		zones         []string
+		preferredZone string
+		verify        func(t *testing.T, sortedZones []string)
+	}{
+		"no zones": {
+			zones: []string{},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Empty(t, sortedZones)
+			},
+		},
+		"one zone, without preferred zone": {
+			zones: []string{"zone-a"},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, []string{"zone-a"}, sortedZones)
+			},
+		},
+		"one zone, with preferred zone": {
+			zones:         []string{"zone-a"},
+			preferredZone: "zone-a",
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, []string{"zone-a"}, sortedZones)
+			},
+		},
+		"two zones, without preferred zone": {
+			zones: []string{"zone-a", "zone-b"},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.ElementsMatch(t, []string{"zone-a", "zone-b"}, sortedZones)
+			},
+		},
+		"two zones, with preferred zone": {
+			zones:         []string{"zone-a", "zone-b"},
+			preferredZone: "zone-b",
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, []string{"zone-b", "zone-a"}, sortedZones)
+			},
+		},
+		"many zones, without preferred zone": {
+			zones: []string{"zone-a", "zone-b", "zone-c", "zone-d"},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c", "zone-d"}, sortedZones)
+			},
+		},
+		"many zones, with preferred zone": {
+			zones:         []string{"zone-a", "zone-b", "zone-c", "zone-d"},
+			preferredZone: "zone-b",
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Len(t, sortedZones, 4)
+				require.Equal(t, "zone-b", sortedZones[0])
+				require.ElementsMatch(t, []string{"zone-a", "zone-c", "zone-d"}, sortedZones[1:])
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			sorted := queryIngesterPartitionsRingZoneSorter(testCase.preferredZone)(testCase.zones)
 			testCase.verify(t, sorted)
 		})
 	}
@@ -6088,4 +6908,24 @@ func (m *mockInstanceClient) Check(_ context.Context, _ *grpc_health_v1.HealthCh
 func (m *mockInstanceClient) Push(ctx context.Context, _ *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	m.md, _ = metadata.FromOutgoingContext(ctx)
 	return nil, nil
+}
+
+func cloneTimeseries(orig *mimirpb.TimeSeries) (*mimirpb.TimeSeries, error) {
+	data, err := orig.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
+	cloned := &mimirpb.TimeSeries{}
+	err = cloned.Unmarshal(data)
+	return cloned, err
+}
+
+func clonePreallocTimeseries(orig mimirpb.PreallocTimeseries) (mimirpb.PreallocTimeseries, error) {
+	clonedSeries, err := cloneTimeseries(orig.TimeSeries)
+	if err != nil {
+		return mimirpb.PreallocTimeseries{}, err
+	}
+
+	return mimirpb.PreallocTimeseries{TimeSeries: clonedSeries}, nil
 }

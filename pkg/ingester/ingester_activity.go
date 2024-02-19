@@ -159,7 +159,7 @@ func (i *ActivityTrackerWrapper) PrepareShutdownHandler(w http.ResponseWriter, r
 
 func (i *ActivityTrackerWrapper) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
-		return requestActivity(r.Context(), "Ingester/PreparePartitionDownscaleHandler()", nil)
+		return requestActivity(r.Context(), "Ingester/PreparePartitionDownscaleHandler", nil)
 	})
 	defer i.tracker.Delete(ix)
 

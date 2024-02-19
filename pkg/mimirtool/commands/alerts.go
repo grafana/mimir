@@ -94,9 +94,26 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 		cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided.").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 	}
 
+	migrateCmd := alertCmd.Command("migrate-utf8", "Migrate the Alertmanager tenant configuration for UTF-8.").Action(a.migrateConfig)
+	migrateCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
+	migrateCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
+	migrateCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
+	migrateCmd.Flag("output-dir", "The directory where the migrated configuration and templates will be written to and disables printing to console.").ExistingDirVar(&a.OutputDir)
+
 	verifyalertCmd := alertCmd.Command("verify", "Verify Alertmanager tenant configuration and template files.").Action(a.verifyAlertmanagerConfig)
 	verifyalertCmd.Arg("config", "Alertmanager configuration to verify").Required().StringVar(&a.AlertmanagerConfigFile)
 	verifyalertCmd.Arg("template-files", "The template files to verify").ExistingFilesVar(&a.TemplateFiles)
+
+	trCmd := &TemplateRenderCmd{}
+	renderCmd := alertCmd.Command("render", "Render a given definition in a template file to standard output.").Action(trCmd.render)
+	renderCmd.Flag("template.glob", "Glob of paths that will be expanded and used for rendering.").Required().StringsVar(&trCmd.TemplateFilesGlobs)
+	renderCmd.Flag("template.text", "The template that will be rendered.").Required().StringVar(&trCmd.TemplateText)
+	renderCmd.Flag("template.type", "The type of the template. Can be either text (default) or html.").EnumVar(&trCmd.TemplateType, "html", "text")
+	renderCmd.Flag("template.data", "Full path to a file which contains the data of the alert(-s) with which the --template-text will be rendered. Must be in JSON. File must be formatted according to the following layout: https://pkg.go.dev/github.com/prometheus/alertmanager/template#Data. If none has been specified then a predefined, simple alert will be used for rendering.").FileVar(&trCmd.TemplateData)
+	renderCmd.Flag("id", "Basic auth username to use when rendering template used by the function `tenantID`, also set as tenant ID; alternatively, set "+envVars.TenantID+".").
+		Envar(envVars.TenantID).
+		Default("").
+		StringVar(&trCmd.TenantID)
 }
 
 func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext) error {
@@ -224,6 +241,22 @@ func (a *AlertmanagerCommand) deleteConfig(_ *kingpin.ParseContext) error {
 		return err
 	}
 	return nil
+}
+
+func (a *AlertmanagerCommand) migrateConfig(_ *kingpin.ParseContext) error {
+	cfg, templates, err := a.readAlertManagerConfig()
+	if err != nil {
+		return err
+	}
+	cfg, err = migrateCfg(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to migrate cfg: %w", err)
+	}
+	if a.OutputDir == "" {
+		p := printer.New(a.DisableColor)
+		return p.PrintAlertmanagerConfig(cfg, templates)
+	}
+	return a.outputAlertManagerConfigTemplates(cfg, templates)
 }
 
 func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames, reg prometheus.Registerer) {
