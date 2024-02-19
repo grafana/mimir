@@ -5298,11 +5298,7 @@ func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, 
 }
 
 func makeWriteRequestWith(series ...mimirpb.PreallocTimeseries) *mimirpb.WriteRequest {
-	req := &mimirpb.WriteRequest{}
-	for _, item := range series {
-		req.Timeseries = append(req.Timeseries, item)
-	}
-	return req
+	return &mimirpb.WriteRequest{Timeseries: series}
 }
 
 func makeTimeseries(seriesLabels []string, samples []mimirpb.Sample, exemplars []mimirpb.Exemplar) mimirpb.PreallocTimeseries {
