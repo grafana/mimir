@@ -230,8 +230,11 @@ func (p *prometheusChunkIterator) Timestamp() int64 {
 	return p.it.AtT()
 }
 
-func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) Batch {
-	var batch Batch
+func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, b *Batch) *Batch {
+	batch := b
+	if batch == nil {
+		batch = &Batch{}
+	}
 	batch.ValueType = valueType
 	var populate func(j int)
 	switch valueType {
@@ -246,13 +249,21 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) 
 		}
 	case chunkenc.ValHistogram:
 		populate = func(j int) {
-			t, h := p.it.AtHistogram(nil)
+			var (
+				h = (*histogram.Histogram)(batch.PointerValues[j])
+				t int64
+			)
+			t, h = p.it.AtHistogram(h)
 			batch.Timestamps[j] = t
 			batch.PointerValues[j] = unsafe.Pointer(h)
 		}
 	case chunkenc.ValFloatHistogram:
 		populate = func(j int) {
-			t, fh := p.it.AtFloatHistogram(nil)
+			var (
+				fh = (*histogram.FloatHistogram)(batch.PointerValues[j])
+				t  int64
+			)
+			t, fh = p.it.AtFloatHistogram(fh)
 			batch.Timestamps[j] = t
 			batch.PointerValues[j] = unsafe.Pointer(fh)
 		}
@@ -294,6 +305,6 @@ func (e errorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Hist
 func (e errorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	panic("no float histograms")
 }
-func (e errorIterator) Timestamp() int64                        { panic("no samples") }
-func (e errorIterator) Batch(_ int, _ chunkenc.ValueType) Batch { panic("no values") }
-func (e errorIterator) Err() error                              { return errors.New(string(e)) }
+func (e errorIterator) Timestamp() int64                                   { panic("no samples") }
+func (e errorIterator) Batch(_ int, _ chunkenc.ValueType, _ *Batch) *Batch { panic("no values") }
+func (e errorIterator) Err() error                                         { return errors.New(string(e)) }
