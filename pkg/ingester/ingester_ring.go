@@ -3,6 +3,7 @@
 package ingester
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -66,7 +67,7 @@ type RingConfig struct {
 	JoinAfter time.Duration `yaml:"-"`
 }
 
-func (cfg *RingConfig) Validate() error {
+func (cfg *RingConfig) Validate(ingestStorageEnabled bool) error {
 	if cfg.TokenGenerationStrategy != randomTokenGeneration && cfg.TokenGenerationStrategy != spreadMinimizingTokenGeneration {
 		return fmt.Errorf("unsupported token generation strategy (%q) has been chosen for %s", cfg.TokenGenerationStrategy, tokenGenerationStrategyFlag)
 	}
@@ -75,13 +76,20 @@ func (cfg *RingConfig) Validate() error {
 		if cfg.TokensFilePath != "" {
 			return fmt.Errorf("%q token generation strategy requires %q to be empty", spreadMinimizingTokenGeneration, tokensFilePathFlag)
 		}
-		_, err := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, cfg.SpreadMinimizingJoinRingInOrder)
-		return err
+
+		if _, err := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, cfg.SpreadMinimizingJoinRingInOrder); err != nil {
+			return err
+		}
 	}
 
-	// at this point cfg.TokenGenerationStrategy is not spreadMinimizingTokenGeneration
-	if cfg.SpreadMinimizingJoinRingInOrder {
+	if cfg.TokenGenerationStrategy != spreadMinimizingTokenGeneration && cfg.SpreadMinimizingJoinRingInOrder {
 		return fmt.Errorf("%q must be false when using %q token generation strategy", spreadMinimizingJoinRingInOrderFlag, cfg.TokenGenerationStrategy)
+	}
+
+	// Ingest storage requires the zone to be configured for ingesters, because on the read path we always use
+	// zone-aware replication tracker to compute the quorum.
+	if ingestStorageEnabled && cfg.InstanceZone == "" {
+		return errors.New("the ingester instance zone must be configured when running Mimir with the ingest storage")
 	}
 
 	return nil

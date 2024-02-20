@@ -3,6 +3,7 @@
 package ingester
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -118,8 +119,9 @@ func TestRingConfig_Validate(t *testing.T) {
 		tokenGenerationStrategy         string
 		spreadMinimizingJoinRingInOrder bool
 		spreadMinimizingZones           []string
-		expectedError                   error
 		tokensFilePath                  string
+		ingestStorageEnabled            bool
+		expectedError                   error
 	}{
 		"spread-minimizing and correct zones pass validation": {
 			zone:                    instanceZone,
@@ -170,17 +172,34 @@ func TestRingConfig_Validate(t *testing.T) {
 			tokenGenerationStrategy: "bla-bla-tokens",
 			expectedError:           fmt.Errorf("unsupported token generation strategy (%q) has been chosen for %s", "bla-bla-tokens", tokenGenerationStrategyFlag),
 		},
+		"should fail if ingest storage is enabled and no zone is configured": {
+			zone:                 "",
+			ingestStorageEnabled: true,
+			expectedError:        errors.New("the ingester instance zone must be configured when running Mimir with the ingest storage"),
+		},
 	}
 
 	for _, testData := range tests {
 		cfg := RingConfig{}
+		flagext.DefaultValues(&cfg)
+
 		cfg.InstanceID = instanceID
-		cfg.InstanceZone = testData.zone
-		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
 		cfg.SpreadMinimizingJoinRingInOrder = testData.spreadMinimizingJoinRingInOrder
-		cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
-		cfg.TokensFilePath = testData.tokensFilePath
-		err := cfg.Validate()
+
+		if testData.zone != "" {
+			cfg.InstanceZone = testData.zone
+		}
+		if testData.tokenGenerationStrategy != "" {
+			cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
+		}
+		if len(testData.spreadMinimizingZones) > 0 {
+			cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
+		}
+		if testData.tokensFilePath != "" {
+			cfg.TokensFilePath = testData.tokensFilePath
+		}
+
+		err := cfg.Validate(testData.ingestStorageEnabled)
 		if testData.expectedError == nil {
 			require.NoError(t, err)
 		} else {
