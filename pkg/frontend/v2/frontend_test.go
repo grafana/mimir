@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"runtime"
 	"strconv"
@@ -35,6 +36,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
@@ -368,61 +370,120 @@ func TestFrontendFailedCancellation(t *testing.T) {
 
 func TestFrontendStreamingResponse(t *testing.T) {
 	const (
-		responseBody = "streamed response body"
-		userID       = "test"
+		userID = "test"
 	)
 
-	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		go streamResponse(t, f, userID, msg.QueryID, &httpgrpc.HTTPResponse{
-			Code: http.StatusOK,
-			Body: []byte(responseBody),
+	for _, tt := range []struct {
+		name              string
+		sendResultStream  func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error
+		expectStreamError bool
+		expectBody        string
+	}{
+		{
+			name: "metadata and two chunks",
+			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+				body := "result stream body"
+				headers := []*httpgrpc.Header{{Key: "Content-Length", Values: []string{strconv.Itoa(len(body))}}}
+				resp := &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(body), Headers: headers}
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s.msgs = append(s.msgs,
+					&frontendv2pb.QueryResultStreamRequest{
+						QueryID: msg.QueryID,
+						Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
+							Code: resp.Code, Headers: resp.Headers, Stats: &stats.Stats{}}},
+					},
+					&frontendv2pb.QueryResultStreamRequest{
+						QueryID: msg.QueryID,
+						Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: resp.Body[:len(resp.Body)/2]}},
+					},
+					&frontendv2pb.QueryResultStreamRequest{
+						QueryID: msg.QueryID,
+						Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: resp.Body[len(resp.Body)/2:]}},
+					},
+				)
+				return f.QueryResultStream(s)
+			},
+			expectBody: "result stream body",
+		},
+		{
+			name: "received metadata only, no body data sent",
+			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s.msgs = append(s.msgs, &frontendv2pb.QueryResultStreamRequest{
+					QueryID: msg.QueryID,
+					Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
+						Code:    http.StatusOK,
+						Headers: []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"0"}}},
+					}},
+				})
+				return f.QueryResultStream(s)
+			},
+			expectBody: "",
+		},
+		{
+			name: "errors on wrong message sequence",
+			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s.msgs = append(s.msgs,
+					&frontendv2pb.QueryResultStreamRequest{
+						QueryID: msg.QueryID,
+						Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
+							Code:  http.StatusOK,
+							Stats: &stats.Stats{}}},
+					}, &frontendv2pb.QueryResultStreamRequest{
+						QueryID: msg.QueryID,
+						Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: []byte("part 1/2")}},
+					}, &frontendv2pb.QueryResultStreamRequest{
+						QueryID: msg.QueryID,
+						Data:    &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{}},
+					}, &frontendv2pb.QueryResultStreamRequest{
+						QueryID: msg.QueryID,
+						Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: []byte("part 2/2")}},
+					},
+				)
+				return f.QueryResultStream(s)
+			},
+			expectStreamError: true,
+			expectBody:        "part 1/2",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				go func() {
+					err := tt.sendResultStream(f, msg)
+					if tt.expectStreamError {
+						require.Error(t, err)
+					} else {
+						require.NoError(t, err)
+					}
+				}()
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			})
+
+			req := httptest.NewRequest("GET", "/api/v1/cardinality/active_series?selector=metric", nil)
+			rt := transport.AdaptGrpcRoundTripperToHTTPRoundTripper(f)
+
+			resp, err := rt.RoundTrip(req.WithContext(user.InjectOrgID(context.Background(), userID)))
+			require.NoError(t, err)
+			defer func() {
+				_, _ = io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+			}()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			body, err := io.ReadAll(resp.Body)
+			if tt.expectStreamError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.expectBody, string(body))
+
+			contentLength, err := strconv.Atoi(resp.Header.Get("Content-Length"))
+			require.NoError(t, err)
+			require.Equal(t, len(tt.expectBody), contentLength)
 		})
-		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
-	})
-
-	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/cardinality/active_series?selector=metric",
 	}
-	resp, bodyReader, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
-	require.NoError(t, err)
-	defer func() {
-		_, _ = io.ReadAll(bodyReader)
-		_ = bodyReader.Close()
-	}()
-	require.Equal(t, int32(http.StatusOK), resp.Code)
-
-	body, err := io.ReadAll(bodyReader)
-	require.NoError(t, err)
-	require.Equal(t, responseBody, string(body))
-}
-
-func streamResponse(t *testing.T, f *Frontend, userID string, queryID uint64, resp *httpgrpc.HTTPResponse) {
-	mockServer := newMockQueryResultStreamServer(context.Background(), userID, queryID, resp)
-	err := f.QueryResultStream(mockServer)
-	require.NoError(t, err)
-}
-
-func newMockQueryResultStreamServer(ctx context.Context, userID string, queryID uint64, resp *httpgrpc.HTTPResponse) *mockQueryResultStreamServer {
-	s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(ctx, userID), queryID: queryID}
-	s.msgs = append(s.msgs,
-		&frontendv2pb.QueryResultStreamRequest{
-			QueryID: queryID,
-			Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
-				Code:    resp.Code,
-				Headers: resp.Headers,
-				Stats:   &stats.Stats{},
-			}},
-		},
-		&frontendv2pb.QueryResultStreamRequest{
-			QueryID: queryID,
-			Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: resp.Body[:len(resp.Body)/2]}},
-		},
-		&frontendv2pb.QueryResultStreamRequest{
-			QueryID: queryID,
-			Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: resp.Body[len(resp.Body)/2:]}},
-		},
-	)
-	return s
 }
 
 type mockQueryResultStreamServer struct {
@@ -439,10 +500,13 @@ func (s *mockQueryResultStreamServer) Context() context.Context {
 }
 
 func (s *mockQueryResultStreamServer) SendAndClose(_ *frontendv2pb.QueryResultResponse) error {
-	return nil
+	return s.ctx.Err()
 }
 
 func (s *mockQueryResultStreamServer) Recv() (*frontendv2pb.QueryResultStreamRequest, error) {
+	if err := s.ctx.Err(); err != nil {
+		return nil, err
+	}
 	if s.next >= len(s.msgs) {
 		return nil, io.EOF
 	}

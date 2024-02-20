@@ -386,8 +386,8 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
 	reader, writer := io.Pipe()
-	defer func(c io.Closer) {
-		if err := c.Close(); err != nil {
+	defer func(c *io.PipeWriter) {
+		if err := c.CloseWithError(err); err != nil {
 			level.Warn(f.log).Log("msg", "failed to close query result body writer", "err", err)
 		}
 	}(writer)
@@ -395,7 +395,8 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 	metadataReceived := false
 
 	for {
-		resp, err := stream.Recv()
+		var resp *frontendv2pb.QueryResultStreamRequest
+		resp, err = stream.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -404,6 +405,9 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 		}
 		switch d := resp.Data.(type) {
 		case *frontendv2pb.QueryResultStreamRequest_Metadata:
+			if metadataReceived {
+				return fmt.Errorf("metadata for query ID %d received more than once", resp.QueryID)
+			}
 			req := f.requests.get(resp.QueryID)
 			if req == nil {
 				return fmt.Errorf("query %d not found", resp.QueryID)
@@ -433,7 +437,7 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 			if !metadataReceived {
 				return fmt.Errorf("result body for query ID %d received before metadata", resp.QueryID)
 			}
-			_, err := writer.Write(d.Body.Chunk)
+			_, err = writer.Write(d.Body.Chunk)
 			if err != nil {
 				return fmt.Errorf("failed to write query result body chunk: %w", err)
 			}
