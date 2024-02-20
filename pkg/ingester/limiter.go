@@ -187,12 +187,17 @@ func (is *ingesterRingLimiterStrategy) getShardSize(userID string) int {
 	return is.getIngestionTenantShardSize(userID)
 }
 
+// Interface for mocking.
+type partitionRingWatcher interface {
+	PartitionRing() *ring.PartitionRing
+}
+
 type partitionRingLimiterStrategy struct {
-	partitionRingWatcher        *ring.PartitionRingWatcher
+	partitionRingWatcher        partitionRingWatcher
 	getPartitionTenantShardSize func(userID string) int
 }
 
-func newPartitionRingLimiter(watcher *ring.PartitionRingWatcher, getPartitionTenantShardSize func(userID string) int) *partitionRingLimiterStrategy {
+func newPartitionRingLimiter(watcher partitionRingWatcher, getPartitionTenantShardSize func(userID string) int) *partitionRingLimiterStrategy {
 	return &partitionRingLimiterStrategy{
 		partitionRingWatcher:        watcher,
 		getPartitionTenantShardSize: getPartitionTenantShardSize,
