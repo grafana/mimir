@@ -19,19 +19,21 @@ This changelog is continued from `enterprise-metrics` after Grafana Enterprise M
 All notable changes to this chart will be documented in this file.
 
 Entries should be ordered as follows:
-- [CHANGE]
-- [FEATURE]
-- [ENHANCEMENT]
-- [BUGFIX]
+
+* [CHANGE]
+* [FEATURE]
+* [ENHANCEMENT]
+* [BUGFIX]
 
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
 
-* [FEATURE] Added experimental feature for deploying [KEDA](https://keda.sh) ScaledObjects as part of the helm chart for the components: distributor, querier, query-frontend and ruler. #7282 #7392
+* [FEATURE] Added experimental feature for deploying [KEDA](https://keda.sh) ScaledObjects as part of the helm chart for the components: distributor, querier, query-frontend and ruler. #7282 #7392 #7431
   * Autoscaling can be enabled via `distributor.kedaAutoscaling`, `ruler.kedaAutoscaling`, `query_frontend.kedaAutoscaling`, and `querier.kedaAutoscaling`.
   * Global configuration of `promtheusAddress`, `pollingInterval` and `customHeaders` can be found in `kedaAutoscaling`section.
-  * Requires metamonitoring or custom installed Prometheus compatible solution, for more details on metamonitoring see [Monitor the health of your system](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/). See [grafana/mimir#7367](https://github.com/grafana/mimir/issues/7367) for a migration procedure.
+  * Requires metamonitoring or custom installed Prometheus compatible solution, for more details on metamonitoring see [Monitor the health of your system](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/).
+  * For migration please use `kedaAutoscaling.preserveReplicas` option. This option should be enabled, when first time enabling KEDA autoscaling for a component, to preserve the current number of replicas. After the autoscaler takes over and is ready to scale the component, this option can be disabled. After disabling this option, the `replicas` field inside the components deployment will be ignored and the autoscaler will manage the number of replicas.
 * [CHANGE] Rollout-operator: remove default CPU limit. #7125
 * [CHANGE] Ring: relaxed the hash ring heartbeat period and timeout for distributor, ingester, store-gateway and compactor: #6860
   * `-distributor.ring.heartbeat-period` set to `1m`
