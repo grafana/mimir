@@ -41,6 +41,10 @@ import (
 )
 
 const (
+	// ResponseStreamingEnabledHeader is the header key used by http handlers to
+	// indicate to the scheduler processor that its response should be streamed. This
+	// header is internal to the querier only and removed before the response is sent
+	// over the network.
 	ResponseStreamingEnabledHeader      = "X-Mimir-Stream-Grpc-Response"
 	responseStreamingBodyChunkSizeBytes = 1 * 1024 * 1024
 
