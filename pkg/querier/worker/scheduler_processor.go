@@ -295,7 +295,7 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		}
 
 		var ok bool
-		response.Headers, ok = consumeResponseStreamingEnabledHeader(response.Headers)
+		response.Headers, ok = removeStreamingHeader(response.Headers)
 		if sp.streamingEnabled && ok {
 			err = streamResponse(frontendCtx, c, queryID, response, stats)
 		} else {
@@ -320,7 +320,7 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	}
 }
 
-func consumeResponseStreamingEnabledHeader(headers []*httpgrpc.Header) ([]*httpgrpc.Header, bool) {
+func removeStreamingHeader(headers []*httpgrpc.Header) ([]*httpgrpc.Header, bool) {
 	streamEnabledViaHeader := false
 	for i, header := range headers {
 		if header.Key == ResponseStreamingEnabledHeader {
