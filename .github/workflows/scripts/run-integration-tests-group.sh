@@ -24,8 +24,8 @@ do
       ;;
     --tagprefix)
       TAGPREFIX="$2"
-      shift # skip --image
-      shift # skip image value
+      shift # skip --tagprefix
+      shift # skip tagprefix value
       ;;
     *)  break
       ;;
@@ -39,11 +39,6 @@ fi
 
 if [[ -z "$TOTAL" ]]; then
     echo "No total provided."
-    exit 1
-fi
-
-if [[ -z "$TAGPREFIX" ]]; then
-    echo "No image provided."
     exit 1
 fi
 

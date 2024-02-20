@@ -25,8 +25,12 @@ jobs:
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
+      - name: Determine if we will deploy the image
+        run: echo "Setting output"
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
+      is_deploy: ${{ (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r')) && github.event_name == 'push' && github.repository == 'grafana/mimir' }}
+      
 
   goversion:
     runs-on: ubuntu-latest
@@ -281,104 +285,113 @@ jobs:
           export MIMIR_IMAGE="grafana/mimir:distroless-$IMAGE_TAG_RACE"
           export MIMIR_ALPINE_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
           make BUILD_IN_CONTAINER=false cmd/mimir/.uptodate_race
-          docker save $MIMIR_IMAGE -o ./mimir_race_image
-          docker save $MIMIR_ALPINE_IMAGE -o ./mimir_race_image_alpine
+          docker save $MIMIR_IMAGE -o ./mimir_race_image_distroless
+          docker save $MIMIR_ALPINE_IMAGE -o ./mimir_race_image
       - name: Upload archive with race-enabled Mimir
         uses: actions/upload-artifact@v4
         with:
           name: Race-enabled Mimir
           path: |
             ./mimir_race_image
-            ./mimir_race_image_alpine
+            ./mimir_race_image_distroless
 
   integration:
-    needs: [goversion, build, checkDeploy]
+    needs: [goversion, build, prepare]
     runs-on: ubuntu-latest
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
       # Split tests into 6 groups.
       matrix:
+        image_tag_prefix: ['distroless-', '']
         test_group_id:    [0, 1, 2, 3, 4, 5]
         test_group_total: [6]
     steps:
+      - name: Check if we should run against the current matrix.image_tag_prefix
+        id: check_matrix
+        run: |
+          # Run the integration tests against the distroless image tag prefix in all cases.
+          # Only run the integration tests against the (legacy) alpine image when pushing a tag (denoted by no prefix).
+          run_matrix=${{ (needs.prepare.outputs.is_deploy == 'true' || matrix.image_tag_prefix == 'distroless-') && 'true' || 'false'  }}
+          echo "For debugging:"
+          echo "needs.precondition.outputs.isDeploy: ${{ needs.prepare.outputs.is_deploy }}"
+          echo "matrix.image_tag_prefix: ${{ matrix.image_tag_prefix }}"
+          echo "run_matrix: $run_matrix"
+          echo "run_matrix=$run_matrix" >> $GITHUB_OUTPUT
       - name: Upgrade golang
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         uses: actions/setup-go@v5
         with:
           go-version: ${{ needs.goversion.outputs.version }}
           cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
       - name: Check out repository
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         uses: actions/checkout@v4
       - name: Run Git Config
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         run: sudo ./.github/workflows/scripts/install-docker.sh
       - name: Symlink Expected Path to Workspace
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Get Go build cache path
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         id: gocache
         run: |
           echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
       - name: Cache Go build cache
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         uses: actions/cache@v3
         with:
           # Cache is shared between test groups.
           key: integration-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           path: ${{ steps.gocache.outputs.path }}
       - name: Download Archive with Docker Images
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         uses: actions/download-artifact@v4
         with:
           name: Docker Images
       - name: Extract Docker Images from Archive
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         run: tar xvf images.tar -C /
       - name: Load Mimirtool Image into Docker
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         run: |
           export IMAGE_TAG=$(make image-tag)
           # skopeo will by default load system-specific version of the image (linux/amd64).
           skopeo copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
       - name: Download Archive with Docker Images
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         uses: actions/download-artifact@v4
         with:
           name: Race-enabled Mimir
       - name: Load race-enabled mimir into Docker
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         run: |
           docker load -i ./mimir_race_image
           export IMAGE_TAG_RACE=$(make image-tag-race)
+          docker run "grafana/mimir:$IMAGE_TAG_RACE" --version
+          docker load -i ./mimir_race_image_distroless
           docker run "grafana/mimir:distroless-$IMAGE_TAG_RACE" --version
-          if ${{ needs.checkDeploy.outputs.is_deploy == 'true' }}; then
-            docker load -i ./mimir_race_image_alpine
-            docker run "grafana/mimir:$IMAGE_TAG_RACE"  --version
-          fi
       - name: Preload Images
         # We download docker images used by integration tests so that all images are available
         # locally and the download time doesn't account in the test execution time, which is subject
         # to a timeout
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         run: go run ./tools/pre-pull-images | xargs -n1 -P4 docker pull
       - name: Integration Tests
+        if: steps.check_matrix.outputs.run_matrix == 'true'
         run: |
-          ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }} --tagprefix "distroless-"
-      - name: Run Integration Tests on alpine when deploying
-        if: ${{ needs.checkDeploy.outputs.is_deploy == 'true' }}
-        run: |
-          ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }} --tagprefix ""
+          ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }} --tagprefix ${{ matrix.image_tag_prefix }}
 
-  checkDeploy: 
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Whether In Deploy Process
-        id: check_deploy
-        run: |
-          is_deploy=${{ (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r')) && github.event_name == 'push' && github.repository == 'grafana/mimir' }}
-          echo "is_deploy=$is_deploy" >> $GITHUB_OUTPUT
-    outputs:
-      is_deploy: ${{ steps.check_deploy.outputs.is_deploy }}
-  
   deploy:
-    needs: [prepare, build, test, lint, checkDeploy, integration]
+    needs: [prepare, build, test, lint, integration]
     # Only deploy images on pushes to the grafana/mimir repo, which either are tag pushes or weekly release branch pushes.
-    if: ${{ needs.checkDeploy.outputs.is_deploy == 'true' }}
+    if: needs.prepare.outputs.is_deploy == 'true'
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.prepare.outputs.build_image }}

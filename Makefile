@@ -123,7 +123,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 			--build-arg=USE_BINARY_SUFFIX=true \
 			--build-arg=BINARY_SUFFIX=_race \
-			--build-arg=EXTRA_PACKAGES="gcompat" \
 			--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian12" \
 			-t $(IMAGE_PREFIX)$(shell basename $(@D)):distroless-$(IMAGE_TAG_RACE) $(@D)/; \
 	fi;
