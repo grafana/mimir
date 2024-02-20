@@ -358,12 +358,14 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		// make sure responses don't get rejected as too large
 		reqProcessor.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
+		queryID := uint64(1)
 		requestQueue := []*schedulerpb.SchedulerToQuerier{
-			{QueryID: 1, HttpRequest: nil, FrontendAddress: frontend.addr, UserID: "test"},
+			{QueryID: queryID, HttpRequest: nil, FrontendAddress: frontend.addr, UserID: "test"},
 		}
+		responseBodyBytes := bytes.Repeat([]byte("a"), responseStreamingBodyChunkSizeBytes+1)
 		responses := []*httpgrpc.HTTPResponse{
 			{
-				Code: 200, Body: bytes.Repeat([]byte("a"), responseStreamingBodyChunkSizeBytes+1),
+				Code: 200, Body: responseBodyBytes,
 				Headers: []*httpgrpc.Header{streamingEnabledHeader},
 			},
 		}
@@ -381,6 +383,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		// Response body does not fit into one chunk, expect body to be split into two chunks.
 		require.Equal(t, 2, int(frontend.queryResultStreamBodyCalls.Load()))
 		require.Equal(t, 0, int(frontend.queryResultCalls.Load()))
+		require.Equal(t, responseBodyBytes, frontend.responses[queryID].body)
 	})
 }
 
@@ -406,7 +409,7 @@ func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopC
 	}
 	sp.grpcConfig.MaxSendMsgSize = math.MaxInt
 
-	frontendForQuerierMock := &frontendForQuerierMockServer{}
+	frontendForQuerierMock := &frontendForQuerierMockServer{responses: make(map[uint64]*queryResult)}
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	frontendForQuerierMock.addr = lis.Addr().String()
@@ -517,6 +520,13 @@ type frontendForQuerierMockServer struct {
 
 	queryResultStreamMetadataCalls atomic.Int64
 	queryResultStreamBodyCalls     atomic.Int64
+
+	responses map[uint64]*queryResult
+}
+
+type queryResult struct {
+	metadata *frontendv2pb.QueryResultMetadata
+	body     []byte
 }
 
 func (f *frontendForQuerierMockServer) QueryResult(context.Context, *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
@@ -535,15 +545,17 @@ func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.Frontend
 			}
 			return err
 		}
-		switch resp.Data.(type) {
+		switch data := resp.Data.(type) {
 		case *frontendv2pb.QueryResultStreamRequest_Metadata:
 			f.queryResultStreamMetadataCalls.Inc()
 			metadataSent = true
+			f.responses[resp.QueryID] = &queryResult{metadata: data.Metadata}
 		case *frontendv2pb.QueryResultStreamRequest_Body:
 			f.queryResultStreamBodyCalls.Inc()
 			if !metadataSent {
 				return errors.New("expected metadata to be sent before body")
 			}
+			f.responses[resp.QueryID].body = append(f.responses[resp.QueryID].body, data.Body.Chunk...)
 		default:
 			return errors.New("unexpected request type")
 		}
