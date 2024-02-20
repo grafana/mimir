@@ -6,8 +6,10 @@ kedaAutoscaling:
   pollingInterval: 20
   customHeaders:
     X-Scope-OrgID: tenant
+  preserveReplicas: true
 
 distributor:
+  replicas: 5
   kedaAutoscaling:
     enabled: true
     minReplicaCount: 1
@@ -16,6 +18,7 @@ distributor:
     targetMemoryUtilizationPercentage: 80
 
 ruler:
+  replicas: 5
   kedaAutoscaling:
     enabled: true
     minReplicaCount: 1
@@ -24,6 +27,7 @@ ruler:
     targetMemoryUtilizationPercentage: 80
 
 querier:
+  replicas: 5
   kedaAutoscaling:
     enabled: true
     minReplicaCount: 2
@@ -31,6 +35,7 @@ querier:
     querySchedulerInflightRequestsThreshold: 6
 
 query_frontend:
+  replicas: 5
   kedaAutoscaling:
     enabled: true
     minReplicaCount: 1

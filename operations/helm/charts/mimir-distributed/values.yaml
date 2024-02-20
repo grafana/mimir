@@ -511,6 +511,9 @@ kedaAutoscaling:
   prometheusAddress: ""
   customHeaders: {}
   pollingInterval: 10
+  # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the components will be left intact.
+  # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+  preserveReplicas: false
 
 alertmanager:
   enabled: true
