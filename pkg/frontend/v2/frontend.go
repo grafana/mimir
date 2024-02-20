@@ -411,8 +411,7 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 			if req.userID != userID {
 				return fmt.Errorf("expected metadata for user: %s, got: %s", req.userID, userID)
 			}
-			select {
-			case req.response <- queryResultWithBody{
+			res := queryResultWithBody{
 				queryResult: &frontendv2pb.QueryResultRequest{
 					QueryID: resp.QueryID,
 					Stats:   d.Metadata.Stats,
@@ -422,7 +421,9 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 					},
 				},
 				bodyStream: reader,
-			}: // Should always be possible unless QueryResultStream is called multiple times with the same queryID.
+			}
+			select {
+			case req.response <- res: // Should always be possible unless QueryResultStream is called multiple times with the same queryID.
 				metadataReceived = true
 			default:
 				level.Warn(f.log).Log("msg", "failed to write query result to the response channel",
