@@ -127,10 +127,11 @@ When the query results comparison is enabled, the query-tee compares the respons
 
 ### Slow query log
 
-The query-tee can optionally log requests that take longer on one backend than it did compared to the fastest backend.
-The logging is enabled by setting the flag `proxy.log-slow-query-response-threshold` to a duration whereby if two backends differ by the specified amount the query is logged.
+You can configure query-tee to log requests that take longer than the fastest backend by by setting the flag `-proxy.log-slow-query-response-threshold`.
 
-> **Note**: Slow query logging it disabled by default (by setting to 0).
+The default value is `10s` which logs requests that are ten seconds slower than the fastest backend.
+
+To disable slow query logging, set `-proxy.log-slow-query-response-threshold` to `0`.
 
 ### Exported metrics
 
