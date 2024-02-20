@@ -111,9 +111,12 @@ type Frontend struct {
 	requests                *requestsInProgress
 }
 
+// queryResultWithBody contains the result for a query and optionally a streaming version of the response body.
+// In the non-streaming case, the response body is contained in queryResult.HttpResponse.Body and bodyStream is nil.
+// In the streaming case, queryResult.HttpResponse.Body is empty and bodyStream contains the streaming response body.
 type queryResultWithBody struct {
-	wireType *frontendv2pb.QueryResultRequest
-	body     io.ReadCloser
+	queryResult *frontendv2pb.QueryResultRequest
+	bodyStream  io.ReadCloser
 }
 
 type frontendRequest struct {
@@ -312,20 +315,20 @@ enqueueAgain:
 	case resp := <-freq.response:
 		spanLogger.DebugLog("msg", "received response")
 
-		if stats.ShouldTrackHTTPGRPCResponse(resp.wireType.HttpResponse) {
+		if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
 			stats := stats.FromContext(ctx)
-			stats.Merge(resp.wireType.Stats) // Safe if stats is nil.
+			stats.Merge(resp.queryResult.Stats) // Safe if stats is nil.
 		}
 
 		// the cleanup will be triggered by the caller closing the body.
 		cleanupInDefer = false
 		body := &cleanupReadCloser{cleanup: cleanup}
-		if resp.body != nil {
-			body.rc = resp.body
+		if resp.bodyStream != nil {
+			body.rc = resp.bodyStream
 		} else {
-			body.rc = io.NopCloser(bytes.NewReader(resp.wireType.HttpResponse.Body))
+			body.rc = io.NopCloser(bytes.NewReader(resp.queryResult.HttpResponse.Body))
 		}
-		return resp.wireType.HttpResponse, body, nil
+		return resp.queryResult.HttpResponse, body, nil
 	}
 }
 
@@ -357,7 +360,7 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	if req != nil && req.userID == userID {
 		select {
 		case req.response <- queryResultWithBody{
-			wireType: qrReq,
+			queryResult: qrReq,
 		}:
 			// Should always be possible, unless QueryResult is called multiple times with the same queryID.
 		default:
@@ -410,7 +413,7 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 			}
 			select {
 			case req.response <- queryResultWithBody{
-				wireType: &frontendv2pb.QueryResultRequest{
+				queryResult: &frontendv2pb.QueryResultRequest{
 					QueryID: resp.QueryID,
 					Stats:   d.Metadata.Stats,
 					HttpResponse: &httpgrpc.HTTPResponse{
@@ -418,7 +421,7 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 						Headers: d.Metadata.Headers,
 					},
 				},
-				body: reader,
+				bodyStream: reader,
 			}: // Should always be possible unless QueryResultStream is called multiple times with the same queryID.
 				metadataReceived = true
 			default:

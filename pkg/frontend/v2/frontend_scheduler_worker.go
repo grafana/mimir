@@ -444,7 +444,7 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 		level.Warn(spanLogger).Log("msg", "scheduler returned error", "err", resp.Error)
 		req.enqueue <- enqueueResult{status: waitForResponse}
 		req.response <- queryResultWithBody{
-			wireType: &frontendv2pb.QueryResultRequest{
+			queryResult: &frontendv2pb.QueryResultRequest{
 				HttpResponse: &httpgrpc.HTTPResponse{
 					Code: http.StatusInternalServerError,
 					Body: []byte(resp.Error),
@@ -455,7 +455,7 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 		level.Warn(spanLogger).Log("msg", "scheduler reported it has too many outstanding requests")
 		req.enqueue <- enqueueResult{status: waitForResponse}
 		req.response <- queryResultWithBody{
-			wireType: &frontendv2pb.QueryResultRequest{
+			queryResult: &frontendv2pb.QueryResultRequest{
 				HttpResponse: &httpgrpc.HTTPResponse{
 					Code: http.StatusTooManyRequests,
 					Body: []byte("too many outstanding requests"),
