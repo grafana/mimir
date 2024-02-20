@@ -253,7 +253,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 
 	cleanup := func() {
 		defer cancel(errExecutingQueryRoundTripFinished)
-		f.requests.delete(freq.queryID)
+		defer f.requests.delete(freq.queryID)
 	}
 	cleanupInDefer := true
 	defer func() {
