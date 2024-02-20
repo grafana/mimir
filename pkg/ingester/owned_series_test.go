@@ -72,7 +72,7 @@ func (c *ownedSeriesTestContext) checkTestedIngesterOwnedSeriesState(t *testing.
 }
 
 func (c *ownedSeriesTestContext) checkCalculatedLocalLimit(t *testing.T, expectedLimit int, msg string) {
-	_, minLimit := c.db.getSeriesAndMinForSeriesLimit()
+	_, minLimit := c.db.getSeriesCountAndMinLocalLimit()
 	localLimit := c.ing.limiter.maxSeriesPerUser(ownedServiceTestUser, minLimit)
 	require.Equal(t, expectedLimit, localLimit, msg)
 }

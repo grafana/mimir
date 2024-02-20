@@ -197,7 +197,7 @@ func TestNextForcedHeadCompactionRange(t *testing.T) {
 	}
 }
 
-func TestGetSeriesAndMinForSeriesLimit(t *testing.T) {
+func TestGetSeriesCountAndMinLocalLimit(t *testing.T) {
 	tsdbDB, err := tsdb.Open(t.TempDir(), log.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -221,7 +221,7 @@ func TestGetSeriesAndMinForSeriesLimit(t *testing.T) {
 	t.Run("using series in Head", func(t *testing.T) {
 		db.useOwnedSeriesForLimits = false
 
-		cnt, minLimit := db.getSeriesAndMinForSeriesLimit()
+		cnt, minLimit := db.getSeriesCountAndMinLocalLimit()
 		require.Equal(t, 1, cnt)
 		require.Equal(t, 0, minLimit)
 	})
@@ -229,7 +229,7 @@ func TestGetSeriesAndMinForSeriesLimit(t *testing.T) {
 	t.Run("using owned series", func(t *testing.T) {
 		db.useOwnedSeriesForLimits = true
 
-		cnt, minLimit := db.getSeriesAndMinForSeriesLimit()
+		cnt, minLimit := db.getSeriesCountAndMinLocalLimit()
 		require.Equal(t, 555, cnt)
 		require.Equal(t, 10000, minLimit)
 	})

@@ -294,7 +294,7 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	}
 
 	// Total series limit.
-	series, minLimit := u.getSeriesAndMinForSeriesLimit()
+	series, minLimit := u.getSeriesCountAndMinLocalLimit()
 	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, series, minLimit) {
 		return globalerror.MaxSeriesPerUser
 	}
@@ -311,9 +311,9 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	return nil
 }
 
-// getSeriesAndMinForSeriesLimit returns current number of series and minimum local limit that should be used for computing
+// getSeriesCountAndMinLocalLimit returns current number of series and minimum local limit that should be used for computing
 // series limit.
-func (u *userTSDB) getSeriesAndMinForSeriesLimit() (int, int) {
+func (u *userTSDB) getSeriesCountAndMinLocalLimit() (int, int) {
 	if u.useOwnedSeriesForLimits {
 		os := u.ownedSeriesState()
 		return os.count, os.localLimit
