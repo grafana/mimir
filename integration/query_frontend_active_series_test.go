@@ -22,17 +22,17 @@ import (
 
 func TestActiveSeriesWithQuerySharding(t *testing.T) {
 	for _, qsEnabled := range []bool{false, true} {
-		for _, shardingEnabled := range []string{"false", "true"} {
+		for _, shardingEnabled := range []bool{false, true} {
 			for _, responseStreamingEnabled := range []string{"false", "true"} {
 				config := queryFrontendTestConfig{
 					queryStatsEnabled:           true,
+					shardActiveSeriesQueries:    shardingEnabled,
 					querySchedulerEnabled:       qsEnabled,
 					querySchedulerDiscoveryMode: "ring",
 					setup: func(t *testing.T, s *e2e.Scenario) (string, map[string]string) {
 						flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(),
 							map[string]string{
-								"-querier.response-streaming-enabled":         responseStreamingEnabled,
-								"-query-frontend.shard-active-series-queries": shardingEnabled,
+								"-querier.response-streaming-enabled": responseStreamingEnabled,
 							},
 						)
 						minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -89,6 +89,10 @@ func runTestActiveSeriesWithQueryShardingHTTPTest(t *testing.T, cfg queryFronten
 
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
+	}
+
+	if cfg.shardActiveSeriesQueries {
+		flags["-query-frontend.shard-active-series-queries"] = "true"
 	}
 
 	// Start the query-frontend.
@@ -151,7 +155,7 @@ func runTestActiveSeriesWithQueryShardingHTTPTest(t *testing.T, cfg queryFronten
 	}
 
 	_, err = c.ActiveSeries(metricName, e2emimir.WithQueryShards(512))
-	if flags["-query-frontend.shard-active-series-queries"] == "true" {
+	if cfg.shardActiveSeriesQueries {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "shard count 512 exceeds allowed maximum (128)")
 	} else {
