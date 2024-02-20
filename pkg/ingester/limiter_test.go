@@ -672,6 +672,14 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			series:                 100,
 			expected:               true,
 		},
+		"limit is disabled, minimum set": {
+			maxGlobalSeriesPerUser: 0,
+			ringReplicationFactor:  1,
+			ringIngesterCount:      1,
+			series:                 100,
+			minLocalLimit:          50,
+			expected:               true,
+		},
 		"current number of series is below the limit": {
 			maxGlobalSeriesPerUser: 1000,
 			ringReplicationFactor:  3,
