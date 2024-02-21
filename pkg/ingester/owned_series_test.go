@@ -66,9 +66,9 @@ func (c *ownedSeriesTestContext) checkUpdateReasonForUser(t *testing.T, expected
 
 func (c *ownedSeriesTestContext) checkTestedIngesterOwnedSeriesState(t *testing.T, series, shards, limit int) {
 	os := c.db.ownedSeriesState()
-	require.Equal(t, series, os.count)
+	require.Equal(t, series, os.ownedSeriesCount)
 	require.Equal(t, shards, os.shardSize)
-	require.Equal(t, limit, os.localLimit)
+	require.Equal(t, limit, os.localSeriesLimit)
 }
 
 func (c *ownedSeriesTestContext) checkCalculatedLocalLimit(t *testing.T, expectedLimit int, msg string) {

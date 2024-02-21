@@ -852,10 +852,10 @@ func (i *Ingester) updateMetrics() {
 		minLocalSeriesLimit := 0
 		if i.cfg.UseIngesterOwnedSeriesForLimits || i.cfg.UpdateIngesterOwnedSeries {
 			os := db.ownedSeriesState()
-			i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(os.count))
+			i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(os.ownedSeriesCount))
 
 			if i.cfg.UseIngesterOwnedSeriesForLimits {
-				minLocalSeriesLimit = os.localLimit
+				minLocalSeriesLimit = os.localSeriesLimit
 			}
 		}
 
@@ -2412,9 +2412,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		blockMinRetention:       i.cfg.BlocksStorageConfig.TSDB.Retention,
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
 
-		ownedSeries: ownedSeriesState{
-			shardSize:  i.limits.IngestionTenantShardSize(userID), // initialize series shard size so that it's correct even before we update ownedSeries for the first time
-			localLimit: initialLocalLimit,
+		ownedState: ownedSeriesState{
+			shardSize:        i.limits.IngestionTenantShardSize(userID), // initialize series shard size so that it's correct even before we update ownedSeries for the first time
+			localSeriesLimit: initialLocalLimit,
 		},
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)

@@ -161,7 +161,7 @@ func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringCha
 		// Check if shard size or local limit has changed
 		if shardSize != os.shardSize {
 			reason = recomputeOwnedSeriesReasonShardSizeChanged
-		} else if localLimit != os.localLimit {
+		} else if localLimit != os.localSeriesLimit {
 			reason = recomputeOwnedSeriesReasonLocalLimitChanged
 		}
 	}
