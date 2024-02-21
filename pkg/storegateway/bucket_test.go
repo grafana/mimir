@@ -1070,8 +1070,14 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 func appendTestSeries(series int) func(testing.TB, func() storage.Appender) {
 	return func(t testing.TB, appenderFactory func() storage.Appender) {
 		app := appenderFactory()
-		addSeries := func(l labels.Labels) {
-			_, err := app.Append(0, l, 0, 0)
+		b := labels.NewScratchBuilder(4)
+		addSeries := func(ss ...string) {
+			b.Reset()
+			for i := 0; i < len(ss); i += 2 {
+				b.Add(ss[i], ss[i+1])
+			}
+			b.Sort()
+			_, err := app.Append(0, b.Labels(), 0, 0)
 			assert.NoError(t, err)
 		}
 
@@ -1079,12 +1085,12 @@ func appendTestSeries(series int) func(testing.TB, func() storage.Appender) {
 		for n := 0; n < 10; n++ {
 			for i := 0; i < series/10; i++ {
 
-				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "foo", "p", "foo"))
+				addSeries("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "foo", "p", "foo")
 				// Have some series that won't be matched, to properly test inverted matches.
-				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "bar", "q", "foo"))
-				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "0_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "r", "foo"))
-				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "1_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "s", "foo"))
-				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "2_"+strconv.Itoa(n)+labelLongSuffix, "j", "foo", "t", "foo"))
+				addSeries("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "bar", "q", "foo")
+				addSeries("i", strconv.Itoa(i)+labelLongSuffix, "n", "0_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "r", "foo")
+				addSeries("i", strconv.Itoa(i)+labelLongSuffix, "n", "1_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "s", "foo")
+				addSeries("i", strconv.Itoa(i)+labelLongSuffix, "n", "2_"+strconv.Itoa(n)+labelLongSuffix, "j", "foo", "t", "foo")
 			}
 			assert.NoError(t, app.Commit())
 			app = appenderFactory()
