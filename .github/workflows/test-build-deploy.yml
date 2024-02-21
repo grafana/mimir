@@ -446,7 +446,7 @@ jobs:
           ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
   deploy:
-    needs: [prepare, build, test, lint, integration]
+    needs: [prepare, build, test, lint, integration-distroless, integration-alpine]
     # Only deploy images on pushes to the grafana/mimir repo, which either are tag pushes or weekly release branch pushes.
     if: needs.prepare.outputs.is_deploy == 'true'
     runs-on: ubuntu-latest
