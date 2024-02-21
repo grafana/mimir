@@ -6,8 +6,6 @@
 package batch
 
 import (
-	"unsafe"
-
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -51,14 +49,14 @@ func (bs *batchStream) at() (int64, float64) {
 	return b.Timestamps[b.Index], b.Values[b.Index]
 }
 
-func (bs *batchStream) atHistogram() (int64, unsafe.Pointer) {
+func (bs *batchStream) atHistogram() (int64, *histogram.Histogram) {
 	b := &(*bs)[0]
-	return b.Timestamps[b.Index], b.PointerValues[b.Index]
+	return b.Timestamps[b.Index], b.Histograms[b.Index]
 }
 
-func (bs *batchStream) atFloatHistogram() (int64, unsafe.Pointer) {
+func (bs *batchStream) atFloatHistogram() (int64, *histogram.FloatHistogram) {
 	b := &(*bs)[0]
-	return b.Timestamps[b.Index], b.PointerValues[b.Index]
+	return b.Timestamps[b.Index], b.FloatHistograms[b.Index]
 }
 
 // mergeStreams merges streams of Batches of the same series over time.
@@ -66,10 +64,9 @@ func (bs *batchStream) atFloatHistogram() (int64, unsafe.Pointer) {
 // When sample are different type, batches are not merged. In case of equal timestamps, histograms take precedence since they have more information.
 // If copyPointerValuesLeft or copyPointerValuesRight are true, pointers of the copies of the histograms and float histograms from left or right batchStream
 // will be stored in the result batchStream.
-// hPointerValuesPool and fhPointerValuesPool are pools of pointers corresponding to histograms and float histograms. They return instances of histogram.Histogram
-// and histogram.FloatHistogram that are used for creating copies. If they are nil, new instances of histogram.Histogram and histogram.FloatHistogram are used for
-// creating copies.
-func mergeStreams(left, right, result batchStream, size int, copyPointerValuesLeft, copyPointerValuesRight bool, hPointerValuesPool, fhPointerValuesPool *zeropool.Pool[unsafe.Pointer]) batchStream {
+// hPool and fhPool are pools of pointers to histogram.Histogram and histogram.FloatHistogram that are used for creating copies.
+// If they are nil, new instances of histogram.Histogram and histogram.FloatHistogram are used for creating copies.
+func mergeStreams(left, right, result batchStream, size int, copyPointerValuesLeft, copyPointerValuesRight bool, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) batchStream {
 
 	// Reset the Index and Length of existing batches.
 	for i := range result {
@@ -109,37 +106,37 @@ func mergeStreams(left, right, result batchStream, size int, copyPointerValuesLe
 		case chunkenc.ValFloat:
 			b.Timestamps[b.Index], b.Values[b.Index] = s.at()
 		case chunkenc.ValHistogram:
-			t, pH := s.atHistogram()
+			t, fromH := s.atHistogram()
 			if copyPointerValues {
-				fromH := (*histogram.Histogram)(pH)
 				if fromH != nil {
 					var toH *histogram.Histogram
-					if hPointerValuesPool == nil {
+					if hPool == nil {
 						toH = &histogram.Histogram{}
 					} else {
-						toH = (*histogram.Histogram)(hPointerValuesPool.Get())
+						toH = hPool.Get()
 					}
 					fromH.CopyTo(toH)
-					pH = unsafe.Pointer(toH)
+					b.Timestamps[b.Index], b.Histograms[b.Index] = t, toH
 				}
+			} else {
+				b.Timestamps[b.Index], b.Histograms[b.Index] = t, fromH
 			}
-			b.Timestamps[b.Index], b.PointerValues[b.Index] = t, pH
 		case chunkenc.ValFloatHistogram:
-			t, pFH := s.atFloatHistogram()
+			t, fromFH := s.atFloatHistogram()
 			if copyPointerValues {
-				fromFH := (*histogram.FloatHistogram)(pFH)
 				if fromFH != nil {
 					var toFH *histogram.FloatHistogram
-					if fhPointerValuesPool == nil {
+					if fhPool == nil {
 						toFH = &histogram.FloatHistogram{}
 					} else {
-						toFH = (*histogram.FloatHistogram)(fhPointerValuesPool.Get())
+						toFH = fhPool.Get()
 					}
 					fromFH.CopyTo(toFH)
-					pFH = unsafe.Pointer(toFH)
+					b.Timestamps[b.Index], b.FloatHistograms[b.Index] = t, toFH
 				}
+			} else {
+				b.Timestamps[b.Index], b.FloatHistograms[b.Index] = t, fromFH
 			}
-			b.Timestamps[b.Index], b.PointerValues[b.Index] = t, pFH
 		}
 		b.Index++
 	}

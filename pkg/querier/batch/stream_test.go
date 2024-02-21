@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
-	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -137,24 +136,26 @@ func TestStreamWithCopiedPointerValues(t *testing.T) {
 					result := make(batchStream, len(tc.left)+len(tc.right))
 					result = mergeStreams(tc.left, tc.right, result, chunk.BatchSize, copyPointerValuesLeft, copyPointerValuesRight, nil, nil)
 					for _, batch := range result {
-						if batch.ValueType == chunkenc.ValHistogram || batch.ValueType == chunkenc.ValFloatHistogram {
-							for j := 0; j < batch.Length; j++ {
-								pointerValue1 := seek(tc.left, batch.Timestamps[j], batch.ValueType)
-								if pointerValue1 != nil {
-									if copyPointerValuesLeft {
-										require.NotEqual(t, batch.PointerValues[j], pointerValue1)
-									} else {
-										require.Equal(t, batch.PointerValues[j], pointerValue1)
-									}
-									continue
-								}
-								pointerValue2 := seek(tc.right, batch.Timestamps[j], batch.ValueType)
-								require.NotNil(t, pointerValue2)
-								if copyPointerValuesRight {
-									require.NotEqual(t, batch.PointerValues[j], pointerValue2)
+						for j := 0; j < batch.Length; j++ {
+							h, fh := seek(tc.left, batch.Timestamps[j], batch.ValueType)
+							if h != nil || fh != nil {
+								histogramCopied := batch.ValueType == chunkenc.ValHistogram && h != batch.Histograms[j]
+								floatHistogramCopied := batch.ValueType == chunkenc.ValFloatHistogram && fh != batch.FloatHistograms[j]
+								if copyPointerValuesLeft {
+									require.True(t, histogramCopied || floatHistogramCopied)
 								} else {
-									require.Equal(t, batch.PointerValues[j], pointerValue2)
+									require.False(t, histogramCopied && floatHistogramCopied)
 								}
+								continue
+							}
+							h, fh = seek(tc.right, batch.Timestamps[j], batch.ValueType)
+							require.True(t, h != nil || fh != nil)
+							histogramCopied := batch.ValueType == chunkenc.ValHistogram && h != batch.Histograms[j]
+							floatHistogramCopied := batch.ValueType == chunkenc.ValFloatHistogram && fh != batch.FloatHistograms[j]
+							if copyPointerValuesRight {
+								require.True(t, histogramCopied || floatHistogramCopied)
+							} else {
+								require.False(t, histogramCopied && floatHistogramCopied)
 							}
 						}
 					}
@@ -165,28 +166,35 @@ func TestStreamWithCopiedPointerValues(t *testing.T) {
 
 }
 
-func seek(bs batchStream, ts int64, t chunkenc.ValueType) unsafe.Pointer {
+func seek(bs batchStream, ts int64, t chunkenc.ValueType) (*histogram.Histogram, *histogram.FloatHistogram) {
 	for i := len(bs) - 1; i >= 0; i-- {
 		b := (bs)[i]
 		if b.Length <= 0 {
-			return nil
+			return nil, nil
 		}
 		if b.Timestamps[b.Length-1] < ts {
-			return nil
+			return nil, nil
 		}
 		if b.Timestamps[0] > ts {
 			continue
 		}
 		if b.ValueType != t {
-			return nil
+			return nil, nil
 		}
 		for j := 0; j < b.Length; j++ {
 			if b.Timestamps[j] == ts {
-				return b.PointerValues[j]
+				switch t {
+				case chunkenc.ValHistogram:
+					return b.Histograms[j], nil
+				case chunkenc.ValFloatHistogram:
+					return nil, b.FloatHistograms[j]
+				default:
+					return nil, nil
+				}
 			}
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func mkFloatBatch(from int64) chunk.Batch {
@@ -215,7 +223,7 @@ func mkGenericHistogramBatch(from int64, size int) chunk.Batch {
 	batch := chunk.Batch{ValueType: chunkenc.ValHistogram}
 	for i := 0; i < size; i++ {
 		batch.Timestamps[i] = from + int64(i)
-		batch.PointerValues[i] = unsafe.Pointer(test.GenerateTestHistogram(int(from) + i))
+		batch.Histograms[i] = test.GenerateTestHistogram(int(from) + i)
 	}
 	batch.Length = size
 	return batch
@@ -225,7 +233,7 @@ func mkGenericFloatHistogramBatch(from int64, size int) chunk.Batch {
 	batch := chunk.Batch{ValueType: chunkenc.ValFloatHistogram}
 	for i := 0; i < size; i++ {
 		batch.Timestamps[i] = from + int64(i)
-		batch.PointerValues[i] = unsafe.Pointer(test.GenerateTestFloatHistogram(int(from) + i))
+		batch.FloatHistograms[i] = test.GenerateTestFloatHistogram(int(from) + i)
 	}
 	batch.Length = size
 	return batch
@@ -239,12 +247,12 @@ func requireBatchEqual(t *testing.T, b, o chunk.Batch) {
 		case chunkenc.ValFloat:
 			require.Equal(t, b.Values[i], o.Values[i], fmt.Sprintf("at idx %v", i))
 		case chunkenc.ValHistogram:
-			bh := (*histogram.Histogram)(b.PointerValues[i])
-			oh := (*histogram.Histogram)(o.PointerValues[i])
+			bh := b.Histograms[i]
+			oh := o.Histograms[i]
 			require.Equal(t, *bh, *oh, fmt.Sprintf("at idx %v", i))
 		case chunkenc.ValFloatHistogram:
-			bh := (*histogram.FloatHistogram)(b.PointerValues[i])
-			oh := (*histogram.FloatHistogram)(o.PointerValues[i])
+			bh := b.FloatHistograms[i]
+			oh := o.FloatHistograms[i]
 			require.Equal(t, *bh, *oh, fmt.Sprintf("at idx %v", i))
 		}
 	}

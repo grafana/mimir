@@ -8,7 +8,6 @@ package batch
 import (
 	"container/heap"
 	"sort"
-	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -25,10 +24,10 @@ type mergeIterator struct {
 	batches batchStream
 
 	// Buffers to merge in.
-	batchesBuf          batchStream
-	nextBatchBuf        [1]chunk.Batch
-	hPointerValuesPool  zeropool.Pool[unsafe.Pointer]
-	fhPointerValuesPool zeropool.Pool[unsafe.Pointer]
+	batchesBuf   batchStream
+	nextBatchBuf [1]chunk.Batch
+	hPool        zeropool.Pool[*histogram.Histogram]
+	fhPool       zeropool.Pool[*histogram.FloatHistogram]
 
 	currErr error
 }
@@ -40,8 +39,8 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 		c.currErr = nil
 	} else {
 		c = &mergeIterator{}
-		c.hPointerValuesPool = zeropool.New(func() unsafe.Pointer { return unsafe.Pointer(&histogram.Histogram{}) })
-		c.fhPointerValuesPool = zeropool.New(func() unsafe.Pointer { return unsafe.Pointer(&histogram.FloatHistogram{}) })
+		c.hPool = zeropool.New(func() *histogram.Histogram { return &histogram.Histogram{} })
+		c.fhPool = zeropool.New(func() *histogram.FloatHistogram { return &histogram.FloatHistogram{} })
 	}
 
 	css := partitionChunks(cs)
@@ -78,13 +77,13 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 }
 
 func (c *mergeIterator) putPointerValuesToThePool(b chunk.Batch) {
-	if b.ValueType == chunkenc.ValHistogram || b.ValueType == chunkenc.ValFloatHistogram {
+	if b.ValueType == chunkenc.ValHistogram {
 		for i := 0; i < b.Length; i++ {
-			if b.ValueType == chunkenc.ValHistogram {
-				c.hPointerValuesPool.Put(b.PointerValues[i])
-			} else {
-				c.fhPointerValuesPool.Put(b.PointerValues[i])
-			}
+			c.hPool.Put(b.Histograms[i])
+		}
+	} else if b.ValueType == chunkenc.ValFloatHistogram {
+		for i := 0; i < b.Length; i++ {
+			c.fhPool.Put(b.FloatHistograms[i])
 		}
 	}
 }
@@ -156,7 +155,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	// is before all iterators next entry.
 	for len(c.h) > 0 && (len(c.batches) == 0 || c.nextBatchEndTime() >= c.h[0].AtTime()) {
 		c.nextBatchBuf[0] = c.h[0].Batch()
-		c.batchesBuf = mergeStreams(c.batches, c.nextBatchBuf[:], c.batchesBuf, size, false, true, &c.hPointerValuesPool, &c.fhPointerValuesPool)
+		c.batchesBuf = mergeStreams(c.batches, c.nextBatchBuf[:], c.batchesBuf, size, false, true, &c.hPool, &c.fhPool)
 		c.batches = append(c.batches[:0], c.batchesBuf...)
 
 		if c.h[0].Next(size) != chunkenc.ValNone {
