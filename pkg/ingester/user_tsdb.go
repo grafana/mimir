@@ -294,8 +294,8 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	}
 
 	// Total series limit.
-	series, minLimit := u.getSeriesCountAndMinLocalLimit()
-	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, series, minLimit) {
+	series, minLocalLimit := u.getSeriesCountAndMinLocalLimit()
+	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, series, minLocalLimit) {
 		return globalerror.MaxSeriesPerUser
 	}
 
@@ -511,6 +511,7 @@ func (u *userTSDB) releaseAppendLock(acquireState tsdbState) {
 	}
 }
 
+// ownedSeriesState returns a copy of the current state
 func (u *userTSDB) ownedSeriesState() ownedSeriesState {
 	u.ownedSeriesMtx.Lock()
 	defer u.ownedSeriesMtx.Unlock()

@@ -30,7 +30,7 @@ const (
 	recomputeOwnedSeriesReasonGetTokenRangesFailed = "token ranges check failed"
 	recomputeOwnedSeriesReasonRingChanged          = "ring changed"
 	recomputeOwnedSeriesReasonShardSizeChanged     = "shard size changed"
-	recomputeOwnedSeriesReasonLocalLimitChanged    = "local limit changed"
+	recomputeOwnedSeriesReasonLocalLimitChanged    = "local series limit changed"
 )
 
 type ownedSeriesService struct {
