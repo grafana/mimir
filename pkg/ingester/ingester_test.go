@@ -4596,7 +4596,15 @@ func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Confi
 	// Disable TSDB head compaction jitter to have predictable tests.
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
-	ingester, err := New(ingesterCfg, overrides, nil, nil, registerer, noDebugNoopLogger{})
+	// Start the ingester ring
+	rng, err := ring.New(ingesterCfg.IngesterRing.ToRingConfig(), "ingester", IngesterRingKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), rng))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), rng))
+	})
+
+	ingester, err := New(ingesterCfg, overrides, rng, nil, registerer, noDebugNoopLogger{})
 	if err != nil {
 		return nil, err
 	}
