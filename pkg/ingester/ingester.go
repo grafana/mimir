@@ -408,7 +408,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	// Init the limter and instantiate the user states which depend on it
 	i.limiter = NewLimiter(
 		limits,
-		i.lifecycler,
+		NewLimiterRing(ingestersRing, cfg.IngesterRing.InstanceZone),
 		cfg.IngesterRing.ReplicationFactor,
 		cfg.IngesterRing.ZoneAwarenessEnabled,
 	)

@@ -8,6 +8,8 @@ package ingester
 import (
 	"math"
 
+	"github.com/grafana/dskit/ring"
+
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -19,6 +21,23 @@ type RingCount interface {
 	InstancesCount() int
 	InstancesInZoneCount() int
 	ZonesCount() int
+}
+
+// Wraps ring.ReadRing to implement RingCount
+type LimiterRing struct {
+	ring.ReadRing
+	zone string
+}
+
+func NewLimiterRing(ring ring.ReadRing, zone string) *LimiterRing {
+	return &LimiterRing{
+		ReadRing: ring,
+		zone:     zone,
+	}
+}
+
+func (r *LimiterRing) InstancesInZoneCount() int {
+	return r.ReadRing.InstancesInZoneCount(r.zone)
 }
 
 // Limiter implements primitives to get the maximum number of series
