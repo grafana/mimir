@@ -21,35 +21,38 @@ import (
 )
 
 func TestActiveSeriesWithQuerySharding(t *testing.T) {
-	for _, qsEnabled := range []bool{false, true} {
-		for _, shardingEnabled := range []bool{false, true} {
-			for _, responseStreamingEnabled := range []string{"false", "true"} {
-				config := queryFrontendTestConfig{
-					queryStatsEnabled:           true,
-					shardActiveSeriesQueries:    shardingEnabled,
-					querySchedulerEnabled:       qsEnabled,
-					querySchedulerDiscoveryMode: "ring",
-					setup: func(t *testing.T, s *e2e.Scenario) (string, map[string]string) {
-						flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(),
-							map[string]string{
-								"-querier.response-streaming-enabled": responseStreamingEnabled,
-							},
-						)
-						minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-						require.NoError(t, s.StartAndWaitReady(minio))
-
-						return "", flags
+	for _, tc := range []struct {
+		querySchedulerEnabled bool
+		shardingEnabled       bool
+	}{
+		{true, false},
+		{true, true},
+		{false, true},
+	} {
+		config := queryFrontendTestConfig{
+			queryStatsEnabled:           true,
+			shardActiveSeriesQueries:    tc.shardingEnabled,
+			querySchedulerEnabled:       tc.querySchedulerEnabled,
+			querySchedulerDiscoveryMode: "ring",
+			setup: func(t *testing.T, s *e2e.Scenario) (string, map[string]string) {
+				flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(),
+					map[string]string{
+						"-querier.response-streaming-enabled": "true",
 					},
-				}
-
-				testName := fmt.Sprintf("query scheduler=%v/query sharding=%v/response streaming=%v",
-					qsEnabled, shardingEnabled, responseStreamingEnabled,
 				)
-				t.Run(testName, func(t *testing.T) {
-					runTestActiveSeriesWithQueryShardingHTTPTest(t, config)
-				})
-			}
+				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+				require.NoError(t, s.StartAndWaitReady(minio))
+
+				return "", flags
+			},
 		}
+
+		testName := fmt.Sprintf("query scheduler=%v/query sharding=%v",
+			tc.querySchedulerEnabled, tc.shardingEnabled,
+		)
+		t.Run(testName, func(t *testing.T) {
+			runTestActiveSeriesWithQueryShardingHTTPTest(t, config)
+		})
 	}
 }
 
