@@ -38,15 +38,19 @@ type PartitionRing struct {
 
 	// shuffleShardCache is used to cache subrings generated with shuffle sharding.
 	shuffleShardCache *partitionRingShuffleShardCache
+
+	// activePartitionsCount is a saved count of active partitions to avoid recomputing it.
+	activePartitionsCount int
 }
 
 func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
 	return &PartitionRing{
-		desc:              desc,
-		ringTokens:        desc.tokens(),
-		partitionByToken:  desc.partitionByToken(),
-		ownersByPartition: desc.ownersByPartition(),
-		shuffleShardCache: newPartitionRingShuffleShardCache(),
+		desc:                  desc,
+		ringTokens:            desc.tokens(),
+		partitionByToken:      desc.partitionByToken(),
+		ownersByPartition:     desc.ownersByPartition(),
+		activePartitionsCount: desc.activePartitionsCount(),
+		shuffleShardCache:     newPartitionRingShuffleShardCache(),
 	}
 }
 
@@ -85,6 +89,18 @@ func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, error) {
 	}
 
 	return 0, ErrNoActivePartitionFound
+}
+
+// ShuffleShardSize returns number of partitions that would be in the result of ShuffleShard call with the same size.
+func (r *PartitionRing) ShuffleShardSize(size int) int {
+	if size <= 0 || size > r.activePartitionsCount {
+		return r.activePartitionsCount
+	}
+
+	if size < r.activePartitionsCount {
+		return size
+	}
+	return r.activePartitionsCount
 }
 
 // ShuffleShard returns a subring for the provided identifier (eg. a tenant ID)
@@ -249,13 +265,7 @@ func (r *PartitionRing) PartitionsCount() int {
 
 // ActivePartitionsCount returns the number of active partitions in the ring.
 func (r *PartitionRing) ActivePartitionsCount() int {
-	count := 0
-	for _, partition := range r.desc.Partitions {
-		if partition.IsActive() {
-			count++
-		}
-	}
-	return count
+	return r.activePartitionsCount
 }
 
 // Partitions returns the partitions in the ring.
