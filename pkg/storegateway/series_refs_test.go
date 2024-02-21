@@ -2455,9 +2455,9 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 func TestCreateSeriesChunkRefsSet(t *testing.T) {
 	set := createSeriesChunkRefsSet(5, 7, true)
 	require.Len(t, set.series, 3)
-	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000005")}, set.series[0])
-	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000006")}, set.series[1])
-	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000007")}, set.series[2])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000005")}, set.series[0])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000006")}, set.series[1])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000007")}, set.series[2])
 }
 
 func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
