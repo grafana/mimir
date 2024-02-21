@@ -130,9 +130,21 @@ func TestBlockTTL(t *testing.T) {
 		ttl  time.Duration
 	}{
 		{
+			name: "30m block",
+			minT: 1700000000000,
+			maxT: 1700001800000,
+			ttl:  1 * time.Hour,
+		},
+		{
 			name: "1h block",
 			minT: 1700000000000,
 			maxT: 1700003600000,
+			ttl:  1 * time.Hour,
+		},
+		{
+			name: "90m block",
+			minT: 1700000000000,
+			maxT: 1700005400000,
 			ttl:  2 * time.Hour,
 		},
 		{
@@ -142,22 +154,28 @@ func TestBlockTTL(t *testing.T) {
 			ttl:  2 * time.Hour,
 		},
 		{
+			name: "3h block",
+			minT: 1700000000000,
+			maxT: 1700010800000,
+			ttl:  3 * time.Hour,
+		},
+		{
 			name: "10h block",
 			minT: 1700000000000,
 			maxT: 1700036000000,
-			ttl:  2 * time.Hour,
+			ttl:  10 * time.Hour,
 		},
 		{
 			name: "12h block",
 			minT: 1700000000000,
 			maxT: 1700043200000,
-			ttl:  2 * time.Hour,
+			ttl:  12 * time.Hour,
 		},
 		{
 			name: "20h block",
 			minT: 1700000000000,
 			maxT: 1700072000000,
-			ttl:  168 * time.Hour,
+			ttl:  20 * time.Hour,
 		},
 		{
 			name: "24h block",

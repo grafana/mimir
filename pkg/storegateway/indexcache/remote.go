@@ -27,10 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
-const (
-	remoteDefaultTTL = 7 * 24 * time.Hour
-)
-
 var (
 	postingsCacheKeyLabelHashBufferPool = sync.Pool{New: func() any {
 		// We assume the label name/value pair is typically not longer than 1KB.
@@ -88,7 +84,7 @@ func (c *RemoteIndexCache) get(ctx context.Context, typ string, key string) ([]b
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
 func (c *RemoteIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
-	c.remote.SetAsync(postingsCacheKey(userID, blockID.String(), l), v, remoteDefaultTTL)
+	c.remote.SetAsync(postingsCacheKey(userID, blockID.String(), l), v, defaultTTL)
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label.
@@ -257,7 +253,7 @@ func seriesForRefCacheKey(userID string, blockID ulid.ULID, id storage.SeriesRef
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *RemoteIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, lmKey LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
-	c.remote.SetAsync(expandedPostingsCacheKey(userID, blockID, lmKey, postingsSelectionStrategy), v, remoteDefaultTTL)
+	c.remote.SetAsync(expandedPostingsCacheKey(userID, blockID, lmKey, postingsSelectionStrategy), v, defaultTTL)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
@@ -272,7 +268,7 @@ func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatch
 
 // StoreSeriesForPostings stores a series set for the provided postings.
 func (c *RemoteIndexCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
-	c.remote.SetAsync(seriesForPostingsCacheKey(userID, blockID, shard, postingsKey), v, remoteDefaultTTL)
+	c.remote.SetAsync(seriesForPostingsCacheKey(userID, blockID, shard, postingsKey), v, defaultTTL)
 }
 
 // FetchSeriesForPostings fetches a series set for the provided postings.
@@ -293,7 +289,7 @@ func seriesForPostingsCacheKey(userID string, blockID ulid.ULID, shard *sharding
 
 // StoreLabelNames stores the result of a LabelNames() call.
 func (c *RemoteIndexCache) StoreLabelNames(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
-	c.remote.SetAsync(labelNamesCacheKey(userID, blockID, matchersKey), v, remoteDefaultTTL)
+	c.remote.SetAsync(labelNamesCacheKey(userID, blockID, matchersKey), v, defaultTTL)
 }
 
 // FetchLabelNames fetches the result of a LabelNames() call.
@@ -308,7 +304,7 @@ func labelNamesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatch
 
 // StoreLabelValues stores the result of a LabelValues() call.
 func (c *RemoteIndexCache) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
-	c.remote.SetAsync(labelValuesCacheKey(userID, blockID, labelName, matchersKey), v, remoteDefaultTTL)
+	c.remote.SetAsync(labelValuesCacheKey(userID, blockID, labelName, matchersKey), v, defaultTTL)
 }
 
 // FetchLabelValues fetches the result of a LabelValues() call.

@@ -31,6 +31,8 @@ const (
 	cacheTypeSeriesForPostings = "SeriesForPostings"
 	cacheTypeLabelNames        = "LabelNames"
 	cacheTypeLabelValues       = "LabelValues"
+
+	defaultTTL = 7 * 24 * time.Hour
 )
 
 var (
@@ -123,15 +125,16 @@ type IndexCache interface {
 // compacted and deleted soon and a longer TTL for larger blocks that won't be deleted.
 func BlockTTL(meta *block.Meta) time.Duration {
 	duration := time.Duration(meta.MaxTime-meta.MinTime) * time.Millisecond
+	duration = max(time.Hour, duration.Round(time.Hour))
 
-	// Anything less than or equal to 12h is a temporary block that will eventually
-	// be compacted into a 24h block. Don't cache for long since otherwise these will
-	// stay in the cache long after they're no longer relevant.
-	if duration <= 12*time.Hour {
-		return 2 * time.Hour
+	// Anything less than 24h is a temporary block that will eventually be compacted into
+	// a 24h block. Use a shorter TTL since otherwise these will stay in the cache long
+	// after they're no longer relevant.
+	if duration < 24*time.Hour {
+		return duration
 	}
 
-	return 7 * 24 * time.Hour
+	return defaultTTL
 }
 
 // PostingsKey represents a canonical key for a []storage.SeriesRef slice
