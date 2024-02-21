@@ -283,6 +283,10 @@ jobs:
       - name: Build Mimir with race-detector
         run: |
           export IMAGE_TAG_RACE=$(make image-tag-race)
+          # We are working on migrating to a distroless image as our only base.
+          # For now we mark our distroless image with a tag prefix `distroless-`
+          # and Alpine remains the default image pushed to the registry.
+          # We always test the distroless image, and we test the alpine image on deploy.
           export MIMIR_IMAGE="grafana/mimir:distroless-$IMAGE_TAG_RACE"
           export MIMIR_ALPINE_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
           make BUILD_IN_CONTAINER=false cmd/mimir/.uptodate_race
