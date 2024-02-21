@@ -407,6 +407,19 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			expectBody: "",
 		},
 		{
+			name: "metadata and empty body chunks",
+			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s.msgs = append(s.msgs,
+					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"0"}}}),
+					bodyChunkRequest(msg, nil),
+					bodyChunkRequest(msg, nil),
+				)
+				return f.QueryResultStream(s)
+			},
+			expectBody: "",
+		},
+		{
 			name: "errors on wrong message sequence",
 			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
 				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
