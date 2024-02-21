@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"net/http"
 	"testing"
 	"time"
 
@@ -351,40 +352,56 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 	streamingEnabledHeader := &httpgrpc.Header{Key: ResponseStreamingEnabledHeader, Values: []string{"true"}}
 
-	t.Run("should stream response metadata followed by response body chunks", func(t *testing.T) {
-		reqProcessor, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
-		// enable response streaming
-		reqProcessor.streamingEnabled = true
-		// make sure responses don't get rejected as too large
-		reqProcessor.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
+	for _, tc := range []struct {
+		name                    string
+		responseBodyBytes       []byte
+		expectMetadataCalls     int
+		expectBodyCalls         int
+		expectNonStreamingCalls int
+	}{
+		{
+			name:                "should stream response metadata followed by response body chunks",
+			responseBodyBytes:   bytes.Repeat([]byte("a"), responseStreamingBodyChunkSizeBytes+1),
+			expectMetadataCalls: 1,
+			expectBodyCalls:     2,
+		},
+		{
+			name:                    "should not stream response if body is smaller than the chunk size",
+			responseBodyBytes:       bytes.Repeat([]byte("a"), responseStreamingBodyChunkSizeBytes-1),
+			expectNonStreamingCalls: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reqProcessor, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+			// enable response streaming
+			reqProcessor.streamingEnabled = true
+			// make sure responses don't get rejected as too large
+			reqProcessor.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
-		queryID := uint64(1)
-		requestQueue := []*schedulerpb.SchedulerToQuerier{
-			{QueryID: queryID, HttpRequest: nil, FrontendAddress: frontend.addr, UserID: "test"},
-		}
-		responseBodyBytes := bytes.Repeat([]byte("a"), responseStreamingBodyChunkSizeBytes+1)
-		responses := []*httpgrpc.HTTPResponse{
-			{
-				Code: 200, Body: responseBodyBytes,
+			queryID := uint64(1)
+			requestQueue := []*schedulerpb.SchedulerToQuerier{
+				{QueryID: queryID, HttpRequest: nil, FrontendAddress: frontend.addr, UserID: "test"},
+			}
+			responses := []*httpgrpc.HTTPResponse{{
+				Code: http.StatusOK, Body: tc.responseBodyBytes,
 				Headers: []*httpgrpc.Header{streamingEnabledHeader},
-			},
-		}
+			}}
 
-		processClient.On("Recv").Return(receiveRequests(requestQueue, processClient))
-		ctx, cancel := context.WithCancel(context.Background())
+			processClient.On("Recv").Return(receiveRequests(requestQueue, processClient))
+			ctx, cancel := context.WithCancel(context.Background())
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(
-			func(arguments mock.Arguments) { cancel() },
-		).Return(returnResponses(responses)())
+			requestHandler.On("Handle", mock.Anything, mock.Anything).Run(
+				func(arguments mock.Arguments) { cancel() },
+			).Return(returnResponses(responses)())
 
-		reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
+			reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
 
-		require.Equal(t, 1, int(frontend.queryResultStreamMetadataCalls.Load()))
-		// Response body does not fit into one chunk, expect body to be split into two chunks.
-		require.Equal(t, 2, int(frontend.queryResultStreamBodyCalls.Load()))
-		require.Equal(t, 0, int(frontend.queryResultCalls.Load()))
-		require.Equal(t, responseBodyBytes, frontend.responses[queryID].body)
-	})
+			require.Equal(t, tc.expectMetadataCalls, int(frontend.queryResultStreamMetadataCalls.Load()))
+			require.Equal(t, tc.expectBodyCalls, int(frontend.queryResultStreamBodyCalls.Load()))
+			require.Equal(t, tc.expectNonStreamingCalls, int(frontend.queryResultCalls.Load()))
+			require.Equal(t, tc.responseBodyBytes, frontend.responses[queryID].body)
+		})
+	}
 }
 
 func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopClientMock, *requestHandlerMock, *frontendForQuerierMockServer) {
@@ -529,8 +546,9 @@ type queryResult struct {
 	body     []byte
 }
 
-func (f *frontendForQuerierMockServer) QueryResult(context.Context, *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
+func (f *frontendForQuerierMockServer) QueryResult(_ context.Context, r *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
 	f.queryResultCalls.Inc()
+	f.responses[r.QueryID] = &queryResult{body: r.HttpResponse.Body}
 
 	return &frontendv2pb.QueryResultResponse{}, nil
 }

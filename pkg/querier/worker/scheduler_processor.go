@@ -300,7 +300,7 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 
 		var ok bool
 		response.Headers, ok = removeStreamingHeader(response.Headers)
-		if sp.streamingEnabled && ok {
+		if sp.streamingEnabled && ok && len(response.Body) > responseStreamingBodyChunkSizeBytes {
 			err = streamResponse(frontendCtx, c, queryID, response, stats)
 		} else {
 			// Response is empty and uninteresting.
