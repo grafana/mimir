@@ -42,11 +42,11 @@ if [[ -z "$TOTAL" ]]; then
     exit 1
 fi
 
-export IMAGE_TAG_RACE=$(make image-tag-race)
-export MIMIR_IMAGE="grafana/mimir:$TAGPREFIX$IMAGE_TAG_RACE"
-export IMAGE_TAG=$(make image-tag)
-export MIMIRTOOL_IMAGE="grafana/mimirtool:$IMAGE_TAG"
-export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
+export IMAGE_TAG_RACE=${IMAGE_TAG_RACE:-$(make image-tag-race)}
+export MIMIR_IMAGE=${MIMIR_IMAGE:-"grafana/mimir:$TAGPREFIX$IMAGE_TAG_RACE"}
+export IMAGE_TAG=${IMAGE_TAG:-$(make image-tag)}
+export MIMIRTOOL_IMAGE=${MIMIRTOOL_IMAGE:-"grafana/mimirtool:$IMAGE_TAG"}
+export MIMIR_CHECKOUT_DIR=${MIMIR_CHECKOUT_DIR:-"/go/src/github.com/grafana/mimir"}
 
 echo "Running integration tests with image: $MIMIR_IMAGE (Mimir), $MIMIRTOOL_IMAGE (Mimirtool)"
 echo "Running integration tests (group $INDEX of $TOTAL) with Go version: $(go version)"
