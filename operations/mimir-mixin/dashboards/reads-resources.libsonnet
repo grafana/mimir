@@ -8,15 +8,15 @@ local filename = 'mimir-reads-resources.json';
     .addRow(
       $.row('Summary')
       .addPanel(
-        $.panel('CPU') +
+        $.timeseriesPanel('CPU') +
         $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
         $.stack,
       )
       .addPanel(
-        $.panel('Memory (workingset)') +
+        $.timeseriesPanel('Memory (workingset)') +
         $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
         $.stack +
-        { yaxes: $.yaxes('bytes') },
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('read') +
@@ -93,7 +93,7 @@ local filename = 'mimir-reads-resources.json';
     .addRow(
       $.row('Ruler')
       .addPanel(
-        $.panel('Rules') +
+        $.timeseriesPanel('Rules') +
         $.queryPanel(
           'sum by(%s) (cortex_prometheus_rule_group_rules{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler)],
           '{{%s}}' % $._config.per_instance_label

@@ -24,13 +24,13 @@ local filename = 'mimir-overview-resources.json';
     .addRow(
       $.row('Writes')
       .addPanel(
-        $.panel('CPU') +
+        $.timeseriesPanel('CPU') +
         $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label),
       )
       .addPanel(
-        $.panel('Memory (workingset)') +
+        $.timeseriesPanel('Memory (workingset)') +
         $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
-        { yaxes: $.yaxes('bytes') },
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('write'),
@@ -52,13 +52,13 @@ local filename = 'mimir-overview-resources.json';
     .addRow(
       $.row('Reads')
       .addPanel(
-        $.panel('CPU') +
+        $.timeseriesPanel('CPU') +
         $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label),
       )
       .addPanel(
-        $.panel('Memory (workingset)') +
+        $.timeseriesPanel('Memory (workingset)') +
         $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
-        { yaxes: $.yaxes('bytes') },
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('read'),
@@ -68,13 +68,13 @@ local filename = 'mimir-overview-resources.json';
     .addRow(
       $.row('Backend')
       .addPanel(
-        $.panel('CPU') +
+        $.timeseriesPanel('CPU') +
         $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.backend, $._config.container_names.backend), '{{%s}}' % $._config.per_instance_label),
       )
       .addPanel(
-        $.panel('Memory (workingset)') +
+        $.timeseriesPanel('Memory (workingset)') +
         $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.backend, $._config.container_names.backend), '{{%s}}' % $._config.per_instance_label) +
-        { yaxes: $.yaxes('bytes') },
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('backend'),

@@ -55,12 +55,12 @@ local filename = 'mimir-remote-ruler-reads.json';
     .addRow(
       $.row('Query-frontend (dedicated to ruler)')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.ruler_query_frontend), rulerRoutesRegex])
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ruler_query_frontend) + [utils.selector.re('route', rulerRoutesRegex)])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ruler_query_frontend) + [utils.selector.re('route', rulerRoutesRegex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -82,32 +82,25 @@ local filename = 'mimir-remote-ruler-reads.json';
       $.row('Query-scheduler (dedicated to ruler)')
       .addPanel(
         local title = 'Requests / sec';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
       )
       .addPanel(
         local title = 'Latency (Time in Queue)';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
       )
       .addPanel(
         local title = 'Queue length';
-
         $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.hiddenLegendQueryPanel(
           'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher($._config.job_names.ruler_query_scheduler)],
           'Queue length'
         ) +
-        {
-          fieldConfig+: {
-            defaults+: {
-              unit: 'queries',
-            },
-          },
-        },
+        { fieldConfig+: { defaults+: { unit: 'queries' } } },
       )
     )
     .addRow(
@@ -136,7 +129,7 @@ local filename = 'mimir-remote-ruler-reads.json';
       $.row('Query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions')
       .addPanel(
         local title = '99th Percentile Latency by Queue Dimension';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
           metricName=metricName,
@@ -149,7 +142,7 @@ local filename = 'mimir-remote-ruler-reads.json';
       )
       .addPanel(
         local title = '50th Percentile Latency by Queue Dimension';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
           metricName=metricName,
@@ -162,7 +155,7 @@ local filename = 'mimir-remote-ruler-reads.json';
       )
       .addPanel(
         local title = 'Average Latency by Queue Dimension';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
           metricName=metricName,
@@ -177,12 +170,12 @@ local filename = 'mimir-remote-ruler-reads.json';
     .addRow(
       $.row('Querier (dedicated to ruler)')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.ruler_querier), $.queries.read_http_routes_regex])
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.ruler_querier) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.ruler_querier) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
