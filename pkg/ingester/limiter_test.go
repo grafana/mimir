@@ -463,7 +463,7 @@ func buildPartitionRingFromPartitionStates(states ...ring.PartitionState) *ring.
 	return ring.NewPartitionRing(*pr)
 }
 
-func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
+func TestLimiter_IsWithinMaxSeriesPerMetric(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalSeriesPerMetric int
 		ringReplicationFactor    int
@@ -516,7 +516,7 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 	}
 }
 
-func TestLimiter_AssertMaxSeriesPerMetric_WithPartitionsRing(t *testing.T) {
+func TestLimiter_IsWithinMaxSeriesPerMetric_WithPartitionsRing(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalSeriesPerMetric int
 		partitionStates          []ring.PartitionState
@@ -559,7 +559,7 @@ func TestLimiter_AssertMaxSeriesPerMetric_WithPartitionsRing(t *testing.T) {
 	}
 }
 
-func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
+func TestLimiter_IsWithinMaxMetadataPerMetric(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalMetadataPerMetric int
 		ringReplicationFactor      int
@@ -612,7 +612,7 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 	}
 }
 
-func TestLimiter_AssertMaxMetadataPerMetric_WithPartitionsRing(t *testing.T) {
+func TestLimiter_IsWithinMaxMetadataPerMetric_WithPartitionsRing(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalMetadataPerMetric int
 		partitionStates            []ring.PartitionState
@@ -655,7 +655,7 @@ func TestLimiter_AssertMaxMetadataPerMetric_WithPartitionsRing(t *testing.T) {
 	}
 }
 
-func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
+func TestLimiter_IsWithinMaxSeriesPerUser(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalSeriesPerUser int
 		ringReplicationFactor  int
@@ -743,7 +743,7 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 	}
 }
 
-func TestLimiter_AssertMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
+func TestLimiter_IsWithinMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalSeriesPerUser int
 		partitionStates        []ring.PartitionState
@@ -809,7 +809,7 @@ func TestLimiter_AssertMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 	}
 }
 
-func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
+func TestLimiter_IsWithinMaxMetricsWithMetadataPerUser(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalMetadataPerUser int
 		ringReplicationFactor    int
@@ -862,7 +862,7 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 	}
 }
 
-func TestLimiter_AssertMaxMetricsWithMetadataPerUser_WithPartitionsRing(t *testing.T) {
+func TestLimiter_IsWithinMaxMetricsWithMetadataPerUser_WithPartitionsRing(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalMetadataPerUser int
 		partitionStates          []ring.PartitionState
