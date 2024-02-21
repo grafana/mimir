@@ -7,7 +7,6 @@ INTEGRATION_DIR=$(realpath "${SCRIPT_DIR}/../../../integration/")
 # Parse args.
 INDEX=""
 TOTAL=""
-TAGPREFIX=""
 
 while [[ $# -gt 0 ]]
 do
