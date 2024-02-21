@@ -102,6 +102,16 @@ func (m *PartitionRingDesc) countPartitionsByState() map[PartitionState]int {
 	return out
 }
 
+func (m *PartitionRingDesc) activePartitionsCount() int {
+	count := 0
+	for _, partition := range m.Partitions {
+		if partition.IsActive() {
+			count++
+		}
+	}
+	return count
+}
+
 // WithPartitions returns a new PartitionRingDesc with only the specified partitions and their owners included.
 func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) PartitionRingDesc {
 	newPartitions := make(map[int32]PartitionDesc, len(partitions))
