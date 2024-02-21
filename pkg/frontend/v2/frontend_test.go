@@ -387,19 +387,9 @@ func TestFrontendStreamingResponse(t *testing.T) {
 				resp := &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(body), Headers: headers}
 				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
 				s.msgs = append(s.msgs,
-					&frontendv2pb.QueryResultStreamRequest{
-						QueryID: msg.QueryID,
-						Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
-							Code: resp.Code, Headers: resp.Headers, Stats: &stats.Stats{}}},
-					},
-					&frontendv2pb.QueryResultStreamRequest{
-						QueryID: msg.QueryID,
-						Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: resp.Body[:len(resp.Body)/2]}},
-					},
-					&frontendv2pb.QueryResultStreamRequest{
-						QueryID: msg.QueryID,
-						Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: resp.Body[len(resp.Body)/2:]}},
-					},
+					metadataRequest(msg, int(resp.Code), resp.Headers),
+					bodyChunkRequest(msg, resp.Body[:len(resp.Body)/2]),
+					bodyChunkRequest(msg, resp.Body[len(resp.Body)/2:]),
 				)
 				return f.QueryResultStream(s)
 			},
@@ -409,13 +399,9 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			name: "received metadata only, no body data sent",
 			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
 				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
-				s.msgs = append(s.msgs, &frontendv2pb.QueryResultStreamRequest{
-					QueryID: msg.QueryID,
-					Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
-						Code:    http.StatusOK,
-						Headers: []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"0"}}},
-					}},
-				})
+				s.msgs = append(s.msgs,
+					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"0"}}}),
+				)
 				return f.QueryResultStream(s)
 			},
 			expectBody: "",
@@ -425,21 +411,10 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
 				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
 				s.msgs = append(s.msgs,
-					&frontendv2pb.QueryResultStreamRequest{
-						QueryID: msg.QueryID,
-						Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
-							Code:  http.StatusOK,
-							Stats: &stats.Stats{}}},
-					}, &frontendv2pb.QueryResultStreamRequest{
-						QueryID: msg.QueryID,
-						Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: []byte("part 1/2")}},
-					}, &frontendv2pb.QueryResultStreamRequest{
-						QueryID: msg.QueryID,
-						Data:    &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{}},
-					}, &frontendv2pb.QueryResultStreamRequest{
-						QueryID: msg.QueryID,
-						Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: []byte("part 2/2")}},
-					},
+					metadataRequest(msg, http.StatusOK, nil),
+					bodyChunkRequest(msg, []byte("part 1/2")),
+					metadataRequest(msg, http.StatusOK, nil),
+					bodyChunkRequest(msg, []byte("part 2/2")),
 				)
 				return f.QueryResultStream(s)
 			},
@@ -483,6 +458,24 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, len(tt.expectBody), contentLength)
 		})
+	}
+}
+
+func metadataRequest(msg *schedulerpb.FrontendToScheduler, statusCode int, headers []*httpgrpc.Header) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		QueryID: msg.QueryID,
+		Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
+			Code:    int32(statusCode),
+			Headers: headers,
+			Stats:   &stats.Stats{},
+		}},
+	}
+}
+
+func bodyChunkRequest(msg *schedulerpb.FrontendToScheduler, content []byte) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		QueryID: msg.QueryID,
+		Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: content}},
 	}
 }
 
