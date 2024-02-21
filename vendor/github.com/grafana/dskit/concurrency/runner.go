@@ -84,12 +84,19 @@ func CreateJobsFromStrings(values []string) []interface{} {
 
 // ForEachJob runs the provided jobFunc for each job index in [0, jobs) up to concurrency concurrent workers.
 // If the concurrency value is <= 0 all jobs will be executed in parallel.
+//
 // The execution breaks on first error encountered.
+//
+// ForEachJob cancels the context.Context passed to each invocation of jobFunc before ForEachJob returns.
 func ForEachJob(ctx context.Context, jobs int, concurrency int, jobFunc func(ctx context.Context, idx int) error) error {
 	if jobs == 0 {
 		return nil
 	}
 	if jobs == 1 {
+		// Honor the function contract, cancelling the context passed to the jobFunc once it completed.
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
 		return jobFunc(ctx, 0)
 	}
 	if concurrency <= 0 {
@@ -123,6 +130,8 @@ func ForEachJob(ctx context.Context, jobs int, concurrency int, jobFunc func(ctx
 
 // ForEachJobMergeResults is like ForEachJob but expects jobFunc to return a slice of results which are then
 // merged with results from all jobs. This function returns no results if an error occurred running any jobFunc.
+//
+// ForEachJobMergeResults cancels the context.Context passed to each invocation of jobFunc before ForEachJobMergeResults returns.
 func ForEachJobMergeResults[J any, R any](ctx context.Context, jobs []J, concurrency int, jobFunc func(ctx context.Context, job J) ([]R, error)) ([]R, error) {
 	var (
 		resultsMx sync.Mutex

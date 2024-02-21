@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
-	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
@@ -221,6 +220,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
+	// queryIngester MUST call cancelContext once processing is completed in order to release resources. It's required
+	// by ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation() to properly release resources.
 	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelCauseFunc) (ingesterQueryResult, error) {
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
 		cleanup := func() {
@@ -352,9 +353,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
 	quorumConfig.IsTerminalError = validation.IsLimitError
 
-	results, err := concurrency.ForEachJobMergeResults[ring.ReplicationSet, ingesterQueryResult](ctx, replicationSets, 0, func(ctx context.Context, replicationSet ring.ReplicationSet) ([]ingesterQueryResult, error) {
-		return ring.DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, quorumConfig, queryIngester, cleanup)
-	})
+	results, err := ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSets, quorumConfig, queryIngester, cleanup)
 	if err != nil {
 		return ingester_client.CombinedQueryStreamResponse{}, err
 	}

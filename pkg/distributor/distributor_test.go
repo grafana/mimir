@@ -5694,7 +5694,9 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 		return nil, err
 	}
 
-	time.Sleep(i.queryDelay)
+	if err := i.enforceQueryDelay(ctx); err != nil {
+		return nil, err
+	}
 
 	i.Lock()
 	defer i.Unlock()
@@ -5845,6 +5847,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 	}
 
 	return &stream{
+		ctx:     ctx,
 		results: results,
 	}, nil
 }
@@ -6270,6 +6273,16 @@ func (i *mockIngester) enforceReadConsistency(ctx context.Context) error {
 	return i.partitionReader.WaitReadConsistency(ctx)
 }
 
+func (i *mockIngester) enforceQueryDelay(ctx context.Context) error {
+	select {
+	case <-time.After(i.queryDelay):
+		return nil
+
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 type mockIngesterPusherAdapter struct {
 	ingester *mockIngester
 }
@@ -6301,6 +6314,10 @@ func (i *noopIngester) Push(context.Context, *mimirpb.WriteRequest, ...grpc.Call
 
 type stream struct {
 	grpc.ClientStream
+
+	// The mocked gRPC client's context.
+	ctx context.Context
+
 	i       int
 	results []*client.QueryStreamResponse
 }
@@ -6310,6 +6327,12 @@ func (*stream) CloseSend() error {
 }
 
 func (s *stream) Recv() (*client.QueryStreamResponse, error) {
+	// Check whether the context has been canceled, so that we can test the case the context
+	// gets cancelled while reading messages from gRPC client.
+	if s.ctx.Err() != nil {
+		return nil, s.ctx.Err()
+	}
+
 	if s.i >= len(s.results) {
 		return nil, io.EOF
 	}
@@ -6319,7 +6342,7 @@ func (s *stream) Recv() (*client.QueryStreamResponse, error) {
 }
 
 func (s *stream) Context() context.Context {
-	return context.Background()
+	return s.ctx
 }
 
 func (i *mockIngester) AllUserStats(context.Context, *client.UserStatsRequest, ...grpc.CallOption) (*client.UsersStatsResponse, error) {

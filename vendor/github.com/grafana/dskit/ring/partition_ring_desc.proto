@@ -18,6 +18,9 @@ message PartitionRingDesc {
 
 // PartitionDesc holds the state of a single partition.
 message PartitionDesc {
+  // The partition ID. This value is the same as the key in the partitions map in PartitionRingDesc.
+  int32 id = 4;
+
   // Unique tokens, generated with deterministic token generator. Tokens MUST be immutable:
   // if tokens get changed, the change will not be propagated via memberlist.
   repeated uint32 tokens = 1;
@@ -63,7 +66,6 @@ message OwnerDesc {
   // This timestamp is used to resolve conflicts when merging updates via memberlist (the most recent
   // update wins).
   int64 updatedTimestamp = 3;
-
 }
 
 enum OwnerState {
