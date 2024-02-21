@@ -330,7 +330,7 @@ func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
 			require.Equal(t, chunkenc.ValHistogram, batch.ValueType, "Batch contains histograms")
 			for j := 0; j < batch.Length; j++ {
 				require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
-				require.EqualValues(t, expectedHistogram(i+j), (*histogram.Histogram)(batch.PointerValues[j]))
+				require.EqualValues(t, expectedHistogram(i+j), batch.Histograms[j])
 			}
 		case PrometheusFloatHistogramChunk:
 			require.Equal(t, chunkenc.ValFloatHistogram, chunkType)
@@ -338,7 +338,7 @@ func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
 			require.Equal(t, chunkenc.ValFloatHistogram, batch.ValueType, "Batch contains float histograms")
 			for j := 0; j < batch.Length; j++ {
 				require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
-				require.EqualValues(t, expectedFloatHistogram(i+j), (*histogram.FloatHistogram)(batch.PointerValues[j]))
+				require.EqualValues(t, expectedFloatHistogram(i+j), batch.FloatHistograms[j])
 			}
 		default:
 			require.FailNowf(t, "Unexpected encoding", "%v", encoding)

@@ -8,7 +8,6 @@ package chunk
 import (
 	"fmt"
 	"io"
-	"unsafe"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -231,11 +230,13 @@ func (p *prometheusChunkIterator) Timestamp() int64 {
 }
 
 func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, b *Batch) *Batch {
-	batch := b
-	if batch == nil {
+	var batch *Batch
+	if b == nil || b.ValueType != valueType {
 		batch = &Batch{}
+		batch.ValueType = valueType
+	} else {
+		batch = b
 	}
-	batch.ValueType = valueType
 	var populate func(j int)
 	switch valueType {
 	case chunkenc.ValNone:
@@ -249,23 +250,13 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, 
 		}
 	case chunkenc.ValHistogram:
 		populate = func(j int) {
-			var (
-				h = (*histogram.Histogram)(batch.PointerValues[j])
-				t int64
-			)
-			t, h = p.it.AtHistogram(h)
-			batch.Timestamps[j] = t
-			batch.PointerValues[j] = unsafe.Pointer(h)
+			h := batch.Histograms[j]
+			batch.Timestamps[j], batch.Histograms[j] = p.it.AtHistogram(h)
 		}
 	case chunkenc.ValFloatHistogram:
 		populate = func(j int) {
-			var (
-				fh = (*histogram.FloatHistogram)(batch.PointerValues[j])
-				t  int64
-			)
-			t, fh = p.it.AtFloatHistogram(fh)
-			batch.Timestamps[j] = t
-			batch.PointerValues[j] = unsafe.Pointer(fh)
+			fh := batch.FloatHistograms[j]
+			batch.Timestamps[j], batch.FloatHistograms[j] = p.it.AtFloatHistogram(fh)
 		}
 	default:
 		panic(fmt.Sprintf("invalid chunk encoding %v", valueType))
