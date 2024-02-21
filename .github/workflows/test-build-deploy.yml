@@ -25,8 +25,6 @@ jobs:
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
-      - name: Determine if we will deploy the image
-        run: echo "Setting output"
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
       # Determine if we will deploy (aka push) the image to the registry.
