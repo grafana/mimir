@@ -142,9 +142,9 @@ func TestBlockTTL(t *testing.T) {
 			ttl:  1 * time.Hour,
 		},
 		{
-			name: "90m block",
+			name: "65m block",
 			minT: 1700000000000,
-			maxT: 1700005400000,
+			maxT: 1700003900000,
 			ttl:  2 * time.Hour,
 		},
 		{
@@ -158,6 +158,12 @@ func TestBlockTTL(t *testing.T) {
 			minT: 1700000000000,
 			maxT: 1700010800000,
 			ttl:  3 * time.Hour,
+		},
+		{
+			name: "185m block",
+			minT: 1700000000000,
+			maxT: 1700011100000,
+			ttl:  4 * time.Hour,
 		},
 		{
 			name: "10h block",
@@ -184,14 +190,16 @@ func TestBlockTTL(t *testing.T) {
 			ttl:  168 * time.Hour,
 		},
 	} {
-		meta := &block.Meta{
-			BlockMeta: tsdb.BlockMeta{
-				MinTime: tt.minT,
-				MaxTime: tt.maxT,
-			},
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			meta := &block.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					MinTime: tt.minT,
+					MaxTime: tt.maxT,
+				},
+			}
 
-		ttl := BlockTTL(meta)
-		assert.Equal(t, tt.ttl, ttl)
+			ttl := BlockTTL(meta)
+			assert.Equal(t, tt.ttl, ttl)
+		})
 	}
 }

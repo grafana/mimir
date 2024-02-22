@@ -125,7 +125,12 @@ type IndexCache interface {
 // compacted and deleted soon and a longer TTL for larger blocks that won't be deleted.
 func BlockTTL(meta *block.Meta) time.Duration {
 	duration := time.Duration(meta.MaxTime-meta.MinTime) * time.Millisecond
-	duration = max(time.Hour, duration.Round(time.Hour))
+	if duration%time.Hour != 0 {
+		duration += time.Hour - duration%time.Hour
+	}
+
+	// Pick the max of one hour or duration adjusted up to the next hour
+	duration = max(time.Hour, duration)
 
 	// Anything less than 24h is a temporary block that will eventually be compacted into
 	// a 24h block. Use a shorter TTL since otherwise these will stay in the cache long
