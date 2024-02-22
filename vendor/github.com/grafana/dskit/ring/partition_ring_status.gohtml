@@ -1,4 +1,4 @@
-{{- /*gotype: github.com/grafana/dskit/ring.httpResponse */ -}}
+{{- /*gotype: github.com/grafana/dskit/ring.partitionRingPageData */ -}}
 <!DOCTYPE html>
 <html>
 <head>
@@ -15,13 +15,21 @@
                 <th>State</th>
                 <th>State updated at</th>
                 <th>Owners</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
+        {{ $stateChanges := .PartitionStateChanges }}
         {{ range $partition := .Partitions }}
-            <tr {{ if eq .State "Corrupt" }}bgcolor="#FFDEDE"{{ else if mod $partition.ID 2 }}bgcolor="#BEBEBE"{{ end }}>
+            <tr {{ if .Corrupted }}bgcolor="#FFDEDE"{{ else if mod $partition.ID 2 }}bgcolor="#BEBEBE"{{ end }}>
                 <td>{{ .ID }}</td>
-                <td>{{ .State }}</td>
+                <td>
+                    {{ if .Corrupted }}
+                        Corrupt
+                    {{ else }}
+                        {{ .State.CleanName }}
+                    {{ end }}
+                </td>
                 <td>
                     {{ if not .StateTimestamp.IsZero }}
                         {{ .StateTimestamp | formatTimestamp }}
@@ -32,6 +40,19 @@
                 <td>
                     {{ range $ownerID := $partition.OwnerIDs }}
                         {{$ownerID}} <br />
+                    {{ end }}
+                </td>
+                <td>
+                    <!-- Allow to force a state change -->
+                    {{ if and (not .Corrupted) (ne (index $stateChanges .State) 0) }}
+                        {{ $toState := index $stateChanges .State }}
+                        <form action="" method="POST" onsubmit="return confirm('Do you confirm you want to change the state to {{ $toState.CleanName }}?');">
+                            <input type="hidden" name="csrf_token" value="$__CSRF_TOKEN_PLACEHOLDER__">
+                            <input type="hidden" name="partition_id" value="{{ .ID }}">
+                            <input type="hidden" name="partition_state" value="{{ $toState.String }}">
+
+                            <button name="action" value="change_state" type="submit">Change state to {{ $toState.CleanName }}</button>
+                        </form>
                     {{ end }}
                 </td>
             </tr>

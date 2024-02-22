@@ -371,7 +371,8 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 	t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
 
 	// Expose a web page to view the partitions ring state.
-	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher))
+	updater := ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)
+	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, updater))
 
 	return t.IngesterPartitionRingWatcher, nil
 }

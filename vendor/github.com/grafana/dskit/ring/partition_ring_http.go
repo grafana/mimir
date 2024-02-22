@@ -1,10 +1,13 @@
 package ring
 
 import (
+	"context"
 	_ "embed"
+	"fmt"
 	"html/template"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	"golang.org/x/exp/slices"
@@ -21,19 +24,36 @@ var partitionRingPageTemplate = template.Must(template.New("webpage").Funcs(temp
 	},
 }).Parse(partitionRingPageContent))
 
-type PartitionRingPageHandler struct {
-	ring PartitionRingReader
+type PartitionRingUpdater interface {
+	ChangePartitionState(ctx context.Context, partitionID int32, toState PartitionState) error
 }
 
-func NewPartitionRingPageHandler(ring PartitionRingReader) *PartitionRingPageHandler {
+type PartitionRingPageHandler struct {
+	reader  PartitionRingReader
+	updater PartitionRingUpdater
+}
+
+func NewPartitionRingPageHandler(reader PartitionRingReader, updater PartitionRingUpdater) *PartitionRingPageHandler {
 	return &PartitionRingPageHandler{
-		ring: ring,
+		reader:  reader,
+		updater: updater,
 	}
 }
 
 func (h *PartitionRingPageHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	switch req.Method {
+	case http.MethodGet:
+		h.handleGetRequest(w, req)
+	case http.MethodPost:
+		h.handlePostRequest(w, req)
+	default:
+		http.Error(w, "Unsupported HTTP method", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *http.Request) {
 	var (
-		ring     = h.ring.PartitionRing()
+		ring     = h.reader.PartitionRing()
 		ringDesc = ring.desc
 	)
 
@@ -45,7 +65,8 @@ func (h *PartitionRingPageHandler) ServeHTTP(w http.ResponseWriter, req *http.Re
 
 		partitionsByID[id] = partitionPageData{
 			ID:             id,
-			State:          partition.State.CleanName(),
+			Corrupted:      false,
+			State:          partition.State,
 			StateTimestamp: partition.GetStateTime(),
 			OwnerIDs:       owners,
 		}
@@ -59,7 +80,8 @@ func (h *PartitionRingPageHandler) ServeHTTP(w http.ResponseWriter, req *http.Re
 		if !exists {
 			partition = partitionPageData{
 				ID:             owner.OwnedPartition,
-				State:          "Corrupt",
+				Corrupted:      true,
+				State:          PartitionUnknown,
 				StateTimestamp: time.Time{},
 				OwnerIDs:       []string{ownerID},
 			}
@@ -86,16 +108,51 @@ func (h *PartitionRingPageHandler) ServeHTTP(w http.ResponseWriter, req *http.Re
 
 	renderHTTPResponse(w, partitionRingPageData{
 		Partitions: partitions,
+		PartitionStateChanges: map[PartitionState]PartitionState{
+			PartitionPending:  PartitionActive,
+			PartitionActive:   PartitionInactive,
+			PartitionInactive: PartitionActive,
+		},
 	}, partitionRingPageTemplate, req)
+}
+
+func (h *PartitionRingPageHandler) handlePostRequest(w http.ResponseWriter, req *http.Request) {
+	if req.FormValue("action") == "change_state" {
+		partitionID, err := strconv.Atoi(req.FormValue("partition_id"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid partition ID: %s", err.Error()), http.StatusBadRequest)
+			return
+		}
+
+		toState, ok := PartitionState_value[req.FormValue("partition_state")]
+		if !ok {
+			http.Error(w, "invalid partition state", http.StatusBadRequest)
+			return
+		}
+
+		if err := h.updater.ChangePartitionState(req.Context(), int32(partitionID), PartitionState(toState)); err != nil {
+			http.Error(w, fmt.Sprintf("failed to change partition state: %s", err.Error()), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Implement PRG pattern to prevent double-POST and work with CSRF middleware.
+	// https://en.wikipedia.org/wiki/Post/Redirect/Get
+	w.Header().Set("Location", "#")
+	w.WriteHeader(http.StatusFound)
 }
 
 type partitionRingPageData struct {
 	Partitions []partitionPageData `json:"partitions"`
+
+	// PartitionStateChanges maps the allowed state changes through the UI.
+	PartitionStateChanges map[PartitionState]PartitionState `json:"-"`
 }
 
 type partitionPageData struct {
-	ID             int32     `json:"id"`
-	State          string    `json:"state"`
-	StateTimestamp time.Time `json:"state_timestamp"`
-	OwnerIDs       []string  `json:"owner_ids"`
+	ID             int32          `json:"id"`
+	Corrupted      bool           `json:"corrupted"`
+	State          PartitionState `json:"state"`
+	StateTimestamp time.Time      `json:"state_timestamp"`
+	OwnerIDs       []string       `json:"owner_ids"`
 }
