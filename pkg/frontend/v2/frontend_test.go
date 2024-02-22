@@ -480,6 +480,10 @@ func TestFrontendStreamingResponse(t *testing.T) {
 				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			})
 
+			// Record the number of goroutines before the test, check that none are leaked
+			// after the response body has been closed.
+			numGoRoutinesBefore := runtime.NumGoroutine()
+
 			req := httptest.NewRequest("GET", "/api/v1/cardinality/active_series?selector=metric", nil)
 			rt := transport.AdaptGrpcRoundTripperToHTTPRoundTripper(f)
 
@@ -502,6 +506,13 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			contentLength, err := strconv.Atoi(resp.Header.Get("Content-Length"))
 			require.NoError(t, err)
 			require.Equal(t, tt.expectContentLength, contentLength)
+
+			require.NoError(t, resp.Body.Close())
+			// Ensure no goroutines are leaked.
+			require.Eventually(t, func() bool {
+				// require.Eventually uses a ticker running on a goroutine, so add one to the expected count
+				return numGoRoutinesBefore+1 == runtime.NumGoroutine()
+			}, time.Second, 10*time.Millisecond, "expected no goroutines to leak")
 		})
 	}
 }
