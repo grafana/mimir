@@ -83,6 +83,7 @@ func (l *Limiter) maxMetadataPerUser(userID string) int {
 }
 
 func (l *Limiter) maxExemplarsPerUser(userID string) int {
+	// We don't use `convertGlobalToLocalLimitOrUnlimited`, because we don't want "unlimited" part. 0 means disabled.
 	return l.ringStrategy.convertGlobalToLocalLimit(l.getShardSize(userID), l.limits.MaxGlobalExemplarsPerUser(userID))
 }
 
