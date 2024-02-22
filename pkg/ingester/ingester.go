@@ -408,9 +408,10 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	// Init the limter and instantiate the user states which depend on it
 	i.limiter = NewLimiter(
 		limits,
-		NewLimiterRing(ingestersRing, cfg.IngesterRing.InstanceZone),
+		ingestersRing,
 		cfg.IngesterRing.ReplicationFactor,
 		cfg.IngesterRing.ZoneAwarenessEnabled,
+		cfg.IngesterRing.InstanceZone,
 	)
 
 	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {

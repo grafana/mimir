@@ -8,8 +8,6 @@ package ingester
 import (
 	"math"
 
-	"github.com/grafana/dskit/ring"
-
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -19,25 +17,8 @@ import (
 // to count members
 type RingCount interface {
 	InstancesCount() int
-	InstancesInZoneCount() int
+	InstancesInZoneCount(zone string) int
 	ZonesCount() int
-}
-
-// Wraps ring.ReadRing to implement RingCount
-type LimiterRing struct {
-	ring.ReadRing
-	zone string
-}
-
-func NewLimiterRing(ring ring.ReadRing, zone string) *LimiterRing {
-	return &LimiterRing{
-		ReadRing: ring,
-		zone:     zone,
-	}
-}
-
-func (r *LimiterRing) InstancesInZoneCount() int {
-	return r.ReadRing.InstancesInZoneCount(r.zone)
 }
 
 // Limiter implements primitives to get the maximum number of series
@@ -47,6 +28,7 @@ type Limiter struct {
 	ring                 RingCount
 	replicationFactor    int
 	zoneAwarenessEnabled bool
+	ingesterZone         string
 }
 
 // NewLimiter makes a new in-memory series limiter
@@ -55,12 +37,14 @@ func NewLimiter(
 	ring RingCount,
 	replicationFactor int,
 	zoneAwarenessEnabled bool,
+	ingesterZone string,
 ) *Limiter {
 	return &Limiter{
 		limits:               limits,
 		ring:                 ring,
 		replicationFactor:    replicationFactor,
 		zoneAwarenessEnabled: zoneAwarenessEnabled,
+		ingesterZone:         ingesterZone,
 	}
 }
 
@@ -131,7 +115,7 @@ func (l *Limiter) convertGlobalToLocalLimit(userShardSize int, globalLimit int) 
 	if zonesCount > 1 {
 		// In this case zone-aware replication is enabled, and ingestersInZoneCount is initially set to
 		// the total number of ingesters in the corresponding zone
-		ingestersInZoneCount = l.ring.InstancesInZoneCount()
+		ingestersInZoneCount = l.ring.InstancesInZoneCount(l.ingesterZone)
 	} else {
 		// In this case zone-aware replication is disabled, and ingestersInZoneCount is initially set to
 		// the total number of ingesters
