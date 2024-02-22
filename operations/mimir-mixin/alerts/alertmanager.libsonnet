@@ -61,7 +61,7 @@
             message: |||
               %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s is failing to replicating partial state to its replicas.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,,
+          } + $._config.alert_extra_annotations_variable,
         },
         {
           alert: $.alertName('AlertmanagerPersistStateFailing'),
