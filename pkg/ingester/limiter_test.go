@@ -519,7 +519,7 @@ func (m *ringCountMock) InstancesCount() int {
 	return m.instancesCount
 }
 
-func (m *ringCountMock) InstancesInZoneCount(zone string) int {
+func (m *ringCountMock) InstancesInZoneCount(_ string) int {
 	return m.instancesInZoneCount
 }
 
