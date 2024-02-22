@@ -146,7 +146,6 @@ func (is *ingesterRingLimiterStrategy) convertGlobalToLocalLimit(userShardSize i
 	}
 
 	zonesCount := is.getZonesCount()
-
 	var ingestersInZoneCount int
 	if zonesCount > 1 {
 		// In this case zone-aware replication is enabled, and ingestersInZoneCount is initially set to
@@ -177,15 +176,15 @@ func (is *ingesterRingLimiterStrategy) convertGlobalToLocalLimit(userShardSize i
 	return int((float64(globalLimit*is.replicationFactor) / float64(zonesCount)) / float64(ingestersInZoneCount))
 }
 
+func (is *ingesterRingLimiterStrategy) getShardSize(userID string) int {
+	return is.getIngestionTenantShardSize(userID)
+}
+
 func (is *ingesterRingLimiterStrategy) getZonesCount() int {
 	if is.zoneAwarenessEnabled {
 		return util_math.Max(is.ring.ZonesCount(), 1)
 	}
 	return 1
-}
-
-func (is *ingesterRingLimiterStrategy) getShardSize(userID string) int {
-	return is.getIngestionTenantShardSize(userID)
 }
 
 // Interface for mocking.
@@ -211,13 +210,9 @@ func (ps *partitionRingLimiterStrategy) convertGlobalToLocalLimit(userShardSize 
 	}
 
 	pr := ps.partitionRingWatcher.PartitionRing()
-	activePartitionsCount := pr.ActivePartitionsCount()
-
-	// If user has shuffle-sharding enabled, we cannot use more than user's shard size number of partitions.
-	// If number of active partitions is smaller than shard size, we can only use that number of partitions.
-	if userShardSize > 0 {
-		activePartitionsCount = util_math.Min(activePartitionsCount, userShardSize)
-	}
+	// ShuffleShardSize correctly handles cases when user has 0 or negative number of shards,
+	// or more shards than number of active partitions in the ring.
+	activePartitionsCount := pr.ShuffleShardSize(userShardSize)
 
 	// If we haven't found any active partitions (e.g. partition was just added but this ingester hasn't seen it yet),
 	// ignore global limit.
