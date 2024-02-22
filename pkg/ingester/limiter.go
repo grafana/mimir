@@ -197,7 +197,7 @@ type partitionRingLimiterStrategy struct {
 	getPartitionTenantShardSize func(userID string) int
 }
 
-func newPartitionRingLimiter(watcher partitionRingWatcher, getPartitionTenantShardSize func(userID string) int) *partitionRingLimiterStrategy {
+func newPartitionRingLimiterStrategy(watcher partitionRingWatcher, getPartitionTenantShardSize func(userID string) int) *partitionRingLimiterStrategy {
 	return &partitionRingLimiterStrategy{
 		partitionRingWatcher:        watcher,
 		getPartitionTenantShardSize: getPartitionTenantShardSize,
@@ -232,12 +232,12 @@ func (ps *partitionRingLimiterStrategy) getShardSize(userID string) int {
 	return ps.getPartitionTenantShardSize(userID)
 }
 
-type forFlushStrategy struct{}
+type flusherLimiterStrategy struct{}
 
-func (f forFlushStrategy) convertGlobalToLocalLimit(_ int, _ int) int {
+func (f flusherLimiterStrategy) convertGlobalToLocalLimit(_ int, _ int) int {
 	return 0
 }
 
-func (f forFlushStrategy) getShardSize(userID string) int {
+func (f flusherLimiterStrategy) getShardSize(userID string) int {
 	return 0
 }

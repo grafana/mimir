@@ -453,7 +453,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			logger,
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 
-		limiterStrategy = newPartitionRingLimiter(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
+		limiterStrategy = newPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
 	}
 
 	i.limiter = NewLimiter(limits, limiterStrategy)
@@ -472,7 +472,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 
 	i.shipperIngesterID = "flusher"
-	i.limiter = NewLimiter(limits, forFlushStrategy{})
+	i.limiter = NewLimiter(limits, flusherLimiterStrategy{})
 
 	// This ingester will not start any subservices (lifecycler, compaction, shipping),
 	// and will only open TSDBs, wait for Flush to be called, and then close TSDBs again.
