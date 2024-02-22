@@ -3,7 +3,6 @@
 package ingester
 
 import (
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -119,9 +118,8 @@ func TestRingConfig_Validate(t *testing.T) {
 		tokenGenerationStrategy         string
 		spreadMinimizingJoinRingInOrder bool
 		spreadMinimizingZones           []string
-		tokensFilePath                  string
-		ingestStorageEnabled            bool
 		expectedError                   error
+		tokensFilePath                  string
 	}{
 		"spread-minimizing and correct zones pass validation": {
 			zone:                    instanceZone,
@@ -172,34 +170,17 @@ func TestRingConfig_Validate(t *testing.T) {
 			tokenGenerationStrategy: "bla-bla-tokens",
 			expectedError:           fmt.Errorf("unsupported token generation strategy (%q) has been chosen for %s", "bla-bla-tokens", tokenGenerationStrategyFlag),
 		},
-		"should fail if ingest storage is enabled and no zone is configured": {
-			zone:                 "",
-			ingestStorageEnabled: true,
-			expectedError:        errors.New("-ingester.ring.instance-availability-zone must be configured when -ingest-storage.enabled is true"),
-		},
 	}
 
 	for _, testData := range tests {
 		cfg := RingConfig{}
-		flagext.DefaultValues(&cfg)
-
 		cfg.InstanceID = instanceID
+		cfg.InstanceZone = testData.zone
+		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
 		cfg.SpreadMinimizingJoinRingInOrder = testData.spreadMinimizingJoinRingInOrder
-
-		if testData.zone != "" {
-			cfg.InstanceZone = testData.zone
-		}
-		if testData.tokenGenerationStrategy != "" {
-			cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
-		}
-		if len(testData.spreadMinimizingZones) > 0 {
-			cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
-		}
-		if testData.tokensFilePath != "" {
-			cfg.TokensFilePath = testData.tokensFilePath
-		}
-
-		err := cfg.Validate(testData.ingestStorageEnabled)
+		cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
+		cfg.TokensFilePath = testData.tokensFilePath
+		err := cfg.Validate()
 		if testData.expectedError == nil {
 			require.NoError(t, err)
 		} else {
