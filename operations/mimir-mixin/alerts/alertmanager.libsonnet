@@ -116,7 +116,7 @@
             message: |||
               Alertmanager %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,,
+          } + $._config.alert_extra_annotations_variable,
         },
         {
           alert: $.alertName('AlertmanagerInstanceHasNoTenants'),
