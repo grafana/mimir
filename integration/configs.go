@@ -251,6 +251,9 @@ blocks_storage:
 			// Do not wait before switching an INACTIVE partition to ACTIVE.
 			"-ingester.partition-ring.min-partition-owners-count":    "0",
 			"-ingester.partition-ring.min-partition-owners-duration": "0s",
+
+			// The ingester AZ is required when running the ingest storage.
+			"-ingester.ring.instance-availability-zone": "zone-a",
 		}
 	}
 )

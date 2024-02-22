@@ -238,7 +238,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.DeprecatedReturnOnlyGRPCErrors, deprecatedReturnOnlyGRPCErrorsFlag, true, "When enabled only gRPC errors will be returned by the ingester.")
 }
 
-func (cfg *Config) Validate(logger log.Logger) error {
+func (cfg *Config) Validate(ingestStorageEnabled bool, logger log.Logger) error {
 	if cfg.ErrorSampleRate < 0 {
 		return fmt.Errorf("error sample rate cannot be a negative number")
 	}
@@ -247,7 +247,7 @@ func (cfg *Config) Validate(logger log.Logger) error {
 		util.WarnDeprecatedConfig(deprecatedReturnOnlyGRPCErrorsFlag, logger)
 	}
 
-	return cfg.IngesterRing.Validate()
+	return cfg.IngesterRing.Validate(ingestStorageEnabled)
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
