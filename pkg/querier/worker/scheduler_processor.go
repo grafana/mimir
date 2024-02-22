@@ -8,7 +8,6 @@ package worker
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -26,7 +25,6 @@ import (
 	"github.com/grafana/dskit/user"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
@@ -301,7 +299,7 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		var ok bool
 		response.Headers, ok = removeStreamingHeader(response.Headers)
 		if sp.streamingEnabled && ok && len(response.Body) > responseStreamingBodyChunkSizeBytes {
-			err = streamResponse(frontendCtx, c, queryID, response, stats)
+			err = streamResponse(frontendCtx, ctx, c, queryID, response, stats)
 		} else {
 			// Response is empty and uninteresting.
 			_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
@@ -338,7 +336,7 @@ func removeStreamingHeader(headers []*httpgrpc.Header) ([]*httpgrpc.Header, bool
 	return headers, streamEnabledViaHeader
 }
 
-func streamResponse(ctx context.Context, c client.PoolClient, queryID uint64, response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error {
+func streamResponse(ctx context.Context, reqCtx context.Context, c client.PoolClient, queryID uint64, response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error {
 	sc, err := c.(frontendv2pb.FrontendForQuerierClient).QueryResultStream(ctx)
 	if err != nil {
 		return fmt.Errorf("error creating stream to frontend: %w", err)
@@ -357,24 +355,31 @@ func streamResponse(ctx context.Context, c client.PoolClient, queryID uint64, re
 		return fmt.Errorf("error sending initial response to frontend: %w", err)
 	}
 
+	// The response metadata has been sent successfully. After this point we can no longer
+	// return an error from this function as that would cause the response metadata to be sent
+	// again. This would be rejected by the frontend and the retry could never succeed.
+sendBody:
 	// Send body chunks.
 	for offset := 0; offset < len(response.Body); {
-		err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
-			QueryID: queryID,
-			Data: &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{
-				Chunk: response.Body[offset:min(offset+responseStreamingBodyChunkSizeBytes, len(response.Body))],
-			}},
-		})
-		if err != nil {
-			return fmt.Errorf("error sending response body chunk to frontend: %w", err)
+		select {
+		case <-reqCtx.Done():
+			break sendBody
+		default:
+			err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
+				QueryID: queryID,
+				Data: &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{
+					Chunk: response.Body[offset:min(offset+responseStreamingBodyChunkSizeBytes, len(response.Body))],
+				}},
+			})
+			if err != nil {
+				break sendBody
+			}
+			offset += responseStreamingBodyChunkSizeBytes
 		}
-		offset += responseStreamingBodyChunkSizeBytes
 	}
 
-	_, err = sc.CloseAndRecv()
-	if err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("error closing stream to frontend: %w", err)
-	}
+	// Ignore error here because there's nothing we can do about it.
+	_, _ = sc.CloseAndRecv()
 
 	return nil
 }

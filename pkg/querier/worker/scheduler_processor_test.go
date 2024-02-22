@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -402,6 +403,47 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			require.Equal(t, tc.responseBodyBytes, frontend.responses[queryID].body)
 		})
 	}
+
+	t.Run("should abort streaming if query is cancelled", func(t *testing.T) {
+		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		sp.streamingEnabled = true
+		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
+
+		recvCount := atomic.NewInt64(0)
+		frontend.responseStreamStarted = make(chan struct{})
+
+		queryID := uint64(1)
+		loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
+			switch recvCount.Inc() {
+			case 1:
+				return &schedulerpb.SchedulerToQuerier{
+					QueryID:         queryID,
+					FrontendAddress: frontend.addr,
+					UserID:          "test",
+				}, nil
+			default:
+				<-frontend.responseStreamStarted
+				loopClient.cancelCtx()
+				return nil, toRPCErr(context.Canceled)
+			}
+		})
+
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			workerCancel()
+		}).Return(
+			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
+				Body: bytes.Repeat([]byte("a"), responseBodySize)},
+			nil,
+		)
+
+		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+
+		assert.Equal(t, 1, int(frontend.queryResultStreamMetadataCalls.Load()))
+		// We expect to receive only part of the body before the stream aborts.
+		assert.Less(t, len(frontend.responses[queryID].body), responseBodySize)
+	})
 }
 
 func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopClientMock, *requestHandlerMock, *frontendForQuerierMockServer) {
@@ -535,6 +577,7 @@ type frontendForQuerierMockServer struct {
 	addr             string
 	queryResultCalls atomic.Int64
 
+	responseStreamStarted          chan struct{}
 	queryResultStreamMetadataCalls atomic.Int64
 	queryResultStreamBodyCalls     atomic.Int64
 
@@ -554,6 +597,7 @@ func (f *frontendForQuerierMockServer) QueryResult(_ context.Context, r *fronten
 }
 
 func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	var once sync.Once
 	metadataSent := false
 	for {
 		resp, err := s.Recv()
@@ -569,6 +613,12 @@ func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.Frontend
 			metadataSent = true
 			f.responses[resp.QueryID] = &queryResult{metadata: data.Metadata}
 		case *frontendv2pb.QueryResultStreamRequest_Body:
+			once.Do(func() {
+				// Signal that response streaming has begun.
+				if f.responseStreamStarted != nil {
+					close(f.responseStreamStarted)
+				}
+			})
 			f.queryResultStreamBodyCalls.Inc()
 			if !metadataSent {
 				return errors.New("expected metadata to be sent before body")
