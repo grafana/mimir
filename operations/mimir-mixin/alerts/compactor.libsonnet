@@ -33,7 +33,7 @@
           labels: {
             severity: 'critical',
             reason: 'in-last-24h',
-           + $._config.alert_extra_labels_variable},
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction in the last 24 hours.' % $._config,
           } + $._config.alert_extra_annotations_variable,
