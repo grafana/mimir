@@ -3,7 +3,6 @@
 package ingester
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -16,6 +15,8 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
+
+	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
 const (
@@ -27,6 +28,9 @@ const (
 	randomTokenGeneration               = "random"
 	spreadMinimizingTokenGeneration     = "spread-minimizing"
 	spreadMinimizingJoinRingInOrderFlag = "spread-minimizing-join-ring-in-order"
+
+	ingesterRingFlagPrefix           = "ingester.ring."
+	ingesterRingAvailabilityZoneFlag = ingesterRingFlagPrefix + "instance-availability-zone"
 )
 
 type RingConfig struct {
@@ -89,7 +93,7 @@ func (cfg *RingConfig) Validate(ingestStorageEnabled bool) error {
 	// Ingest storage requires the zone to be configured for ingesters, because on the read path we always use
 	// zone-aware replication tracker to compute the quorum.
 	if ingestStorageEnabled && cfg.InstanceZone == "" {
-		return errors.New("the ingester instance zone must be configured when running Mimir with the ingest storage")
+		return fmt.Errorf("-%s must be configured when -%s is true", ingesterRingAvailabilityZoneFlag, ingest.EnabledFlag)
 	}
 
 	return nil
@@ -103,42 +107,40 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		os.Exit(1)
 	}
 
-	prefix := "ingester.ring."
-
 	// Ring flags
 	cfg.KVStore.Store = "memberlist" // Override default value.
-	cfg.KVStore.RegisterFlagsWithPrefix(prefix, "collectors/", f)
+	cfg.KVStore.RegisterFlagsWithPrefix(ingesterRingFlagPrefix, "collectors/", f)
 
-	f.DurationVar(&cfg.HeartbeatPeriod, prefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
-	f.DurationVar(&cfg.HeartbeatTimeout, prefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled)."+sharedOptionWithRingClient)
-	f.IntVar(&cfg.ReplicationFactor, prefix+"replication-factor", 3, "Number of ingesters that each time series is replicated to."+sharedOptionWithRingClient)
-	f.BoolVar(&cfg.ZoneAwarenessEnabled, prefix+"zone-awareness-enabled", false, "True to enable the zone-awareness and replicate ingested samples across different availability zones."+sharedOptionWithRingClient)
-	f.Var(&cfg.ExcludedZones, prefix+"excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring."+sharedOptionWithRingClient)
+	f.DurationVar(&cfg.HeartbeatPeriod, ingesterRingFlagPrefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
+	f.DurationVar(&cfg.HeartbeatTimeout, ingesterRingFlagPrefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled)."+sharedOptionWithRingClient)
+	f.IntVar(&cfg.ReplicationFactor, ingesterRingFlagPrefix+"replication-factor", 3, "Number of ingesters that each time series is replicated to."+sharedOptionWithRingClient)
+	f.BoolVar(&cfg.ZoneAwarenessEnabled, ingesterRingFlagPrefix+"zone-awareness-enabled", false, "True to enable the zone-awareness and replicate ingested samples across different availability zones."+sharedOptionWithRingClient)
+	f.Var(&cfg.ExcludedZones, ingesterRingFlagPrefix+"excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring."+sharedOptionWithRingClient)
 
-	f.StringVar(&cfg.TokensFilePath, prefix+tokensFilePathFlag, "", fmt.Sprintf("File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup. Must be empty if -%s is set to %q.", prefix+tokenGenerationStrategyFlag, spreadMinimizingTokenGeneration))
-	f.IntVar(&cfg.NumTokens, prefix+"num-tokens", 128, "Number of tokens for each ingester.")
+	f.StringVar(&cfg.TokensFilePath, ingesterRingFlagPrefix+tokensFilePathFlag, "", fmt.Sprintf("File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup. Must be empty if -%s is set to %q.", ingesterRingFlagPrefix+tokenGenerationStrategyFlag, spreadMinimizingTokenGeneration))
+	f.IntVar(&cfg.NumTokens, ingesterRingFlagPrefix+"num-tokens", 128, "Number of tokens for each ingester.")
 
 	// Instance flags
-	f.StringVar(&cfg.InstanceID, prefix+"instance-id", hostname, "Instance ID to register in the ring.")
+	f.StringVar(&cfg.InstanceID, ingesterRingFlagPrefix+"instance-id", hostname, "Instance ID to register in the ring.")
 	cfg.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
-	f.Var((*flagext.StringSlice)(&cfg.InstanceInterfaceNames), prefix+"instance-interface-names", "List of network interface names to look up when finding the instance IP address.")
-	f.IntVar(&cfg.InstancePort, prefix+"instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
-	f.StringVar(&cfg.InstanceAddr, prefix+"instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
-	f.BoolVar(&cfg.EnableIPv6, prefix+"instance-enable-ipv6", false, "Enable using a IPv6 instance address. (default false)")
-	f.StringVar(&cfg.InstanceZone, prefix+"instance-availability-zone", "", "The availability zone where this instance is running.")
+	f.Var((*flagext.StringSlice)(&cfg.InstanceInterfaceNames), ingesterRingFlagPrefix+"instance-interface-names", "List of network interface names to look up when finding the instance IP address.")
+	f.IntVar(&cfg.InstancePort, ingesterRingFlagPrefix+"instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
+	f.StringVar(&cfg.InstanceAddr, ingesterRingFlagPrefix+"instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
+	f.BoolVar(&cfg.EnableIPv6, ingesterRingFlagPrefix+"instance-enable-ipv6", false, "Enable using a IPv6 instance address. (default false)")
+	f.StringVar(&cfg.InstanceZone, ingesterRingAvailabilityZoneFlag, "", "The availability zone where this instance is running.")
 
-	f.BoolVar(&cfg.UnregisterOnShutdown, prefix+"unregister-on-shutdown", true, "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming.")
+	f.BoolVar(&cfg.UnregisterOnShutdown, ingesterRingFlagPrefix+"unregister-on-shutdown", true, "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming.")
 
 	// Lifecycler.
-	f.DurationVar(&cfg.ObservePeriod, prefix+"observe-period", 0*time.Second, "Observe tokens after generating to resolve collisions. Useful when using gossiping ring.")
-	flagext.DeprecatedFlag(f, prefix+"join-after", "Deprecated: this setting was used to set a period of time to wait before joining the hash ring. Mimir now behaves as this setting is always set to 0s.", logger)
-	f.DurationVar(&cfg.MinReadyDuration, prefix+"min-ready-duration", 15*time.Second, "Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates.")
-	f.DurationVar(&cfg.FinalSleep, prefix+"final-sleep", 0, "Duration to sleep for before exiting, to ensure metrics are scraped.")
+	f.DurationVar(&cfg.ObservePeriod, ingesterRingFlagPrefix+"observe-period", 0*time.Second, "Observe tokens after generating to resolve collisions. Useful when using gossiping ring.")
+	flagext.DeprecatedFlag(f, ingesterRingFlagPrefix+"join-after", "Deprecated: this setting was used to set a period of time to wait before joining the hash ring. Mimir now behaves as this setting is always set to 0s.", logger)
+	f.DurationVar(&cfg.MinReadyDuration, ingesterRingFlagPrefix+"min-ready-duration", 15*time.Second, "Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates.")
+	f.DurationVar(&cfg.FinalSleep, ingesterRingFlagPrefix+"final-sleep", 0, "Duration to sleep for before exiting, to ensure metrics are scraped.")
 
 	// TokenGenerator
-	f.StringVar(&cfg.TokenGenerationStrategy, prefix+tokenGenerationStrategyFlag, randomTokenGeneration, fmt.Sprintf("Specifies the strategy used for generating tokens for ingesters. Supported values are: %s.", strings.Join([]string{randomTokenGeneration, spreadMinimizingTokenGeneration}, ",")))
-	f.BoolVar(&cfg.SpreadMinimizingJoinRingInOrder, prefix+spreadMinimizingJoinRingInOrderFlag, false, fmt.Sprintf("True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to %q.", spreadMinimizingTokenGeneration))
-	f.Var(&cfg.SpreadMinimizingZones, prefix+"spread-minimizing-zones", fmt.Sprintf("Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when %q is set to %q.", tokenGenerationStrategyFlag, spreadMinimizingTokenGeneration))
+	f.StringVar(&cfg.TokenGenerationStrategy, ingesterRingFlagPrefix+tokenGenerationStrategyFlag, randomTokenGeneration, fmt.Sprintf("Specifies the strategy used for generating tokens for ingesters. Supported values are: %s.", strings.Join([]string{randomTokenGeneration, spreadMinimizingTokenGeneration}, ",")))
+	f.BoolVar(&cfg.SpreadMinimizingJoinRingInOrder, ingesterRingFlagPrefix+spreadMinimizingJoinRingInOrderFlag, false, fmt.Sprintf("True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to %q.", spreadMinimizingTokenGeneration))
+	f.Var(&cfg.SpreadMinimizingZones, ingesterRingFlagPrefix+"spread-minimizing-zones", fmt.Sprintf("Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when %q is set to %q.", tokenGenerationStrategyFlag, spreadMinimizingTokenGeneration))
 }
 
 // ToRingConfig returns a ring.Config based on the ingester

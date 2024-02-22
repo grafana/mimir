@@ -175,7 +175,7 @@ func TestRingConfig_Validate(t *testing.T) {
 		"should fail if ingest storage is enabled and no zone is configured": {
 			zone:                 "",
 			ingestStorageEnabled: true,
-			expectedError:        errors.New("the ingester instance zone must be configured when running Mimir with the ingest storage"),
+			expectedError:        errors.New("-ingester.ring.instance-availability-zone must be configured when -ingest-storage.enabled is true"),
 		},
 	}
 

@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+const (
+	EnabledFlag = "ingest-storage.enabled"
+)
+
 var (
 	ErrMissingKafkaAddress = errors.New("the Kafka address has not been configured")
 	ErrMissingKafkaTopic   = errors.New("the Kafka topic has not been configured")
@@ -19,7 +23,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
+	f.BoolVar(&cfg.Enabled, EnabledFlag, false, "True to enable the ingestion via object storage.")
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka", f)
 }
