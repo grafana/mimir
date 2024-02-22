@@ -255,8 +255,8 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	// delete is called through the cleanup func executed either in the defer or by the caller closing the body.
 
 	cleanup := func() {
-		defer cancel(errExecutingQueryRoundTripFinished)
-		defer f.requests.delete(freq.queryID)
+		f.requests.delete(freq.queryID)
+		cancel(errExecutingQueryRoundTripFinished)
 	}
 	cleanupInDefer := true
 	defer func() {
