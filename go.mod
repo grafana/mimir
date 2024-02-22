@@ -174,7 +174,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.0 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
-	github.com/grafana/gomemcache v0.0.0-20231023152154-6947259a0586 // indirect
+	github.com/grafana/gomemcache v0.0.0-20231204155601-7de47a8c3cb0 // indirect
 	github.com/hashicorp/consul/api v1.27.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -254,6 +254,8 @@ require (
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20240222183203-883370d1fa8e
 
 // Using a fork of Prometheus with Mimir-specific changes.
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240213153929-d32b69f03433
