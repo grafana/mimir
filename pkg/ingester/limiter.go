@@ -234,6 +234,6 @@ func (f flusherLimiterStrategy) convertGlobalToLocalLimit(_ int, _ int) int {
 	return 0
 }
 
-func (f flusherLimiterStrategy) getShardSize(userID string) int {
+func (f flusherLimiterStrategy) getShardSize(_ string) int {
 	return 0
 }
