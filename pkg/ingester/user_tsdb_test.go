@@ -217,7 +217,7 @@ func TestGetSeriesAndShardsForSeriesLimit(t *testing.T) {
 
 	db := userTSDB{
 		db:                   tsdbDB,
-		limiter:              NewLimiter(overrides, nil),
+		limiter:              NewLimiter(overrides, newIngesterRingLimiterStrategy(&ringCountMock{instancesCount: 100}, 3, false, "", overrides.IngestionTenantShardSize)),
 		ownedSeriesCount:     555,
 		ownedSeriesShardSize: 333,
 	}
