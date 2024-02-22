@@ -49,8 +49,8 @@ func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, userID strin
 	return hits
 }
 
-func (t *TracingIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	t.c.StoreSeriesForRef(userID, blockID, id, v)
+func (t *TracingIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte, ttl time.Duration) {
+	t.c.StoreSeriesForRef(userID, blockID, id, v, ttl)
 }
 
 func (t *TracingIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {

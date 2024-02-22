@@ -47,6 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	testutil "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -131,11 +132,12 @@ func TestConfig_Validate(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			logger := testutil.NewTestingLogger(t)
 			cfg := &Config{}
 			flagext.DefaultValues(cfg)
 			testData.setup(cfg)
 
-			if actualErr := cfg.Validate(); testData.expected != "" {
+			if actualErr := cfg.Validate(logger); testData.expected != "" {
 				assert.EqualError(t, actualErr, testData.expected)
 			} else {
 				assert.NoError(t, actualErr)
