@@ -31,14 +31,19 @@ func TestChunkIter(t *testing.T) {
 }
 
 func testChunkIter(t *testing.T, encoding chunk.Encoding) {
-	chunk := mkGenericChunk(t, 0, 100, encoding)
+	chk := mkGenericChunk(t, 0, 100, encoding)
 	iter := &chunkIterator{}
 
-	iter.reset(chunk)
-	testIter(t, 100, newIteratorAdapter(nil, iter), encoding)
+	verifiedEncoding := encoding
+	if encoding == chunk.PrometheusHistogramChunk {
+		verifiedEncoding = chunk.PrometheusFloatHistogramChunk
+	}
 
-	iter.reset(chunk)
-	testSeek(t, 100, newIteratorAdapter(nil, iter), encoding)
+	iter.reset(chk)
+	testIter(t, 100, newIteratorAdapter(nil, iter), verifiedEncoding)
+
+	iter.reset(chk)
+	testSeek(t, 100, newIteratorAdapter(nil, iter), verifiedEncoding)
 }
 
 func mkChunk(t require.TestingT, from model.Time, points int, encoding chunk.Encoding) chunk.Chunk {
@@ -103,7 +108,8 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 		}
 	case chunk.PrometheusFloatHistogramChunk:
 		assertPoint = func(i int) {
-			require.Equal(t, chunkenc.ValFloatHistogram, iter.Next(), strconv.Itoa(i))
+			valType := iter.Next()
+			require.True(t, chunkenc.ValFloatHistogram == valType || chunkenc.ValHistogram == valType, strconv.Itoa(i))
 			ts, fh := iter.AtFloatHistogram(nil)
 			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
 			test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(nextExpectedTS)), fh, strconv.Itoa(i))
@@ -139,7 +145,7 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 		}
 	case chunk.PrometheusFloatHistogramChunk:
 		assertPoint = func(expectedTS int64, valType chunkenc.ValueType) {
-			require.Equal(t, chunkenc.ValFloatHistogram, valType)
+			require.True(t, chunkenc.ValFloatHistogram == valType || chunkenc.ValHistogram == valType)
 			ts, fh := iter.AtFloatHistogram(nil)
 			require.EqualValues(t, expectedTS, ts)
 			test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(expectedTS)), fh)

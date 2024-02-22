@@ -613,7 +613,7 @@ func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples 
 			if s.IsFloatHistogram() {
 				test.RequireIteratorFloatHistogram(t, s.Timestamp, mimirpb.FromFloatHistogramProtoToFloatHistogram(&s), it, valType)
 			} else {
-				test.RequireIteratorHistogram(t, s.Timestamp, mimirpb.FromHistogramProtoToHistogram(&s), it, valType)
+				test.RequireIteratorFloatHistogram(t, s.Timestamp, mimirpb.FromHistogramProtoToHistogram(&s).ToFloat(nil), it, valType)
 			}
 		default:
 			t.Errorf("verifyHistogramSeries - internal error, unhandled expected type: %T", s)

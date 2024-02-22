@@ -156,12 +156,8 @@ func (a *iteratorAdapter) At() (int64, float64) {
 	return a.curr.Timestamps[a.curr.Index], a.curr.Values[a.curr.Index]
 }
 
-// AtHistogram implements chunkenc.Iterator. It does not copy the underlying histogram as that optimization is left to the caller / higher level.
 func (a *iteratorAdapter) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
-	if a.curr.ValueType != chunkenc.ValHistogram {
-		panic(fmt.Sprintf("Cannot read histogram from batch %v", a.curr.ValueType))
-	}
-	return a.curr.Timestamps[a.curr.Index], (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
+	panic("AtHistogram is not implemented for batch iterator")
 }
 
 // AtFloatHistogram implements chunkenc.Iterator. It does not copy the underlying histogram as that optimization is left to the caller / higher level.

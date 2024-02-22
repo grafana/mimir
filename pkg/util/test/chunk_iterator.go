@@ -46,7 +46,7 @@ func RequireIteratorIthHistogram(t *testing.T, i int64, iter chunkenc.Iterator, 
 // RequireIteratorFloatHistogram checks that the iterator contains the expected
 // float histogram value and type at the position.
 func RequireIteratorFloatHistogram(t *testing.T, expectedTs int64, expectedV *histogram.FloatHistogram, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
-	require.Equal(t, chunkenc.ValFloatHistogram, valueType)
+	require.True(t, chunkenc.ValFloatHistogram == valueType || chunkenc.ValHistogram == valueType)
 	ts, h := iter.AtFloatHistogram(nil)
 	require.Equal(t, expectedTs, ts)
 	RequireFloatHistogramEqual(t, expectedV, h)
