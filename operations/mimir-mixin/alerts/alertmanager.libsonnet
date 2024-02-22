@@ -11,12 +11,12 @@
           'for': '30m',
           labels: {
             severity: 'critical',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: |||
               %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s is failing to read tenant configurations from storage.
             ||| % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,
         },
         {
           alert: $.alertName('AlertmanagerRingCheckFailing'),
@@ -26,12 +26,12 @@
           'for': '10m',
           labels: {
             severity: 'critical',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: |||
               %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s is unable to check tenants ownership via the ring.
             ||| % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,
         },
         {
           alert: $.alertName('AlertmanagerPartialStateMergeFailing'),
@@ -41,12 +41,12 @@
           'for': '10m',
           labels: {
             severity: 'critical',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: |||
               %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s is failing to merge partial state changes received from a replica.
             ||| % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,
         },
         {
           alert: $.alertName('AlertmanagerReplicationFailing'),
@@ -56,12 +56,12 @@
           'for': '10m',
           labels: {
             severity: 'critical',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: |||
               %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s is failing to replicating partial state to its replicas.
             ||| % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,,
         },
         {
           alert: $.alertName('AlertmanagerPersistStateFailing'),
@@ -71,12 +71,12 @@
           'for': '1h',
           labels: {
             severity: 'critical',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: |||
               %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s is unable to persist full state snaphots to remote storage.
             ||| % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,
         },
         {
           alert: $.alertName('AlertmanagerInitialSyncFailed'),
@@ -85,12 +85,12 @@
           |||,
           labels: {
             severity: 'critical',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: |||
               %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s was unable to obtain some initial state when starting up.
             ||| % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,
         },
         {
           alert: $.alertName('AlertmanagerAllocatingTooMuchMemory'),
@@ -98,12 +98,12 @@
           'for': '15m',
           labels: {
             severity: 'warning',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: |||
               Alertmanager %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,
         },
         {
           alert: $.alertName('AlertmanagerAllocatingTooMuchMemory'),
@@ -111,12 +111,12 @@
           'for': '15m',
           labels: {
             severity: 'critical',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: |||
               Alertmanager %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,,
         },
         {
           alert: $.alertName('AlertmanagerInstanceHasNoTenants'),
@@ -134,10 +134,10 @@
           'for': '1h',
           labels: {
             severity: 'warning',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: '%(product)s alertmanager %(alert_instance_variable)s in %(alert_aggregation_variables)s owns no tenants.' % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,
         },
       ],
     },

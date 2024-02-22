@@ -29,10 +29,10 @@
           },
           labels: {
             severity: 'critical',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: 'The Horizontal Pod Autoscaler (HPA) {{ $labels.horizontalpodautoscaler }} in {{ $labels.namespace }} is not active.' % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,
         },
         {
           alert: $.alertName('AutoscalerKedaFailing'),
@@ -50,10 +50,10 @@
           },
           labels: {
             severity: 'critical',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: 'The Keda ScaledObject {{ $labels.scaledObject }} in {{ $labels.namespace }} is experiencing errors.',
-          },
+          } + $._config.alert_extra_annotations_variable,
         },
       ],
     },

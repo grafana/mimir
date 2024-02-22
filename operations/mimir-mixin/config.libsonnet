@@ -188,6 +188,12 @@
       namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
     },
 
+    // Used to add extra labels to all alerts, carefull can override default labels too
+    alert_extra_labels_variable: {},
+
+    // Used to add extra annotations to all alerts, carefull can override default annotations too
+    alert_extra_annotations_variable: {},
+
     cortex_p99_latency_threshold_seconds: 2.5,
 
     // Whether resources dashboards are enabled (based on cAdvisor metrics).

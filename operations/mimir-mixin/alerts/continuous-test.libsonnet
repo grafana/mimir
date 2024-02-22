@@ -13,10 +13,10 @@
           ||| % $._config,
           labels: {
             severity: 'warning',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: '%(product)s continuous test {{ $labels.test }} in %(alert_aggregation_variables)s is not effectively running because writes are failing.' % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,
         },
         {
           // Alert if Mimir continuous test is not effectively running because queries are failing.
@@ -28,10 +28,10 @@
           ||| % $._config,
           labels: {
             severity: 'warning',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: '%(product)s continuous test {{ $labels.test }} in %(alert_aggregation_variables)s is not effectively running because queries are failing.' % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,
         },
         {
           // Alert if Mimir continuous test failed when asserting results. This alert has no "for" duration because it
@@ -42,10 +42,10 @@
           ||| % $._config,
           labels: {
             severity: 'warning',
-          },
+          } + $._config.alert_extra_labels_variable,
           annotations: {
             message: '%(product)s continuous test {{ $labels.test }} in %(alert_aggregation_variables)s failed when asserting query results.' % $._config,
-          },
+          } + $._config.alert_extra_annotations_variable,
         },
       ],
     },
