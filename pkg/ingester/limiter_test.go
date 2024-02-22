@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -287,10 +286,7 @@ func runLimiterMaxFunctionTest(
 
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
-			ring := &ringCountMock{}
-			ring.On("InstancesCount").Return(testData.ringIngesterCount)
-			ring.On("InstancesInZoneCount").Return(testData.ingestersInZoneCount)
-			ring.On("ZonesCount").Return(testData.ringZonesCount)
+			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: testData.ringZonesCount, instancesInZoneCount: testData.ingestersInZoneCount}
 
 			// Mock limits
 			limits := validation.Limits{IngestionTenantShardSize: testData.shardSize}
@@ -299,7 +295,7 @@ func runLimiterMaxFunctionTest(
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(overrides, ring, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled)
+			limiter := NewLimiter(overrides, ring, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled, "zone")
 			actual := runMaxFn(limiter)
 			assert.Equal(t, testData.expectedValue, actual)
 		})
@@ -342,9 +338,7 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
-			ring := &ringCountMock{}
-			ring.On("InstancesCount").Return(testData.ringIngesterCount)
-			ring.On("ZonesCount").Return(1)
+			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
 
 			// Mock limits
 			limits, err := validation.NewOverrides(validation.Limits{
@@ -352,7 +346,7 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
+			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false, "")
 			actual := limiter.IsWithinMaxSeriesPerMetric("test", testData.series)
 
 			assert.Equal(t, testData.expected, actual)
@@ -395,9 +389,7 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
-			ring := &ringCountMock{}
-			ring.On("InstancesCount").Return(testData.ringIngesterCount)
-			ring.On("ZonesCount").Return(1)
+			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
 
 			// Mock limits
 			limits, err := validation.NewOverrides(validation.Limits{
@@ -405,7 +397,7 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
+			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false, "")
 			actual := limiter.IsWithinMaxMetadataPerMetric("test", testData.metadata)
 
 			assert.Equal(t, testData.expected, actual)
@@ -449,9 +441,7 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
-			ring := &ringCountMock{}
-			ring.On("InstancesCount").Return(testData.ringIngesterCount)
-			ring.On("ZonesCount").Return(1)
+			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
 
 			// Mock limits
 			limits, err := validation.NewOverrides(validation.Limits{
@@ -459,7 +449,7 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
+			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false, "")
 			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, limiter.getShardSize("test"))
 
 			assert.Equal(t, testData.expected, actual)
@@ -503,9 +493,7 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
-			ring := &ringCountMock{}
-			ring.On("InstancesCount").Return(testData.ringIngesterCount)
-			ring.On("ZonesCount").Return(1)
+			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
 
 			// Mock limits
 			limits, err := validation.NewOverrides(validation.Limits{
@@ -513,7 +501,7 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
+			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false, "")
 			actual := limiter.IsWithinMaxMetricsWithMetadataPerUser("test", testData.metadata)
 
 			assert.Equal(t, testData.expected, actual)
@@ -522,20 +510,19 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 }
 
 type ringCountMock struct {
-	mock.Mock
+	instancesCount       int
+	instancesInZoneCount int
+	zonesCount           int
 }
 
 func (m *ringCountMock) InstancesCount() int {
-	args := m.Called()
-	return args.Int(0)
+	return m.instancesCount
 }
 
-func (m *ringCountMock) InstancesInZoneCount() int {
-	args := m.Called()
-	return args.Int(0)
+func (m *ringCountMock) InstancesInZoneCount(_ string) int {
+	return m.instancesInZoneCount
 }
 
 func (m *ringCountMock) ZonesCount() int {
-	args := m.Called()
-	return args.Int(0)
+	return m.zonesCount
 }

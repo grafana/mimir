@@ -17,7 +17,7 @@ import (
 // to count members
 type RingCount interface {
 	InstancesCount() int
-	InstancesInZoneCount() int
+	InstancesInZoneCount(zone string) int
 	ZonesCount() int
 }
 
@@ -28,6 +28,7 @@ type Limiter struct {
 	ring                 RingCount
 	replicationFactor    int
 	zoneAwarenessEnabled bool
+	ingesterZone         string
 }
 
 // NewLimiter makes a new in-memory series limiter
@@ -36,12 +37,14 @@ func NewLimiter(
 	ring RingCount,
 	replicationFactor int,
 	zoneAwarenessEnabled bool,
+	ingesterZone string,
 ) *Limiter {
 	return &Limiter{
 		limits:               limits,
 		ring:                 ring,
 		replicationFactor:    replicationFactor,
 		zoneAwarenessEnabled: zoneAwarenessEnabled,
+		ingesterZone:         ingesterZone,
 	}
 }
 
@@ -112,7 +115,7 @@ func (l *Limiter) convertGlobalToLocalLimit(userShardSize int, globalLimit int) 
 	if zonesCount > 1 {
 		// In this case zone-aware replication is enabled, and ingestersInZoneCount is initially set to
 		// the total number of ingesters in the corresponding zone
-		ingestersInZoneCount = l.ring.InstancesInZoneCount()
+		ingestersInZoneCount = l.ring.InstancesInZoneCount(l.ingesterZone)
 	} else {
 		// In this case zone-aware replication is disabled, and ingestersInZoneCount is initially set to
 		// the total number of ingesters
