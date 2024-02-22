@@ -67,13 +67,16 @@ func (a ByLabelName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 // creates a new TimeSeries in the map if not found and returns the time series signature.
 // tsMap will be unmodified if either labels or sample is nil, but can still be modified if the exemplar is nil.
 func addSample(tsMap map[uint64]*mimirpb.TimeSeries, sample *mimirpb.Sample, labels []mimirpb.LabelAdapter,
-	datatype string) uint64 {
-	if sample == nil || labels == nil || tsMap == nil {
+	datatype string) (uint64, error) {
+	if sample == nil || len(labels) == 0 || len(tsMap) == 0 {
 		// This shouldn't happen
-		return 0
+		return 0, fmt.Errorf("invalid parameter")
 	}
 
-	sig := timeSeriesSignature(datatype, labels)
+	sig, err := timeSeriesSignature(datatype, labels)
+	if err != nil {
+		return 0, err
+	}
 	ts := tsMap[sig]
 	if ts != nil {
 		ts.Samples = append(ts.Samples, *sample)
@@ -84,7 +87,7 @@ func addSample(tsMap map[uint64]*mimirpb.TimeSeries, sample *mimirpb.Sample, lab
 		tsMap[sig] = newTs
 	}
 
-	return sig
+	return sig, nil
 }
 
 // addExemplars finds a bucket bound that corresponds to the exemplars value and add the exemplar to the specific sig;
@@ -121,20 +124,32 @@ func addExemplar(tsMap map[uint64]*mimirpb.TimeSeries, bucketBounds []bucketBoun
 //
 // the label slice should not contain duplicate label names; this method sorts the slice by label name before creating
 // the signature.
-func timeSeriesSignature(datatype string, labels []mimirpb.LabelAdapter) uint64 {
+func timeSeriesSignature(datatype string, labels []mimirpb.LabelAdapter) (uint64, error) {
 	sort.Sort(ByLabelName(labels))
 
 	h := xxhash.New()
-	h.WriteString(datatype)
-	h.Write(seps)
+	if _, err := h.WriteString(datatype); err != nil {
+		return 0, err
+	}
+	if _, err := h.Write(seps); err != nil {
+		return 0, err
+	}
 	for _, lb := range labels {
-		h.WriteString(lb.Name)
-		h.Write(seps)
-		h.WriteString(lb.Value)
-		h.Write(seps)
+		if _, err := h.WriteString(lb.Name); err != nil {
+			return 0, err
+		}
+		if _, err := h.Write(seps); err != nil {
+			return 0, err
+		}
+		if _, err := h.WriteString(lb.Value); err != nil {
+			return 0, err
+		}
+		if _, err := h.Write(seps); err != nil {
+			return 0, err
+		}
 	}
 
-	return h.Sum64()
+	return h.Sum64(), nil
 }
 
 var seps = []byte{'\xff'}
@@ -242,7 +257,7 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 
 // addSingleHistogramDataPoint converts pt to 2 + min(len(ExplicitBounds), len(BucketCount)) + 1 samples. It
 // ignore extra buckets if len(ExplicitBounds) > len(BucketCounts)
-func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings, tsMap map[uint64]*mimirpb.TimeSeries, baseName string) {
+func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings, tsMap map[uint64]*mimirpb.TimeSeries, baseName string) error {
 	timestamp := convertTimeStamp(pt.Timestamp())
 	baseLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels)
 
@@ -274,7 +289,9 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 		}
 
 		sumlabels := createLabels(sumStr)
-		addSample(tsMap, sum, sumlabels, metric.Type().String())
+		if _, err := addSample(tsMap, sum, sumlabels, metric.Type().String()); err != nil {
+			return err
+		}
 
 	}
 
@@ -288,7 +305,9 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 	}
 
 	countlabels := createLabels(countStr)
-	addSample(tsMap, count, countlabels, metric.Type().String())
+	if _, err := addSample(tsMap, count, countlabels, metric.Type().String()); err != nil {
+		return err
+	}
 
 	// cumulative count for conversion to cumulative histogram
 	var cumulativeCount uint64
@@ -310,7 +329,10 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 		}
 		boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 		labels := createLabels(bucketStr, leStr, boundStr)
-		sig := addSample(tsMap, bucket, labels, metric.Type().String())
+		sig, err := addSample(tsMap, bucket, labels, metric.Type().String())
+		if err != nil {
+			return err
+		}
 
 		bucketBounds = append(bucketBounds, bucketBoundsData{sig: sig, bound: bound})
 	}
@@ -324,7 +346,10 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 		infBucket.Value = float64(pt.Count())
 	}
 	infLabels := createLabels(bucketStr, leStr, pInfStr)
-	sig := addSample(tsMap, infBucket, infLabels, metric.Type().String())
+	sig, err := addSample(tsMap, infBucket, infLabels, metric.Type().String())
+	if err != nil {
+		return err
+	}
 
 	bucketBounds = append(bucketBounds, bucketBoundsData{sig: sig, bound: math.Inf(1)})
 	addExemplars(tsMap, exemplars, bucketBounds)
@@ -333,8 +358,12 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 	startTimestamp := pt.StartTimestamp()
 	if settings.ExportCreatedMetric && startTimestamp != 0 {
 		labels := createLabels(createdSuffix)
-		addCreatedTimeSeriesIfNeeded(tsMap, labels, startTimestamp, pt.Timestamp(), metric.Type().String())
+		if err := addCreatedTimeSeriesIfNeeded(tsMap, labels, startTimestamp, pt.Timestamp(), metric.Type().String()); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 type exemplarType interface {
@@ -441,7 +470,7 @@ func maxTimestamp(a, b pcommon.Timestamp) pcommon.Timestamp {
 
 // addSingleSummaryDataPoint converts pt to len(QuantileValues) + 2 samples.
 func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings,
-	tsMap map[uint64]*mimirpb.TimeSeries, baseName string) {
+	tsMap map[uint64]*mimirpb.TimeSeries, baseName string) error {
 	timestamp := convertTimeStamp(pt.Timestamp())
 	baseLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels)
 
@@ -469,7 +498,9 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 	}
 	// sum and count of the summary should append suffix to baseName
 	sumlabels := createLabels(baseName + sumStr)
-	addSample(tsMap, sum, sumlabels, metric.Type().String())
+	if _, err := addSample(tsMap, sum, sumlabels, metric.Type().String()); err != nil {
+		return err
+	}
 
 	// treat count as a sample in an individual TimeSeries
 	count := &mimirpb.Sample{
@@ -480,7 +511,9 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 		count.Value = math.Float64frombits(value.StaleNaN)
 	}
 	countlabels := createLabels(baseName + countStr)
-	addSample(tsMap, count, countlabels, metric.Type().String())
+	if _, err := addSample(tsMap, count, countlabels, metric.Type().String()); err != nil {
+		return err
+	}
 
 	// process each percentile/quantile
 	for i := 0; i < pt.QuantileValues().Len(); i++ {
@@ -494,15 +527,21 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 		}
 		percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
 		qtlabels := createLabels(baseName, quantileStr, percentileStr)
-		addSample(tsMap, quantile, qtlabels, metric.Type().String())
+		if _, err := addSample(tsMap, quantile, qtlabels, metric.Type().String()); err != nil {
+			return err
+		}
 	}
 
 	// add _created time series if needed
 	startTimestamp := pt.StartTimestamp()
 	if settings.ExportCreatedMetric && startTimestamp != 0 {
 		createdLabels := createLabels(baseName + createdSuffix)
-		addCreatedTimeSeriesIfNeeded(tsMap, createdLabels, startTimestamp, pt.Timestamp(), metric.Type().String())
+		if err := addCreatedTimeSeriesIfNeeded(tsMap, createdLabels, startTimestamp, pt.Timestamp(), metric.Type().String()); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 // addCreatedTimeSeriesIfNeeded adds {name}_created time series with a single
@@ -513,8 +552,11 @@ func addCreatedTimeSeriesIfNeeded(
 	startTimestamp pcommon.Timestamp,
 	timestamp pcommon.Timestamp,
 	metricType string,
-) {
-	sig := timeSeriesSignature(metricType, labels)
+) error {
+	sig, err := timeSeriesSignature(metricType, labels)
+	if err != nil {
+		return err
+	}
 	if _, ok := series[sig]; !ok {
 		series[sig] = &mimirpb.TimeSeries{
 			Labels: labels,
@@ -526,12 +568,14 @@ func addCreatedTimeSeriesIfNeeded(
 			},
 		}
 	}
+
+	return nil
 }
 
 // addResourceTargetInfo converts the resource to the target info metric
-func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, tsMap map[uint64]*mimirpb.TimeSeries) {
+func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, tsMap map[uint64]*mimirpb.TimeSeries) error {
 	if settings.DisableTargetInfo {
-		return
+		return nil
 	}
 	// Use resource attributes (other than those used for job+instance) as the
 	// metric labels for the target info metric
@@ -548,7 +592,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 	})
 	if attributes.Len() == 0 {
 		// If we only have job + instance, then target_info isn't useful, so don't add it.
-		return
+		return nil
 	}
 	// create parameters for addSample
 	name := targetMetricName
@@ -561,7 +605,8 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		// convert ns to ms
 		TimestampMs: convertTimeStamp(timestamp),
 	}
-	addSample(tsMap, sample, labels, infoType)
+	_, err := addSample(tsMap, sample, labels, infoType)
+	return err
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms

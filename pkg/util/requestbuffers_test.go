@@ -11,7 +11,9 @@ import (
 
 func TestRequestBuffers(t *testing.T) {
 	rb := NewRequestBuffers(&fakePool{})
-	t.Cleanup(rb.CleanUp)
+	t.Cleanup(func() {
+		rb.CleanUp(nil)
+	})
 
 	b := rb.Get(1024)
 	require.NotNil(t, b)
@@ -21,7 +23,7 @@ func TestRequestBuffers(t *testing.T) {
 	_, err := b.Write([]byte("test"))
 	require.NoError(t, err)
 
-	rb.CleanUp()
+	rb.CleanUp(nil)
 	assert.Nil(t, rb.buffersBacking[0])
 
 	b1 := rb.Get(2048)

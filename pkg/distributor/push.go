@@ -135,7 +135,7 @@ func handler(
 					err = httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 				}
 
-				rb.CleanUp()
+				rb.CleanUp(nil)
 				return nil, nil, err
 			}
 
@@ -147,7 +147,7 @@ func handler(
 
 			cleanup := func() {
 				mimirpb.ReuseSlice(req.Timeseries)
-				rb.CleanUp()
+				rb.CleanUp(nil)
 			}
 			return &req.WriteRequest, cleanup, nil
 		}

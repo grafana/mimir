@@ -23,7 +23,7 @@ func addSingleGaugeNumberDataPoint(
 	settings Settings,
 	series map[uint64]*mimirpb.TimeSeries,
 	name string,
-) {
+) error {
 	labels := createAttributes(
 		resource,
 		pt.Attributes(),
@@ -44,7 +44,8 @@ func addSingleGaugeNumberDataPoint(
 	if pt.Flags().NoRecordedValue() {
 		sample.Value = math.Float64frombits(value.StaleNaN)
 	}
-	addSample(series, sample, labels, metric.Type().String())
+	_, err := addSample(series, sample, labels, metric.Type().String())
+	return err
 }
 
 // addSingleSumNumberDataPoint converts the Sum metric data point to a Prometheus
@@ -57,7 +58,7 @@ func addSingleSumNumberDataPoint(
 	settings Settings,
 	series map[uint64]*mimirpb.TimeSeries,
 	name string,
-) {
+) error {
 	labels := createAttributes(
 		resource,
 		pt.Attributes(),
@@ -78,7 +79,10 @@ func addSingleSumNumberDataPoint(
 	if pt.Flags().NoRecordedValue() {
 		sample.Value = math.Float64frombits(value.StaleNaN)
 	}
-	sig := addSample(series, sample, labels, metric.Type().String())
+	sig, err := addSample(series, sample, labels, metric.Type().String())
+	if err != nil {
+		return err
+	}
 
 	if ts := series[sig]; sig != 0 && ts != nil {
 		exemplars := getMimirExemplars[pmetric.NumberDataPoint](pt)
@@ -89,7 +93,7 @@ func addSingleSumNumberDataPoint(
 	if settings.ExportCreatedMetric && metric.Sum().IsMonotonic() {
 		startTimestamp := pt.StartTimestamp()
 		if startTimestamp == 0 {
-			return
+			return nil
 		}
 
 		createdLabels := make([]mimirpb.LabelAdapter, len(labels))
@@ -100,6 +104,10 @@ func addSingleSumNumberDataPoint(
 				break
 			}
 		}
-		addCreatedTimeSeriesIfNeeded(series, createdLabels, startTimestamp, pt.Timestamp(), metric.Type().String())
+		if err := addCreatedTimeSeriesIfNeeded(series, createdLabels, startTimestamp, pt.Timestamp(), metric.Type().String()); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }

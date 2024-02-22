@@ -59,7 +59,9 @@ func FromMetrics(md pmetric.Metrics, settings Settings) ([]mimirpb.PreallocTimes
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleGaugeNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
+						if err := addSingleGaugeNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName); err != nil {
+							errs = multierr.Append(errs, err)
+						}
 					}
 				case pmetric.MetricTypeSum:
 					dataPoints := metric.Sum().DataPoints()
@@ -67,7 +69,9 @@ func FromMetrics(md pmetric.Metrics, settings Settings) ([]mimirpb.PreallocTimes
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleSumNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
+						if err := addSingleSumNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName); err != nil {
+							errs = multierr.Append(errs, err)
+						}
 					}
 				case pmetric.MetricTypeHistogram:
 					dataPoints := metric.Histogram().DataPoints()
@@ -75,7 +79,9 @@ func FromMetrics(md pmetric.Metrics, settings Settings) ([]mimirpb.PreallocTimes
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleHistogramDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
+						if err := addSingleHistogramDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName); err != nil {
+							errs = multierr.Append(errs, err)
+						}
 					}
 				case pmetric.MetricTypeExponentialHistogram:
 					dataPoints := metric.ExponentialHistogram().DataPoints()
@@ -100,14 +106,18 @@ func FromMetrics(md pmetric.Metrics, settings Settings) ([]mimirpb.PreallocTimes
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleSummaryDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
+						if err := addSingleSummaryDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName); err != nil {
+							errs = multierr.Append(errs, err)
+						}
 					}
 				default:
 					errs = multierr.Append(errs, errors.New("unsupported metric type"))
 				}
 			}
 		}
-		addResourceTargetInfo(resource, settings, mostRecentTimestamp, tsMap)
+		if err := addResourceTargetInfo(resource, settings, mostRecentTimestamp, tsMap); err != nil {
+			errs = multierr.Append(errs, err)
+		}
 	}
 
 	mimirTs := mimirpb.PreallocTimeseriesSliceFromPool()

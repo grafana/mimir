@@ -31,10 +31,13 @@ func addSingleExponentialHistogramDataPoint(
 		metric,
 	)
 
-	sig := timeSeriesSignature(
+	sig, err := timeSeriesSignature(
 		pmetric.MetricTypeExponentialHistogram.String(),
 		labels,
 	)
+	if err != nil {
+		return err
+	}
 	ts, ok := series[sig]
 	if !ok {
 		ts = &mimirpb.TimeSeries{
