@@ -36,6 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -374,7 +375,7 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
 	defer func(s frontendv2pb.FrontendForQuerier_QueryResultStreamServer) {
 		err := s.SendAndClose(&frontendv2pb.QueryResultResponse{})
-		if err != nil {
+		if err != nil && !errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
 			level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
 		}
 	}(stream)
@@ -400,6 +401,11 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
+			}
+			if errors.Is(err, context.Canceled) {
+				if cause := context.Cause(stream.Context()); cause != nil {
+					return fmt.Errorf("aborted streaming on canceled context: %w", cause)
+				}
 			}
 			return fmt.Errorf("failed to receive query result stream message: %w", err)
 		}

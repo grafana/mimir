@@ -7,6 +7,7 @@ package v2
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -374,10 +375,11 @@ func TestFrontendStreamingResponse(t *testing.T) {
 	)
 
 	for _, tt := range []struct {
-		name              string
-		sendResultStream  func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error
-		expectStreamError bool
-		expectBody        string
+		name                string
+		sendResultStream    func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error
+		expectStreamError   bool
+		expectContentLength int
+		expectBody          string
 	}{
 		{
 			name: "metadata and two chunks",
@@ -393,7 +395,8 @@ func TestFrontendStreamingResponse(t *testing.T) {
 				)
 				return f.QueryResultStream(s)
 			},
-			expectBody: "result stream body",
+			expectBody:          "result stream body",
+			expectContentLength: 18,
 		},
 		{
 			name: "received metadata only, no body data sent",
@@ -424,15 +427,44 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
 				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
 				s.msgs = append(s.msgs,
-					metadataRequest(msg, http.StatusOK, nil),
+					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"16"}}}),
 					bodyChunkRequest(msg, []byte("part 1/2")),
 					metadataRequest(msg, http.StatusOK, nil),
 					bodyChunkRequest(msg, []byte("part 2/2")),
 				)
 				return f.QueryResultStream(s)
 			},
-			expectStreamError: true,
-			expectBody:        "part 1/2",
+			expectStreamError:   true,
+			expectBody:          "part 1/2",
+			expectContentLength: 16,
+		},
+		{
+			name: "context cancelled while streaming response",
+			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+				ctx, cancelCause := context.WithCancelCause(user.InjectOrgID(context.Background(), userID))
+				recvCalled := make(chan struct{})
+				cancelAfterCalls := 2
+				s := &mockQueryResultStreamServer{ctx: ctx, queryID: msg.QueryID, recvCalled: recvCalled}
+				go func() {
+					recvCount := 0
+					for range recvCalled {
+						recvCount++
+						if recvCount == cancelAfterCalls {
+							cancelCause(fmt.Errorf("streaming cancelled"))
+						}
+					}
+				}()
+				s.msgs = append(s.msgs,
+					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"24"}}}),
+					bodyChunkRequest(msg, []byte("part 1/3")),
+					bodyChunkRequest(msg, []byte("part 2/3")),
+					bodyChunkRequest(msg, []byte("part 3/3")),
+				)
+				return f.QueryResultStream(s)
+			},
+			expectStreamError:   true,
+			expectBody:          "part 1/3",
+			expectContentLength: 24,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -454,7 +486,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			resp, err := rt.RoundTrip(req.WithContext(user.InjectOrgID(context.Background(), userID)))
 			require.NoError(t, err)
 			defer func() {
-				_, _ = io.ReadAll(resp.Body)
+				_, _ = io.Copy(io.Discard, resp.Body)
 				_ = resp.Body.Close()
 			}()
 			require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -462,14 +494,14 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			body, err := io.ReadAll(resp.Body)
 			if tt.expectStreamError {
 				require.Error(t, err)
-				return
+			} else {
+				require.NoError(t, err)
 			}
-			require.NoError(t, err)
 			require.Equal(t, tt.expectBody, string(body))
 
 			contentLength, err := strconv.Atoi(resp.Header.Get("Content-Length"))
 			require.NoError(t, err)
-			require.Equal(t, len(tt.expectBody), contentLength)
+			require.Equal(t, tt.expectContentLength, contentLength)
 		})
 	}
 }
@@ -493,10 +525,11 @@ func bodyChunkRequest(msg *schedulerpb.FrontendToScheduler, content []byte) *fro
 }
 
 type mockQueryResultStreamServer struct {
-	ctx     context.Context
-	queryID uint64
-	msgs    []*frontendv2pb.QueryResultStreamRequest
-	next    int
+	ctx        context.Context
+	queryID    uint64
+	msgs       []*frontendv2pb.QueryResultStreamRequest
+	next       int
+	recvCalled chan struct{}
 
 	grpc.ServerStream
 }
@@ -510,7 +543,13 @@ func (s *mockQueryResultStreamServer) SendAndClose(_ *frontendv2pb.QueryResultRe
 }
 
 func (s *mockQueryResultStreamServer) Recv() (*frontendv2pb.QueryResultStreamRequest, error) {
+	if s.recvCalled != nil {
+		s.recvCalled <- struct{}{}
+	}
 	if err := s.ctx.Err(); err != nil {
+		if s.recvCalled != nil {
+			close(s.recvCalled)
+		}
 		return nil, err
 	}
 	if s.next >= len(s.msgs) {
