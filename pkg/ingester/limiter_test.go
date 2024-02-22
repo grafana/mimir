@@ -27,10 +27,10 @@ func TestLimiter_maxSeriesPerMetric(t *testing.T) {
 	}
 
 	t.Run("ingester ring", func(t *testing.T) {
-		runLimiterMaxFunctionTest(t, applyLimits, runMaxFn)
+		runLimiterMaxFunctionTest(t, applyLimits, runMaxFn, math.MaxInt32)
 	})
 	t.Run("partitions ring", func(t *testing.T) {
-		runLimiterMaxFunctionTestWithPartitionsRing(t, applyLimits, runMaxFn)
+		runLimiterMaxFunctionTestWithPartitionsRing(t, applyLimits, runMaxFn, math.MaxInt32)
 	})
 }
 
@@ -44,10 +44,10 @@ func TestLimiter_maxMetadataPerMetric(t *testing.T) {
 	}
 
 	t.Run("ingester ring", func(t *testing.T) {
-		runLimiterMaxFunctionTest(t, applyLimits, runMaxFn)
+		runLimiterMaxFunctionTest(t, applyLimits, runMaxFn, math.MaxInt32)
 	})
 	t.Run("partitions ring", func(t *testing.T) {
-		runLimiterMaxFunctionTestWithPartitionsRing(t, applyLimits, runMaxFn)
+		runLimiterMaxFunctionTestWithPartitionsRing(t, applyLimits, runMaxFn, math.MaxInt32)
 	})
 }
 
@@ -61,10 +61,10 @@ func TestLimiter_maxSeriesPerUser(t *testing.T) {
 	}
 
 	t.Run("ingester ring", func(t *testing.T) {
-		runLimiterMaxFunctionTest(t, applyLimits, runMaxFn)
+		runLimiterMaxFunctionTest(t, applyLimits, runMaxFn, math.MaxInt32)
 	})
 	t.Run("partitions ring", func(t *testing.T) {
-		runLimiterMaxFunctionTestWithPartitionsRing(t, applyLimits, runMaxFn)
+		runLimiterMaxFunctionTestWithPartitionsRing(t, applyLimits, runMaxFn, math.MaxInt32)
 	})
 }
 
@@ -78,10 +78,27 @@ func TestLimiter_maxMetadataPerUser(t *testing.T) {
 	}
 
 	t.Run("ingester ring", func(t *testing.T) {
-		runLimiterMaxFunctionTest(t, applyLimits, runMaxFn)
+		runLimiterMaxFunctionTest(t, applyLimits, runMaxFn, math.MaxInt32)
 	})
 	t.Run("partitions ring", func(t *testing.T) {
-		runLimiterMaxFunctionTestWithPartitionsRing(t, applyLimits, runMaxFn)
+		runLimiterMaxFunctionTestWithPartitionsRing(t, applyLimits, runMaxFn, math.MaxInt32)
+	})
+}
+
+func TestLimiter_maxExemplarsPerUser(t *testing.T) {
+	applyLimits := func(limits *validation.Limits, globalLimit int) {
+		limits.MaxGlobalExemplarsPerUser = globalLimit
+	}
+
+	runMaxFn := func(limiter *Limiter) int {
+		return limiter.maxExemplarsPerUser("test")
+	}
+
+	t.Run("ingester ring", func(t *testing.T) {
+		runLimiterMaxFunctionTest(t, applyLimits, runMaxFn, 0)
+	})
+	t.Run("partitions ring", func(t *testing.T) {
+		runLimiterMaxFunctionTestWithPartitionsRing(t, applyLimits, runMaxFn, 0)
 	})
 }
 
@@ -89,6 +106,7 @@ func runLimiterMaxFunctionTest(
 	t *testing.T,
 	applyLimits func(limits *validation.Limits, globalLimit int),
 	runMaxFn func(limiter *Limiter) int,
+	expectedLimitForZeroGlobalLimit int,
 ) {
 	tests := map[string]struct {
 		globalLimit              int
@@ -100,11 +118,11 @@ func runLimiterMaxFunctionTest(
 		shardSize                int
 		expectedValue            int
 	}{
-		"zone-awareness disabled, limit is disabled": {
+		"zone-awareness disabled, global limit is 0": {
 			globalLimit:           0,
 			ringReplicationFactor: 1,
 			ringIngesterCount:     1,
-			expectedValue:         math.MaxInt32,
+			expectedValue:         expectedLimitForZeroGlobalLimit,
 		},
 		"zone-awareness disabled, limit is enabled with replication-factor=1, shard size 0": {
 			globalLimit:           1000,
@@ -142,14 +160,14 @@ func runLimiterMaxFunctionTest(
 			expectedValue:         300, // (1000 / 10 ingesters) * 3 replication factor
 		},
 
-		"zone-awareness enabled, limit is disabled": {
+		"zone-awareness enabled, global limit is 0": {
 			globalLimit:              0,
 			ringReplicationFactor:    1,
 			ringIngesterCount:        1,
 			ringZoneAwarenessEnabled: true,
 			ringZonesCount:           3,
 			ingestersInZoneCount:     1,
-			expectedValue:            math.MaxInt32,
+			expectedValue:            expectedLimitForZeroGlobalLimit,
 		},
 		"zone-awareness enabled, limit is enabled with replication-factor=3, all ingesters up and running, and shard size 0": {
 			globalLimit:              900,
@@ -329,6 +347,7 @@ func runLimiterMaxFunctionTestWithPartitionsRing(
 	t *testing.T,
 	applyLimits func(limits *validation.Limits, globalLimit int),
 	runMaxFn func(limiter *Limiter) int,
+	expectedLimitForZeroGlobalLimit int,
 ) {
 	tests := map[string]struct {
 		globalLimit               int
@@ -340,7 +359,7 @@ func runLimiterMaxFunctionTestWithPartitionsRing(
 			globalLimit:               0,
 			partitionStates:           []ring.PartitionState{ring.PartitionActive, ring.PartitionInactive},
 			tenantPartitionsShardSize: 0,
-			expectedValue:             math.MaxInt32,
+			expectedValue:             expectedLimitForZeroGlobalLimit,
 		},
 		"limit is enabled, using all active partitions, only 1 is active": {
 			globalLimit:               1000,
@@ -370,7 +389,7 @@ func runLimiterMaxFunctionTestWithPartitionsRing(
 			globalLimit:               1000,
 			partitionStates:           []ring.PartitionState{ring.PartitionInactive, ring.PartitionInactive, ring.PartitionInactive, ring.PartitionInactive, ring.PartitionInactive},
 			tenantPartitionsShardSize: 2,
-			expectedValue:             math.MaxInt32, // No limit can be computed = allow everything.
+			expectedValue:             expectedLimitForZeroGlobalLimit, // No limit can be computed, treated as if global limit was 0.
 		},
 	}
 
