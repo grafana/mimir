@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math/rand"
+	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -464,4 +465,77 @@ func (t *zoneAwareContextTracker) cancelAllContexts(cause error) {
 		delete(t.contexts, instance)
 		delete(t.cancelFuncs, instance)
 	}
+}
+
+type inflightInstanceTracker struct {
+	mx       sync.Mutex
+	inflight []map[*InstanceDesc]struct{}
+
+	// expectMoreInstances is true if more instances are expected to be added to the tracker.
+	expectMoreInstances bool
+}
+
+func newInflightInstanceTracker(sets []ReplicationSet) *inflightInstanceTracker {
+	// Init the inflight tracker.
+	inflight := make([]map[*InstanceDesc]struct{}, len(sets))
+	for idx, set := range sets {
+		inflight[idx] = make(map[*InstanceDesc]struct{}, len(set.Instances))
+	}
+
+	return &inflightInstanceTracker{
+		inflight:            inflight,
+		expectMoreInstances: true,
+	}
+}
+
+// addInstance adds the instance for replicationSetIdx to the tracker.
+//
+// addInstance is idempotent.
+func (t *inflightInstanceTracker) addInstance(replicationSetIdx int, instance *InstanceDesc) {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+
+	t.inflight[replicationSetIdx][instance] = struct{}{}
+}
+
+// removeInstance removes the instance for replicationSetIdx from the tracker.
+//
+// removeInstance is idempotent.
+func (t *inflightInstanceTracker) removeInstance(replicationSetIdx int, instance *InstanceDesc) {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+
+	delete(t.inflight[replicationSetIdx], instance)
+}
+
+// allInstancesAdded signals the tracker that all expected instances have been added.
+//
+// allInstancesAdded is idempotent.
+func (t *inflightInstanceTracker) allInstancesAdded() {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+
+	t.expectMoreInstances = false
+}
+
+// allInstancesCompleted returns true if and only if no more instances are expected to be
+// added to the tracker and all previously tracked instances have been removed calling removeInstance().
+func (t *inflightInstanceTracker) allInstancesCompleted() bool {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+
+	// We can't assert all instances have completed if it's still possible
+	// to add new ones to the tracker.
+	if t.expectMoreInstances {
+		return false
+	}
+
+	// Ensure there are no inflight instances for any replication set.
+	for _, instances := range t.inflight {
+		if len(instances) > 0 {
+			return false
+		}
+	}
+
+	return true
 }
