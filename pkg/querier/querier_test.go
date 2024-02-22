@@ -8,7 +8,6 @@ package querier
 import (
 	"context"
 	"fmt"
-	"slices"
 	"testing"
 	"time"
 
@@ -28,12 +27,11 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/storage/chunk"
-
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -431,23 +429,14 @@ func BenchmarkExecute(b *testing.B) {
 			queryStart := time.Now().Add(-time.Second * time.Duration(scenario.numChunks*scenario.numSamplesPerChunk))
 			queryEnd := time.Now()
 			chunks := createChunks(b, scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, queryStart, queryStep, encoding)
-			reversedChunks := make([]client.Chunk, len(chunks))
-			copy(reversedChunks, chunks)
-			slices.Reverse(reversedChunks)
 			// Mock distributor to return chunks that need merging.
 			distributor := &mockDistributor{}
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 				client.CombinedQueryStreamResponse{
 					Chunkseries: []client.TimeSeriesChunk{
-						// Series with chunks in order, that need merge
 						{
 							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
 							Chunks: chunks,
-						},
-						// Series with chunks in reversed order, that need merge
-						{
-							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "bar"}},
-							Chunks: reversedChunks,
 						},
 					},
 				},
@@ -473,9 +462,7 @@ func BenchmarkExecute(b *testing.B) {
 					m, err := r.Matrix()
 					require.NoError(b, err)
 
-					require.Equal(b, 2, m.Len())
-					//require.ElementsMatch(b, m[0].Floats, m[1].Floats)
-					//require.ElementsMatch(b, m[0].Histograms, m[1].Histograms)
+					require.Equal(b, 1, m.Len())
 				}
 			})
 		}

@@ -163,34 +163,32 @@ func (a *iteratorAdapter) AtHistogram(h *histogram.Histogram) (int64, *histogram
 	if a.curr.ValueType != chunkenc.ValHistogram {
 		panic(fmt.Sprintf("Cannot read histogram from batch %v", a.curr.ValueType))
 	}
-	toH := h
-	if toH == nil {
-		toH = &histogram.Histogram{}
+	if h == nil {
+		h = &histogram.Histogram{}
 	}
 	fromH := a.curr.Histograms[a.curr.Index]
-	fromH.CopyTo(toH)
-	return a.curr.Timestamps[a.curr.Index], toH
+	fromH.CopyTo(h)
+	return a.curr.Timestamps[a.curr.Index], h
 }
 
 // AtFloatHistogram implements chunkenc.Iterator. It copies and returns the underlying float histogram.
 // If a pointer to a float histogram is passed as parameter, the underlying float histogram is copied there.
 // Otherwise, a new float histogram is created.
 func (a *iteratorAdapter) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	toFH := fh
-	if toFH == nil {
-		toFH = &histogram.FloatHistogram{}
+	if fh == nil {
+		fh = &histogram.FloatHistogram{}
 	}
 	// The promQL engine works on Float Histograms even if the underlying data is an integer histogram
 	// and will call AtFloatHistogram on a Histogram
 	if a.curr.ValueType == chunkenc.ValFloatHistogram {
 		fromFH := a.curr.FloatHistograms[a.curr.Index]
-		fromFH.CopyTo(toFH)
-		return a.curr.Timestamps[a.curr.Index], toFH
+		fromFH.CopyTo(fh)
+		return a.curr.Timestamps[a.curr.Index], fh
 	}
 	if a.curr.ValueType == chunkenc.ValHistogram {
 		fromH := a.curr.Histograms[a.curr.Index]
-		fromH.ToFloat(toFH)
-		return a.curr.Timestamps[a.curr.Index], toFH
+		fromH.ToFloat(fh)
+		return a.curr.Timestamps[a.curr.Index], fh
 	}
 	panic(fmt.Sprintf("Cannot read floathistogram from batch %v", a.curr.ValueType))
 }
