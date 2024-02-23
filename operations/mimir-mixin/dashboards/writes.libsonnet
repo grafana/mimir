@@ -135,21 +135,22 @@ local filename = 'mimir-writes.json';
           |||
         ) +
         $.qpsPanel($.queries.distributor.writeRequestsPerSecond) +
-        if $._config.show_rejected_requests_on_writes_dashboard then {
-          targets: [
-                     {
-                       legendLink: null,
-                       expr: 'sum (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.distributor)],
-                       format: 'time_series',
-                       intervalFactor: 2,
-                       legendFormat: 'rejected',
-                       refId: 'B',
-                     },
-                   ] + super.targets +
-                   $.aliasColors({
-                     rejected: '#EAB839',
-                   }),
-        } else {},
+        if $._config.show_rejected_requests_on_writes_dashboard then
+          {
+            targets: [
+              {
+                legendLink: null,
+                expr: 'sum (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.distributor)],
+                format: 'time_series',
+                intervalFactor: 2,
+                legendFormat: 'rejected',
+                refId: 'B',
+              },
+            ] + super.targets,
+          } + $.aliasColors({
+            rejected: '#EAB839',
+          })
+        else {},
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
@@ -177,21 +178,22 @@ local filename = 'mimir-writes.json';
           |||
         ) +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ingester)) +
-        if $._config.show_rejected_requests_on_writes_dashboard then {
-          targets: [
-                     {
-                       legendLink: null,
-                       expr: 'sum (rate(cortex_ingester_instance_rejected_requests_total{%s, reason=~"ingester_max_inflight_push_requests|ingester_max_ingestion_rate"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-                       format: 'time_series',
-                       intervalFactor: 2,
-                       legendFormat: 'rejected',
-                       refId: 'B',
-                     },
-                   ] + super.targets +
-                   $.aliasColors({
-                     rejected: '#EAB839',
-                   }),
-        } else {},
+        if $._config.show_rejected_requests_on_writes_dashboard then
+          {
+            targets: [
+              {
+                legendLink: null,
+                expr: 'sum (rate(cortex_ingester_instance_rejected_requests_total{%s, reason=~"ingester_max_inflight_push_requests|ingester_max_ingestion_rate"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+                format: 'time_series',
+                intervalFactor: 2,
+                legendFormat: 'rejected',
+                refId: 'B',
+              },
+            ] + super.targets,
+          } + $.aliasColors({
+            rejected: '#EAB839',
+          })
+        else {},
       )
       .addPanel(
         $.timeseriesPanel('Latency') +

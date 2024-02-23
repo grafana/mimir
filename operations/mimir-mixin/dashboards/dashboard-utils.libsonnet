@@ -1416,7 +1416,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     // aliasColors was the configuration in (deprecated) graph panel; we hide it from JSON model.
     aliasColors:: super.aliasColors,
     fieldConfig+: {
-      overrides: [
+      overrides+: [
         $.overrideFieldByName(name, [
           $.overrideProperty('color', { mode: 'fixed', fixedColor: colors[name] }),
         ])
