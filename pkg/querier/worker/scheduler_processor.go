@@ -371,11 +371,7 @@ sendBody:
 	for offset := 0; offset < len(response.Body); {
 		select {
 		case <-reqCtx.Done():
-			if cause := context.Cause(reqCtx); cause != nil {
-				level.Warn(logger).Log("msg", "response stream aborted", "cause", cause)
-			} else {
-				level.Warn(logger).Log("msg", "response stream aborted", "err", reqCtx.Err())
-			}
+			level.Warn(logger).Log("msg", "response stream aborted", "cause", context.Cause(reqCtx))
 			break sendBody
 		default:
 			err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
@@ -385,7 +381,7 @@ sendBody:
 				}},
 			})
 			if err != nil {
-				level.Warn(logger).Log("msg", "error streaming response body to frontend", "err", err)
+				level.Warn(logger).Log("msg", "error streaming response body to frontend, aborting response stream", "err", err)
 				break sendBody
 			}
 			offset += responseStreamingBodyChunkSizeBytes
