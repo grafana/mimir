@@ -531,8 +531,7 @@ func (s *seriesChunkRefsSeriesSet) Err() error {
 	return s.from.Err()
 }
 
-// deduplicatingSeriesChunkRefsSetIterator merges together consecutive series in an underlying
-// seriesChunkRefsSetIterator.
+// deduplicatingSeriesChunkRefsSetIterator merges together consecutive series in the underlying iterator.
 type deduplicatingSeriesChunkRefsSetIterator struct {
 	batchSize int
 
