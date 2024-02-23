@@ -9,9 +9,9 @@ import (
 	"container/heap"
 	"sort"
 
-	"github.com/prometheus/prometheus/model/histogram"
+	//"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/zeropool"
+	//"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
@@ -24,9 +24,9 @@ type mergeIterator struct {
 	batches batchStream
 
 	// Buffers to merge in.
-	batchesBuf   batchStream
-	hPool        zeropool.Pool[*histogram.Histogram]
-	fhPool       zeropool.Pool[*histogram.FloatHistogram]
+	batchesBuf batchStream
+	//hPool        zeropool.Pool[*histogram.Histogram]
+	//fhPool       zeropool.Pool[*histogram.FloatHistogram]
 
 	currErr error
 }
@@ -37,8 +37,8 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 		c.currErr = nil
 	} else {
 		c = &mergeIterator{}
-		c.hPool = zeropool.New(func() *histogram.Histogram { return &histogram.Histogram{} })
-		c.fhPool = zeropool.New(func() *histogram.FloatHistogram { return &histogram.FloatHistogram{} })
+		//c.hPool = zeropool.New(func() *histogram.Histogram { return &histogram.Histogram{} })
+		//c.fhPool = zeropool.New(func() *histogram.FloatHistogram { return &histogram.FloatHistogram{} })
 	}
 
 	css := partitionChunks(cs)
@@ -74,17 +74,17 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 	return c
 }
 
-func (c *mergeIterator) putPointerValuesToThePool(b chunk.Batch) {
-	if b.ValueType == chunkenc.ValHistogram {
-		for i := 0; i < b.Length; i++ {
-			c.hPool.Put(b.Histograms[i])
-		}
-	} else if b.ValueType == chunkenc.ValFloatHistogram {
-		for i := 0; i < b.Length; i++ {
-			c.fhPool.Put(b.FloatHistograms[i])
-		}
-	}
-}
+// func (c *mergeIterator) putPointerValuesToThePool(b chunk.Batch) {
+// 	if b.ValueType == chunkenc.ValHistogram {
+// 		for i := 0; i < b.Length; i++ {
+// 			c.hPool.Put(b.Histograms[i])
+// 		}
+// 	} else if b.ValueType == chunkenc.ValFloatHistogram {
+// 		for i := 0; i < b.Length; i++ {
+// 			c.fhPool.Put(b.FloatHistograms[i])
+// 		}
+// 	}
+// }
 
 func (c *mergeIterator) Seek(t int64, size int) chunkenc.ValueType {
 
@@ -101,7 +101,7 @@ found:
 		}
 		// The first batch is not needed anymore, so we put pointers to its Histograms/FloatHistograms
 		// to the pool in order to reuse them.
-		c.putPointerValuesToThePool(c.batches[0])
+		//c.putPointerValuesToThePool(c.batches[0])
 		copy(c.batches, c.batches[1:])
 		c.batches = c.batches[:len(c.batches)-1]
 	}
@@ -135,7 +135,7 @@ func (c *mergeIterator) Next(size int) chunkenc.ValueType {
 	if len(c.batches) > 0 {
 		// The first batch is not needed anymore, so we put pointers to its Histograms/FloatHistograms
 		// to the pool in order to reuse them.
-		c.putPointerValuesToThePool(c.batches[0])
+		//c.putPointerValuesToThePool(c.batches[0])
 		copy(c.batches, c.batches[1:])
 		c.batches = c.batches[:len(c.batches)-1]
 	}
@@ -152,7 +152,8 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	// All we need to do is get enough batches that our first batch's last entry
 	// is before all iterators next entry.
 	for len(c.h) > 0 && (len(c.batches) == 0 || c.nextBatchEndTime() >= c.h[0].AtTime()) {
-		c.batchesBuf = mergeStreams(c.batches, c.h[0].Batch(), c.batchesBuf, size, &c.hPool, &c.fhPool)
+		nextToMerge := c.h[0].Batch()
+		c.batchesBuf = mergeStreams(c.batches, nextToMerge, c.batchesBuf, size, nil, nil) //&c.hPool, &c.fhPool)
 		c.batches = append(c.batches[:0], c.batchesBuf...)
 
 		if c.h[0].Next(size) != chunkenc.ValNone {

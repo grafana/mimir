@@ -119,9 +119,6 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 		}
 	}
 
-	if a.curr != nil {
-		a.curr.Length = -1
-	}
 	a.batchSize = 1
 	if typ := a.underlying.Seek(t, a.batchSize); typ != chunkenc.ValNone {
 		a.curr = a.underlying.Batch()
@@ -129,6 +126,7 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 			return typ
 		}
 	}
+	a.curr = nil // Invalidate the current batch if we found no samples.
 	return chunkenc.ValNone
 }
 

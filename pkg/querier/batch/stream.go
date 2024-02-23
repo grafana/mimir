@@ -88,6 +88,7 @@ func mergeStreams(left batchStream, right *chunk.Batch, result batchStream, size
 	}
 
 	resultLen := 1 // Number of batches in the final result.
+	resultIdx := 0 // Index of the current batch in the final result.
 	b := &result[0]
 
 	// Step to the next Batch in the result, create it if it does not exist
@@ -96,6 +97,7 @@ func mergeStreams(left batchStream, right *chunk.Batch, result batchStream, size
 		// has to be appended, hence it tells the length.
 		b.Length = b.Index
 		resultLen++
+		resultIdx++
 		if resultLen > len(result) {
 			// It is possible that result can grow longer
 			// then the one provided.
@@ -126,37 +128,41 @@ func mergeStreams(left batchStream, right *chunk.Batch, result batchStream, size
 		b.Index++
 	}
 
-	populateRight := func(c *chunk.Batch, valueType chunkenc.ValueType) {
+	populateRight := func() {
 		if b.Index == 0 {
 			// Starting to write this Batch, it is safe to set the value type
-			b.ValueType = valueType
-		} else if b.Index == size || b.ValueType != valueType {
+			b.ValueType = right.ValueType
+		} else if b.Index == size || b.ValueType != right.ValueType {
 			// The batch reached its intended size or is of a different value type
 			// Add another batch to the result and use it for further appending.
-			nextBatch(valueType)
+			nextBatch(right.ValueType)
 		}
 
-		switch valueType {
+		switch right.ValueType {
 		case chunkenc.ValFloat:
-			b.Timestamps[b.Index], b.Values[b.Index] = c.Timestamps[c.Index], c.Values[c.Index]
+			b.Timestamps[b.Index], b.Values[b.Index] = right.Timestamps[right.Index], right.Values[right.Index]
 		case chunkenc.ValHistogram:
-			var replacement *histogram.Histogram
-			if hPool == nil {
+			replacement := b.Histograms[b.Index]
+			if replacement == nil || resultIdx > 0 {
+				//if hPool == nil {
 				replacement = &histogram.Histogram{}
-			} else {
-				replacement = hPool.Get()
+				//} else {
+				//	replacement = hPool.Get()
+				//}
 			}
-			b.Timestamps[b.Index], b.Histograms[b.Index] = c.Timestamps[c.Index], c.Histograms[c.Index]
-			c.Timestamps[c.Index], c.Histograms[c.Index] = 0, replacement
+			b.Timestamps[b.Index], b.Histograms[b.Index] = right.Timestamps[right.Index], right.Histograms[right.Index]
+			right.Timestamps[right.Index], right.Histograms[right.Index] = 0, replacement
 		case chunkenc.ValFloatHistogram:
-			var replacement *histogram.FloatHistogram
-			if fhPool == nil {
+			replacement := b.FloatHistograms[b.Index]
+			if replacement == nil || resultIdx > 0 {
+				//if fhPool == nil {
 				replacement = &histogram.FloatHistogram{}
-			} else {
-				replacement = fhPool.Get()
+				//} else {
+				//	replacement = fhPool.Get()
+				//}
 			}
-			b.Timestamps[b.Index], b.FloatHistograms[b.Index] = c.Timestamps[c.Index], c.FloatHistograms[c.Index]
-			c.Timestamps[c.Index], c.FloatHistograms[c.Index] = 0, replacement
+			b.Timestamps[b.Index], b.FloatHistograms[b.Index] = right.Timestamps[right.Index], right.FloatHistograms[right.Index]
+			right.Timestamps[right.Index], right.FloatHistograms[right.Index] = 0, replacement
 		}
 		b.Index++
 	}
@@ -167,12 +173,12 @@ func mergeStreams(left batchStream, right *chunk.Batch, result batchStream, size
 			populateLeft(left, lt)
 			left.next()
 		} else if t1 > t2 {
-			populateRight(right, rt)
+			populateRight()
 			right.Index++
 		} else {
 			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
 				// Prefer histograms to floats. Take left side if both have histograms.
-				populateRight(right, rt)
+				populateRight()
 			} else {
 				populateLeft(left, lt)
 			}
@@ -189,7 +195,7 @@ func mergeStreams(left batchStream, right *chunk.Batch, result batchStream, size
 
 	// Add the remaining samples from the right
 	for right.Index < right.Length {
-		populateRight(right, right.ValueType)
+		populateRight()
 		right.Index++
 	}
 
