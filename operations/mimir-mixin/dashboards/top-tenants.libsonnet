@@ -239,5 +239,25 @@ local filename = 'mimir-top-tenants.json';
           { 'Value #A': { alias: 'seconds' } }
         )
       )
+    )
+
+    .addRow(
+      ($.row('By estimated compaction jobs from bucket-index') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by estimated compaction jobs from bucket-index') +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            |||
+              topk($limit,
+                sum by (user) (cortex_bucket_index_estimated_compaction_jobs{%s})
+                and ignoring(user)
+                (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)
+              )
+            ||| % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)],
+          ],
+          { Value: { alias: 'Compaction Jobs', decimals: 0 } }
+        )
+      ),
     ),
 }
