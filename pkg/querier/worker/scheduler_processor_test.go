@@ -423,26 +423,34 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 				}, nil
 			default:
 				<-frontend.responseStreamStarted
-				loopClient.cancelCtx()
+				// Simulate cancellation of the query.
 				return nil, toRPCErr(context.Canceled)
 			}
 		})
 
-		workerCtx, workerCancel := context.WithCancel(context.Background())
 		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-			workerCancel()
-		}).Return(
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(
 			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
 				Body: bytes.Repeat([]byte("a"), responseBodySize)},
 			nil,
 		)
 
-		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+		go func() {
+			sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		}()
 
-		assert.Equal(t, 1, int(frontend.queryResultStreamMetadataCalls.Load()))
-		// We expect to receive only part of the body before the stream aborts.
+		assert.Eventually(t, func() bool {
+			return int(frontend.queryResultStreamMetadataCalls.Load()) == 1
+		}, time.Second, 10*time.Millisecond, "expected frontend to be called with response metadata once")
+		assert.Eventually(t, func() bool {
+			return int(frontend.queryResultStreamReturned.Load()) == 1
+		}, time.Second, 10*time.Millisecond, "expected frontend QueryResultStream to have returned once")
+
+		assert.NotNil(t, frontend.responses[queryID].body)
 		assert.Less(t, len(frontend.responses[queryID].body), responseBodySize)
+
+		workerCancel()
 	})
 }
 
@@ -580,6 +588,7 @@ type frontendForQuerierMockServer struct {
 	responseStreamStarted          chan struct{}
 	queryResultStreamMetadataCalls atomic.Int64
 	queryResultStreamBodyCalls     atomic.Int64
+	queryResultStreamReturned      atomic.Int64
 
 	responses map[uint64]*queryResult
 }
@@ -597,7 +606,9 @@ func (f *frontendForQuerierMockServer) QueryResult(_ context.Context, r *fronten
 }
 
 func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	defer f.queryResultStreamReturned.Inc()
 	var once sync.Once
+
 	metadataSent := false
 	for {
 		resp, err := s.Recv()
