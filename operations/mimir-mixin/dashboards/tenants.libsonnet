@@ -733,5 +733,40 @@ local filename = 'mimir-tenants.json';
           ],
         )
       )
+    )
+
+    .addRow(
+      ($.row('Compactions') + { collapse: true })
+      .addPanel(
+        $.timeseriesPanel('Estimated Compaction Jobs') +
+        $.queryPanel(
+          |||
+            sum by (type) (cortex_bucket_index_estimated_compaction_jobs{%s, user="$user"})
+            and ignoring(type)
+            (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)
+          ||| % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)],
+          '{{ job }}',
+        ) + {
+          fieldConfig+: {
+            defaults+: {
+              custom+: {
+                fillOpacity: 50,
+                stacking+: { mode: 'normal' },
+              },
+            },
+          },
+        } +
+        $.panelDescription(
+          'Estimated Compaction Jobs',
+          |||
+            Estimated number of compaction jobs for selected user, based on latest version of bucket index. When user sends data, ingesters upload new user blocks every 2 hours
+            (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.), and compactors should process all of the blocks within 2h interval.
+            If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction for this user works correctly.
+
+            Depending on the configuration, there are two types of jobs: `split` jobs and `merge` jobs. Split jobs will only show up when user is configured with positive number of `compactor_split_and_merge_shards`.
+            Values for split and merge jobs are stacked.
+          |||
+        )
+      ),
     ),
 }

@@ -236,6 +236,18 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     .addRow(
       $.row('')
       .addPanel(
+        $.timeseriesPanel('Estimated Compaction Jobs') +
+        $.queryPanel('sum(cortex_bucket_index_estimated_compaction_jobs{%s}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)' %
+                     [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)], 'Jobs') +
+        $.panelDescription(
+          'Estimated Compaction Jobs',
+          |||
+            Estimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),
+            and compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.
+          |||
+        ),
+      )
+      .addPanel(
         $.timeseriesPanel('TSDB compactions / sec') +
         $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor), 'compactions') +
         { fieldConfig+: { defaults+: { unit: 'ops' } } } +
