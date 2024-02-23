@@ -88,6 +88,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
   ],
 
   [filename]:
+    assert std.md5(filename) == '1b3443aea86db629e6efdb7d05c53823' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Compactor') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(

@@ -6,6 +6,7 @@ local filename = 'mimir-alertmanager.json';
     local jobSelector = $.jobSelector($._config.job_names.alertmanager);
     local jobInstanceSelector = jobSelector + [utils.selector.noop($._config.per_instance_label)];
     local jobIntegrationSelector = jobSelector + [utils.selector.noop('integration')];
+    assert std.md5(filename) == 'b0d38d318bbddd80476246d4930f9e55' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Alertmanager') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(

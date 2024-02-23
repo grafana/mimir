@@ -30,6 +30,7 @@ local filename = 'mimir-overview.json';
       writesResourcesDashboardURL: $.dashboardURL('mimir-writes-resources.json'),
     };
 
+    assert std.md5(filename) == 'ffcd83628d7d4b5a03d1cafd159e6c9c' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Overview') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
 

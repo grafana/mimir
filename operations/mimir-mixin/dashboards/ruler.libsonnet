@@ -11,6 +11,7 @@ local filename = 'mimir-ruler.json';
   ],
 
   [filename]:
+    assert std.md5(filename) == '631e15d5d85afb2ca8e35d62984eeaa0' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Ruler') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(

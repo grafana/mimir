@@ -3,6 +3,7 @@ local filename = 'mimir-slow-queries.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == '6089e1ce1e678788f46312a0a1e647e6' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Slow queries') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow(
