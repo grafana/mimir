@@ -39,6 +39,8 @@ We use *breaking :warning:* to mark changes that are not backward compatible (re
 - [#92](https://github.com/thanos-io/objstore/pull/92) GCS: Allow using a gRPC client.
 - [#94](https://github.com/thanos-io/objstore/pull/94) Allow timingReadCloser to be seeker 
 - [#96](https://github.com/thanos-io/objstore/pull/96) Allow nopCloserWithObjectSize to be seeker
+- [#86](https://github.com/thanos-io/objstore/pull/86) GCS: Add HTTP Config to GCS
+- [#99](https://github.com/thanos-io/objstore/pull/99) Swift: Add HTTP_Config
 
 ### Changed
 - [#38](https://github.com/thanos-io/objstore/pull/38) *: Upgrade minio-go version to `v7.0.45`.
