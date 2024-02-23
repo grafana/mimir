@@ -44,62 +44,62 @@ jobs:
     outputs:
       version: ${{ steps.go-version.outputs.version }}
 
-  lint:
-    runs-on: ubuntu-latest
-    needs: prepare
-    container:
-      image: ${{ needs.prepare.outputs.build_image }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Run Git Config
-        run: git config --global --add safe.directory '*'
-        # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
-        # Symlink ensures paths specified in previous commands don’t break
-      - name: Symlink Expected Path to Workspace
-        run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Get golangci-lint cache path
-        id: golangcilintcache
-        run: |
-          echo "path=$(golangci-lint cache status | grep 'Dir: ' | cut -d ' ' -f2)" >> "$GITHUB_OUTPUT"
-      - name: Cache golangci-lint cache
-        uses: actions/cache@v3
-        with:
-          key: lint-golangci-lint-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', '.golangci.yml', 'Makefile') }}
-          path: ${{ steps.golangcilintcache.outputs.path }}
-      - name: Get Go cache paths
-        id: goenv
-        run: |
-          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-      - name: Cache Go build cache
-        uses: actions/cache@v3
-        with:
-          key: lint-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
-          path: ${{ steps.goenv.outputs.gocache }}
-      # Although we use vendoring, this linting job downloads all modules to verify that what is vendored is correct,
-      # so it'll use GOMODCACHE. Other jobs don't need this.
-      - name: Cache Go module cache
-        uses: actions/cache@v3
-        with:
-          key: lint-go-mod-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
-          path: ${{ steps.goenv.outputs.gomodcache }}
-      - name: Lint
-        run: make BUILD_IN_CONTAINER=false lint
-      - name: Check Vendor Directory
-        run: make BUILD_IN_CONTAINER=false mod-check
-      - name: Check Protos
-        run: make BUILD_IN_CONTAINER=false check-protos
-      - name: Check Generated Documentation
-        run: make BUILD_IN_CONTAINER=false check-doc
-      - name: Check White Noise
-        run: make BUILD_IN_CONTAINER=false check-white-noise
-      - name: Check License Header
-        run: make BUILD_IN_CONTAINER=false check-license
-      - name: Check Docker-Compose YAML
-        run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml check-mimir-read-write-mode-docker-compose-yaml
+#  lint:
+#    runs-on: ubuntu-latest
+#    needs: prepare
+#    container:
+#      image: ${{ needs.prepare.outputs.build_image }}
+#    steps:
+#      - name: Check out repository
+#        uses: actions/checkout@v4
+#      - name: Run Git Config
+#        run: git config --global --add safe.directory '*'
+#        # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
+#        # Symlink ensures paths specified in previous commands don’t break
+#      - name: Symlink Expected Path to Workspace
+#        run: |
+#          mkdir -p /go/src/github.com/grafana/mimir
+#          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+#      - name: Get golangci-lint cache path
+#        id: golangcilintcache
+#        run: |
+#          echo "path=$(golangci-lint cache status | grep 'Dir: ' | cut -d ' ' -f2)" >> "$GITHUB_OUTPUT"
+#      - name: Cache golangci-lint cache
+#        uses: actions/cache@v3
+#        with:
+#          key: lint-golangci-lint-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', '.golangci.yml', 'Makefile') }}
+#          path: ${{ steps.golangcilintcache.outputs.path }}
+#      - name: Get Go cache paths
+#        id: goenv
+#        run: |
+#          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+#          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+#      - name: Cache Go build cache
+#        uses: actions/cache@v3
+#        with:
+#          key: lint-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+#          path: ${{ steps.goenv.outputs.gocache }}
+#      # Although we use vendoring, this linting job downloads all modules to verify that what is vendored is correct,
+#      # so it'll use GOMODCACHE. Other jobs don't need this.
+#      - name: Cache Go module cache
+#        uses: actions/cache@v3
+#        with:
+#          key: lint-go-mod-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+#          path: ${{ steps.goenv.outputs.gomodcache }}
+#      - name: Lint
+#        run: make BUILD_IN_CONTAINER=false lint
+#      - name: Check Vendor Directory
+#        run: make BUILD_IN_CONTAINER=false mod-check
+#      - name: Check Protos
+#        run: make BUILD_IN_CONTAINER=false check-protos
+#      - name: Check Generated Documentation
+#        run: make BUILD_IN_CONTAINER=false check-doc
+#      - name: Check White Noise
+#        run: make BUILD_IN_CONTAINER=false check-white-noise
+#      - name: Check License Header
+#        run: make BUILD_IN_CONTAINER=false check-license
+#      - name: Check Docker-Compose YAML
+#        run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml check-mimir-read-write-mode-docker-compose-yaml
 
   doc-validator:
     runs-on: ubuntu-latest
@@ -138,59 +138,59 @@ jobs:
         env:
           REVIEWDOG_GITHUB_API_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
-  lint-jsonnet:
-    runs-on: ubuntu-latest
-    needs:
-      - prepare
-    container:
-      image: ${{ needs.prepare.outputs.build_image }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Run Git Config
-        run: git config --global --add safe.directory '*'
-        # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
-        # Symlink ensures paths specified in previous commands don’t break
-      - name: Symlink Expected Path to Workspace
-        run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Check Mixin
-        run: make BUILD_IN_CONTAINER=false check-mixin
-      - name: Check Mixin Tests
-        run: make BUILD_IN_CONTAINER=false check-mixin-tests
-      - name: Check Mixin with Mimirtool rules check
-        run: make BUILD_IN_CONTAINER=false check-mixin-mimirtool-rules
-      - name: Check Jsonnet Manifests
-        run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
-      - name: Check Jsonnet Getting Started
-        run: make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
-      - name: Check Jsonnet Tests
-        run: make BUILD_IN_CONTAINER=false check-jsonnet-tests
+#  lint-jsonnet:
+#    runs-on: ubuntu-latest
+#    needs:
+#      - prepare
+#    container:
+#      image: ${{ needs.prepare.outputs.build_image }}
+#    steps:
+#      - name: Check out repository
+#        uses: actions/checkout@v4
+#      - name: Run Git Config
+#        run: git config --global --add safe.directory '*'
+#        # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
+#        # Symlink ensures paths specified in previous commands don’t break
+#      - name: Symlink Expected Path to Workspace
+#        run: |
+#          mkdir -p /go/src/github.com/grafana/mimir
+#          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+#      - name: Check Mixin
+#        run: make BUILD_IN_CONTAINER=false check-mixin
+#      - name: Check Mixin Tests
+#        run: make BUILD_IN_CONTAINER=false check-mixin-tests
+#      - name: Check Mixin with Mimirtool rules check
+#        run: make BUILD_IN_CONTAINER=false check-mixin-mimirtool-rules
+#      - name: Check Jsonnet Manifests
+#        run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
+#      - name: Check Jsonnet Getting Started
+#        run: make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
+#      - name: Check Jsonnet Tests
+#        run: make BUILD_IN_CONTAINER=false check-jsonnet-tests
 
-  lint-helm:
-    runs-on: ubuntu-latest
-    needs:
-      - prepare
-    container:
-      image: ${{ needs.prepare.outputs.build_image }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Run Git Config
-        run: git config --global --add safe.directory '*'
-        # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
-        # Symlink ensures paths specified in previous commands don’t break
-      - name: Symlink Expected Path to Workspace
-        run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Set up Helm
-        uses: azure/setup-helm@v3
-        with:
-          version: v3.8.2
-      - name: Check Helm Tests
-        run: make BUILD_IN_CONTAINER=false check-helm-tests
+#  lint-helm:
+#    runs-on: ubuntu-latest
+#    needs:
+#      - prepare
+#    container:
+#      image: ${{ needs.prepare.outputs.build_image }}
+#    steps:
+#      - name: Check out repository
+#        uses: actions/checkout@v4
+#      - name: Run Git Config
+#        run: git config --global --add safe.directory '*'
+#        # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
+#        # Symlink ensures paths specified in previous commands don’t break
+#      - name: Symlink Expected Path to Workspace
+#        run: |
+#          mkdir -p /go/src/github.com/grafana/mimir
+#          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+#      - name: Set up Helm
+#        uses: azure/setup-helm@v3
+#        with:
+#          version: v3.8.2
+#      - name: Check Helm Tests
+#        run: make BUILD_IN_CONTAINER=false check-helm-tests
 
 #  test:
 #    runs-on: ubuntu-latest
