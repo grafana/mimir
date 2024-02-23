@@ -452,6 +452,54 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 		workerCancel()
 	})
+
+	t.Run("should finish response stream on non-cancellation error", func(t *testing.T) {
+		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		sp.streamingEnabled = true
+		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
+
+		recvCount := atomic.NewInt64(0)
+		frontend.responseStreamStarted = make(chan struct{})
+
+		queryID := uint64(1)
+		loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
+			switch recvCount.Inc() {
+			case 1:
+				return &schedulerpb.SchedulerToQuerier{
+					QueryID:         queryID,
+					FrontendAddress: frontend.addr,
+					UserID:          "test",
+				}, nil
+			default:
+				<-frontend.responseStreamStarted
+				// Simulate non-cancellation error.
+				return nil, errors.New("something went wrong")
+			}
+		})
+
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(
+			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
+				Body: bytes.Repeat([]byte("a"), responseBodySize)},
+			nil,
+		)
+
+		go func() {
+			sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		}()
+
+		assert.Eventually(t, func() bool {
+			return int(frontend.queryResultStreamMetadataCalls.Load()) == 1
+		}, time.Second, 10*time.Millisecond, "expected frontend to be called with response metadata once")
+		assert.Eventually(t, func() bool {
+			return int(frontend.queryResultStreamReturned.Load()) == 1
+		}, time.Second, 10*time.Millisecond, "expected frontend QueryResultStream to have returned once")
+
+		assert.Equal(t, len(frontend.responses[queryID].body), responseBodySize)
+
+		workerCancel()
+	})
 }
 
 func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopClientMock, *requestHandlerMock, *frontendForQuerierMockServer) {
