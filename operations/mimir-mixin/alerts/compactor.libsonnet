@@ -14,10 +14,10 @@
           |||,
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully cleaned up blocks in the last 6 hours.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if the compactor has not successfully run compaction in the last 24h.
@@ -33,10 +33,10 @@
           labels: {
             severity: 'critical',
             reason: 'in-last-24h',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction in the last 24 hours.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if the compactor has not successfully run compaction in the last 24h since startup.
@@ -50,10 +50,10 @@
           labels: {
             severity: 'critical',
             reason: 'since-startup',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction in the last 24 hours.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if compactor failed to run 2 consecutive compactions excluding shutdowns.
@@ -64,10 +64,10 @@
           labels: {
             severity: 'critical',
             reason: 'consecutive-failures',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s failed to run 2 consecutive compactions.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if the compactor has not uploaded anything in the last 24h.
@@ -85,10 +85,10 @@
           labels: {
             severity: 'critical',
             time_period: '24h',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not uploaded any block in the last 24 hours.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if the compactor has not uploaded anything since its start.
@@ -104,10 +104,10 @@
           labels: {
             severity: 'critical',
             time_period: 'since-start',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not uploaded any block since its start.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if compactor has tried to compact unhealthy blocks.
@@ -118,10 +118,10 @@
           |||,
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored unhealthy blocks.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if compactor has tried to compact unhealthy blocks.
@@ -133,10 +133,10 @@
           |||,
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored unhealthy blocks.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
       ],
     },

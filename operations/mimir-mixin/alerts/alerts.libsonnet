@@ -24,10 +24,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ||| % $._config.alert_aggregation_labels,
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s cluster %(alert_aggregation_variables)s has {{ printf "%%f" $value }} unhealthy ingester(s).' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('RequestErrors'),
@@ -46,12 +46,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '15m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               The route {{ $labels.route }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('RequestLatency'),
@@ -71,12 +71,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '15m',
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               {{ $labels.%(per_job_label)s }} {{ $labels.route }} is experiencing {{ printf "%%.2f" $value }}s 99th percentile latency.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('QueriesIncorrect'),
@@ -88,12 +88,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '15m',
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               The %(product)s cluster %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% incorrect query results.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('InconsistentRuntimeConfig'),
@@ -103,12 +103,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '1h',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               An inconsistent runtime config file is used across cluster %(alert_aggregation_variables)s.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('BadRuntimeConfig'),
@@ -120,12 +120,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               {{ $labels.%(per_job_label)s }} failed to reload runtime config.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('FrontendQueriesStuck'),
@@ -135,12 +135,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',  // We don't want to block for longer.
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('SchedulerQueriesStuck'),
@@ -150,12 +150,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '7m',  // We don't want to block for longer.
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('CacheRequestErrors'),
@@ -177,12 +177,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               The cache {{ $labels.name }} used by %(product)s %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors for {{ $labels.operation }} operation.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('IngesterRestarts'),
@@ -206,10 +206,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
             // not necessarily an issue (eg. may happen because of the K8S node autoscaler), so we're
             // keeping the alert as warning as a signal in case of an outage.
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s %(alert_instance_variable)s in %(alert_aggregation_variables)s has restarted {{ printf "%%.2f" $value }} times in the last 30 mins.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('KVStoreFailure'),
@@ -225,12 +225,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               %(product)s %(alert_instance_variable)s in  %(alert_aggregation_variables)s is failing to talk to the KV store {{ $labels.kv_name }}.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('MemoryMapAreasTooHigh'),
@@ -240,10 +240,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '{{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has a number of mmap-ed areas close to the limit.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if an ingester instance has no tenants assigned while other instances in the same cell do.
@@ -261,10 +261,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ||| % $._config,
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has no tenants assigned.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if a ruler instance has no rule groups assigned while other instances in the same cell do.
@@ -286,10 +286,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s has no rule groups assigned.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if a ruler instance has no rule groups assigned while other instances in the same cell do.
@@ -307,10 +307,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has ingested samples with timestamps more than 1h in the future.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('StoreGatewayTooManyFailedOperations'),
@@ -322,10 +322,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s store-gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
       ] + [
         {
@@ -349,12 +349,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           labels: {
             component: component_job[0],
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               Number of members in %(product)s %(component)s hash ring does not match the expected number in %(alert_aggregation_variables)s.
             ||| % { component: component_job[0], alert_aggregation_variables: $._config.alert_aggregation_variables, product: $._config.product },
-          } + $._config.alert_extra_annotations_variable,
+          },
         }
         // NOTE(jhesketh): It is expected that the stateless components may trigger this alert
         //                 too often. Just alert on ingester for now.
@@ -382,12 +382,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '3h',
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its series limit.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('IngesterReachingSeriesLimit'),
@@ -401,12 +401,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its series limit.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('IngesterReachingTenantsLimit'),
@@ -420,12 +420,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its tenant limit.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('IngesterReachingTenantsLimit'),
@@ -439,12 +439,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its tenant limit.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('ReachingTCPConnectionsLimit'),
@@ -455,13 +455,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               %(product)s instance {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
             ||| % $._config,
           },
-        } + $._config.alert_extra_annotations_variable,
+        },
         {
           alert: $.alertName('DistributorReachingInflightPushRequestLimit'),
           expr: |||
@@ -474,12 +474,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               Distributor {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its inflight push request limit.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
       ],
     },
@@ -518,12 +518,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           labels: {
             severity: 'warning',
             workload_type: 'statefulset',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('RolloutStuck'),
@@ -547,12 +547,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           labels: {
             severity: 'warning',
             workload_type: 'deployment',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: 'RolloutOperatorNotReconciling',
@@ -562,12 +562,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               Rollout operator is not reconciling the rollout group {{ $labels.rollout_group }} in %(alert_aggregation_variables)s.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
       ],
     },
@@ -585,12 +585,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '15m',
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               Instance %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('AllocatingTooMuchMemory'),
@@ -603,12 +603,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '15m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               Instance %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
       ],
     },
@@ -627,12 +627,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% write (push) errors.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('RulerTooManyFailedQueries'),
@@ -646,12 +646,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors while evaluating rules.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('RulerMissedEvaluations'),
@@ -665,12 +665,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations for the rule group {{ $labels.rule_group }}.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('RulerFailedRingCheck'),
@@ -681,12 +681,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               %(product)s Rulers in %(alert_aggregation_variables)s are experiencing errors when checking the ring for rule group ownership.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('RulerRemoteEvaluationFailing'),
@@ -700,12 +700,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               %(product)s rulers in %(alert_aggregation_variables)s are failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations through the ruler-query-frontend.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
       ],
     },
@@ -732,10 +732,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '20m',
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: 'One or more %(product)s instances in %(alert_aggregation_variables)s consistently sees a higher than expected number of gossip members.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // What's the purpose of this alert? We want to know if a cell has reached a split brain scenario.
@@ -751,10 +751,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '20m',
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: 'One or more %(product)s instances in %(alert_aggregation_variables)s consistently sees a lower than expected number of gossip members.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
       ],
     },
@@ -773,12 +773,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '15m',
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               Too much memory being used by {{ $labels.namespace }}/%(alert_instance_variable)s - bump memory limit.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: 'EtcdAllocatingTooMuchMemory',
@@ -792,12 +792,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '15m',
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: |||
               Too much memory being used by {{ $labels.namespace }}/%(alert_instance_variable)s - bump memory limit.
             ||| % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
       ],
     },

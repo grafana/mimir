@@ -28,10 +28,10 @@
           },
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Ingester {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has not shipped any block in the last 4 hours.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if the ingester has not shipped any block since start. It also checks cortex_ingester_ingested_samples_total
@@ -49,10 +49,10 @@
           },
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Ingester {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has not shipped any block in the last 4 hours.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if the ingester has compacted some blocks that haven't been successfully uploaded to the storage yet since
@@ -67,10 +67,10 @@
           |||,
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: "%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has compacted a block {{ $value | humanizeDuration }} ago but it hasn't been successfully uploaded to the storage yet." % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if the ingester is failing to compact TSDB head into a block, for any opened TSDB. Once the TSDB head is
@@ -83,10 +83,10 @@
           |||,
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to compact TSDB head.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('IngesterTSDBHeadTruncationFailed'),
@@ -95,10 +95,10 @@
           |||,
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to truncate TSDB head.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('IngesterTSDBCheckpointCreationFailed'),
@@ -107,10 +107,10 @@
           |||,
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to create TSDB checkpoint.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('IngesterTSDBCheckpointDeletionFailed'),
@@ -119,10 +119,10 @@
           |||,
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to delete TSDB checkpoint.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('IngesterTSDBWALTruncationFailed'),
@@ -131,10 +131,10 @@
           |||,
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to truncate TSDB WAL.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('IngesterTSDBWALCorrupted'),
@@ -148,10 +148,10 @@
           labels: {
             severity: 'critical',
             deployment: 'single-zone',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('IngesterTSDBWALCorrupted'),
@@ -165,10 +165,10 @@
           labels: {
             severity: 'critical',
             deployment: 'multi-zone',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           alert: $.alertName('IngesterTSDBWALWritesFailed'),
@@ -178,10 +178,10 @@
           |||,
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to write to TSDB WAL.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if the store-gateway is not successfully synching the bucket.
@@ -194,10 +194,10 @@
           |||,
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s store-gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully synched the bucket since {{ $value | humanizeDuration }}.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if the store-gateway is not owning any tenant.
@@ -208,10 +208,10 @@
           ||| % $._config,
           labels: {
             severity: 'warning',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s store-gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s is not syncing any blocks for any tenant.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
         {
           // Alert if the bucket index has not been updated for a given user.
@@ -221,10 +221,10 @@
           ||| % $._config,
           labels: {
             severity: 'critical',
-          } + $._config.alert_extra_labels_variable,
+          },
           annotations: {
             message: '%(product)s bucket index for tenant {{ $labels.user }} in %(alert_aggregation_variables)s has not been updated since {{ $value | humanizeDuration }}.' % $._config,
-          } + $._config.alert_extra_annotations_variable,
+          },
         },
       ],
     },
