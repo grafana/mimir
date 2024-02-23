@@ -239,6 +239,7 @@ overrides:
 		"-distributor.ha-tracker.consul.hostname":            consul.NetworkHTTPEndpoint(),
 		"-distributor.ha-tracker.prefix":                     "prom_ha/",
 		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(cachingUnmarshalDataEnabled),
+		"-log.level": "debug",
 	}
 
 	flags := mergeFlags(
