@@ -365,25 +365,25 @@ func runLimiterMaxFunctionTestWithPartitionsRing(
 			globalLimit:               1000,
 			partitionStates:           []ring.PartitionState{ring.PartitionActive, ring.PartitionInactive, ring.PartitionInactive, ring.PartitionInactive, ring.PartitionInactive},
 			tenantPartitionsShardSize: 0,
-			expectedValue:             1000, // 1000 / 1
+			expectedValue:             1000 / 1,
 		},
 		"limit is enabled, using all active partitions, only 2 are active": {
 			globalLimit:               1000,
 			partitionStates:           []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionInactive, ring.PartitionInactive, ring.PartitionInactive},
 			tenantPartitionsShardSize: 0,
-			expectedValue:             500, // 1000 / 2
+			expectedValue:             1000 / 2,
 		},
 		"limit is enabled, using 2 partitions out of 5, all active": {
 			globalLimit:               1000,
 			partitionStates:           []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionActive, ring.PartitionActive, ring.PartitionActive},
 			tenantPartitionsShardSize: 2,
-			expectedValue:             500, // 1000 / 2
+			expectedValue:             1000 / 2,
 		},
 		"limit is enabled, using 5 partitions, but only 2 are active": {
 			globalLimit:               1000,
 			partitionStates:           []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionInactive, ring.PartitionInactive, ring.PartitionInactive},
 			tenantPartitionsShardSize: 5,
-			expectedValue:             500, // 1000 / 2
+			expectedValue:             1000 / 2,
 		},
 		"limit is enabled, using 2 partitions, but 0 are active": {
 			globalLimit:               1000,
