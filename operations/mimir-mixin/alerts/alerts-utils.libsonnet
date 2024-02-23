@@ -40,8 +40,8 @@
     local update_rule(rule) =
       if std.objectHas(rule, 'alert')
       then rule {
-        annotations+: $._config.alert_extra_annotations_variable,
-        labels+: $._config.alert_extra_labels_variable,
+        annotations+: $._config.alert_extra_annotations,
+        labels+: $._config.alert_extra_labels,
       }
       else rule;
     [
