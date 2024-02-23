@@ -25,7 +25,6 @@ type mergeIterator struct {
 
 	// Buffers to merge in.
 	batchesBuf   batchStream
-	nextBatchBuf [1]chunk.Batch
 	hPool        zeropool.Pool[*histogram.Histogram]
 	fhPool       zeropool.Pool[*histogram.FloatHistogram]
 
@@ -35,7 +34,6 @@ type mergeIterator struct {
 func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 	c, ok := it.(*mergeIterator)
 	if ok {
-		c.nextBatchBuf[0] = chunk.Batch{}
 		c.currErr = nil
 	} else {
 		c = &mergeIterator{}
@@ -154,8 +152,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	// All we need to do is get enough batches that our first batch's last entry
 	// is before all iterators next entry.
 	for len(c.h) > 0 && (len(c.batches) == 0 || c.nextBatchEndTime() >= c.h[0].AtTime()) {
-		c.nextBatchBuf[0] = c.h[0].Batch()
-		c.batchesBuf = mergeStreams(c.batches, c.nextBatchBuf[:], c.batchesBuf, size, false, true, &c.hPool, &c.fhPool)
+		c.batchesBuf = mergeStreams(c.batches, c.h[0].Batch(), c.batchesBuf, size, &c.hPool, &c.fhPool)
 		c.batches = append(c.batches[:0], c.batchesBuf...)
 
 		if c.h[0].Next(size) != chunkenc.ValNone {
@@ -175,8 +172,8 @@ func (c *mergeIterator) AtTime() int64 {
 	return c.batches[0].Timestamps[0]
 }
 
-func (c *mergeIterator) Batch() chunk.Batch {
-	return c.batches[0]
+func (c *mergeIterator) Batch() *chunk.Batch {
+	return &c.batches[0]
 }
 
 func (c *mergeIterator) Err() error {

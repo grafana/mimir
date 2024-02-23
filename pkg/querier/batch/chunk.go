@@ -75,8 +75,8 @@ func (i *chunkIterator) AtTime() int64 {
 	return i.batch.Timestamps[0]
 }
 
-func (i *chunkIterator) Batch() chunk.Batch {
-	return *i.batch
+func (i *chunkIterator) Batch() *chunk.Batch {
+	return i.batch
 }
 
 func (i *chunkIterator) Err() error {

@@ -48,9 +48,9 @@ type iterator interface {
 	// Seek or Next have returned true.
 	AtTime() int64
 
-	// Batch returns the current batch.  Must only be called after Seek or Next
+	// Batch returns a pointer to the current batch.  Must only be called after Seek or Next
 	// have returned true.
-	Batch() chunk.Batch
+	Batch() *chunk.Batch
 
 	Err() error
 }
@@ -84,7 +84,7 @@ func NewGenericChunkMergeIterator(it chunkenc.Iterator, chunks []GenericChunk) c
 // call to Next; on calls to Seek, resets batch size to 1.
 type iteratorAdapter struct {
 	batchSize  int
-	curr       chunk.Batch
+	curr       *chunk.Batch
 	underlying iterator
 }
 
@@ -92,7 +92,6 @@ func newIteratorAdapter(it *iteratorAdapter, underlying iterator) chunkenc.Itera
 	if it != nil {
 		it.batchSize = 1
 		it.underlying = underlying
-		it.curr = chunk.Batch{}
 		return it
 	}
 	return &iteratorAdapter{
@@ -105,7 +104,7 @@ func newIteratorAdapter(it *iteratorAdapter, underlying iterator) chunkenc.Itera
 func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 
 	// Optimisation: fulfill the seek using current batch if possible.
-	if a.curr.Length > 0 && a.curr.Index < a.curr.Length {
+	if a.curr != nil && a.curr.Length > 0 && a.curr.Index < a.curr.Length {
 		if t <= a.curr.Timestamps[a.curr.Index] {
 			//In this case, the interface's requirement is met, so state of this
 			//iterator does not need any change.
@@ -120,7 +119,9 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 		}
 	}
 
-	a.curr.Length = -1
+	if a.curr != nil {
+		a.curr.Length = -1
+	}
 	a.batchSize = 1
 	if typ := a.underlying.Seek(t, a.batchSize); typ != chunkenc.ValNone {
 		a.curr = a.underlying.Batch()
@@ -133,8 +134,11 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 
 // Next implements chunkenc.Iterator.
 func (a *iteratorAdapter) Next() chunkenc.ValueType {
-	a.curr.Index++
-	for a.curr.Index >= a.curr.Length && a.underlying.Next(a.batchSize) != chunkenc.ValNone {
+	// Iterator never been used before.
+	if a.curr != nil {
+		a.curr.Index++
+	}
+	for (a.curr == nil || a.curr.Index >= a.curr.Length) && a.underlying.Next(a.batchSize) != chunkenc.ValNone {
 		a.curr = a.underlying.Batch()
 		a.batchSize = a.batchSize * 2
 		if a.batchSize > chunk.BatchSize {

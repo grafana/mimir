@@ -65,7 +65,7 @@ func (it *nonOverlappingIterator) AtTime() int64 {
 	return it.iter.AtTime()
 }
 
-func (it *nonOverlappingIterator) Batch() chunk.Batch {
+func (it *nonOverlappingIterator) Batch() *chunk.Batch {
 	return it.iter.Batch()
 }
 
