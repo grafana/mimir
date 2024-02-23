@@ -188,7 +188,7 @@
       namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
     },
 
-    // Used to add extra labels to all alerts, carefull can override default labels too
+    // Used to add extra labels to all alerts. Careful: takes precedence over default labels.
     alert_extra_labels_variable: {},
 
     // Used to add extra annotations to all alerts, carefull can override default annotations too
