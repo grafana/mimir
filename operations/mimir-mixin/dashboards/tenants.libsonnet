@@ -755,6 +755,11 @@ local filename = 'mimir-tenants.json';
               },
             },
           },
+          options+: {
+            tooltip+: {
+              mode: 'multi',
+            },
+          },
         } +
         $.panelDescription(
           'Estimated Compaction Jobs',
