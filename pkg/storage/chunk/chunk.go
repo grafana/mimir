@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -78,12 +79,13 @@ type Iterator interface {
 	Timestamp() int64
 	// Batch returns a batch of the provisded size; NB not idempotent!  Should only be called
 	// once per Scan.
-	// When the optional *Batch argument is passed, it will be replaced with the content
-	// of the new batch. Depending on the implementation, the optional *Batch argument can
-	// also be used to optimize memory allocations. For example, if it already contains
-	// pointers to objects of type histogram.Histogram or histogram.FloatHistogram,
-	// the latter can be reused for the object of the new Batch.
-	Batch(size int, valueType chunkenc.ValueType, b *Batch) *Batch
+	// When the optional *zeropool.Pool arguments hPool and fhPool are passed, they will be
+	// used to optimize memory allocations for histogram.Histogram and histogram.FloatHistogram
+	// objects.
+	// For example, when creating a batch of chunkenc.ValHistogram or chunkenc.ValFloatHistogram
+	// objects, the histogram.Histogram or histogram.FloatHistograms obhects already present in
+	// the hPool or fhPool pool will be used instead of creating new ones.
+	Batch(size int, valueType chunkenc.ValueType, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch
 	// Returns the last error encountered. In general, an error signals data
 	// corruption in the chunk and requires quarantining.
 	Err() error

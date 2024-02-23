@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -207,13 +208,11 @@ func (i *mockIterator) Timestamp() int64 {
 	return 0
 }
 
-func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, b *chunk.Batch) *chunk.Batch {
-	batch := b
-	if batch == nil {
-		batch = &chunk.Batch{}
+func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram]) chunk.Batch {
+	batch := chunk.Batch{
+		Length:    chunk.BatchSize,
+		ValueType: valueType,
 	}
-	batch.Length = chunk.BatchSize
-	batch.ValueType = valueType
 	for i := 0; i < chunk.BatchSize; i++ {
 		batch.Timestamps[i] = int64(i)
 	}

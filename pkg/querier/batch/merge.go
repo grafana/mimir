@@ -58,7 +58,7 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 		c.batchesBuf = make(batchStream, len(c.its))
 	}
 	for i, cs := range css {
-		c.its[i] = newNonOverlappingIterator(c.its[i], cs)
+		c.its[i] = newNonOverlappingIterator(c.its[i], cs, &c.hPool, &c.fhPool)
 	}
 
 	for _, iter := range c.its {
@@ -155,7 +155,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	// is before all iterators next entry.
 	for len(c.h) > 0 && (len(c.batches) == 0 || c.nextBatchEndTime() >= c.h[0].AtTime()) {
 		c.nextBatchBuf[0] = c.h[0].Batch()
-		c.batchesBuf = mergeStreams(c.batches, c.nextBatchBuf[:], c.batchesBuf, size, false, true, &c.hPool, &c.fhPool)
+		c.batchesBuf = mergeStreams(c.batches, c.nextBatchBuf[:], c.batchesBuf, size)
 		c.batches = append(c.batches[:0], c.batchesBuf...)
 
 		if c.h[0].Next(size) != chunkenc.ValNone {

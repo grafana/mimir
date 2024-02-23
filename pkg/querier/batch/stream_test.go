@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
@@ -87,7 +86,7 @@ func TestStream(t *testing.T) {
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			result := make(batchStream, len(tc.input1)+len(tc.input2))
-			result = mergeStreams(tc.input1, tc.input2, result, chunk.BatchSize, false, false, nil, nil)
+			result = mergeStreams(tc.input1, tc.input2, result, chunk.BatchSize)
 			require.Equal(t, len(tc.output), len(result))
 			for i, batch := range tc.output {
 				other := result[i]
@@ -97,7 +96,7 @@ func TestStream(t *testing.T) {
 	}
 }
 
-func TestStreamWithCopiedPointerValues(t *testing.T) {
+/*func TestStreamWithCopiedPointerValues(t *testing.T) {
 	tests := map[string]struct {
 		left, right batchStream
 	}{
@@ -195,7 +194,7 @@ func seek(bs batchStream, ts int64, t chunkenc.ValueType) (*histogram.Histogram,
 		}
 	}
 	return nil, nil
-}
+}*/
 
 func mkFloatBatch(from int64) chunk.Batch {
 	return mkGenericFloatBatch(from, chunk.BatchSize)
@@ -205,9 +204,9 @@ func mkHistogramBatch(from int64) chunk.Batch {
 	return mkGenericHistogramBatch(from, chunk.BatchSize)
 }
 
-func mkFloatHistogramBatch(from int64) chunk.Batch {
+/*func mkFloatHistogramBatch(from int64) chunk.Batch {
 	return mkGenericFloatHistogramBatch(from, chunk.BatchSize)
-}
+}*/
 
 func mkGenericFloatBatch(from int64, size int) chunk.Batch {
 	batch := chunk.Batch{ValueType: chunkenc.ValFloat}
