@@ -359,6 +359,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		expectMetadataCalls     int
 		expectBodyCalls         int
 		expectNonStreamingCalls int
+		wantFrontendStreamError bool
 	}{
 		{
 			name:                "should stream response metadata followed by response body chunks",
@@ -371,6 +372,14 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			responseBodyBytes:       bytes.Repeat([]byte("a"), responseStreamingBodyChunkSizeBytes-1),
 			expectNonStreamingCalls: 1,
 		},
+		{
+			name:                    "should abort streaming on error from frontend",
+			responseBodyBytes:       bytes.Repeat([]byte("a"), 2*responseStreamingBodyChunkSizeBytes+1),
+			wantFrontendStreamError: true,
+			expectMetadataCalls:     1,
+			// Would expect 3 chunks to transfer the whole body, but expect stream to be interrupted.
+			expectBodyCalls: 2,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reqProcessor, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
@@ -378,6 +387,10 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			reqProcessor.streamingEnabled = true
 			// make sure responses don't get rejected as too large
 			reqProcessor.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
+
+			if tc.wantFrontendStreamError {
+				frontend.queryResultStreamErrorAfter = 1
+			}
 
 			queryID := uint64(1)
 			requestQueue := []*schedulerpb.SchedulerToQuerier{
@@ -400,7 +413,11 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			require.Equal(t, tc.expectMetadataCalls, int(frontend.queryResultStreamMetadataCalls.Load()))
 			require.Equal(t, tc.expectBodyCalls, int(frontend.queryResultStreamBodyCalls.Load()))
 			require.Equal(t, tc.expectNonStreamingCalls, int(frontend.queryResultCalls.Load()))
-			require.Equal(t, tc.responseBodyBytes, frontend.responses[queryID].body)
+			if tc.wantFrontendStreamError {
+				require.Less(t, len(frontend.responses[queryID].body), len(tc.responseBodyBytes))
+			} else {
+				require.Equal(t, tc.responseBodyBytes, frontend.responses[queryID].body)
+			}
 		})
 	}
 
@@ -477,7 +494,6 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			}
 		})
 
-		workerCtx, workerCancel := context.WithCancel(context.Background())
 		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
 		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(
 			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
@@ -485,6 +501,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			nil,
 		)
 
+		workerCtx, workerCancel := context.WithCancel(context.Background())
 		go func() {
 			sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 		}()
@@ -634,6 +651,7 @@ type frontendForQuerierMockServer struct {
 	queryResultCalls atomic.Int64
 
 	responseStreamStarted          chan struct{}
+	queryResultStreamErrorAfter    int
 	queryResultStreamMetadataCalls atomic.Int64
 	queryResultStreamBodyCalls     atomic.Int64
 	queryResultStreamReturned      atomic.Int64
@@ -679,6 +697,9 @@ func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.Frontend
 				}
 			})
 			f.queryResultStreamBodyCalls.Inc()
+			if f.queryResultStreamErrorAfter > 0 && int(f.queryResultStreamBodyCalls.Load()) > f.queryResultStreamErrorAfter {
+				return errors.New("something went wrong")
+			}
 			if !metadataSent {
 				return errors.New("expected metadata to be sent before body")
 			}
