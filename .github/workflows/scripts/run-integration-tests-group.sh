@@ -58,5 +58,5 @@ REGEX="${REGEX})$"
 # that integration tests will fail on data races.
 export MIMIR_ENV_VARS_JSON='{"GORACE": "halt_on_error=1"}'
 
-exec go test -tags=requires_docker,stringlabels -timeout 2400s -v -count=1 -run 'TestDistributor'
+exec go test -tags=requires_docker,stringlabels -timeout 2400s -v -count=1 -run 'TestDistributor' "${INTEGRATION_DIR}/..."
 # exec go test -tags=requires_docker,stringlabels -timeout 2400s -v -count=1 -run "${REGEX}" "${INTEGRATION_DIR}/..."
