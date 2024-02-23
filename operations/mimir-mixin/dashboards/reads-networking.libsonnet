@@ -3,6 +3,7 @@ local filename = 'mimir-reads-networking.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == '54b2a0a4748b3bd1aefa92ce5559a1c2' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Reads networking') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow($.containerNetworkingRowByComponent('Summary', 'read'))

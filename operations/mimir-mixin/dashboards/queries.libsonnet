@@ -3,6 +3,7 @@ local filename = 'mimir-queries.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == 'b3abe8d5c040395cc36615cb4334c92d' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Queries') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(

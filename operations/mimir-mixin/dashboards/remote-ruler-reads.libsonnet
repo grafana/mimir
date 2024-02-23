@@ -7,6 +7,7 @@ local filename = 'mimir-remote-ruler-reads.json';
   local rulerRoutesRegex = '/httpgrpc.HTTP/Handle|.*api_v1_query',
 
   [filename]:
+    assert std.md5(filename) == 'f103238f7f5ab2f1345ce650cbfbfe2f' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Remote ruler reads') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRowIf(

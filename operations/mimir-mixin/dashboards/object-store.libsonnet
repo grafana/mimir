@@ -3,6 +3,7 @@ local filename = 'mimir-object-store.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == 'e1324ee2a434f4158c00a9ee279d3292' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Object Store') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(

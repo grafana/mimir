@@ -3,6 +3,7 @@ local filename = 'mimir-writes-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == 'bc9160e50b52e89e0e49c840fea3d379' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Writes resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow(
