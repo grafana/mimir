@@ -2409,7 +2409,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
-	maxExemplars := i.limiter.maxExemplarsPerUser(userID)
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
@@ -2426,7 +2425,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		SeriesLifecycleCallback:               userDB,
 		BlocksToDelete:                        userDB.blocksToDelete,
 		EnableExemplarStorage:                 true, // enable for everyone so we can raise the limit later
-		MaxExemplars:                          int64(maxExemplars),
+		MaxExemplars:                          int64(i.limiter.maxExemplarsPerUser(userID)),
 		SeriesHashCache:                       i.seriesHashCache,
 		EnableMemorySnapshotOnShutdown:        i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		IsolationDisabled:                     true,
