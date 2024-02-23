@@ -185,6 +185,7 @@
 ### Query-tee
 
 * [BUGFIX] Fix issue where `Host` HTTP header was not being correctly changed for the proxy targets. #7386
+* [ENHANCEMENT] Allow using the value of X-Scope-OrgID for basic auth username in the forwarded request if URL username is set as `__REQUEST_HEADER_X_SCOPE_ORGID__`. #7452
 
 ### Documentation
 
