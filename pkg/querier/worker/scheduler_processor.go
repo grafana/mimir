@@ -299,7 +299,7 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		var ok bool
 		response.Headers, ok = removeStreamingHeader(response.Headers)
 		if sp.streamingEnabled && ok && len(response.Body) > responseStreamingBodyChunkSizeBytes {
-			err = streamResponse(frontendCtx, ctx, c, queryID, response, stats)
+			err = streamResponse(frontendCtx, ctx, c, queryID, response, stats, sp.log)
 		} else {
 			// Response is empty and uninteresting.
 			_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
@@ -336,7 +336,15 @@ func removeStreamingHeader(headers []*httpgrpc.Header) ([]*httpgrpc.Header, bool
 	return headers, streamEnabledViaHeader
 }
 
-func streamResponse(ctx context.Context, reqCtx context.Context, c client.PoolClient, queryID uint64, response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error {
+func streamResponse(
+	ctx context.Context,
+	reqCtx context.Context,
+	c client.PoolClient,
+	queryID uint64,
+	response *httpgrpc.HTTPResponse,
+	stats *querier_stats.Stats,
+	logger log.Logger,
+) error {
 	sc, err := c.(frontendv2pb.FrontendForQuerierClient).QueryResultStream(ctx)
 	if err != nil {
 		return fmt.Errorf("error creating stream to frontend: %w", err)
@@ -363,6 +371,11 @@ sendBody:
 	for offset := 0; offset < len(response.Body); {
 		select {
 		case <-reqCtx.Done():
+			if cause := context.Cause(reqCtx); cause != nil {
+				level.Warn(logger).Log("msg", "response stream aborted", "cause", cause)
+			} else {
+				level.Warn(logger).Log("msg", "response stream aborted", "err", reqCtx.Err())
+			}
 			break sendBody
 		default:
 			err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
@@ -372,6 +385,7 @@ sendBody:
 				}},
 			})
 			if err != nil {
+				level.Warn(logger).Log("msg", "error streaming response body to frontend", "err", err)
 				break sendBody
 			}
 			offset += responseStreamingBodyChunkSizeBytes
