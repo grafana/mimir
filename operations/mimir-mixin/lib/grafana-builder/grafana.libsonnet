@@ -80,18 +80,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
             text: 'show',
             value: '1',
           },
-          description: 'When setting this option to 1, panels will query and show deprecated low precision histogram metrics.',
+          description: 'When setting this option to show, panels will query and show deprecated low precision histogram metrics.',
           hide: 0,
           includeAll: false,
           label: 'Show historic data',
           multi: false,
           name: 'show_classic_histograms',
-          query: 'hide : 0,show : 1',
+          query: 'hide : -1,show : 1',
           options: [
             {
               selected: false,
               text: 'hide',
-              value: '0'
+              value: '-1'
             },
             {
               selected: true,
@@ -495,7 +495,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           lineWidth: 0,
           fillOpacity: 100,  // Get solid fill.
           stacking: {
-          mode: 'normal',  // This will be overridden for classic series to hide those behind.
+          mode: 'normal',
           group: 'A'
         },
         },
@@ -504,8 +504,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
       overrides+: [{
         matcher: {
-          id: 'byRegexp',
-          options: '(historic_)?' + status,
+          id: 'byName',
+          options: status,
         },
         properties: [
           {
@@ -516,24 +516,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             },
           },
         ],
-      } for status in std.objectFieldsAll($.httpStatusColors)] + [
-        // Make the classic histogram query results be in the backround stacked.
-        {
-          matcher: {
-            id: 'byFrameRefID',
-            options: 'A_classic',
-          },
-          properties: [
-            {
-              id: 'custom.stacking',
-              value: {
-                mode: 'normal',
-                group: 'B',
-              },
-            },
-          ],
-        },
-      ],
+      } for status in std.objectFieldsAll($.httpStatusColors)]
     },
     targets: [
       {
@@ -543,6 +526,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               label_replace(label_replace(%(metricQuery)s,
               "status", "${1}xx", "%(label)s", "([0-9]).."),
               "status", "${1}", "%(label)s", "([a-zA-Z]+)"))
+              < ($show_classic_histograms * -Inf)
           ||| % {
             metricQuery: utils.nativeClassicHistogramCountRate(metricName, selector).native,
             label: statusLabelName,
@@ -564,7 +548,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             label: statusLabelName,
           },
         format: 'time_series',
-        legendFormat: 'historic_{{status}}',
+        legendFormat: '{{status}}',
         refId: 'A_classic',
       },
     ],
@@ -598,9 +582,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // Assumes that there is a dashboard variable named show_classic_histograms, values are 0 or 1
   latencyPanelNativeHistogram(title, metricName, selector, multiplier='1e3'):: $.timeseriesPanel(title) {
     nullPointMode: 'null as zero',
+    fieldConfig+: {
+      defaults+: {
+        custom+: {
+          fillOpacity: 10,
+        },
+        unit: 'ms',
+      },
+    },
     targets: [
       {
-        expr: '(%(metricQuery)s) * %(multiplier)s' % {
+        expr: '(%(metricQuery)s) * %(multiplier)s < ($show_classic_histograms * -Inf)' % {
           metricQuery: utils.nativeClassicHistogramQuantile('0.99', metricName, selector).native,
           multiplier: multiplier,
         },
@@ -614,11 +606,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           multiplier: multiplier,
         },
         format: 'time_series',
-        legendFormat: 'Historic 99th percentile',
+        legendFormat: '99th percentile',
         refId: 'A_classic',
       },
       {
-        expr: '(%(metricQuery)s) * %(multiplier)s' % {
+        expr: '(%(metricQuery)s) * %(multiplier)s < ($show_classic_histograms * -Inf)' % {
           metricQuery: utils.nativeClassicHistogramQuantile('0.50', metricName, selector).native,
           multiplier: multiplier,
         },
@@ -632,7 +624,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           multiplier: multiplier,
         },
         format: 'time_series',
-        legendFormat: 'Historic 50th percentile',
+        legendFormat: '50th percentile',
         refId: 'B_classic',
       },
       {
@@ -640,6 +632,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           |||
             %(multiplier)s * sum(%(sumMetricQuery)s) /
             sum(%(countMetricQuery)s)
+            < ($show_classic_histograms * -Inf)
           ||| % {
             sumMetricQuery: utils.nativeClassicHistogramSumRate(metricName, selector).native,
             countMetricQuery: utils.nativeClassicHistogramCountRate(metricName, selector).native,
@@ -653,14 +646,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
         expr:
           |||
             %(multiplier)s * sum(%(sumMetricQuery)s) /
-            sum(%(countMetricQuery)s) < ($show_classic_histograms * +Inf)
+            sum(%(countMetricQuery)s)
+            < ($show_classic_histograms * +Inf)
           ||| % {
             sumMetricQuery: utils.nativeClassicHistogramSumRate(metricName, selector).classic,
             countMetricQuery: utils.nativeClassicHistogramCountRate(metricName, selector).classic,
             multiplier: multiplier,
           },
         format: 'time_series',
-        legendFormat: 'Historic average',
+        legendFormat: 'Average',
         refId: 'C_classic',
       },
     ],

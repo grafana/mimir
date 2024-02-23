@@ -53,11 +53,11 @@ local filename = 'mimir-overview.json';
           'Status',
           [
             // Write failures.
-            if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate('native') else $.queries.distributor.writeFailuresRate('native'),
+            '%s < ($show_classic_histograms * -Inf)' % if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate('native') else $.queries.distributor.writeFailuresRate('native'),
             // Write failures but from classic histograms.
             '%s < ($show_classic_histograms * +Inf)' % if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate('classic') else $.queries.distributor.writeFailuresRate('classic'),
             // Read failures.
-            if $._config.gateway_enabled then $.queries.gateway.readFailuresRate('native') else $.queries.query_frontend.readFailuresRate('native'),
+            '%s < ($show_classic_histograms * -Inf)' % if $._config.gateway_enabled then $.queries.gateway.readFailuresRate('native') else $.queries.query_frontend.readFailuresRate('native'),
             // Read failures but from classic histograms.
             '%s < ($show_classic_histograms * +Inf)' % if $._config.gateway_enabled then $.queries.gateway.readFailuresRate('classic') else $.queries.query_frontend.readFailuresRate('classic'),
             // Rule evaluation failures.
@@ -88,7 +88,7 @@ local filename = 'mimir-overview.json';
             // Object storage failures.
             $.queries.storage.failuresRate,
           ],
-          ['Writes', 'Writes historic', 'Reads', 'Reads historic', 'Rule evaluations', 'Alerting notifications', 'Object storage']
+          ['Writes', 'Writes', 'Reads', 'Reads', 'Rule evaluations', 'Alerting notifications', 'Object storage']
         )
       )
       .addPanel(
@@ -184,11 +184,16 @@ local filename = 'mimir-overview.json';
         )
       )
       .addPanel(
-        $.panel(std.stripChars('Read latency %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) + (
+        $.latencyPanelNativeHistogram(
+          std.stripChars('Read latency %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' '),
           if $._config.gateway_enabled then
-            utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+            $.queries.gateway.readRequestsPerSecondMetric
           else
-            utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+            $.queries.query_frontend.readRequestsPerSecondMetric,
+          if $._config.gateway_enabled then
+            $.queries.gateway.readRequestsPerSecondSelector
+          else
+            $.queries.query_frontend.readRequestsPerSecondSelector
         )
       )
       .addPanel(
