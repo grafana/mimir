@@ -44,6 +44,7 @@ type memcachedClientBackend interface {
 	GetMulti(keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
 	Delete(key string) error
+	Decrement(key string, delta uint64) (uint64, error)
 	Increment(key string, delta uint64) (uint64, error)
 	Touch(key string, seconds int32) error
 	Close()
@@ -399,28 +400,41 @@ func (c *MemcachedClient) Delete(ctx context.Context, key string) error {
 }
 
 func (c *MemcachedClient) Increment(ctx context.Context, key string, delta uint64) (uint64, error) {
+	return c.incrDecr(ctx, key, opIncrement, func() (uint64, error) {
+		return c.client.Increment(key, delta)
+	})
+}
+
+func (c *MemcachedClient) Decrement(ctx context.Context, key string, delta uint64) (uint64, error) {
+	return c.incrDecr(ctx, key, opDecrement, func() (uint64, error) {
+		return c.client.Decrement(key, delta)
+	})
+}
+
+func (c *MemcachedClient) incrDecr(ctx context.Context, key string, operation string, f func() (uint64, error)) (uint64, error) {
 	var (
 		newValue uint64
 		err      error
 	)
 	start := time.Now()
-	c.metrics.operations.WithLabelValues(opIncrement).Inc()
+	c.metrics.operations.WithLabelValues(operation).Inc()
 
 	select {
 	case <-ctx.Done():
 		err = ctx.Err()
 	default:
-		newValue, err = c.client.Increment(key, delta)
+		newValue, err = f()
 	}
 	if err != nil {
 		level.Debug(c.logger).Log(
-			"msg", "failed to increment cache item",
+			"msg", "failed to incr/decr cache item",
+			"operation", operation,
 			"key", key,
 			"err", err,
 		)
-		c.trackError(opIncrement, err)
+		c.trackError(operation, err)
 	} else {
-		c.metrics.duration.WithLabelValues(opIncrement).Observe(time.Since(start).Seconds())
+		c.metrics.duration.WithLabelValues(operation).Observe(time.Since(start).Seconds())
 	}
 
 	return newValue, err
