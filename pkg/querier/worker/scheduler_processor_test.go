@@ -453,9 +453,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		)
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
-		go func() {
-			sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
-		}()
+		go sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
 		assert.Eventually(t, func() bool {
 			return int(frontend.queryResultStreamMetadataCalls.Load()) == 1
@@ -494,28 +492,22 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			}
 		})
 
+		workerCtx, workerCancel := context.WithCancel(context.Background())
 		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(
+		responseBody := bytes.Repeat([]byte("a"), responseBodySize)
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
+			workerCancel()
+		}).Return(
 			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
-				Body: bytes.Repeat([]byte("a"), responseBodySize)},
+				Body: responseBody},
 			nil,
 		)
 
-		workerCtx, workerCancel := context.WithCancel(context.Background())
-		go func() {
-			sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
-		}()
+		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
-		assert.Eventually(t, func() bool {
-			return int(frontend.queryResultStreamMetadataCalls.Load()) == 1
-		}, time.Second, 10*time.Millisecond, "expected frontend to be called with response metadata once")
-		assert.Eventually(t, func() bool {
-			return int(frontend.queryResultStreamReturned.Load()) == 1
-		}, time.Second, 10*time.Millisecond, "expected frontend QueryResultStream to have returned once")
-
-		assert.Equal(t, len(frontend.responses[queryID].body), responseBodySize)
-
-		workerCancel()
+		assert.Equal(t, 1, int(frontend.queryResultStreamMetadataCalls.Load()))
+		assert.Equal(t, 1, int(frontend.queryResultStreamReturned.Load()))
+		assert.Equal(t, responseBody, frontend.responses[queryID].body)
 	})
 }
 
