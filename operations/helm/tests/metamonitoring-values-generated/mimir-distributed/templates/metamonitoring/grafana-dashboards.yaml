@@ -4600,6 +4600,55 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
+                      "description": "### Estimated Compaction Jobs\nEstimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),\nand compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 5,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum(cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) == 0)",
+                            "format": "time_series",
+                            "legendFormat": "Jobs",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Estimated Compaction Jobs",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
                       "description": "### TSDB compactions / sec\nRate of TSDB compactions. Single TSDB compaction takes one or more input blocks and produces one or more (during \"split\" phase) output blocks.\n\n",
                       "fieldConfig": {
                          "defaults": {
@@ -4624,7 +4673,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 5,
+                      "id": 6,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -4635,7 +4684,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(rate(prometheus_tsdb_compactions_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
@@ -4673,7 +4722,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 6,
+                      "id": 7,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -4685,7 +4734,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "histogram_quantile(0.99, sum(rate(prometheus_tsdb_compaction_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1e3",
@@ -4764,7 +4813,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 7,
+                      "id": 8,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -4813,7 +4862,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 8,
+                      "id": 9,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -4873,7 +4922,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 9,
+                      "id": 10,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -4952,7 +5001,7 @@ data:
                             }
                          ]
                       },
-                      "id": 10,
+                      "id": 11,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -5049,7 +5098,7 @@ data:
                             }
                          ]
                       },
-                      "id": 11,
+                      "id": 12,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -5103,7 +5152,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 12,
+                      "id": 13,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -5194,7 +5243,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 13,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -5227,7 +5276,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 14,
+                      "id": 15,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -5275,7 +5324,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 15,
+                      "id": 16,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -5354,7 +5403,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 16,
+                      "id": 17,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -5445,7 +5494,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 17,
+                      "id": 18,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -5524,7 +5573,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 18,
+                      "id": 19,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -5603,7 +5652,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 20,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -5682,7 +5731,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 20,
+                      "id": 21,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -5909,7 +5958,7 @@ data:
                             }
                          ]
                       },
-                      "id": 21,
+                      "id": 22,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -5957,7 +6006,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 23,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -32852,6 +32901,67 @@ data:
                 "showTitle": true,
                 "title": "Read Path - Queries (Ruler)",
                 "titleSize": "h6"
+             },
+             {
+                "collapse": true,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Estimated Compaction Jobs\nEstimated number of compaction jobs for selected user, based on latest version of bucket index. When user sends data, ingesters upload new user blocks every 2 hours\n(shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.), and compactors should process all of the blocks within 2h interval.\nIf this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction for this user works correctly.\n\nDepending on the configuration, there are two types of jobs: `split` jobs and `merge` jobs. Split jobs will only show up when user is configured with positive number of `compactor_split_and_merge_shards`.\nValues for split and merge jobs are stacked.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 50,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 36,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 12,
+                      "targets": [
+                         {
+                            "expr": "sum by (type) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\", user=\"$user\"})\nand ignoring(type)\n(sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) == 0)\n",
+                            "format": "time_series",
+                            "legendFormat": "{{ job }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Estimated Compaction Jobs",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Compactions",
+                "titleSize": "h6"
              }
           ],
           "schemaVersion": 14,
@@ -34278,6 +34388,132 @@ data:
                 "repeatRowId": null,
                 "showTitle": true,
                 "title": "By rule group evaluation time",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": true,
+                "height": "250px",
+                "panels": [
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "fill": 1,
+                      "id": 13,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "sort": {
+                         "col": 2,
+                         "desc": true
+                      },
+                      "spaceLength": 10,
+                      "span": 12,
+                      "stack": false,
+                      "steppedLine": false,
+                      "styles": [
+                         {
+                            "alias": "Time",
+                            "dateFormat": "YYYY-MM-DD HH:mm:ss",
+                            "pattern": "Time",
+                            "type": "hidden"
+                         },
+                         {
+                            "alias": "Compaction Jobs",
+                            "colorMode": null,
+                            "colors": [ ],
+                            "dateFormat": "YYYY-MM-DD HH:mm:ss",
+                            "decimals": 0,
+                            "link": false,
+                            "linkTargetBlank": false,
+                            "linkTooltip": "Drill down",
+                            "linkUrl": "",
+                            "pattern": "Value",
+                            "thresholds": [ ],
+                            "type": "number",
+                            "unit": "short"
+                         },
+                         {
+                            "alias": "",
+                            "colorMode": null,
+                            "colors": [ ],
+                            "dateFormat": "YYYY-MM-DD HH:mm:ss",
+                            "decimals": 2,
+                            "pattern": "/.*/",
+                            "thresholds": [ ],
+                            "type": "string",
+                            "unit": "short"
+                         }
+                      ],
+                      "targets": [
+                         {
+                            "expr": "topk($limit,\n  sum by (user) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"})\n  and ignoring(user)\n  (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) == 0)\n)\n",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "A"
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Top $limit users by estimated compaction jobs from bucket-index",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "transform": "table",
+                      "type": "table",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "By estimated compaction jobs from bucket-index",
                 "titleSize": "h6"
              }
           ],
