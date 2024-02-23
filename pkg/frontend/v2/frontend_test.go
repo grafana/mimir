@@ -7,8 +7,11 @@ package v2
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"runtime"
 	"strconv"
@@ -34,11 +37,17 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
+
+func TestMain(m *testing.M) {
+	utiltest.VerifyNoLeakTestMain(m)
+}
 
 const testFrontendWorkerConcurrency = 5
 
@@ -132,7 +141,7 @@ func TestFrontendBasicWorkflow(t *testing.T) {
 	req := &httpgrpc.HTTPRequest{
 		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
 	}
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
 	require.Equal(t, int32(200), resp.Code)
 	require.Equal(t, []byte(body), resp.Body)
@@ -168,7 +177,7 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 	req := &httpgrpc.HTTPRequest{
 		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
 	}
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
 	require.Equal(t, int32(200), resp.Code)
 	require.Equal(t, []byte(body), resp.Body)
@@ -213,7 +222,7 @@ func TestFrontendRetryEnqueue(t *testing.T) {
 	req := &httpgrpc.HTTPRequest{
 		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
 	}
-	_, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+	_, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
 }
 
@@ -225,7 +234,7 @@ func TestFrontendTooManyRequests(t *testing.T) {
 	req := &httpgrpc.HTTPRequest{
 		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
 	}
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
+	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
 	require.Equal(t, int32(http.StatusTooManyRequests), resp.Code)
 }
@@ -238,7 +247,7 @@ func TestFrontendEnqueueFailure(t *testing.T) {
 	req := &httpgrpc.HTTPRequest{
 		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
 	}
-	_, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
+	_, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
 	require.Error(t, err)
 	require.True(t, strings.Contains(err.Error(), "failed to enqueue request"))
 }
@@ -252,7 +261,7 @@ func TestFrontendCancellation(t *testing.T) {
 	req := &httpgrpc.HTTPRequest{
 		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
 	}
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
+	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
 	require.EqualError(t, err, context.DeadlineExceeded.Error())
 	require.Nil(t, resp)
 
@@ -291,7 +300,7 @@ func TestFrontendWorkerCancellation(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
+			resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
 			require.EqualError(t, err, context.DeadlineExceeded.Error())
 			require.Nil(t, resp)
 		}()
@@ -356,13 +365,205 @@ func TestFrontendFailedCancellation(t *testing.T) {
 	req := &httpgrpc.HTTPRequest{
 		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
 	}
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
+	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
 	require.EqualError(t, err, context.Canceled.Error())
 	require.Nil(t, resp)
 
 	ms.checkWithLock(func() {
 		require.Equal(t, 1, len(ms.msgs))
 	})
+}
+
+func TestFrontendStreamingResponse(t *testing.T) {
+	const (
+		userID = "test"
+	)
+
+	for _, tt := range []struct {
+		name                string
+		sendResultStream    func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error
+		expectStreamError   bool
+		expectContentLength int
+		expectBody          string
+	}{
+		{
+			name: "metadata and two chunks",
+			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+				body := "result stream body"
+				headers := []*httpgrpc.Header{{Key: "Content-Length", Values: []string{strconv.Itoa(len(body))}}}
+				resp := &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(body), Headers: headers}
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s.msgs = append(s.msgs,
+					metadataRequest(msg, int(resp.Code), resp.Headers),
+					bodyChunkRequest(msg, resp.Body[:len(resp.Body)/2]),
+					bodyChunkRequest(msg, resp.Body[len(resp.Body)/2:]),
+				)
+				return f.QueryResultStream(s)
+			},
+			expectBody:          "result stream body",
+			expectContentLength: 18,
+		},
+		{
+			name: "received metadata only, no body data sent",
+			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s.msgs = append(s.msgs,
+					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"0"}}}),
+				)
+				return f.QueryResultStream(s)
+			},
+			expectBody: "",
+		},
+		{
+			name: "metadata and empty body chunks",
+			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s.msgs = append(s.msgs,
+					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"0"}}}),
+					bodyChunkRequest(msg, nil),
+					bodyChunkRequest(msg, nil),
+				)
+				return f.QueryResultStream(s)
+			},
+			expectBody: "",
+		},
+		{
+			name: "errors on wrong message sequence",
+			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
+				s.msgs = append(s.msgs,
+					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"16"}}}),
+					bodyChunkRequest(msg, []byte("part 1/2")),
+					metadataRequest(msg, http.StatusOK, nil),
+					bodyChunkRequest(msg, []byte("part 2/2")),
+				)
+				return f.QueryResultStream(s)
+			},
+			expectStreamError:   true,
+			expectBody:          "part 1/2",
+			expectContentLength: 16,
+		},
+		{
+			name: "context cancelled while streaming response",
+			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+				ctx, cancelCause := context.WithCancelCause(user.InjectOrgID(context.Background(), userID))
+				recvCalled := make(chan struct{})
+				cancelAfterCalls := 2
+				s := &mockQueryResultStreamServer{ctx: ctx, queryID: msg.QueryID, recvCalled: recvCalled}
+				go func() {
+					recvCount := 0
+					for range recvCalled {
+						recvCount++
+						if recvCount == cancelAfterCalls {
+							cancelCause(fmt.Errorf("streaming cancelled"))
+						}
+					}
+				}()
+				s.msgs = append(s.msgs,
+					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"24"}}}),
+					bodyChunkRequest(msg, []byte("part 1/3")),
+					bodyChunkRequest(msg, []byte("part 2/3")),
+					bodyChunkRequest(msg, []byte("part 3/3")),
+				)
+				return f.QueryResultStream(s)
+			},
+			expectStreamError:   true,
+			expectBody:          "part 1/3",
+			expectContentLength: 24,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				go func() {
+					err := tt.sendResultStream(f, msg)
+					if tt.expectStreamError {
+						require.Error(t, err)
+					} else {
+						require.NoError(t, err)
+					}
+				}()
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			})
+
+			req := httptest.NewRequest("GET", "/api/v1/cardinality/active_series?selector=metric", nil)
+			rt := transport.AdaptGrpcRoundTripperToHTTPRoundTripper(f)
+
+			resp, err := rt.RoundTrip(req.WithContext(user.InjectOrgID(context.Background(), userID)))
+			require.NoError(t, err)
+			defer func() {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			}()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			body, err := io.ReadAll(resp.Body)
+			if tt.expectStreamError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.expectBody, string(body))
+
+			contentLength, err := strconv.Atoi(resp.Header.Get("Content-Length"))
+			require.NoError(t, err)
+			require.Equal(t, tt.expectContentLength, contentLength)
+
+			require.NoError(t, resp.Body.Close())
+		})
+	}
+}
+
+func metadataRequest(msg *schedulerpb.FrontendToScheduler, statusCode int, headers []*httpgrpc.Header) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		QueryID: msg.QueryID,
+		Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
+			Code:    int32(statusCode),
+			Headers: headers,
+			Stats:   &stats.Stats{},
+		}},
+	}
+}
+
+func bodyChunkRequest(msg *schedulerpb.FrontendToScheduler, content []byte) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		QueryID: msg.QueryID,
+		Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: content}},
+	}
+}
+
+type mockQueryResultStreamServer struct {
+	ctx        context.Context
+	queryID    uint64
+	msgs       []*frontendv2pb.QueryResultStreamRequest
+	next       int
+	recvCalled chan struct{}
+
+	grpc.ServerStream
+}
+
+func (s *mockQueryResultStreamServer) Context() context.Context {
+	return s.ctx
+}
+
+func (s *mockQueryResultStreamServer) SendAndClose(_ *frontendv2pb.QueryResultResponse) error {
+	return s.ctx.Err()
+}
+
+func (s *mockQueryResultStreamServer) Recv() (*frontendv2pb.QueryResultStreamRequest, error) {
+	if s.recvCalled != nil {
+		s.recvCalled <- struct{}{}
+	}
+	if err := s.ctx.Err(); err != nil {
+		if s.recvCalled != nil {
+			close(s.recvCalled)
+		}
+		return nil, err
+	}
+	if s.next >= len(s.msgs) {
+		return nil, io.EOF
+	}
+	defer func() { s.next++ }()
+	return s.msgs[s.next], nil
 }
 
 type mockScheduler struct {
@@ -481,7 +682,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 	req := &httpgrpc.HTTPRequest{
 		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
 	}
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
 	require.Equal(t, int(resp.Code), http.StatusTooManyRequests)
 
@@ -495,7 +696,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 	require.Equal(t, 1, checkStreamGoroutines())
 
 	// Another request will work as before, because worker will recreate connection.
-	resp, err = f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+	resp, _, err = f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
 	require.Equal(t, int(resp.Code), http.StatusTooManyRequests)
 

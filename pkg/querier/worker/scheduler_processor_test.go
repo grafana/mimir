@@ -3,10 +3,14 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"math"
 	"net"
+	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -325,6 +329,229 @@ func TestCreateSchedulerProcessor(t *testing.T) {
 	assert.Equal(t, conf, sp.grpcConfig)
 }
 
+func TestSchedulerProcessor_ResponseStream(t *testing.T) {
+	receiveRequests := func(r []*schedulerpb.SchedulerToQuerier, c schedulerpb.SchedulerForQuerier_QuerierLoopClient) func() (*schedulerpb.SchedulerToQuerier, error) {
+		nextReq := atomic.NewInt64(0)
+		return func() (*schedulerpb.SchedulerToQuerier, error) {
+			switch n := int(nextReq.Inc()); {
+			case n <= len(r):
+				return r[n-1], nil
+			default:
+				// No more messages to process, wait until terminated.
+				<-c.Context().Done()
+				return nil, toRPCErr(c.Context().Err())
+			}
+		}
+	}
+
+	returnResponses := func(res []*httpgrpc.HTTPResponse) func() (*httpgrpc.HTTPResponse, error) {
+		nextResp := atomic.NewInt64(0)
+		return func() (*httpgrpc.HTTPResponse, error) {
+			return res[nextResp.Inc()-1], nil
+		}
+	}
+
+	streamingEnabledHeader := &httpgrpc.Header{Key: ResponseStreamingEnabledHeader, Values: []string{"true"}}
+
+	for _, tc := range []struct {
+		name                    string
+		responseBodyBytes       []byte
+		expectMetadataCalls     int
+		expectBodyCalls         int
+		expectNonStreamingCalls int
+		wantFrontendStreamError bool
+	}{
+		{
+			name:                "should stream response metadata followed by response body chunks",
+			responseBodyBytes:   bytes.Repeat([]byte("a"), responseStreamingBodyChunkSizeBytes+1),
+			expectMetadataCalls: 1,
+			expectBodyCalls:     2,
+		},
+		{
+			name:                    "should not stream response if body is smaller than the chunk size",
+			responseBodyBytes:       bytes.Repeat([]byte("a"), responseStreamingBodyChunkSizeBytes-1),
+			expectNonStreamingCalls: 1,
+		},
+		{
+			name:                    "should abort streaming on error from frontend",
+			responseBodyBytes:       bytes.Repeat([]byte("a"), 2*responseStreamingBodyChunkSizeBytes+1),
+			wantFrontendStreamError: true,
+			expectMetadataCalls:     1,
+			// Would expect 3 chunks to transfer the whole body, but expect stream to be interrupted.
+			expectBodyCalls: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reqProcessor, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+			// enable response streaming
+			reqProcessor.streamingEnabled = true
+			// make sure responses don't get rejected as too large
+			reqProcessor.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
+
+			if tc.wantFrontendStreamError {
+				frontend.queryResultStreamErrorAfter = 1
+			}
+
+			queryID := uint64(1)
+			requestQueue := []*schedulerpb.SchedulerToQuerier{
+				{QueryID: queryID, HttpRequest: nil, FrontendAddress: frontend.addr, UserID: "test"},
+			}
+			responses := []*httpgrpc.HTTPResponse{{
+				Code: http.StatusOK, Body: tc.responseBodyBytes,
+				Headers: []*httpgrpc.Header{streamingEnabledHeader},
+			}}
+
+			processClient.On("Recv").Return(receiveRequests(requestQueue, processClient))
+			ctx, cancel := context.WithCancel(context.Background())
+
+			requestHandler.On("Handle", mock.Anything, mock.Anything).Run(
+				func(arguments mock.Arguments) { cancel() },
+			).Return(returnResponses(responses)())
+
+			reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
+
+			require.Equal(t, tc.expectMetadataCalls, int(frontend.queryResultStreamMetadataCalls.Load()))
+			require.Equal(t, tc.expectBodyCalls, int(frontend.queryResultStreamBodyCalls.Load()))
+			require.Equal(t, tc.expectNonStreamingCalls, int(frontend.queryResultCalls.Load()))
+			if tc.wantFrontendStreamError {
+				require.Less(t, len(frontend.responses[queryID].body), len(tc.responseBodyBytes))
+			} else {
+				require.Equal(t, tc.responseBodyBytes, frontend.responses[queryID].body)
+			}
+		})
+	}
+
+	t.Run("should abort streaming if query is cancelled", func(t *testing.T) {
+		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		sp.streamingEnabled = true
+		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
+
+		recvCount := atomic.NewInt64(0)
+		frontend.responseStreamStarted = make(chan struct{})
+
+		queryID := uint64(1)
+		loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
+			switch recvCount.Inc() {
+			case 1:
+				return &schedulerpb.SchedulerToQuerier{
+					QueryID:         queryID,
+					FrontendAddress: frontend.addr,
+					UserID:          "test",
+				}, nil
+			default:
+				<-frontend.responseStreamStarted
+				// Simulate cancellation of the query.
+				return nil, toRPCErr(context.Canceled)
+			}
+		})
+
+		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(
+			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
+				Body: bytes.Repeat([]byte("a"), responseBodySize)},
+			nil,
+		)
+
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+		go sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+
+		assert.Eventually(t, func() bool {
+			return int(frontend.queryResultStreamReturned.Load()) == 1
+		}, time.Second, 10*time.Millisecond, "expected frontend QueryResultStream to have returned once")
+
+		assert.Equal(t, 1, int(frontend.queryResultStreamMetadataCalls.Load()))
+		assert.NotNil(t, frontend.responses[queryID].body)
+		assert.Less(t, len(frontend.responses[queryID].body), responseBodySize)
+
+		workerCancel()
+	})
+
+	t.Run("should finish streaming if worker context is canceled", func(t *testing.T) {
+		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		sp.streamingEnabled = true
+		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
+
+		recvCount := atomic.NewInt64(0)
+		frontend.responseStreamStarted = make(chan struct{})
+
+		queryID := uint64(1)
+		loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
+			switch recvCount.Inc() {
+			case 1:
+				return &schedulerpb.SchedulerToQuerier{
+					QueryID:         queryID,
+					FrontendAddress: frontend.addr,
+					UserID:          "test",
+				}, nil
+			default:
+				<-loopClient.Context().Done()
+				return nil, loopClient.Context().Err()
+			}
+		})
+
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
+		responseBody := bytes.Repeat([]byte("a"), responseBodySize)
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
+			// cancel the worker context before response streaming begins
+			workerCancel()
+		}).Return(
+			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
+				Body: responseBody},
+			nil,
+		)
+
+		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+
+		assert.Equal(t, 1, int(frontend.queryResultStreamMetadataCalls.Load()))
+		assert.Equal(t, 1, int(frontend.queryResultStreamReturned.Load()))
+		assert.Equal(t, responseBody, frontend.responses[queryID].body)
+	})
+
+	t.Run("should finish streaming if scheduler client returns a non-cancellation error", func(t *testing.T) {
+		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		sp.streamingEnabled = true
+		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
+
+		recvCount := atomic.NewInt64(0)
+		frontend.responseStreamStarted = make(chan struct{})
+
+		queryID := uint64(1)
+		loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
+			switch recvCount.Inc() {
+			case 1:
+				return &schedulerpb.SchedulerToQuerier{
+					QueryID:         queryID,
+					FrontendAddress: frontend.addr,
+					UserID:          "test",
+				}, nil
+			default:
+				<-frontend.responseStreamStarted
+				return nil, errors.New("something went wrong that isn't a cancellation error")
+			}
+		})
+
+		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
+		responseBody := bytes.Repeat([]byte("a"), responseBodySize)
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(
+			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
+				Body: responseBody},
+			nil,
+		)
+
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+		go sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+
+		assert.Eventually(t, func() bool {
+			return frontend.queryResultStreamReturned.Load() == 1
+		}, time.Second, 10*time.Millisecond, "expected frontend QueryResultStream to have returned once")
+		assert.Equal(t, 1, int(frontend.queryResultStreamMetadataCalls.Load()))
+		assert.Equal(t, responseBody, frontend.responses[queryID].body)
+
+		workerCancel()
+	})
+}
+
 func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopClientMock, *requestHandlerMock, *frontendForQuerierMockServer) {
 	loopClient := &querierLoopClientMock{}
 	loopClient.On("Send", mock.Anything).Return(nil)
@@ -347,7 +574,7 @@ func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopC
 	}
 	sp.grpcConfig.MaxSendMsgSize = math.MaxInt
 
-	frontendForQuerierMock := &frontendForQuerierMockServer{}
+	frontendForQuerierMock := &frontendForQuerierMockServer{responses: make(map[uint64]*queryResult)}
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	frontendForQuerierMock.addr = lis.Addr().String()
@@ -455,10 +682,65 @@ func (m *requestHandlerMock) Handle(ctx context.Context, req *httpgrpc.HTTPReque
 type frontendForQuerierMockServer struct {
 	addr             string
 	queryResultCalls atomic.Int64
+
+	responseStreamStarted          chan struct{}
+	queryResultStreamErrorAfter    int
+	queryResultStreamMetadataCalls atomic.Int64
+	queryResultStreamBodyCalls     atomic.Int64
+	queryResultStreamReturned      atomic.Int64
+
+	responses map[uint64]*queryResult
 }
 
-func (f *frontendForQuerierMockServer) QueryResult(context.Context, *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
+type queryResult struct {
+	metadata *frontendv2pb.QueryResultMetadata
+	body     []byte
+}
+
+func (f *frontendForQuerierMockServer) QueryResult(_ context.Context, r *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
 	f.queryResultCalls.Inc()
+	f.responses[r.QueryID] = &queryResult{body: r.HttpResponse.Body}
 
 	return &frontendv2pb.QueryResultResponse{}, nil
+}
+
+func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	defer f.queryResultStreamReturned.Inc()
+	var once sync.Once
+
+	metadataSent := false
+	for {
+		resp, err := s.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return err
+		}
+		switch data := resp.Data.(type) {
+		case *frontendv2pb.QueryResultStreamRequest_Metadata:
+			f.queryResultStreamMetadataCalls.Inc()
+			metadataSent = true
+			f.responses[resp.QueryID] = &queryResult{metadata: data.Metadata}
+		case *frontendv2pb.QueryResultStreamRequest_Body:
+			once.Do(func() {
+				// Signal that response streaming has begun.
+				if f.responseStreamStarted != nil {
+					close(f.responseStreamStarted)
+				}
+			})
+			f.queryResultStreamBodyCalls.Inc()
+			if f.queryResultStreamErrorAfter > 0 && int(f.queryResultStreamBodyCalls.Load()) > f.queryResultStreamErrorAfter {
+				return errors.New("something went wrong")
+			}
+			if !metadataSent {
+				return errors.New("expected metadata to be sent before body")
+			}
+			f.responses[resp.QueryID].body = append(f.responses[resp.QueryID].body, data.Body.Chunk...)
+		default:
+			return errors.New("unexpected request type")
+		}
+	}
+
+	return nil
 }

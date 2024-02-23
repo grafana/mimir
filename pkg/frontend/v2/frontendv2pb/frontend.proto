@@ -19,6 +19,7 @@ option (gogoproto.unmarshaler_all) = true;
 // Frontend interface exposed to Queriers. Used by queriers to report back the result of the query.
 service FrontendForQuerier {
     rpc QueryResult (QueryResultRequest) returns (QueryResultResponse) { };
+    rpc QueryResultStream (stream QueryResultStreamRequest) returns (QueryResultResponse) { };
 }
 
 message QueryResultRequest {
@@ -28,6 +29,24 @@ message QueryResultRequest {
 
     // There is no userID field here, because Querier puts userID into the context when
     // calling QueryResult, and that is where Frontend expects to find it.
+}
+
+message QueryResultStreamRequest {
+  uint64 queryID = 1;
+  oneof data {
+    QueryResultMetadata metadata = 2;
+    QueryResultBody body = 3;
+  }
+}
+
+message QueryResultMetadata {
+    int32 code = 1;
+    repeated httpgrpc.Header headers = 2;
+    stats.Stats stats = 3;
+}
+
+message QueryResultBody {
+    bytes chunk = 1;
 }
 
 message QueryResultResponse { }
