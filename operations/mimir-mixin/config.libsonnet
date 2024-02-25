@@ -191,7 +191,7 @@
     // Used to add extra labels to all alerts. Careful: takes precedence over default labels.
     alert_extra_labels: {},
 
-    // Used to add extra annotations to all alerts, Careful: takes precedence over default labels.
+    // Used to add extra annotations to all alerts, Careful: takes precedence over default annotations.
     alert_extra_annotations: {},
 
     cortex_p99_latency_threshold_seconds: 2.5,
