@@ -800,7 +800,7 @@ func TestLimiter_IsWithinMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 			limits, err := validation.NewOverrides(validation.Limits{MaxGlobalSeriesPerUser: testData.maxGlobalSeriesPerUser, IngestionPartitionsTenantShardSize: testData.tenantShardSize}, nil)
 			require.NoError(t, err)
 
-			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionTenantShardSize)
+			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionPartitionsTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
 			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, testData.minLocalLimit)
 
