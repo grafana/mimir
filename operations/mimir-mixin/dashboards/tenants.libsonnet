@@ -772,6 +772,22 @@ local filename = 'mimir-tenants.json';
             Values for split and merge jobs are stacked.
           |||
         )
+      )
+
+      .addPanel(
+        $.timeseriesPanel('Blocks') +
+        $.queryPanel(
+          |||
+            max by (user) (cortex_bucket_blocks_count{%s, user="$user"})
+          ||| % [$.jobMatcher($._config.job_names.compactor)],
+          '{{ job }}',
+        ) +
+        $.panelDescription(
+          'Number of blocks',
+          |||
+            Number of blocks stored in long-term storage for this user.
+          |||
+        )
       ),
     ),
 }

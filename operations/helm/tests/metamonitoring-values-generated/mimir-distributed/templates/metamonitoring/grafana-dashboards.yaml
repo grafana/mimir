@@ -32943,7 +32943,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 12,
+                      "span": 6,
                       "targets": [
                          {
                             "expr": "sum by (type) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\", user=\"$user\"})\nand ignoring(type)\n(sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) == 0)\n",
@@ -32953,6 +32953,55 @@ data:
                          }
                       ],
                       "title": "Estimated Compaction Jobs",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Number of blocks\nNumber of blocks stored in long-term storage for this user.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 37,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 6,
+                      "targets": [
+                         {
+                            "expr": "max by (user) (cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\", user=\"$user\"})\n",
+                            "format": "time_series",
+                            "legendFormat": "{{ job }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Blocks",
                       "type": "timeseries"
                    }
                 ],
