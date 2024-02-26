@@ -165,11 +165,15 @@ func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duratio
 		return true, nil, nil
 	}
 
-	// Check if the job contains any source block uploaded more recently
-	// than "wait period" ago.
+	// Check if the job contains any source block uploaded more recently than "wait period" ago,
+	// ignoring out of order blocks.
 	threshold := time.Now().Add(-waitPeriod)
 
 	for _, meta := range job.Metas() {
+		if meta.OutOfOrder || meta.Compaction.FromOutOfOrder() {
+			continue
+		}
+
 		metaPath := path.Join(meta.ULID.String(), block.MetaFilename)
 
 		attrs, err := userBucket.Attributes(ctx, metaPath)

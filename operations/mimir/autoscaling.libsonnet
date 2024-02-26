@@ -354,7 +354,7 @@
     // This is due to KEDA requiring an integer.
 
     if (std.isString(str) && std.endsWith(str, 'm')) then (
-      std.rstripChars(str, 'm')
+      std.parseInt(std.rstripChars(str, 'm'))
     ) else (
       std.parseJson(str + '') * 1000
     )

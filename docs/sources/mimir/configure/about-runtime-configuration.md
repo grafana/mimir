@@ -99,4 +99,10 @@ An advanced runtime configuration option controls if ingesters transfer encoded 
 The parameter `ingester_stream_chunks_when_using_blocks` might only be used in runtime configuration.
 A value of `true` transfers encoded chunks, and a value of `false` transfers decoded series.
 
-> **Note:** The parameter `ingester_stream_chunks_when_using_blocks` in the runtime configuration can override the CLI flag `-ingester.stream-chunks-when-using-blocks`, which is enabled by default. We strongly recommend to keep it enabled, except in rare cases where you observe rules evaluation slowing down.
+{{< admonition type="note" >}}
+By default, `-ingester.stream-chunks-when-using-blocks` is `true` which enables transfer of encoded chunks.
+
+In runtime configuration, the parameter `ingester_stream_chunks_when_using_blocks` overrides the CLI flag `-ingester.stream-chunks-when-using-blocks`.
+
+It's strongly recommended that you keep the transfer of encoded chunks enabled, except in rare cases where you observe rules evaluation slowing down.
+{{< /admonition >}}

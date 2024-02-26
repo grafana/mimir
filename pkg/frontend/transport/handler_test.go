@@ -88,21 +88,23 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"time":  []string{"42"},
 			},
 			expectedMetrics:         5,
-			expectedActivity:        "12345 POST /api/v1/query query=some_metric&time=42",
+			expectedActivity:        "user:12345 UA:test-user-agent req:POST /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 		},
 		{
 			name: "handler with stats enabled, GET request with params",
 			cfg:  HandlerConfig{QueryStatsEnabled: true},
 			request: func() *http.Request {
-				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+				r := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+				r.Header.Add("User-Agent", "test-user-agent")
+				return r
 			},
 			expectedParams: url.Values{
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
 			expectedMetrics:         5,
-			expectedActivity:        "12345 GET /api/v1/query query=some_metric&time=42",
+			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 		},
 		{
@@ -110,6 +112,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			cfg:  HandlerConfig{QueryStatsEnabled: true},
 			request: func() *http.Request {
 				r := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+				r.Header.Add("User-Agent", "test-user-agent")
 				return r.WithContext(api.ContextWithReadConsistency(context.Background(), api.ReadConsistencyStrong))
 			},
 			expectedParams: url.Values{
@@ -117,32 +120,36 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"time":  []string{"42"},
 			},
 			expectedMetrics:         5,
-			expectedActivity:        "12345 GET /api/v1/query query=some_metric&time=42",
+			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: api.ReadConsistencyStrong,
 		},
 		{
 			name: "handler with stats enabled, GET request without params",
 			cfg:  HandlerConfig{QueryStatsEnabled: true},
 			request: func() *http.Request {
-				return httptest.NewRequest("GET", "/api/v1/query", nil)
+				r := httptest.NewRequest("GET", "/api/v1/query", nil)
+				r.Header.Add("User-Agent", "test-user-agent")
+				return r
 			},
 			expectedParams:          url.Values{},
 			expectedMetrics:         5,
-			expectedActivity:        "12345 GET /api/v1/query (no params)",
+			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
 			expectedReadConsistency: "",
 		},
 		{
 			name: "handler with stats disabled, GET request with params",
 			cfg:  HandlerConfig{QueryStatsEnabled: false},
 			request: func() *http.Request {
-				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+				r := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+				r.Header.Add("User-Agent", "test-user-agent")
+				return r
 			},
 			expectedParams: url.Values{
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
 			expectedMetrics:         0,
-			expectedActivity:        "12345 GET /api/v1/query query=some_metric&time=42",
+			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 		},
 	} {

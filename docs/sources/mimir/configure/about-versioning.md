@@ -63,9 +63,6 @@ The following features are currently experimental:
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
-  - OTLP ingestion path
-  - OTLP metadata storage
-    - `-distributor.enable-otlp-metadata-storage`
   - Using status code 529 instead of 429 upon rate limit exhaustion.
     - `distributor.service-overload-status-code-on-rate-limit-enabled`
   - Set Retry-After header in recoverable error responses
@@ -109,6 +106,7 @@ The following features are currently experimental:
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
+  - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`
@@ -125,6 +123,7 @@ The following features are currently experimental:
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
+  - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
@@ -146,7 +145,12 @@ The following features are currently experimental:
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
-- Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
+- Vault
+  - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
+  - Vault client authentication token lifetime watcher. Ensures the client token is always valid by renewing the token lease or re-authenticating. Includes the metrics:
+    - `cortex_vault_token_lease_renewal_active`
+    - `cortex_vault_token_lease_renewal_success_total`
+    - `cortex_vault_auth_success_total`
 - Logger
   - Rate limited logger support
     - `log.rate-limit-enabled`
@@ -158,9 +162,6 @@ The following features are currently experimental:
     - `-<prefix>.memcached.read-buffer-size-bytes`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
-- Limiting inflight requests to Distributor and Ingester via gRPC limiter:
-  - `-distributor.limit-inflight-requests-using-grpc-method-limiter`
-  - `-ingester.limit-inflight-requests-using-grpc-method-limiter`
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
 - Ingester: track "owned series" and use owned series instead of in-memory series for tenant limits.
   - `-ingester.use-ingester-owned-series-for-limits`

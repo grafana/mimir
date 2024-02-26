@@ -99,13 +99,10 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		ctx = context.Background()
 	)
 
-	setup := func(t *testing.T) (testConsumer, *PartitionReader, *kgo.Client, *prometheus.Registry) {
+	setup := func(t *testing.T, consumer recordConsumer) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 
 		_, clusterAddr := testkafka.CreateCluster(t, 1, topicName)
-
-		// Create a consumer with no buffer capacity.
-		consumer := newTestConsumer(0)
 
 		// Configure the reader to poll the "last produced offset" frequently.
 		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer,
@@ -114,13 +111,34 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 
 		writeClient := newKafkaProduceClient(t, clusterAddr)
 
-		return consumer, reader, writeClient, reg
+		return reader, writeClient, reg
 	}
 
-	t.Run("should return after all produced records up have been consumed", func(t *testing.T) {
+	t.Run("should return after all produced records have been consumed", func(t *testing.T) {
 		t.Parallel()
 
-		consumer, reader, writeClient, reg := setup(t)
+		consumedRecords := atomic.NewInt64(0)
+
+		// We define a custom consume function which introduces a delay once the 2nd record
+		// has been consumed but before the function returns. From the PartitionReader perspective,
+		// the 2nd record consumption will be delayed.
+		consumer := consumerFunc(func(ctx context.Context, records []record) error {
+			for _, record := range records {
+				// Introduce a delay before returning from the consume function once
+				// the 2nd record has been consumed.
+				if consumedRecords.Load()+1 == 2 {
+					time.Sleep(time.Second)
+				}
+
+				consumedRecords.Inc()
+				assert.Equal(t, fmt.Sprintf("record-%d", consumedRecords.Load()), string(record.content))
+				t.Logf("consumed record: %s", string(record.content))
+			}
+
+			return nil
+		})
+
+		reader, writeClient, reg := setup(t, consumer)
 
 		// Produce some records.
 		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
@@ -129,30 +147,12 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 
 		// WaitReadConsistency() should return after all records produced up until this
 		// point have been consumed.
-		runAsyncAndAssertCompletionOrder(t,
-			func() {
-				records, err := consumer.waitRecords(1, time.Second, 0)
-				assert.NoError(t, err)
-				assert.Equal(t, [][]byte{[]byte("record-1")}, records)
-				t.Logf("consumed records: %s", records)
+		t.Log("started waiting for read consistency")
 
-				// Wait some time before consuming next record.
-				time.Sleep(time.Second)
-
-				records, err = consumer.waitRecords(1, time.Second, 0)
-				assert.NoError(t, err)
-				assert.Equal(t, [][]byte{[]byte("record-2")}, records)
-				t.Logf("consumed records: %s", records)
-			},
-			func() {
-				t.Log("started waiting for read consistency")
-
-				err := reader.WaitReadConsistency(ctx)
-				require.NoError(t, err)
-
-				t.Log("finished waiting for read consistency")
-			},
-		)
+		err := reader.WaitReadConsistency(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), consumedRecords.Load())
+		t.Log("finished waiting for read consistency")
 
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
@@ -168,7 +168,10 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 	t.Run("should block until the context deadline exceed if produced records are not consumed", func(t *testing.T) {
 		t.Parallel()
 
-		consumer, reader, writeClient, reg := setup(t)
+		// Create a consumer with no buffer capacity.
+		consumer := newTestConsumer(0)
+
+		reader, writeClient, reg := setup(t, consumer)
 
 		// Produce some records.
 		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
@@ -200,7 +203,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 	t.Run("should return if no records have been produced yet", func(t *testing.T) {
 		t.Parallel()
 
-		_, reader, _, reg := setup(t)
+		reader, _, reg := setup(t, newTestConsumer(0))
 
 		err := reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
 		require.NoError(t, err)
@@ -219,7 +222,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 	t.Run("should return an error if the PartitionReader is not running", func(t *testing.T) {
 		t.Parallel()
 
-		_, reader, _, reg := setup(t)
+		reader, _, reg := setup(t, newTestConsumer(0))
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
@@ -304,7 +307,7 @@ func startReader(ctx context.Context, t *testing.T, addr string, topicName strin
 	for _, o := range opts {
 		o(cfg)
 	}
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, cfg.consumer, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	reader.commitInterval = cfg.commitInterval
 

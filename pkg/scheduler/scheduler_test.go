@@ -608,6 +608,11 @@ func (f *frontendMock) QueryResult(_ context.Context, request *frontendv2pb.Quer
 	return &frontendv2pb.QueryResultResponse{}, nil
 }
 
+// satisfy frontendv2pb.FrontendForQuerierServer interface
+func (f *frontendMock) QueryResultStream(_ frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	panic("unexpected call to QueryResultStream")
+}
+
 func (f *frontendMock) getRequest(queryID uint64) *httpgrpc.HTTPResponse {
 	f.mu.Lock()
 	defer f.mu.Unlock()

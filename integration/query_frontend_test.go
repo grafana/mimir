@@ -39,6 +39,7 @@ type queryFrontendTestConfig struct {
 	queryStatsEnabled           bool
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
 	withHistograms              bool
+	shardActiveSeriesQueries    bool
 }
 
 func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
@@ -316,6 +317,17 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// When using the ingest storage, wait until partitions are ACTIVE in the ring.
+	if flags["-ingest-storage.enabled"] == "true" {
+		require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+			labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+
+		require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+			labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+	}
 
 	// Push a series for each user to Mimir.
 	now := time.Now()

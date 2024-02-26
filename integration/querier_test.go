@@ -77,9 +77,10 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 	// Configure the blocks storage to frequently compact TSDB head
 	// and ship blocks to the storage.
 	commonFlags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-		"-blocks-storage.tsdb.block-ranges-period": blockRangePeriod.String(),
-		"-blocks-storage.tsdb.ship-interval":       "1s",
-		"-blocks-storage.tsdb.retention-period":    "1ms", // Retention period counts from the moment the block was uploaded to storage so we're setting it deliberatelly small so block gets deleted as soon as possible
+		"-blocks-storage.tsdb.block-ranges-period":      blockRangePeriod.String(),
+		"-blocks-storage.tsdb.ship-interval":            "1s",
+		"-blocks-storage.tsdb.retention-period":         "1ms", // Retention period counts from the moment the block was uploaded to storage so we're setting it deliberatelly small so block gets deleted as soon as possible
+		"-compactor.first-level-compaction-wait-period": "1m",  // Do not compact aggressively
 	})
 
 	// Start dependencies in common with all test cases.
@@ -549,7 +550,6 @@ func testMetadataQueriesWithBlocksStorage(
 		resp   []prompb.Label
 	}
 	type labelValuesTest struct {
-		label   string
 		matches []string
 		resp    []string
 	}
@@ -584,16 +584,13 @@ func testMetadataQueriesWithBlocksStorage(
 			},
 			labelValuesTests: []labelValuesTest{
 				{
-					label: labels.MetricName,
-					resp:  []string{firstSeriesInIngesterHeadName},
+					resp: []string{firstSeriesInIngesterHeadName},
 				},
 				{
-					label:   labels.MetricName,
 					resp:    []string{firstSeriesInIngesterHeadName},
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 				{
-					label:   labels.MetricName,
 					resp:    []string{},
 					matches: []string{lastSeriesInStorageName},
 				},
@@ -620,17 +617,13 @@ func testMetadataQueriesWithBlocksStorage(
 			},
 			labelValuesTests: []labelValuesTest{
 				{
-					label: labels.MetricName,
-					resp:  []string{lastSeriesInIngesterBlocksName},
+					resp: []string{lastSeriesInIngesterBlocksName},
 				},
-
 				{
-					label:   labels.MetricName,
 					resp:    []string{lastSeriesInIngesterBlocksName},
 					matches: []string{lastSeriesInIngesterBlocksName},
 				},
 				{
-					label:   labels.MetricName,
 					resp:    []string{},
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
@@ -659,21 +652,17 @@ func testMetadataQueriesWithBlocksStorage(
 			},
 			labelValuesTests: []labelValuesTest{
 				{
-					label: labels.MetricName,
-					resp:  []string{lastSeriesInStorageName, lastSeriesInIngesterBlocksName, firstSeriesInIngesterHeadName},
+					resp: []string{lastSeriesInStorageName, lastSeriesInIngesterBlocksName, firstSeriesInIngesterHeadName},
 				},
 				{
-					label:   labels.MetricName,
 					resp:    []string{lastSeriesInStorageName},
 					matches: []string{lastSeriesInStorageName},
 				},
 				{
-					label:   labels.MetricName,
 					resp:    []string{lastSeriesInIngesterBlocksName},
 					matches: []string{lastSeriesInIngesterBlocksName},
 				},
 				{
-					label:   labels.MetricName,
 					resp:    []string{lastSeriesInStorageName, lastSeriesInIngesterBlocksName},
 					matches: []string{lastSeriesInStorageName, lastSeriesInIngesterBlocksName},
 				},
@@ -701,16 +690,13 @@ func testMetadataQueriesWithBlocksStorage(
 			},
 			labelValuesTests: []labelValuesTest{
 				{
-					label: labels.MetricName,
-					resp:  []string{lastSeriesInStorageName},
+					resp: []string{lastSeriesInStorageName},
 				},
 				{
-					label:   labels.MetricName,
 					resp:    []string{lastSeriesInStorageName},
 					matches: []string{lastSeriesInStorageName},
 				},
 				{
-					label:   labels.MetricName,
 					resp:    []string{},
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
@@ -725,21 +711,21 @@ func testMetadataQueriesWithBlocksStorage(
 				seriesRes, err := c.Series([]string{st.lookup}, tc.from, tc.to)
 				require.NoError(t, err)
 				if st.ok {
-					require.Equal(t, 1, len(seriesRes))
-					require.Equal(t, model.LabelSet(prompbLabelsToModelMetric(st.resp)), seriesRes[0])
+					require.Equal(t, 1, len(seriesRes), st)
+					require.Equal(t, model.LabelSet(prompbLabelsToModelMetric(st.resp)), seriesRes[0], st)
 				} else {
-					require.Equal(t, 0, len(seriesRes))
+					require.Equal(t, 0, len(seriesRes), st)
 				}
 			}
 
 			for _, lvt := range tc.labelValuesTests {
-				labelsRes, err := c.LabelValues(lvt.label, tc.from, tc.to, lvt.matches)
+				labelsRes, err := c.LabelValues(labels.MetricName, tc.from, tc.to, lvt.matches)
 				require.NoError(t, err)
 				exp := model.LabelValues{}
 				for _, val := range lvt.resp {
 					exp = append(exp, model.LabelValue(val))
 				}
-				require.Equal(t, exp, labelsRes)
+				require.Equal(t, exp, labelsRes, lvt)
 			}
 
 			labelNames, err := c.LabelNames(tc.from, tc.to)

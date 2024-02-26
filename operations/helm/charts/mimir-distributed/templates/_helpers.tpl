@@ -379,6 +379,18 @@ Prometheus http prefix
 {{- end -}}
 
 {{/*
+KEDA Autoscaling Prometheus address
+*/}}
+{{- define "mimir.kedaPrometheusAddress" -}}
+{{- if not .ctx.Values.kedaAutoscaling.prometheusAddress -}}
+{{ include "mimir.metaMonitoring.metrics.remoteReadUrl" . }}
+{{- else -}}
+{{ .ctx.Values.kedaAutoscaling.prometheusAddress }}
+{{- end -}}
+{{- end -}}
+
+
+{{/*
 Cluster name that shows up in dashboard metrics
 */}}
 {{- define "mimir.clusterName" -}}
@@ -509,6 +521,10 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 
 {{- define "mimir.remoteWriteUrl.inCluster" -}}
 {{ include "mimir.gatewayUrl" . }}/api/v1/push
+{{- end -}}
+
+{{- define "mimir.remoteReadUrl.inCluster" -}}
+{{ include "mimir.gatewayUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
 {{- end -}}
 
 {{/*

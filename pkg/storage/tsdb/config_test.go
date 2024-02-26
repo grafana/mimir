@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 
@@ -148,7 +147,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(activeSeriesCfg)
 			testData.setup(storageCfg, activeSeriesCfg)
 
-			actualErr := storageCfg.Validate(*activeSeriesCfg, log.NewNopLogger())
+			actualErr := storageCfg.Validate(*activeSeriesCfg)
 			assert.Equal(t, testData.expectedErr, actualErr)
 		})
 	}
