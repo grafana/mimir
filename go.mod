@@ -53,7 +53,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/storage v1.37.0
+	cloud.google.com/go/storage v1.38.0
 	github.com/alecthomas/chroma/v2 v2.12.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/aws/aws-sdk-go v1.50.25
@@ -61,7 +61,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.6.0
 	github.com/google/go-github/v57 v57.0.0
-	github.com/google/uuid v1.5.0
+	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
 	github.com/hashicorp/golang-lru/v2 v2.0.7
@@ -81,7 +81,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.22.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20240222234643-814bf88cf225
-	google.golang.org/api v0.160.0
+	google.golang.org/api v0.162.0
 	google.golang.org/protobuf v1.32.0
 	sigs.k8s.io/kustomize/kyaml v0.16.0
 )
@@ -246,7 +246,7 @@ require (
 	golang.org/x/tools v0.18.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto v0.0.0-20240205150955-31a09d347014 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240125205218-1f4bbc51befe // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240205150955-31a09d347014 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240213162025-012b6fc9bca9 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/telebot.v3 v3.2.1 // indirect
