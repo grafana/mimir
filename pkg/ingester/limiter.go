@@ -110,10 +110,6 @@ func (l *Limiter) convertGlobalToLocalLimitOrUnlimited(userID string, globalLimi
 	return max(minLocalLimit, localLimit)
 }
 
-func (l *Limiter) getShardSize(userID string) int {
-	return l.ringStrategy.getShardSize(userID)
-}
-
 // limiterRingStrategy provides computations based on ingester or partitions ring.
 type limiterRingStrategy interface {
 	// convertGlobalToLocalLimit converts global limit to local, per-ingester limit, using given user's shard size (ingesters or partitions).
