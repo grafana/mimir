@@ -744,3 +744,53 @@ func TestCompareLabelAdapters(t *testing.T) {
 		require.Equal(t, -sign(test.expected), sign(got), "unexpected comparison result for reverse test case %d", i)
 	}
 }
+
+// The main usecase for `LabelsToKeyString` is to generate hashKeys
+// for maps. We are benchmarking that here.
+func BenchmarkSeriesMap(b *testing.B) {
+	benchmarkSeriesMap(100000, b)
+}
+
+func benchmarkSeriesMap(numSeries int, b *testing.B) {
+	series := makeSeries(numSeries)
+	sm := make(map[string]int, numSeries)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for i, s := range series {
+			sm[FromLabelAdaptersToKeyString(s)] = i
+		}
+
+		for _, s := range series {
+			_, ok := sm[FromLabelAdaptersToKeyString(s)]
+			if !ok {
+				b.Fatal("element missing")
+			}
+		}
+
+		if len(sm) != numSeries {
+			b.Fatal("the number of series expected:", numSeries, "got:", len(sm))
+		}
+	}
+}
+
+func makeSeries(n int) [][]LabelAdapter {
+	series := make([][]LabelAdapter, 0, n)
+	for i := 0; i < n; i++ {
+		series = append(series, []LabelAdapter{
+			{Name: "label0", Value: "value0"},
+			{Name: "label1", Value: "value1"},
+			{Name: "label2", Value: "value2"},
+			{Name: "label3", Value: "value3"},
+			{Name: "label4", Value: "value4"},
+			{Name: "label5", Value: "value5"},
+			{Name: "label6", Value: "value6"},
+			{Name: "label7", Value: "value7"},
+			{Name: "label8", Value: "value8"},
+			{Name: "label9", Value: strconv.Itoa(i)},
+		})
+	}
+
+	return series
+}

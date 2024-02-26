@@ -103,6 +103,20 @@ func FromLabelAdaptersToScratchBuilder(ls []LabelAdapter, builder *labels.Scratc
 	}
 }
 
+// FromLabelAdaptersToKeyString makes a string to be used as a key to a map.
+// It's much simpler than FromLabelAdaptersToString, but not human-readable.
+func FromLabelAdaptersToKeyString(ls []LabelAdapter) string {
+	buf := make([]byte, 0, 1024)
+	b := bytes.NewBuffer(buf)
+	for _, l := range ls {
+		b.WriteByte('\xff')
+		b.WriteString(l.Name)
+		b.WriteByte('\xff')
+		b.WriteString(l.Value)
+	}
+	return b.String()
+}
+
 // FromLabelAdaptersToString formats label adapters as a metric name with labels, while preserving
 // label order, and keeping duplicates. If there are multiple "__name__" labels, only
 // first one is used as metric name, other ones will be included as regular labels.
