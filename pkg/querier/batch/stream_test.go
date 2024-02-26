@@ -88,7 +88,7 @@ func TestStream(t *testing.T) {
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			result := make(batchStream, len(tc.input1)+len(tc.input2))
-			result = mergeStreams(tc.input1, tc.input2, result, chunk.BatchSize)
+			result = mergeStreams(tc.input1, tc.input2, result, chunk.BatchSize, nil, nil)
 			require.Equal(t, len(tc.output), len(result))
 			for i, batch := range tc.output {
 				other := result[i]

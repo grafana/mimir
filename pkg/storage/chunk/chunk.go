@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -77,9 +78,15 @@ type Iterator interface {
 	AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram)
 	AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram)
 	Timestamp() int64
-	// Returns a batch of the provisded size; NB not idempotent!  Should only be called
+	// Batch returns a batch of the provisded size; NB not idempotent!  Should only be called
 	// once per Scan.
-	Batch(size int, valueType chunkenc.ValueType) Batch
+	// When the optional *zeropool.Pool arguments hPool and fhPool are passed, they will be
+	// used to optimize memory allocations for histogram.Histogram and histogram.FloatHistogram
+	// objects.
+	// For example, when creating a batch of chunkenc.ValHistogram or chunkenc.ValFloatHistogram
+	// objects, the histogram.Histogram or histogram.FloatHistograms objects already present in
+	// the hPool or fhPool pool will be used instead of creating new ones.
+	Batch(size int, valueType chunkenc.ValueType, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch
 	// Returns the last error encountered. In general, an error signals data
 	// corruption in the chunk and requires quarantining.
 	Err() error
@@ -94,7 +101,8 @@ const BatchSize = 12
 // Batch is intended to be small, and passed by value!
 type Batch struct {
 	Timestamps [BatchSize]int64
-	Values     [BatchSize]float64
+	// Values stores float values related to this batch if ValueType is chunkenc.ValFloat.
+	Values [BatchSize]float64
 	// PointerValues store pointers to non-float complex values like histograms, float histograms or future additions.
 	// Since Batch is expected to be passed by value, the array needs to be constant sized,
 	// however increasing the size of the Batch also adds memory management overhead. Using the unsafe.Pointer
