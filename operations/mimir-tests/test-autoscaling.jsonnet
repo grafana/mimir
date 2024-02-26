@@ -72,6 +72,18 @@ mimir {
         query: 'some_query_goes_here',
         threshold: '123',
       },
+      {
+        metric_name: 'cortex_test_hpa_%s_ignore_null_values_false' % $._config.namespace,
+        query: 'query',
+        threshold: '123',
+        ignore_null_values: false,  // Boolean is supported, and converted to string.
+      },
+      {
+        metric_name: 'cortex_test_hpa_%s_ignore_null_values_true' % $._config.namespace,
+        query: 'query',
+        threshold: '123',
+        ignore_null_values: 'true',  // String is supported, and let as-is.
+      },
     ],
   }),
 }
