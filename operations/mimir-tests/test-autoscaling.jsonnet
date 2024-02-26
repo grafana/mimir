@@ -82,7 +82,7 @@ mimir {
         metric_name: 'cortex_test_hpa_%s_ignore_null_values_true' % $._config.namespace,
         query: 'query',
         threshold: '123',
-        ignore_null_values: 'true',  // String is supported, and let as-is.
+        ignore_null_values: 'true',  // String is supported, and left as-is.
       },
     ],
   }),
