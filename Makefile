@@ -120,8 +120,10 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 
 %/$(UPTODATE_RACE): GOOS=linux
 %/$(UPTODATE_RACE): %/Dockerfile
+	# Build Dockerfile.distroless if it exists, we use distroless/base-nossl-debian12 as base image since race detector needs glibc packages.
 	if [ -f $(@D)/Dockerfile.distroless ]; then \
 		$(SUDO) docker build -f $(@D)/Dockerfile.distroless \
+			--build-arg=revision=$(GIT_REVISION) \
 			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 			--build-arg=USE_BINARY_SUFFIX=true \
 			--build-arg=BINARY_SUFFIX=_race \
