@@ -32,7 +32,7 @@ local filename = 'mimir-overview.json';
 
     ($.dashboard('Overview') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
-    .addShowHistoricDataVariable()
+    .addShowNativeLatencyVariable()
 
     .addRow(
       $.row('%(product)s cluster health' % $._config)
@@ -53,13 +53,21 @@ local filename = 'mimir-overview.json';
           'Status',
           [
             // Write failures.
-            '%s < ($show_classic_histograms * -Inf)' % if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate('native') else $.queries.distributor.writeFailuresRate('native'),
+            utils.wrapNativeLatencyQuery(
+              if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate else $.queries.distributor.writeFailuresRate
+            ),
             // Write failures but from classic histograms.
-            '%s < ($show_classic_histograms * +Inf)' % if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate('classic') else $.queries.distributor.writeFailuresRate('classic'),
+            utils.wrapClassicLatencyQuery(
+              if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate else $.queries.distributor.writeFailuresRate
+            ),
             // Read failures.
-            '%s < ($show_classic_histograms * -Inf)' % if $._config.gateway_enabled then $.queries.gateway.readFailuresRate('native') else $.queries.query_frontend.readFailuresRate('native'),
+            utils.wrapNativeLatencyQuery(
+              if $._config.gateway_enabled then $.queries.gateway.readFailuresRate else $.queries.query_frontend.readFailuresRate,
+            ),
             // Read failures but from classic histograms.
-            '%s < ($show_classic_histograms * +Inf)' % if $._config.gateway_enabled then $.queries.gateway.readFailuresRate('classic') else $.queries.query_frontend.readFailuresRate('classic'),
+            utils.wrapClassicLatencyQuery(
+              if $._config.gateway_enabled then $.queries.gateway.readFailuresRate else $.queries.query_frontend.readFailuresRate,
+            ),
             // Rule evaluation failures.
             $.queries.ruler.evaluations.failuresRate,
             // Alerting notifications.

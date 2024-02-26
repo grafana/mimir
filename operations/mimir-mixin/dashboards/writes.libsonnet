@@ -6,7 +6,7 @@ local filename = 'mimir-writes.json';
   [filename]:
     ($.dashboard('Writes') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
-    .addShowHistoricDataVariable()
+    .addShowNativeLatencyVariable()
     .addRowIf(
       $._config.show_dashboard_descriptions.writes,
       ($.row('Writes dashboard description') { height: '125px', showTitle: false })
@@ -155,8 +155,12 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           [
-            '%s < ($show_classic_histograms * -Inf)' % utils.nativeClassicHistogramQuantile('0.99', $.queries.distributor.writeRequestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector, [$._config.per_instance_label]).native,
-            '%s < ($show_classic_histograms * +Inf)' % utils.nativeClassicHistogramQuantile('0.99', $.queries.distributor.writeRequestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector, [$._config.per_instance_label]).classic,
+            utils.wrapNativeLatencyQuery(
+              utils.nativeClassicHistogramQuantile('0.99', $.queries.distributor.writeRequestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector, [$._config.per_instance_label])
+            ),
+            utils.wrapClassicLatencyQuery(
+              utils.nativeClassicHistogramQuantile('0.99', $.queries.distributor.writeRequestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector, [$._config.per_instance_label])
+            ),
           ],
           ['', '']
         )
@@ -199,8 +203,12 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           [
-            '%s < ($show_classic_histograms * -Inf)' % utils.nativeClassicHistogramQuantile('0.99', 'cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester), [$._config.per_instance_label]).native,
-            '%s < ($show_classic_histograms * +Inf)' % utils.nativeClassicHistogramQuantile('0.99', 'cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester), [$._config.per_instance_label]).classic,
+            utils.wrapNativeLatencyQuery(
+              utils.nativeClassicHistogramQuantile('0.99', 'cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester), [$._config.per_instance_label])
+            ),
+            utils.wrapClassicLatencyQuery(
+              utils.nativeClassicHistogramQuantile('0.99', 'cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester), [$._config.per_instance_label])
+            ),
           ],
           ['', '']
         )
