@@ -396,7 +396,7 @@ func TestBatchMergeChunks(t *testing.T) {
 	require.ElementsMatch(t, m[0].Histograms, m[1].Histograms)
 }
 
-func BenchmarkExecute(b *testing.B) {
+func BenchmarkQueryExecute(b *testing.B) {
 	var (
 		logger    = log.NewNopLogger()
 		queryStep = time.Second
@@ -424,7 +424,11 @@ func BenchmarkExecute(b *testing.B) {
 	}
 
 	for _, scenario := range scenarios {
-		for _, encoding := range []chunk.Encoding{chunk.PrometheusXorChunk, chunk.PrometheusHistogramChunk, chunk.PrometheusFloatHistogramChunk} {
+		for _, encoding := range []chunk.Encoding{
+			chunk.PrometheusXorChunk,
+			chunk.PrometheusHistogramChunk,
+			chunk.PrometheusFloatHistogramChunk,
+		} {
 			name := fmt.Sprintf("chunks: %d samples per chunk: %d duplication factor: %d encoding: %s", scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, encoding)
 			queryStart := time.Now().Add(-time.Second * time.Duration(scenario.numChunks*scenario.numSamplesPerChunk))
 			queryEnd := time.Now()
@@ -524,7 +528,7 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	return queryable, ts
 }
 
-func createChunks(b *testing.B, numChunks, numSamplesPerChunk, duplicationFactor int, queryStart time.Time, step time.Duration, enc chunk.Encoding) []client.Chunk {
+func createChunks(b require.TestingT, numChunks, numSamplesPerChunk, duplicationFactor int, queryStart time.Time, step time.Duration, enc chunk.Encoding) []client.Chunk {
 	result := make([]chunk.Chunk, 0, numChunks)
 
 	for d := 0; d < duplicationFactor; d++ {

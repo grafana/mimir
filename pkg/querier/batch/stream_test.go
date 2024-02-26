@@ -86,7 +86,7 @@ func TestStream(t *testing.T) {
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			result := make(batchStream, len(tc.input1)+len(tc.input2))
-			result = mergeStreams(tc.input1, tc.input2, result, chunk.BatchSize)
+			result = mergeStreams(tc.input1, tc.input2, result, chunk.BatchSize, nil, nil)
 			require.Equal(t, len(tc.output), len(result))
 			for i, batch := range tc.output {
 				other := result[i]
@@ -96,106 +96,6 @@ func TestStream(t *testing.T) {
 	}
 }
 
-/*func TestStreamWithCopiedPointerValues(t *testing.T) {
-	tests := map[string]struct {
-		left, right batchStream
-	}{
-		"non-overlapping histograms": {
-			left:  []chunk.Batch{mkHistogramBatch(0)},
-			right: []chunk.Batch{mkHistogramBatch(chunk.BatchSize)},
-		},
-		"non-overlapping float histograms": {
-			left:  []chunk.Batch{mkFloatHistogramBatch(0)},
-			right: []chunk.Batch{mkFloatHistogramBatch(chunk.BatchSize)},
-		},
-		"non-overlapping histograms and float histograms": {
-			left:  []chunk.Batch{mkHistogramBatch(0)},
-			right: []chunk.Batch{mkFloatHistogramBatch(chunk.BatchSize)},
-		},
-		"overlapping histograms": {
-			left:  []chunk.Batch{mkHistogramBatch(0)},
-			right: []chunk.Batch{mkHistogramBatch(chunk.BatchSize / 2)},
-		},
-		"overlapping float histograms": {
-			left:  []chunk.Batch{mkFloatHistogramBatch(0)},
-			right: []chunk.Batch{mkFloatHistogramBatch(chunk.BatchSize / 2)},
-		},
-		"overlapping histograms and float histograms": {
-			left:  []chunk.Batch{mkHistogramBatch(0)},
-			right: []chunk.Batch{mkFloatHistogramBatch(chunk.BatchSize / 2)},
-		},
-	}
-
-	for testName, tc := range tests {
-		for _, copyPointerValuesLeft := range []bool{false, true} {
-			for _, copyPointerValuesRight := range []bool{false, true} {
-				t.Run(fmt.Sprintf("%s copyPointerValuesLeft %v copyPointerValuesRight %v", testName, copyPointerValuesLeft, copyPointerValuesRight), func(t *testing.T) {
-					tc.left.reset()
-					tc.right.reset()
-					result := make(batchStream, len(tc.left)+len(tc.right))
-					result = mergeStreams(tc.left, tc.right, result, chunk.BatchSize, copyPointerValuesLeft, copyPointerValuesRight, nil, nil)
-					for _, batch := range result {
-						for j := 0; j < batch.Length; j++ {
-							h, fh := seek(tc.left, batch.Timestamps[j], batch.ValueType)
-							if h != nil || fh != nil {
-								histogramCopied := batch.ValueType == chunkenc.ValHistogram && h != batch.Histograms[j]
-								floatHistogramCopied := batch.ValueType == chunkenc.ValFloatHistogram && fh != batch.FloatHistograms[j]
-								if copyPointerValuesLeft {
-									require.True(t, histogramCopied || floatHistogramCopied)
-								} else {
-									require.False(t, histogramCopied && floatHistogramCopied)
-								}
-								continue
-							}
-							h, fh = seek(tc.right, batch.Timestamps[j], batch.ValueType)
-							require.True(t, h != nil || fh != nil)
-							histogramCopied := batch.ValueType == chunkenc.ValHistogram && h != batch.Histograms[j]
-							floatHistogramCopied := batch.ValueType == chunkenc.ValFloatHistogram && fh != batch.FloatHistograms[j]
-							if copyPointerValuesRight {
-								require.True(t, histogramCopied || floatHistogramCopied)
-							} else {
-								require.False(t, histogramCopied && floatHistogramCopied)
-							}
-						}
-					}
-				})
-			}
-		}
-	}
-
-}
-
-func seek(bs batchStream, ts int64, t chunkenc.ValueType) (*histogram.Histogram, *histogram.FloatHistogram) {
-	for i := len(bs) - 1; i >= 0; i-- {
-		b := (bs)[i]
-		if b.Length <= 0 {
-			return nil, nil
-		}
-		if b.Timestamps[b.Length-1] < ts {
-			return nil, nil
-		}
-		if b.Timestamps[0] > ts {
-			continue
-		}
-		if b.ValueType != t {
-			return nil, nil
-		}
-		for j := 0; j < b.Length; j++ {
-			if b.Timestamps[j] == ts {
-				switch t {
-				case chunkenc.ValHistogram:
-					return b.Histograms[j], nil
-				case chunkenc.ValFloatHistogram:
-					return nil, b.FloatHistograms[j]
-				default:
-					return nil, nil
-				}
-			}
-		}
-	}
-	return nil, nil
-}*/
-
 func mkFloatBatch(from int64) chunk.Batch {
 	return mkGenericFloatBatch(from, chunk.BatchSize)
 }
@@ -203,10 +103,6 @@ func mkFloatBatch(from int64) chunk.Batch {
 func mkHistogramBatch(from int64) chunk.Batch {
 	return mkGenericHistogramBatch(from, chunk.BatchSize)
 }
-
-/*func mkFloatHistogramBatch(from int64) chunk.Batch {
-	return mkGenericFloatHistogramBatch(from, chunk.BatchSize)
-}*/
 
 func mkGenericFloatBatch(from int64, size int) chunk.Batch {
 	batch := chunk.Batch{ValueType: chunkenc.ValFloat}
@@ -223,16 +119,6 @@ func mkGenericHistogramBatch(from int64, size int) chunk.Batch {
 	for i := 0; i < size; i++ {
 		batch.Timestamps[i] = from + int64(i)
 		batch.Histograms[i] = test.GenerateTestHistogram(int(from) + i)
-	}
-	batch.Length = size
-	return batch
-}
-
-func mkGenericFloatHistogramBatch(from int64, size int) chunk.Batch {
-	batch := chunk.Batch{ValueType: chunkenc.ValFloatHistogram}
-	for i := 0; i < size; i++ {
-		batch.Timestamps[i] = from + int64(i)
-		batch.FloatHistograms[i] = test.GenerateTestFloatHistogram(int(from) + i)
 	}
 	batch.Length = size
 	return batch

@@ -8,6 +8,7 @@ package batch
 import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
@@ -61,7 +62,10 @@ func (bs *batchStream) atFloatHistogram() (int64, *histogram.FloatHistogram) {
 // mergeStreams merges streams of Batches of the same series over time.
 // Samples are simply merged by time when they are the same type (float/histogram/...), with the left stream taking precedence if the timestamps are equal.
 // When sample are different type, batches are not merged. In case of equal timestamps, histograms take precedence since they have more information.
-func mergeStreams(left, right batchStream, result batchStream, size int) batchStream {
+// hPool and fhPool are pools of pointers where the discarded histogram.Histogram and histogram.FloatHistogram objects from left and right streams
+// will be placed, so that they can be reused. If hPool and fhPool are nil, the discarded histogram.Histogram and histogram.FloatHistogram objects
+// will not be reused.
+func mergeStreams(left, right, result batchStream, size int, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) batchStream {
 
 	// Reset the Index and Length of existing batches.
 	for i := range result {
@@ -118,10 +122,18 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 			right.next()
 		} else {
 			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
-				// Prefer histograms over floats. Take left side if both have histograms.
+				// Prefer histograms than floats. Take left side if both have histograms.
 				populate(right, rt)
 			} else {
 				populate(left, lt)
+				if hPool != nil && rt == chunkenc.ValHistogram {
+					_, h := right.atHistogram()
+					hPool.Put(h)
+				}
+				if fhPool != nil && rt == chunkenc.ValFloatHistogram {
+					_, fh := right.atFloatHistogram()
+					fhPool.Put(fh)
+				}
 			}
 			left.next()
 			right.next()

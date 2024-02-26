@@ -155,7 +155,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	// is before all iterators next entry.
 	for len(c.h) > 0 && (len(c.batches) == 0 || c.nextBatchEndTime() >= c.h[0].AtTime()) {
 		c.nextBatchBuf[0] = c.h[0].Batch()
-		c.batchesBuf = mergeStreams(c.batches, c.nextBatchBuf[:], c.batchesBuf, size)
+		c.batchesBuf = mergeStreams(c.batches, c.nextBatchBuf[:], c.batchesBuf, size, &c.hPool, &c.fhPool)
 		c.batches = append(c.batches[:0], c.batchesBuf...)
 
 		if c.h[0].Next(size) != chunkenc.ValNone {
