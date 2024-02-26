@@ -72,6 +72,7 @@
 * [ENHANCEMENT] Compactor: After updating bucket-index, compactor now also computes estimated number of compaction jobs based on current bucket-index, and reports the result in `cortex_bucket_index_estimated_compaction_jobs` metric. If computation of jobs fails, `cortex_bucket_index_estimated_compaction_jobs_errors_total` is updated instead. #7299
 * [ENHANCEMENT] Mimir: Integrate profiling into tracing instrumentation. #7363
 * [ENHANCEMENT] Alertmanager: Adds metric `cortex_alertmanager_notifications_suppressed_total` that counts the total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals. #7384
+* [ENHANCEMENT] Query-scheduler: added more buckets to `cortex_query_scheduler_queue_duration_seconds` histogram metric, in order to better track queries staying in the queue for longer than 10s. #7470
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
 * [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
