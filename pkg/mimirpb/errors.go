@@ -17,10 +17,7 @@ func IsClientError(err error) bool {
 	if status, ok := grpcutil.ErrorToStatus(err); ok {
 		for _, details := range status.Details() {
 			if errDetails, ok := details.(*ErrorDetails); ok {
-				return errDetails.Cause == BAD_DATA ||
-					errDetails.Cause == INGESTION_RATE_LIMITED ||
-					errDetails.Cause == REQUEST_RATE_LIMITED ||
-					errDetails.Cause == TOO_MANY_CLUSTERS
+				return errDetails.Cause == BAD_DATA
 			}
 		}
 	}

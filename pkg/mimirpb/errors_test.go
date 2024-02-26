@@ -47,14 +47,6 @@ func TestIsClientError(t *testing.T) {
 			err:      mustStatusWithDetails(codes.FailedPrecondition, BAD_DATA).Err(),
 			expected: true,
 		},
-		"a gRPC error with INGESTION_RATE_LIMITED in details is a client error": {
-			err:      mustStatusWithDetails(codes.FailedPrecondition, INGESTION_RATE_LIMITED).Err(),
-			expected: true,
-		},
-		"a gRPC error with REQUEST_RATE_LIMITED in details is a client error": {
-			err:      mustStatusWithDetails(codes.FailedPrecondition, REQUEST_RATE_LIMITED).Err(),
-			expected: true,
-		},
 		"a gRPC error with TSDB_UNAVAILABLE in details is not a client error": {
 			err:      mustStatusWithDetails(codes.FailedPrecondition, TSDB_UNAVAILABLE).Err(),
 			expected: false,
