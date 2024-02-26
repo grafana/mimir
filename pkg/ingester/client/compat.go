@@ -223,13 +223,3 @@ func FromLabelMatchers(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
 	}
 	return result, nil
 }
-
-// LabelsToKeyString is used to form a string to be used as
-// the hashKey. Don't print, use l.String() for printing.
-func LabelsToKeyString(l labels.Labels) string {
-	// We are allocating 1024, even though most series are less than 600b long.
-	// But this is not an issue as this function is being inlined when called in a loop
-	// and buffer allocated is a static buffer and not a dynamic buffer on the heap.
-	b := make([]byte, 0, 1024)
-	return string(l.Bytes(b))
-}
