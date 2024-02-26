@@ -13,8 +13,34 @@ import (
 	"github.com/grafana/dskit/kv/memberlist"
 )
 
+type partitionRingCodec struct {
+	codec.Codec
+}
+
+// Decode wraps Codec.Decode and ensure PartitionRingDesc maps are not nil.
+func (c *partitionRingCodec) Decode(in []byte) (interface{}, error) {
+	out, err := c.Codec.Decode(in)
+	if err != nil {
+		return out, err
+	}
+
+	// Ensure maps are initialised. This makes working with PartitionRingDesc more convenient.
+	if actual, ok := out.(*PartitionRingDesc); ok {
+		if actual.Partitions == nil {
+			actual.Partitions = map[int32]PartitionDesc{}
+		}
+		if actual.Owners == nil {
+			actual.Owners = map[string]OwnerDesc{}
+		}
+	}
+
+	return out, nil
+}
+
 func GetPartitionRingCodec() codec.Codec {
-	return codec.NewProtoCodec("partitionRingDesc", PartitionRingDescFactory)
+	return &partitionRingCodec{
+		Codec: codec.NewProtoCodec("partitionRingDesc", PartitionRingDescFactory),
+	}
 }
 
 // PartitionRingDescFactory makes new PartitionRingDesc.
@@ -54,7 +80,7 @@ func (m *PartitionRingDesc) tokens() Tokens {
 	return allTokens
 }
 
-// partitionByToken returns the a map where they key is a registered token and the value is ID of the partition
+// partitionByToken returns a map where they key is a registered token and the value is ID of the partition
 // that registered that token.
 func (m *PartitionRingDesc) partitionByToken() map[Token]int32 {
 	out := make(map[Token]int32, len(m.Partitions)*optimalTokensPerInstance)
@@ -102,6 +128,16 @@ func (m *PartitionRingDesc) countPartitionsByState() map[PartitionState]int {
 	return out
 }
 
+func (m *PartitionRingDesc) activePartitionsCount() int {
+	count := 0
+	for _, partition := range m.Partitions {
+		if partition.IsActive() {
+			count++
+		}
+	}
+	return count
+}
+
 // WithPartitions returns a new PartitionRingDesc with only the specified partitions and their owners included.
 func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) PartitionRingDesc {
 	newPartitions := make(map[int32]PartitionDesc, len(partitions))
@@ -133,6 +169,7 @@ func (m *PartitionRingDesc) AddPartition(id int32, state PartitionState, now tim
 	spreadMinimizing := NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID("", int(id), 0, false)
 
 	m.Partitions[id] = PartitionDesc{
+		Id:             id,
 		Tokens:         spreadMinimizing.GenerateTokens(optimalTokensPerInstance, nil),
 		State:          state,
 		StateTimestamp: now.Unix(),
@@ -187,12 +224,7 @@ func (m *PartitionRingDesc) AddOrUpdateOwner(id string, state OwnerState, ownedP
 	}
 
 	updated.UpdatedTimestamp = now.Unix()
-
-	if m.Owners == nil {
-		m.Owners = map[string]OwnerDesc{id: updated}
-	} else {
-		m.Owners[id] = updated
-	}
+	m.Owners[id] = updated
 
 	return true
 }
@@ -268,7 +300,7 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 			changed = true
 			thisPart = otherPart
 		} else {
-			// We don't merge token changes because we expect tokens to be immutable.
+			// We don't merge changes to partition ID and tokens because we expect them to be immutable.
 			//
 			// If in the future we'll change the tokens generation algorithm and we'll have to handle migration to
 			// a different set of tokens then we'll add the support. For example, we could add "token generation version"
@@ -306,7 +338,7 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 		}
 	}
 
-	// Now let's handle owners. Owners don't have tokens, which simplifies things compared to "normal" ring.
+	// Now let's handle owners.
 	for id, otherOwner := range other.Owners {
 		thisOwner := m.Owners[id]
 

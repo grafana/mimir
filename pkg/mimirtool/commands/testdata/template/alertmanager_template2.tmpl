@@ -1,0 +1,14 @@
+{{ define "my_message" }}[{{ .CommonLabels.alertname }} | {{ .CommonLabels.customer }} | {{ .CommonLabels.environment }}]{{ end }}
+
+{{ define "my_description" }}
+{{ range .Alerts -}}
+Alertname: {{ .Labels.alertname }}
+Severity: {{ .Labels.severity }}
+
+Details:
+• Customer: {{ .Labels.customer }}
+• Environment: {{ .Labels.environment }}
+• Description: {{ .Annotations.description }}
+{{ end }}
+<a href="{{ grafanaExploreURL "https://example.com" "xyz" "now-12h" "now" (queryFromGeneratorURL (index .Alerts 0).GeneratorURL) }}">Grafana Explorer URL</a>
+{{ end }}

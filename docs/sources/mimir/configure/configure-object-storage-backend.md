@@ -36,16 +36,23 @@ but it is a read-only data source and can be used to provision state into those 
 
 To avoid repetition, you can use the [common configuration]({{< relref "./about-configurations#common-configurations" >}}) and fill the [`common`]({{< relref "./configuration-parameters#common" >}}) configuration block or by providing the `-common.storage.*` CLI flags.
 
-> **Note:** Blocks storage cannot be located in the same path of the same bucket as the ruler and alertmanager stores. When using the common configuration, make [`blocks_storage`]({{< relref "./configuration-parameters#blocks_storage" >}}) use either a:
+{{< admonition type="note" >}}
+Blocks storage can't be located in the same path of the same bucket as the ruler and Alertmanager stores.
+
+When using the common configuration, make [`blocks_storage`]({{< relref "./configuration-parameters#blocks_storage" >}}) use either a:
 
 - different bucket, overriding the common bucket name
 - storage prefix
 
-Grafana Mimir will fail to start if you configure blocks storage to use the same bucket and storage prefix that the alertmanager or ruler store uses.
+{{< /admonition >}}
+
+Grafana Mimir will fail to start if you configure blocks storage to use the same bucket and storage prefix that the Alertmanager or ruler store uses.
 
 Find examples of setting up the different object stores below:
 
-> **Note**: If you're using a mixture of YAML files and CLI flags, pay attention to their [precedence logic]({{< relref "./about-configurations#common-configurations" >}}).
+{{< admonition type="note" >}}
+If you're using a mixture of YAML files and CLI flags, pay attention to their [precedence logic]({{< relref "./about-configurations#common-configurations" >}}).
+{{< /admonition >}}
 
 ### S3
 

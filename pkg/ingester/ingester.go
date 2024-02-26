@@ -368,7 +368,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, activeGroupsCleanupService *util.ActiveGroupsCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
 		return nil, err
@@ -405,14 +405,6 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, i.lifecycler.ID, ingestersRing, log.With(i.logger, "component", "owned series"), registerer, i.limits.IngestionTenantShardSize, i.getTSDBUsers, i.getTSDB)
 	}
 
-	// Init the limter and instantiate the user states which depend on it
-	i.limiter = NewLimiter(
-		limits,
-		i.lifecycler,
-		cfg.IngesterRing.ReplicationFactor,
-		cfg.IngesterRing.ZoneAwarenessEnabled,
-	)
-
 	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {
 		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(cfg.ReadPathCPUUtilizationLimit,
 			cfg.ReadPathMemoryUtilizationLimit, cfg.LogUtilizationBasedLimiterCPUSamples,
@@ -425,6 +417,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	// Apply positive jitter only to ensure that the minimum timeout is adhered to.
 	i.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
 	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.compactionIdleTimeout)
+
+	var limiterStrategy limiterRingStrategy
 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
@@ -457,8 +451,13 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			partitionRingKV,
 			logger,
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+
+		limiterStrategy = newPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
+	} else {
+		limiterStrategy = newIngesterRingLimiterStrategy(ingestersRing, cfg.IngesterRing.ReplicationFactor, cfg.IngesterRing.ZoneAwarenessEnabled, cfg.IngesterRing.InstanceZone, i.limits.IngestionTenantShardSize)
 	}
 
+	i.limiter = NewLimiter(limits, limiterStrategy)
 	i.BasicService = services.NewBasicService(i.starting, i.updateLoop, i.stopping)
 	return i, nil
 }
@@ -474,6 +473,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 
 	i.shipperIngesterID = "flusher"
+	i.limiter = NewLimiter(limits, flusherLimiterStrategy{})
 
 	// This ingester will not start any subservices (lifecycler, compaction, shipping),
 	// and will only open TSDBs, wait for Flush to be called, and then close TSDBs again.
@@ -807,9 +807,6 @@ func (i *Ingester) updateUsageStats() {
 // * The current out-of-order time window. If it changes from 0 to >0, then a new Write-Behind-Log gets created for that tenant.
 func (i *Ingester) applyTSDBSettings() {
 	for _, userID := range i.getTSDBUsers() {
-		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
-		localValue := i.limiter.convertGlobalToLocalLimit(i.limiter.getShardSize(userID), globalValue)
-
 		oooTW := i.limits.OutOfOrderTimeWindow(userID)
 		if oooTW < 0 {
 			oooTW = 0
@@ -822,7 +819,7 @@ func (i *Ingester) applyTSDBSettings() {
 		cfg := promcfg.Config{
 			StorageConfig: promcfg.StorageConfig{
 				ExemplarsConfig: &promcfg.ExemplarsConfig{
-					MaxExemplars: int64(localValue),
+					MaxExemplars: int64(i.limiter.maxExemplarsPerUser(userID)),
 				},
 				TSDBConfig: &promcfg.TSDBConfig{
 					OutOfOrderTimeWindow: oooTW.Milliseconds(),
@@ -2412,7 +2409,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
-	maxExemplars := i.limiter.convertGlobalToLocalLimit(i.limits.IngestionTenantShardSize(userID), i.limits.MaxGlobalExemplarsPerUser(userID))
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
@@ -2429,7 +2425,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		SeriesLifecycleCallback:               userDB,
 		BlocksToDelete:                        userDB.blocksToDelete,
 		EnableExemplarStorage:                 true, // enable for everyone so we can raise the limit later
-		MaxExemplars:                          int64(maxExemplars),
+		MaxExemplars:                          int64(i.limiter.maxExemplarsPerUser(userID)),
 		SeriesHashCache:                       i.seriesHashCache,
 		EnableMemorySnapshotOnShutdown:        i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		IsolationDisabled:                     true,

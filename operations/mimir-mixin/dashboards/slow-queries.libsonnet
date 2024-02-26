@@ -3,12 +3,13 @@ local filename = 'mimir-slow-queries.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == '6089e1ce1e678788f46312a0a1e647e6' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Slow queries') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow(
       $.row('Accross tenants')
       .addPanel(
-        $.panel('Response time') +
+        $.timeseriesPanel('Response time') +
         $.lokiMetricsQueryPanel(
           [
             'quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by ()' % [$._config.per_cluster_label, $._config.per_namespace_label],
@@ -19,7 +20,7 @@ local filename = 'mimir-slow-queries.json';
         )
       )
       .addPanel(
-        $.panel('Fetched series') +
+        $.timeseriesPanel('Fetched series') +
         $.lokiMetricsQueryPanel(
           [
             'quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by ()' % [$._config.per_cluster_label, $._config.per_namespace_label],
@@ -29,7 +30,7 @@ local filename = 'mimir-slow-queries.json';
         )
       )
       .addPanel(
-        $.panel('Fetched chunks') +
+        $.timeseriesPanel('Fetched chunks') +
         $.lokiMetricsQueryPanel(
           [
             'quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by ()' % [$._config.per_cluster_label, $._config.per_namespace_label],
@@ -40,7 +41,7 @@ local filename = 'mimir-slow-queries.json';
         )
       )
       .addPanel(
-        $.panel('Response size') +
+        $.timeseriesPanel('Response size') +
         $.lokiMetricsQueryPanel(
           [
             'quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by ()' % [$._config.per_cluster_label, $._config.per_namespace_label],
@@ -51,7 +52,7 @@ local filename = 'mimir-slow-queries.json';
         )
       )
       .addPanel(
-        $.panel('Time span') +
+        $.timeseriesPanel('Time span') +
         $.lokiMetricsQueryPanel(
           [
             'quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by ()' % [$._config.per_cluster_label, $._config.per_namespace_label],
@@ -62,7 +63,7 @@ local filename = 'mimir-slow-queries.json';
         )
       )
       .addPanel(
-        $.panel('Query wall time') +
+        $.timeseriesPanel('Query wall time') +
         $.lokiMetricsQueryPanel(
           [
             'quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by ()' % [$._config.per_cluster_label, $._config.per_namespace_label],
@@ -84,7 +85,7 @@ local filename = 'mimir-slow-queries.json';
     .addRow(
       $.row('Top 10 tenants') { collapse: true }
       .addPanel(
-        $.panel('P99 response time') +
+        $.timeseriesPanel('P99 response time') +
         $.lokiMetricsQueryPanel(
           'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label],
           '{{user}}',
@@ -92,14 +93,14 @@ local filename = 'mimir-slow-queries.json';
         )
       )
       .addPanel(
-        $.panel('P99 fetched series') +
+        $.timeseriesPanel('P99 fetched series') +
         $.lokiMetricsQueryPanel(
           'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label],
           '{{user}}',
         )
       )
       .addPanel(
-        $.panel('P99 fetched chunks') +
+        $.timeseriesPanel('P99 fetched chunks') +
         $.lokiMetricsQueryPanel(
           'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label],
           '{{user}}',
@@ -107,7 +108,7 @@ local filename = 'mimir-slow-queries.json';
         )
       )
       .addPanel(
-        $.panel('P99 response size') +
+        $.timeseriesPanel('P99 response size') +
         $.lokiMetricsQueryPanel(
           'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label],
           '{{user}}',
@@ -115,7 +116,7 @@ local filename = 'mimir-slow-queries.json';
         )
       )
       .addPanel(
-        $.panel('P99 time span') +
+        $.timeseriesPanel('P99 time span') +
         $.lokiMetricsQueryPanel(
           'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label],
           '{{user}}',
@@ -123,7 +124,7 @@ local filename = 'mimir-slow-queries.json';
         )
       )
       .addPanel(
-        $.panel('P99 query wall time') +
+        $.timeseriesPanel('P99 query wall time') +
         $.lokiMetricsQueryPanel(
           'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label],
           '{{user}}',
@@ -143,7 +144,7 @@ local filename = 'mimir-slow-queries.json';
       (
         $.row('Top 10 User-Agents') { collapse: true }
         .addPanel(
-          $.panel('P99 response time') +
+          $.timeseriesPanel('P99 response time') +
           $.lokiMetricsQueryPanel(
             'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by (user_agent))' % [$._config.per_cluster_label, $._config.per_namespace_label],
             '{{user_agent}}',
@@ -151,14 +152,14 @@ local filename = 'mimir-slow-queries.json';
           )
         )
         .addPanel(
-          $.panel('P99 fetched series') +
+          $.timeseriesPanel('P99 fetched series') +
           $.lokiMetricsQueryPanel(
             'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by (user_agent))' % [$._config.per_cluster_label, $._config.per_namespace_label],
             '{{user_agent}}',
           )
         )
         .addPanel(
-          $.panel('P99 fetched chunks') +
+          $.timeseriesPanel('P99 fetched chunks') +
           $.lokiMetricsQueryPanel(
             'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by (user_agent))' % [$._config.per_cluster_label, $._config.per_namespace_label],
             '{{user_agent}}',
@@ -166,7 +167,7 @@ local filename = 'mimir-slow-queries.json';
           )
         )
         .addPanel(
-          $.panel('P99 response size') +
+          $.timeseriesPanel('P99 response size') +
           $.lokiMetricsQueryPanel(
             'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by (user_agent))' % [$._config.per_cluster_label, $._config.per_namespace_label],
             '{{user_agent}}',
@@ -174,7 +175,7 @@ local filename = 'mimir-slow-queries.json';
           )
         )
         .addPanel(
-          $.panel('P99 time span') +
+          $.timeseriesPanel('P99 time span') +
           $.lokiMetricsQueryPanel(
             'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by (user_agent))' % [$._config.per_cluster_label, $._config.per_namespace_label],
             '{{user_agent}}',
@@ -182,7 +183,7 @@ local filename = 'mimir-slow-queries.json';
           )
         )
         .addPanel(
-          $.panel('P99 query wall time') +
+          $.timeseriesPanel('P99 query wall time') +
           $.lokiMetricsQueryPanel(
             'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by (user_agent))' % [$._config.per_cluster_label, $._config.per_namespace_label],
             '{{user_agent}}',

@@ -149,6 +149,8 @@ frontend:
     compression: snappy
 
 frontend_worker:
+  response_streaming_enabled: true
+
   # Uncomment when using "dns" service discovery mode for query-scheduler.
   # scheduler_address: "query-scheduler:9011"
 

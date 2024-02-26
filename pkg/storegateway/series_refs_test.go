@@ -157,7 +157,7 @@ func TestFlattenedSeriesChunkRefs(t *testing.T) {
 	c := generateSeriesChunksRanges(ulid.MustNew(1, nil), 6)
 
 	testCases := map[string]struct {
-		input    seriesChunkRefsSetIterator
+		input    iterator[seriesChunkRefsSet]
 		expected []seriesChunkRefs
 	}{
 		"should iterate on no sets": {
@@ -246,7 +246,7 @@ func TestMergedSeriesChunkRefsSet(t *testing.T) {
 
 	testCases := map[string]struct {
 		batchSize    int
-		set1, set2   seriesChunkRefsSetIterator
+		set1, set2   iterator[seriesChunkRefsSet]
 		expectedSets []seriesChunkRefsSet
 		expectedErr  string
 	}{
@@ -613,7 +613,7 @@ func TestMergedSeriesChunkRefsSet_Concurrency(t *testing.T) {
 		)
 
 		// Create the iterators.
-		iterators := make([]seriesChunkRefsSetIterator, 0, numIterators)
+		iterators := make([]iterator[seriesChunkRefsSet], 0, numIterators)
 		for iteratorIdx := 0; iteratorIdx < numIterators; iteratorIdx++ {
 			// Create the sets for this iterator.
 			sets := make([]seriesChunkRefsSet, 0, numSetsPerIterator)
@@ -686,7 +686,7 @@ func BenchmarkMergedSeriesChunkRefsSetIterators(b *testing.B) {
 	for _, withDuplicatedSeries := range []bool{true, false} {
 		for numIterators := 1; numIterators <= 64; numIterators *= 2 {
 			// Create empty iterators that we can reuse in each benchmark run.
-			iterators := make([]seriesChunkRefsSetIterator, 0, numIterators)
+			iterators := make([]iterator[seriesChunkRefsSet], 0, numIterators)
 			for i := 0; i < numIterators; i++ {
 				iterators = append(iterators, newSliceSeriesChunkRefsSetIterator(nil))
 			}
@@ -746,7 +746,7 @@ func TestSeriesSetWithoutChunks(t *testing.T) {
 	c := generateSeriesChunksRanges(ulid.MustNew(1, nil), 6)
 
 	testCases := map[string]struct {
-		input              seriesChunkRefsSetIterator
+		input              iterator[seriesChunkRefsSet]
 		expectedSeries     []labels.Labels
 		expectedBatchCount int
 	}{
@@ -2405,7 +2405,7 @@ func generateSeriesChunksRanges(blockID ulid.ULID, numRefs int) []seriesChunkRef
 	return refs
 }
 
-func readAllSeriesChunkRefsSet(it seriesChunkRefsSetIterator) []seriesChunkRefsSet {
+func readAllSeriesChunkRefsSet(it iterator[seriesChunkRefsSet]) []seriesChunkRefsSet {
 	var out []seriesChunkRefsSet
 	for it.Next() {
 		out = append(out, it.At())
@@ -2413,7 +2413,7 @@ func readAllSeriesChunkRefsSet(it seriesChunkRefsSetIterator) []seriesChunkRefsS
 	return out
 }
 
-func readAllSeriesChunkRefs(it seriesChunkRefsIterator) []seriesChunkRefs {
+func readAllSeriesChunkRefs(it iterator[seriesChunkRefs]) []seriesChunkRefs {
 	var out []seriesChunkRefs
 	for it.Next() {
 		out = append(out, it.At())

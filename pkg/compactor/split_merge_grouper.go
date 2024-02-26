@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -135,9 +136,11 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCo
 		}
 	}
 
-	// Ensure we don't compact the most recent blocks prematurely when another one of
-	// the same size still fits in the range. To do it, we consider a job valid only
-	// if its range is before the most recent block or if it fully covers the range.
+	// Ensure we don't compact the most recent blocks prematurely. We allow a job to remain if:
+	// - its range is before the most recent block
+	// - its range is at least 1 job length in the past
+	// - its max compaction level is 1
+	// - it fully covers the range
 	highestMaxTime := getMaxTime(blocks)
 
 	for idx := 0; idx < len(jobs); {
@@ -145,6 +148,18 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCo
 
 		// If the job covers a range before the most recent block, it's fine.
 		if job.rangeEnd <= highestMaxTime {
+			idx++
+			continue
+		}
+
+		// If the job covers a range at least 1 job length in the past, it's fine.
+		if job.rangeEnd+job.rangeLength() <= time.Now().UnixMilli() {
+			idx++
+			continue
+		}
+
+		// If the job only contains level 1 blocks, it's fine.
+		if job.maxCompactionLevel() == 1 {
 			idx++
 			continue
 		}

@@ -20,6 +20,7 @@ local filename = 'mimir-top-tenants.json';
   },
 
   [filename]:
+    assert std.md5(filename) == 'bc6e12d4fe540e4a1785b9d3ca0ffdd9' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Top tenants') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addCustomTemplate('limit', ['10', '50', '100'])
@@ -81,7 +82,7 @@ local filename = 'mimir-top-tenants.json';
       ($.row('By in-memory series growth') + { collapse: true })
       .addPanel(
         local title = 'Top $limit users by in-memory series (series created - series removed) that grew the most between query range start and query range end';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           |||
             %(in_memory_series_per_user)s
@@ -115,7 +116,7 @@ local filename = 'mimir-top-tenants.json';
     .addRow(
       ($.row('By samples rate growth') + { collapse: true })
       .addPanel(
-        $.panel('Top $limit users by received samples rate that grew the most between query range start and query range end') +
+        $.timeseriesPanel('Top $limit users by received samples rate that grew the most between query range start and query range end') +
         $.queryPanel(
           |||
             sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s}[$__rate_interval]))
@@ -151,7 +152,7 @@ local filename = 'mimir-top-tenants.json';
     .addRow(
       ($.row('By discarded samples rate growth') + { collapse: true })
       .addPanel(
-        $.panel('Top $limit users by discarded samples rate that grew the most between query range start and query range end') +
+        $.timeseriesPanel('Top $limit users by discarded samples rate that grew the most between query range start and query range end') +
         $.queryPanel(
           |||
             sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[$__rate_interval]))

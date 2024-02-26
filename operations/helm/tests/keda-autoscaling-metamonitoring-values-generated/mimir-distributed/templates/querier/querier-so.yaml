@@ -41,14 +41,14 @@ spec:
   triggers:
   - metadata:
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="citestns",quantile="0.5"}[1m]))
-      serverAddress: https://mimir.example.com/prometheus
+      serverAddress: https://mimir.example.com/prometheus 
       threshold: "6"
       customHeaders: "X-Scope-OrgID=tenant-1"
     name: cortex_querier_hpa_default
     type: prometheus
   - metadata:
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="citestns"}[1m]))
-      serverAddress: https://mimir.example.com/prometheus
+      serverAddress: https://mimir.example.com/prometheus 
       threshold: "6"
       customHeaders: "X-Scope-OrgID=tenant-1"
     name: cortex_querier_hpa_default_requests_duration

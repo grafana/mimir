@@ -39,6 +39,7 @@ type queryFrontendTestConfig struct {
 	queryStatsEnabled           bool
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
 	withHistograms              bool
+	shardActiveSeriesQueries    bool
 }
 
 func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {

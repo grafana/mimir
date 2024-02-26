@@ -18,6 +18,7 @@ const (
 	opSet            = "set"
 	opGetMulti       = "getmulti"
 	opDelete         = "delete"
+	opDecrement      = "decrement"
 	opIncrement      = "increment"
 	opTouch          = "touch"
 	opFlush          = "flushall"

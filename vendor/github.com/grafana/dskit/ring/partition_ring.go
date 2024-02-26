@@ -3,6 +3,7 @@ package ring
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"math/rand"
 	"strconv"
 	"time"
@@ -37,15 +38,19 @@ type PartitionRing struct {
 
 	// shuffleShardCache is used to cache subrings generated with shuffle sharding.
 	shuffleShardCache *partitionRingShuffleShardCache
+
+	// activePartitionsCount is a saved count of active partitions to avoid recomputing it.
+	activePartitionsCount int
 }
 
 func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
 	return &PartitionRing{
-		desc:              desc,
-		ringTokens:        desc.tokens(),
-		partitionByToken:  desc.partitionByToken(),
-		ownersByPartition: desc.ownersByPartition(),
-		shuffleShardCache: newPartitionRingShuffleShardCache(),
+		desc:                  desc,
+		ringTokens:            desc.tokens(),
+		partitionByToken:      desc.partitionByToken(),
+		ownersByPartition:     desc.ownersByPartition(),
+		activePartitionsCount: desc.activePartitionsCount(),
+		shuffleShardCache:     newPartitionRingShuffleShardCache(),
 	}
 }
 
@@ -84,6 +89,18 @@ func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, error) {
 	}
 
 	return 0, ErrNoActivePartitionFound
+}
+
+// ShuffleShardSize returns number of partitions that would be in the result of ShuffleShard call with the same size.
+func (r *PartitionRing) ShuffleShardSize(size int) int {
+	if size <= 0 || size > r.activePartitionsCount {
+		return r.activePartitionsCount
+	}
+
+	if size < r.activePartitionsCount {
+		return size
+	}
+	return r.activePartitionsCount
 }
 
 // ShuffleShard returns a subring for the provided identifier (eg. a tenant ID)
@@ -248,13 +265,7 @@ func (r *PartitionRing) PartitionsCount() int {
 
 // ActivePartitionsCount returns the number of active partitions in the ring.
 func (r *PartitionRing) ActivePartitionsCount() int {
-	count := 0
-	for _, partition := range r.desc.Partitions {
-		if partition.IsActive() {
-			count++
-		}
-	}
-	return count
+	return r.activePartitionsCount
 }
 
 // Partitions returns the partitions in the ring.
@@ -351,6 +362,71 @@ func (r *PartitionRing) String() string {
 	}
 
 	return fmt.Sprintf("PartitionRing{ownersCount: %d, partitionsCount: %d, partitions: {%s}}", len(r.desc.Owners), len(r.desc.Partitions), buf.String())
+}
+
+// GetTokenRangesForPartition returns token-range owned by given partition. Note that this
+// method does NOT take partition state into account, so if only active partitions should be
+// considered, then PartitionRing with only active partitions must be created first (e.g. using ShuffleShard method).
+func (r *PartitionRing) GetTokenRangesForPartition(partitionID int32) (TokenRanges, error) {
+	partition, ok := r.desc.Partitions[partitionID]
+	if !ok {
+		return nil, ErrPartitionDoesNotExist
+	}
+
+	// 1 range (2 values) per token + one additional if we need to split the rollover range.
+	ranges := make(TokenRanges, 0, 2*(len(partition.Tokens)+1))
+
+	addRange := func(start, end uint32) {
+		// check if we can group ranges. If so, we just update end of previous range.
+		if len(ranges) > 0 && ranges[len(ranges)-1] == start-1 {
+			ranges[len(ranges)-1] = end
+		} else {
+			ranges = append(ranges, start, end)
+		}
+	}
+
+	// "last" range is range that includes token math.MaxUint32.
+	ownsLastRange := false
+	startOfLastRange := uint32(0)
+
+	// We start with all tokens, but will remove tokens we already skipped, to let binary search do less work.
+	ringTokens := r.ringTokens
+
+	for iter, t := range partition.Tokens {
+		lastOwnedToken := t - 1
+
+		ix := searchToken(ringTokens, lastOwnedToken)
+		prevIx := ix - 1
+
+		if prevIx < 0 {
+			// We can only find "last" range during first iteration.
+			if iter > 0 {
+				return nil, ErrInconsistentTokensInfo
+			}
+
+			prevIx = len(ringTokens) - 1
+			ownsLastRange = true
+
+			startOfLastRange = ringTokens[prevIx]
+
+			// We can only claim token 0 if our actual token in the ring (which is exclusive end of range) was not 0.
+			if t > 0 {
+				addRange(0, lastOwnedToken)
+			}
+		} else {
+			addRange(ringTokens[prevIx], lastOwnedToken)
+		}
+
+		// Reduce number of tokens we need to search through. We keep current token to serve as min boundary for next search,
+		// to make sure we don't find another "last" range (where prevIx < 0).
+		ringTokens = ringTokens[ix:]
+	}
+
+	if ownsLastRange {
+		addRange(startOfLastRange, math.MaxUint32)
+	}
+
+	return ranges, nil
 }
 
 // ActivePartitionBatchRing wraps PartitionRing and implements DoBatchRing to lookup ACTIVE partitions.

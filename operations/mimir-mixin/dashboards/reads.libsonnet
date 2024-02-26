@@ -3,6 +3,7 @@ local filename = 'mimir-reads.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == 'e327503188913dc38ad571c647eef643' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Reads') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRowIf(
@@ -115,12 +116,12 @@ local filename = 'mimir-reads.json';
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel($.queries.gateway.readRequestsPerSecond)
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -132,12 +133,12 @@ local filename = 'mimir-reads.json';
     .addRow(
       $.row('Query-frontend')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel($.queries.query_frontend.readRequestsPerSecond)
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -159,19 +160,18 @@ local filename = 'mimir-reads.json';
       $.row('Query-scheduler')
       .addPanel(
         local title = 'Requests / sec';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
       )
       .addPanel(
         local title = 'Latency (Time in Queue)';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
       )
       .addPanel(
         local title = 'Queue length';
-
         $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.hiddenLegendQueryPanel(
@@ -213,7 +213,7 @@ local filename = 'mimir-reads.json';
       $.row('Query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions')
       .addPanel(
         local title = '99th Percentile Latency by Queue Dimension';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
           metricName=metricName,
@@ -226,7 +226,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         local title = '50th Percentile Latency by Queue Dimension';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
           metricName=metricName,
@@ -239,7 +239,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         local title = 'Average Latency by Queue Dimension';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
           metricName=metricName,
@@ -254,7 +254,7 @@ local filename = 'mimir-reads.json';
     .addRow(
       $.row('Cache – query results')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.queryPanel(
           |||
             sum (
@@ -267,10 +267,10 @@ local filename = 'mimir-reads.json';
           },
           'Requests/s'
         ) +
-        { yaxes: $.yaxes('ops') },
+        { fieldConfig+: { defaults+: { unit: 'ops' } } },
       )
       .addPanel(
-        $.panel('Latency') +
+        $.timeseriesPanel('Latency') +
         $.backwardsCompatibleLatencyPanel(
           'thanos_memcached_operation_duration_seconds',
           'thanos_cache_operation_duration_seconds',
@@ -281,12 +281,12 @@ local filename = 'mimir-reads.json';
     .addRow(
       $.row('Querier')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.querier), $.queries.read_http_routes_regex])
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -298,12 +298,12 @@ local filename = 'mimir-reads.json';
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', '/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata')])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', '/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata')])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -315,12 +315,12 @@ local filename = 'mimir-reads.json';
     .addRow(
       $.row('Store-gateway')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/gatewaypb.StoreGateway/.*"}' % $.jobMatcher($._config.job_names.store_gateway))
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -342,7 +342,7 @@ local filename = 'mimir-reads.json';
       $.row('Querier - autoscaling')
       .addPanel(
         local title = 'Replicas';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             |||
@@ -400,27 +400,26 @@ local filename = 'mimir-reads.json';
           |||
         ) +
         {
-          seriesOverrides+: [
-            {
-              alias: '/Max .+/',
-              dashes: true,
-              fill: 0,
-            },
-            {
-              alias: '/Current .+/',
-              fill: 0,
-            },
-            {
-              alias: '/Min .+/',
-              dashes: true,
-              fill: 0,
-            },
-          ],
-        }
+          fieldConfig+: {
+            overrides: [
+              $.overrideField('byRegexp', '/Max .+/', [
+                $.overrideProperty('custom.fillOpacity', 0),
+                $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+              ]),
+              $.overrideField('byRegexp', '/Current .+/', [
+                $.overrideProperty('custom.fillOpacity', 0),
+              ]),
+              $.overrideField('byRegexp', '/Min .+/', [
+                $.overrideProperty('custom.fillOpacity', 0),
+                $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+              ]),
+            ],
+          },
+        },
       )
       .addPanel(
         local title = 'Scaling metric (desired replicas)';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             |||
@@ -453,12 +452,11 @@ local filename = 'mimir-reads.json';
             This panel shows the result scaling metric exposed by KEDA divided by the target/threshold used.
             It should represent the desired number of replicas, ignoring the min/max constraints which are applied later.
           |||
-        ) +
-        $.panelAxisPlacement('Target per replica', 'right'),
+        )
       )
       .addPanel(
         local title = 'Autoscaler failures rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           $.filterKedaScalerErrorsByHPA($._config.autoscaling.querier.hpa_name),
           '{{scaler}} failures'
@@ -478,7 +476,7 @@ local filename = 'mimir-reads.json';
     .addRow(
       $.row('Memcached – block index cache (store-gateway accesses)')  // Resembles thanosMemcachedCache
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.queryPanel(
           |||
             sum by(operation) (
@@ -506,10 +504,10 @@ local filename = 'mimir-reads.json';
           '{{operation}}'
         ) +
         $.stack +
-        { yaxes: $.yaxes('ops') },
+        { fieldConfig+: { defaults+: { unit: 'ops' } } }
       )
       .addPanel(
-        $.panel('Latency (getmulti)') +
+        $.timeseriesPanel('Latency (getmulti)') +
         $.backwardsCompatibleLatencyPanel(
           'thanos_memcached_operation_duration_seconds',
           'thanos_cache_operation_duration_seconds',
@@ -524,7 +522,7 @@ local filename = 'mimir-reads.json';
         )
       )
       .addPanel(
-        $.panel('Hit ratio') +
+        $.timeseriesPanel('Hit ratio') +
         $.queryPanel(
           |||
             sum by(item_type) (
@@ -550,7 +548,7 @@ local filename = 'mimir-reads.json';
           ],
           '{{item_type}}'
         ) +
-        { yaxes: $.yaxes('percentunit') } +
+        { fieldConfig+: { defaults+: { unit: 'percentunit' } } } +
         $.panelDescription(
           'Hit ratio',
           |||
