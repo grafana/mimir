@@ -1,18 +1,16 @@
-// DO NOT EDIT. COPIED AS-IS. SEE ../README.md
+// SPDX-License-Identifier: AGPL-3.0-only
 
-// Copyright The OpenTelemetry Authors
-// SPDX-License-Identifier: Apache-2.0
-
-package prometheusremotewrite // import "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+package otlp
 
 import (
 	"math"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // addSingleGaugeNumberDataPoint converts the Gauge metric data point to a
@@ -23,9 +21,9 @@ func addSingleGaugeNumberDataPoint(
 	resource pcommon.Resource,
 	metric pmetric.Metric,
 	settings Settings,
-	series map[string]*prompb.TimeSeries,
+	series map[uint64]*mimirpb.TimeSeries,
 	name string,
-) {
+) error {
 	labels := createAttributes(
 		resource,
 		pt.Attributes(),
@@ -33,9 +31,9 @@ func addSingleGaugeNumberDataPoint(
 		model.MetricNameLabel,
 		name,
 	)
-	sample := &prompb.Sample{
+	sample := &mimirpb.Sample{
 		// convert ns to ms
-		Timestamp: convertTimeStamp(pt.Timestamp()),
+		TimestampMs: convertTimeStamp(pt.Timestamp()),
 	}
 	switch pt.ValueType() {
 	case pmetric.NumberDataPointValueTypeInt:
@@ -46,7 +44,8 @@ func addSingleGaugeNumberDataPoint(
 	if pt.Flags().NoRecordedValue() {
 		sample.Value = math.Float64frombits(value.StaleNaN)
 	}
-	addSample(series, sample, labels, metric.Type().String())
+	_, err := addSample(series, sample, labels, metric.Type().String())
+	return err
 }
 
 // addSingleSumNumberDataPoint converts the Sum metric data point to a Prometheus
@@ -57,18 +56,19 @@ func addSingleSumNumberDataPoint(
 	resource pcommon.Resource,
 	metric pmetric.Metric,
 	settings Settings,
-	series map[string]*prompb.TimeSeries,
+	series map[uint64]*mimirpb.TimeSeries,
 	name string,
-) {
+) error {
 	labels := createAttributes(
 		resource,
 		pt.Attributes(),
 		settings.ExternalLabels,
-		model.MetricNameLabel, name,
+		model.MetricNameLabel,
+		name,
 	)
-	sample := &prompb.Sample{
+	sample := &mimirpb.Sample{
 		// convert ns to ms
-		Timestamp: convertTimeStamp(pt.Timestamp()),
+		TimestampMs: convertTimeStamp(pt.Timestamp()),
 	}
 	switch pt.ValueType() {
 	case pmetric.NumberDataPointValueTypeInt:
@@ -79,10 +79,13 @@ func addSingleSumNumberDataPoint(
 	if pt.Flags().NoRecordedValue() {
 		sample.Value = math.Float64frombits(value.StaleNaN)
 	}
-	sig := addSample(series, sample, labels, metric.Type().String())
+	sig, err := addSample(series, sample, labels, metric.Type().String())
+	if err != nil {
+		return err
+	}
 
-	if ts := series[sig]; sig != "" && ts != nil {
-		exemplars := getPromExemplars[pmetric.NumberDataPoint](pt)
+	if ts := series[sig]; sig != 0 && ts != nil {
+		exemplars := getMimirExemplars[pmetric.NumberDataPoint](pt)
 		ts.Exemplars = append(ts.Exemplars, exemplars...)
 	}
 
@@ -90,10 +93,10 @@ func addSingleSumNumberDataPoint(
 	if settings.ExportCreatedMetric && metric.Sum().IsMonotonic() {
 		startTimestamp := pt.StartTimestamp()
 		if startTimestamp == 0 {
-			return
+			return nil
 		}
 
-		createdLabels := make([]prompb.Label, len(labels))
+		createdLabels := make([]mimirpb.LabelAdapter, len(labels))
 		copy(createdLabels, labels)
 		for i, l := range createdLabels {
 			if l.Name == model.MetricNameLabel {
@@ -101,6 +104,10 @@ func addSingleSumNumberDataPoint(
 				break
 			}
 		}
-		addCreatedTimeSeriesIfNeeded(series, createdLabels, startTimestamp, pt.Timestamp(), metric.Type().String())
+		if err := addCreatedTimeSeriesIfNeeded(series, createdLabels, startTimestamp, pt.Timestamp(), metric.Type().String()); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }

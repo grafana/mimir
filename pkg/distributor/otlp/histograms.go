@@ -1,9 +1,6 @@
-// DO NOT EDIT. COPIED AS-IS. SEE ../README.md
+// SPDX-License-Identifier: AGPL-3.0-only
 
-// Copyright The OpenTelemetry Authors
-// SPDX-License-Identifier: Apache-2.0
-
-package prometheusremotewrite // import "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+package otlp
 
 import (
 	"fmt"
@@ -11,9 +8,10 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const defaultZeroThreshold = 1e-128
@@ -23,7 +21,7 @@ func addSingleExponentialHistogramDataPoint(
 	pt pmetric.ExponentialHistogramDataPoint,
 	resource pcommon.Resource,
 	settings Settings,
-	series map[string]*prompb.TimeSeries,
+	series map[uint64]*mimirpb.TimeSeries,
 ) error {
 	labels := createAttributes(
 		resource,
@@ -33,13 +31,16 @@ func addSingleExponentialHistogramDataPoint(
 		metric,
 	)
 
-	sig := timeSeriesSignature(
+	sig, err := timeSeriesSignature(
 		pmetric.MetricTypeExponentialHistogram.String(),
 		labels,
 	)
+	if err != nil {
+		return err
+	}
 	ts, ok := series[sig]
 	if !ok {
-		ts = &prompb.TimeSeries{
+		ts = &mimirpb.TimeSeries{
 			Labels: labels,
 		}
 		series[sig] = ts
@@ -51,7 +52,7 @@ func addSingleExponentialHistogramDataPoint(
 	}
 	ts.Histograms = append(ts.Histograms, histogram)
 
-	exemplars := getPromExemplars[pmetric.ExponentialHistogramDataPoint](pt)
+	exemplars := getMimirExemplars[pmetric.ExponentialHistogramDataPoint](pt)
 	ts.Exemplars = append(ts.Exemplars, exemplars...)
 
 	return nil
@@ -59,10 +60,10 @@ func addSingleExponentialHistogramDataPoint(
 
 // exponentialToNativeHistogram  translates OTel Exponential Histogram data point
 // to Prometheus Native Histogram.
-func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prompb.Histogram, error) {
+func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (mimirpb.Histogram, error) {
 	scale := p.Scale()
 	if scale < -4 {
-		return prompb.Histogram{},
+		return mimirpb.Histogram{},
 			fmt.Errorf("cannot convert exponential to native histogram."+
 				" Scale must be >= -4, was %d", scale)
 	}
@@ -76,7 +77,7 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prom
 	pSpans, pDeltas := convertBucketsLayout(p.Positive(), scaleDown)
 	nSpans, nDeltas := convertBucketsLayout(p.Negative(), scaleDown)
 
-	h := prompb.Histogram{
+	h := mimirpb.Histogram{
 		// The counter reset detection must be compatible with Prometheus to
 		// safely set ResetHint to NO. This is not ensured currently.
 		// Sending a sample that triggers counter reset but with ResetHint==NO
@@ -86,10 +87,10 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prom
 		// need to know here if it was used for the detection.
 		// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
 		// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
-		ResetHint: prompb.Histogram_UNKNOWN,
+		ResetHint: mimirpb.Histogram_UNKNOWN,
 		Schema:    scale,
 
-		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: p.ZeroCount()},
+		ZeroCount: &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: p.ZeroCount()},
 		// TODO use zero_threshold, if set, see
 		// https://github.com/open-telemetry/opentelemetry-proto/pull/441
 		ZeroThreshold: defaultZeroThreshold,
@@ -104,12 +105,12 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prom
 
 	if p.Flags().NoRecordedValue() {
 		h.Sum = math.Float64frombits(value.StaleNaN)
-		h.Count = &prompb.Histogram_CountInt{CountInt: value.StaleNaN}
+		h.Count = &mimirpb.Histogram_CountInt{CountInt: value.StaleNaN}
 	} else {
 		if p.HasSum() {
 			h.Sum = p.Sum()
 		}
-		h.Count = &prompb.Histogram_CountInt{CountInt: p.Count()}
+		h.Count = &mimirpb.Histogram_CountInt{CountInt: p.Count()}
 	}
 	return h, nil
 }
@@ -124,14 +125,14 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prom
 // to the range (base 1].
 //
 // scaleDown is the factor by which the buckets are scaled down. In other words 2^scaleDown buckets will be merged into one.
-func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets, scaleDown int32) ([]prompb.BucketSpan, []int64) {
+func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets, scaleDown int32) ([]mimirpb.BucketSpan, []int64) {
 	bucketCounts := buckets.BucketCounts()
 	if bucketCounts.Len() == 0 {
 		return nil, nil
 	}
 
 	var (
-		spans     []prompb.BucketSpan
+		spans     []mimirpb.BucketSpan
 		deltas    []int64
 		count     int64
 		prevCount int64
@@ -149,7 +150,7 @@ func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets, 
 
 	// The offset is scaled and adjusted by 1 as described above.
 	bucketIdx := buckets.Offset()>>scaleDown + 1
-	spans = append(spans, prompb.BucketSpan{
+	spans = append(spans, mimirpb.BucketSpan{
 		Offset: bucketIdx,
 		Length: 0,
 	})
@@ -171,7 +172,7 @@ func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets, 
 			// We have to create a new span, because we have found a gap
 			// of more than two buckets. The constant 2 is copied from the logic in
 			// https://github.com/prometheus/client_golang/blob/27f0506d6ebbb117b6b697d0552ee5be2502c5f2/prometheus/histogram.go#L1296
-			spans = append(spans, prompb.BucketSpan{
+			spans = append(spans, mimirpb.BucketSpan{
 				Offset: gap,
 				Length: 0,
 			})
@@ -192,7 +193,7 @@ func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets, 
 		// We have to create a new span, because we have found a gap
 		// of more than two buckets. The constant 2 is copied from the logic in
 		// https://github.com/prometheus/client_golang/blob/27f0506d6ebbb117b6b697d0552ee5be2502c5f2/prometheus/histogram.go#L1296
-		spans = append(spans, prompb.BucketSpan{
+		spans = append(spans, mimirpb.BucketSpan{
 			Offset: gap,
 			Length: 0,
 		})

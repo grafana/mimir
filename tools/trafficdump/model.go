@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -45,7 +46,7 @@ type request struct {
 
 	PushRequest any `json:"push,omitempty"`
 
-	cleanup func()
+	cleanup func(*sync.Pool)
 }
 
 type requestURL struct {

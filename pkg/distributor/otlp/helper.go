@@ -1,9 +1,6 @@
-// DO NOT EDIT. COPIED AS-IS. SEE ../README.md
+// SPDX-License-Identifier: AGPL-3.0-only
 
-// Copyright The OpenTelemetry Authors
-// SPDX-License-Identifier: Apache-2.0
-
-package prometheusremotewrite // import "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+package otlp
 
 import (
 	"encoding/hex"
@@ -12,19 +9,19 @@ import (
 	"math"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
+	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
 
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const (
@@ -48,7 +45,7 @@ const (
 )
 
 type bucketBoundsData struct {
-	sig   string
+	sig   uint64
 	bound float64
 }
 
@@ -60,7 +57,7 @@ func (m byBucketBoundsData) Less(i, j int) bool { return m[i].bound < m[j].bound
 func (m byBucketBoundsData) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 
 // ByLabelName enables the usage of sort.Sort() with a slice of labels
-type ByLabelName []prompb.Label
+type ByLabelName []mimirpb.LabelAdapter
 
 func (a ByLabelName) Len() int           { return len(a) }
 func (a ByLabelName) Less(i, j int) bool { return a[i].Name < a[j].Name }
@@ -69,32 +66,34 @@ func (a ByLabelName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 // addSample finds a TimeSeries in tsMap that corresponds to the label set labels, and add sample to the TimeSeries; it
 // creates a new TimeSeries in the map if not found and returns the time series signature.
 // tsMap will be unmodified if either labels or sample is nil, but can still be modified if the exemplar is nil.
-func addSample(tsMap map[string]*prompb.TimeSeries, sample *prompb.Sample, labels []prompb.Label,
-	datatype string) string {
-	if sample == nil || labels == nil || tsMap == nil {
+func addSample(tsMap map[uint64]*mimirpb.TimeSeries, sample *mimirpb.Sample, labels []mimirpb.LabelAdapter,
+	datatype string) (uint64, error) {
+	if sample == nil || len(labels) == 0 || len(tsMap) == 0 {
 		// This shouldn't happen
-		return ""
+		return 0, fmt.Errorf("invalid parameter")
 	}
 
-	sig := timeSeriesSignature(datatype, labels)
+	sig, err := timeSeriesSignature(datatype, labels)
+	if err != nil {
+		return 0, err
+	}
 	ts := tsMap[sig]
 	if ts != nil {
 		ts.Samples = append(ts.Samples, *sample)
 	} else {
-		newTs := &prompb.TimeSeries{
-			Labels:  labels,
-			Samples: []prompb.Sample{*sample},
-		}
+		newTs := mimirpb.TimeseriesFromPool()
+		newTs.Labels = labels
+		newTs.Samples = append(newTs.Samples, *sample)
 		tsMap[sig] = newTs
 	}
 
-	return sig
+	return sig, nil
 }
 
 // addExemplars finds a bucket bound that corresponds to the exemplars value and add the exemplar to the specific sig;
 // we only add exemplars if samples are presents
 // tsMap is unmodified if either of its parameters is nil and samples are nil.
-func addExemplars(tsMap map[string]*prompb.TimeSeries, exemplars []prompb.Exemplar, bucketBoundsData []bucketBoundsData) {
+func addExemplars(tsMap map[uint64]*mimirpb.TimeSeries, exemplars []mimirpb.Exemplar, bucketBoundsData []bucketBoundsData) {
 	if len(tsMap) == 0 || len(bucketBoundsData) == 0 || len(exemplars) == 0 {
 		return
 	}
@@ -106,7 +105,7 @@ func addExemplars(tsMap map[string]*prompb.TimeSeries, exemplars []prompb.Exempl
 	}
 }
 
-func addExemplar(tsMap map[string]*prompb.TimeSeries, bucketBounds []bucketBoundsData, exemplar prompb.Exemplar) {
+func addExemplar(tsMap map[uint64]*mimirpb.TimeSeries, bucketBounds []bucketBoundsData, exemplar mimirpb.Exemplar) {
 	for _, bucketBound := range bucketBounds {
 		sig := bucketBound.sig
 		bound := bucketBound.bound
@@ -125,33 +124,40 @@ func addExemplar(tsMap map[string]*prompb.TimeSeries, bucketBounds []bucketBound
 //
 // the label slice should not contain duplicate label names; this method sorts the slice by label name before creating
 // the signature.
-func timeSeriesSignature(datatype string, labels []prompb.Label) string {
-	length := len(datatype)
-
-	for _, lb := range labels {
-		length += 2 + len(lb.GetName()) + len(lb.GetValue())
-	}
-
-	b := strings.Builder{}
-	b.Grow(length)
-	b.WriteString(datatype)
-
+func timeSeriesSignature(datatype string, labels []mimirpb.LabelAdapter) (uint64, error) {
 	sort.Sort(ByLabelName(labels))
 
+	h := xxhash.New()
+	if _, err := h.WriteString(datatype); err != nil {
+		return 0, err
+	}
+	if _, err := h.Write(seps); err != nil {
+		return 0, err
+	}
 	for _, lb := range labels {
-		b.WriteString("-")
-		b.WriteString(lb.GetName())
-		b.WriteString("-")
-		b.WriteString(lb.GetValue())
+		if _, err := h.WriteString(lb.Name); err != nil {
+			return 0, err
+		}
+		if _, err := h.Write(seps); err != nil {
+			return 0, err
+		}
+		if _, err := h.WriteString(lb.Value); err != nil {
+			return 0, err
+		}
+		if _, err := h.Write(seps); err != nil {
+			return 0, err
+		}
 	}
 
-	return b.String()
+	return h.Sum64(), nil
 }
 
-// createAttributes creates a slice of Prometheus Labels with OTLP attributes and pairs of string values.
+var seps = []byte{'\xff'}
+
+// createAttributes creates a slice of Mimir labels with OTLP attributes and pairs of string values.
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen, and overwrites are
 // logged. Resulting label names are sanitized.
-func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externalLabels map[string]string, extras ...string) []prompb.Label {
+func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externalLabels map[string]string, extras ...string) []mimirpb.LabelAdapter {
 	serviceName, haveServiceName := resource.Attributes().Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resource.Attributes().Get(conventions.AttributeServiceInstanceID)
 
@@ -171,9 +177,9 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 
 	// Ensure attributes are sorted by key for consistent merging of keys which
 	// collide when sanitized.
-	labels := make([]prompb.Label, 0, attributes.Len())
+	labels := make([]mimirpb.LabelAdapter, 0, attributes.Len())
 	attributes.Range(func(key string, value pcommon.Value) bool {
-		labels = append(labels, prompb.Label{Name: key, Value: value.AsString()})
+		labels = append(labels, mimirpb.LabelAdapter{Name: key, Value: value.AsString()})
 		return true
 	})
 	sort.Stable(ByLabelName(labels))
@@ -224,16 +230,16 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 		l[name] = extras[i+1]
 	}
 
-	s := make([]prompb.Label, 0, len(l))
+	s := make([]mimirpb.LabelAdapter, 0, len(l))
 	for k, v := range l {
-		s = append(s, prompb.Label{Name: k, Value: v})
+		s = append(s, mimirpb.LabelAdapter{Name: k, Value: v})
 	}
 
 	return s
 }
 
 // isValidAggregationTemporality checks whether an OTel metric has a valid
-// aggregation temporality for conversion to a Prometheus metric.
+// aggregation temporality for conversion to a Mimir metric.
 func isValidAggregationTemporality(metric pmetric.Metric) bool {
 	//exhaustive:enforce
 	switch metric.Type() {
@@ -251,21 +257,21 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 
 // addSingleHistogramDataPoint converts pt to 2 + min(len(ExplicitBounds), len(BucketCount)) + 1 samples. It
 // ignore extra buckets if len(ExplicitBounds) > len(BucketCounts)
-func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings, tsMap map[string]*prompb.TimeSeries, baseName string) {
+func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings, tsMap map[uint64]*mimirpb.TimeSeries, baseName string) error {
 	timestamp := convertTimeStamp(pt.Timestamp())
 	baseLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels)
 
-	createLabels := func(nameSuffix string, extras ...string) []prompb.Label {
+	createLabels := func(nameSuffix string, extras ...string) []mimirpb.LabelAdapter {
 		extraLabelCount := len(extras) / 2
-		labels := make([]prompb.Label, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
+		labels := make([]mimirpb.LabelAdapter, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
 		copy(labels, baseLabels)
 
 		for extrasIdx := 0; extrasIdx < extraLabelCount; extrasIdx++ {
-			labels = append(labels, prompb.Label{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
+			labels = append(labels, mimirpb.LabelAdapter{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
 		}
 
 		// sum, count, and buckets of the histogram should append suffix to baseName
-		labels = append(labels, prompb.Label{Name: model.MetricNameLabel, Value: baseName + nameSuffix})
+		labels = append(labels, mimirpb.LabelAdapter{Name: model.MetricNameLabel, Value: baseName + nameSuffix})
 
 		return labels
 	}
@@ -274,35 +280,39 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 	// omitted
 	if pt.HasSum() {
 		// treat sum as a sample in an individual TimeSeries
-		sum := &prompb.Sample{
-			Value:     pt.Sum(),
-			Timestamp: timestamp,
+		sum := &mimirpb.Sample{
+			Value:       pt.Sum(),
+			TimestampMs: timestamp,
 		}
 		if pt.Flags().NoRecordedValue() {
 			sum.Value = math.Float64frombits(value.StaleNaN)
 		}
 
 		sumlabels := createLabels(sumStr)
-		addSample(tsMap, sum, sumlabels, metric.Type().String())
+		if _, err := addSample(tsMap, sum, sumlabels, metric.Type().String()); err != nil {
+			return err
+		}
 
 	}
 
 	// treat count as a sample in an individual TimeSeries
-	count := &prompb.Sample{
-		Value:     float64(pt.Count()),
-		Timestamp: timestamp,
+	count := &mimirpb.Sample{
+		Value:       float64(pt.Count()),
+		TimestampMs: timestamp,
 	}
 	if pt.Flags().NoRecordedValue() {
 		count.Value = math.Float64frombits(value.StaleNaN)
 	}
 
 	countlabels := createLabels(countStr)
-	addSample(tsMap, count, countlabels, metric.Type().String())
+	if _, err := addSample(tsMap, count, countlabels, metric.Type().String()); err != nil {
+		return err
+	}
 
 	// cumulative count for conversion to cumulative histogram
 	var cumulativeCount uint64
 
-	promExemplars := getPromExemplars[pmetric.HistogramDataPoint](pt)
+	exemplars := getMimirExemplars[pmetric.HistogramDataPoint](pt)
 
 	var bucketBounds []bucketBoundsData
 
@@ -310,22 +320,25 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 	for i := 0; i < pt.ExplicitBounds().Len() && i < pt.BucketCounts().Len(); i++ {
 		bound := pt.ExplicitBounds().At(i)
 		cumulativeCount += pt.BucketCounts().At(i)
-		bucket := &prompb.Sample{
-			Value:     float64(cumulativeCount),
-			Timestamp: timestamp,
+		bucket := &mimirpb.Sample{
+			Value:       float64(cumulativeCount),
+			TimestampMs: timestamp,
 		}
 		if pt.Flags().NoRecordedValue() {
 			bucket.Value = math.Float64frombits(value.StaleNaN)
 		}
 		boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 		labels := createLabels(bucketStr, leStr, boundStr)
-		sig := addSample(tsMap, bucket, labels, metric.Type().String())
+		sig, err := addSample(tsMap, bucket, labels, metric.Type().String())
+		if err != nil {
+			return err
+		}
 
 		bucketBounds = append(bucketBounds, bucketBoundsData{sig: sig, bound: bound})
 	}
 	// add le=+Inf bucket
-	infBucket := &prompb.Sample{
-		Timestamp: timestamp,
+	infBucket := &mimirpb.Sample{
+		TimestampMs: timestamp,
 	}
 	if pt.Flags().NoRecordedValue() {
 		infBucket.Value = math.Float64frombits(value.StaleNaN)
@@ -333,17 +346,24 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 		infBucket.Value = float64(pt.Count())
 	}
 	infLabels := createLabels(bucketStr, leStr, pInfStr)
-	sig := addSample(tsMap, infBucket, infLabels, metric.Type().String())
+	sig, err := addSample(tsMap, infBucket, infLabels, metric.Type().String())
+	if err != nil {
+		return err
+	}
 
 	bucketBounds = append(bucketBounds, bucketBoundsData{sig: sig, bound: math.Inf(1)})
-	addExemplars(tsMap, promExemplars, bucketBounds)
+	addExemplars(tsMap, exemplars, bucketBounds)
 
 	// add _created time series if needed
 	startTimestamp := pt.StartTimestamp()
 	if settings.ExportCreatedMetric && startTimestamp != 0 {
 		labels := createLabels(createdSuffix)
-		addCreatedTimeSeriesIfNeeded(tsMap, labels, startTimestamp, pt.Timestamp(), metric.Type().String())
+		if err := addCreatedTimeSeriesIfNeeded(tsMap, labels, startTimestamp, pt.Timestamp(), metric.Type().String()); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 type exemplarType interface {
@@ -351,59 +371,59 @@ type exemplarType interface {
 	Exemplars() pmetric.ExemplarSlice
 }
 
-func getPromExemplars[T exemplarType](pt T) []prompb.Exemplar {
-	promExemplars := make([]prompb.Exemplar, 0, pt.Exemplars().Len())
+func getMimirExemplars[T exemplarType](pt T) []mimirpb.Exemplar {
+	mimirExemplars := make([]mimirpb.Exemplar, 0, pt.Exemplars().Len())
 	for i := 0; i < pt.Exemplars().Len(); i++ {
 		exemplar := pt.Exemplars().At(i)
 		exemplarRunes := 0
 
-		promExemplar := prompb.Exemplar{
-			Value:     exemplar.DoubleValue(),
-			Timestamp: timestamp.FromTime(exemplar.Timestamp().AsTime()),
+		mimirExemplar := mimirpb.Exemplar{
+			Value:       exemplar.DoubleValue(),
+			TimestampMs: timestamp.FromTime(exemplar.Timestamp().AsTime()),
 		}
 		if traceID := exemplar.TraceID(); !traceID.IsEmpty() {
 			val := hex.EncodeToString(traceID[:])
 			exemplarRunes += utf8.RuneCountInString(traceIDKey) + utf8.RuneCountInString(val)
-			promLabel := prompb.Label{
+			mimirLabel := mimirpb.LabelAdapter{
 				Name:  traceIDKey,
 				Value: val,
 			}
-			promExemplar.Labels = append(promExemplar.Labels, promLabel)
+			mimirExemplar.Labels = append(mimirExemplar.Labels, mimirLabel)
 		}
 		if spanID := exemplar.SpanID(); !spanID.IsEmpty() {
 			val := hex.EncodeToString(spanID[:])
 			exemplarRunes += utf8.RuneCountInString(spanIDKey) + utf8.RuneCountInString(val)
-			promLabel := prompb.Label{
+			mimirLabel := mimirpb.LabelAdapter{
 				Name:  spanIDKey,
 				Value: val,
 			}
-			promExemplar.Labels = append(promExemplar.Labels, promLabel)
+			mimirExemplar.Labels = append(mimirExemplar.Labels, mimirLabel)
 		}
 
 		attrs := exemplar.FilteredAttributes()
-		labelsFromAttributes := make([]prompb.Label, 0, attrs.Len())
+		labelsFromAttributes := make([]mimirpb.LabelAdapter, 0, attrs.Len())
 		attrs.Range(func(key string, value pcommon.Value) bool {
 			val := value.AsString()
 			exemplarRunes += utf8.RuneCountInString(key) + utf8.RuneCountInString(val)
-			promLabel := prompb.Label{
+			mimirLabel := mimirpb.LabelAdapter{
 				Name:  key,
 				Value: val,
 			}
 
-			labelsFromAttributes = append(labelsFromAttributes, promLabel)
+			labelsFromAttributes = append(labelsFromAttributes, mimirLabel)
 
 			return true
 		})
 		if exemplarRunes <= maxExemplarRunes {
 			// only append filtered attributes if it does not cause exemplar
 			// labels to exceed the max number of runes
-			promExemplar.Labels = append(promExemplar.Labels, labelsFromAttributes...)
+			mimirExemplar.Labels = append(mimirExemplar.Labels, labelsFromAttributes...)
 		}
 
-		promExemplars = append(promExemplars, promExemplar)
+		mimirExemplars = append(mimirExemplars, mimirExemplar)
 	}
 
-	return promExemplars
+	return mimirExemplars
 }
 
 // mostRecentTimestampInMetric returns the latest timestamp in a batch of metrics
@@ -450,97 +470,112 @@ func maxTimestamp(a, b pcommon.Timestamp) pcommon.Timestamp {
 
 // addSingleSummaryDataPoint converts pt to len(QuantileValues) + 2 samples.
 func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings,
-	tsMap map[string]*prompb.TimeSeries, baseName string) {
+	tsMap map[uint64]*mimirpb.TimeSeries, baseName string) error {
 	timestamp := convertTimeStamp(pt.Timestamp())
 	baseLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels)
 
-	createLabels := func(name string, extras ...string) []prompb.Label {
+	createLabels := func(name string, extras ...string) []mimirpb.LabelAdapter {
 		extraLabelCount := len(extras) / 2
-		labels := make([]prompb.Label, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
+		labels := make([]mimirpb.LabelAdapter, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
 		copy(labels, baseLabels)
 
 		for extrasIdx := 0; extrasIdx < extraLabelCount; extrasIdx++ {
-			labels = append(labels, prompb.Label{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
+			labels = append(labels, mimirpb.LabelAdapter{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
 		}
 
-		labels = append(labels, prompb.Label{Name: model.MetricNameLabel, Value: name})
+		labels = append(labels, mimirpb.LabelAdapter{Name: model.MetricNameLabel, Value: name})
 
 		return labels
 	}
 
 	// treat sum as a sample in an individual TimeSeries
-	sum := &prompb.Sample{
-		Value:     pt.Sum(),
-		Timestamp: timestamp,
+	sum := &mimirpb.Sample{
+		Value:       pt.Sum(),
+		TimestampMs: timestamp,
 	}
 	if pt.Flags().NoRecordedValue() {
 		sum.Value = math.Float64frombits(value.StaleNaN)
 	}
 	// sum and count of the summary should append suffix to baseName
 	sumlabels := createLabels(baseName + sumStr)
-	addSample(tsMap, sum, sumlabels, metric.Type().String())
+	if _, err := addSample(tsMap, sum, sumlabels, metric.Type().String()); err != nil {
+		return err
+	}
 
 	// treat count as a sample in an individual TimeSeries
-	count := &prompb.Sample{
-		Value:     float64(pt.Count()),
-		Timestamp: timestamp,
+	count := &mimirpb.Sample{
+		Value:       float64(pt.Count()),
+		TimestampMs: timestamp,
 	}
 	if pt.Flags().NoRecordedValue() {
 		count.Value = math.Float64frombits(value.StaleNaN)
 	}
 	countlabels := createLabels(baseName + countStr)
-	addSample(tsMap, count, countlabels, metric.Type().String())
+	if _, err := addSample(tsMap, count, countlabels, metric.Type().String()); err != nil {
+		return err
+	}
 
 	// process each percentile/quantile
 	for i := 0; i < pt.QuantileValues().Len(); i++ {
 		qt := pt.QuantileValues().At(i)
-		quantile := &prompb.Sample{
-			Value:     qt.Value(),
-			Timestamp: timestamp,
+		quantile := &mimirpb.Sample{
+			Value:       qt.Value(),
+			TimestampMs: timestamp,
 		}
 		if pt.Flags().NoRecordedValue() {
 			quantile.Value = math.Float64frombits(value.StaleNaN)
 		}
 		percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
 		qtlabels := createLabels(baseName, quantileStr, percentileStr)
-		addSample(tsMap, quantile, qtlabels, metric.Type().String())
+		if _, err := addSample(tsMap, quantile, qtlabels, metric.Type().String()); err != nil {
+			return err
+		}
 	}
 
 	// add _created time series if needed
 	startTimestamp := pt.StartTimestamp()
 	if settings.ExportCreatedMetric && startTimestamp != 0 {
 		createdLabels := createLabels(baseName + createdSuffix)
-		addCreatedTimeSeriesIfNeeded(tsMap, createdLabels, startTimestamp, pt.Timestamp(), metric.Type().String())
+		if err := addCreatedTimeSeriesIfNeeded(tsMap, createdLabels, startTimestamp, pt.Timestamp(), metric.Type().String()); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 // addCreatedTimeSeriesIfNeeded adds {name}_created time series with a single
 // sample. If the series exists, then new samples won't be added.
 func addCreatedTimeSeriesIfNeeded(
-	series map[string]*prompb.TimeSeries,
-	labels []prompb.Label,
+	series map[uint64]*mimirpb.TimeSeries,
+	labels []mimirpb.LabelAdapter,
 	startTimestamp pcommon.Timestamp,
 	timestamp pcommon.Timestamp,
 	metricType string,
-) {
-	sig := timeSeriesSignature(metricType, labels)
+) error {
+	sig, err := timeSeriesSignature(metricType, labels)
+	if err != nil {
+		return err
+	}
 	if _, ok := series[sig]; !ok {
-		series[sig] = &prompb.TimeSeries{
+		series[sig] = &mimirpb.TimeSeries{
 			Labels: labels,
-			Samples: []prompb.Sample{
+			Samples: []mimirpb.Sample{
 				{ // convert ns to ms
-					Value:     float64(convertTimeStamp(startTimestamp)),
-					Timestamp: convertTimeStamp(timestamp),
+					Value:       float64(convertTimeStamp(startTimestamp)),
+					TimestampMs: convertTimeStamp(timestamp),
 				},
 			},
 		}
 	}
+
+	return nil
 }
 
 // addResourceTargetInfo converts the resource to the target info metric
-func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, tsMap map[string]*prompb.TimeSeries) {
+func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, tsMap map[uint64]*mimirpb.TimeSeries) error {
 	if settings.DisableTargetInfo {
-		return
+		return nil
 	}
 	// Use resource attributes (other than those used for job+instance) as the
 	// metric labels for the target info metric
@@ -557,7 +592,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 	})
 	if attributes.Len() == 0 {
 		// If we only have job + instance, then target_info isn't useful, so don't add it.
-		return
+		return nil
 	}
 	// create parameters for addSample
 	name := targetMetricName
@@ -565,12 +600,13 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		name = settings.Namespace + "_" + name
 	}
 	labels := createAttributes(resource, attributes, settings.ExternalLabels, model.MetricNameLabel, name)
-	sample := &prompb.Sample{
+	sample := &mimirpb.Sample{
 		Value: float64(1),
 		// convert ns to ms
-		Timestamp: convertTimeStamp(timestamp),
+		TimestampMs: convertTimeStamp(timestamp),
 	}
-	addSample(tsMap, sample, labels, infoType)
+	_, err := addSample(tsMap, sample, labels, infoType)
+	return err
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms

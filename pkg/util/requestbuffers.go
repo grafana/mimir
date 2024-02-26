@@ -3,6 +3,7 @@ package util
 
 import (
 	"bytes"
+	"sync"
 )
 
 // Pool is an abstraction of sync.Pool, for testability.
@@ -49,7 +50,7 @@ func (rb *RequestBuffers) Get(size int) *bytes.Buffer {
 }
 
 // CleanUp releases buffers back to the pool.
-func (rb *RequestBuffers) CleanUp() {
+func (rb *RequestBuffers) CleanUp(*sync.Pool) {
 	for i, b := range rb.buffers {
 		// Make sure the backing array doesn't retain a reference
 		rb.buffers[i] = nil
