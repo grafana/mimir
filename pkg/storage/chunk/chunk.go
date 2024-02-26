@@ -107,11 +107,10 @@ type Batch struct {
 	// Since Batch is expected to be passed by value, the array needs to be constant sized,
 	// however increasing the size of the Batch also adds memory management overhead. Using the unsafe.Pointer
 	// combined with the ValueType implements a kind of "union" type to keep the memory use down.
-	PointerValues   [BatchSize]unsafe.Pointer
-	FloatHistograms [BatchSize]*histogram.FloatHistogram
-	ValueType       chunkenc.ValueType
-	Index           int
-	Length          int
+	PointerValues [BatchSize]unsafe.Pointer
+	ValueType     chunkenc.ValueType
+	Index         int
+	Length        int
 }
 
 // Chunk contains encoded timeseries data
