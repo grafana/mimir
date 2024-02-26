@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/efficientgo/core/logerrcapture"
 	"github.com/go-kit/log"
@@ -22,6 +23,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/minio/minio-go/v7/pkg/encrypt"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"gopkg.in/yaml.v2"
 
@@ -99,8 +101,16 @@ const (
 )
 
 var DefaultConfig = Config{
-	PutUserMetadata:  map[string]string{},
-	HTTPConfig:       exthttp.DefaultHTTPConfig,
+	PutUserMetadata: map[string]string{},
+	HTTPConfig: exthttp.HTTPConfig{
+		IdleConnTimeout:       model.Duration(90 * time.Second),
+		ResponseHeaderTimeout: model.Duration(2 * time.Minute),
+		TLSHandshakeTimeout:   model.Duration(10 * time.Second),
+		ExpectContinueTimeout: model.Duration(1 * time.Second),
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   100,
+		MaxConnsPerHost:       0,
+	},
 	PartSize:         1024 * 1024 * 64, // 64MB.
 	BucketLookupType: AutoLookup,
 	SendContentMd5:   true, // Default to using MD5.
