@@ -128,11 +128,11 @@ func mergeStreams(left, right, result batchStream, size int, hPool *zeropool.Poo
 				populate(right, rt)
 			} else {
 				populate(left, lt)
-				if hPool != nil && rt == chunkenc.ValHistogram {
+				if rt == chunkenc.ValHistogram && hPool != nil {
 					_, h := right.atHistogram()
 					hPool.Put((*histogram.Histogram)(h))
 				}
-				if fhPool != nil && rt == chunkenc.ValFloatHistogram {
+				if rt == chunkenc.ValFloatHistogram && fhPool != nil {
 					_, fh := right.atFloatHistogram()
 					fhPool.Put((*histogram.FloatHistogram)(fh))
 				}
