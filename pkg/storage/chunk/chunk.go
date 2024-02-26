@@ -8,6 +8,7 @@ package chunk
 import (
 	"fmt"
 	"io"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -83,7 +84,7 @@ type Iterator interface {
 	// used to optimize memory allocations for histogram.Histogram and histogram.FloatHistogram
 	// objects.
 	// For example, when creating a batch of chunkenc.ValHistogram or chunkenc.ValFloatHistogram
-	// objects, the histogram.Histogram or histogram.FloatHistograms obhects already present in
+	// objects, the histogram.Histogram or histogram.FloatHistograms objects already present in
 	// the hPool or fhPool pool will be used instead of creating new ones.
 	Batch(size int, valueType chunkenc.ValueType, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch
 	// Returns the last error encountered. In general, an error signals data
@@ -102,9 +103,11 @@ type Batch struct {
 	Timestamps [BatchSize]int64
 	// Values stores float values related to this batch if ValueType is chunkenc.ValFloat.
 	Values [BatchSize]float64
-	// Histograms stores histogram values related to this batch if ValueType is chunkenc.ValHistogram.
-	Histograms [BatchSize]*histogram.Histogram
-	// Histograms stores float histogram values related to this batch if ValueType is chunkenc.ValFloatHistogram.
+	// PointerValues store pointers to non-float complex values like histograms, float histograms or future additions.
+	// Since Batch is expected to be passed by value, the array needs to be constant sized,
+	// however increasing the size of the Batch also adds memory management overhead. Using the unsafe.Pointer
+	// combined with the ValueType implements a kind of "union" type to keep the memory use down.
+	PointerValues   [BatchSize]unsafe.Pointer
 	FloatHistograms [BatchSize]*histogram.FloatHistogram
 	ValueType       chunkenc.ValueType
 	Index           int

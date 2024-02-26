@@ -6,6 +6,8 @@
 package batch
 
 import (
+	"unsafe"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -49,14 +51,14 @@ func (bs *batchStream) at() (int64, float64) {
 	return b.Timestamps[b.Index], b.Values[b.Index]
 }
 
-func (bs *batchStream) atHistogram() (int64, *histogram.Histogram) {
+func (bs *batchStream) atHistogram() (int64, unsafe.Pointer) {
 	b := &(*bs)[0]
-	return b.Timestamps[b.Index], b.Histograms[b.Index]
+	return b.Timestamps[b.Index], b.PointerValues[b.Index]
 }
 
-func (bs *batchStream) atFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (bs *batchStream) atFloatHistogram() (int64, unsafe.Pointer) {
 	b := &(*bs)[0]
-	return b.Timestamps[b.Index], b.FloatHistograms[b.Index]
+	return b.Timestamps[b.Index], b.PointerValues[b.Index]
 }
 
 // mergeStreams merges streams of Batches of the same series over time.
@@ -105,9 +107,9 @@ func mergeStreams(left, right, result batchStream, size int, hPool *zeropool.Poo
 		case chunkenc.ValFloat:
 			b.Timestamps[b.Index], b.Values[b.Index] = s.at()
 		case chunkenc.ValHistogram:
-			b.Timestamps[b.Index], b.Histograms[b.Index] = s.atHistogram()
+			b.Timestamps[b.Index], b.PointerValues[b.Index] = s.atHistogram()
 		case chunkenc.ValFloatHistogram:
-			b.Timestamps[b.Index], b.FloatHistograms[b.Index] = s.atFloatHistogram()
+			b.Timestamps[b.Index], b.PointerValues[b.Index] = s.atFloatHistogram()
 		}
 		b.Index++
 	}
@@ -128,11 +130,11 @@ func mergeStreams(left, right, result batchStream, size int, hPool *zeropool.Poo
 				populate(left, lt)
 				if hPool != nil && rt == chunkenc.ValHistogram {
 					_, h := right.atHistogram()
-					hPool.Put(h)
+					hPool.Put((*histogram.Histogram)(h))
 				}
 				if fhPool != nil && rt == chunkenc.ValFloatHistogram {
 					_, fh := right.atFloatHistogram()
-					fhPool.Put(fh)
+					fhPool.Put((*histogram.FloatHistogram)(fh))
 				}
 			}
 			left.next()

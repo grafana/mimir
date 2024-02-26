@@ -8,6 +8,7 @@ package chunk
 import (
 	"fmt"
 	"io"
+	"unsafe"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -244,23 +245,31 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, 
 		}
 	case chunkenc.ValHistogram:
 		populate = func(j int) {
-			var h *histogram.Histogram
+			var (
+				h *histogram.Histogram
+				t int64
+			)
 			if hPool == nil {
 				h = &histogram.Histogram{}
 			} else {
 				h = hPool.Get()
 			}
-			batch.Timestamps[j], batch.Histograms[j] = p.it.AtHistogram(h)
+			t, h = p.it.AtHistogram(h)
+			batch.Timestamps[j], batch.PointerValues[j] = t, unsafe.Pointer(h)
 		}
 	case chunkenc.ValFloatHistogram:
 		populate = func(j int) {
-			var fh *histogram.FloatHistogram
+			var (
+				fh *histogram.FloatHistogram
+				t  int64
+			)
 			if fhPool == nil {
 				fh = &histogram.FloatHistogram{}
 			} else {
 				fh = fhPool.Get()
 			}
-			batch.Timestamps[j], batch.FloatHistograms[j] = p.it.AtFloatHistogram(fh)
+			t, fh = p.it.AtFloatHistogram(fh)
+			batch.Timestamps[j], batch.PointerValues[j] = t, unsafe.Pointer(fh)
 		}
 	default:
 		panic(fmt.Sprintf("invalid chunk encoding %v", valueType))

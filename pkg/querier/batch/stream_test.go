@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
+	"unsafe"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
@@ -118,7 +120,7 @@ func mkGenericHistogramBatch(from int64, size int) chunk.Batch {
 	batch := chunk.Batch{ValueType: chunkenc.ValHistogram}
 	for i := 0; i < size; i++ {
 		batch.Timestamps[i] = from + int64(i)
-		batch.Histograms[i] = test.GenerateTestHistogram(int(from) + i)
+		batch.PointerValues[i] = unsafe.Pointer(test.GenerateTestHistogram(int(from) + i))
 	}
 	batch.Length = size
 	return batch
@@ -132,12 +134,12 @@ func requireBatchEqual(t *testing.T, b, o chunk.Batch) {
 		case chunkenc.ValFloat:
 			require.Equal(t, b.Values[i], o.Values[i], fmt.Sprintf("at idx %v", i))
 		case chunkenc.ValHistogram:
-			bh := b.Histograms[i]
-			oh := o.Histograms[i]
+			bh := (*histogram.Histogram)(b.PointerValues[i])
+			oh := (*histogram.Histogram)(o.PointerValues[i])
 			require.Equal(t, *bh, *oh, fmt.Sprintf("at idx %v", i))
 		case chunkenc.ValFloatHistogram:
-			bh := b.FloatHistograms[i]
-			oh := o.FloatHistograms[i]
+			bh := (*histogram.FloatHistogram)(b.PointerValues[i])
+			oh := (*histogram.FloatHistogram)(o.PointerValues[i])
 			require.Equal(t, *bh, *oh, fmt.Sprintf("at idx %v", i))
 		}
 	}

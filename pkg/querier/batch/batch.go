@@ -166,7 +166,7 @@ func (a *iteratorAdapter) AtHistogram(h *histogram.Histogram) (int64, *histogram
 	if h == nil {
 		h = &histogram.Histogram{}
 	}
-	fromH := a.curr.Histograms[a.curr.Index]
+	fromH := (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
 	fromH.CopyTo(h)
 	return a.curr.Timestamps[a.curr.Index], h
 }
@@ -181,12 +181,12 @@ func (a *iteratorAdapter) AtFloatHistogram(fh *histogram.FloatHistogram) (int64,
 	// The promQL engine works on Float Histograms even if the underlying data is an integer histogram
 	// and will call AtFloatHistogram on a Histogram
 	if a.curr.ValueType == chunkenc.ValFloatHistogram {
-		fromFH := a.curr.FloatHistograms[a.curr.Index]
+		fromFH := (*histogram.FloatHistogram)(a.curr.PointerValues[a.curr.Index])
 		fromFH.CopyTo(fh)
 		return a.curr.Timestamps[a.curr.Index], fh
 	}
 	if a.curr.ValueType == chunkenc.ValHistogram {
-		fromH := a.curr.Histograms[a.curr.Index]
+		fromH := (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
 		fromH.ToFloat(fh)
 		return a.curr.Timestamps[a.curr.Index], fh
 	}

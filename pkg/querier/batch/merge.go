@@ -79,11 +79,11 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 func (c *mergeIterator) putPointerValuesToThePool(b chunk.Batch) {
 	if b.ValueType == chunkenc.ValHistogram {
 		for i := 0; i < b.Length; i++ {
-			c.hPool.Put(b.Histograms[i])
+			c.hPool.Put((*histogram.Histogram)(b.PointerValues[i]))
 		}
 	} else if b.ValueType == chunkenc.ValFloatHistogram {
 		for i := 0; i < b.Length; i++ {
-			c.fhPool.Put(b.FloatHistograms[i])
+			c.fhPool.Put((*histogram.FloatHistogram)(b.PointerValues[i]))
 		}
 	}
 }
