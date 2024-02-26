@@ -2371,3 +2371,19 @@ spec:
     metricType: Value
     name: cortex_test_hpa_default
     type: prometheus
+  - metadata:
+      ignoreNullValues: "false"
+      metricName: cortex_test_hpa_default_ignore_null_values_false
+      query: query
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "123"
+    name: cortex_test_hpa_default_ignore_null_values_false
+    type: prometheus
+  - metadata:
+      ignoreNullValues: "true"
+      metricName: cortex_test_hpa_default_ignore_null_values_true
+      query: query
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "123"
+    name: cortex_test_hpa_default_ignore_null_values_true
+    type: prometheus
