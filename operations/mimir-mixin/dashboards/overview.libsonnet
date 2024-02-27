@@ -175,7 +175,20 @@ local filename = 'mimir-overview.json';
         )
       )
       .addPanel(
-        local legends = ['instant queries', 'range queries', '"label names" queries', '"label values" queries', 'series queries', 'remote read queries', 'metadata queries', 'exemplar queries', 'other'];
+        local legends = [
+          'instant queries',
+          'range queries',
+          '"label names" queries',
+          '"label values" queries',
+          'series queries',
+          'remote read queries',
+          'metadata queries',
+          'exemplar queries',
+          '"active series" queries',
+          '"label name cardinality" queries',
+          '"label value cardinality" queries',
+          'other',
+        ];
 
         $.timeseriesPanel('Queries / sec') +
         $.queryPanel(
@@ -188,6 +201,9 @@ local filename = 'mimir-overview.json';
             $.queries.query_frontend.remoteReadQueriesPerSecond,
             $.queries.query_frontend.metadataQueriesPerSecond,
             $.queries.query_frontend.exemplarsQueriesPerSecond,
+            $.queries.query_frontend.activeSeriesQueriesPerSecond,
+            $.queries.query_frontend.labelNamesCardinalityQueriesPerSecond,
+            $.queries.query_frontend.labelValuesCardinalityQueriesPerSecond,
             $.queries.query_frontend.otherQueriesPerSecond,
           ],
           legends,
