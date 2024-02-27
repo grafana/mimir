@@ -6114,7 +6114,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 	}
 
 	slices.SortFunc(series, func(a, b *mimirpb.PreallocTimeseries) int {
-		return labels.Compare(mimirpb.FromLabelAdaptersToLabels(a.Labels), mimirpb.FromLabelAdaptersToLabels(b.Labels))
+		return mimirpb.CompareLabelAdapters(a.Labels, b.Labels)
 	})
 
 	for seriesIndex, ts := range series {
