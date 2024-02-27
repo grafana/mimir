@@ -97,6 +97,14 @@ func (req *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteRequ
 	return req
 }
 
+func FromLabelAdaptersToMap(ls []LabelAdapter) map[string]string {
+	m := make(map[string]string, len(ls))
+	for _, la := range ls {
+		m[la.Name] = la.Value
+	}
+	return m
+}
+
 // FromLabelAdaptersToMetric converts []LabelAdapter to a model.Metric.
 // Don't do this on any performance sensitive paths.
 func FromLabelAdaptersToMetric(ls []LabelAdapter) model.Metric {
