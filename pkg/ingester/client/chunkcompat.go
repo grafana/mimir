@@ -14,14 +14,13 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/modelutil"
 )
 
 // StreamsToMatrix converts a slice of QueryStreamResponse to a model.Matrix.
 func StreamsToMatrix(from, through model.Time, responses []*QueryStreamResponse) (model.Matrix, error) {
 	result := model.Matrix{}
-	streamingSeries := []labels.Labels{}
+	streamingSeries := [][]mimirpb.LabelAdapter{}
 	haveReachedEndOfStreamingSeriesLabels := false
 
 	for _, response := range responses {
@@ -43,7 +42,7 @@ func StreamsToMatrix(from, through model.Time, responses []*QueryStreamResponse)
 				return nil, errors.New("received series labels after IsEndOfSeriesStream=true")
 			}
 
-			streamingSeries = append(streamingSeries, mimirpb.FromLabelAdaptersToLabels(s.Labels))
+			streamingSeries = append(streamingSeries, s.Labels)
 		}
 
 		if response.IsEndOfSeriesStream {
@@ -73,7 +72,7 @@ func TimeSeriesChunksToMatrix(from, through model.Time, serieses []TimeSeriesChu
 
 	result := model.Matrix{}
 	for _, series := range serieses {
-		stream, err := seriesChunksToMatrix(from, through, mimirpb.FromLabelAdaptersToLabels(series.Labels), series.Chunks)
+		stream, err := seriesChunksToMatrix(from, through, series.Labels, series.Chunks)
 		if err != nil {
 			return nil, err
 		}
@@ -123,9 +122,8 @@ func TimeseriesToMatrix(from, through model.Time, series []mimirpb.TimeSeries) (
 	return result, nil
 }
 
-func seriesChunksToMatrix(from, through model.Time, l labels.Labels, c []Chunk) (*model.SampleStream, error) {
-	metric := util.LabelsToMetric(l)
-	chunks, err := FromChunks(l, c)
+func seriesChunksToMatrix(from, through model.Time, la []mimirpb.LabelAdapter, c []Chunk) (*model.SampleStream, error) {
+	chunks, err := FromChunks(mimirpb.FromLabelAdaptersToLabels(la), c)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +140,7 @@ func seriesChunksToMatrix(from, through model.Time, l labels.Labels, c []Chunk) 
 	}
 
 	stream := &model.SampleStream{
-		Metric: metric,
+		Metric: mimirpb.FromLabelAdaptersToMetric(la),
 	}
 	if len(samples) > 0 {
 		stream.Values = samples
