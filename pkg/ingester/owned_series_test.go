@@ -47,6 +47,10 @@ type ownedSeriesTestContext struct {
 
 	buf *concurrency.SyncBuffer
 
+	cfg          Config
+	overrides    *validation.Overrides
+	ingesterRing ring.ReadRing
+
 	// when true, the test ingester will be second in the shuffle shard, and the "second" ingester will be first
 	swapShardOrder bool
 }
@@ -185,6 +189,37 @@ func TestOwnedSeriesService(t *testing.T) {
 
 				// first ingester still owns all the series
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+			},
+		},
+		"new user trigger from WAL replay": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 0,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesTestContext, limits map[string]*validation.Limits) {
+				c.pushUserSeries(t)
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
+				c.checkUpdateReasonForUser(t, "")
+
+				// initial state: all series are owned by the first ingester
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+
+				dataDir := c.ing.cfg.BlocksStorageConfig.TSDB.Dir
+
+				// stop the ingester
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.ing))
+
+				// restart the ingester with the same TSDB directory to trigger WAL replay
+				c.ing = setupIngesterWithOverrides(t, c.cfg, c.overrides, c.ingesterRing, dataDir)
+				c.db = c.ing.getTSDB(ownedServiceTestUser)
+				require.NotNil(t, c.db)
+
+				// the owned series will be counted during WAL replay and reason set to "new user"
+				// shard size and local limit are initialized to correct values
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonNewUser)
 			},
 		},
 		"shard size = 1, scale ingesters up and down": {
@@ -567,43 +602,47 @@ func TestOwnedSeriesService(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-			wkv := &watchingKV{Client: kvStore}
-
-			cfg := defaultIngesterTestConfig(t)
-			cfg.IngesterRing.KVStore.Mock = wkv // Use "watchingKV" so that we know when update was processed.
-			cfg.IngesterRing.InstanceID = "first-ingester"
-			cfg.IngesterRing.NumTokens = ownedServiceSeriesCount/2 + 1 // We will use token for half of the series + one token for user.
-			cfg.IngesterRing.ZoneAwarenessEnabled = true
-			cfg.IngesterRing.InstanceZone = "zone"
-			cfg.IngesterRing.ReplicationFactor = 1 // Currently we require RF=number of zones, and we will only work with single zone.
-			cfg.IngesterRing.HeartbeatPeriod = defaultHeartbeatPeriod
-
-			// Start the ring watching. We need watcher to be running when we're doing ring updates, otherwise our update-and-watch function will fail.
-			rng := createAndStartRing(t, cfg.IngesterRing.ToRingConfig())
-
 			c := ownedSeriesTestContext{
 				seriesToWrite:  seriesToWrite,
 				seriesTokens:   seriesTokens,
-				kvStore:        wkv,
 				swapShardOrder: tc.swapShardOrder,
 			}
 
-			c.registerTestedIngesterIntoRing(t, cfg.IngesterRing.InstanceID, cfg.IngesterRing.InstanceAddr, cfg.IngesterRing.InstanceZone)
+			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-			overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
+			c.kvStore = &watchingKV{Client: kvStore}
+
+			c.cfg = defaultIngesterTestConfig(t)
+			c.cfg.IngesterRing.KVStore.Mock = c.kvStore // Use "watchingKV" so that we know when update was processed.
+			c.cfg.IngesterRing.InstanceID = "first-ingester"
+			c.cfg.IngesterRing.NumTokens = ownedServiceSeriesCount/2 + 1 // We will use token for half of the series + one token for user.
+			c.cfg.IngesterRing.ZoneAwarenessEnabled = true
+			c.cfg.IngesterRing.InstanceZone = "zone"
+			c.cfg.IngesterRing.ReplicationFactor = 1 // Currently we require RF=number of zones, and we will only work with single zone.
+			c.cfg.IngesterRing.HeartbeatPeriod = defaultHeartbeatPeriod
+			c.cfg.IngesterRing.UnregisterOnShutdown = false
+
+			// Note that we don't start the ingester's owned series service (cfg.UseIngesterOwnedSeriesForLimits and cfg.UpdateIngesterOwnedSeries are false)
+			// because we'll be testing a stand-alone service to better control when it runs.
+
+			// Start the ring watching. We need watcher to be running when we're doing ring updates, otherwise our update-and-watch function will fail.
+			c.ingesterRing = createAndStartRing(t, c.cfg.IngesterRing.ToRingConfig())
+
+			c.registerTestedIngesterIntoRing(t, c.cfg.IngesterRing.InstanceID, c.cfg.IngesterRing.InstanceAddr, c.cfg.IngesterRing.InstanceZone)
+
+			var err error
+			c.overrides, err = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
 			require.NoError(t, err)
 
-			c.ing = setupIngesterWithOverrides(t, cfg, overrides, rng) // Pass ring so that limiter and oss see the same state
+			c.ing = setupIngesterWithOverrides(t, c.cfg, c.overrides, c.ingesterRing, "") // Pass ring so that limiter and oss see the same state
 
 			c.buf = &concurrency.SyncBuffer{}
 
 			c.ownedSeries = newOwnedSeriesService(
 				10*time.Minute,
-				cfg.IngesterRing.InstanceID,
-				rng,
+				c.cfg.IngesterRing.InstanceID,
+				c.ingesterRing,
 				log.NewLogfmtLogger(c.buf),
 				nil,
 				c.ing.limits.IngestionTenantShardSize,
@@ -887,7 +926,7 @@ func TestOwnedSeriesLimiting(t *testing.T) {
 			overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
 			require.NoError(t, err)
 
-			c.ing = setupIngesterWithOverrides(t, cfg, overrides, rng)
+			c.ing = setupIngesterWithOverrides(t, cfg, overrides, rng, "")
 
 			// write series to create TSDB
 			c.seriesToWrite = []series{
@@ -923,8 +962,8 @@ func userToken(user, zone string, skip int) uint32 {
 	return r.Uint32()
 }
 
-func setupIngesterWithOverrides(t *testing.T, cfg Config, overrides *validation.Overrides, ingesterRing ring.ReadRing) *Ingester {
-	ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, ingesterRing, "", "", nil)
+func setupIngesterWithOverrides(t *testing.T, cfg Config, overrides *validation.Overrides, ingesterRing ring.ReadRing, dataDir string) *Ingester {
+	ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, ingesterRing, dataDir, "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 	t.Cleanup(func() {
