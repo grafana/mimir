@@ -110,7 +110,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG)
-	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))-distroless
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))-distroless:$(IMAGE_TAG)
 	@echo
 	@echo Please use '"make push-multiarch-build-image"' to build and push build image.
