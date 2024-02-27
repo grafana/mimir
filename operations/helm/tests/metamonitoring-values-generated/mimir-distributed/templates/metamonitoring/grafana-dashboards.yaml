@@ -10170,7 +10170,7 @@ data:
                             "color": "#A1C4FC"
                          },
                          {
-                            "alias": "other",
+                            "alias": "\"active series\" queries",
                             "color": "#C788DE"
                          }
                       ],
@@ -10225,7 +10225,25 @@ data:
                             "legendLink": null
                          },
                          {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\".*(query|query_range|label.*|series|read|metadata|query_exemplars)\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=\"prometheus_api_v1_cardinality_active_series\"}[$__rate_interval])) > 0",
+                            "format": "time_series",
+                            "legendFormat": "\"active series\" queries",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=\"prometheus_api_v1_cardinality_label_names\"}[$__rate_interval])) > 0",
+                            "format": "time_series",
+                            "legendFormat": "\"label name cardinality\" queries",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=\"prometheus_api_v1_cardinality_label_values\"}[$__rate_interval])) > 0",
+                            "format": "time_series",
+                            "legendFormat": "\"label value cardinality\" queries",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\".*(query|query_range|label.*|series|read|metadata|query_exemplars|cardinality_.*)\"}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "other",
                             "legendLink": null

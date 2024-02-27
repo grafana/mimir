@@ -1394,7 +1394,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 				_, cancel := remoteRequestContext()
 				cancel()
 			},
-			IsClientError: isClientError,
+			IsClientError: isIngesterClientError,
 			Go:            d.doBatchPushWorkers,
 		},
 	)

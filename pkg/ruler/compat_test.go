@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -33,6 +34,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -221,20 +223,27 @@ func TestPusherErrors(t *testing.T) {
 			expectedWrites:   1,
 			expectedFailures: 0,
 		},
-
-		"400 error": {
+		"a 400 HTTPgRPC error is not reported as failure": {
 			returnedError:    httpgrpc.Errorf(http.StatusBadRequest, "test error"),
 			expectedWrites:   1,
-			expectedFailures: 0, // 400 errors not reported as failures.
+			expectedFailures: 0,
 		},
-
-		"500 error": {
+		"a 500 HTTPgRPC error is reported as failure": {
 			returnedError:    httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
 			expectedWrites:   1,
-			expectedFailures: 1, // 500 errors are failures
+			expectedFailures: 1,
 		},
-
-		"unknown error": {
+		"a BAD_DATA push error is not reported as failure": {
+			returnedError:    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.BAD_DATA).Err(),
+			expectedWrites:   1,
+			expectedFailures: 0,
+		},
+		"a TSDB_UNAVAILABLE push error is reported as failure": {
+			returnedError:    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.TSDB_UNAVAILABLE).Err(),
+			expectedWrites:   1,
+			expectedFailures: 1,
+		},
+		"an unknown error is reported as failure": {
 			returnedError:    errors.New("test error"),
 			expectedWrites:   1,
 			expectedFailures: 1, // unknown errors are not 400, so they are reported.
@@ -717,4 +726,12 @@ func (m *mockQueryable) Querier(_, _ int64) (storage.Querier, error) {
 		close(m.called)
 	}
 	return storage.NoopQuerier(), nil
+}
+
+func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.Status {
+	s, err := status.New(code, "").WithDetails(&mimirpb.ErrorDetails{Cause: cause})
+	if err != nil {
+		panic(err)
+	}
+	return s
 }
