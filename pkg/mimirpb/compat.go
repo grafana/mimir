@@ -21,8 +21,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // ToWriteRequest converts matched slices of Labels, Samples, Exemplars, and Metadata into a WriteRequest
@@ -101,7 +99,11 @@ func (req *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteRequ
 // FromLabelAdaptersToMetric converts []LabelAdapter to a model.Metric.
 // Don't do this on any performance sensitive paths.
 func FromLabelAdaptersToMetric(ls []LabelAdapter) model.Metric {
-	return util.LabelsToMetric(FromLabelAdaptersToLabels(ls))
+	m := make(model.Metric, len(ls))
+	for _, la := range ls {
+		m[model.LabelName(la.Name)] = model.LabelValue(la.Value)
+	}
+	return m
 }
 
 // FromLabelAdaptersToKeyString makes a string to be used as a key to a map.
