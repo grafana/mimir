@@ -3,6 +3,9 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
+// If I update something here, do I still need review of a Mimir maintainer
+// to also update the CHANGELOG?
+
 package alertmanager
 
 import (
