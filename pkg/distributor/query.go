@@ -258,7 +258,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		// Why retain the batches rather than iteratively build a single slice?
 		// If we iteratively build a single slice, we'll spend a lot of time copying elements as the slice grows beyond its capacity.
 		// So instead, we build the slice in one go once we know how many series we have.
-		var streamingSeriesBatches [][]labels.Labels
+		var streamingSeriesBatches [][][]mimirpb.LabelAdapter
 		streamingSeriesCount := 0
 
 		for {
@@ -300,7 +300,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 				result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
 			} else if len(resp.StreamingSeries) > 0 {
-				labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
+				labelsBatch := make([][]mimirpb.LabelAdapter, 0, len(resp.StreamingSeries))
 				streamingSeriesCount += len(resp.StreamingSeries)
 
 				for _, s := range resp.StreamingSeries {
@@ -317,7 +317,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 						return ingesterQueryResult{}, err
 					}
 
-					labelsBatch = append(labelsBatch, mimirpb.FromLabelAdaptersToLabels(s.Labels))
+					labelsBatch = append(labelsBatch, s.Labels)
 				}
 
 				streamingSeriesBatches = append(streamingSeriesBatches, labelsBatch)
@@ -325,7 +325,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 			if resp.IsEndOfSeriesStream {
 				if streamingSeriesCount > 0 {
-					result.streamingSeries.Series = make([]labels.Labels, 0, streamingSeriesCount)
+					result.streamingSeries.Series = make([][]mimirpb.LabelAdapter, 0, streamingSeriesCount)
 
 					for _, batch := range streamingSeriesBatches {
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
@@ -499,7 +499,7 @@ func sameSamples(a, b []mimirpb.Sample) bool {
 
 type seriesChunksStream struct {
 	StreamReader *ingester_client.SeriesChunksStreamReader
-	Series       []labels.Labels
+	Series       [][]mimirpb.LabelAdapter
 }
 
 func mergeSeriesChunkStreams(results []ingesterQueryResult, estimatedIngestersPerSeries int) []ingester_client.StreamingSeries {
@@ -508,10 +508,13 @@ func mergeSeriesChunkStreams(results []ingesterQueryResult, estimatedIngestersPe
 		return nil
 	}
 
+	builder := labels.NewBuilder(labels.EmptyLabels())
 	var allSeries []ingester_client.StreamingSeries
 
 	for tree.Next() {
-		nextIngester, nextSeriesFromIngester, nextSeriesIndex := tree.Winner()
+		nextIngester, lbls, nextSeriesIndex := tree.Winner()
+		mimirpb.FromLabelAdaptersToBuilder(lbls, builder)
+		nextSeriesFromIngester := builder.Labels()
 		lastSeriesIndex := len(allSeries) - 1
 
 		if len(allSeries) == 0 || !labels.Equal(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) {
@@ -579,17 +582,17 @@ type seriesChunkStreamsTree struct {
 }
 
 type seriesChunkStreamsTreeNode struct {
-	index           int                // This is the loser for all nodes except the 0th, where it is the winner.
-	value           labels.Labels      // Value copied from the loser node, or winner for node 0.
-	ingester        seriesChunksStream // Only populated for leaf nodes.
-	nextSeriesIndex uint64             // Only populated for leaf nodes.
+	index           int                    // This is the loser for all nodes except the 0th, where it is the winner.
+	value           []mimirpb.LabelAdapter // Value copied from the loser node, or winner for node 0.
+	ingester        seriesChunksStream     // Only populated for leaf nodes.
+	nextSeriesIndex uint64                 // Only populated for leaf nodes.
 }
 
 func (t *seriesChunkStreamsTree) moveNext(index int) bool {
 	n := &t.nodes[index]
 	n.nextSeriesIndex++
 	if int(n.nextSeriesIndex) > len(n.ingester.Series) {
-		n.value = labels.EmptyLabels()
+		n.value = nil
 		n.index = -1
 		return false
 	}
@@ -597,7 +600,7 @@ func (t *seriesChunkStreamsTree) moveNext(index int) bool {
 	return true
 }
 
-func (t *seriesChunkStreamsTree) Winner() (seriesChunksStream, labels.Labels, uint64) {
+func (t *seriesChunkStreamsTree) Winner() (seriesChunksStream, []mimirpb.LabelAdapter, uint64) {
 	n := t.nodes[t.nodes[0].index]
 	return n.ingester, n.value, n.nextSeriesIndex - 1
 }
@@ -662,16 +665,16 @@ func (t *seriesChunkStreamsTree) playGame(a, b int) (loser, winner int) {
 	return a, b
 }
 
-func (t *seriesChunkStreamsTree) less(a, b labels.Labels) bool {
-	if a.IsEmpty() {
+func (t *seriesChunkStreamsTree) less(a, b []mimirpb.LabelAdapter) bool {
+	if a == nil {
 		return false
 	}
 
-	if b.IsEmpty() {
+	if b == nil {
 		return true
 	}
 
-	return labels.Compare(a, b) < 0
+	return mimirpb.CompareLabelAdapters(a, b) < 0
 }
 
 func parent(i int) int { return i / 2 }
