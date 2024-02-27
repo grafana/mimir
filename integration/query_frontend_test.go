@@ -648,6 +648,15 @@ overrides:
 			expBody:       mimirquerier.NewMaxQueryLengthError(time.Hour*24*32, 720*time.Hour).Error(),
 		},
 		{
+			name: "query remote read time range exceeds the limit (streaming chunks)",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				httpR, _, respBytes, err := c.RemoteReadChunks(`metric`, now.Add(-time.Hour*24*32), now)
+				return httpR, respBytes, err
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       mimirquerier.NewMaxQueryLengthError(time.Hour*24*32, 720*time.Hour).Error(),
+		},
+		{
 			name: "execution error",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
 				return c.QueryRangeRaw(`sum by (group_1) (metric{unique=~"0|1|2|3"}) * on(group_1) group_right(unique) (sum by (group_1,unique) (metric{unique=~"0|1|2|3"}))`, now.Add(-time.Minute), now, time.Minute)
