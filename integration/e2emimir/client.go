@@ -26,6 +26,7 @@ import (
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	yaml "gopkg.in/yaml.v3"
@@ -246,6 +247,51 @@ func (c *Client) QueryRangeRaw(query string, start, end time.Time, step time.Dur
 	)
 
 	return c.DoGetBody(addr)
+}
+
+// RemoteRead runs a ranged query directly against the querier API.
+func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Response, _ *prompb.QueryResult, responseBytes []byte, _ error) {
+	addr := fmt.Sprintf(
+		"http://%s/prometheus/api/v1/read",
+		c.querierAddress,
+	)
+	req := &prompb.ReadRequest{
+		Queries: []*prompb.Query{{
+			Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}},
+			StartTimestampMs: start.UnixMilli(),
+			EndTimestampMs:   end.UnixMilli(),
+		}},
+		AcceptedResponseTypes: nil,
+	}
+	reqBytes, err := req.Marshal()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("error marshalling remote read request: %w", err)
+	}
+
+	resp, respBytes, err := c.DoPostBody(addr, bytes.NewReader(snappy.Encode(nil, reqBytes)))
+	if err != nil {
+		return resp, nil, respBytes, fmt.Errorf("error making remote read request: %w", err)
+	}
+	switch contentType := resp.Header.Get("Content-Type"); contentType {
+	case "application/x-protobuf":
+		if resp.Header.Get("Content-Encoding") != "snappy" {
+			return resp, nil, respBytes, fmt.Errorf("remote read should return snappy-encoded protobuf; got %s %s instead", resp.Header.Get("Content-Encoding"), contentType)
+		}
+		uncompressedBytes, err := snappy.Decode(nil, respBytes)
+		if err != nil {
+			return nil, nil, respBytes, fmt.Errorf("error decompressing remote read response: %w", err)
+		}
+		response := &prompb.ReadResponse{}
+		err = response.Unmarshal(uncompressedBytes)
+		if err != nil {
+			return nil, nil, respBytes, fmt.Errorf("error unmarshalling remote read response: %w", err)
+		}
+		return resp, response.Results[0], respBytes, nil
+	case "text/plain; charset=utf-8":
+		return resp, nil, respBytes, nil
+	default:
+		return resp, nil, respBytes, fmt.Errorf("unexpected content type %s", contentType)
+	}
 }
 
 // QueryExemplars runs an exemplar query.
@@ -1288,6 +1334,24 @@ func (c *Client) DoGetBody(url string) (*http.Response, []byte, error) {
 // timeout configured by the client object.
 func (c *Client) DoPost(url string, body io.Reader) (*http.Response, error) {
 	return c.doRequest("POST", url, body)
+}
+
+// DoPostBody performs a HTTP POST request towards the supplied URL and returns
+// the full response body. The request contains the X-Scope-OrgID header and
+// the timeout configured by the client object.
+func (c *Client) DoPostBody(url string, body io.Reader) (*http.Response, []byte, error) {
+	resp, err := c.DoPost(url, body)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return resp, respBytes, nil
 }
 
 func (c *Client) doRequest(method, url string, body io.Reader) (*http.Response, error) {
