@@ -107,7 +107,7 @@
 * [BUGFIX] Query-frontend: abort response streaming for `active_series` requests when the request context is canceled. #7378
 * [BUGFIX] Compactor: improve compaction of sporadic blocks. #7329
 * [BUGFIX] promql: Fix Range selectors with an @ modifier are wrongly scoped in range queries. #7475
-* [BUGFIX] Add json tags to Metadata struct. #7475
+* [BUGFIX] Fix metadata API using wrong JSON field names. #7475
 
 ### Mixin
 
