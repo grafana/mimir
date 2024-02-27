@@ -288,7 +288,7 @@ func TestOwnedSeriesService(t *testing.T) {
 			c.tenantShards = map[string]int{}
 			c.buf = &concurrency.SyncBuffer{}
 
-			c.ownedSeries = newOwnedSeriesService(10*time.Minute, newOwnedSeriesIngesterRing(cfg.IngesterRing.InstanceID, rng, func(user string) int { return c.tenantShards[user] }), log.NewLogfmtLogger(c.buf), nil, c.ing.getTSDBUsers, c.ing.getTSDB)
+			c.ownedSeries = newOwnedSeriesService(10*time.Minute, newOwnedSeriesIngesterRingStrategy(cfg.IngesterRing.InstanceID, rng, func(user string) int { return c.tenantShards[user] }), log.NewLogfmtLogger(c.buf), nil, c.ing.getTSDBUsers, c.ing.getTSDB)
 
 			tc(t, &c)
 		})
@@ -323,7 +323,7 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 	const instanceID1 = "first ingester"
 	const instanceID2 = "second instance"
 
-	ownedSeries := newOwnedSeriesService(10*time.Minute, newOwnedSeriesIngesterRing(instanceID1, rng, nil), log.NewLogfmtLogger(&buf), nil, nil, nil)
+	ownedSeries := newOwnedSeriesService(10*time.Minute, newOwnedSeriesIngesterRingStrategy(instanceID1, rng, nil), log.NewLogfmtLogger(&buf), nil, nil, nil)
 
 	updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
 		desc.AddIngester(instanceID1, "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now())

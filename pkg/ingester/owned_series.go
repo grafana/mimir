@@ -39,7 +39,7 @@ type ownedSeriesService struct {
 
 	logger log.Logger
 
-	ringSupport ownedSeriesRing
+	ringSupport ownedSeriesRingStrategy
 
 	getTSDBUsers func() []string
 	getTSDB      func(user string) *userTSDB
@@ -47,7 +47,7 @@ type ownedSeriesService struct {
 	ownedSeriesCheckDuration prometheus.Histogram
 }
 
-func newOwnedSeriesService(interval time.Duration, ring ownedSeriesRing, logger log.Logger, reg prometheus.Registerer, getTSDBUsers func() []string, getTSDB func(user string) *userTSDB) *ownedSeriesService {
+func newOwnedSeriesService(interval time.Duration, ring ownedSeriesRingStrategy, logger log.Logger, reg prometheus.Registerer, getTSDBUsers func() []string, getTSDB func(user string) *userTSDB) *ownedSeriesService {
 	oss := &ownedSeriesService{
 		logger:       logger,
 		ringSupport:  ring,
@@ -176,8 +176,8 @@ func secondaryTSDBHashFunctionForUser(userID string) func(labels.Labels) uint32 
 	}
 }
 
-// ownedSeriesRing wraps access to the ring, to allow owned-series to be ignorant to whether it uses ingester ring or partitions ring.
-type ownedSeriesRing interface {
+// ownedSeriesRingStrategy wraps access to the ring, to allow owned series service to be ignorant to whether it uses ingester ring or partitions ring.
+type ownedSeriesRingStrategy interface {
 	// checkRingForChanges reads current ring, stores it, and returns bool indicating whether ring has changed since last call
 	// of this method in such a way that new recomputation of token ranges is needed.
 	checkRingForChanges() (bool, error)
@@ -192,7 +192,7 @@ type ownedSeriesRing interface {
 	ownerKeyAndValue() (string, string)
 }
 
-type ownedSeriesIngesterRing struct {
+type ownedSeriesIngesterRingStrategy struct {
 	instanceID    string
 	ingestersRing ring.ReadRing
 
@@ -201,19 +201,19 @@ type ownedSeriesIngesterRing struct {
 	previousRing ring.ReplicationSet
 }
 
-func newOwnedSeriesIngesterRing(instanceID string, ingesterRing ring.ReadRing, getIngesterShardSize func(user string) int) *ownedSeriesIngesterRing {
-	return &ownedSeriesIngesterRing{
+func newOwnedSeriesIngesterRingStrategy(instanceID string, ingesterRing ring.ReadRing, getIngesterShardSize func(user string) int) *ownedSeriesIngesterRingStrategy {
+	return &ownedSeriesIngesterRingStrategy{
 		instanceID:           instanceID,
 		ingestersRing:        ingesterRing,
 		getIngesterShardSize: getIngesterShardSize,
 	}
 }
 
-func (ir *ownedSeriesIngesterRing) ownerKeyAndValue() (string, string) {
+func (ir *ownedSeriesIngesterRingStrategy) ownerKeyAndValue() (string, string) {
 	return "ingester", ir.instanceID
 }
 
-func (ir *ownedSeriesIngesterRing) checkRingForChanges() (bool, error) {
+func (ir *ownedSeriesIngesterRingStrategy) checkRingForChanges() (bool, error) {
 	rs, err := ir.ingestersRing.GetAllHealthy(ownedSeriesRingOp)
 	if err != nil {
 		return false, err
@@ -225,17 +225,17 @@ func (ir *ownedSeriesIngesterRing) checkRingForChanges() (bool, error) {
 	return ringChanged, nil
 }
 
-func (ir *ownedSeriesIngesterRing) shardSizeForUser(userID string) int {
+func (ir *ownedSeriesIngesterRingStrategy) shardSizeForUser(userID string) int {
 	return ir.getIngesterShardSize(userID)
 }
 
-func (ir *ownedSeriesIngesterRing) tokenRangesForUser(userID string, shardSize int) (ring.TokenRanges, error) {
+func (ir *ownedSeriesIngesterRingStrategy) tokenRangesForUser(userID string, shardSize int) (ring.TokenRanges, error) {
 	subring := ir.ingestersRing.ShuffleShard(userID, shardSize)
 
 	return subring.GetTokenRangesForInstance(ir.instanceID)
 }
 
-type ownedSeriesPartitionRing struct {
+type ownedSeriesPartitionRingStrategy struct {
 	partitionID          int32
 	partitionRingWatcher *ring.PartitionRingWatcher
 
@@ -244,15 +244,15 @@ type ownedSeriesPartitionRing struct {
 	previousActivePartition []int32
 }
 
-func newOwnedSeriesPartitionRing(partitionID int32, partitionRing *ring.PartitionRingWatcher, getPartitionShardSize func(user string) int) *ownedSeriesPartitionRing {
-	return &ownedSeriesPartitionRing{
+func newOwnedSeriesPartitionRingStrategy(partitionID int32, partitionRing *ring.PartitionRingWatcher, getPartitionShardSize func(user string) int) *ownedSeriesPartitionRingStrategy {
+	return &ownedSeriesPartitionRingStrategy{
 		partitionID:           partitionID,
 		partitionRingWatcher:  partitionRing,
 		getPartitionShardSize: getPartitionShardSize,
 	}
 }
 
-func (pr *ownedSeriesPartitionRing) checkRingForChanges() (bool, error) {
+func (pr *ownedSeriesPartitionRingStrategy) checkRingForChanges() (bool, error) {
 	// When using partitions ring, we consider ring to be changed if active partitions have changed.
 	r := pr.partitionRingWatcher.PartitionRing()
 	activePartitions := r.ActivePartitionIDs()
@@ -261,11 +261,11 @@ func (pr *ownedSeriesPartitionRing) checkRingForChanges() (bool, error) {
 	return ringChanged, nil
 }
 
-func (pr *ownedSeriesPartitionRing) shardSizeForUser(userID string) int {
+func (pr *ownedSeriesPartitionRingStrategy) shardSizeForUser(userID string) int {
 	return pr.getPartitionShardSize(userID)
 }
 
-func (pr *ownedSeriesPartitionRing) tokenRangesForUser(userID string, shardSize int) (ring.TokenRanges, error) {
+func (pr *ownedSeriesPartitionRingStrategy) tokenRangesForUser(userID string, shardSize int) (ring.TokenRanges, error) {
 	_, ok := slices.BinarySearch(pr.previousActivePartition, pr.partitionID)
 	if !ok {
 		// If our partition is not active, it has no owned series.
@@ -281,6 +281,6 @@ func (pr *ownedSeriesPartitionRing) tokenRangesForUser(userID string, shardSize 
 	return sr.GetTokenRangesForPartition(pr.partitionID)
 }
 
-func (pr *ownedSeriesPartitionRing) ownerKeyAndValue() (string, string) {
+func (pr *ownedSeriesPartitionRingStrategy) ownerKeyAndValue() (string, string) {
 	return "partition", strconv.Itoa(int(pr.partitionID))
 }
