@@ -103,6 +103,7 @@
 * [BUGFIX] Update `google.golang.org/grpc` to resolve occasional issues with gRPC server closing its side of connection before it was drained by the client. #7380
 * [BUGFIX] Query-frontend: abort response streaming for `active_series` requests when the request context is canceled. #7378
 * [BUGFIX] Compactor: improve compaction of sporadic blocks. #7329
+* [BUGFIX] Ruler: fix regression that caused client errors to be tracked in `cortex_ruler_write_requests_failed_total` metric. #7472
 
 ### Mixin
 
