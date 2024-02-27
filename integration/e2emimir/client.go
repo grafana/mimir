@@ -272,7 +272,7 @@ func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Re
 	}
 	switch contentType := resp.Header.Get("Content-Type"); contentType {
 	case "application/x-protobuf":
-		if encoding := resp.Header.Get("Content-Encoding") != "snappy"; encoding {
+		if encoding := resp.Header.Get("Content-Encoding"); encoding != "snappy" {
 			return resp, nil, nil, fmt.Errorf("remote read should return snappy-encoded protobuf; got %s %s instead", encoding, contentType)
 		}
 		queryResult, err := parseRemoteReadSamples(resp)
