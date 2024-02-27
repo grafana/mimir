@@ -297,6 +297,11 @@ func (c *Client) RemoteReadChunks(metricName string, start, end time.Time) (_ *h
 			Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}},
 			StartTimestampMs: start.UnixMilli(),
 			EndTimestampMs:   end.UnixMilli(),
+			Hints: &prompb.ReadHints{
+				StepMs:  1,
+				StartMs: start.UnixMilli(),
+				EndMs:   end.UnixMilli(),
+			},
 		}},
 		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
 	}
