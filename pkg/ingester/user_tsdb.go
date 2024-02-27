@@ -616,5 +616,13 @@ func (u *userTSDB) computeOwnedSeries() int {
 }
 
 func (u *userTSDB) resetSymbolTable() {
-	u.symbolTable.Store(labels.NewSymbolTable())
+	var st *labels.SymbolTable
+	if u.db != nil && u.db.Head() != nil {
+		// Compact all labels in head into one SymbolTable.
+		st = u.Head().RebuildSymbolTable()
+	} else {
+		st = labels.NewSymbolTable()
+	}
+	// Then use that for new series going forward.
+	u.symbolTable.Store(st)
 }
