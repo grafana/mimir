@@ -514,7 +514,7 @@ func mergeSeriesChunkStreams(results []ingesterQueryResult, estimatedIngestersPe
 		nextIngester, nextSeriesFromIngester, nextSeriesIndex := tree.Winner()
 		lastSeriesIndex := len(allSeries) - 1
 
-		if len(allSeries) == 0 || labels.Compare(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) != 0 {
+		if len(allSeries) == 0 || !labels.Equal(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) {
 			// First time we've seen this series.
 			series := ingester_client.StreamingSeries{
 				Labels:  nextSeriesFromIngester,
