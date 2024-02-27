@@ -314,7 +314,7 @@ func (c *Client) RemoteReadChunks(metricName string, start, end time.Time) (_ *h
 		return resp, nil, nil, fmt.Errorf("making remote read request: %w", err)
 	}
 	switch contentType := resp.Header.Get("Content-Type"); contentType {
-	case "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse":
+	case api.ContentTypeRemoteReadStreamedChunks:
 		if encoding := resp.Header.Get("Content-Encoding"); encoding != "" {
 			return resp, nil, nil, fmt.Errorf("remote read should not return Content-Encoding; got %s %s instead", encoding, contentType)
 		}

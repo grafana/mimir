@@ -138,8 +138,7 @@ func remoteReadStreamedXORChunks(
 		http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusBadRequest)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+	w.Header().Set("Content-Type", api.ContentTypeRemoteReadStreamedChunks)
 
 	for i, qr := range req.Queries {
 		if err := processReadStreamedQueryRequest(ctx, i, qr, q, w, f, maxBytesInFrame); err != nil {

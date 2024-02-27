@@ -327,7 +327,7 @@ func TestStreamedRemoteRead(t *testing.T) {
 			handler.ServeHTTP(recorder, request)
 
 			require.Equal(t, 200, recorder.Result().StatusCode)
-			require.Equal(t, []string{"application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"}, recorder.Result().Header["Content-Type"])
+			require.Equal(t, []string{api.ContentTypeRemoteReadStreamedChunks}, recorder.Result().Header["Content-Type"])
 
 			stream := prom_remote.NewChunkedReader(recorder.Result().Body, prom_remote.DefaultChunkedReadLimit, nil)
 
