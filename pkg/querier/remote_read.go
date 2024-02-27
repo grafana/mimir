@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -22,8 +23,10 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -114,7 +117,11 @@ func remoteReadSamples(
 		}
 	}
 	if lastErr != nil {
-		http.Error(w, lastErr.Error(), http.StatusBadRequest)
+		code := remoteReadErrorStatusCode(lastErr)
+		if code/100 != 4 {
+			level.Error(logger).Log("msg", "error while processing remote read request", "err", lastErr)
+		}
+		http.Error(w, lastErr.Error(), code) // change the Content-Type to text/plain and return a human-readable error message
 		return
 	}
 	w.Header().Add("Content-Type", "application/x-protobuf")
@@ -142,18 +149,30 @@ func remoteReadStreamedXORChunks(
 
 	for i, qr := range req.Queries {
 		if err := processReadStreamedQueryRequest(ctx, i, qr, q, w, f, maxBytesInFrame); err != nil {
-			if errors.Is(err, context.Canceled) {
-				// We're intentionally not logging in this case to reduce noise about an unactionable condition.
-				http.Error(w, err.Error(), statusClientClosedRequest)
-				return
+			code := remoteReadErrorStatusCode(err)
+			if code/100 != 4 {
+				level.Error(logger).Log("msg", "error while processing remote read request", "err", err)
 			}
-
-			level.Error(logger).Log("msg", "error while processing remote read request", "err", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, err.Error(), code) // change the Content-Type to text/plain and return a human-readable error message
 			return
 		}
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func remoteReadErrorStatusCode(err error) int {
+	switch {
+	case errors.Is(err, context.Canceled):
+		// The premise is that the client closed the connection and will not read the response.
+		// We want to differentiate between the client aborting the request and the server aborting the request.
+		return statusClientClosedRequest
+	case validation.IsLimitError(err):
+		return http.StatusBadRequest
+	case errors.As(err, &promql.ErrStorage{}):
+		return http.StatusInternalServerError
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 func processReadStreamedQueryRequest(
