@@ -1219,8 +1219,8 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 
 	type testcase struct {
-		inputSeries    labels.Labels
-		expectedSeries labels.Labels
+		inputSeries    []mimirpb.LabelAdapter
+		expectedSeries []mimirpb.LabelAdapter
 		removeReplica  bool
 		removeLabels   []string
 	}
@@ -1230,39 +1230,39 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 		{
 			removeReplica:  true,
 			removeLabels:   []string{"cluster"},
-			inputSeries:    labels.FromStrings("__name__", "some_metric", "cluster", "one", "__replica__", "two"),
-			expectedSeries: labels.FromStrings("__name__", "some_metric"),
+			inputSeries:    labelAdapters("__name__", "some_metric", "cluster", "one", "__replica__", "two"),
+			expectedSeries: labelAdapters("__name__", "some_metric"),
 		},
 		// Remove multiple labels and replica.
 		{
 			removeReplica: true,
 			removeLabels:  []string{"foo", "some"},
-			inputSeries: labels.FromStrings("__name__", "some_metric", "cluster", "one", "__replica__", "two",
+			inputSeries: labelAdapters("__name__", "some_metric", "cluster", "one", "__replica__", "two",
 				"foo", "bar", "some", "thing"),
-			expectedSeries: labels.FromStrings("__name__", "some_metric", "cluster", "one"),
+			expectedSeries: labelAdapters("__name__", "some_metric", "cluster", "one"),
 		},
 		// Remove blank labels.
 		{
-			inputSeries:    labels.FromStrings("__name__", "some_metric", "blank", "", "foo", "bar"),
-			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+			inputSeries:    labelAdapters("__name__", "some_metric", "blank", "", "foo", "bar"),
+			expectedSeries: labelAdapters("__name__", "some_metric", "foo", "bar"),
 		},
 		{
-			inputSeries:    labels.FromStrings("__name__", "some_metric", "foo", "bar", "zzz_blank", ""),
-			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+			inputSeries:    labelAdapters("__name__", "some_metric", "foo", "bar", "zzz_blank", ""),
+			expectedSeries: labelAdapters("__name__", "some_metric", "foo", "bar"),
 		},
 		{
-			inputSeries:    labels.FromStrings("__blank__", "", "__name__", "some_metric", "foo", "bar"),
-			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+			inputSeries:    labelAdapters("__blank__", "", "__name__", "some_metric", "foo", "bar"),
+			expectedSeries: labelAdapters("__name__", "some_metric", "foo", "bar"),
 		},
 		{
-			inputSeries:    labels.FromStrings("__blank__", "", "__name__", "some_metric", "foo", "bar", "zzz_blank", ""),
-			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+			inputSeries:    labelAdapters("__blank__", "", "__name__", "some_metric", "foo", "bar", "zzz_blank", ""),
+			expectedSeries: labelAdapters("__name__", "some_metric", "foo", "bar"),
 		},
 		// Don't remove any labels.
 		{
 			removeReplica:  false,
-			inputSeries:    labels.FromStrings("__name__", "some_metric", "__replica__", "two", "cluster", "one"),
-			expectedSeries: labels.FromStrings("__name__", "some_metric", "__replica__", "two", "cluster", "one"),
+			inputSeries:    labelAdapters("__name__", "some_metric", "__replica__", "two", "cluster", "one"),
+			expectedSeries: labelAdapters("__name__", "some_metric", "__replica__", "two", "cluster", "one"),
 		},
 	}
 
@@ -1291,7 +1291,7 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 			timeseries := ingesters[i].series()
 			assert.Equal(t, 1, len(timeseries))
 			for _, v := range timeseries {
-				assert.True(t, labels.Equal(tc.expectedSeries, mimirpb.FromLabelAdaptersToLabels(v.Labels)))
+				assert.Equal(t, tc.expectedSeries, v.Labels)
 			}
 		}
 	}
@@ -1300,35 +1300,35 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 func TestDistributor_Push_ShouldGuaranteeShardingTokenConsistencyOverTheTime(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	tests := map[string]struct {
-		inputSeries    labels.Labels
-		expectedSeries labels.Labels
+		inputSeries    []mimirpb.LabelAdapter
+		expectedSeries []mimirpb.LabelAdapter
 		expectedToken  uint32
 	}{
 		"metric_1 with value_1": {
-			inputSeries:    labels.FromStrings("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1"),
-			expectedSeries: labels.FromStrings("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1"),
+			inputSeries:    labelAdapters("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1"),
+			expectedSeries: labelAdapters("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1"),
 			expectedToken:  0xec0a2e9d,
 		},
 		"metric_1 with value_1 and dropped label due to config": {
-			inputSeries: labels.FromStrings("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1",
+			inputSeries: labelAdapters("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1",
 				"dropped", "unused"),
-			expectedSeries: labels.FromStrings("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1"),
+			expectedSeries: labelAdapters("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1"),
 			expectedToken:  0xec0a2e9d,
 		},
 		"metric_1 with value_1 and dropped HA replica label": {
-			inputSeries: labels.FromStrings("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1",
+			inputSeries: labelAdapters("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1",
 				"__replica__", "replica_1"),
-			expectedSeries: labels.FromStrings("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1"),
+			expectedSeries: labelAdapters("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1"),
 			expectedToken:  0xec0a2e9d,
 		},
 		"metric_2 with value_1": {
-			inputSeries:    labels.FromStrings("__name__", "metric_2", "key", "value_1"),
-			expectedSeries: labels.FromStrings("__name__", "metric_2", "key", "value_1"),
+			inputSeries:    labelAdapters("__name__", "metric_2", "key", "value_1"),
+			expectedSeries: labelAdapters("__name__", "metric_2", "key", "value_1"),
 			expectedToken:  0xa60906f2,
 		},
 		"metric_1 with value_2": {
-			inputSeries:    labels.FromStrings("__name__", "metric_1", "key", "value_2"),
-			expectedSeries: labels.FromStrings("__name__", "metric_1", "key", "value_2"),
+			inputSeries:    labelAdapters("__name__", "metric_1", "key", "value_2"),
+			expectedSeries: labelAdapters("__name__", "metric_1", "key", "value_2"),
 			expectedToken:  0x18abc8a2,
 		},
 	}
@@ -1360,18 +1360,18 @@ func TestDistributor_Push_ShouldGuaranteeShardingTokenConsistencyOverTheTime(t *
 
 				series, ok := timeseries[testData.expectedToken]
 				require.True(t, ok)
-				assert.Equal(t, testData.expectedSeries, mimirpb.FromLabelAdaptersToLabels(series.Labels))
+				assert.Equal(t, testData.expectedSeries, series.Labels)
 			}
 		})
 	}
 }
 
 func TestDistributor_Push_LabelNameValidation(t *testing.T) {
-	inputLabels := labels.FromStrings(model.MetricNameLabel, "foo", "999.illegal", "baz")
+	inputLabels := labelAdapters(model.MetricNameLabel, "foo", "999.illegal", "baz")
 	ctx := user.InjectOrgID(context.Background(), "user")
 
 	tests := map[string]struct {
-		inputLabels                labels.Labels
+		inputLabels                []mimirpb.LabelAdapter
 		skipLabelNameValidationCfg bool
 		skipLabelNameValidationReq bool
 		errExpected                bool
@@ -2224,23 +2224,23 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 	const numIngesters = 5
 
 	fixtures := []struct {
-		lbls      labels.Labels
+		lbls      []mimirpb.LabelAdapter
 		value     float64
 		timestamp int64
 	}{
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "200"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "500"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+		{labelAdapters(labels.MetricName, "test_1", "status", "200"), 1, 100000},
+		{labelAdapters(labels.MetricName, "test_1", "status", "500"), 1, 110000},
+		{labelAdapters(labels.MetricName, "test_2"), 2, 200000},
 		// The two following series have the same FastFingerprint=e002a3a451262627
-		{labels.FromStrings(labels.MetricName, "fast_fingerprint_collision", "app", "l", "uniq0", "0", "uniq1", "1"), 1, 300000},
-		{labels.FromStrings(labels.MetricName, "fast_fingerprint_collision", "app", "m", "uniq0", "1", "uniq1", "1"), 1, 300000},
+		{labelAdapters(labels.MetricName, "fast_fingerprint_collision", "app", "l", "uniq0", "0", "uniq1", "1"), 1, 300000},
+		{labelAdapters(labels.MetricName, "fast_fingerprint_collision", "app", "m", "uniq0", "1", "uniq1", "1"), 1, 300000},
 	}
 
 	tests := map[string]struct {
 		shuffleShardSize  int
 		matchers          []*labels.Matcher
 		maxSeriesPerQuery int
-		expectedResult    []labels.Labels
+		expectedResult    [][]mimirpb.LabelAdapter
 		expectedIngesters int
 		expectedError     error
 	}{
@@ -2248,14 +2248,14 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown"),
 			},
-			expectedResult:    []labels.Labels{},
+			expectedResult:    nil,
 			expectedIngesters: numIngesters,
 		},
 		"should filter metrics by single matcher": {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult: []labels.Labels{
+			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[0].lbls,
 				fixtures[1].lbls,
 			},
@@ -2266,7 +2266,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 				mustNewMatcher(labels.MatchEqual, "status", "200"),
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult: []labels.Labels{
+			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[0].lbls,
 			},
 			expectedIngesters: numIngesters,
@@ -2275,7 +2275,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "fast_fingerprint_collision"),
 			},
-			expectedResult: []labels.Labels{
+			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[3].lbls,
 				fixtures[4].lbls,
 			},
@@ -2286,7 +2286,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult: []labels.Labels{
+			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[0].lbls,
 				fixtures[1].lbls,
 			},
@@ -2353,7 +2353,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					}
 
 					require.NoError(t, err)
-					assert.ElementsMatch(t, testData.expectedResult, metrics)
+					assertMatchingLabelSlices(t, testData.expectedResult, metrics)
 
 					// Check how many ingesters have been queried.
 					if ingestStorageEnabled {
@@ -2380,44 +2380,44 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 	collision1, collision2 := labelsWithHashCollision()
 
 	pushedData := []struct {
-		lbls      labels.Labels
+		lbls      []mimirpb.LabelAdapter
 		value     float64
 		timestamp int64
 	}{
-		{labels.FromStrings(labels.MetricName, "test_1", "team", "a"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "test_1", "team", "b"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+		{labelAdapters(labels.MetricName, "test_1", "team", "a"), 1, 100000},
+		{labelAdapters(labels.MetricName, "test_1", "team", "b"), 1, 110000},
+		{labelAdapters(labels.MetricName, "test_2"), 2, 200000},
 		{collision1, 3, 300000},
 		{collision2, 4, 300000},
-		{labels.FromStrings(labels.MetricName, "large_metric", "label", strings.Repeat("1", 2*responseSizeLimitBytes)), 5, 400000},
+		{labelAdapters(labels.MetricName, "large_metric", "label", strings.Repeat("1", 2*responseSizeLimitBytes)), 5, 400000},
 	}
 
 	tests := map[string]struct {
 		shuffleShardSize            int
 		requestMatchers             []*labels.Matcher
 		expectError                 error
-		expectedSeries              []labels.Labels
+		expectedSeries              [][]mimirpb.LabelAdapter
 		expectedNumQueriedIngesters int
 	}{
 		"should return an empty response if no metric match": {
 			requestMatchers:             []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown")},
-			expectedSeries:              []labels.Labels{},
+			expectedSeries:              nil,
 			expectedNumQueriedIngesters: numIngesters,
 		},
 		"should return all matching metrics": {
 			requestMatchers:             []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1")},
-			expectedSeries:              []labels.Labels{pushedData[0].lbls, pushedData[1].lbls},
+			expectedSeries:              [][]mimirpb.LabelAdapter{pushedData[0].lbls, pushedData[1].lbls},
 			expectedNumQueriedIngesters: numIngesters,
 		},
 		"should honour shuffle shard size": {
 			shuffleShardSize:            3,
 			requestMatchers:             []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")},
-			expectedSeries:              []labels.Labels{pushedData[2].lbls},
+			expectedSeries:              [][]mimirpb.LabelAdapter{pushedData[2].lbls},
 			expectedNumQueriedIngesters: 3,
 		},
 		"should return all matching series even if their hash collides": {
 			requestMatchers:             []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric")},
-			expectedSeries:              []labels.Labels{collision1, collision2},
+			expectedSeries:              [][]mimirpb.LabelAdapter{collision1, collision2},
 			expectedNumQueriedIngesters: numIngesters,
 		},
 		"aborts if response is too large": {
@@ -2684,10 +2684,28 @@ func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
 }
 
 func assertMatchingLabelSlices(tb testing.TB, a, b []labels.Labels) {
+// Match output of labels.Labels.String().
+func labelAdaptersToString(ls []mimirpb.LabelAdapter) string {
+	var b bytes.Buffer
+
+	b.WriteByte('{')
+	for i, l := range ls {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(l.Name)
+		b.WriteByte('=')
+		b.WriteString(strconv.Quote(l.Value))
+	}
+	b.WriteByte('}')
+	return b.String()
+}
+
+func assertMatchingLabelSlices(tb testing.TB, a [][]mimirpb.LabelAdapter, b []labels.Labels) {
 	tb.Helper()
 	mapA := map[string]struct{}{}
 	for i := range a {
-		mapA[a[i].String()] = struct{}{}
+		mapA[labelAdaptersToString(a[i])] = struct{}{}
 	}
 	for i := range b {
 		s := b[i].String()
@@ -3124,13 +3142,13 @@ func TestDistributor_LabelNames(t *testing.T) {
 	const numIngesters = 5
 
 	fixtures := []struct {
-		lbls      labels.Labels
+		lbls      []mimirpb.LabelAdapter
 		value     float64
 		timestamp int64
 	}{
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "200"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "500", "reason", "broken"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+		{labelAdapters(labels.MetricName, "test_1", "status", "200"), 1, 100000},
+		{labelAdapters(labels.MetricName, "test_1", "status", "500", "reason", "broken"), 1, 110000},
+		{labelAdapters(labels.MetricName, "test_2"), 2, 200000},
 	}
 
 	tests := map[string]struct {
@@ -3328,13 +3346,13 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 	// distinct values are "__name__", "label_00", "label_01" that is 24 bytes in total
 	fixtures := []struct {
-		lbls      labels.Labels
+		lbls      []mimirpb.LabelAdapter
 		value     float64
 		timestamp int64
 	}{
-		{labels.FromStrings(labels.MetricName, "label_00"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "label_11"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "label_11"), 2, 200000},
+		{labelAdapters(labels.MetricName, "label_00"), 1, 100000},
+		{labelAdapters(labels.MetricName, "label_11"), 1, 110000},
+		{labelAdapters(labels.MetricName, "label_11"), 2, 200000},
 	}
 	tests := map[string]struct {
 		sizeLimitBytes int
@@ -3397,13 +3415,13 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 
 func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 	fixtures := []struct {
-		lbls      labels.Labels
+		lbls      []mimirpb.LabelAdapter
 		value     float64
 		timestamp int64
 	}{
-		{labels.FromStrings(labels.MetricName, "label_0", "status", "200"), 1, 100_000},
-		{labels.FromStrings(labels.MetricName, "label_1", "status", "500", "reason", "broken"), 1, 110_000},
-		{labels.FromStrings(labels.MetricName, "label_1"), 2, 200_000},
+		{labelAdapters(labels.MetricName, "label_0", "status", "200"), 1, 100_000},
+		{labelAdapters(labels.MetricName, "label_1", "status", "500", "reason", "broken"), 1, 110_000},
+		{labelAdapters(labels.MetricName, "label_1"), 2, 200_000},
 	}
 	tests := map[string]struct {
 		from, to            model.Time
@@ -3471,13 +3489,13 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 
 func TestDistributor_LabelNamesAndValues(t *testing.T) {
 	fixtures := []struct {
-		lbls      labels.Labels
+		lbls      []mimirpb.LabelAdapter
 		value     float64
 		timestamp int64
 	}{
-		{labels.FromStrings(labels.MetricName, "label_0", "status", "200"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "label_1", "status", "500", "reason", "broken"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "label_1"), 2, 200000},
+		{labelAdapters(labels.MetricName, "label_0", "status", "200"), 1, 100000},
+		{labelAdapters(labels.MetricName, "label_1", "status", "500", "reason", "broken"), 1, 110000},
+		{labelAdapters(labels.MetricName, "label_1"), 2, 200000},
 	}
 	expectedLabelValues := []*client.LabelValues{
 		{
@@ -3573,7 +3591,7 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 // This test asserts that distributor waits for all ingester responses to be completed even if ZoneAwareness is enabled.
 // Also, it simulates delay from zone C to verify that there is no race condition. must be run with `-race` flag (race detection).
 func TestDistributor_LabelValuesCardinality_ExpectedAllIngestersResponsesToBeCompleted(t *testing.T) {
-	ctx, ds := prepareWithZoneAwarenessAndZoneDelay(t, createSeries(10000))
+	ctx, ds := prepareWithZoneAwarenessAndZoneDelay(t, 10000)
 
 	names := []model.LabelName{labels.MetricName}
 	response, err := ds[0].labelValuesCardinality(ctx, names, []*labels.Matcher{}, cardinality.InMemoryMethod)
@@ -3586,33 +3604,33 @@ func TestDistributor_LabelValuesCardinality_ExpectedAllIngestersResponsesToBeCom
 // This test asserts that distributor returns all possible label and values even if results from only two Zones are completed and ZoneAwareness is enabled.
 // Also, it simulates delay from zone C to verify that there is no race condition. must be run with `-race` flag (race detection).
 func TestDistributor_LabelNamesAndValues_ExpectedAllPossibleLabelNamesAndValuesToBeReturned(t *testing.T) {
-	ctx, ds := prepareWithZoneAwarenessAndZoneDelay(t, createSeries(10000))
+	ctx, ds := prepareWithZoneAwarenessAndZoneDelay(t, 10000)
 	response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
 	require.NoError(t, err)
 	require.Len(t, response.Items, 1)
 	require.Equal(t, 10000, len(response.Items[0].Values))
 }
 
-// copied from pkg/ingester/activeseries/active_series_test.go
-func labelsWithHashCollision() (labels.Labels, labels.Labels) {
+// adapted from pkg/ingester/activeseries/active_series_test.go
+func labelsWithHashCollision() ([]mimirpb.LabelAdapter, []mimirpb.LabelAdapter) {
 	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions
-	ls1 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
-	ls2 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+	ls1 := labelAdapters("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+	ls2 := labelAdapters("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
 
-	if ls1.Hash() != ls2.Hash() {
+	if mimirpb.FromLabelAdaptersToLabels(ls1).Hash() != mimirpb.FromLabelAdaptersToLabels(ls2).Hash() {
 		// These ones are the same when using -tags stringlabels
-		ls1 = labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
-		ls2 = labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
+		ls1 = labelAdapters("__name__", "metric", "lbl", "HFnEaGl")
+		ls2 = labelAdapters("__name__", "metric", "lbl", "RqcXatm")
 	}
 
-	if ls1.Hash() != ls2.Hash() {
+	if mimirpb.FromLabelAdaptersToLabels(ls1).Hash() != mimirpb.FromLabelAdaptersToLabels(ls2).Hash() {
 		panic("This code needs to be updated: find new labels with colliding hash values.")
 	}
 
 	return ls1, ls2
 }
 
-func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []series) (context.Context, []*Distributor) {
+func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, count int) (context.Context, []*Distributor) {
 	ctx := user.InjectOrgID(context.Background(), "cardinality-user")
 
 	// Create distributor
@@ -3630,29 +3648,13 @@ func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []series) (cont
 		},
 	})
 
-	// Push fixtures
-	for _, series := range fixtures {
-		req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+	// Push test series.
+	for i := 0; i < count; i++ {
+		req := mockWriteRequest(labelAdapters(labels.MetricName, "metric"+strconv.Itoa(i)), 1, int64(100000+i))
 		_, err := ds[0].Push(ctx, req)
 		require.NoError(t, err)
 	}
 	return ctx, ds
-}
-
-type series struct {
-	lbls      labels.Labels
-	value     float64
-	timestamp int64
-}
-
-func createSeries(count int) []series {
-	fixtures := make([]series, 0, count)
-	for i := 0; i < count; i++ {
-		fixtures = append(fixtures, series{
-			labels.FromStrings(labels.MetricName, "metric"+strconv.Itoa(i)), 1, int64(100000 + i),
-		})
-	}
-	return fixtures
 }
 
 func TestDistributor_UserStats(t *testing.T) {
@@ -4063,13 +4065,13 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 	const replicationFactor = 3
 
 	fixtures := []struct {
-		labels    labels.Labels
+		labels    []mimirpb.LabelAdapter
 		value     float64
 		timestamp int64
 	}{
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "200"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "500", "reason", "broken"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+		{labelAdapters(labels.MetricName, "test_1", "status", "200"), 1, 100000},
+		{labelAdapters(labels.MetricName, "test_1", "status", "500", "reason", "broken"), 1, 110000},
+		{labelAdapters(labels.MetricName, "test_2"), 2, 200000},
 	}
 
 	tests := map[string]struct {
@@ -4493,13 +4495,13 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 
 func TestDistributor_LabelValuesCardinality_Limit(t *testing.T) {
 	fixtures := []struct {
-		labels    labels.Labels
+		labels    []mimirpb.LabelAdapter
 		value     float64
 		timestamp int64
 	}{
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "200"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "500", "reason", "broken"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+		{labelAdapters(labels.MetricName, "test_1", "status", "200"), 1, 100000},
+		{labelAdapters(labels.MetricName, "test_1", "status", "500", "reason", "broken"), 1, 110000},
+		{labelAdapters(labels.MetricName, "test_2"), 2, 200000},
 	}
 
 	tests := map[string]struct {
@@ -5054,7 +5056,19 @@ func mustNewMatcher(t labels.MatchType, n, v string) *labels.Matcher {
 	return m
 }
 
-func mockWriteRequest(lbls labels.Labels, value float64, timestampMs int64) *mimirpb.WriteRequest {
+func labelAdapters(ss ...string) []mimirpb.LabelAdapter {
+	if len(ss)%2 != 0 {
+		panic("invalid number of strings")
+	}
+	res := make([]mimirpb.LabelAdapter, 0, len(ss)/2)
+	for i := 0; i < len(ss); i += 2 {
+		res = append(res, mimirpb.LabelAdapter{Name: ss[i], Value: ss[i+1]})
+	}
+	slices.SortFunc(res, func(a, b mimirpb.LabelAdapter) int { return strings.Compare(a.Name, b.Name) })
+	return res
+}
+
+func mockWriteRequest(la []mimirpb.LabelAdapter, value float64, timestampMs int64) *mimirpb.WriteRequest {
 	samples := []mimirpb.Sample{
 		{
 			TimestampMs: timestampMs,
@@ -5062,7 +5076,7 @@ func mockWriteRequest(lbls labels.Labels, value float64, timestampMs int64) *mim
 		},
 	}
 
-	return mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(lbls)}, samples, nil, nil, mimirpb.API)
+	return mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{la}, samples, nil, nil, mimirpb.API)
 }
 
 func mockWriteHistogramRequest(lbls labels.Labels, value float64, timestampMs int64) *mimirpb.WriteRequest {
@@ -6935,20 +6949,20 @@ func TestDistributor_Push_Relabel(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 
 	type testcase struct {
-		inputSeries          labels.Labels
-		expectedSeries       labels.Labels
+		inputSeries          []mimirpb.LabelAdapter
+		expectedSeries       []mimirpb.LabelAdapter
 		metricRelabelConfigs []*relabel.Config
 	}
 
 	cases := []testcase{
 		// No relabel config.
 		{
-			inputSeries:    labels.FromStrings("__name__", "foo", "cluster", "one"),
-			expectedSeries: labels.FromStrings("__name__", "foo", "cluster", "one"),
+			inputSeries:    labelAdapters("__name__", "foo", "cluster", "one"),
+			expectedSeries: labelAdapters("__name__", "foo", "cluster", "one"),
 		},
 		{
-			inputSeries:    labels.FromStrings("__name__", "foo", "cluster", "one"),
-			expectedSeries: labels.FromStrings("__name__", "foo", "cluster", "two"),
+			inputSeries:    labelAdapters("__name__", "foo", "cluster", "one"),
+			expectedSeries: labelAdapters("__name__", "foo", "cluster", "two"),
 			metricRelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: []model.LabelName{"cluster"},
@@ -6985,7 +6999,7 @@ func TestDistributor_Push_Relabel(t *testing.T) {
 			timeseries := ingesters[i].series()
 			assert.Equal(t, 1, len(timeseries))
 			for _, v := range timeseries {
-				assert.Equal(t, tc.expectedSeries, mimirpb.FromLabelAdaptersToLabels(v.Labels))
+				assert.Equal(t, tc.expectedSeries, v.Labels)
 			}
 		}
 	}
@@ -7460,7 +7474,7 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 	})
 	ingesters[2].pushDelay = time.Second // give the test enough time to do assertions
 
-	lbls := labels.FromStrings("__name__", "metric_1", "key", "value_1")
+	lbls := labelAdapters("__name__", "metric_1", "key", "value_1")
 	ctx := user.InjectOrgID(context.Background(), "user")
 
 	_, err := distributors[0].Push(ctx, mockWriteRequest(lbls, 1, 1))
@@ -7468,7 +7482,7 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 
 	// First push request returned, but there's still an ingester call inflight.
 	// This means that the push request is counted as inflight, so another incoming request should be rejected.
-	_, err = distributors[0].Push(ctx, mockWriteRequest(labels.EmptyLabels(), 1, 1))
+	_, err = distributors[0].Push(ctx, mockWriteRequest(nil, 1, 1))
 	checkGRPCError(t, status.New(codes.Internal, errMaxInflightRequestsReached.Error()), nil, err)
 }
 
