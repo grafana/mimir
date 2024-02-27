@@ -35,24 +35,28 @@ func newBatchStream(size int, hPool *zeropool.Pool[*histogram.Histogram], fhPool
 	}
 }
 
-func (bs *batchStream) removeFirst() {
-	b := bs.curr()
-
-	if b.ValueType == chunkenc.ValHistogram && bs.hPool != nil {
-		for i := 0; i < b.Length; i++ {
-			bs.hPool.Put((*histogram.Histogram)(b.PointerValues[i]))
+func (bs *batchStream) putPointerValuesToThePool(batch chunk.Batch) {
+	if batch.ValueType == chunkenc.ValHistogram && bs.hPool != nil {
+		for i := 0; i < batch.Length; i++ {
+			bs.hPool.Put((*histogram.Histogram)(batch.PointerValues[i]))
 		}
-	} else if b.ValueType == chunkenc.ValFloatHistogram && bs.fhPool != nil {
-		for i := 0; i < b.Length; i++ {
-			bs.fhPool.Put((*histogram.FloatHistogram)(b.PointerValues[i]))
+	} else if batch.ValueType == chunkenc.ValFloatHistogram && bs.fhPool != nil {
+		for i := 0; i < batch.Length; i++ {
+			bs.fhPool.Put((*histogram.FloatHistogram)(batch.PointerValues[i]))
 		}
 	}
+}
 
+func (bs *batchStream) removeFirst() {
+	bs.putPointerValuesToThePool(*bs.curr())
 	copy(bs.batches, bs.batches[1:])
 	bs.batches = bs.batches[:len(bs.batches)-1]
 }
 
 func (bs *batchStream) empty() {
+	for _, batch := range bs.batches {
+		bs.putPointerValuesToThePool(batch)
+	}
 	bs.batches = bs.batches[:0]
 }
 

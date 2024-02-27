@@ -13,7 +13,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -68,8 +67,7 @@ func requireBatchEqual(t *testing.T, b, o chunk.Batch) {
 }
 
 func TestBatchStream_Empty(t *testing.T) {
-	hPool := zeropool.New(func() *histogram.Histogram { return &histogram.Histogram{} })
-	s := newBatchStream(1, &hPool, nil)
+	s := newBatchStream(1, nil, nil)
 	b1 := mkHistogramBatch(0)
 	b2 := mkHistogramBatch(chunk.BatchSize)
 	s.batches = []chunk.Batch{b1, b2}
@@ -83,8 +81,7 @@ func TestBatchStream_Empty(t *testing.T) {
 }
 
 func TestBatchStream_RemoveFirst(t *testing.T) {
-	hPool := zeropool.New(func() *histogram.Histogram { return &histogram.Histogram{} })
-	s := newBatchStream(1, &hPool, nil)
+	s := newBatchStream(1, nil, nil)
 	b1 := mkHistogramBatch(0)
 	b2 := mkHistogramBatch(chunk.BatchSize)
 	s.batches = []chunk.Batch{b1, b2}
@@ -96,16 +93,6 @@ func TestBatchStream_RemoveFirst(t *testing.T) {
 	s.removeFirst()
 	require.Len(t, s.batches, 1)
 	require.Equal(t, b2, s.batches[0])
-
-	for i := 0; i < b1.Length; i++ {
-		h := hPool.Get()
-		found := false
-		for j := 0; j < b1.Length && !found; j++ {
-			currH := (*histogram.Histogram)(b1.PointerValues[j])
-			found = currH == h
-		}
-		require.True(t, found)
-	}
 }
 
 func TestBatchStream_Merge(t *testing.T) {
