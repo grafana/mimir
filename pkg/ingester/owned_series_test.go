@@ -635,11 +635,9 @@ func TestOwnedSeriesService(t *testing.T) {
 
 			c.ownedSeries = newOwnedSeriesService(
 				10*time.Minute,
-				c.cfg.IngesterRing.InstanceID,
-				c.ingesterRing,
+				newOwnedSeriesIngesterRingStrategy(c.cfg.IngesterRing.InstanceID, c.ingesterRing, c.ing.limits.IngestionTenantShardSize),
 				log.NewLogfmtLogger(c.buf),
 				nil,
-				c.ing.limits.IngestionTenantShardSize,
 				c.ing.limiter.maxSeriesPerUser,
 				c.ing.getTSDBUsers,
 				c.ing.getTSDB,
@@ -678,7 +676,8 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 	const instanceID1 = "first ingester"
 	const instanceID2 = "second instance"
 
-	ownedSeries := newOwnedSeriesService(10*time.Minute, instanceID1, rng, log.NewLogfmtLogger(&buf), nil, nil, nil, nil, nil)
+	rs := newOwnedSeriesIngesterRingStrategy(instanceID1, rng, nil)
+	ownedSeries := newOwnedSeriesService(10*time.Minute, rs, log.NewLogfmtLogger(&buf), nil, nil, nil, nil)
 
 	updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
 		desc.AddIngester(instanceID1, "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now())
@@ -686,13 +685,13 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 
 	// First call should indicate ring change.
 	t.Run("first call always reports change", func(t *testing.T) {
-		changed, err := ownedSeries.checkRingForChanges()
+		changed, err := ownedSeries.ringStrategy.checkRingForChanges()
 		require.NoError(t, err)
 		require.True(t, changed)
 	})
 
 	t.Run("second call (without ring change) reports no change", func(t *testing.T) {
-		changed, err := ownedSeries.checkRingForChanges()
+		changed, err := ownedSeries.ringStrategy.checkRingForChanges()
 		require.NoError(t, err)
 		require.False(t, changed)
 	})
@@ -702,7 +701,7 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 			desc.AddIngester(instanceID2, "localhost:22222", "zone", []uint32{4, 5, 6}, ring.ACTIVE, time.Now())
 		})
 
-		changed, err := ownedSeries.checkRingForChanges()
+		changed, err := ownedSeries.ringStrategy.checkRingForChanges()
 		require.NoError(t, err)
 		require.True(t, changed)
 	})
@@ -713,7 +712,7 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 		})
 
 		// Change of state is not interesting.
-		changed, err := ownedSeries.checkRingForChanges()
+		changed, err := ownedSeries.ringStrategy.checkRingForChanges()
 		require.NoError(t, err)
 		require.False(t, changed)
 	})
@@ -723,7 +722,7 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 			desc.RemoveIngester(instanceID2)
 		})
 
-		changed, err := ownedSeries.checkRingForChanges()
+		changed, err := ownedSeries.ringStrategy.checkRingForChanges()
 		require.NoError(t, err)
 		require.True(t, changed)
 	})
