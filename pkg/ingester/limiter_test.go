@@ -672,7 +672,7 @@ func TestLimiter_IsWithinMaxSeriesPerUser(t *testing.T) {
 			series:                 100,
 			expected:               true,
 		},
-		"limit is disabled, minimum set": {
+		"limit is disabled, series is above min limit": {
 			maxGlobalSeriesPerUser: 0,
 			ringReplicationFactor:  1,
 			ringIngesterCount:      1,
@@ -694,6 +694,14 @@ func TestLimiter_IsWithinMaxSeriesPerUser(t *testing.T) {
 			series:                 300,
 			expected:               false,
 		},
+		"current number of series is above the limit, but below min limit": {
+			maxGlobalSeriesPerUser: 1000,
+			ringReplicationFactor:  3,
+			ringIngesterCount:      10,
+			series:                 300,
+			minLocalLimit:          400,
+			expected:               true,
+		},
 		"current number of series below the limit with non-zero shard size to the check": {
 			maxGlobalSeriesPerUser: 1000,
 			ringReplicationFactor:  3,
@@ -709,14 +717,6 @@ func TestLimiter_IsWithinMaxSeriesPerUser(t *testing.T) {
 			series:                 1000,
 			tenantShardSize:        3,
 			expected:               false,
-		},
-		"current number of series is above the limit, but below min limit": {
-			maxGlobalSeriesPerUser: 1000,
-			ringReplicationFactor:  3,
-			ringIngesterCount:      10,
-			series:                 300,
-			minLocalLimit:          400,
-			expected:               true,
 		},
 	}
 
@@ -758,6 +758,13 @@ func TestLimiter_IsWithinMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 			series:                 100,
 			expected:               true,
 		},
+		"limit is disabled, series is above min limit": {
+			maxGlobalSeriesPerUser: 0,
+			partitionStates:        []ring.PartitionState{ring.PartitionActive},
+			series:                 100,
+			minLocalLimit:          50,
+			expected:               true,
+		},
 		"current number of series is below the limit": {
 			maxGlobalSeriesPerUser: 900,
 			partitionStates:        []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionActive},
@@ -769,6 +776,13 @@ func TestLimiter_IsWithinMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 			partitionStates:        []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionActive},
 			series:                 300,
 			expected:               false,
+		},
+		"current number of series is above the limit, but below min limit": {
+			maxGlobalSeriesPerUser: 900,
+			partitionStates:        []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionActive},
+			series:                 350,
+			expected:               true,
+			minLocalLimit:          400,
 		},
 		"current number of series below the limit with non-zero shard size to the check": {
 			maxGlobalSeriesPerUser: 1000,
@@ -783,13 +797,6 @@ func TestLimiter_IsWithinMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 			series:                 500,
 			tenantShardSize:        2,
 			expected:               false,
-		},
-		"current number of series is above the limit, but below min limit": {
-			maxGlobalSeriesPerUser: 900,
-			partitionStates:        []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionActive},
-			series:                 350,
-			expected:               true,
-			minLocalLimit:          400,
 		},
 	}
 
