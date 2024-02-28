@@ -709,8 +709,8 @@ func benchmarkMergedSeriesChunkRefsSetIterators(b *testing.B, numIterators int, 
 	batch := make([]iterator[seriesChunkRefsSet], len(iterators))
 	for i := 0; i < numIterators; i++ {
 		if withIO {
-			// Delay only 2% of iterations to mimic IO ops, happening during real set iterations.
-			batch[i] = newDelayedMaybeIterator(2, time.Millisecond, iterators[i])
+			// The delay represents an IO operation, that happens inside real set iterations.
+			batch[i] = newDelayedIterator(10*time.Microsecond, iterators[i])
 		} else {
 			batch[i] = iterators[i]
 		}

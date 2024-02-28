@@ -887,9 +887,7 @@ func (s *sliceSeriesChunksSetIterator) Err() error {
 // delayedIterator implements iterator and introduces an artificial delay before returning from Next() and At().
 type delayedIterator[S any] struct {
 	wrapped iterator[S]
-
-	chance int // a chance for the delay to happen
-	delay  time.Duration
+	delay   time.Duration
 }
 
 func newDelayedIterator[S any](delay time.Duration, wrapped iterator[S]) *delayedIterator[S] {
@@ -899,30 +897,13 @@ func newDelayedIterator[S any](delay time.Duration, wrapped iterator[S]) *delaye
 	}
 }
 
-func newDelayedMaybeIterator[S any](chance int, delay time.Duration, wrapped iterator[S]) *delayedIterator[S] {
-	if chance < 0 || chance > 100 {
-		panic("delayedIterator: probability must be between 0 and 100")
-	}
-	return &delayedIterator[S]{
-		wrapped: wrapped,
-		chance:  chance,
-		delay:   delay,
-	}
-}
-
-func (s *delayedIterator[S]) delayMaybe() {
-	if s.chance == 0 || rand.Intn(100) <= s.chance {
-		time.Sleep(s.delay)
-	}
-}
-
 func (s *delayedIterator[S]) Next() bool {
-	s.delayMaybe()
+	time.Sleep(s.delay)
 	return s.wrapped.Next()
 }
 
 func (s *delayedIterator[S]) At() S {
-	s.delayMaybe()
+	time.Sleep(s.delay)
 	return s.wrapped.At()
 }
 
