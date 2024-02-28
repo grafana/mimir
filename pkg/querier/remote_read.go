@@ -153,7 +153,7 @@ func remoteReadStreamedXORChunks(
 			if code/100 != 4 {
 				level.Error(logger).Log("msg", "error while processing remote read request", "err", err)
 			}
-			http.Error(w, err.Error(), code) // change the Content-Type to text/plain and return a human-readable error message
+			http.Error(w, err.Error(), code)
 			return
 		}
 	}
