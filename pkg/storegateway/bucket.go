@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -628,6 +629,12 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	)
 	for _, b := range blocks {
 		resHints.AddQueriedBlock(b.meta.ULID)
+
+		if b.meta.Compaction.Level == 1 && b.meta.Thanos.Source == block.ReceiveSource && !b.queried.Load() {
+			level.Debug(s.logger).Log("msg", "queried non-compacted block", "blockId", b.meta.ULID, "ooo", b.meta.Compaction.FromOutOfOrder())
+		}
+
+		b.queried.Store(true)
 	}
 	if err := s.sendHints(srv, resHints); err != nil {
 		return err
@@ -1845,6 +1852,9 @@ type bucketBlock struct {
 	blockLabels labels.Labels
 
 	expandedPostingsPromises sync.Map
+
+	// Indicates whether the block was queried.
+	queried atomic.Bool
 }
 
 func newBucketBlock(
