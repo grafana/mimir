@@ -47,8 +47,8 @@
     [
       group {
         rules: [
-          update_rule(alert)
-          for alert in group.rules
+          update_rule(rule)
+          for rule in group.rules
         ],
       }
       for group in groups
