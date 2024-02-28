@@ -250,7 +250,8 @@ func (c *Client) QueryRangeRaw(query string, start, end time.Time, step time.Dur
 	return c.DoGetBody(addr)
 }
 
-// RemoteRead runs a remote read request against the response.
+// RemoteRead runs a remote read query against the querier.
+// RemoteRead uses samples streaming. See RemoteReadChunks as well for chunks streaming.
 // RemoteRead returns the HTTP response with consumed body, the remote read protobuf response and an error.
 // In case the response is not a protobuf, the plaintext body content is returned instead of the protobuf message.
 func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Response, _ *prompb.QueryResult, plaintextResponse []byte, _ error) {
@@ -288,7 +289,8 @@ func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Re
 	}
 }
 
-// RemoteReadChunks runs a remote read request against the response.
+// RemoteReadChunks runs a remote read query against the querier.
+// RemoteReadChunks uses chunks streaming. See RemoteRead as well for samples streaming.
 // RemoteReadChunks returns the HTTP response with consumed body, the remote read protobuf response and an error.
 // In case the response is not a protobuf, the plaintext body content is returned instead of the protobuf message.
 func (c *Client) RemoteReadChunks(metricName string, start, end time.Time) (_ *http.Response, _ []prompb.ChunkedReadResponse, plaintextResponse []byte, _ error) {
