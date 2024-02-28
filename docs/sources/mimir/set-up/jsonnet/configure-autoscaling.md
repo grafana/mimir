@@ -53,7 +53,6 @@ However, if KEDA is not running successfully, there are consequences for Mimir a
 Use a [high availability](https://keda.sh/docs/latest/operate/cluster/#high-availability) KEDA configuration if autoscaling is critical for your use case.
 {{< /admonition >}}
 
-
 The [alert `MimirAutoscalerNotActive`]({{< relref "../../manage/monitor-grafana-mimir" >}}) fires if HPA is unable to scale the deployment for any reason (e.g. unable to scrape metrics from KEDA metrics API server).
 
 ## How Kubernetes HPA works
