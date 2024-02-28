@@ -97,6 +97,8 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Check block upload](#check-block-upload) | Compactor | `GET /api/v1/upload/block/{block}/check` |
 | [Tenant delete request](#tenant-delete-request) | Compactor | `POST /compactor/delete_tenant` |
 | [Tenant delete status](#tenant-delete-status) | Compactor | `GET /compactor/delete_tenant_status` |
+| [Compactor tenants](#compactor-tenants) | Compactor | `GET /compactor/tenants` |
+| [Compactor tenant planned jobs](#compactor-tenant-planned-jobs) | Compactor | `GET /compactor/tenant/{tenant}/planned_jobs` |
 | [Overrides-exporter ring status](#overrides-exporter-ring-status) | Overrides-exporter | `GET /overrides-exporter/ring` |
 {{% /responsive-table %}}
 
@@ -139,7 +141,9 @@ GET /config
 
 This endpoint displays the configuration currently applied to Grafana Mimir including default values and settings via CLI flags. This endpoint provides the configuration in YAML format and masks sensitive data.
 
-> **Note**: The exported configuration doesn't include the per-tenant overrides.
+{{< admonition type="note" >}}
+The exported configuration doesn't include the per-tenant overrides.
+{{< /admonition >}}
 
 #### Different modes
 
@@ -318,7 +322,11 @@ Requires [authentication](#authentication).
 POST /otlp/v1/metrics
 ```
 
-Entrypoint for the [OTLP HTTP](https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md). Experimental.
+{{% admonition type="note" %}}
+To send OTLP data to Grafana Cloud, refer to [Send data using OpenTelemetry Protocol (OTLP)](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/).
+{{% /admonition %}}
+
+Entrypoint for the [OTLP HTTP](https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md).
 
 This endpoint accepts an HTTP POST request with a body that contains a request encoded with [Protocol Buffers](https://developers.google.com/protocol-buffers) and optionally compressed with [GZIP](https://www.gnu.org/software/gzip/).
 You can find the definition of the protobuf message in [metrics.proto](https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto).
@@ -341,7 +349,9 @@ GET /distributor/all_user_stats
 
 This endpoint displays a web page that shows per-tenant statistics updated in real time, including the total number of active series across all ingesters and the current ingestion rate displayed in samples per second.
 
-> **Note:** This endpoint requires all ingesters to be `ACTIVE` in the ring for a successful response.
+{{< admonition type="note" >}}
+This endpoint requires all ingesters to be `ACTIVE` in the ring for a successful response.
+{{< /admonition >}}
 
 ### HA tracker status
 
@@ -370,7 +380,9 @@ If no tenant is specified, all tenants are flushed.
 
 The flush endpoint also accepts a `wait=true` parameter, which makes the call synchronous, and only returns a status code after flushing completes.
 
-> **Note**: The returned status code does not reflect the result of flush operation.
+{{< admonition type="note" >}}
+The returned status code doesn't reflect the result of flush operation.
+{{< /admonition >}}
 
 ### Prepare for Shutdown
 
@@ -753,7 +765,9 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../manage/tools/mimirtool#list-rules" >}}).
+{{< admonition type="note" >}}
+To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../manage/tools/mimirtool#list-rules" >}}).
+{{< /admonition >}}
 
 **Example response**
 
@@ -848,7 +862,9 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../manage/tools/mimirtool#get-rule-group" >}}) .
+{{< admonition type="note" >}}
+To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../manage/tools/mimirtool#get-rule-group" >}}) .
+{{< /admonition >}}
 
 ### Set rule group
 
@@ -864,10 +880,15 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../manage/tools/mimirtool#load-rule-group" >}}) .
+{{< admonition type="note" >}}
+To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../manage/tools/mimirtool#load-rule-group" >}}) .
+{{< /admonition >}}
 
-> **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
-> The latter options do not preserve carriage returns and newlines.
+{{< admonition type="note" >}}
+When using `curl` to send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
+
+The latter options don't preserve carriage returns and newlines.
+{{< /admonition >}}
 
 #### Example request body
 
@@ -892,7 +913,9 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../manage/tools/mimirtool#delete-rule-group" >}}).
+{{< admonition type="note" >}}
+To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../manage/tools/mimirtool#delete-rule-group" >}}).
+{{< /admonition >}}
 
 ### Delete namespace
 
@@ -980,7 +1003,9 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../manage/tools/mimirtool#get-alertmanager-configuration" >}}).
+{{< admonition type="note" >}}
+To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../manage/tools/mimirtool#get-alertmanager-configuration" >}}).
+{{< /admonition >}}
 
 ### Set Alertmanager configuration
 
@@ -998,10 +1023,15 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../manage/tools/mimirtool#load-alertmanager-configuration" >}}).
+{{< admonition type="note" >}}
+To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../manage/tools/mimirtool#load-alertmanager-configuration" >}}).
+{{< /admonition >}}
 
-> **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
-> The latter options do not preserve carriage returns and newlines.
+{{< admonition type="note" >}}
+When using `curl` to send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
+
+The latter options don't preserve carriage returns and newlines.
+{{< /admonition >}}
 
 #### Example request body
 
@@ -1038,7 +1068,9 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../manage/tools/mimirtool#delete-alertmanager-configuration" >}}).
+{{< admonition type="note" >}}
+To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../manage/tools/mimirtool#delete-alertmanager-configuration" >}}).
+{{< /admonition >}}
 
 ## Store-gateway
 
@@ -1222,6 +1254,22 @@ Returns status of tenant deletion.
 The `blocks_deleted` field will be set to `true` if all the tenant's blocks have been deleted.
 
 Requires [authentication](#authentication).
+
+### Compactor tenants
+
+```
+GET /compactor/tenants
+```
+
+Displays a web page with the list of tenants that have blocks in the storage configured for the compactor.
+
+### Compactor tenant planned jobs
+
+```
+GET /compactor/tenant/{tenant}/planned_jobs
+```
+
+Displays a web page listing planned compaction jobs computed from the bucket index for the given tenant.
 
 ## Overrides-exporter
 

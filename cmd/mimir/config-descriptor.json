@@ -91,10 +91,10 @@
           "required": false,
           "desc": "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "distributor.enable-otlp-metadata-storage",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -1651,12 +1651,12 @@
           "kind": "field",
           "name": "limit_inflight_requests_using_grpc_method_limiter",
           "required": false,
-          "desc": "Use experimental method of limiting push requests.",
+          "desc": "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "distributor.limit-inflight-requests-using-grpc-method-limiter",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -3024,12 +3024,12 @@
           "kind": "field",
           "name": "limit_inflight_requests_using_grpc_method_limiter",
           "required": false,
-          "desc": "Use experimental method of limiting push requests.",
+          "desc": "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.limit-inflight-requests-using-grpc-method-limiter",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -4622,6 +4622,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "response_streaming_enabled",
+          "required": false,
+          "desc": "Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.response-streaming-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -8780,6 +8791,17 @@
               "fieldDefaultValue": 15,
               "fieldFlag": "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage",
               "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "timely_head_compaction_enabled",
+              "required": false,
+              "desc": "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.timely-head-compaction-enabled",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
           ],

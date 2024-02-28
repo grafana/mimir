@@ -584,7 +584,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
 1. Add zone-aware ingester replicas, maximum 21 at a time.
 
-   Explanation: while new ingesters are being added, some series will start to be written to new ingesters, however the series will also exist on old ingesters, thus the series will count twice towards limits. Adding only 21 replicas at a time reduces the number of series affected and thus the likelihood of beaching maximum series limits.
+   Explanation: while new ingesters are being added, some series will start to be written to new ingesters, however the series will also exist on old ingesters, thus the series will count twice towards limits. Adding only 21 replicas at a time reduces the number of series affected and thus the likelihood of breaching maximum series limits.
 
    1. Replace the contents of the `migrate.yaml` file with:
 

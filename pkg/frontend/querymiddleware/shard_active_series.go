@@ -52,6 +52,18 @@ var (
 	}
 )
 
+var snappyWriterPool sync.Pool
+
+func getSnappyWriter(w io.Writer) *s2.Writer {
+	sw := snappyWriterPool.Get()
+	if sw == nil {
+		return s2.NewWriter(w)
+	}
+	enc := sw.(*s2.Writer)
+	enc.Reset(w)
+	return enc
+}
+
 type shardActiveSeriesMiddleware struct {
 	upstream http.RoundTripper
 	limits   Limits
@@ -257,7 +269,7 @@ func shardedSelector(shardCount, currentShard int, expr parser.Expr) (parser.Exp
 	}, nil
 }
 
-func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, responses []*http.Response, acceptEncoding string) *http.Response {
+func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, responses []*http.Response, encoding string) *http.Response {
 	reader, writer := io.Pipe()
 
 	items := make(chan *labels.Builder, len(responses))
@@ -308,6 +320,13 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 			}
 
 			for it.ReadArray() {
+				if err := ctx.Err(); err != nil {
+					if cause := context.Cause(ctx); cause != nil {
+						return fmt.Errorf("aborted streaming because context was cancelled: %w", cause)
+					}
+					return ctx.Err()
+				}
+
 				item := labelBuilderPool.Get().(*labels.Builder)
 				it.ReadMapCB(func(iterator *jsoniter.Iterator, s string) bool {
 					item.Set(s, iterator.ReadString())
@@ -326,29 +345,34 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 		close(items)
 	}()
 
-	response := &http.Response{Body: reader, StatusCode: http.StatusOK, Header: http.Header{}}
-	response.Header.Set("Content-Type", "application/json")
-	if acceptEncoding == encodingTypeSnappyFramed {
-		response.Header.Set("Content-Encoding", encodingTypeSnappyFramed)
+	resp := &http.Response{Body: reader, StatusCode: http.StatusOK, Header: http.Header{}}
+	resp.Header.Set("Content-Type", "application/json")
+	if encoding == encodingTypeSnappyFramed {
+		resp.Header.Set("Content-Encoding", encodingTypeSnappyFramed)
 	}
 
-	go s.writeMergedResponse(ctx, g.Wait, writer, items, acceptEncoding)
+	go s.writeMergedResponse(ctx, g.Wait, writer, items, encoding)
 
-	return response
+	return resp
 }
 
-func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items <-chan *labels.Builder, encodingType string) {
+func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items <-chan *labels.Builder, encoding string) {
 	defer w.Close()
 
 	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveSeries.writeMergedResponse")
 	defer span.Finish()
 
 	var out io.Writer = w
-	if encodingType == encodingTypeSnappyFramed {
+	if encoding == encodingTypeSnappyFramed {
 		span.LogFields(otlog.String("encoding", encodingTypeSnappyFramed))
-		enc := s2.NewWriter(w)
-		defer enc.Close()
+		enc := getSnappyWriter(w)
 		out = enc
+		defer func() {
+			enc.Close()
+			// Reset the encoder before putting it back to pool to avoid it to hold the writer.
+			enc.Reset(nil)
+			snappyWriterPool.Put(enc)
+		}()
 	} else {
 		span.LogFields(otlog.String("encoding", "none"))
 	}

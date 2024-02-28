@@ -21,9 +21,10 @@ import (
 
 const (
 	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
-	StatusServiceOverloaded        = 529
-	deadlineExceededWrapMessage    = "exceeded configured distributor remote timeout"
-	failedPushingToIngesterMessage = "failed pushing to ingester"
+	StatusServiceOverloaded         = 529
+	deadlineExceededWrapMessage     = "exceeded configured distributor remote timeout"
+	failedPushingToIngesterMessage  = "failed pushing to ingester"
+	failedPushingToPartitionMessage = "failed pushing to partition"
 )
 
 var (
@@ -284,7 +285,15 @@ func wrapIngesterPushError(err error, ingesterID string) error {
 	return newIngesterPushError(stat, ingesterID)
 }
 
-func isClientError(err error) bool {
+func wrapPartitionPushError(err error, partitionID int32) error {
+	if err == nil {
+		return nil
+	}
+
+	return errors.Wrap(err, fmt.Sprintf("%s %d", failedPushingToPartitionMessage, partitionID))
+}
+
+func isIngesterClientError(err error) bool {
 	var ingesterPushErr ingesterPushError
 	if errors.As(err, &ingesterPushErr) {
 		return ingesterPushErr.errorCause() == mimirpb.BAD_DATA

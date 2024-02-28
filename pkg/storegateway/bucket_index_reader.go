@@ -669,6 +669,10 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 	// But in order to avoid a race condition with an async cache, we never release the pool and let the GC collect it.
 	bytesPool := pool.NewSlabPool[byte](pool.NoopPool{}, seriesBytesSlabSize)
 
+	// Use a different TTL for these series based on the duration of the block. Use a shorter TTL for blocks that
+	// are going to be compacted and deleted shortly anyway.
+	cacheTTL := indexcache.BlockTTL(r.block.meta)
+
 	for i, id := range ids {
 		// We iterate the series in order assuming they are sorted.
 		err := offsetReader.SkipTo(uint64(id))
@@ -695,7 +699,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		}
 		loaded.addSeries(id, seriesBytes)
 
-		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, seriesBytes)
+		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, seriesBytes, cacheTTL)
 	}
 	return nil
 }

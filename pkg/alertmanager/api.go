@@ -20,7 +20,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
-	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/alertmanager/template"
 	commoncfg "github.com/prometheus/common/config"
 	"gopkg.in/yaml.v3"
@@ -187,7 +186,7 @@ func (am *MultitenantAlertmanager) DeleteUserConfig(w http.ResponseWriter, r *ht
 
 // Partially copied from: https://github.com/prometheus/alertmanager/blob/8e861c646bf67599a1704fc843c6a94d519ce312/cli/check_config.go#L65-L96
 func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits Limits, user string) error {
-	validateMatchersInConfigDesc(logger, compat.RegisteredMetrics, "api", cfg)
+	validateMatchersInConfigDesc(logger, "api", cfg)
 
 	// We don't have a valid use case for empty configurations. If a tenant does not have a
 	// configuration set and issue a request to the Alertmanager, we'll a) upload an empty
@@ -263,7 +262,7 @@ func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits 
 		templateFiles[i] = filepath.Join(userTempDir, t)
 	}
 
-	_, err = template.FromGlobs(templateFiles, withCustomFunctions(user))
+	_, err = template.FromGlobs(templateFiles, WithCustomFunctions(user))
 	if err != nil {
 		return err
 	}
@@ -348,6 +347,11 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 			return err
 		}
 
+	case reflect.TypeOf(config.DiscordConfig{}):
+		if err := validateDiscordConfig(v.Interface().(config.DiscordConfig)); err != nil {
+			return err
+		}
+
 	case reflect.TypeOf(config.EmailConfig{}):
 		if err := validateEmailConfig(v.Interface().(config.EmailConfig)); err != nil {
 			return err
@@ -387,10 +391,17 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 		if err := validatePushoverConfig(v.Interface().(config.PushoverConfig)); err != nil {
 			return err
 		}
+
+	case reflect.TypeOf(config.MSTeamsConfig{}):
+		if err := validateMSTeamsConfig(v.Interface().(config.MSTeamsConfig)); err != nil {
+			return err
+		}
+
 	case reflect.TypeOf(config.TelegramConfig{}):
 		if err := validateTelegramConfig(v.Interface().(config.TelegramConfig)); err != nil {
 			return err
 		}
+
 	case reflect.TypeOf(config.WebhookConfig{}):
 		if err := validateWebhookConfig(v.Interface().(config.WebhookConfig)); err != nil {
 			return err
@@ -496,6 +507,15 @@ func validateGlobalConfig(cfg config.GlobalConfig) error {
 	return nil
 }
 
+// validateDiscordConfig validates the Discord config and returns an error if it
+// contains settings not allowed by Mimir.
+func validateDiscordConfig(cfg config.DiscordConfig) error {
+	if cfg.WebhookURLFile != "" {
+		return errWebhookURLFileNotAllowed
+	}
+	return nil
+}
+
 // validateEmailConfig validates the Email config and returns an error if it contains settings not allowed by Mimir.
 func validateEmailConfig(cfg config.EmailConfig) error {
 	if cfg.AuthPasswordFile != "" {
@@ -555,6 +575,15 @@ func validatePushoverConfig(cfg config.PushoverConfig) error {
 		return errPushoverTokenFileNotAllowed
 	}
 
+	return nil
+}
+
+// validateMSTeamsConfig validates the Microsoft Teams config and returns an error if it
+// contains settings not allowed by Mimir.
+func validateMSTeamsConfig(cfg config.MSTeamsConfig) error {
+	if cfg.WebhookURLFile != "" {
+		return errWebhookURLFileNotAllowed
+	}
 	return nil
 }
 

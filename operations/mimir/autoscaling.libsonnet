@@ -136,7 +136,20 @@
             //
             // We also have to ensure that the threshold is an integer (represented as a string)
             threshold: std.toString(std.parseInt(trigger.threshold)),
-          },
+          } + (
+            // Add support for KEDA's "ignoreNullValues" option. This defaults to "true", which means that if query
+            // returns no results, KEDA will ignore that and return value 0. By setting this value to "false",
+            // KEDA will return error in such case.
+            //
+            // Note that since our triggers use snake_case for fields, we check for "ignore_null_values", but KEDA
+            // expects camelCase (ie. "ignoreNullValues"), and string value, not boolean.
+            if std.objectHas(trigger, 'ignore_null_values') then {
+              ignoreNullValues:
+                if std.isBoolean(trigger.ignore_null_values)
+                then (if trigger.ignore_null_values then 'true' else 'false')
+                else trigger.ignore_null_values,  // not boolean
+            } else {}
+          ),
         } + (
           // Be aware that the default value for the trigger "metricType" field is "AverageValue"
           // (see https://keda.sh/docs/2.9/concepts/scaling-deployments/#triggers), which means that KEDA will
@@ -354,7 +367,7 @@
     // This is due to KEDA requiring an integer.
 
     if (std.isString(str) && std.endsWith(str, 'm')) then (
-      std.rstripChars(str, 'm')
+      std.parseInt(std.rstripChars(str, 'm'))
     ) else (
       std.parseJson(str + '') * 1000
     )

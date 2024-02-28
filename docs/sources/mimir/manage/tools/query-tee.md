@@ -43,7 +43,9 @@ You can configure the backend endpoints by setting the `-backend.endpoints` flag
 
 For each incoming request, the query-tee clones the request and sends it to each configured backend.
 
-> **Note:** You can configure the query-tee proxy listening ports via the `-server.http-service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
+{{< admonition type="note" >}}
+You can configure the query-tee proxy listening ports via the `-server.http-service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
+{{< /admonition >}}
 
 ## How the query-tee works
 
@@ -105,7 +107,9 @@ When a preferred backend is not configured, the query-tee uses the following alg
 1. If at least one backend response status code is 2xx or 4xx, the query-tee selects the first received response whose status code is 2xx or 4xx.
 1. If no backend response status code is 2xx or 4xx, the query-tee selects the first received response regardless of the status code.
 
-> **Note:** The query-tee considers a 4xx response as a valid response to select because a 4xx status code generally means the error is caused by an invalid request and not due to a server side issue.
+{{< admonition type="note" >}}
+The query-tee considers a 4xx response as a valid response to select because a 4xx status code generally an invalid request and not a server side issue.
+{{< /admonition >}}
 
 ### Backend results comparison
 
@@ -117,13 +121,19 @@ The query results comparison can be enabled setting the flag `-proxy.compare-res
 
 When the query results comparison is enabled, the query-tee compares the response received from the two configured backends and logs a message for each query whose results don't match. Query-tee keeps track of the number of successful and failed comparison through the metric `cortex_querytee_responses_compared_total`.
 
-> **Note**: Floating point sample values are compared with a tolerance that can be configured via `-proxy.value-comparison-tolerance`. The configured tolerance prevents false positives due to differences in floating point values rounding introduced by the non-deterministic series ordering within the Prometheus PromQL engine.
+{{< admonition type="note" >}}
+Query-tee compares Floating point sample values with a tolerance that you can configure with the `-proxy.value-comparison-tolerance` option.
 
-> **Note**: The default value of `-proxy.compare-skip-recent-samples` is 2 minutes. This means points within results with a timestamp within 2 minutes of the current time will not be compared.
-> This prevents false positives due to racing with ingestion, and, if the query selects the output of recording rules, rule evaluation.
->
-> If either Mimir cluster is running with a non-default value of `-ruler.evaluation-delay-duration`, we recommend setting `-proxy.compare-skip-recent-samples` to 1 minute more than the
-> value of `-ruler.evaluation-delay-duration`.
+The configured tolerance prevents false positives due to differences in floating point values rounding introduced by the non-deterministic series ordering within the Prometheus PromQL engine.
+{{< /admonition >}}
+
+{{< admonition type="note" >}}
+The default value of `-proxy.compare-skip-recent-samples` is two minutes.
+This means points within results with a timestamp within two minutes of the current time aren't compared.
+This prevents false positives due to racing with ingestion, and, if the query selects the output of recording rules, rule evaluation.
+
+If either Mimir cluster is running with a non-default value of `-ruler.evaluation-delay-duration`, you should set `-proxy.compare-skip-recent-samples` to one minute more than the value of `-ruler.evaluation-delay-duration`.
+{{< /admonition >}}
 
 ### Exported metrics
 

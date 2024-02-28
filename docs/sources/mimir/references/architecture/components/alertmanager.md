@@ -15,6 +15,10 @@ The Mimir Alertmanager adds multi-tenancy support and horizontal scalability to 
 The Mimir Alertmanager is an optional component that accepts alert notifications from the [Mimir ruler]({{< relref "./ruler" >}}).
 The Alertmanager deduplicates and groups alert notifications, and routes them to a notification channel, such as email, PagerDuty, or OpsGenie.
 
+{{< admonition type="note" >}}
+To run Mimir Alertmanager as a part of [monolithic deployment]({{< relref "../deployment-modes#monolithic-mode" >}}), run Mimir with the option `-target=all,alertmanager`.
+{{< /admonition >}}
+
 ## Multi-tenancy
 
 Like other Mimir components, multi-tenancy in the Mimir Alertmanager uses the tenant ID header.
@@ -25,8 +29,13 @@ Each tenant has an isolated alert routing configuration and Alertmanager UI.
 Each tenant has an Alertmanager configuration that defines notifications receivers and alerting routes.
 The Mimir Alertmanager uses the same [configuration file](https://prometheus.io/docs/alerting/latest/configuration/#configuration-file) that the Prometheus Alertmanager uses.
 
-> **Note:** The Mimir Alertmanager exposes the configuration API according to the path set by the `-server.path-prefix` flag. It does not use the path set by the `-http.alertmanager-http-prefix` flag.
-> If you run Mimir with the default configuration (`-server.path-prefix`, where the default value is `/`), then only set the hostname for the `--address` flag of the `mimirtool` command; do not set a path-specific address. For example, `/` is correct, and `/alertmanager` is incorrect.
+{{< admonition type="note" >}}
+The Mimir Alertmanager exposes the configuration API according to the path set by the `-server.path-prefix` flag.
+It doesn't use the path set by the `-http.alertmanager-http-prefix` flag.
+
+If you run Mimir with the default configuration, `-server.path-prefix`, where the default value is `/`, then only set the hostname for the `--address` flag of the `mimirtool` command; don't set a path-specific address.
+For example, `/` is correct, and `/alertmanager` is incorrect.
+{{< /admonition >}}
 
 You can validate a configuration file using the `mimirtool` command:
 
@@ -66,7 +75,9 @@ When a tenant doesn't have a Alertmanager configuration, the Grafana Mimir Alert
 By default, there is always a fallback configuration set.
 You can overwrite the default fallback configuration via the `-alertmanager.configs.fallback` command-line flag.
 
-> **Warning**: Without a fallback configuration or a tenant specific configuration, the Alertmanager UI is inaccessible and ruler notifications for that tenant fail.
+{{< admonition type="warning" >}}
+Without a fallback configuration or a tenant specific configuration, the Alertmanager UI is inaccessible and ruler notifications for that tenant fail.
+{{< /admonition >}}
 
 ### Tenant limits
 
@@ -87,8 +98,11 @@ You can configure the HTTP path prefix for the UI and the HTTP API:
 - `-http.alertmanager-http-prefix` configures the path prefix for Alertmanager endpoints.
 - `-alertmanager.web.external-url` configures the source URLs generated in Alertmanager alerts and from where to fetch web assets.
 
-> **Note:** Unless you are using a reverse proxy in front of the Alertmanager API that rewrites routes, the path prefix set in `-alertmanager.web.external-url` must match the path prefix set in `-http.alertmanager-http-prefix` (`/alertmanager` by default).
-> If the path prefixes do not match, HTTP requests routing might not work as expected.
+{{< admonition type="note" >}}
+Unless you are using a reverse proxy in front of the Alertmanager API that rewrites routes, the path prefix set in `-alertmanager.web.external-url` must match the path prefix set in `-http.alertmanager-http-prefix` which is `/alertmanager` by default.
+
+If the path prefixes don't match, HTTP requests routing might not work as expected.
+{{< /admonition >}}
 
 ### Using a reverse proxy
 
@@ -118,19 +132,22 @@ If the Mimir Alertmanager replica receiving the HTTP request doesn't own the ten
 
 To configure the Alertmanagers' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configure-hash-rings" >}}).
 
-> **Note:** When running with a single tenant, scaling the number of replicas to be greater than the replication factor offers no benefits as the Mimir Alertmanager shards by tenant and not individual alerts.
+{{< admonition type="note" >}}
+When running with a single tenant, scaling the number of replicas to be greater than the replication factor offers no benefits as the Mimir Alertmanager shards by tenant and not individual alerts.
+{{< /admonition >}}
 
 ### State
 
 The Mimir Alertmanager stores the alerts state on local disk at the location configured using `-alertmanager.storage.path`.
 
-> **Warning:**
-> When running the Mimir Alertmanager without replication, ensure persistence of the `-alertmanager.storage.path` directory to avoid losing alert state.
+{{< admonition type="warning" >}}
+When running the Mimir Alertmanager without replication, ensure persistence of the `-alertmanager.storage.path` directory to avoid losing alert state.
+{{< /admonition >}}
 
 The Mimir Alertmanager also periodically stores the alert state in the storage backend configured with `-alertmanager-storage.backend`.
 When an Alertmanager starts, it attempts to load the alerts state for a given tenant from other Alertmanager replicas. If the load from other Alertmanager replicas fails, the Alertmanager falls back to the state that is periodically stored in the storage backend.
 
-In the event of a cluster outage, this fallback mechanism recovers the backup of the previous state. Because backups are taken periodically, this fallback mechanism does not guarantee that the lastest state is restored.
+In the event of a cluster outage, this fallback mechanism recovers the backup of the previous state. Because backups are taken periodically, this fallback mechanism does not guarantee that the most recent state is restored.
 
 ## Ruler configuration
 

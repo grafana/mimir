@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -153,7 +154,7 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 		expectedTS := int64(i * int(step/time.Millisecond))
 		assertPoint(expectedTS, iter.Seek(expectedTS))
 
-		for j := i + 1; j < i+points/10; j++ {
+		for j := i + 1; j < i+points/10 && j < points; j++ {
 			expectedTS := int64(j * int(step/time.Millisecond))
 			assertPoint(expectedTS, iter.Next())
 		}
@@ -207,7 +208,7 @@ func (i *mockIterator) Timestamp() int64 {
 	return 0
 }
 
-func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType) chunk.Batch {
+func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram]) chunk.Batch {
 	batch := chunk.Batch{
 		Length:    chunk.BatchSize,
 		ValueType: valueType,

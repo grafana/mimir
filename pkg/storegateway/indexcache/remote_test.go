@@ -279,7 +279,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			// Store the series expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreSeriesForRef(p.userID, p.block, p.id, p.value)
+				c.StoreSeriesForRef(p.userID, p.block, p.id, p.value, time.Hour)
 			}
 
 			// Fetch series from cached and assert on it.

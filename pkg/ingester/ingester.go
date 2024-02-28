@@ -10,7 +10,6 @@ package ingester
 
 import (
 	"context"
-	"expvar"
 	"flag"
 	"fmt"
 	"io"
@@ -25,6 +24,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -87,7 +87,9 @@ const (
 	// IngesterRingKey is the key under which we store the ingesters ring in the KVStore.
 	IngesterRingKey = "ring"
 
-	errTSDBCreateIncompatibleState = "cannot create a new TSDB while the ingester is not in active state (current state: %s)"
+	// PartitionRingKey is the key under which we store the partitions ring used by the "ingest storage".
+	PartitionRingKey  = "ingester-partitions"
+	PartitionRingName = "ingester-partitions"
 
 	// Jitter applied to the idle timeout to prevent compaction in all ingesters concurrently.
 	compactionIdleTimeoutJitter = 0.25
@@ -128,6 +130,25 @@ var (
 	reasonIngesterMaxInflightPushRequestsBytes = globalerror.IngesterMaxInflightPushRequestsBytes.LabelValue()
 )
 
+// Usage-stats expvars. Initialized as package-global in order to avoid race conditions and panics
+// when initializing expvars per-ingester in multiple parallel tests at once.
+var (
+	// updated in Ingester.updateUsageStats.
+	memorySeriesStats                  = usagestats.GetAndResetInt(memorySeriesStatsName)
+	memoryTenantsStats                 = usagestats.GetAndResetInt(memoryTenantsStatsName)
+	tenantsWithOutOfOrderEnabledStat   = usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName)
+	minOutOfOrderTimeWindowSecondsStat = usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName)
+	maxOutOfOrderTimeWindowSecondsStat = usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName)
+
+	// updated in Ingester.PushWithCleanup.
+	appendedSamplesStats   = usagestats.GetAndResetCounter(appendedSamplesStatsName)
+	appendedExemplarsStats = usagestats.GetAndResetCounter(appendedExemplarsStatsName)
+
+	// Set in newIngester.
+	replicationFactor = usagestats.GetInt(replicationFactorStatsName)
+	ringStoreName     = usagestats.GetString(ringStoreStatsName)
+)
+
 // BlocksUploader interface is used to have an easy way to mock it in tests.
 type BlocksUploader interface {
 	Sync(ctx context.Context) (uploaded int, err error)
@@ -149,7 +170,8 @@ type requestWithUsersAndCallback struct {
 
 // Config for an Ingester.
 type Config struct {
-	IngesterRing RingConfig `yaml:"ring"`
+	IngesterRing          RingConfig          `yaml:"ring"`
+	IngesterPartitionRing PartitionRingConfig `yaml:"partition_ring" category:"experimental" doc:"hidden"`
 
 	// Config for metadata purging.
 	MetadataRetainPeriod time.Duration `yaml:"metadata_retain_period" category:"advanced"`
@@ -174,7 +196,7 @@ type Config struct {
 	ReadPathMemoryUtilizationLimit       uint64  `yaml:"read_path_memory_utilization_limit" category:"experimental"`
 	LogUtilizationBasedLimiterCPUSamples bool    `yaml:"log_utilization_based_limiter_cpu_samples" category:"experimental"`
 
-	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"experimental"`
+	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"deprecated"` // TODO Remove the configuration option in Mimir 2.14, keeping the same behavior as if it's enabled.
 
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
 
@@ -191,6 +213,7 @@ type Config struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.IngesterRing.RegisterFlags(f, logger)
+	cfg.IngesterPartitionRing.RegisterFlags(f)
 	cfg.DefaultLimits.RegisterFlags(f)
 	cfg.ActiveSeriesMetrics.RegisterFlags(f)
 
@@ -202,7 +225,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
 	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
 	f.BoolVar(&cfg.LogUtilizationBasedLimiterCPUSamples, "ingester.log-utilization-based-limiter-cpu-samples", false, "Enable logging of utilization based limiter CPU samples.")
-	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "ingester.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
+	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "ingester.limit-inflight-requests-using-grpc-method-limiter", true, "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.")
 	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 0, "Each error will be logged once in this many times. Use 0 to log all of them.")
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
@@ -302,20 +325,14 @@ type Ingester struct {
 	inflightPushRequests      atomic.Int64
 	inflightPushRequestsBytes atomic.Int64
 
-	// Anonymous usage statistics tracked by ingester.
-	memorySeriesStats                  *expvar.Int
-	memoryTenantsStats                 *expvar.Int
-	appendedSamplesStats               *usagestats.Counter
-	appendedExemplarsStats             *usagestats.Counter
-	tenantsWithOutOfOrderEnabledStat   *expvar.Int
-	minOutOfOrderTimeWindowSecondsStat *expvar.Int
-	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
-
 	utilizationBasedLimiter utilizationBasedLimiter
 
 	errorSamplers ingesterErrSamplers
 
-	ingestReader *ingest.PartitionReader
+	// The following is used by ingest storage (when enabled).
+	ingestReader              *ingest.PartitionReader
+	ingestPartitionID         int32
+	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -329,8 +346,8 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	}
 
 	// Track constant usage stats.
-	usagestats.GetInt(replicationFactorStatsName).Set(int64(cfg.IngesterRing.ReplicationFactor))
-	usagestats.GetString(ringStoreStatsName).Set(cfg.IngesterRing.KVStore.Store)
+	replicationFactor.Set(int64(cfg.IngesterRing.ReplicationFactor))
+	ringStoreName.Set(cfg.IngesterRing.KVStore.Store)
 
 	return &Ingester{
 		cfg:    cfg,
@@ -346,20 +363,12 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
 
-		memorySeriesStats:                  usagestats.GetAndResetInt(memorySeriesStatsName),
-		memoryTenantsStats:                 usagestats.GetAndResetInt(memoryTenantsStatsName),
-		appendedSamplesStats:               usagestats.GetAndResetCounter(appendedSamplesStatsName),
-		appendedExemplarsStats:             usagestats.GetAndResetCounter(appendedExemplarsStatsName),
-		tenantsWithOutOfOrderEnabledStat:   usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName),
-		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
-		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
-
 		errorSamplers: newIngesterErrSamplers(cfg.ErrorSampleRate),
 	}, nil
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, activeGroupsCleanupService *util.ActiveGroupsCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
 		return nil, err
@@ -396,14 +405,6 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, i.lifecycler.ID, ingestersRing, log.With(i.logger, "component", "owned series"), registerer, i.limits.IngestionTenantShardSize, i.getTSDBUsers, i.getTSDB)
 	}
 
-	// Init the limter and instantiate the user states which depend on it
-	i.limiter = NewLimiter(
-		limits,
-		i.lifecycler,
-		cfg.IngesterRing.ReplicationFactor,
-		cfg.IngesterRing.ZoneAwarenessEnabled,
-	)
-
 	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {
 		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(cfg.ReadPathCPUUtilizationLimit,
 			cfg.ReadPathMemoryUtilizationLimit, cfg.LogUtilizationBasedLimiterCPUSamples,
@@ -417,19 +418,46 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
 	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.compactionIdleTimeout)
 
+	var limiterStrategy limiterRingStrategy
+
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
 
-		partitionID, err := ingest.IngesterPartition(cfg.IngesterRing.InstanceID)
+		i.ingestPartitionID, err = ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
 		if err != nil {
-			return nil, errors.Wrap(err, "calculating ingest storage partition ID")
+			return nil, errors.Wrap(err, "calculating ingester partition ID")
 		}
-		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, partitionID, i, log.With(logger, "component", "ingest_reader"), registerer)
+
+		// We use the ingester instance ID as consumer group. This means that we have N consumer groups
+		// where N is the total number of ingesters. Each ingester is part of their own consumer group
+		// so that they all replay the owned partition with no gaps.
+		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, i, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}
+
+		partitionRingKV := cfg.IngesterPartitionRing.kvMock
+		if partitionRingKV == nil {
+			partitionRingKV, err = kv.NewClient(cfg.IngesterRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, PartitionRingName+"-lifecycler"), logger)
+			if err != nil {
+				return nil, errors.Wrap(err, "creating KV store for ingester partition ring")
+			}
+		}
+
+		i.ingestPartitionLifecycler = ring.NewPartitionInstanceLifecycler(
+			i.cfg.IngesterPartitionRing.ToLifecyclerConfig(i.ingestPartitionID, cfg.IngesterRing.InstanceID),
+			PartitionRingName,
+			PartitionRingKey,
+			partitionRingKV,
+			logger,
+			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+
+		limiterStrategy = newPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
+	} else {
+		limiterStrategy = newIngesterRingLimiterStrategy(ingestersRing, cfg.IngesterRing.ReplicationFactor, cfg.IngesterRing.ZoneAwarenessEnabled, cfg.IngesterRing.InstanceZone, i.limits.IngestionTenantShardSize)
 	}
 
+	i.limiter = NewLimiter(limits, limiterStrategy)
 	i.BasicService = services.NewBasicService(i.starting, i.updateLoop, i.stopping)
 	return i, nil
 }
@@ -445,6 +473,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 
 	i.shipperIngesterID = "flusher"
+	i.limiter = NewLimiter(limits, flusherLimiterStrategy{})
 
 	// This ingester will not start any subservices (lifecycler, compaction, shipping),
 	// and will only open TSDBs, wait for Flush to be called, and then close TSDBs again.
@@ -472,6 +501,16 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
 		}
 	}()
+
+	// First of all we have to check if the shutdown marker is set. This needs to be done
+	// as first thing because, if found, it may change the behaviour of the ingester startup.
+	if exists, err := shutdownmarker.Exists(shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)); err != nil {
+		return errors.Wrap(err, "failed to check ingester shutdown marker")
+	} else if exists {
+		level.Info(i.logger).Log("msg", "detected existing shutdown marker, setting unregister and flush on shutdown", "path", shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir))
+		i.setPrepareShutdown()
+	}
+
 	if err := i.openExistingTSDB(ctx); err != nil {
 		// Try to rollback and close opened TSDBs before halting the ingester.
 		i.closeAllTSDB()
@@ -544,15 +583,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, i.ingestReader)
 	}
 
-	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
-	shutdownMarkerFound, err := shutdownmarker.Exists(shutdownMarkerPath)
-	if err != nil {
-		return errors.Wrap(err, "failed to check ingester shutdown marker")
-	}
-
-	if shutdownMarkerFound {
-		level.Info(i.logger).Log("msg", "detected existing shutdown marker, setting unregister and flush on shutdown", "path", shutdownMarkerPath)
-		i.setPrepareShutdown()
+	if i.ingestPartitionLifecycler != nil {
+		servs = append(servs, i.ingestPartitionLifecycler)
 	}
 
 	i.subservices, err = services.NewManager(servs...)
@@ -570,10 +602,6 @@ func (i *Ingester) stoppingForFlusher(_ error) error {
 }
 
 func (i *Ingester) stopping(_ error) error {
-	// It's important to wait until shipper is finished,
-	// because the blocks transfer should start only once it's guaranteed
-	// there's no shipping on-going.
-
 	if err := services.StopManagerAndAwaitStopped(context.Background(), i.subservices); err != nil {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
@@ -767,11 +795,11 @@ func (i *Ingester) updateUsageStats() {
 	}
 
 	// Track anonymous usage stats.
-	i.memorySeriesStats.Set(memorySeriesCount)
-	i.memoryTenantsStats.Set(memoryUsersCount)
-	i.tenantsWithOutOfOrderEnabledStat.Set(tenantsWithOutOfOrderEnabledCount)
-	i.minOutOfOrderTimeWindowSecondsStat.Set(int64(minOutOfOrderTimeWindow.Seconds()))
-	i.maxOutOfOrderTimeWindowSecondsStat.Set(int64(maxOutOfOrderTimeWindow.Seconds()))
+	memorySeriesStats.Set(memorySeriesCount)
+	memoryTenantsStats.Set(memoryUsersCount)
+	tenantsWithOutOfOrderEnabledStat.Set(tenantsWithOutOfOrderEnabledCount)
+	minOutOfOrderTimeWindowSecondsStat.Set(int64(minOutOfOrderTimeWindow.Seconds()))
+	maxOutOfOrderTimeWindowSecondsStat.Set(int64(maxOutOfOrderTimeWindow.Seconds()))
 }
 
 // applyTSDBSettings goes through all tenants and applies
@@ -779,9 +807,6 @@ func (i *Ingester) updateUsageStats() {
 // * The current out-of-order time window. If it changes from 0 to >0, then a new Write-Behind-Log gets created for that tenant.
 func (i *Ingester) applyTSDBSettings() {
 	for _, userID := range i.getTSDBUsers() {
-		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
-		localValue := i.limiter.convertGlobalToLocalLimit(i.limiter.getShardSize(userID), globalValue)
-
 		oooTW := i.limits.OutOfOrderTimeWindow(userID)
 		if oooTW < 0 {
 			oooTW = 0
@@ -794,7 +819,7 @@ func (i *Ingester) applyTSDBSettings() {
 		cfg := promcfg.Config{
 			StorageConfig: promcfg.StorageConfig{
 				ExemplarsConfig: &promcfg.ExemplarsConfig{
-					MaxExemplars: int64(localValue),
+					MaxExemplars: int64(i.limiter.maxExemplarsPerUser(userID)),
 				},
 				TSDBConfig: &promcfg.TSDBConfig{
 					OutOfOrderTimeWindow: oooTW.Milliseconds(),
@@ -954,7 +979,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		return nil
 	}
 
-	db, err := i.getOrCreateTSDB(userID, false)
+	db, err := i.getOrCreateTSDB(userID)
 	if err != nil {
 		return wrapOrAnnotateWithUser(err, userID)
 	}
@@ -1044,8 +1069,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(stats.failedSamplesCount))
 	i.metrics.ingestedExemplars.Add(float64(stats.succeededExemplarsCount))
 	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
-	i.appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
-	i.appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
+	appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
+	appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
@@ -2323,7 +2348,7 @@ func (i *Ingester) getTSDBUsers() []string {
 	return ids
 }
 
-func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error) {
+func (i *Ingester) getOrCreateTSDB(userID string) (*userTSDB, error) {
 	db := i.getTSDB(userID)
 	if db != nil {
 		return db, nil
@@ -2337,16 +2362,6 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 	db, ok = i.tsdbs[userID]
 	if ok {
 		return db, nil
-	}
-
-	// We're ready to create the TSDB, however we must be sure that the ingester
-	// is in the ACTIVE state, otherwise it may conflict with the transfer in/out.
-	// The TSDB is created when the first series is pushed and this shouldn't happen
-	// to a non-ACTIVE ingester, however we want to protect from any bug, cause we
-	// may have data loss or TSDB WAL corruption if the TSDB is created before/during
-	// a transfer in occurs.
-	if ingesterState := i.lifecycler.GetState(); !force && ingesterState != ring.ACTIVE {
-		return nil, fmt.Errorf(errTSDBCreateIncompatibleState, ingesterState)
 	}
 
 	gl := i.getInstanceLimits()
@@ -2394,7 +2409,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
-	maxExemplars := i.limiter.convertGlobalToLocalLimit(i.limits.IngestionTenantShardSize(userID), i.limits.MaxGlobalExemplarsPerUser(userID))
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
@@ -2411,7 +2425,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		SeriesLifecycleCallback:               userDB,
 		BlocksToDelete:                        userDB.blocksToDelete,
 		EnableExemplarStorage:                 true, // enable for everyone so we can raise the limit later
-		MaxExemplars:                          int64(maxExemplars),
+		MaxExemplars:                          int64(i.limiter.maxExemplarsPerUser(userID)),
 		SeriesHashCache:                       i.seriesHashCache,
 		EnableMemorySnapshotOnShutdown:        i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		IsolationDisabled:                     true,
@@ -2420,6 +2434,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		EnableSharding:                        true,                 // Always enable query sharding support.
 		OutOfOrderTimeWindow:                  oooTW.Milliseconds(), // The unit must be same as our timestamps.
 		OutOfOrderCapMax:                      int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
+		TimelyCompaction:                      i.cfg.BlocksStorageConfig.TSDB.TimelyHeadCompaction,
 		HeadPostingsForMatchersCacheTTL:       i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
 		HeadPostingsForMatchersCacheMaxItems:  i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxItems,
 		HeadPostingsForMatchersCacheMaxBytes:  i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxBytes,
@@ -2739,17 +2754,6 @@ func (i *Ingester) shipBlocksLoop(ctx context.Context) error {
 
 // shipBlocks runs shipping for all users.
 func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants) {
-	// Do not ship blocks if the ingester is PENDING or JOINING. It's
-	// particularly important for the JOINING state because there could
-	// be a blocks transfer in progress (from another ingester) and if we
-	// run the shipper in such state we could end up with race conditions.
-	if i.lifecycler != nil {
-		if ingesterState := i.lifecycler.GetState(); ingesterState == ring.PENDING || ingesterState == ring.JOINING {
-			level.Info(i.logger).Log("msg", "TSDB blocks shipping has been skipped because of the current ingester state", "state", ingesterState)
-			return
-		}
-	}
-
 	// Number of concurrent workers is limited in order to avoid to concurrently sync a lot
 	// of tenants in a large cluster.
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.ShipConcurrency, func(ctx context.Context, userID string) error {
@@ -2857,15 +2861,6 @@ func (i *Ingester) compactionLoop(ctx context.Context) error {
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowedTenants) {
-	// Don't compact TSDB blocks while JOINING as there may be ongoing blocks transfers.
-	// Compaction loop is not running in LEAVING state, so if we get here in LEAVING state, we're flushing blocks.
-	if i.lifecycler != nil {
-		if ingesterState := i.lifecycler.GetState(); ingesterState == ring.JOINING {
-			level.Info(i.logger).Log("msg", "TSDB blocks compaction has been skipped because of the current ingester state", "state", ingesterState)
-			return
-		}
-	}
-
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(ctx context.Context, userID string) error {
 		if !allowed.IsAllowed(userID) {
 			return nil
@@ -3301,6 +3296,13 @@ func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request
 
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodDelete:
+		// Reverting the prepared shutdown is currently not supported by the ingest storage.
+		if i.cfg.IngestStorageConfig.Enabled {
+			level.Error(i.logger).Log("msg", "the ingest storage doesn't support reverting the prepared shutdown")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
 		if err := shutdownmarker.Remove(shutdownMarkerPath); err != nil {
 			level.Error(i.logger).Log("msg", "unable to remove prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -3321,6 +3323,18 @@ func (i *Ingester) setPrepareShutdown() {
 	i.lifecycler.SetUnregisterOnShutdown(true)
 	i.lifecycler.SetFlushOnShutdown(true)
 	i.metrics.shutdownMarker.Set(1)
+
+	if i.ingestPartitionLifecycler != nil {
+		// When the prepare shutdown endpoint is called there are two changes in the partitions ring behavior:
+		//
+		// 1. If setPrepareShutdown() is called at startup, because of the shutdown marker found on disk,
+		//    the ingester shouldn't create the partition if doesn't exist, because we expect the ingester will
+		//    be scaled down shortly after.
+		// 2. When the ingester will shutdown we'll have to remove the ingester from the partition owners,
+		//    because we expect the ingester to be scaled down.
+		i.ingestPartitionLifecycler.SetCreatePartitionOnStartup(false)
+		i.ingestPartitionLifecycler.SetRemoveOwnerOnShutdown(true)
+	}
 }
 
 func (i *Ingester) unsetPrepareShutdown() {
@@ -3329,12 +3343,105 @@ func (i *Ingester) unsetPrepareShutdown() {
 	i.metrics.shutdownMarker.Set(0)
 }
 
+// PreparePartitionDownscaleHandler prepares the ingester's partition downscaling. The partition owned by the
+// ingester will switch to INACTIVE state (read-only).
+//
+// Following methods are supported:
+//
+//   - GET
+//     Returns timestamp when partition was switched to INACTIVE state, or 0, if partition is not in INACTIVE state.
+//
+//   - POST
+//     Switches the partition to INACTIVE state (if not yet), and returns the timestamp when the switch to
+//     INACTIVE state happened.
+//
+//   - DELETE
+//     Sets partition back from INACTIVE to ACTIVE state.
+func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *http.Request) {
+	logger := log.With(i.logger, "partition", i.ingestPartitionID)
+
+	// Don't allow callers to change the shutdown configuration while we're in the middle
+	// of starting or shutting down.
+	if i.State() != services.Running {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	if !i.cfg.IngestStorageConfig.Enabled {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPost:
+		// It's not allowed to prepare the downscale while in PENDING state. Why? Because if the downscale
+		// will be later cancelled, we don't know if it was requested in PENDING or ACTIVE state, so we
+		// don't know to which state reverting back. Given a partition is expected to stay in PENDING state
+		// for a short period, we simply don't allow this case.
+		state, _, err := i.ingestPartitionLifecycler.GetPartitionState(r.Context())
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to check partition state in the ring", "err", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if state == ring.PartitionPending {
+			level.Warn(logger).Log("msg", "received a request to prepare partition for shutdown, but the request can't be satisfied because the partition is in PENDING state")
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+
+		if err := i.ingestPartitionLifecycler.ChangePartitionState(r.Context(), ring.PartitionInactive); err != nil {
+			level.Error(logger).Log("msg", "failed to change partition state to inactive", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+	case http.MethodDelete:
+		state, _, err := i.ingestPartitionLifecycler.GetPartitionState(r.Context())
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to check partition state in the ring", "err", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		// If partition is inactive, make it active. We ignore other states Active and especially Pending.
+		if state == ring.PartitionInactive {
+			// We don't switch it back to PENDING state if there are not enough owners because we want to guarantee consistency
+			// in the read path. If the partition is within the lookback period we need to guarantee that partition will be queried.
+			// Moving back to PENDING will cause us loosing consistency, because PENDING partitions are not queried by design.
+			// We could move back to PENDING if there are not enough owners and the partition moved to INACTIVE more than
+			// "lookback period" ago, but since we delete inactive partitions with no owners that moved to inactive since longer
+			// than "lookback period" ago, it looks to be an edge case not worth to address.
+			if err := i.ingestPartitionLifecycler.ChangePartitionState(r.Context(), ring.PartitionActive); err != nil {
+				level.Error(logger).Log("msg", "failed to change partition state to active", "err", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	state, stateTimestamp, err := i.ingestPartitionLifecycler.GetPartitionState(r.Context())
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to check partition state in the ring", "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if state == ring.PartitionInactive {
+		util.WriteJSONResponse(w, map[string]any{"timestamp": stateTimestamp.Unix()})
+	} else {
+		util.WriteJSONResponse(w, map[string]any{"timestamp": 0})
+	}
+}
+
 // ShutdownHandler triggers the following set of operations in order:
 //   - Change the state of ring to stop accepting writes.
 //   - Flush all the chunks.
 func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 	originalFlush := i.lifecycler.FlushOnShutdown()
-	// We want to flush the chunks if transfer fails irrespective of original flag.
+
+	// We want to flush the blocks.
 	i.lifecycler.SetFlushOnShutdown(true)
 
 	// In the case of an HTTP shutdown, we want to unregister no matter what.

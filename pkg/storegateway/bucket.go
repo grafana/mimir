@@ -132,7 +132,7 @@ func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, ke
 	return &indexcache.MapIterator[labels.Label]{Keys: keys}
 }
 
-func (noopCache) StoreSeriesForRef(string, ulid.ULID, storage.SeriesRef, []byte) {}
+func (noopCache) StoreSeriesForRef(string, ulid.ULID, storage.SeriesRef, []byte, time.Duration) {}
 func (noopCache) FetchMultiSeriesForRefs(_ context.Context, _ string, _ ulid.ULID, ids []storage.SeriesRef) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
 	return map[storage.SeriesRef][]byte{}, ids
 }
@@ -670,7 +670,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 
 	start := time.Now()
 	if req.StreamingChunksBatchSize > 0 {
-		var seriesChunkIt seriesChunksSetIterator
+		var seriesChunkIt iterator[seriesChunksSet]
 		seriesChunkIt, err = s.streamingChunksSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reuse)
 		if err != nil {
 			return err
@@ -771,7 +771,7 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 func (s *BucketStore) sendStreamingChunks(
 	req *storepb.SeriesRequest,
 	srv storegatewaypb.StoreGateway_SeriesServer,
-	it seriesChunksSetIterator,
+	it iterator[seriesChunksSet],
 	stats *safeQueryStats,
 	totalSeriesCount int,
 ) error {
@@ -1065,7 +1065,7 @@ func (s *BucketStore) streamingChunksSetForBlocks(
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	stats *safeQueryStats,
 	reuse []*reusedPostingsAndMatchers, // Should come from streamingSeriesForBlocks.
-) (seriesChunksSetIterator, error) {
+) (iterator[seriesChunksSet], error) {
 	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reuse, defaultStrategy)
 	if err != nil {
 		return nil, err
@@ -1086,10 +1086,10 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 	stats *safeQueryStats,
 	reuse []*reusedPostingsAndMatchers, // Used if not empty. If not empty, len(reuse) must be len(blocks).
 	strategy seriesIteratorStrategy,
-) (seriesChunkRefsSetIterator, error) {
+) (iterator[seriesChunkRefsSet], error) {
 	var (
 		mtx                      = sync.Mutex{}
-		batches                  = make([]seriesChunkRefsSetIterator, 0, len(blocks))
+		batches                  = make([]iterator[seriesChunkRefsSet], 0, len(blocks))
 		g, _                     = errgroup.WithContext(ctx)
 		begin                    = time.Now()
 		blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
@@ -1633,7 +1633,7 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 }
 
 func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch int, pendingMatchers []*labels.Matcher, indexr *bucketIndexReader, b *bucketBlock, matchersPostings []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
-	var iterator seriesChunkRefsSetIterator
+	var iterator iterator[seriesChunkRefsSet]
 	iterator = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
 		newPostingsSetsIterator(matchersPostings, seriesPerBatch),

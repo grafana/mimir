@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r276-845432f
+  tag: r279-770c233
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -89,7 +89,7 @@ configStorageType: ConfigMap
 externalConfigSecretName: '{{ include "mimir.resourceName" (dict "ctx" . "component" "config") }}'
 
 # -- When 'useExternalConfig' is true, then changing 'externalConfigVersion' triggers restart of services - otherwise changes to the configuration cause a restart.
-externalConfigVersion: '0'
+externalConfigVersion: "0"
 
 # --Vault Agent config to mount secrets to TLS configurable components. This requires Vault and Vault Agent to already be running.
 vaultAgent:
@@ -459,9 +459,33 @@ runtimeConfig: {}
 
 # RBAC configuration
 rbac:
-  create: true
   # -- If true, PodSecurityPolicy will be rendered by the chart on Kuberentes 1.24.
   # By default the PodSecurityPolicy is not rendered on version 1.24.
+  create: true
+  # -- PSP configuration
+  podSecurityPolicy:
+    seccompProfile: runtime/default
+    privileged: false
+    allowPrivilegeEscalation: false
+    hostNetwork: false
+    hostIPC: false
+    hostPID: false
+    readOnlyRootFilesystem: true
+    runAsUser:
+      rule: "MustRunAsNonRoot"
+    seLinux:
+      rule: "RunAsAny"
+    supplementalGroups:
+      rule: "MustRunAs"
+      ranges:
+        - min: 1
+          max: 65535
+    fsGroup:
+      rule: "MustRunAs"
+      ranges:
+        - min: 1
+          max: 65535
+    additionalVolumes: []
   forcePSPOnKubernetes124: false
   # -- For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
   type: psp
@@ -480,6 +504,13 @@ rbac:
     runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
+
+# -- KEDA Autoscaling configuration
+kedaAutoscaling:
+  # -- A Prometheus-compatible URL. Cadvisor and Mimir metrics for the Mimir pods are expected in this server. For more information on the required metrics see [Monitor system health](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/) If empty, the helm chart uses the metamonitoring URL from metaMonitoring.grafanaAgent.metrics.remote.url. If that is empty, then the Mimir cluster is used.
+  prometheusAddress: ""
+  customHeaders: {}
+  pollingInterval: 10
 
 alertmanager:
   enabled: true
@@ -568,7 +599,7 @@ alertmanager:
     # Subdirectory of Alertmanager data Persistent Volume to mount
     # Useful if the volume's root directory is not empty
     #
-    subPath: ''
+    subPath: ""
 
     # Alertmanager data Persistent Volume Storage Class
     # If defined, storageClassName: <storageClass>
@@ -690,49 +721,68 @@ alertmanager:
       writePath: false
     # -- Zone definitions for alertmanager zones. Note: you have to redefine the whole list to change parts as YAML does not allow to modify parts of a list.
     zones:
-    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-    - name: zone-a
-      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
-      # nodeSelector:
-      #   topology.kubernetes.io/zone: zone-a
-      nodeSelector: null
-      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
-      extraAffinity: {}
-      # -- Alertmanager data Persistent Volume Storage Class
-      # If defined, storageClassName: <storageClass>
-      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
-      # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
-      storageClass: null
-    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-    - name: zone-b
-      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
-      # nodeSelector:
-      #   topology.kubernetes.io/zone: zone-b
-      nodeSelector: null
-      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
-      extraAffinity: {}
-      # -- Alertmanager data Persistent Volume Storage Class
-      # If defined, storageClassName: <storageClass>
-      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
-      # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
-      storageClass: null
-    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-    - name: zone-c
-      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
-      # nodeSelector:
-      #   topology.kubernetes.io/zone: zone-c
-      nodeSelector: null
-      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
-      extraAffinity: {}
-      # -- Alertmanager data Persistent Volume Storage Class
-      # If defined, storageClassName: <storageClass>
-      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
-      # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
-      storageClass: null
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      - name: zone-a
+        # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+        # nodeSelector:
+        #   topology.kubernetes.io/zone: zone-a
+        nodeSelector: null
+        # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+        extraAffinity: {}
+        # -- Alertmanager data Persistent Volume Storage Class
+        # If defined, storageClassName: <storageClass>
+        # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+        # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
+        storageClass: null
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      - name: zone-b
+        # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+        # nodeSelector:
+        #   topology.kubernetes.io/zone: zone-b
+        nodeSelector: null
+        # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+        extraAffinity: {}
+        # -- Alertmanager data Persistent Volume Storage Class
+        # If defined, storageClassName: <storageClass>
+        # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+        # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
+        storageClass: null
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      - name: zone-c
+        # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+        # nodeSelector:
+        #   topology.kubernetes.io/zone: zone-c
+        nodeSelector: null
+        # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+        extraAffinity: {}
+        # -- Alertmanager data Persistent Volume Storage Class
+        # If defined, storageClassName: <storageClass>
+        # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+        # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
+        storageClass: null
 
 distributor:
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
+
+  # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
+  # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
+  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
+  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # The remote URL is used even if metamonitoring is disabled.
+  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  kedaAutoscaling:
+    enabled: false
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    targetCPUUtilizationPercentage: 100
+    targetMemoryUtilizationPercentage: 100
+    behavior:
+      scaleDown:
+        policies:
+          - periodSeconds: 600
+            type: Percent
+            value: 10
 
   service:
     annotations: {}
@@ -795,7 +845,8 @@ distributor:
       maxUnavailable: 0
       maxSurge: 15%
 
-  terminationGracePeriodSeconds: 60
+  # Keep the termination grace period higher than the -shutdown-delay configured on the distributor.
+  terminationGracePeriodSeconds: 100
 
   tolerations: []
   initContainers: []
@@ -886,14 +937,13 @@ ingester:
 
     # Subdirectory of Ingester data Persistent Volume to mount
     # Useful if the volume's root directory is not empty
-    subPath: ''
+    subPath: ""
 
     # -- Enable StatefulSetAutoDeletePVC feature
     # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
     enableRetentionPolicy: false
     whenDeleted: Retain
     whenScaled: Retain
-
 
     # Ingester data Persistent Volume Storage Class
     # If defined, storageClassName: <storageClass>
@@ -985,45 +1035,45 @@ ingester:
       writePath: false
     # -- Zone definitions for ingester zones. Note: you have to redefine the whole list to change parts as YAML does not allow to modify parts of a list.
     zones:
-    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-    - name: zone-a
-      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
-      # nodeSelector:
-      #   topology.kubernetes.io/zone: zone-a
-      nodeSelector: null
-      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
-      extraAffinity: {}
-      # -- Ingester data Persistent Volume Storage Class
-      # If defined, storageClassName: <storageClass>
-      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
-      # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
-      storageClass: null
-    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-    - name: zone-b
-      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
-      # nodeSelector:
-      #   topology.kubernetes.io/zone: zone-b
-      nodeSelector: null
-      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
-      extraAffinity: {}
-      # -- Ingester data Persistent Volume Storage Class
-      # If defined, storageClassName: <storageClass>
-      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
-      # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
-      storageClass: null
-    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-    - name: zone-c
-      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
-      # nodeSelector:
-      #   topology.kubernetes.io/zone: zone-c
-      nodeSelector: null
-      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
-      extraAffinity: {}
-      # -- Ingester data Persistent Volume Storage Class
-      # If defined, storageClassName: <storageClass>
-      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
-      # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
-      storageClass: null
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      - name: zone-a
+        # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+        # nodeSelector:
+        #   topology.kubernetes.io/zone: zone-a
+        nodeSelector: null
+        # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+        extraAffinity: {}
+        # -- Ingester data Persistent Volume Storage Class
+        # If defined, storageClassName: <storageClass>
+        # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+        # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
+        storageClass: null
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      - name: zone-b
+        # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+        # nodeSelector:
+        #   topology.kubernetes.io/zone: zone-b
+        nodeSelector: null
+        # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+        extraAffinity: {}
+        # -- Ingester data Persistent Volume Storage Class
+        # If defined, storageClassName: <storageClass>
+        # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+        # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
+        storageClass: null
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      - name: zone-c
+        # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+        # nodeSelector:
+        #   topology.kubernetes.io/zone: zone-c
+        nodeSelector: null
+        # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+        extraAffinity: {}
+        # -- Ingester data Persistent Volume Storage Class
+        # If defined, storageClassName: <storageClass>
+        # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+        # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
+        storageClass: null
 
 overrides_exporter:
   enabled: true
@@ -1110,7 +1160,37 @@ ruler:
   enabled: true
   replicas: 1
 
+  # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
+  # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
+  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
+  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # The remote URL is used even if metamonitoring is disabled.
+  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  kedaAutoscaling:
+    enabled: false
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    targetCPUUtilizationPercentage: 100
+    targetMemoryUtilizationPercentage: 100
+    behavior:
+      scaleDown:
+        policies:
+          - periodSeconds: 600
+            type: Percent
+            value: 10
+
   service:
+    annotations: {}
+    labels: {}
+
+  # -- Dedicated service account for ruler pods.
+  # If not set, the default service account defined at the begining of this file will be used.
+  # This service account can be used even if the default one is not set.
+  serviceAccount:
+    create: false
+    # -- Ruler specific service account name. If not set and create is set to true, the default
+    # name will be the default mimir service account's name with the "-ruler" suffix.
+    name: ""
     annotations: {}
     labels: {}
 
@@ -1185,6 +1265,34 @@ ruler:
 
 querier:
   replicas: 2
+
+  # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
+  # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
+  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
+  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # The remote URL is used even if metamonitoring is disabled.
+  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  kedaAutoscaling:
+    enabled: false
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    querySchedulerInflightRequestsThreshold: 12
+    behavior:
+      scaleDown:
+        policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 10
+        stabilizationWindowSeconds: 600
+      scaleUp:
+        policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 50
+          - periodSeconds: 120
+            type: Pods
+            value: 15
+        stabilizationWindowSeconds: 60
 
   service:
     annotations: {}
@@ -1264,6 +1372,25 @@ querier:
 query_frontend:
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
+
+  # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
+  # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
+  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
+  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # The remote URL is used even if metamonitoring is disabled.
+  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  kedaAutoscaling:
+    enabled: false
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 100
+    behavior:
+      scaleDown:
+        policies:
+          - periodSeconds: 60
+            type: Percent
+            value: 10
 
   service:
     annotations: {}
@@ -1499,8 +1626,7 @@ store_gateway:
     # Subdirectory of Store-gateway data Persistent Volume to mount
     # Useful if the volume's root directory is not empty
     #
-    subPath: ''
-
+    subPath: ""
 
     # Store-gateway data Persistent Volume Storage Class
     # If defined, storageClassName: <storageClass>
@@ -1586,45 +1712,45 @@ store_gateway:
       readPath: false
     # -- Zone definitions for store-gateway zones. Note: you have to redefine the whole list to change parts as YAML does not allow to modify parts of a list.
     zones:
-    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-    - name: zone-a
-      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
-      # nodeSelector:
-      #   topology.kubernetes.io/zone: zone-a
-      nodeSelector: null
-      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
-      extraAffinity: {}
-      # -- StoreGateway data Persistent Volume Storage Class
-      # If defined, storageClassName: <storageClass>
-      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
-      # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
-      storageClass: null
-    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-    - name: zone-b
-      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
-      # nodeSelector:
-      #   topology.kubernetes.io/zone: zone-b
-      nodeSelector: null
-      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
-      extraAffinity: {}
-      # -- StoreGateway data Persistent Volume Storage Class
-      # If defined, storageClassName: <storageClass>
-      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
-      # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
-      storageClass: null
-    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-    - name: zone-c
-      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
-      # nodeSelector:
-      #   topology.kubernetes.io/zone: zone-c
-      nodeSelector: null
-      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
-      extraAffinity: {}
-      # -- StoreGateway data Persistent Volume Storage Class
-      # If defined, storageClassName: <storageClass>
-      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
-      # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
-      storageClass: null
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      - name: zone-a
+        # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+        # nodeSelector:
+        #   topology.kubernetes.io/zone: zone-a
+        nodeSelector: null
+        # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+        extraAffinity: {}
+        # -- StoreGateway data Persistent Volume Storage Class
+        # If defined, storageClassName: <storageClass>
+        # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+        # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
+        storageClass: null
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      - name: zone-b
+        # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+        # nodeSelector:
+        #   topology.kubernetes.io/zone: zone-b
+        nodeSelector: null
+        # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+        extraAffinity: {}
+        # -- StoreGateway data Persistent Volume Storage Class
+        # If defined, storageClassName: <storageClass>
+        # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+        # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
+        storageClass: null
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      - name: zone-c
+        # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+        # nodeSelector:
+        #   topology.kubernetes.io/zone: zone-c
+        nodeSelector: null
+        # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+        extraAffinity: {}
+        # -- StoreGateway data Persistent Volume Storage Class
+        # If defined, storageClassName: <storageClass>
+        # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+        # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
+        storageClass: null
 
 compactor:
   replicas: 1
@@ -1695,7 +1821,7 @@ compactor:
     # Subdirectory of compactor data Persistent Volume to mount
     # Useful if the volume's root directory is not empty
     #
-    subPath: ''
+    subPath: ""
 
     # compactor data Persistent Volume Storage Class
     # If defined, storageClassName: <storageClass>
@@ -1856,7 +1982,7 @@ chunks-cache:
   # -- Add extended options for chunks-cache memcached container. The format is the same as for the memcached -o/--extend flag.
   # Example:
   # extraExtendedOptions: 'tls,no_hashexpand'
-  extraExtendedOptions: ''
+  extraExtendedOptions: ""
 
   # -- Additional CLI args for chunks-cache
   extraArgs: {}
@@ -1948,7 +2074,7 @@ index-cache:
   # -- Add extended options for index-cache memcached container. The format is the same as for the memcached -o/--extend flag.
   # Example:
   # extraExtendedOptions: 'tls,modern,track_sizes'
-  extraExtendedOptions: ''
+  extraExtendedOptions: ""
 
   # -- Additional CLI args for index-cache
   extraArgs: {}
@@ -2040,7 +2166,7 @@ metadata-cache:
   # -- Add extended options for metadata-cache memcached container. The format is the same as for the memcached -o/--extend flag.
   # Example:
   # extraExtendedOptions: 'tls,modern,track_sizes'
-  extraExtendedOptions: ''
+  extraExtendedOptions: ""
 
   # -- Additional CLI args for metadata-cache
   extraArgs: {}
@@ -2132,7 +2258,7 @@ results-cache:
   # -- Add extended options for results-cache memcached container. The format is the same as for the memcached -o/--extend flag.
   # Example:
   # extraExtendedOptions: 'tls,modern,track_sizes'
-  extraExtendedOptions: ''
+  extraExtendedOptions: ""
 
   # -- Additional CLI args for results-cache
   extraArgs: {}
@@ -2295,7 +2421,7 @@ nginx:
   terminationGracePeriodSeconds: 30
   # -- Affinity for nginx pods. Passed through `tpl` and, thus, to be configured as string
   # @default -- Hard node and soft zone anti-affinity
-  affinity: ''
+  affinity: ""
 
   # -- topologySpreadConstraints allows to customize the default topologySpreadConstraints. This can be either a single dict as shown below or a slice of topologySpreadConstraints.
   # labelSelector is taken from the constraint itself (if it exists) or is generated by the chart using the same selectors as for services.
@@ -2650,7 +2776,6 @@ gateway:
 
   # -- SecurityContext override for gateway pods
   securityContext: {}
-
     # -- The SecurityContext for gateway containers
   containerSecurityContext:
     allowPrivilegeEscalation: false
@@ -2702,7 +2827,7 @@ gateway:
     # By using the same name as the nginx/GEM gateway Service, Helm will not delete the Service Resource.
     # Instead, it will update the existing one in place.
     # If left as an empty string, a name is generated.
-    nameOverride: ''
+    nameOverride: ""
 
   ingress:
     enabled: false
@@ -2711,14 +2836,15 @@ gateway:
     # By using the same name as the nginx/GEM gateway Ingress, Helm will not delete the Ingress Resource.
     # Instead, it will update the existing one in place.
     # If left as an empty string, a name is generated.
-    nameOverride: ''
+    nameOverride: ""
     # -- Ingress Class Name. MAY be required for Kubernetes versions >= 1.18
-    ingressClassName: ''
+    ingressClassName: ""
     # -- Annotations for the Ingress
     annotations: {}
     # -- Hosts configuration for the Ingress
     hosts:
-      - host: mimir.example.com
+      # -- Passed through the `tpl` function to allow templating.
+      - host: "{{ .Release.Name }}.mimir.example.com"
         paths:
           - path: /
             # -- pathType (e.g. ImplementationSpecific, Prefix, .. etc.) might also be required by some Ingress Controllers
@@ -2726,16 +2852,17 @@ gateway:
     # -- TLS configuration for the nginx ingress
     tls:
       - secretName: mimir-tls
+        # --  Hosts included in the tls certificate. Passed through the `tpl` function to allow templating.
         hosts:
-          - mimir.example.com
+          - "{{ .Release.Name }}.mimir.example.com"
 
   # -- OpenShift Route configuration
   route:
     enabled: false
     # -- Annotations for the Route
     annotations: {}
-
-    host: mimir.example.com
+    # -- Passed through the `tpl` function to allow templating.
+    host: "{{ .Release.Name }}.mimir.example.com"
 
     tls:
       # -- More details about TLS configuration and termination types: https://docs.openshift.com/container-platform/3.11/architecture/networking/routes.html#secured-routes
@@ -2794,6 +2921,8 @@ gateway:
       httpSnippet: ""
       # -- Allows to set a custom resolver
       resolver: null
+      # -- Configures whether or not NGINX bind IPv6
+      enableIPv6: true
       # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating.
       file: |
         worker_processes  5;  ## Default: 1
@@ -2849,7 +2978,9 @@ gateway:
           proxy_read_timeout 300;
           server {
             listen {{ include "mimir.serverHttpListenPort" . }};
+            {{- if .Values.gateway.nginx.config.enableIPv6 }}
             listen [::]:{{ include "mimir.serverHttpListenPort" . }};
+            {{- end }}
 
             {{- if .Values.gateway.nginx.basicAuth.enabled }}
             auth_basic           "Mimir";
@@ -3053,19 +3184,19 @@ metaMonitoring:
       # configuration to write logs to this Loki-compatible remote. Optional.
       remote:
         # -- Full URL for Loki push endpoint. Usually ends in /loki/api/v1/push
-        url: ''
+        url: ""
 
         auth:
           # -- Used to set X-Scope-OrgID header on requests. Usually not used in combination with username and password.
-          tenantId: ''
+          tenantId: ""
 
           # -- Basic authentication username. Optional.
-          username: ''
+          username: ""
 
           # -- The value under key passwordSecretKey in this secret will be used as the basic authentication password. Required only if passwordSecretKey is set.
-          passwordSecretName: ''
+          passwordSecretName: ""
           # -- The value under this key in passwordSecretName will be used as the basic authentication password. Required only if passwordSecretName is set.
-          passwordSecretKey: ''
+          passwordSecretKey: ""
 
       # -- Client configurations for the LogsInstance that will scrape Mimir pods. Follows the format of .remote.
       additionalClientConfigs: []
@@ -3105,18 +3236,18 @@ metaMonitoring:
         # -- Full URL for Prometheus remote-write. Usually ends in /push.
         # If you leave the url field empty, then the chart automatically fills in the
         # address of the GEM gateway Service or the Mimir NGINX Service.
-        url: ''
+        url: ""
 
         # -- Used to add HTTP headers to remote-write requests.
         headers: {}
         auth:
           # -- Basic authentication username. Optional.
-          username: ''
+          username: ""
 
           # -- The value under key passwordSecretKey in this secret will be used as the basic authentication password. Required only if passwordSecretKey is set.
-          passwordSecretName: ''
+          passwordSecretName: ""
           # -- The value under this key in passwordSecretName will be used as the basic authentication password. Required only if passwordSecretName is set.
-          passwordSecretKey: ''
+          passwordSecretKey: ""
 
       # -- Additional remote-write for the MetricsInstance that will scrape Mimir pods. Follows the format of .remote.
       additionalRemoteWriteConfigs: []
@@ -3137,7 +3268,7 @@ metaMonitoring:
       scrapeInterval: 60s
 
     # -- Sets the namespace of the resources. Leave empty or unset to use the same namespace as the Helm release.
-    namespace: ''
+    namespace: ""
 
     # -- Labels to add to all monitoring.grafana.com custom resources.
     # Does not affect the ServiceMonitors for kubernetes metrics; use serviceMonitor.labels for that.
@@ -3201,7 +3332,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r276-b5a67b33
+    tag: r279-6954265b
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3436,7 +3567,7 @@ graphite:
                     operator: In
                     values:
                       - graphite-querier
-              topologyKey: 'kubernetes.io/hostname'
+              topologyKey: "kubernetes.io/hostname"
 
     livenessProbe:
       httpGet:
@@ -3518,7 +3649,7 @@ graphite:
                     operator: In
                     values:
                       - graphite-write-proxy
-              topologyKey: 'kubernetes.io/hostname'
+              topologyKey: "kubernetes.io/hostname"
 
     livenessProbe:
       httpGet:
@@ -3702,9 +3833,9 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r276-845432f
+    tag: r279-770c233
     pullPolicy: IfNotPresent
-  tenantId: ''
+  tenantId: ""
   extraArgs: {}
   env: []
   extraEnvFrom: []
@@ -3722,7 +3853,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r276-845432f
+    tag: r279-770c233
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 
@@ -3733,7 +3864,7 @@ continuous_test:
     # -- The tenant to use for tenantId or basicAuth authentication type
     # In case of tenantId authentication, it is injected as the X-Scope-OrgID header on requests.
     # In case of basicAuth, it is set as the username.
-    tenant: 'mimir-continuous-test'
+    tenant: "mimir-continuous-test"
     # -- Password for basicAuth auth (note: can be environment variable from secret attached in extraEnvFrom, e.g. $(PASSWORD))
     # For GEM, it should contain an access token created for an access policy that allows `metrics:read` and `metrics:write` for the tenant.
     password: null

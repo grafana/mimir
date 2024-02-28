@@ -402,7 +402,7 @@ func (e Expiration) IsDeleteMarkerExpirationEnabled() bool {
 
 // IsNull returns true if both date and days fields are null
 func (e Expiration) IsNull() bool {
-	return e.IsDaysNull() && e.IsDateNull() && !e.IsDeleteMarkerExpirationEnabled()
+	return e.IsDaysNull() && e.IsDateNull() && !e.IsDeleteMarkerExpirationEnabled() && !e.DeleteAll.IsEnabled()
 }
 
 // MarshalXML is expiration is non null

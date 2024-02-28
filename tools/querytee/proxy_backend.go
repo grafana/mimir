@@ -81,14 +81,18 @@ func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.ReadClos
 	req.URL.Path = path.Join(b.endpoint.Path, req.URL.Path)
 
 	// Set the correct host header for the backend
-	req.Header.Set("Host", b.endpoint.Host)
+	req.Host = b.endpoint.Host
 
 	// Replace the auth:
 	// - If the endpoint has user and password, use it.
 	// - If the endpoint has user only, keep it and use the request password (if any).
 	// - If the endpoint has no user and no password, use the request auth (if any).
+	// - If the endpoint has __REQUEST_HEADER_X_SCOPE_ORGID__ as the user, then replace it with the X-Scope-OrgID header value from the request.
 	clientUser, clientPass, clientAuth := orig.BasicAuth()
 	endpointUser := b.endpoint.User.Username()
+	if endpointUser == "__REQUEST_HEADER_X_SCOPE_ORGID__" {
+		endpointUser = orig.Header.Get("X-Scope-OrgID")
+	}
 	endpointPass, _ := b.endpoint.User.Password()
 
 	req.Header.Del("Authorization")

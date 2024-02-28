@@ -65,7 +65,9 @@ Queries coming into Grafana Mimir arrive at the [query-frontend]({{< relref "../
 
 The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are put into an in-memory queue within the query-frontend.
 
-> **Note:** If you run the optional [query-scheduler]({{< relref "../../references/architecture/components/query-scheduler" >}}) component, this queue is maintained in the query-scheduler instead of the query-frontend.
+{{< admonition type="note" >}}
+If you run the optional [query-scheduler]({{< relref "../../references/architecture/components/query-scheduler" >}}) component, the query-schedule maintains the queue instead of the query-frontend.
+{{< /admonition >}}
 
 The queriers act as workers, pulling queries from the queue.
 

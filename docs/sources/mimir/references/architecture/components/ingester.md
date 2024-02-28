@@ -56,7 +56,9 @@ Writes to the Mimir cluster are successful if a majority of ingesters received t
 If the Mimir cluster loses a minority of ingesters, the in-memory series samples held by the lost ingesters are available in at least one other ingester, meaning no time series samples are lost.
 If a majority of ingesters fail, time series might be lost if the failure affects all the ingesters holding the replicas of a specific time series.
 
-> **Note:** Replication only happens at write time. If an ingester is unavailable during a period when writes are actively being written to other ingesters, that particular ingester will never recover those missed samples.
+{{< admonition type="note" >}}
+Replication only happens at write time. If an ingester is unavailable during a period when writes are actively being written to other ingesters, that particular ingester will never recover those missed samples.
+{{< /admonition >}}
 
 ### Write-ahead log
 
