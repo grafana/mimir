@@ -5,7 +5,7 @@ package api
 import "github.com/prometheus/prometheus/model/labels"
 
 // ContentTypeRemoteReadStreamedChunks is taken from the prometheus protobuf definitions documentation.
-// At the time of writing those are at github.com/prometheus/prometheus/prompb/remote.proto.
+// See: https://github.com/prometheus/prometheus/blob/d9d51c565c622cdc7d626d3e7569652bc28abe15/prompb/remote.proto#L48
 const ContentTypeRemoteReadStreamedChunks = "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"
 
 type LabelValuesCardinalityResponse struct {
