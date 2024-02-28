@@ -120,7 +120,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		err = s.performActionsOnBlocks(tenantID, req, action, uids)
 		if err != nil {
-			util.WriteTextResponse(w, fmt.Sprintf("Failed to perform action on blocks: %s", err))
+			util.WriteTextResponse(w, err.Error())
 			return
 		}
 	}
@@ -214,32 +214,34 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 func (s *StoreGateway) performActionsOnBlocks(tenantID string, req *http.Request, action ActionType, blockUlids []string) error {
 	// When blockUlids is set, and dropdown action is "no-compact" or "delete-no-compact",
 	// we will perform the action on the selected blocks
-	if (action == ActionTypeNoCompact || action == ActionTypeDeleteNoCompact) && len(blockUlids) > 0 {
-		errs := multierror.MultiError{}
-		for _, uid := range blockUlids {
-			ulid, err := ulid.Parse(uid)
-			if err != nil {
-				return fmt.Errorf("can't parse ULID %s: %w", uid, err)
-			}
-			bkt := block.BucketWithGlobalMarkers(bucket.NewUserBucketClient(tenantID, s.stores.bucket, nil))
-			switch action {
-			case ActionTypeNoCompact:
-				errs.Add(block.MarkForNoCompact(req.Context(), s.logger, bkt, ulid, block.ManualNoCompactReason, "Manual Operations from Admin UI: Mark for no compaction", nil))
-			case ActionTypeDeleteNoCompact:
-				errs.Add(block.DeleteNoCompactMarker(req.Context(), s.logger, bkt, ulid))
-			default:
-				return nil
-			}
+	if (action != ActionTypeNoCompact && action != ActionTypeDeleteNoCompact) || len(blockUlids) == 0 {
+		return nil
+	}
+
+	errs := multierror.MultiError{}
+	for _, uid := range blockUlids {
+		ulid, err := ulid.Parse(uid)
+		if err != nil {
+			return fmt.Errorf("can't parse ULID %s: %w", uid, err)
 		}
-		ip := req.Header.Get("X-Forwarded-For")
-		// If X-Forwarded-For is empty, fall back to RemoteAddr
-		if ip == "" {
-			ip = strings.Split(req.RemoteAddr, ":")[0]
+		bkt := block.BucketWithGlobalMarkers(bucket.NewUserBucketClient(tenantID, s.stores.bucket, nil))
+		switch action {
+		case ActionTypeNoCompact:
+			errs.Add(block.MarkForNoCompact(req.Context(), s.logger, bkt, ulid, block.ManualNoCompactReason, "Manual Operations from Admin UI: Mark for no compaction", nil))
+		case ActionTypeDeleteNoCompact:
+			errs.Add(block.DeleteNoCompactMarker(req.Context(), s.logger, bkt, ulid))
+		default:
+			return nil
 		}
-		level.Info(s.logger).Log("msg", "Performed action on blocks", "action", action, "blocks", blockUlids, "ip", ip)
-		if errs.Err() != nil {
-			return fmt.Errorf("failed to perform action on blocks: %w", errs.Err())
-		}
+	}
+	ip := req.Header.Get("X-Forwarded-For")
+	// If X-Forwarded-For is empty, fall back to RemoteAddr
+	if ip == "" {
+		ip = strings.Split(req.RemoteAddr, ":")[0]
+	}
+	level.Info(s.logger).Log("msg", "Performed action on blocks", "action", action, "blocks", blockUlids, "ip", ip)
+	if errs.Err() != nil {
+		return fmt.Errorf("action failed with error: %w", errs.Err())
 	}
 	return nil
 }
