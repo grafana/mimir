@@ -648,7 +648,7 @@ func TestOwnedSeriesService(t *testing.T) {
 	}
 }
 
-func TestOwnedSeriesRingChanged(t *testing.T) {
+func TestOwnedSeriesIngesterRingStrategyRingChanged(t *testing.T) {
 	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
@@ -663,21 +663,12 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 	rc.ReplicationFactor = 3
 	rc.ZoneAwarenessEnabled = true
 
-	// Start the ring watching.
-	rng, err := ring.New(rc, "ingester", IngesterRingKey, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), rng))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), rng))
-	})
-
-	buf := concurrency.SyncBuffer{}
+	rng := createAndStartRing(t, rc)
 
 	const instanceID1 = "first ingester"
 	const instanceID2 = "second instance"
 
-	rs := newOwnedSeriesIngesterRingStrategy(instanceID1, rng, nil)
-	ownedSeries := newOwnedSeriesService(10*time.Minute, rs, log.NewLogfmtLogger(&buf), nil, nil, nil, nil)
+	ringStrategy := newOwnedSeriesIngesterRingStrategy(instanceID1, rng, nil)
 
 	updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
 		desc.AddIngester(instanceID1, "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now())
@@ -685,13 +676,13 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 
 	// First call should indicate ring change.
 	t.Run("first call always reports change", func(t *testing.T) {
-		changed, err := ownedSeries.ringStrategy.checkRingForChanges()
+		changed, err := ringStrategy.checkRingForChanges()
 		require.NoError(t, err)
 		require.True(t, changed)
 	})
 
 	t.Run("second call (without ring change) reports no change", func(t *testing.T) {
-		changed, err := ownedSeries.ringStrategy.checkRingForChanges()
+		changed, err := ringStrategy.checkRingForChanges()
 		require.NoError(t, err)
 		require.False(t, changed)
 	})
@@ -701,7 +692,7 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 			desc.AddIngester(instanceID2, "localhost:22222", "zone", []uint32{4, 5, 6}, ring.ACTIVE, time.Now())
 		})
 
-		changed, err := ownedSeries.ringStrategy.checkRingForChanges()
+		changed, err := ringStrategy.checkRingForChanges()
 		require.NoError(t, err)
 		require.True(t, changed)
 	})
@@ -712,7 +703,7 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 		})
 
 		// Change of state is not interesting.
-		changed, err := ownedSeries.ringStrategy.checkRingForChanges()
+		changed, err := ringStrategy.checkRingForChanges()
 		require.NoError(t, err)
 		require.False(t, changed)
 	})
@@ -722,9 +713,125 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 			desc.RemoveIngester(instanceID2)
 		})
 
-		changed, err := ownedSeries.ringStrategy.checkRingForChanges()
+		changed, err := ringStrategy.checkRingForChanges()
 		require.NoError(t, err)
 		require.True(t, changed)
+	})
+}
+
+func TestOwnedSeriesPartitionsRingStrategyRingChanged(t *testing.T) {
+	kvStore, closer := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	wkv := &watchingKV{Client: kvStore}
+	prw := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, wkv, log.NewNopLogger(), nil)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), prw))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), prw))
+	})
+
+	ringStrategy := newOwnedSeriesPartitionRingStrategy(1, prw, nil)
+
+	checkExpectedRingChange := func(expected bool) {
+		changed, err := ringStrategy.checkRingForChanges()
+		require.NoError(t, err)
+		require.Equal(t, expected, changed)
+	}
+
+	updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
+		partitionRing.AddPartition(1, ring.PartitionActive, time.Now())
+	})
+
+	t.Run("first call with active partition in the ring reports change", func(t *testing.T) {
+		// State of the ring: 1: Active
+		checkExpectedRingChange(true)
+		// second call reports no change
+		checkExpectedRingChange(false)
+	})
+
+	t.Run("new active partition added, change reported", func(t *testing.T) {
+		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
+			partitionRing.AddPartition(2, ring.PartitionActive, time.Now())
+		})
+
+		// State of the ring: 1: Active, 2: Active
+		checkExpectedRingChange(true)
+		// second call reports no change
+		checkExpectedRingChange(false)
+	})
+
+	t.Run("new inactive partition added, no change reported", func(t *testing.T) {
+		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
+			partitionRing.AddPartition(3, ring.PartitionInactive, time.Now())
+		})
+		// State of the ring: 1: Active, 2: Active, 3: Inactive
+		checkExpectedRingChange(false)
+	})
+
+	t.Run("new pending partition added, no change reported", func(t *testing.T) {
+		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
+			partitionRing.AddPartition(4, ring.PartitionPending, time.Now())
+		})
+		// State of the ring: 1: Active, 2: Active, 3: Inactive, 4: Pending
+		checkExpectedRingChange(false)
+	})
+
+	t.Run("inactive partition changed to active, change reported", func(t *testing.T) {
+		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
+			partitionRing.UpdatePartitionState(3, ring.PartitionActive, time.Now())
+		})
+		// State of the ring: 1: Active, 2: Active, 3: Active, 4: Pending
+		checkExpectedRingChange(true)
+		// second call reports no change
+		checkExpectedRingChange(false)
+	})
+
+	t.Run("active partition changed to inactive, change reported", func(t *testing.T) {
+		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
+			partitionRing.UpdatePartitionState(1, ring.PartitionInactive, time.Now())
+		})
+		// State of the ring: 1: Inactive, 2: Active, 3: Active, 4: Pending
+		checkExpectedRingChange(true)
+		// second call reports no change
+		checkExpectedRingChange(false)
+	})
+
+	t.Run("inactive partition changed to pending, no change reported", func(t *testing.T) {
+		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
+			partitionRing.UpdatePartitionState(1, ring.PartitionPending, time.Now())
+		})
+		// State of the ring: 1: Pending, 2: Active, 3: Active, 4: Pending
+		checkExpectedRingChange(false)
+	})
+
+	t.Run("two partitions change at the same time", func(t *testing.T) {
+		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
+			partitionRing.UpdatePartitionState(1, ring.PartitionActive, time.Now())
+			partitionRing.UpdatePartitionState(2, ring.PartitionInactive, time.Now())
+		})
+		// State of the ring: 1: Active, 2: Inactive, 3: Active, 4: Pending
+		checkExpectedRingChange(true)
+		// second call reports no change
+		checkExpectedRingChange(false)
+	})
+
+	t.Run("active partition removed", func(t *testing.T) {
+		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
+			partitionRing.RemovePartition(3)
+		})
+		// State of the ring: 1: Active, 2: Inactive, 4: Pending
+		checkExpectedRingChange(true)
+		// second call reports no change
+		checkExpectedRingChange(false)
+	})
+
+	t.Run("inactive partition removed", func(t *testing.T) {
+		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
+			partitionRing.RemovePartition(2)
+		})
+		// State of the ring: 1: Active, 4: Pending
+		checkExpectedRingChange(false)
 	})
 }
 
@@ -752,13 +859,8 @@ func updateRingAndWaitForWatcherToReadUpdate(t *testing.T, kvStore *watchingKV, 
 	kvStore.getAndResetUpdatedKeys()
 
 	err := kvStore.CAS(context.Background(), IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
-		d, _ := in.(*ring.Desc)
-		if d == nil {
-			d = ring.NewDesc()
-		}
-
+		d := ring.GetOrCreateRingDesc(in)
 		updateFn(d)
-
 		return d, true, nil
 	})
 	require.NoError(t, err)
@@ -766,6 +868,23 @@ func updateRingAndWaitForWatcherToReadUpdate(t *testing.T, kvStore *watchingKV, 
 	test.Poll(t, 1*time.Second, true, func() interface{} {
 		v := kvStore.getAndResetUpdatedKeys()
 		return slices.Contains(v, IngesterRingKey)
+	})
+}
+
+func updatePartitionRingAndWaitForWatcherToReadUpdate(t *testing.T, kvStore *watchingKV, updateFn func(partitionRing *ring.PartitionRingDesc)) {
+	// Clear existing updates, so that we can test if next update was processed.
+	kvStore.getAndResetUpdatedKeys()
+
+	err := kvStore.CAS(context.Background(), PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		d := ring.GetOrCreatePartitionRingDesc(in)
+		updateFn(d)
+		return d, true, nil
+	})
+	require.NoError(t, err)
+
+	test.Poll(t, 1*time.Second, true, func() interface{} {
+		v := kvStore.getAndResetUpdatedKeys()
+		return slices.Contains(v, PartitionRingKey)
 	})
 }
 
