@@ -4,10 +4,13 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
+
+	"github.com/grafana/mimir/pkg/storage/ingest/ingestpb"
 )
 
 type WriteAgent struct {
@@ -15,6 +18,10 @@ type WriteAgent struct {
 
 	logger log.Logger
 	store  *MetadataStore
+}
+
+func (a *WriteAgent) Write(ctx context.Context, wr *ingestpb.WriteRequest) (*ingestpb.WriteResponse, error) {
+	return &ingestpb.WriteResponse{}, a.writeSegmentPiece(ctx, wr)
 }
 
 func NewWriteAgent(cfg Config, logger log.Logger) *WriteAgent {
@@ -64,5 +71,10 @@ func (a *WriteAgent) stopping(_ error) error {
 		level.Warn(a.logger).Log("msg", "failed to stop write agent dependencies", "err", err)
 	}
 
+	return nil
+}
+
+func (a *WriteAgent) writeSegmentPiece(ctx context.Context, wr *ingestpb.WriteRequest) error {
+	fmt.Println("writeSegmentPiece: partition ", wr.PartitionId)
 	return nil
 }

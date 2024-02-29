@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package ingest;
 
+option go_package = "ingestpb";
+
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 
 message Segment {
@@ -16,6 +18,11 @@ message Piece {
 message WriteResponse {
 }
 
+message WriteRequest {
+    Piece piece = 1;
+    int32 partition_id = 2;
+}
+
 service WriteAgent {
-  rpc Write(Piece) returns (WriteResponse) {}
+  rpc Write(WriteRequest) returns (WriteResponse) {}
 }
