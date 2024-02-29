@@ -88,7 +88,7 @@ func (s *MetadataStore) AddSegment(ctx context.Context, partitionID int32, objec
 }
 
 func (s *MetadataStore) commitSegment(ctx context.Context, partitionID int32, objectID ulid.ULID) (int64, error) {
-	lastOffsetID, err := s.getLastOffsetID(ctx, partitionID)
+	lastOffsetID, err := s.GetLastProducedOffsetID(ctx, partitionID)
 	if err != nil {
 		return 0, errors.Wrapf(err, "failed to get last offset ID for partition %d", partitionID)
 	}
@@ -106,7 +106,9 @@ func (s *MetadataStore) commitSegment(ctx context.Context, partitionID int32, ob
 	return nextOffsetID, nil
 }
 
-func (s *MetadataStore) getLastOffsetID(ctx context.Context, partitionID int32) (int64, error) {
+// GetLastProducedOffsetID returns the last produced offset ID for a given partitionID.
+// If the partition is empty this function returns -1 and no error.
+func (s *MetadataStore) GetLastProducedOffsetID(ctx context.Context, partitionID int32) (int64, error) {
 	var lastOffsetID *int64
 
 	rows := s.connections.QueryRow(ctx, "SELECT MAX(offset_id) FROM segments WHERE partition_id = $1", partitionID)
@@ -186,4 +188,31 @@ func (s *MetadataStore) fetchSegments(ctx context.Context, partitionID int32, la
 	}
 
 	return
+}
+
+// CommitLastConsumedOffset updates the last offset consumed by a given consumerID for a specific partitionID.
+func (s *MetadataStore) CommitLastConsumedOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error {
+	_, err := s.connections.Exec(ctx,
+		"INSERT INTO consumer_offsets (partition_id, consumer_id, offset_id) VALUES ($1, $2, $3) ON CONFLICT (partition_id, consumer_id) DO UPDATE SET offset_id = $4",
+		partitionID, consumerID, offsetID, offsetID)
+
+	return errors.Wrapf(err, "failed to commit consumer %q offset %d for partition %d", consumerID, offsetID, partitionID)
+}
+
+// GetLastConsumedOffsetID returns the last offset consumed but a given consumerID for a specific partitionID.
+// If the consumer hasn't committed any offset yet, this function will return -1 and no error.
+func (s *MetadataStore) GetLastConsumedOffsetID(ctx context.Context, partitionID int32, consumerID string) (int64, error) {
+	var offsetID *int64
+
+	rows := s.connections.QueryRow(ctx, "SELECT offset_id FROM consumer_offsets WHERE partition_id = $1 AND consumer_id = $2", partitionID, consumerID)
+	if err := rows.Scan(&offsetID); err != nil {
+		return 0, err
+	}
+
+	// The value is nil if there's offset recorded for a specific consumer and partition.
+	if offsetID == nil {
+		return -1, nil
+	}
+
+	return *offsetID, nil
 }
