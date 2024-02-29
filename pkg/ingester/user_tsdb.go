@@ -11,6 +11,7 @@ import (
 	"math"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -615,11 +616,20 @@ func (u *userTSDB) computeOwnedSeries() int {
 	return count
 }
 
-func (u *userTSDB) resetSymbolTable() {
+type hackSymbolTable struct {
+	mx      sync.Mutex
+	p       unsafe.Pointer
+	nextNum int
+}
+
+func (u *userTSDB) resetSymbolTable(logger log.Logger) {
 	var st *labels.SymbolTable
 	if u.db != nil && u.db.Head() != nil {
+		level.Info(logger).Log("msg", "RebuildSymbolTable starting")
 		// Compact all labels in head into one SymbolTable.
 		st = u.Head().RebuildSymbolTable()
+		x := (*hackSymbolTable)(unsafe.Pointer(st))
+		level.Info(logger).Log("msg", "RebuildSymbolTable finished", "addr", fmt.Sprintf("%p: %v", x, x), "size", st.Len())
 	} else {
 		st = labels.NewSymbolTable()
 	}

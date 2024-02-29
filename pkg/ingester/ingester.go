@@ -2403,7 +2403,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
 		ownedSeriesShardSize:    i.limits.IngestionTenantShardSize(userID), // initialize series shard size so that it's correct even before we update ownedSeries for the first time (during WAL replay).
 	}
-	userDB.resetSymbolTable()
+	userDB.resetSymbolTable(i.logger)
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
@@ -2896,7 +2896,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		default:
 			reason = "regular"
 			err = userDB.Compact()
-			userDB.resetSymbolTable()
+			userDB.resetSymbolTable(i.logger)
 		}
 
 		if err != nil {
