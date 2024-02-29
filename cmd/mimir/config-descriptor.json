@@ -3085,6 +3085,17 @@
           "fieldFlag": "ingester.owned-series-update-interval",
           "fieldType": "duration",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "enable_push_api",
+          "required": false,
+          "desc": "When disabled, disallows Push API in ingester. Use after migrating ingester to ingest-storage.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "ingester.enable-push-api",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

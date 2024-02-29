@@ -1317,6 +1317,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.enable-push-api
+    	[experimental] When disabled, disallows Push API in ingester. Use after migrating ingester to ingest-storage. (default true)
   -ingester.error-sample-rate int
     	[experimental] Each error will be logged once in this many times. Use 0 to log all of them.
   -ingester.ignore-series-limit-for-metric-names string

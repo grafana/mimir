@@ -1197,6 +1197,11 @@ instance_limits:
 # owned series as a result of detected change.
 # CLI flag: -ingester.owned-series-update-interval
 [owned_series_update_interval: <duration> | default = 15s]
+
+# (experimental) When disabled, disallows Push API in ingester. Use after
+# migrating ingester to ingest-storage.
+# CLI flag: -ingester.enable-push-api
+[enable_push_api: <boolean> | default = true]
 ```
 
 ### querier
