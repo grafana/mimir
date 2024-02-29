@@ -401,10 +401,6 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.subservicesWatcher = services.NewFailureWatcher()
 	i.subservicesWatcher.WatchService(i.lifecycler)
 
-	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
-		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, i.lifecycler.ID, ingestersRing, log.With(i.logger, "component", "owned series"), registerer, i.limits.IngestionTenantShardSize, i.getTSDBUsers, i.getTSDB)
-	}
-
 	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {
 		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(cfg.ReadPathCPUUtilizationLimit,
 			cfg.ReadPathMemoryUtilizationLimit, cfg.LogUtilizationBasedLimiterCPUSamples,
@@ -458,6 +454,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	}
 
 	i.limiter = NewLimiter(limits, limiterStrategy)
+
+	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
+		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, i.lifecycler.ID, ingestersRing, log.With(i.logger, "component", "owned series"), registerer, i.limits.IngestionTenantShardSize, i.limiter.maxSeriesPerUser, i.getTSDBUsers, i.getTSDB)
+	}
+
 	i.BasicService = services.NewBasicService(i.starting, i.updateLoop, i.stopping)
 	return i, nil
 }
@@ -849,17 +850,17 @@ func (i *Ingester) updateMetrics() {
 			continue
 		}
 
-		localLimitShards := i.limiter.getShardSize(userID)
+		minLocalSeriesLimit := 0
 		if i.cfg.UseIngesterOwnedSeriesForLimits || i.cfg.UpdateIngesterOwnedSeries {
-			ownedSeries, shards := db.ownedSeriesAndShards()
-			i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(ownedSeries))
+			os := db.ownedSeriesState()
+			i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(os.ownedSeriesCount))
 
 			if i.cfg.UseIngesterOwnedSeriesForLimits {
-				localLimitShards = shards
+				minLocalSeriesLimit = os.localSeriesLimit
 			}
 		}
 
-		localLimit := i.limiter.maxSeriesPerUser(userID, localLimitShards)
+		localLimit := i.limiter.maxSeriesPerUser(userID, minLocalSeriesLimit)
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
 	}
 }
@@ -2394,6 +2395,12 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
 	matchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 
+	// flusher doesn't actually start the ingester services
+	initialLocalLimit := 0
+	if i.limiter != nil {
+		initialLocalLimit = i.limiter.maxSeriesPerUser(userID, 0)
+	}
+
 	userDB := &userTSDB{
 		userID:                  userID,
 		activeSeries:            activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout),
@@ -2405,7 +2412,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		instanceErrors:          i.metrics.rejected,
 		blockMinRetention:       i.cfg.BlocksStorageConfig.TSDB.Retention,
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
-		ownedSeriesShardSize:    i.limits.IngestionTenantShardSize(userID), // initialize series shard size so that it's correct even before we update ownedSeries for the first time (during WAL replay).
+
+		ownedState: ownedSeriesState{
+			shardSize:        i.limits.IngestionTenantShardSize(userID), // initialize series shard size so that it's correct even before we update ownedSeries for the first time
+			localSeriesLimit: initialLocalLimit,
+		},
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 

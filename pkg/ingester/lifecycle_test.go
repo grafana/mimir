@@ -69,7 +69,7 @@ func TestIngesterRestart(t *testing.T) {
 	config.IngesterRing.UnregisterOnShutdown = false
 
 	{
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, "", nil)
+		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
 		require.NoError(t, err)
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -84,7 +84,7 @@ func TestIngesterRestart(t *testing.T) {
 	})
 
 	{
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, "", nil)
+		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
 		require.NoError(t, err)
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -108,7 +108,7 @@ func TestIngester_ShutdownHandler(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 			config.IngesterRing.UnregisterOnShutdown = unregister
 
-			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, "", nil)
+			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
 			require.NoError(t, err)
 			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
 

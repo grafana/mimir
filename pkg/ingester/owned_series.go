@@ -30,6 +30,7 @@ const (
 	recomputeOwnedSeriesReasonGetTokenRangesFailed = "token ranges check failed"
 	recomputeOwnedSeriesReasonRingChanged          = "ring changed"
 	recomputeOwnedSeriesReasonShardSizeChanged     = "shard size changed"
+	recomputeOwnedSeriesReasonLocalLimitChanged    = "local series limit changed"
 )
 
 type ownedSeriesService struct {
@@ -41,6 +42,7 @@ type ownedSeriesService struct {
 	logger log.Logger
 
 	getIngesterShardSize func(user string) int
+	getLocalSeriesLimit  func(user string, minLocalLimit int) int
 	getTSDBUsers         func() []string
 	getTSDB              func(user string) *userTSDB
 
@@ -49,12 +51,23 @@ type ownedSeriesService struct {
 	previousRing ring.ReplicationSet
 }
 
-func newOwnedSeriesService(interval time.Duration, instanceID string, ingesterRing ring.ReadRing, logger log.Logger, reg prometheus.Registerer, getIngesterShardSize func(user string) int, getTSDBUsers func() []string, getTSDB func(user string) *userTSDB) *ownedSeriesService {
+func newOwnedSeriesService(
+	interval time.Duration,
+	instanceID string,
+	ingesterRing ring.ReadRing,
+	logger log.Logger,
+	reg prometheus.Registerer,
+	getIngesterShardSize func(user string) int,
+	getLocalSeriesLimit func(user string, minLocalLimit int) int,
+	getTSDBUsers func() []string,
+	getTSDB func(user string) *userTSDB,
+) *ownedSeriesService {
 	oss := &ownedSeriesService{
 		instanceID:           instanceID,
 		ingestersRing:        ingesterRing,
 		logger:               logger,
 		getIngesterShardSize: getIngesterShardSize,
+		getLocalSeriesLimit:  getLocalSeriesLimit,
 		getTSDBUsers:         getTSDBUsers,
 		getTSDB:              getTSDB,
 		ownedSeriesCheckDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
@@ -129,20 +142,27 @@ func (oss *ownedSeriesService) updateAllTenants(ctx context.Context, ringChanged
 // This method is complicated, because it takes many possible scenarios into consideration:
 // 1. Ring changed
 // 2. Shard size changed
-// 3. Previous ring check failed [stored as reason]
+// 3. Local limit changed
+// 4. Previous ring check failed [stored as reason]
 // 5. Previous computation of owned series failed [stored as reason]
-// 4. Other reasons for check and recomputation (new TSDB, compaction)
+// 6. Other reasons for check and recomputation (new TSDB, compaction)
 //
 // Ring and shard size changes require new check of the ring to see if token ranges for this ingester have changed. We also need to check ring if previous ring check has failed.
 // When doing computation of owned series, we make sure to pass up-to-date number of shards.
 func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringChanged bool) bool {
 	shardSize := oss.getIngesterShardSize(userID)
+	localLimit := oss.getLocalSeriesLimit(userID, 0)
 
 	reason := db.getAndClearReasonForRecomputeOwnedSeries() // Clear reason, so that other reasons can be set while we run update here.
+
 	if reason == "" {
-		_, ownedShardSize := db.ownedSeriesAndShards()
-		if shardSize != ownedShardSize {
+		os := db.ownedSeriesState()
+
+		// Check if shard size or local limit has changed
+		if shardSize != os.shardSize {
 			reason = recomputeOwnedSeriesReasonShardSizeChanged
+		} else if localLimit != os.localSeriesLimit {
+			reason = recomputeOwnedSeriesReasonLocalLimitChanged
 		}
 	}
 
