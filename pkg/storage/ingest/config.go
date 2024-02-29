@@ -6,6 +6,8 @@ import (
 	"errors"
 	"flag"
 	"time"
+
+	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
 var (
@@ -15,14 +17,16 @@ var (
 
 type Config struct {
 	Enabled        bool             `yaml:"enabled"`
-	KafkaConfig    KafkaConfig      `yaml:"kafka"`
+	KafkaConfig    KafkaConfig      `yaml:"kafka"` // TODO remove
 	PostgresConfig PostgresqlConfig `yaml:"postgresql"`
+	Bucket         bucket.Config    `yaml:",inline"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka", f)
+	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("ingest-storage.", "ingest", f)
 }
 
 // Validate the config.
@@ -30,6 +34,10 @@ func (cfg *Config) Validate() error {
 	// Skip validation if disabled.
 	if !cfg.Enabled {
 		return nil
+	}
+
+	if err := cfg.Bucket.Validate(); err != nil {
+		return err
 	}
 
 	return nil

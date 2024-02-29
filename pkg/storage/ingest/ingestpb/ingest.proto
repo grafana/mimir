@@ -8,6 +8,7 @@ import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 
 message Segment {
   repeated Piece pieces = 1;
+  int32 partition_id = 2;
 }
 
 message Piece {

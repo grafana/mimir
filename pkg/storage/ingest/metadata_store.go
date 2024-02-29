@@ -53,8 +53,8 @@ func (s *MetadataStore) stopping(_ error) error {
 	return nil
 }
 
-// AddSegment adds a Segment to the metadata store.
-func (s *MetadataStore) AddSegment(ctx context.Context, partitionID int32, objectID ulid.ULID) (Segment, error) {
+// AddSegment adds a SegmentRef to the metadata store.
+func (s *MetadataStore) AddSegment(ctx context.Context, partitionID int32, objectID ulid.ULID) (SegmentRef, error) {
 	var lastErr error
 
 	try := backoff.New(ctx, backoff.Config{
@@ -72,7 +72,7 @@ func (s *MetadataStore) AddSegment(ctx context.Context, partitionID int32, objec
 			continue
 		}
 
-		return Segment{
+		return SegmentRef{
 			PartitionID: partitionID,
 			OffsetID:    offsetID,
 			ObjectID:    objectID,
@@ -84,7 +84,7 @@ func (s *MetadataStore) AddSegment(ctx context.Context, partitionID int32, objec
 		lastErr = try.Err()
 	}
 
-	return Segment{}, lastErr
+	return SegmentRef{}, lastErr
 }
 
 func (s *MetadataStore) commitSegment(ctx context.Context, partitionID int32, objectID ulid.ULID) (int64, error) {
@@ -126,7 +126,7 @@ func (s *MetadataStore) GetLastProducedOffsetID(ctx context.Context, partitionID
 
 // WatchSegments blocks until more segments are available. To replay a partition from the beginning
 // you can specify lastOffsetID set to -1.
-func (s *MetadataStore) WatchSegments(ctx context.Context, partitionID int32, lastOffsetID int32) []Segment {
+func (s *MetadataStore) WatchSegments(ctx context.Context, partitionID int32, lastOffsetID int32) []SegmentRef {
 	try := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: 500 * time.Millisecond,
@@ -150,7 +150,7 @@ func (s *MetadataStore) WatchSegments(ctx context.Context, partitionID int32, la
 
 // fetchSegments fetch all segments for the given partitionID committed after lastOffsetID.
 // This function may return some segments even if an error occurred.
-func (s *MetadataStore) fetchSegments(ctx context.Context, partitionID int32, lastOffsetID int32) (segments []Segment, returnErr error) {
+func (s *MetadataStore) fetchSegments(ctx context.Context, partitionID int32, lastOffsetID int32) (segments []SegmentRef, returnErr error) {
 	rows, err := s.connections.Query(ctx, "SELECT offset_id, object_id FROM segments WHERE partition_id = $1 AND offset_id > $2 ORDER BY offset_id", partitionID, lastOffsetID)
 	if err != nil {
 		return nil, err
@@ -180,7 +180,7 @@ func (s *MetadataStore) fetchSegments(ctx context.Context, partitionID int32, la
 			continue
 		}
 
-		segments = append(segments, Segment{
+		segments = append(segments, SegmentRef{
 			PartitionID: partitionID,
 			OffsetID:    offsetID,
 			ObjectID:    objectID,

@@ -1430,7 +1430,7 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 		return nil, err
 	}
 
-	// It's not required to sort series from a single ingester because series are sorted by the Exemplar Storage before returning from Select.
+	// It's not required to sort series from a single ingester because series are sorted by the Exemplar SegmentStorage before returning from Select.
 	res, err := q.Select(from, through, matchers...)
 	if err != nil {
 		return nil, err

@@ -4,7 +4,8 @@ package ingest
 
 import "github.com/oklog/ulid"
 
-type Segment struct {
+// SegmentRef holds the reference to a segment.
+type SegmentRef struct {
 	// PartitionID is the partition ID.
 	PartitionID int32
 
