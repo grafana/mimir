@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/grafana/dskit/backoff"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
@@ -18,7 +19,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest/ingestpb"
 )
 
-// SegmentStorage is a client to the segments storage.
+// SegmentStorage is a low-level client to write and read segments to/fron the storage.
+// Use SegmentReader if you need an higher level client to read segments.
 type SegmentStorage struct {
 	bucket   objstore.Bucket
 	metadata *MetadataStore
@@ -34,9 +36,9 @@ func NewSegmentStorage(bucket objstore.Bucket, metadata *MetadataStore) *Segment
 }
 
 // CommitSegment uploads and commits a segment to the storage.
-func (s *SegmentStorage) CommitSegment(ctx context.Context, segment *ingestpb.Segment) (SegmentRef, error) {
+func (s *SegmentStorage) CommitSegment(ctx context.Context, partitionID int32, segmentData *ingestpb.Segment) (SegmentRef, error) {
 	// Marshal the segment.
-	segmentData, err := segment.Marshal()
+	rawData, err := segmentData.Marshal()
 	if err != nil {
 		return SegmentRef{}, errors.Wrap(err, "failed to marshal segment")
 	}
@@ -46,18 +48,18 @@ func (s *SegmentStorage) CommitSegment(ctx context.Context, segment *ingestpb.Se
 	if err != nil {
 		return SegmentRef{}, errors.Wrap(err, "failed to generate segment object ID")
 	}
-	objectPath := getSegmentObjectPath(segment.PartitionId, objectID)
+	objectPath := getSegmentObjectPath(partitionID, objectID)
 
-	if err := s.bucket.Upload(ctx, objectPath, bytes.NewReader(segmentData)); err != nil {
+	if err := s.bucket.Upload(ctx, objectPath, bytes.NewReader(rawData)); err != nil {
 		return SegmentRef{}, errors.Wrapf(err, "failed to upload segment object %s", objectPath)
 	}
 
 	// Commit it to the metadata store after it has been successfully uploaded.
-	return s.metadata.AddSegment(ctx, segment.PartitionId, objectID)
+	return s.metadata.CommitSegment(ctx, partitionID, objectID)
 }
 
 // FetchSegment reads a segment from the storage.
-func (s *SegmentStorage) FetchSegment(ctx context.Context, ref SegmentRef) (_ *ingestpb.Segment, returnErr error) {
+func (s *SegmentStorage) FetchSegment(ctx context.Context, ref SegmentRef) (_ *Segment, returnErr error) {
 	objectPath := getSegmentObjectPath(ref.PartitionID, ref.ObjectID)
 
 	reader, err := s.bucket.Get(ctx, objectPath)
@@ -73,17 +75,45 @@ func (s *SegmentStorage) FetchSegment(ctx context.Context, ref SegmentRef) (_ *i
 	}()
 
 	// Read all the segment object content and then unmarshal it.
-	data, err := io.ReadAll(reader)
+	rawData, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to read segment object %s", objectPath)
 	}
 
-	segment := &ingestpb.Segment{}
-	if err := segment.Unmarshal(data); err != nil {
+	segmentData := &ingestpb.Segment{}
+	if err := segmentData.Unmarshal(rawData); err != nil {
 		return nil, errors.Wrapf(err, "failed to unmarshal segment object %s", objectPath)
 	}
 
-	return segment, nil
+	return &Segment{
+		Ref:  ref,
+		Data: segmentData,
+	}, nil
+}
+
+// FetchSegmentWithRetries is like FetchSegment but retries few times on failure.
+func (s *SegmentStorage) FetchSegmentWithRetries(ctx context.Context, ref SegmentRef) (segment *Segment, returnErr error) {
+	try := backoff.New(ctx, backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: 500 * time.Millisecond,
+		MaxRetries: 3,
+	})
+
+	for try.Ongoing() {
+		segment, returnErr = s.FetchSegment(ctx, ref)
+		if returnErr == nil {
+			return
+		}
+
+		try.Wait()
+	}
+
+	// If no error has been recorded yet, we fallback to the backoff error.
+	if returnErr == nil {
+		returnErr = try.Err()
+	}
+
+	return
 }
 
 // getSegmentObjectPath returns the path of the segment object in the object storage.
