@@ -21,13 +21,13 @@ type SegmentReader struct {
 	lastOffsetID int64
 	logger       log.Logger
 	storage      *SegmentStorage
-	metadata     *MetadataStore
+	metadata     MetadataStoreClient
 
 	// segmentsBuffer holds a buffer of fetched segments, ready to be returned by WaitNextSegment().
 	segmentsBuffer chan *Segment
 }
 
-func NewSegmentReader(bucket objstore.Bucket, metadata *MetadataStore, partitionID int32, lastOffsetID int64, bufferSize int, logger log.Logger) *SegmentReader {
+func NewSegmentReader(bucket objstore.Bucket, metadata MetadataStoreClient, partitionID int32, lastOffsetID int64, bufferSize int, logger log.Logger) *SegmentReader {
 	c := &SegmentReader{
 		partitionID:    partitionID,
 		lastOffsetID:   lastOffsetID,

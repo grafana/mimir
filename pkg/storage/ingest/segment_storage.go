@@ -23,11 +23,11 @@ import (
 // Use SegmentReader if you need an higher level client to read segments.
 type SegmentStorage struct {
 	bucket   objstore.Bucket
-	metadata *MetadataStore
+	metadata MetadataStoreClient
 	random   *rand.Rand
 }
 
-func NewSegmentStorage(bucket objstore.Bucket, metadata *MetadataStore) *SegmentStorage {
+func NewSegmentStorage(bucket objstore.Bucket, metadata MetadataStoreClient) *SegmentStorage {
 	return &SegmentStorage{
 		bucket:   bucket,
 		metadata: metadata,
@@ -75,14 +75,9 @@ func (s *SegmentStorage) FetchSegment(ctx context.Context, ref SegmentRef) (_ *S
 	}()
 
 	// Read all the segment object content and then unmarshal it.
-	rawData, err := io.ReadAll(reader)
+	segmentData, err := readSegmentObject(reader)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to read segment object %s", objectPath)
-	}
-
-	segmentData := &ingestpb.Segment{}
-	if err := segmentData.Unmarshal(rawData); err != nil {
-		return nil, errors.Wrapf(err, "failed to unmarshal segment object %s", objectPath)
 	}
 
 	return &Segment{
@@ -119,4 +114,18 @@ func (s *SegmentStorage) FetchSegmentWithRetries(ctx context.Context, ref Segmen
 // getSegmentObjectPath returns the path of the segment object in the object storage.
 func getSegmentObjectPath(partitionID int32, objectID ulid.ULID) string {
 	return path.Join(strconv.Itoa(int(partitionID)), objectID.String())
+}
+
+func readSegmentObject(reader io.Reader) (*ingestpb.Segment, error) {
+	rawData, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	segmentData := &ingestpb.Segment{}
+	if err := segmentData.Unmarshal(rawData); err != nil {
+		return nil, err
+	}
+
+	return segmentData, nil
 }

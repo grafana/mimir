@@ -323,8 +323,9 @@ func TestWriter_WriteSync(t *testing.T) {
 func mockPreallocTimeseries(metricName string) mimirpb.PreallocTimeseries {
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: metricName}},
-			Samples: []mimirpb.Sample{{TimestampMs: 1, Value: 2}},
+			Labels:    []mimirpb.LabelAdapter{{Name: "__name__", Value: metricName}},
+			Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2}},
+			Exemplars: make([]mimirpb.Exemplar, 0),
 		},
 	}
 }

@@ -16,6 +16,14 @@ import (
 	"go.uber.org/multierr"
 )
 
+type MetadataStoreClient interface {
+	CommitSegment(ctx context.Context, partitionID int32, objectID ulid.ULID) (SegmentRef, error)
+	WatchSegments(ctx context.Context, partitionID int32, lastOffsetID int64) []SegmentRef
+	GetLastProducedOffsetID(ctx context.Context, partitionID int32) (int64, error)
+	CommitLastConsumedOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error
+	GetLastConsumedOffsetID(ctx context.Context, partitionID int32, consumerID string) (int64, error)
+}
+
 type MetadataStore struct {
 	services.Service
 
