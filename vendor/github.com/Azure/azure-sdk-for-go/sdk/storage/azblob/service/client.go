@@ -40,16 +40,15 @@ type Client base.Client[generated.ServiceClient]
 //   - cred - an Azure AD credential, typically obtained via the azidentity module
 //   - options - client options; pass nil to accept the default values
 func NewClient(serviceURL string, cred azcore.TokenCredential, options *ClientOptions) (*Client, error) {
-	audience := base.GetAudience((*base.ClientOptions)(options))
-	authPolicy := shared.NewStorageChallengePolicy(cred, audience)
+	authPolicy := shared.NewStorageChallengePolicy(cred)
 	conOptions := shared.GetClientOptions(options)
 	plOpts := runtime.PipelineOptions{PerRetry: []policy.Policy{authPolicy}}
 
-	azClient, err := azcore.NewClient(exported.ModuleName, exported.ModuleVersion, plOpts, &conOptions.ClientOptions)
+	azClient, err := azcore.NewClient(shared.ServiceClient, exported.ModuleVersion, plOpts, &conOptions.ClientOptions)
 	if err != nil {
 		return nil, err
 	}
-	return (*Client)(base.NewServiceClient(serviceURL, azClient, &cred, (*base.ClientOptions)(conOptions))), nil
+	return (*Client)(base.NewServiceClient(serviceURL, azClient, &cred)), nil
 }
 
 // NewClientWithNoCredential creates an instance of Client with the specified values.
@@ -59,11 +58,11 @@ func NewClient(serviceURL string, cred azcore.TokenCredential, options *ClientOp
 func NewClientWithNoCredential(serviceURL string, options *ClientOptions) (*Client, error) {
 	conOptions := shared.GetClientOptions(options)
 
-	azClient, err := azcore.NewClient(exported.ModuleName, exported.ModuleVersion, runtime.PipelineOptions{}, &conOptions.ClientOptions)
+	azClient, err := azcore.NewClient(shared.ServiceClient, exported.ModuleVersion, runtime.PipelineOptions{}, &conOptions.ClientOptions)
 	if err != nil {
 		return nil, err
 	}
-	return (*Client)(base.NewServiceClient(serviceURL, azClient, nil, (*base.ClientOptions)(conOptions))), nil
+	return (*Client)(base.NewServiceClient(serviceURL, azClient, nil)), nil
 }
 
 // NewClientWithSharedKeyCredential creates an instance of Client with the specified values.
@@ -75,12 +74,12 @@ func NewClientWithSharedKeyCredential(serviceURL string, cred *SharedKeyCredenti
 	conOptions := shared.GetClientOptions(options)
 	plOpts := runtime.PipelineOptions{PerRetry: []policy.Policy{authPolicy}}
 
-	azClient, err := azcore.NewClient(exported.ModuleName, exported.ModuleVersion, plOpts, &conOptions.ClientOptions)
+	azClient, err := azcore.NewClient(shared.ServiceClient, exported.ModuleVersion, plOpts, &conOptions.ClientOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	return (*Client)(base.NewServiceClient(serviceURL, azClient, cred, (*base.ClientOptions)(conOptions))), nil
+	return (*Client)(base.NewServiceClient(serviceURL, azClient, cred)), nil
 }
 
 // NewClientFromConnectionString creates an instance of Client with the specified values.
@@ -137,10 +136,6 @@ func getGeneratedBlobClient(b *blob.Client) *generated.BlobClient {
 	return base.InnerClient((*base.Client[generated.BlobClient])(b))
 }
 
-func (s *Client) getClientOptions() *base.ClientOptions {
-	return base.GetClientOptions((*base.Client[generated.ServiceClient])(s))
-}
-
 // URL returns the URL endpoint used by the Client object.
 func (s *Client) URL() string {
 	return s.generated().Endpoint()
@@ -150,7 +145,7 @@ func (s *Client) URL() string {
 // this Client's URL. The new container.Client uses the same request policy pipeline as the Client.
 func (s *Client) NewContainerClient(containerName string) *container.Client {
 	containerURL := runtime.JoinPaths(s.generated().Endpoint(), containerName)
-	return (*container.Client)(base.NewContainerClient(containerURL, s.generated().InternalClient().WithClientName(exported.ModuleName), s.credential(), s.getClientOptions()))
+	return (*container.Client)(base.NewContainerClient(containerURL, s.generated().InternalClient().WithClientName(shared.ContainerClient), s.credential()))
 }
 
 // CreateContainer is a lifecycle method to creates a new container under the specified account.
@@ -320,7 +315,7 @@ func (s *Client) NewBatchBuilder() (*BatchBuilder, error) {
 
 	switch cred := s.credential().(type) {
 	case *azcore.TokenCredential:
-		authPolicy = shared.NewStorageChallengePolicy(*cred, base.GetAudience(s.getClientOptions()))
+		authPolicy = shared.NewStorageChallengePolicy(*cred)
 	case *SharedKeyCredential:
 		authPolicy = exported.NewSharedKeyCredPolicy(cred)
 	case nil:

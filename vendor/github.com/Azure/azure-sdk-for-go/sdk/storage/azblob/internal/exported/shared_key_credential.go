@@ -11,9 +11,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"fmt"
-	"github.com/Azure/azure-sdk-for-go/sdk/internal/errorinfo"
 	"net/http"
 	"net/url"
 	"sort"
@@ -197,17 +195,6 @@ func NewSharedKeyCredPolicy(cred *SharedKeyCredential) *SharedKeyCredPolicy {
 }
 
 func (s *SharedKeyCredPolicy) Do(req *policy.Request) (*http.Response, error) {
-	// skip adding the authorization header if no SharedKeyCredential was provided.
-	// this prevents a panic that might be hard to diagnose and allows testing
-	// against http endpoints that don't require authentication.
-	if s.cred == nil {
-		return req.Next()
-	}
-
-	if err := checkHTTPSForAuth(req); err != nil {
-		return nil, err
-	}
-
 	if d := getHeader(shared.HeaderXmsDate, req.Raw().Header); d == "" {
 		req.Raw().Header.Set(shared.HeaderXmsDate, time.Now().UTC().Format(http.TimeFormat))
 	}
@@ -228,11 +215,4 @@ func (s *SharedKeyCredPolicy) Do(req *policy.Request) (*http.Response, error) {
 		log.Write(azlog.EventResponse, "===== HTTP Forbidden status, String-to-Sign:\n"+stringToSign+"\n===============================\n")
 	}
 	return response, err
-}
-
-func checkHTTPSForAuth(req *policy.Request) error {
-	if strings.ToLower(req.Raw().URL.Scheme) != "https" {
-		return errorinfo.NonRetriableError(errors.New("authenticated requests are not permitted for non TLS protected (https) endpoints"))
-	}
-	return nil
 }
