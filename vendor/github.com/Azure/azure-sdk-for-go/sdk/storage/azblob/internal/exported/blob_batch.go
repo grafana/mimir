@@ -11,6 +11,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/internal/log"
+	"github.com/Azure/azure-sdk-for-go/sdk/internal/uuid"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/internal/shared"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -18,13 +24,6 @@ import (
 	"net/textproto"
 	"strconv"
 	"strings"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/internal/log"
-	"github.com/Azure/azure-sdk-for-go/sdk/internal/uuid"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/internal/shared"
 )
 
 const (
@@ -46,7 +45,7 @@ func createBatchID() (string, error) {
 // buildSubRequest is used for building the sub-request. Example:
 // DELETE /container0/blob0 HTTP/1.1
 // x-ms-date: Thu, 14 Jun 2018 16:46:54 GMT
-// Authorization: SharedKey account:<redacted>
+// Authorization: SharedKey account:G4jjBXA7LI/RnWKIOQ8i9xH4p76pAQ+4Fs4R1VxasaE=
 // Content-Length: 0
 func buildSubRequest(req *policy.Request) []byte {
 	var batchSubRequest strings.Builder
@@ -81,7 +80,7 @@ func buildSubRequest(req *policy.Request) []byte {
 //
 //	DELETE /container0/blob0 HTTP/1.1
 //	x-ms-date: Thu, 14 Jun 2018 16:46:54 GMT
-//	Authorization: SharedKey account:<redacted>
+//	Authorization: SharedKey account:G4jjBXA7LI/RnWKIOQ8i9xH4p76pAQ+4Fs4R1VxasaE=
 //	Content-Length: 0
 func CreateBatchRequest(bb *BlobBatchBuilder) ([]byte, string, error) {
 	batchID, err := createBatchID()

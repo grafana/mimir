@@ -198,7 +198,7 @@ type GetPageRangesOptions struct {
 
 func (o *GetPageRangesOptions) format() (*generated.PageBlobClientGetPageRangesOptions, *generated.LeaseAccessConditions, *generated.ModifiedAccessConditions) {
 	if o == nil {
-		return &generated.PageBlobClientGetPageRangesOptions{}, nil, nil
+		return nil, nil, nil
 	}
 
 	leaseAccessConditions, modifiedAccessConditions := exported.FormatBlobAccessConditions(o.AccessConditions)
