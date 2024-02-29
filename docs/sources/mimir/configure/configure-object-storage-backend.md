@@ -36,6 +36,8 @@ but it is a read-only data source and can be used to provision state into those 
 
 To avoid repetition, you can use the [common configuration]({{< relref "./about-configurations#common-configurations" >}}) and fill the [`common`]({{< relref "./configuration-parameters#common" >}}) configuration block or by providing the `-common.storage.*` CLI flags.
 
+To use environment variables in the configuration file, ensure that you [enable expansion]({{< relref "./references/configuration-parameters/#use-environment-variables-in-the-configuration" >}}) for the variables.
+
 {{< admonition type="note" >}}
 Blocks storage can't be located in the same path of the same bucket as the ruler and Alertmanager stores.
 
