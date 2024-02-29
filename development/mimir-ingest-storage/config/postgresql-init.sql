@@ -4,7 +4,7 @@
 
 CREATE TABLE segments (
     partition_id    smallint NOT NULL,
-    commit_id       bigint NOT NULL,
+    offset_id       bigint NOT NULL,
     object_id       text NOT NULL
 );
 

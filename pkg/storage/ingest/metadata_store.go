@@ -7,11 +7,13 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"go.uber.org/multierr"
 )
 
 type MetadataStore struct {
@@ -62,9 +64,9 @@ func (s *MetadataStore) AddSegment(ctx context.Context, partitionID int32, objec
 	})
 
 	for try.Ongoing() {
-		var commitID int64
+		var offsetID int64
 
-		commitID, lastErr = s.commitSegment(ctx, partitionID, objectID)
+		offsetID, lastErr = s.commitSegment(ctx, partitionID, objectID)
 		if lastErr != nil {
 			try.Wait()
 			continue
@@ -72,7 +74,7 @@ func (s *MetadataStore) AddSegment(ctx context.Context, partitionID int32, objec
 
 		return Segment{
 			PartitionID: partitionID,
-			CommitID:    commitID,
+			OffsetID:    offsetID,
 			ObjectID:    objectID,
 		}, nil
 	}
@@ -86,36 +88,102 @@ func (s *MetadataStore) AddSegment(ctx context.Context, partitionID int32, objec
 }
 
 func (s *MetadataStore) commitSegment(ctx context.Context, partitionID int32, objectID ulid.ULID) (int64, error) {
-	lastCommitID, err := s.getLastCommitID(ctx, partitionID)
+	lastOffsetID, err := s.getLastOffsetID(ctx, partitionID)
 	if err != nil {
-		return 0, errors.Wrapf(err, "failed to get last commit ID for partition %d", partitionID)
+		return 0, errors.Wrapf(err, "failed to get last offset ID for partition %d", partitionID)
 	}
 
-	nextCommitID := lastCommitID + 1
+	nextOffsetID := lastOffsetID + 1
 
-	// Attempt to insert the segment with the next commit ID, optimistically
+	// Attempt to insert the segment with the next offset ID, optimistically
 	// hoping no other concurrent write on the same partition happened in the
 	// meanwhile. If it did, the INSERT will fail.
-	_, err = s.connections.Exec(ctx, "INSERT INTO segments (partition_id, commit_id, object_id) VALUES ($1, $2, $3)", partitionID, nextCommitID, objectID.String())
+	_, err = s.connections.Exec(ctx, "INSERT INTO segments (partition_id, offset_id, object_id) VALUES ($1, $2, $3)", partitionID, nextOffsetID, objectID.String())
 	if err != nil {
-		return 0, errors.Wrapf(err, "failed to commit segment for partition %d and commit %d", partitionID, nextCommitID)
+		return 0, errors.Wrapf(err, "failed to offset segment for partition %d and offset %d", partitionID, nextOffsetID)
 	}
 
-	return nextCommitID, nil
+	return nextOffsetID, nil
 }
 
-func (s *MetadataStore) getLastCommitID(ctx context.Context, partitionID int32) (int64, error) {
-	var lastCommitID *int64
+func (s *MetadataStore) getLastOffsetID(ctx context.Context, partitionID int32) (int64, error) {
+	var lastOffsetID *int64
 
-	rows := s.connections.QueryRow(ctx, "SELECT MAX(commit_id) FROM segments WHERE partition_id = $1", partitionID)
-	if err := rows.Scan(&lastCommitID); err != nil {
+	rows := s.connections.QueryRow(ctx, "SELECT MAX(offset_id) FROM segments WHERE partition_id = $1", partitionID)
+	if err := rows.Scan(&lastOffsetID); err != nil {
 		return 0, err
 	}
 
 	// The value is nil if there's no segment for the partition yet.
-	if lastCommitID == nil {
+	if lastOffsetID == nil {
 		return -1, nil
 	}
 
-	return *lastCommitID, nil
+	return *lastOffsetID, nil
+}
+
+// WatchSegments blocks until more segments are available. To replay a partition from the beginning
+// you can specify lastOffsetID set to -1.
+func (s *MetadataStore) WatchSegments(ctx context.Context, partitionID int32, lastOffsetID int32) []Segment {
+	try := backoff.New(ctx, backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: 500 * time.Millisecond,
+		MaxRetries: 0, // Retry indefinitely.
+	})
+
+	for try.Ongoing() {
+		segments, err := s.fetchSegments(ctx, partitionID, lastOffsetID)
+		if err != nil {
+			level.Warn(s.logger).Log("msg", "failed to fetch segments while watching", "partition_id", partitionID, "last_offset_id", lastOffsetID, "err", err)
+		}
+		if len(segments) > 0 {
+			return segments
+		}
+
+		try.Wait()
+	}
+
+	return nil
+}
+
+// fetchSegments fetch all segments for the given partitionID committed after lastOffsetID.
+// This function may return some segments even if an error occurred.
+func (s *MetadataStore) fetchSegments(ctx context.Context, partitionID int32, lastOffsetID int32) (segments []Segment, returnErr error) {
+	rows, err := s.connections.Query(ctx, "SELECT offset_id, object_id FROM segments WHERE partition_id = $1 AND offset_id > $2 ORDER BY offset_id", partitionID, lastOffsetID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ensure the rows will be closed once done.
+	defer rows.Close()
+
+	// Parse rows (if any).
+	for rows.Next() {
+		var (
+			offsetID    int64
+			rawObjectID string
+		)
+
+		if err := rows.Scan(&offsetID, &rawObjectID); err != nil {
+			returnErr = multierr.Append(returnErr, err)
+			return
+		}
+
+		// Parse object ID.
+		objectID, err := ulid.Parse(rawObjectID)
+		if err != nil {
+			// This is a critical permanent error. Retrying will not fix it, so we keep track of the
+			// error and move on.
+			returnErr = multierr.Append(returnErr, err)
+			continue
+		}
+
+		segments = append(segments, Segment{
+			PartitionID: partitionID,
+			OffsetID:    offsetID,
+			ObjectID:    objectID,
+		})
+	}
+
+	return
 }

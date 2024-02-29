@@ -37,6 +37,20 @@ func (a *WriteAgent) starting(ctx context.Context) error {
 }
 
 func (a *WriteAgent) running(ctx context.Context) error {
+	// TODO DEBUG
+	//go func() {
+	//	for ctx.Err() == nil {
+	//		time.Sleep(time.Second)
+	//		segment, err := a.store.AddSegment(ctx, 1, ulid.MustNew(uint64(time.Now().UnixMilli()), nil))
+	//		fmt.Println("AddSegment() segment:", segment, "err:", err)
+	//	}
+	//}()
+	//
+	//for ctx.Err() == nil {
+	//	segments := a.store.WatchSegments(ctx, 1, -1)
+	//	fmt.Println("WatchSegments() segments:", segments)
+	//}
+
 	// Wait until terminated.
 	select {
 	case <-ctx.Done():
