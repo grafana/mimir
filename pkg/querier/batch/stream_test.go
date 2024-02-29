@@ -105,6 +105,35 @@ func TestBatchStream_Merge(t *testing.T) {
 	}
 }
 
+func TestBatchStream_Empty(t *testing.T) {
+	s := newBatchStream(1, nil, nil)
+	b1 := mkHistogramBatch(0)
+	b2 := mkHistogramBatch(chunk.BatchSize)
+	s.batches = []chunk.Batch{b1, b2}
+
+	require.Len(t, s.batches, 2)
+	require.Equal(t, b1, s.batches[0])
+	require.Equal(t, b2, s.batches[1])
+
+	s.empty()
+	require.Len(t, s.batches, 0)
+}
+
+func TestBatchStream_RemoveFirst(t *testing.T) {
+	s := newBatchStream(1, nil, nil)
+	b1 := mkHistogramBatch(0)
+	b2 := mkHistogramBatch(chunk.BatchSize)
+	s.batches = []chunk.Batch{b1, b2}
+
+	require.Len(t, s.batches, 2)
+	require.Equal(t, b1, s.batches[0])
+	require.Equal(t, b2, s.batches[1])
+
+	s.removeFirst()
+	require.Len(t, s.batches, 1)
+	require.Equal(t, b2, s.batches[0])
+}
+
 func mkFloatBatch(from int64) chunk.Batch {
 	return mkGenericFloatBatch(from, chunk.BatchSize)
 }
@@ -150,33 +179,4 @@ func requireBatchEqual(t *testing.T, b, o chunk.Batch) {
 			require.Equal(t, *bh, *oh, fmt.Sprintf("at idx %v", i))
 		}
 	}
-}
-
-func TestBatchStream_Empty(t *testing.T) {
-	s := newBatchStream(1, nil, nil)
-	b1 := mkHistogramBatch(0)
-	b2 := mkHistogramBatch(chunk.BatchSize)
-	s.batches = []chunk.Batch{b1, b2}
-
-	require.Len(t, s.batches, 2)
-	require.Equal(t, b1, s.batches[0])
-	require.Equal(t, b2, s.batches[1])
-
-	s.empty()
-	require.Len(t, s.batches, 0)
-}
-
-func TestBatchStream_RemoveFirst(t *testing.T) {
-	s := newBatchStream(1, nil, nil)
-	b1 := mkHistogramBatch(0)
-	b2 := mkHistogramBatch(chunk.BatchSize)
-	s.batches = []chunk.Batch{b1, b2}
-
-	require.Len(t, s.batches, 2)
-	require.Equal(t, b1, s.batches[0])
-	require.Equal(t, b2, s.batches[1])
-
-	s.removeFirst()
-	require.Len(t, s.batches, 1)
-	require.Equal(t, b2, s.batches[0])
 }
