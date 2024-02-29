@@ -11,9 +11,8 @@ common:
 
 ingest_storage:
   enabled:       true
-  kafka:
-    address: kafka:9092
-    topic:   mimir-ingest
+  postgresql:
+    address: postgres://postgres:supersecret@postgresql:5432/postgres
 
 ingester:
   return_only_grpc_errors: true

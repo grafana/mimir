@@ -9,8 +9,7 @@ std.manifestYamlDoc({
     self.grafana +
     self.grafana_agent +
     self.memcached +
-    self.zookeeper +
-    self.kafka +
+    self.postgresql +
     {},
 
   write:: {
@@ -117,44 +116,19 @@ std.manifestYamlDoc({
     },
   },
 
-  zookeeper:: {
-    zookeeper: {
-      image: 'confluentinc/cp-zookeeper:latest',
+  postgresql:: {
+    postgresql: {
+      image: 'postgres:latest',
       environment: [
-        'ZOOKEEPER_CLIENT_PORT=2181',
-        'ZOOKEEPER_TICK_TIME=2000',
-        'ZOOKEEPER_AUTOPURGE_SNAPRETAINCOUNT=5',
-        'ZOOKEEPER_AUTOPURGE_PURGEINTERVAL=1',
+        'POSTGRES_USER=postgres',
+        'POSTGRES_PASSWORD=supersecret',
+        'PGDATA=/var/lib/postgresql/data/pgdata',
       ],
-      ports: [
-        '22181:22181',
+      ports: ['5432:5432'],
+      volumes: [
+        '.data-postgresql:/var/lib/postgresql/data:delegated',
+        './config/postgresql-init.sql:/docker-entrypoint-initdb.d/postgresql-init.sql',
       ],
-    },
-  },
-
-  kafka:: {
-    kafka: {
-      image: 'confluentinc/cp-kafka:latest',
-      depends_on: ['zookeeper'],
-      environment: [
-        'KAFKA_BROKER_ID=1',
-        'KAFKA_NUM_PARTITIONS=100',  // Default number of partitions for auto-created topics.
-        'KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181',
-        'KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,ORBSTACK://kafka.mimir-read-write-mode.orb.local:9091,PLAINTEXT_HOST://localhost:29092',
-        'KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,ORBSTACK:PLAINTEXT',
-        'KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT',
-        'KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1',
-      ],
-      ports: [
-        '29092:29092',
-      ],
-      healthcheck: {
-        test: 'nc -z localhost 9092 || exit -1',
-        start_period: '1s',
-        interval: '1s',
-        timeout: '1s',
-        retries: '30',
-      },
     },
   },
 
@@ -200,7 +174,6 @@ std.manifestYamlDoc({
       publishedHttpPort: error 'missing publishedHttpPort',
       dependsOn: {
         minio: { condition: 'service_started' },
-        kafka: { condition: 'service_healthy' },
       },
       env: {},
       extraArguments: [],

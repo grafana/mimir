@@ -53,6 +53,7 @@ import (
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/usagestats"
@@ -97,6 +98,7 @@ const (
 	Vault                      string = "vault"
 	TenantFederation           string = "tenant-federation"
 	UsageStats                 string = "usage-stats"
+	WriteAgent                 string = "write-agent"
 	All                        string = "all"
 
 	// Write Read and Backend are the targets used when using the read-write deployment mode.
@@ -274,6 +276,10 @@ func (t *Mimir) initVault() (services.Service, error) {
 	}
 
 	return services.NewBasicService(nil, runFunc, nil), nil
+}
+
+func (t *Mimir) initWriteAgent() (services.Service, error) {
+	return ingest.NewWriteAgent(t.Cfg.IngestStorage, util_log.Logger), nil
 }
 
 func (t *Mimir) initSanityCheck() (services.Service, error) {
@@ -1078,6 +1084,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
 	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
+	mm.RegisterModule(WriteAgent, t.initWriteAgent)
 	mm.RegisterModule(Write, nil)
 	mm.RegisterModule(Read, nil)
 	mm.RegisterModule(Backend, nil)
@@ -1110,7 +1117,8 @@ func (t *Mimir) setupModuleManager() error {
 		Compactor:                {API, MemberlistKV, Overrides, Vault},
 		StoreGateway:             {API, Overrides, MemberlistKV, Vault},
 		TenantFederation:         {Queryable},
-		Write:                    {Distributor, Ingester},
+		WriteAgent:               {API},
+		Write:                    {Distributor, Ingester, WriteAgent},
 		Read:                     {QueryFrontend, Querier},
 		Backend:                  {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
 		All:                      {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},

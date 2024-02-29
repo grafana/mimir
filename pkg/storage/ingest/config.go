@@ -14,8 +14,9 @@ var (
 )
 
 type Config struct {
-	Enabled     bool        `yaml:"enabled"`
-	KafkaConfig KafkaConfig `yaml:"kafka"`
+	Enabled        bool             `yaml:"enabled"`
+	KafkaConfig    KafkaConfig      `yaml:"kafka"`
+	PostgresConfig PostgresqlConfig `yaml:"postgresql"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -29,10 +30,6 @@ func (cfg *Config) Validate() error {
 	// Skip validation if disabled.
 	if !cfg.Enabled {
 		return nil
-	}
-
-	if err := cfg.KafkaConfig.Validate(); err != nil {
-		return err
 	}
 
 	return nil
@@ -74,4 +71,16 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 
 	return nil
+}
+
+type PostgresqlConfig struct {
+	Address string `yaml:"address"`
+}
+
+func (cfg *PostgresqlConfig) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix("", f)
+}
+
+func (cfg *PostgresqlConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.StringVar(&cfg.Address, prefix+".address", "", "The PostgreSQL backend address.")
 }
