@@ -4,13 +4,10 @@ package ingest
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
-	"github.com/oklog/ulid"
 )
 
 type WriteAgent struct {
@@ -40,18 +37,6 @@ func (a *WriteAgent) starting(ctx context.Context) error {
 }
 
 func (a *WriteAgent) running(ctx context.Context) error {
-	// TODO DEBUG
-	for ctx.Err() == nil {
-		segment, err := a.store.AddSegment(ctx, 1, ulid.MustNew(uint64(time.Now().UnixMilli()), nil))
-		fmt.Println("AddSegment() segment:", segment, "err:", err)
-
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(5 * time.Second):
-		}
-	}
-
 	// Wait until terminated.
 	select {
 	case <-ctx.Done():

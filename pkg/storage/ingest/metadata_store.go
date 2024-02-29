@@ -4,11 +4,11 @@ package ingest
 
 import (
 	"context"
-	"fmt"
+	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -53,37 +53,69 @@ func (s *MetadataStore) stopping(_ error) error {
 
 // AddSegment adds a Segment to the metadata store.
 func (s *MetadataStore) AddSegment(ctx context.Context, partitionID int32, objectID ulid.ULID) (Segment, error) {
+	var lastErr error
 
+	try := backoff.New(ctx, backoff.Config{
+		MinBackoff: 10 * time.Millisecond,
+		MaxBackoff: 100 * time.Millisecond,
+		MaxRetries: 10,
+	})
+
+	for try.Ongoing() {
+		var commitID int64
+
+		commitID, lastErr = s.commitSegment(ctx, partitionID, objectID)
+		if lastErr != nil {
+			try.Wait()
+			continue
+		}
+
+		return Segment{
+			PartitionID: partitionID,
+			CommitID:    commitID,
+			ObjectID:    objectID,
+		}, nil
+	}
+
+	// If no error has been recorded yet, we fallback to the backoff error.
+	if lastErr == nil {
+		lastErr = try.Err()
+	}
+
+	return Segment{}, lastErr
+}
+
+func (s *MetadataStore) commitSegment(ctx context.Context, partitionID int32, objectID ulid.ULID) (int64, error) {
 	lastCommitID, err := s.getLastCommitID(ctx, partitionID)
-	fmt.Println("getLastCommitID() lastCommitID:", lastCommitID, "err:", err)
+	if err != nil {
+		return 0, errors.Wrapf(err, "failed to get last commit ID for partition %d", partitionID)
+	}
 
-	//s.conn.Exec(ctx, `INSERT INTO segments `)
-	//
-	//var name string
-	//var weight int64
-	//err = conn.QueryRow(context.Background(), "select name, weight from widgets where id=$1", 42).Scan(&name, &weight)
-	//if err != nil {
-	//	fmt.Fprintf(os.Stderr, "QueryRow failed: %v\n", err)
-	//}
-	//
-	//fmt.Println(name, weight)
+	nextCommitID := lastCommitID + 1
 
-	return Segment{
-		PartitionID: partitionID,
-		CommitID:    0, // TODO
-		ObjectID:    objectID,
-	}, nil
+	// Attempt to insert the segment with the next commit ID, optimistically
+	// hoping no other concurrent write on the same partition happened in the
+	// meanwhile. If it did, the INSERT will fail.
+	_, err = s.connections.Exec(ctx, "INSERT INTO segments (partition_id, commit_id, object_id) VALUES ($1, $2, $3)", partitionID, nextCommitID, objectID.String())
+	if err != nil {
+		return 0, errors.Wrapf(err, "failed to commit segment for partition %d and commit %d", partitionID, nextCommitID)
+	}
+
+	return nextCommitID, nil
 }
 
 func (s *MetadataStore) getLastCommitID(ctx context.Context, partitionID int32) (int64, error) {
-	var lastCommitID int64
+	var lastCommitID *int64
 
-	row := s.connections.QueryRow(ctx, "SELECT MAX(commit_id) FROM segments WHERE partition_id = $1", partitionID)
-	if err := row.Scan(&lastCommitID); errors.Is(err, pgx.ErrNoRows) {
-		return -1, nil
-	} else if err != nil {
+	rows := s.connections.QueryRow(ctx, "SELECT MAX(commit_id) FROM segments WHERE partition_id = $1", partitionID)
+	if err := rows.Scan(&lastCommitID); err != nil {
 		return 0, err
 	}
 
-	return lastCommitID, nil
+	// The value is nil if there's no segment for the partition yet.
+	if lastCommitID == nil {
+		return -1, nil
+	}
+
+	return *lastCommitID, nil
 }
