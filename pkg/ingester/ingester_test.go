@@ -4604,7 +4604,7 @@ func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, i
 		ingestersRing = createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig())
 	}
 
-	ingester, err := New(ingesterCfg, overrides, ingestersRing, partitionsRing, nil, registerer, noDebugNoopLogger{})
+	ingester, err := New(ingesterCfg, overrides, ingestersRing, partitionsRing, nil, registerer, noDebugNoopLogger{}) // LOGGING: log.NewLogfmtLogger(os.Stderr)
 	if err != nil {
 		return nil, err
 	}

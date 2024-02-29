@@ -45,6 +45,7 @@ type ownedSeriesRingStrategy interface {
 	shardSizeForUser(tenant string) int
 
 	// tokenRangesForUser returns token ranges owned by this ingester for given user.
+	// If ingester doesn't own the tenant anymore, it should return nil tokens and no error.
 	tokenRangesForUser(userID string, shardSize int) (ring.TokenRanges, error)
 
 	// ownerKeyAndValue returns key and value used in log message to indicate "object" that owned series operates on.
@@ -168,22 +169,18 @@ func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringCha
 	}
 
 	// We need to check for tokens even if ringChanged is false, because previous ring check may have failed.
+	// If this ingester doesn't own the tenant anymore, ringStrategy is expected to return nil ranges. In that case there will be no "owned" series.
 	ranges, err := oss.ringStrategy.tokenRangesForUser(userID, shardSize)
 	if err != nil {
-		if errors.Is(err, ring.ErrInstanceNotFound) {
-			// This ingester doesn't own the tenant anymore, so there will be no "owned" series.
-			ranges = nil
-		} else {
-			ownerKey, ownerValue := oss.ringStrategy.ownerKeyAndValue()
-			level.Error(oss.logger).Log("msg", "failed to get token ranges from user's subring", "user", userID, ownerKey, ownerValue, "err", err)
+		ownerKey, ownerValue := oss.ringStrategy.ownerKeyAndValue()
+		level.Error(oss.logger).Log("msg", "failed to get token ranges from user's subring", "user", userID, ownerKey, ownerValue, "err", err)
 
-			// If we failed to get token ranges, set the new reason, to make sure we do the check in next iteration.
-			if reason == "" {
-				reason = recomputeOwnedSeriesReasonGetTokenRangesFailed
-			}
-			db.triggerRecomputeOwnedSeries(reason)
-			return false
+		// If we failed to get token ranges, set the new reason, to make sure we do the check in next iteration.
+		if reason == "" {
+			reason = recomputeOwnedSeriesReasonGetTokenRangesFailed
 		}
+		db.triggerRecomputeOwnedSeries(reason)
+		return false
 	}
 
 	if db.updateTokenRanges(ranges) && reason == "" {
@@ -245,7 +242,13 @@ func (ir *ownedSeriesIngesterRingStrategy) shardSizeForUser(userID string) int {
 func (ir *ownedSeriesIngesterRingStrategy) tokenRangesForUser(userID string, shardSize int) (ring.TokenRanges, error) {
 	subring := ir.ingestersRing.ShuffleShard(userID, shardSize)
 
-	return subring.GetTokenRangesForInstance(ir.instanceID)
+	ranges, err := subring.GetTokenRangesForInstance(ir.instanceID)
+	if errors.Is(err, ring.ErrInstanceNotFound) {
+		// Not an error.
+		return nil, nil
+	}
+
+	return ranges, err
 }
 
 type ownedSeriesPartitionRingStrategy struct {
@@ -279,19 +282,17 @@ func (pr *ownedSeriesPartitionRingStrategy) shardSizeForUser(userID string) int 
 }
 
 func (pr *ownedSeriesPartitionRingStrategy) tokenRangesForUser(userID string, shardSize int) (ring.TokenRanges, error) {
-	_, ok := slices.BinarySearch(pr.previousActivePartition, pr.partitionID)
-	if !ok {
-		// If our partition is not active, it has no owned series.
-		return nil, nil
-	}
-
 	r := pr.partitionRingWatcher.PartitionRing()
 	sr, err := r.ShuffleShard(userID, shardSize)
 	if err != nil {
 		return nil, err
 	}
 
-	return sr.GetTokenRangesForPartition(pr.partitionID)
+	ranges, err := sr.GetTokenRangesForPartition(pr.partitionID)
+	if errors.Is(err, ring.ErrPartitionDoesNotExist) {
+		return nil, nil
+	}
+	return ranges, err
 }
 
 func (pr *ownedSeriesPartitionRingStrategy) ownerKeyAndValue() (string, string) {
