@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -178,7 +177,7 @@ func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 // Validate the config.
-func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, logger log.Logger) error {
+func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config) error {
 	if err := cfg.Bucket.Validate(); err != nil {
 		return err
 	}
@@ -187,7 +186,7 @@ func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, lo
 		return err
 	}
 
-	return cfg.BucketStore.Validate(logger)
+	return cfg.BucketStore.Validate()
 }
 
 // TSDBConfig holds the config for TSDB opened in the ingesters.
@@ -465,7 +464,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 // Validate the config.
-func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
+func (cfg *BucketStoreConfig) Validate() error {
 	if cfg.StreamingBatchSize <= 0 {
 		return errInvalidStreamingBatchSize
 	}
@@ -478,7 +477,7 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 	if err := cfg.MetadataCache.Validate(); err != nil {
 		return errors.Wrap(err, "metadata-cache configuration")
 	}
-	if err := cfg.BucketIndex.Validate(logger); err != nil {
+	if err := cfg.BucketIndex.Validate(); err != nil {
 		return errors.Wrap(err, "bucket-index configuration")
 	}
 	if !util.StringsContain(validSeriesSelectionStrategies, cfg.SeriesSelectionStrategyName) {
@@ -506,6 +505,6 @@ func (cfg *BucketIndexConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 }
 
 // Validate the config.
-func (cfg *BucketIndexConfig) Validate(_ log.Logger) error {
+func (cfg *BucketIndexConfig) Validate() error {
 	return nil
 }

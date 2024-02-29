@@ -518,6 +518,16 @@ func (d *Desc) getOldestRegisteredTimestamp() int64 {
 	return result
 }
 
+func (d *Desc) instancesCountPerZone() map[string]int {
+	instancesCountPerZone := map[string]int{}
+	if d != nil {
+		for _, ingester := range d.Ingesters {
+			instancesCountPerZone[ingester.Zone]++
+		}
+	}
+	return instancesCountPerZone
+}
+
 type CompareResult int
 
 // CompareResult responses

@@ -78,6 +78,12 @@ type ReadRing interface {
 
 	// GetTokenRangesForInstance returns the token ranges owned by an instance in the ring
 	GetTokenRangesForInstance(instanceID string) (TokenRanges, error)
+
+	// InstancesInZoneCount returns the number of instances in the ring that are registered in given zone.
+	InstancesInZoneCount(zone string) int
+
+	// ZonesCount returns the number of zones for which there's at least 1 instance registered in the ring.
+	ZonesCount() int
 }
 
 var (
@@ -183,6 +189,9 @@ type Ring struct {
 	// List of zones for which there's at least 1 instance in the ring. This list is guaranteed
 	// to be sorted alphabetically.
 	ringZones []string
+
+	// Number of registered instances per zone.
+	instancesCountPerZone map[string]int
 
 	// Cache of shuffle-sharded subrings per identifier. Invalidated when topology changes.
 	// If set to nil, no caching is done (used by tests, and subrings).
@@ -333,6 +342,7 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 	ringInstanceByToken := ringDesc.getTokensInfo()
 	ringZones := getZones(ringTokensByZone)
 	oldestRegisteredTimestamp := ringDesc.getOldestRegisteredTimestamp()
+	instancesCountPerZone := ringDesc.instancesCountPerZone()
 
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
@@ -341,6 +351,7 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 	r.ringTokensByZone = ringTokensByZone
 	r.ringInstanceByToken = ringInstanceByToken
 	r.ringZones = ringZones
+	r.instancesCountPerZone = instancesCountPerZone
 	r.oldestRegisteredTimestamp = oldestRegisteredTimestamp
 	r.lastTopologyChange = now
 
@@ -797,12 +808,13 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	shardTokens := mergeTokenGroups(shardTokensByZone)
 
 	return &Ring{
-		cfg:              r.cfg,
-		strategy:         r.strategy,
-		ringDesc:         shardDesc,
-		ringTokens:       shardTokens,
-		ringTokensByZone: shardTokensByZone,
-		ringZones:        getZones(shardTokensByZone),
+		cfg:                   r.cfg,
+		strategy:              r.strategy,
+		ringDesc:              shardDesc,
+		ringTokens:            shardTokens,
+		ringTokensByZone:      shardTokensByZone,
+		ringZones:             getZones(shardTokensByZone),
+		instancesCountPerZone: shardDesc.instancesCountPerZone(),
 
 		oldestRegisteredTimestamp: shardDesc.getOldestRegisteredTimestamp(),
 
@@ -1077,6 +1089,21 @@ func (r *Ring) getRing(_ context.Context) (*Desc, error) {
 
 func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	newRingPageHandler(r, r.cfg.HeartbeatTimeout).handle(w, req)
+}
+
+// InstancesInZoneCount returns the number of instances in the ring that are registered in given zone.
+func (r *Ring) InstancesInZoneCount(zone string) int {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	return r.instancesCountPerZone[zone]
+}
+
+func (r *Ring) ZonesCount() int {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	return len(r.ringZones)
 }
 
 // Operation describes which instances can be included in the replica set, based on their state.

@@ -59,11 +59,19 @@ The `-memberlist.join` can be set to:
 
 The default port is `7946`.
 
-> **Note**: At a minimum, configure one or more addresses that resolve to a consistent subset of replicas (for example, all the ingesters).
+{{< admonition type="note" >}}
+At a minimum, configure one or more addresses that resolve to a consistent subset of replicas (for example, all the ingesters).
+{{< /admonition >}}
 
-> **Note**: If you're running Grafana Mimir in Kubernetes, define a [headless Kubernetes Service](https://kubernetes.io/docs/concepts/services-networking/service/#headless-services) which resolves to the IP addresses of all Grafana Mimir pods. Then you set `-memberlist.join` to `dnssrv+<service name>.<namespace>.svc.cluster.local:<port>`.
+{{< admonition type="note" >}}
+If you're running Grafana Mimir in Kubernetes, define a [headless Kubernetes Service](https://kubernetes.io/docs/concepts/services-networking/service/#headless-services) which resolves to the IP addresses of all Grafana Mimir Pods.
 
-> **Note**: The `memberlist` backend is configured globally and can't be customized on a per-component basis. Because `memberlist` is configured globally, the `memberlist` backend differs from other supported backends, such as Consul or etcd.
+Then set `-memberlist.join` to `dnssrv+<service name>.<namespace>.svc.cluster.local:<port>`.
+{{< /admonition >}}
+
+{{< admonition type="note" >}}
+The `memberlist` backend is configured globally, unlike other supported backends, and can't be customized on a per-component basis.
+{{< /admonition >}}
 
 Grafana Mimir supports TLS for memberlist connections between its components.
 For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "../manage/secure/securing-communications-with-tls" >}}).
@@ -159,7 +167,10 @@ You can use the following parameters to configure the multi KV store settings:
 - `<prefix>.multi.mirror-enabled`: Whether mirroring of writes to the secondary backend store is enabled.
 - `<prefix>.multi.mirror-timeout`: The maximum time allowed to mirror a change to the secondary backend store.
 
-> **Note**: Grafana Mimir does not log an error if it is unable to mirror writes to the secondary backend store. The total number of errors is only tracked through the metric `cortex_multikv_mirror_write_errors_total`.
+{{< admonition type="note" >}}
+Grafana Mimir doesn't log an error if it's unable to mirror writes to the secondary backend store.
+However, the total number of errors is tracked through the metric `cortex_multikv_mirror_write_errors_total`.
+{{< /admonition >}}
 
 The multi KV primary backend and mirroring can also be configured in the [runtime configuration file]({{< relref "./about-runtime-configuration" >}}).
 Changes to a multi KV Store in the runtime configuration apply to _all_ components using a multi KV store.
@@ -173,7 +184,9 @@ multi_kv_config:
   mirror_enabled: true
 ```
 
-> **Note**: The runtime configuration settings take precedence over CLI flags.
+{{< admonition type="note" >}}
+The runtime configuration settings take precedence over CLI flags.
+{{< /admonition >}}
 
 #### Ingester migration example
 

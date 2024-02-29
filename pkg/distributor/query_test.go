@@ -132,7 +132,7 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 						clonedSeries, err := clonePreallocTimeseries(series)
 						require.NoError(t, err)
 
-						_, err = ds[0].Push(ctx, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{clonedSeries}})
+						_, err = ds[0].Push(ctx, makeWriteRequestWith(clonedSeries))
 						require.NoError(t, err)
 					}
 
@@ -315,10 +315,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 			}
 
 			// Push more series to exceed the limit once we'll query back all series.
-			writeReq = &mimirpb.WriteRequest{}
-			writeReq.Timeseries = append(writeReq.Timeseries,
-				makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil),
-			)
+			writeReq = makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil))
 
 			writeRes, err = ds[0].Push(userCtx, writeReq)
 			assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
@@ -362,10 +359,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
 	}
 	// Push a single series to allow us to calculate the chunk size to calculate the limit for the test.
-	writeReq := &mimirpb.WriteRequest{}
-	writeReq.Timeseries = append(writeReq.Timeseries,
-		makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil),
-	)
+	writeReq := makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil))
 	writeRes, err := ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 	assert.Nil(t, err)
@@ -394,10 +388,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	assert.Len(t, queryRes.Chunkseries, seriesToAdd)
 
 	// Push another series to exceed the chunk bytes limit once we'll query back all series.
-	writeReq = &mimirpb.WriteRequest{}
-	writeReq.Timeseries = append(writeReq.Timeseries,
-		makeTimeseries([]string{model.MetricNameLabel, "another_series_1"}, makeSamples(0, 0), nil),
-	)
+	writeReq = makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series_1"}, makeSamples(0, 0), nil))
 
 	writeRes, err = ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
@@ -408,6 +399,70 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	_, err = ds[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 	require.Error(t, err)
 	assert.Equal(t, err, limiter.NewMaxChunkBytesHitLimitError(uint64(maxBytesLimit)))
+}
+
+func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamingChunksIsEnabled(t *testing.T) {
+	const (
+		numSeries  = 20
+		numQueries = 3
+	)
+
+	for _, ingestStorageEnabled := range []bool{false, true} {
+		ingestStorageEnabled := ingestStorageEnabled
+
+		t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
+			t.Parallel()
+
+			// Prepare distributors.
+			distributors, ingesters, reg, _ := prepare(t, prepConfig{
+				numIngesters:            3,
+				happyIngesters:          3,
+				numDistributors:         1,
+				replicationFactor:       1, // Use replication factor of 1 so that we always wait the response from all ingesters.
+				ingestStorageEnabled:    ingestStorageEnabled,
+				ingestStoragePartitions: 3,
+				configure: func(cfg *Config) {
+					cfg.PreferStreamingChunksFromIngesters = true
+				},
+			})
+
+			// Mock 1 ingester to be slow.
+			ingesters[0].queryDelay = time.Second
+
+			// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+			ctx := user.InjectOrgID(context.Background(), "test")
+			ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+			// Push series.
+			for seriesID := 0; seriesID < numSeries; seriesID++ {
+				_, err := distributors[0].Push(ctx, makeWriteRequest(0, 1, 0, false, false, fmt.Sprintf("series_%d", seriesID)))
+				require.NoError(t, err)
+			}
+
+			// Query back multiple times and ensure each response is consistent.
+			matchers := labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "series_.*")
+			queryMetrics := stats.NewQueryMetrics(reg[0])
+
+			for i := 1; i <= numQueries; i++ {
+				t.Run(fmt.Sprintf("Query #%d", i), func(t *testing.T) {
+					t.Parallel()
+
+					res, err := distributors[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, matchers)
+					require.NoError(t, err)
+					require.Equal(t, numSeries, len(res.StreamingSeries))
+
+					// Read all chunks.
+					for _, series := range res.StreamingSeries {
+						for sourceIdx, source := range series.Sources {
+							_, err := source.StreamReader.GetChunks(source.SeriesIndex)
+							require.NoErrorf(t, err, "GetChunks() from stream reader for series %d from source %d", source.SeriesIndex, sourceIdx)
+						}
+					}
+				})
+			}
+		})
+	}
+
 }
 
 func TestMergeSamplesIntoFirstDuplicates(t *testing.T) {

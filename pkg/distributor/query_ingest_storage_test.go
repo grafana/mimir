@@ -502,7 +502,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				ingesterStateByZone:  testData.ingesterStateByZone,
 				ingesterDataByZone:   testData.ingesterDataByZone,
 				ingesterDataTenantID: tenantID,
-				queryDelay:           100 * time.Millisecond, // Give some time to start the calls to all ingesters before failures are received.
+				queryDelay:           250 * time.Millisecond, // Give some time to start the calls to all ingesters before failures are received.
 				replicationFactor:    1,                      // Ingest storage is not expected to use it.
 				limits:               limits,
 				configure: func(config *Config) {
@@ -543,7 +543,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 
 			// Check how many ingesters have been queried.
 			// Because we return immediately on failures, it might take some time for all ingester calls to register.
-			test.Poll(t, 100*time.Millisecond, testData.expectedQueriedIngesters, func() any { return countMockIngestersCalls(ingesters, "QueryStream") })
+			test.Poll(t, 4*cfg.queryDelay, testData.expectedQueriedIngesters, func() any { return countMockIngestersCalls(ingesters, "QueryStream") })
 
 			// We expected the number of non-deduplicated chunks to be equal to the number of queried series
 			// given we expect 1 chunk per series.

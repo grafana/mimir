@@ -35,4 +35,23 @@
       }
       for group in groups
     ],
+
+  withExtraLabelsAnnotations(groups)::
+    local update_rule(rule) =
+      if std.objectHas(rule, 'alert')
+      then rule {
+        annotations+: $._config.alert_extra_annotations,
+        labels+: $._config.alert_extra_labels,
+      }
+      else rule;
+    [
+      group {
+        rules: [
+          update_rule(rule)
+          for rule in group.rules
+        ],
+      }
+      for group in groups
+    ],
+
 }

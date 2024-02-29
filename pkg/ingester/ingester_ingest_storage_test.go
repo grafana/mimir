@@ -408,7 +408,8 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 	// Disable TSDB head compaction jitter to have predictable tests.
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
-	ingester, err := New(*ingesterCfg, overrides, nil, nil, reg, util_test.NewTestingLogger(t))
+	prw := ring.NewPartitionRingWatcher("ingester", "partition-ring", kv, log.NewNopLogger(), nil)
+	ingester, err := New(*ingesterCfg, overrides, nil, prw, nil, reg, util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 
 	return ingester, kafkaCluster
