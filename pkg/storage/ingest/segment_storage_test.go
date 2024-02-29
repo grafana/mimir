@@ -6,16 +6,18 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
-	"github.com/grafana/mimir/pkg/storage/ingest/ingestpb"
 )
 
 func TestSegmentStorage_CommitSegment(t *testing.T) {
@@ -28,35 +30,37 @@ func TestSegmentStorage_CommitSegment(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
 	require.NoError(t, err)
 
+	db := &metadataDatabaseMock{}
+
+	metadata := NewMetadataStore(db, log.NewNopLogger())
+	require.NoError(t, services.StartAndAwaitRunning(ctx, metadata))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, metadata))
+	})
+
 	t.Run("should upload segment data to object storage and commit reference to metadata store", func(t *testing.T) {
 		var committedRefs []SegmentRef
 
-		metadata := &metadataStoreMock{}
-		metadata.onCommitSegment = func(_ context.Context, partitionID int32, objectID ulid.ULID) (SegmentRef, error) {
-			ref := SegmentRef{
-				PartitionID: partitionID,
-				OffsetID:    2,
-				ObjectID:    objectID,
-			}
-
-			committedRefs = append(committedRefs, ref)
-			return ref, nil
+		db.onMaxPartitionOffset = func(ctx context.Context, partitionID int32) (*int64, error) {
+			value := int64(2)
+			return &value, nil
 		}
 
-		expectedData := &ingestpb.Segment{Pieces: []*ingestpb.Piece{
-			{
-				WriteRequests: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}},
-				TenantId:      tenantID,
-			},
-		}}
+		db.onInsertSegment = func(ctx context.Context, ref SegmentRef) error {
+			committedRefs = append(committedRefs, ref)
+			return nil
+		}
 
 		storage := NewSegmentStorage(bucket, metadata)
+
+		expectedData := mockSegmentData(tenantID, series1)
 		ref, err := storage.CommitSegment(ctx, 1, expectedData)
 		require.NoError(t, err)
 
 		// Ensure the returned SegmentRef is the one committed to the metadata store.
 		require.Len(t, committedRefs, 1)
 		assert.Equal(t, committedRefs[0], ref)
+		assert.Equal(t, int64(3), committedRefs[0].OffsetID)
 
 		// Ensure the segment data has been uploaded to the storage.
 		exists, err := bucket.Exists(ctx, getSegmentObjectPath(ref.PartitionID, ref.ObjectID))
@@ -89,19 +93,14 @@ func TestSegmentStorage_FetchSegment(t *testing.T) {
 
 	t.Run("should read a segment from the storage", func(t *testing.T) {
 		// Upload a segment to the storage.
-		expectedData := &ingestpb.Segment{Pieces: []*ingestpb.Piece{
-			{
-				WriteRequests: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}},
-				TenantId:      tenantID,
-			},
-		}}
+		expectedData := mockSegmentData(tenantID, series1)
 
 		rawData, err := expectedData.Marshal()
 		require.NoError(t, err)
 		require.NoError(t, bucket.Upload(ctx, getSegmentObjectPath(partitionID, objectID), bytes.NewReader(rawData)))
 
 		// Then read it back via SegmentStorage.
-		storage := NewSegmentStorage(bucket, &metadataStoreMock{})
+		storage := NewSegmentStorage(bucket, NewMetadataStore(&metadataDatabaseMock{}, log.NewNopLogger()))
 		actual, err := storage.FetchSegment(ctx, SegmentRef{PartitionID: partitionID, OffsetID: 0, ObjectID: objectID})
 		require.NoError(t, err)
 
@@ -110,30 +109,122 @@ func TestSegmentStorage_FetchSegment(t *testing.T) {
 	})
 }
 
-type metadataStoreMock struct {
-	onCommitSegment func(ctx context.Context, partitionID int32, objectID ulid.ULID) (SegmentRef, error)
+type metadataDatabaseMock struct {
+	onInsertSegment        func(ctx context.Context, ref SegmentRef) error
+	onListSegments         func(ctx context.Context, partitionID int32, lastOffsetID int64) ([]SegmentRef, error)
+	onMaxPartitionOffset   func(ctx context.Context, partitionID int32) (*int64, error)
+	onUpsertConsumerOffset func(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error
+	onGetConsumerOffset    func(ctx context.Context, partitionID int32, consumerID string) (*int64, error)
 }
 
-func (m *metadataStoreMock) CommitSegment(ctx context.Context, partitionID int32, objectID ulid.ULID) (SegmentRef, error) {
-	if m.onCommitSegment != nil {
-		return m.onCommitSegment(ctx, partitionID, objectID)
-	}
-
-	return SegmentRef{}, errors.New("not mocked")
-}
-
-func (m *metadataStoreMock) WatchSegments(ctx context.Context, partitionID int32, lastOffsetID int64) []SegmentRef {
+func (m *metadataDatabaseMock) Open(ctx context.Context) error {
 	return nil
 }
 
-func (m *metadataStoreMock) GetLastProducedOffsetID(ctx context.Context, partitionID int32) (int64, error) {
-	return 0, errors.New("not implemented")
+func (m *metadataDatabaseMock) Close() {}
+
+func (m *metadataDatabaseMock) InsertSegment(ctx context.Context, ref SegmentRef) error {
+	if m.onInsertSegment != nil {
+		return m.onInsertSegment(ctx, ref)
+	}
+
+	return errors.New("not mocked")
 }
 
-func (m *metadataStoreMock) CommitLastConsumedOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error {
+func (m *metadataDatabaseMock) ListSegments(ctx context.Context, partitionID int32, lastOffsetID int64) ([]SegmentRef, error) {
+	if m.onListSegments != nil {
+		return m.onListSegments(ctx, partitionID, lastOffsetID)
+	}
+
+	return nil, errors.New("not mocked")
+}
+
+func (m *metadataDatabaseMock) MaxPartitionOffset(ctx context.Context, partitionID int32) (*int64, error) {
+	if m.onMaxPartitionOffset != nil {
+		return m.onMaxPartitionOffset(ctx, partitionID)
+	}
+
+	return nil, errors.New("not mocked")
+}
+
+func (m *metadataDatabaseMock) UpsertConsumerOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error {
+	if m.onUpsertConsumerOffset != nil {
+		return m.onUpsertConsumerOffset(ctx, partitionID, consumerID, offsetID)
+	}
+
+	return errors.New("not mocked")
+}
+
+func (m *metadataDatabaseMock) GetConsumerOffset(ctx context.Context, partitionID int32, consumerID string) (*int64, error) {
+	if m.onGetConsumerOffset != nil {
+		return m.onGetConsumerOffset(ctx, partitionID, consumerID)
+	}
+
+	return nil, errors.New("not mocked")
+}
+
+// metadataDatabaseMemory is an in-memory MetadataStoreDatabase implementation.
+type metadataDatabaseMemory struct {
+	segmentsMx sync.Mutex
+	segments   []SegmentRef
+}
+
+func (m *metadataDatabaseMemory) Open(ctx context.Context) error {
+	return nil
+}
+
+func (m *metadataDatabaseMemory) Close() {}
+
+func (m *metadataDatabaseMemory) InsertSegment(_ context.Context, ref SegmentRef) error {
+	m.segmentsMx.Lock()
+	defer m.segmentsMx.Unlock()
+
+	m.segments = append(m.segments, ref)
+	return nil
+}
+
+func (m *metadataDatabaseMemory) ListSegments(_ context.Context, partitionID int32, lastOffsetID int64) ([]SegmentRef, error) {
+	m.segmentsMx.Lock()
+	defer m.segmentsMx.Unlock()
+
+	// Filter segments.
+	var res []SegmentRef
+	for _, segment := range m.segments {
+		if segment.PartitionID == partitionID && segment.OffsetID > lastOffsetID {
+			res = append(res, segment)
+		}
+	}
+
+	// Sort results by offset ID.
+	slices.SortFunc(res, func(a, b SegmentRef) int {
+		return int(a.OffsetID) - int(b.OffsetID)
+	})
+
+	return res, nil
+}
+
+func (m *metadataDatabaseMemory) MaxPartitionOffset(_ context.Context, partitionID int32) (*int64, error) {
+	m.segmentsMx.Lock()
+	defer m.segmentsMx.Unlock()
+
+	var res *int64
+	for _, segment := range m.segments {
+		if segment.PartitionID != partitionID {
+			continue
+		}
+
+		if res == nil || segment.OffsetID > *res {
+			res = &segment.OffsetID
+		}
+	}
+
+	return res, nil
+}
+
+func (m *metadataDatabaseMemory) UpsertConsumerOffset(_ context.Context, partitionID int32, consumerID string, offsetID int64) error {
 	return errors.New("not implemented")
 }
 
-func (m *metadataStoreMock) GetLastConsumedOffsetID(ctx context.Context, partitionID int32, consumerID string) (int64, error) {
-	return 0, errors.New("not implemented")
+func (m *metadataDatabaseMemory) GetConsumerOffset(_ context.Context, partitionID int32, consumerID string) (*int64, error) {
+	return nil, errors.New("not implemented")
 }

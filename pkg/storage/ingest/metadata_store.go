@@ -27,14 +27,13 @@ type MetadataStoreClient interface {
 type MetadataStore struct {
 	services.Service
 
-	cfg         PostgresqlConfig
-	logger      log.Logger
-	connections *pgxpool.Pool
+	db     MetadataStoreDatabase
+	logger log.Logger
 }
 
-func NewMetadataStore(cfg PostgresqlConfig, logger log.Logger) *MetadataStore {
+func NewMetadataStore(db MetadataStoreDatabase, logger log.Logger) *MetadataStore {
 	s := &MetadataStore{
-		cfg:    cfg,
+		db:     db,
 		logger: logger,
 	}
 
@@ -44,20 +43,11 @@ func NewMetadataStore(cfg PostgresqlConfig, logger log.Logger) *MetadataStore {
 
 // TODO correctly handle reconnections
 func (s *MetadataStore) starting(ctx context.Context) error {
-	var err error
-
-	// Create the connection pool.
-	s.connections, err = pgxpool.New(ctx, s.cfg.Address)
-	if err != nil {
-		return errors.Wrap(err, "failed to created database connections pool")
-	}
-
-	return nil
+	return s.db.Open(ctx)
 }
 
 func (s *MetadataStore) stopping(_ error) error {
-	s.connections.Close()
-
+	s.db.Close()
 	return nil
 }
 
@@ -103,11 +93,16 @@ func (s *MetadataStore) commitSegment(ctx context.Context, partitionID int32, ob
 
 	nextOffsetID := lastOffsetID + 1
 
+	ref := SegmentRef{
+		PartitionID: partitionID,
+		OffsetID:    nextOffsetID,
+		ObjectID:    objectID,
+	}
+
 	// Attempt to insert the segment with the next offset ID, optimistically
 	// hoping no other concurrent write on the same partition happened in the
 	// meanwhile. If it did, the INSERT will fail.
-	_, err = s.connections.Exec(ctx, "INSERT INTO segments (partition_id, offset_id, object_id) VALUES ($1, $2, $3)", partitionID, nextOffsetID, objectID.String())
-	if err != nil {
+	if err := s.db.InsertSegment(ctx, ref); err != nil {
 		return 0, errors.Wrapf(err, "failed to offset segment for partition %d and offset %d", partitionID, nextOffsetID)
 	}
 
@@ -117,10 +112,8 @@ func (s *MetadataStore) commitSegment(ctx context.Context, partitionID int32, ob
 // GetLastProducedOffsetID returns the last produced offset ID for a given partitionID.
 // If the partition is empty this function returns -1 and no error.
 func (s *MetadataStore) GetLastProducedOffsetID(ctx context.Context, partitionID int32) (int64, error) {
-	var lastOffsetID *int64
-
-	rows := s.connections.QueryRow(ctx, "SELECT MAX(offset_id) FROM segments WHERE partition_id = $1", partitionID)
-	if err := rows.Scan(&lastOffsetID); err != nil {
+	lastOffsetID, err := s.db.MaxPartitionOffset(ctx, partitionID)
+	if err != nil {
 		return 0, err
 	}
 
@@ -142,7 +135,7 @@ func (s *MetadataStore) WatchSegments(ctx context.Context, partitionID int32, la
 	})
 
 	for try.Ongoing() {
-		segments, err := s.fetchSegments(ctx, partitionID, lastOffsetID)
+		segments, err := s.db.ListSegments(ctx, partitionID, lastOffsetID)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to fetch segments while watching", "partition_id", partitionID, "last_offset_id", lastOffsetID, "err", err)
 		}
@@ -156,9 +149,78 @@ func (s *MetadataStore) WatchSegments(ctx context.Context, partitionID int32, la
 	return nil
 }
 
-// fetchSegments fetch all segments for the given partitionID committed after lastOffsetID.
+// CommitLastConsumedOffset updates the last offset consumed by a given consumerID for a specific partitionID.
+func (s *MetadataStore) CommitLastConsumedOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error {
+	err := s.db.UpsertConsumerOffset(ctx, partitionID, consumerID, offsetID)
+	return errors.Wrapf(err, "failed to commit consumer %q offset %d for partition %d", consumerID, offsetID, partitionID)
+}
+
+// GetLastConsumedOffsetID returns the last offset consumed but a given consumerID for a specific partitionID.
+// If the consumer hasn't committed any offset yet, this function will return -1 and no error.
+func (s *MetadataStore) GetLastConsumedOffsetID(ctx context.Context, partitionID int32, consumerID string) (int64, error) {
+	offsetID, err := s.db.GetConsumerOffset(ctx, partitionID, consumerID)
+	if err != nil {
+		return 0, err
+	}
+
+	// The value is nil if there's offset recorded for a specific consumer and partition.
+	if offsetID == nil {
+		return -1, nil
+	}
+
+	return *offsetID, nil
+}
+
+type MetadataStoreDatabase interface {
+	// Open the database client.
+	Open(ctx context.Context) error
+
+	// Close the database client.
+	Close()
+
+	InsertSegment(ctx context.Context, ref SegmentRef) error
+	ListSegments(ctx context.Context, partitionID int32, lastOffsetID int64) (segments []SegmentRef, returnErr error)
+	MaxPartitionOffset(ctx context.Context, partitionID int32) (*int64, error)
+	UpsertConsumerOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error
+	GetConsumerOffset(ctx context.Context, partitionID int32, consumerID string) (*int64, error)
+}
+
+// MetadataStorePostgresql implements MetadataStoreDatabase for PostgreSQL.
+type MetadataStorePostgresql struct {
+	cfg         PostgresqlConfig
+	connections *pgxpool.Pool
+}
+
+func NewMetadataStorePostgresql(cfg PostgresqlConfig) *MetadataStorePostgresql {
+	return &MetadataStorePostgresql{
+		cfg: cfg,
+	}
+}
+
+func (s *MetadataStorePostgresql) Open(ctx context.Context) error {
+	var err error
+
+	// Create the connection pool.
+	s.connections, err = pgxpool.New(ctx, s.cfg.Address)
+	if err != nil {
+		return errors.Wrap(err, "failed to created database connections pool")
+	}
+
+	return nil
+}
+
+func (s *MetadataStorePostgresql) Close() {
+	s.connections.Close()
+}
+
+func (s *MetadataStorePostgresql) InsertSegment(ctx context.Context, ref SegmentRef) error {
+	_, err := s.connections.Exec(ctx, "INSERT INTO segments (partition_id, offset_id, object_id) VALUES ($1, $2, $3)", ref.PartitionID, ref.OffsetID, ref.ObjectID.String())
+	return err
+}
+
+// ListSegments fetch all segments for the given partitionID committed after lastOffsetID.
 // This function may return some segments even if an error occurred.
-func (s *MetadataStore) fetchSegments(ctx context.Context, partitionID int32, lastOffsetID int64) (segments []SegmentRef, returnErr error) {
+func (s *MetadataStorePostgresql) ListSegments(ctx context.Context, partitionID int32, lastOffsetID int64) (segments []SegmentRef, returnErr error) {
 	rows, err := s.connections.Query(ctx, "SELECT offset_id, object_id FROM segments WHERE partition_id = $1 AND offset_id > $2 ORDER BY offset_id", partitionID, lastOffsetID)
 	if err != nil {
 		return nil, err
@@ -198,29 +260,31 @@ func (s *MetadataStore) fetchSegments(ctx context.Context, partitionID int32, la
 	return
 }
 
-// CommitLastConsumedOffset updates the last offset consumed by a given consumerID for a specific partitionID.
-func (s *MetadataStore) CommitLastConsumedOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error {
+func (s *MetadataStorePostgresql) MaxPartitionOffset(ctx context.Context, partitionID int32) (*int64, error) {
+	var value *int64
+
+	rows := s.connections.QueryRow(ctx, "SELECT MAX(offset_id) FROM segments WHERE partition_id = $1", partitionID)
+	if err := rows.Scan(&value); err != nil {
+		return nil, err
+	}
+
+	return value, nil
+}
+
+func (s *MetadataStorePostgresql) UpsertConsumerOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error {
 	_, err := s.connections.Exec(ctx,
 		"INSERT INTO consumer_offsets (partition_id, consumer_id, offset_id) VALUES ($1, $2, $3) ON CONFLICT (partition_id, consumer_id) DO UPDATE SET offset_id = $4",
 		partitionID, consumerID, offsetID, offsetID)
-
-	return errors.Wrapf(err, "failed to commit consumer %q offset %d for partition %d", consumerID, offsetID, partitionID)
+	return err
 }
 
-// GetLastConsumedOffsetID returns the last offset consumed but a given consumerID for a specific partitionID.
-// If the consumer hasn't committed any offset yet, this function will return -1 and no error.
-func (s *MetadataStore) GetLastConsumedOffsetID(ctx context.Context, partitionID int32, consumerID string) (int64, error) {
-	var offsetID *int64
+func (s *MetadataStorePostgresql) GetConsumerOffset(ctx context.Context, partitionID int32, consumerID string) (*int64, error) {
+	var value *int64
 
 	rows := s.connections.QueryRow(ctx, "SELECT offset_id FROM consumer_offsets WHERE partition_id = $1 AND consumer_id = $2", partitionID, consumerID)
-	if err := rows.Scan(&offsetID); err != nil {
-		return 0, err
+	if err := rows.Scan(&value); err != nil {
+		return nil, err
 	}
 
-	// The value is nil if there's offset recorded for a specific consumer and partition.
-	if offsetID == nil {
-		return -1, nil
-	}
-
-	return *offsetID, nil
+	return value, nil
 }

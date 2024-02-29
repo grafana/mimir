@@ -26,7 +26,7 @@ func (a *WriteAgent) Write(ctx context.Context, wr *ingestpb.WriteRequest) (*ing
 
 func NewWriteAgent(cfg Config, logger log.Logger) *WriteAgent {
 	a := &WriteAgent{
-		store:  NewMetadataStore(cfg.PostgresConfig, logger),
+		store:  NewMetadataStore(NewMetadataStorePostgresql(cfg.PostgresConfig), logger),
 		logger: logger,
 	}
 
