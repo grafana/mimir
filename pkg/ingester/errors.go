@@ -28,11 +28,13 @@ import (
 
 const (
 	integerUnavailableMsgFormat = "ingester is unavailable (current state: %s)"
-	tooBusyErrorMsg             = "the ingester is currently too busy to process queries, try again later"
+	ingesterTooBusyMsg          = "ingester is currently too busy to process queries, try again later"
+	ingesterPushAPIDisabledMsg  = "ingester is configured with Push API disabled"
 )
 
 var (
-	tooBusyError = ingesterTooBusyError{}
+	errTooBusy         = ingesterTooBusyError{}
+	errPushAPIDisabled = newErrorWithStatus(ingesterPushAPIDisabledError{}, codes.Unimplemented)
 )
 
 // errorWithStatus is used for wrapping errors returned by ingester.
@@ -515,7 +517,7 @@ var _ ingesterError = tsdbUnavailableError{}
 type ingesterTooBusyError struct{}
 
 func (e ingesterTooBusyError) Error() string {
-	return tooBusyErrorMsg
+	return ingesterTooBusyMsg
 }
 
 func (e ingesterTooBusyError) errorCause() mimirpb.ErrorCause {
@@ -524,6 +526,19 @@ func (e ingesterTooBusyError) errorCause() mimirpb.ErrorCause {
 
 // Ensure that ingesterTooBusyError is an ingesterError.
 var _ ingesterError = ingesterTooBusyError{}
+
+type ingesterPushAPIDisabledError struct{}
+
+func (e ingesterPushAPIDisabledError) Error() string {
+	return ingesterPushAPIDisabledMsg
+}
+
+func (e ingesterPushAPIDisabledError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.SERVICE_UNAVAILABLE
+}
+
+// Ensure that ingesterPushAPIDisabledError is an ingesterError.
+var _ ingesterError = ingesterPushAPIDisabledError{}
 
 type ingesterErrSamplers struct {
 	sampleTimestampTooOld             *log.Sampler
@@ -553,6 +568,12 @@ func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 
 // mapPushErrorToErrorWithStatus maps the given error to the corresponding error of type errorWithStatus.
 func mapPushErrorToErrorWithStatus(err error) error {
+	var errStatus errorWithStatus
+	if errors.As(err, &errStatus) {
+		// If the error was already mapped (or wrapped) into appropriate errorWithStatus,
+		// return it as is.
+		return errStatus
+	}
 	var (
 		ingesterErr ingesterError
 		errCode     = codes.Internal
@@ -577,6 +598,12 @@ func mapPushErrorToErrorWithStatus(err error) error {
 // mapPushErrorToErrorWithHTTPOrGRPCStatus maps ingesterError objects to an appropriate
 // errorWithStatus, which may contain both HTTP and gRPC error codes.
 func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
+	var errStatus errorWithStatus
+	if errors.As(err, &errStatus) {
+		// If the error was already mapped (or wrapped) into appropriate errorWithStatus,
+		// return it as is.
+		return errStatus
+	}
 	var ingesterErr ingesterError
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {

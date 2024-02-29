@@ -206,6 +206,8 @@ type Config struct {
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
 	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
 
+	EnablePushAPI bool `yaml:"enable_push_api" category:"experimental" doc:"hidden"`
+
 	// This config is dynamically injected because defined outside the ingester config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
 }
@@ -230,6 +232,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
+
+	f.BoolVar(&cfg.EnablePushAPI, "ingester.enable-push-api", true, "When disabled, disallows Push API in ingester. Use after migrating ingester to ingest-storage.")
 
 	// The ingester.return-only-grpc-errors flag has been deprecated.
 	// According to the migration plan (https://github.com/grafana/mimir/issues/6008#issuecomment-1854320098)
@@ -897,6 +901,10 @@ type pushStats struct {
 //
 // In the second case, returned errors will not be logged, because request will not reach any middleware.
 func (i *Ingester) StartPushRequest(requestSize int64) error {
+	if !i.cfg.EnablePushAPI {
+		return errPushAPIDisabled
+	}
+
 	if err := i.checkAvailable(); err != nil {
 		return err
 	}
@@ -956,6 +964,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
 	defer cleanUp()
+
+	if !i.cfg.EnablePushAPI {
+		return errPushAPIDisabled
+	}
 
 	// If we're using grpc handlers, we don't need to start/finish request here.
 	if !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
@@ -3724,7 +3736,7 @@ func (i *Ingester) checkReadOverloaded() error {
 	}
 
 	i.metrics.utilizationLimitedRequests.WithLabelValues(reason).Inc()
-	return tooBusyError
+	return errTooBusy
 }
 
 type utilizationBasedLimiter interface {
