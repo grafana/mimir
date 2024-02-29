@@ -117,7 +117,7 @@
 * [CHANGE] The `job` label matcher for distributor and gateway have been extended to include any deployment matching `distributor.*` and `cortex-gw.*` respectively. This change allows to match custom and multi-zone distributor and gateway deployments too. #6817
 * [ENHANCEMENT] Dashboards: Add panels for alertmanager activity of a tenant #6826
 * [ENHANCEMENT] Dashboards: Add graphs to "Slow Queries" dashboard. #6880
-* [ENHANCEMENT] Dashboards: remove legacy `graph` panel from Rollout Progress dashboard. #6864
+* [ENHANCEMENT] Dashboards: Update all deprecated "graph" panels to "timeseries" panels. #6864 #7413 #7457
 * [ENHANCEMENT] Dashboards: Make most columns in "Slow Queries" sortable. #7000
 * [ENHANCEMENT] Dashboards: Render graph panels at full resolution as opposed to at half resolution. #7027
 * [ENHANCEMENT] Dashboards: show query-scheduler queue length on "Reads" and "Remote Ruler Reads" dashboards. #7088
