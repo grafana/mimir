@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package ingest;
+
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+
+message Segment {
+  repeated Piece pieces = 1;
+}
+
+message Piece {
+  cortexpb.WriteRequest write_requests = 1;
+  string tenant_id = 2;
+}
+
+message WriteResponse {
+}
+
+service WriteAgent {
+  rpc Write(Piece) returns (WriteResponse) {}
+}
