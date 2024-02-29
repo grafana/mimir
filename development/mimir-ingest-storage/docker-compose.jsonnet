@@ -2,6 +2,7 @@ std.manifestYamlDoc({
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
   services:
     self.write +
+    self.write_agent +
     self.read +
     self.backend +
     self.nginx +
@@ -57,6 +58,14 @@ std.manifestYamlDoc({
       publishedHttpPort: 8013,
       extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
       extraVolumes: ['.data-mimir-write-zone-b-3:/data:delegated'],
+    }),
+  },
+
+  write_agent:: {
+    'mimir-write-agent': mimirService({
+      name: 'mimir-write-agent',
+      target: 'write-agent',
+      publishedHttpPort: 8021,
     }),
   },
 
