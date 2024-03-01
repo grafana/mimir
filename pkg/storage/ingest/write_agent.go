@@ -33,7 +33,7 @@ type WriteAgent struct {
 	partitionSegments   map[int32]*partitionSegmentWithWaiters
 }
 
-func NewWriteAgent(cfg Config, flushInterval time.Duration, logger log.Logger, reg prometheus.Registerer) (*WriteAgent, error) {
+func NewWriteAgent(cfg Config, logger log.Logger, reg prometheus.Registerer) (*WriteAgent, error) {
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.Bucket, "write-agent-segment-store", logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create segment store bucket client")
@@ -47,7 +47,7 @@ func NewWriteAgent(cfg Config, flushInterval time.Duration, logger log.Logger, r
 		return nil, errors.Wrap(err, "failed to create write agent dependencies")
 	}
 
-	return newWriteAgent(flushInterval, segmentStorage, logger, reg, mgr), nil
+	return newWriteAgent(250*time.Millisecond, segmentStorage, logger, reg, mgr), nil
 }
 
 func newWriteAgent(flushInterval time.Duration, segmentStorage *SegmentStorage, logger log.Logger, reg prometheus.Registerer, dependencies *services.Manager) *WriteAgent {

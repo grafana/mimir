@@ -13,6 +13,15 @@ ingest_storage:
   enabled:       true
   postgresql:
     address: postgres://postgres:supersecret@postgresql:5432/postgres
+  write_agent:
+    address: mimir-write-agent:9095
+  backend: s3
+  s3:
+    bucket_name: mimir-ingest
+    endpoint: minio:9000
+    access_key_id: mimir
+    secret_access_key: supersecret
+    insecure: true
 
 ingester:
   return_only_grpc_errors: true
