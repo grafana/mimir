@@ -86,16 +86,15 @@ func (s *SegmentStorage) FetchSegment(ctx context.Context, ref SegmentRef) (_ *S
 
 // DeleteSegment deletes a segment from storage.
 func (s *SegmentStorage) DeleteSegment(ctx context.Context, ref SegmentRef) error {
-	// First delete it from the metadata store.
-	if err := s.metadata.DeleteSegment(ctx, ref); err != nil {
-		return errors.Wrap(err, "failed to delete segment from metadata store")
-	}
-
-	// Then we can delete it from object storage.
+	// First delete segment from object storage.
 	objectPath := getSegmentObjectPath(ref.PartitionID, ref.ObjectID)
-
 	if err := s.bucket.Delete(ctx, objectPath); err != nil {
 		return errors.Wrap(err, "failed to delete segment from object storage")
+	}
+
+	// Then delete it from the metadata store.
+	if err := s.metadata.DeleteSegment(ctx, ref); err != nil {
+		return errors.Wrap(err, "failed to delete segment from metadata store")
 	}
 
 	return nil
