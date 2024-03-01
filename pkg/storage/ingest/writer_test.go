@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -22,8 +21,10 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.uber.org/atomic"
+	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest/ingestpb"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
@@ -51,17 +52,17 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should block until data has been committed to storage", func(t *testing.T) {
 		t.Parallel()
 
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestWriteAgentConfig(clusterAddr, topicName))
+		wAgents := createTestWriteAgentSelector()
+		writer, reg := createTestWriter(t, wAgents)
 
 		produceRequestProcessed := atomic.NewBool(false)
 
-		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		wAgents.onWrite(func(*ingestpb.WriteRequest) (*ingestpb.WriteResponse, error) {
 			// Add a delay, so that if WriteSync() will not wait then the test will fail.
 			time.Sleep(time.Second)
 			produceRequestProcessed.Store(true)
 
-			return nil, nil, false
+			return &ingestpb.WriteResponse{}, nil
 		})
 
 		err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
@@ -70,21 +71,8 @@ func TestWriter_WriteSync(t *testing.T) {
 		// Ensure it was processed before returning.
 		assert.True(t, produceRequestProcessed.Load())
 
-		// Read back from Kafka.
-		consumer, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr), kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{topicName: {int32(partitionID): kgo.NewOffset().AtStart()}}))
-		require.NoError(t, err)
-		t.Cleanup(consumer.Close)
-
-		fetchCtx, cancel := context.WithTimeout(ctx, time.Second)
-		t.Cleanup(cancel)
-
-		fetches := consumer.PollFetches(fetchCtx)
-		require.NoError(t, fetches.Err())
-		require.Len(t, fetches.Records(), 1)
-		assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
-
-		received := mimirpb.WriteRequest{}
-		require.NoError(t, received.Unmarshal(fetches.Records()[0].Value))
+		require.Len(t, wAgents.receivedWrites, 1)
+		received := wAgents.receivedWrites[0].Piece.WriteRequest
 		require.Len(t, received.Timeseries, len(multiSeries))
 
 		for idx, expected := range multiSeries {
@@ -97,10 +85,11 @@ func TestWriter_WriteSync(t *testing.T) {
 			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes sent to the ingest storage.
 			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
 			cortex_ingest_storage_writer_sent_bytes_total %d
-		`, len(fetches.Records()[0].Value))), "cortex_ingest_storage_writer_sent_bytes_total"))
+		`, wAgents.receivedWrites[0].Size())), "cortex_ingest_storage_writer_sent_bytes_total"))
 	})
 
 	t.Run("should interrupt the WriteSync() on context cancelled but other concurrent requests should not fail", func(t *testing.T) {
+		t.Skip("this test confirms franz-go behavior, which is not used in grafana streams")
 		t.Parallel()
 
 		var (
@@ -110,13 +99,11 @@ func TestWriter_WriteSync(t *testing.T) {
 			receivedBatchesLengthMx sync.Mutex
 			receivedBatchesLength   []int
 		)
+		wAgents := createTestWriteAgentSelector()
+		writer, _ := createTestWriter(t, wAgents)
 
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestWriteAgentConfig(clusterAddr, topicName))
-
-		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
-			numRecords, err := getProduceRequestRecordsCount(request.(*kmsg.ProduceRequest))
-			require.NoError(t, err)
+		wAgents.onWrite(func(request *ingestpb.WriteRequest) (*ingestpb.WriteResponse, error) {
+			numRecords := 1
 
 			receivedBatchesLengthMx.Lock()
 			receivedBatchesLength = append(receivedBatchesLength, numRecords)
@@ -129,7 +116,7 @@ func TestWriter_WriteSync(t *testing.T) {
 				time.Sleep(time.Second)
 			}
 
-			return nil, nil, false
+			return nil, nil
 		})
 
 		wg := sync.WaitGroup{}
@@ -171,8 +158,8 @@ func TestWriter_WriteSync(t *testing.T) {
 			receivedBatchesLength   []int
 		)
 
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestWriteAgentConfig(clusterAddr, topicName))
+		cluster, _ := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestWriteAgentSelector())
 
 		// Allow only 1 in-flight Produce request in this test, to easily reproduce the scenario.
 		writer.maxInflightProduceRequests = 1
@@ -223,10 +210,11 @@ func TestWriter_WriteSync(t *testing.T) {
 	})
 
 	t.Run("should return error on non existing partition", func(t *testing.T) {
+		t.Skip("grafana streams write agents support all partitions")
 		t.Parallel()
 
-		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestWriteAgentConfig(clusterAddr, topicName))
+		_, _ = testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestWriteAgentSelector())
 
 		// Write to a non-existing partition.
 		err := writer.WriteSync(ctx, 100, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
@@ -237,8 +225,8 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Skip("there's no connection timeout when sending to grafana streams")
 		t.Parallel()
 
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		kafkaCfg := createTestWriteAgentConfig(clusterAddr, topicName)
+		cluster, _ := testkafka.CreateCluster(t, numPartitions, topicName)
+		kafkaCfg := createTestWriteAgentSelector()
 		writer, _ := createTestWriter(t, kafkaCfg)
 
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -260,8 +248,8 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Skip("there's not connection timeout when sending to grafana streams")
 		t.Parallel()
 
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		kafkaCfg := createTestWriteAgentConfig(clusterAddr, topicName)
+		cluster, _ := testkafka.CreateCluster(t, numPartitions, topicName)
+		kafkaCfg := createTestWriteAgentSelector()
 		writer, _ := createTestWriter(t, kafkaCfg)
 
 		var (
@@ -374,19 +362,37 @@ func createTestContextWithTimeout(t *testing.T, timeout time.Duration) context.C
 	return ctx
 }
 
-func createTestWriteAgentConfig(clusterAddr, topicName string) WriteAgentConfig {
-	cfg := WriteAgentConfig{}
-	flagext.DefaultValues(&cfg)
+type mockWriteAgentSelector struct {
+	*services.BasicService
 
-	cfg.Address = clusterAddr
-
-	return cfg
+	doOnWrite      func(*ingestpb.WriteRequest) (*ingestpb.WriteResponse, error)
+	receivedWrites []*ingestpb.WriteRequest
 }
 
-func createTestWriter(t *testing.T, cfg WriteAgentConfig) (*Writer, prometheus.Gatherer) {
+func (m *mockWriteAgentSelector) PickServer(partitionID int32) (ingestpb.WriteAgentClient, error) {
+	return m, nil
+}
+
+func (m *mockWriteAgentSelector) Write(ctx context.Context, in *ingestpb.WriteRequest, opts ...grpc.CallOption) (*ingestpb.WriteResponse, error) {
+	m.receivedWrites = append(m.receivedWrites, in)
+	return m.doOnWrite(in)
+}
+
+func (m *mockWriteAgentSelector) onWrite(f func(*ingestpb.WriteRequest) (*ingestpb.WriteResponse, error)) {
+	m.doOnWrite = f
+}
+
+func createTestWriteAgentSelector() *mockWriteAgentSelector {
+	noopWrite := func(*ingestpb.WriteRequest) (*ingestpb.WriteResponse, error) {
+		return &ingestpb.WriteResponse{}, nil
+	}
+	return &mockWriteAgentSelector{BasicService: services.NewIdleService(nil, nil), doOnWrite: noopWrite}
+}
+
+func createTestWriter(t *testing.T, waSelector writeAgentSelector) (*Writer, prometheus.Gatherer) {
 	reg := prometheus.NewPedanticRegistry()
 
-	writer, err := NewWriter(cfg, test.NewTestingLogger(t), reg)
+	writer, err := newWriter(waSelector, test.NewTestingLogger(t), reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), writer))
 

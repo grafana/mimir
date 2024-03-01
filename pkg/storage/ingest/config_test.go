@@ -17,20 +17,21 @@ func TestConfig_Validate(t *testing.T) {
 		"should pass with the default config": {
 			setup: func(_ *Config) {},
 		},
-		"should fail if ingest storage is enabled and Kafka address is not configured": {
-			setup: func(cfg *Config) {
-				cfg.Enabled = true
-				cfg.KafkaConfig.Topic = "test"
-			},
-			expectedErr: ErrMissingKafkaAddress,
-		},
-		"should fail if ingest storage is enabled and Kafka topic is not configured": {
-			setup: func(cfg *Config) {
-				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
-			},
-			expectedErr: ErrMissingKafkaTopic,
-		},
+		// TODO change for write-agent config instead
+		//"should fail if ingest storage is enabled and Kafka address is not configured": {
+		//	setup: func(cfg *Config) {
+		//		cfg.Enabled = true
+		//		cfg.KafkaConfig.Topic = "test"
+		//	},
+		//	expectedErr: ErrMissingKafkaAddress,
+		//},
+		//"should fail if ingest storage is enabled and Kafka topic is not configured": {
+		//	setup: func(cfg *Config) {
+		//		cfg.Enabled = true
+		//		cfg.KafkaConfig.Address = "localhost"
+		//	},
+		//	expectedErr: ErrMissingKafkaTopic,
+		//},
 		"should pass if ingest storage is enabled and required config is set": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true

@@ -34,6 +34,11 @@ const (
 	writerRequestTimeoutOverhead = 2 * time.Second
 )
 
+type writeAgentSelector interface {
+	services.Service
+	PickServer(partitionID int32) (ingestpb.WriteAgentClient, error)
+}
+
 // Writer is responsible to write incoming data to the ingest storage.
 type Writer struct {
 	services.Service
@@ -41,7 +46,7 @@ type Writer struct {
 	logger     log.Logger
 	registerer prometheus.Registerer
 
-	writeAgents writeAgentServerSelector
+	writeAgents writeAgentSelector
 
 	// Metrics.
 	writeLatency    prometheus.Summary
@@ -56,7 +61,10 @@ func NewWriter(waConfig WriteAgentConfig, logger log.Logger, reg prometheus.Regi
 	if err != nil {
 		return nil, errors.Wrap(err, "creating write agent server selector")
 	}
+	return newWriter(waSelector, logger, reg)
+}
 
+func newWriter(waSelector writeAgentSelector, logger log.Logger, reg prometheus.Registerer) (*Writer, error) {
 	w := &Writer{
 		logger:                     logger,
 		registerer:                 reg,
