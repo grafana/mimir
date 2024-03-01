@@ -68,7 +68,8 @@ type Handler struct {
 	cfg          HandlerConfig
 	log          log.Logger
 	roundTripper http.RoundTripper
-	at           *activitytracker.ActivityTracker
+	//QueryService service.QueryService
+	at *activitytracker.ActivityTracker
 
 	// Metrics.
 	querySeconds    *prometheus.CounterVec
@@ -191,6 +192,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.at.Delete(activityIndex)
 
 	startTime := time.Now()
+	// plug in QueryService here
 	resp, err := f.roundTripper.RoundTrip(r)
 	queryResponseTime := time.Since(startTime)
 
