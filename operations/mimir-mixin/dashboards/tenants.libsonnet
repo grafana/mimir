@@ -138,7 +138,7 @@ local filename = 'mimir-tenants.json';
                 $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
                 $.overrideProperty('color', { mode: 'fixed', fixedColor: 'yellow' }),
               ]),
-            ]
+            ],
           },
           options+: {
             tooltip+: {
@@ -186,7 +186,7 @@ local filename = 'mimir-tenants.json';
                 $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
                 $.overrideProperty('color', { mode: 'fixed', fixedColor: 'yellow' }),
               ]),
-            ]
+            ],
           },
           options+: {
             tooltip+: {
@@ -201,7 +201,7 @@ local filename = 'mimir-tenants.json';
           |||
             Local tenant series limit and number of owned series per ingester.
             Because series can be unevenly distributed across ingesters, ingesters may hit the local limit at different times.
-            Owned series are the subset of and ingester's in-memory series that currently map to it in the ring
+            Owned series are the subset of an ingester's in-memory series that currently map to it in the ring
           |||
         ),
       )

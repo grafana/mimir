@@ -228,7 +228,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Owned series per ingester\nLocal tenant series limit and number of owned series per ingester.\nBecause series can be unevenly distributed across ingesters, ingesters may hit the local limit at different times.\nOwned series are the subset of in-memory series that currently map to the ingester in the ring\n\n",
+                  "description": "### Owned series per ingester\nLocal tenant series limit and number of owned series per ingester.\nBecause series can be unevenly distributed across ingesters, ingesters may hit the local limit at different times.\nOwned series are the subset of an ingester's in-memory series that currently map to it in the ring\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
