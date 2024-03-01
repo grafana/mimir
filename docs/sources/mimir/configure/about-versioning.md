@@ -184,6 +184,8 @@ The following features or configuration parameters are currently deprecated and 
 
 The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.14**:
 
+- Distributor
+  - the metric `cortex_distributor_sample_delay_seconds`
 - Ingester
   - `-ingester.return-only-grpc-errors`
 - Ingester client
