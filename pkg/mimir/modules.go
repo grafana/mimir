@@ -279,7 +279,10 @@ func (t *Mimir) initVault() (services.Service, error) {
 }
 
 func (t *Mimir) initWriteAgent() (services.Service, error) {
-	wa := ingest.NewWriteAgent(t.Cfg.IngestStorage, util_log.Logger)
+	wa, err := ingest.NewWriteAgent(t.Cfg.IngestStorage, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
 	t.API.RegisterWriteAgent(wa)
 	return wa, nil
 }
