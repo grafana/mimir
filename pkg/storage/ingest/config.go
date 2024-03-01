@@ -7,6 +7,8 @@ import (
 	"flag"
 	"time"
 
+	"github.com/grafana/dskit/grpcclient"
+
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
@@ -22,17 +24,20 @@ type Config struct {
 	LastProducedOffsetPollInterval time.Duration `yaml:"last_produced_offset_poll_interval"`
 
 	PostgresConfig PostgresqlConfig `yaml:"postgresql"`
+	WriteAgent     WriteAgentConfig `yaml:"write_agent"`
 	Bucket         bucket.Config    `yaml:",inline"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
-	
+
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka", f)
 	f.IntVar(&cfg.BufferSize, "ingest-storage.buffer-size", 1, "The segment reader's buffer size")
 	f.DurationVar(&cfg.LastProducedOffsetPollInterval, "ingest-storage.last-produced-offset-poll-interval", time.Second, "How frequently to poll the last produced offset, used to enforce strong read consistency.")
 
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("ingest-storage.", "ingest", f)
+	cfg.PostgresConfig.RegisterFlagsWithPrefix("ingest-storage.postgresql", f)
+	cfg.WriteAgent.RegisterFlagsWithPrefix("ingest-storage.write-agent", f)
 }
 
 // Validate the config.
@@ -98,4 +103,20 @@ func (cfg *PostgresqlConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *PostgresqlConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.Address, prefix+".address", "", "The PostgreSQL backend address.")
+}
+
+type WriteAgentConfig struct {
+	Address                    string            `yaml:"address"`
+	DNSLookupPeriod            time.Duration     `yaml:"dns_lookup_duration" category:"advanced"`
+	WriteAgentGRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the distributor and the write-agent."`
+}
+
+func (cfg *WriteAgentConfig) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix("", f)
+}
+
+func (cfg *WriteAgentConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.StringVar(&cfg.Address, prefix+".address", "", "The write-agent address.")
+	f.DurationVar(&cfg.DNSLookupPeriod, prefix+".dns-lookup-period", 10*time.Second, "How often to query DNS for query-frontend or query-scheduler address.")
+	cfg.WriteAgentGRPCClientConfig.RegisterFlagsWithPrefix(prefix+".write-agent.grpc-client-config", f)
 }
