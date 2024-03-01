@@ -94,7 +94,8 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			})
 
 			// Create a Kafka writer and then write a series.
-			writer := ingest.NewWriter(cfg.IngestStorageConfig.KafkaConfig, log.NewNopLogger(), nil)
+			writer, err := ingest.NewWriter(cfg.IngestStorageConfig.WriteAgent, log.NewNopLogger(), nil)
+			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, writer))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))

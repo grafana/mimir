@@ -4,20 +4,26 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/plugin/kprom"
+	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest/ingestpb"
 )
 
 const (
@@ -32,13 +38,10 @@ const (
 type Writer struct {
 	services.Service
 
-	kafkaCfg   KafkaConfig
 	logger     log.Logger
 	registerer prometheus.Registerer
 
-	// We create 1 writer per partition to better parallelize the workload.
-	writersMx sync.RWMutex
-	writers   map[int32]*kgo.Client
+	writeAgents writeAgentServerSelector
 
 	// Metrics.
 	writeLatency    prometheus.Summary
@@ -48,12 +51,16 @@ type Writer struct {
 	maxInflightProduceRequests int
 }
 
-func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
+func NewWriter(waConfig WriteAgentConfig, logger log.Logger, reg prometheus.Registerer) (*Writer, error) {
+	waSelector, err := newWriteAgentServerSelector(waConfig, logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating write agent server selector")
+	}
+
 	w := &Writer{
-		kafkaCfg:                   kafkaCfg,
 		logger:                     logger,
 		registerer:                 reg,
-		writers:                    map[int32]*kgo.Client{},
+		writeAgents:                waSelector,
 		maxInflightProduceRequests: 20,
 
 		// Metrics.
@@ -70,20 +77,12 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		}),
 	}
 
-	w.Service = services.NewIdleService(nil, w.stopping)
+	w.Service = services.NewIdleService(w.starting, w.stopping)
 
-	return w
+	return w, nil
 }
 
 func (w *Writer) stopping(_ error) error {
-	w.writersMx.Lock()
-	defer w.writersMx.Unlock()
-
-	for partitionID, client := range w.writers {
-		client.Close()
-		delete(w.writers, partitionID)
-	}
-
 	return nil
 }
 
@@ -97,94 +96,51 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 		return nil
 	}
 
-	data, err := req.Marshal()
-	if err != nil {
-		return errors.Wrap(err, "failed to serialise data")
-	}
-
-	// Prepare the record to write.
-	record := &kgo.Record{
-		Key:   []byte(userID), // We don't partition based on the key, so the value here doesn't make any difference.
-		Value: data,
-	}
-
 	// Write to backend.
-	writer, err := w.getKafkaWriterForPartition(partitionID)
+	writer, err := w.getWriteAgentForPartition(partitionID)
 	if err != nil {
 		return err
 	}
 
-	err = w.produceSync(ctx, writer, record)
+	waReq := &ingestpb.WriteRequest{
+		Piece:       &ingestpb.Piece{WriteRequest: req, TenantId: userID},
+		PartitionId: partitionID,
+	}
+
+	_, err = writer.Write(ctx, waReq) // response is empty
 	if err != nil {
-		return err
+		return errors.Wrap(err, "sending request to write agent")
 	}
 
 	// Track latency and payload size only for successful requests.
 	w.writeLatency.Observe(time.Since(startTime).Seconds())
-	w.writeBytesTotal.Add(float64(len(data)))
+	w.writeBytesTotal.Add(float64(waReq.Size()))
 
 	return nil
 }
 
-func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, record *kgo.Record) error {
-	errCh := make(chan error, 1)
-
-	// We use a new context to avoid that other Produce() may be cancelled when this call's context is
-	// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
-	// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
-	// cases may cause all requests to fail with context cancelled.
-	client.Produce(context.Background(), record, func(_ *kgo.Record, err error) {
-		errCh <- err
-	})
-
-	// Wait for a response or until the context has done.
-	select {
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	case err := <-errCh:
-		return err
-	}
-}
-
-func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kgo.Client, error) {
-	// Check if the writer has already been created.
-	w.writersMx.RLock()
-	writer := w.writers[partitionID]
-	w.writersMx.RUnlock()
-
-	if writer != nil {
-		return writer, nil
-	}
-
-	w.writersMx.Lock()
-	defer w.writersMx.Unlock()
-
-	// Ensure a new writer wasn't created in the meanwhile. If so, use it.
-	writer = w.writers[partitionID]
-	if writer != nil {
-		return writer, nil
-	}
-	newWriter, err := w.newKafkaWriter(partitionID)
+func (w *Writer) getWriteAgentForPartition(partitionID int32) (ingestpb.WriteAgentClient, error) {
+	writer, err := w.writeAgents.PickServer(partitionID)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "picking write agent for partition %d", partitionID)
 	}
-	w.writers[partitionID] = newWriter
-	return newWriter, nil
+	return writer, nil
 }
 
+// TODO remove
 // newKafkaWriter creates a new Kafka client used to write to a specific partition.
 func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
-	logger := log.With(w.logger, "partition", partitionID)
+	//logger := log.With(w.logger, "partition", partitionID)
 
 	// Do not export the client ID, because we use it to specify options to the backend.
-	metrics := kprom.NewMetrics("cortex_ingest_storage_writer",
-		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, w.registerer)),
-		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
+	//metrics := kprom.NewMetrics("cortex_ingest_storage_writer",
+	//	kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, w.registerer)),
+	//	kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
-	opts := append(
-		commonKafkaClientOptions(w.kafkaCfg, metrics, logger),
+	opts := append([]kgo.Opt{},
+		//commonKafkaClientOptions(w.kafkaCfg, metrics, logger),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.DefaultProduceTopic(w.kafkaCfg.Topic),
+		//kgo.DefaultProduceTopic(w.kafkaCfg.Topic),
 
 		// Use a static partitioner because we want to be in control of the partition.
 		kgo.RecordPartitioner(newKafkaStaticPartitioner(int(partitionID))),
@@ -219,11 +175,15 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		// Once the timeout is reached, the Produce request will fail and all other buffered requests in the client
 		// (for the same partition) will fail too. See kgo.RecordDeliveryTimeout() documentation for more info.
 		kgo.RecordRetries(math.MaxInt64),
-		kgo.RecordDeliveryTimeout(w.kafkaCfg.WriteTimeout),
-		kgo.ProduceRequestTimeout(w.kafkaCfg.WriteTimeout),
+		//kgo.RecordDeliveryTimeout(w.kafkaCfg.WriteTimeout),
+		//kgo.ProduceRequestTimeout(w.kafkaCfg.WriteTimeout),
 		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
 	)
 	return kgo.NewClient(opts...)
+}
+
+func (w *Writer) starting(ctx context.Context) error {
+	return services.StartAndAwaitRunning(ctx, w.writeAgents)
 }
 
 type kafkaStaticPartitioner struct {
@@ -251,4 +211,116 @@ func (p *kafkaStaticPartitioner) RequiresConsistency(_ *kgo.Record) bool {
 // Partition implements kgo.TopicPartitioner.
 func (p *kafkaStaticPartitioner) Partition(_ *kgo.Record, _ int) int {
 	return p.partitionID
+}
+
+type writeAgentServerSelector struct {
+	services.Service
+
+	subservices *services.Manager
+
+	logger log.Logger
+
+	grpcConfig     grpcclient.Config
+	serverSelector *cache.MemcachedJumpHashSelector // it says memcached, but this is just a host jump hash selector; TODO: move in its own package
+
+	writeAgentsMtx *sync.RWMutex
+	writeAgents    map[string]ingestpb.WriteAgentClient
+}
+
+func newWriteAgentServerSelector(waConfig WriteAgentConfig, logger log.Logger) (writeAgentServerSelector, error) {
+	w := writeAgentServerSelector{
+		logger:         logger,
+		grpcConfig:     waConfig.WriteAgentGRPCClientConfig,
+		serverSelector: &cache.MemcachedJumpHashSelector{},
+		writeAgentsMtx: &sync.RWMutex{},
+		writeAgents:    map[string]ingestpb.WriteAgentClient{},
+	}
+
+	sd, err := servicediscovery.NewDNS(logger, waConfig.Address, waConfig.DNSLookupPeriod, w)
+	if err != nil {
+		return writeAgentServerSelector{}, errors.Wrap(err, "creating service discovery")
+	}
+	w.subservices, err = services.NewManager(sd)
+	if err != nil {
+		return writeAgentServerSelector{}, errors.Wrap(err, "creating service manager")
+	}
+	w.Service = services.NewIdleService(w.start, w.stop)
+
+	return w, nil
+}
+
+func (w writeAgentServerSelector) InstanceAdded(instance servicediscovery.Instance) {
+	w.writeAgentsMtx.Lock()
+	defer w.writeAgentsMtx.Unlock()
+
+	_, ok := w.writeAgents[instance.Address]
+	if ok {
+		return
+	}
+	// Dial the new agent.
+	opts, err := w.grpcConfig.DialOption(nil, nil)
+	if err != nil {
+		level.Warn(w.logger).Log("msg", "failed to create gRPC dial options", "err", err)
+		return
+	}
+	cc, err := grpc.Dial(instance.Address, opts...)
+	if err != nil {
+		level.Warn(w.logger).Log("msg", "failed to create gRPC client", "err", err, "address", instance.Address)
+		return
+	}
+	w.writeAgents[instance.Address] = ingestpb.NewWriteAgentClient(cc)
+	w.updateSelectorFromAgents(instance)
+	level.Info(w.logger).Log("msg", "added write agent client", "address", instance.Address)
+}
+
+func (w writeAgentServerSelector) InstanceRemoved(instance servicediscovery.Instance) {
+	w.writeAgentsMtx.Lock()
+	defer w.writeAgentsMtx.Unlock()
+
+	if _, ok := w.writeAgents[instance.Address]; !ok {
+		return
+	}
+	delete(w.writeAgents, instance.Address)
+	w.updateSelectorFromAgents(instance)
+	level.Info(w.logger).Log("msg", "removed write agent client", "address", instance.Address)
+}
+
+func (w writeAgentServerSelector) InstanceChanged(instance servicediscovery.Instance) {
+	// If we get a notification for something we haven't seen yet, then just add it.
+	w.InstanceAdded(instance)
+}
+
+// updateSelectorFromAgents assumes that w.writeAgents is already updated and that w.writeAgentsMtx is being held.
+func (w writeAgentServerSelector) updateSelectorFromAgents(diff servicediscovery.Instance) {
+	allAddresses := make([]string, 0, len(w.writeAgents))
+	for addr := range w.writeAgents {
+		allAddresses = append(allAddresses, addr)
+	}
+	err := w.serverSelector.SetServers(allAddresses...)
+	if err != nil {
+		level.Warn(w.logger).Log("msg", "couldn't update list of write agent clients; keeping same servers", "err", err, "changed_instance", diff.Address)
+		return
+	}
+}
+
+func (w writeAgentServerSelector) PickServer(partitionID int32) (ingestpb.WriteAgentClient, error) {
+	w.writeAgentsMtx.RLock()
+	defer w.writeAgentsMtx.RUnlock()
+	addr, err := w.serverSelector.PickServer(strconv.Itoa(int(partitionID)))
+	if err != nil {
+		return nil, fmt.Errorf("picking server: %w", err)
+	}
+
+	// TODO dimitarvdimitrov remove
+	w.logger.Log("picked", addr.String(), "at", "writeAgentServerSelector", "for", partitionID)
+
+	return w.writeAgents[addr.String()], nil
+}
+
+func (w writeAgentServerSelector) start(ctx context.Context) error {
+	return services.StartManagerAndAwaitHealthy(ctx, w.subservices)
+}
+
+func (w writeAgentServerSelector) stop(err error) error {
+	return services.StopManagerAndAwaitStopped(context.Background(), w.subservices)
 }
