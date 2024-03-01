@@ -295,7 +295,7 @@ func (s *MetadataStorePostgresql) MaxPartitionOffset(ctx context.Context, partit
 
 func (s *MetadataStorePostgresql) UpsertConsumerOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error {
 	_, err := s.connections.Exec(ctx,
-		"INSERT INTO CONSUMER_OFFSETS (PARTITION_ID, CONSUMER_ID, OFFSET_ID, ) VALUES ($1, $2, $3) ON CONFLICT (partition_id, consumer_id) DO UPDATE SET offset_id = $4",
+		"INSERT INTO CONSUMER_OFFSETS (PARTITION_ID, CONSUMER_ID, OFFSET_ID) VALUES ($1, $2, $3) ON CONFLICT (partition_id, consumer_id) DO UPDATE SET offset_id = $4",
 		partitionID, consumerID, offsetID, offsetID)
 	return err
 }

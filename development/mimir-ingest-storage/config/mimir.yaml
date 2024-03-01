@@ -17,11 +17,16 @@ ingest_storage:
     address: mimir-write-agent:9095
   backend: s3
   s3:
+    # You can create the bucket running:
+    # AWS_ACCESS_KEY_ID="mimir" AWS_SECRET_ACCESS_KEY="supersecret" AWS_DEFAULT_REGION=us-west-2 aws --endpoint-url http://127.0.0.1:9000 s3 mb s3://mimir-ingest
     bucket_name: mimir-ingest
     endpoint: minio:9000
     access_key_id: mimir
     secret_access_key: supersecret
     insecure: true
+  garbage_collector:
+    cleanup_interval: 10s
+    retention_period: 30s
 
 ingester:
   return_only_grpc_errors: true

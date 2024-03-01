@@ -83,7 +83,7 @@ func (c *GarbageCollector) onTimerTick(ctx context.Context) error {
 func (c *GarbageCollector) cleanupSegments(ctx context.Context) error {
 	for ctx.Err() == nil {
 		var (
-			limit        = c.cfg.DeleteConcurrency * 10
+			limit        = c.cfg.DeleteConcurrency * 50
 			deleteBefore = time.Now().Add(-c.cfg.RetentionPeriod)
 		)
 
@@ -94,9 +94,11 @@ func (c *GarbageCollector) cleanupSegments(ctx context.Context) error {
 		}
 
 		if len(refs) == 0 {
-			// Nothing to do.
+			level.Info(c.logger).Log("msg", "garbage collector found no segments to delete")
 			return nil
 		}
+
+		level.Info(c.logger).Log("msg", "garbage collector found segments to delete", "num", len(refs))
 
 		// Concurrently delete segments.
 		err = concurrency.ForEachJob(ctx, len(refs), c.cfg.DeleteConcurrency, func(ctx context.Context, idx int) error {
