@@ -1,5 +1,6 @@
 *
 !mimir-ruler
 !mimir-blocks
+!mimir-ingest
 !mimir-alertmanager
 !.gitignore
