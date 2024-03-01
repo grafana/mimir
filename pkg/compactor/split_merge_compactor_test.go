@@ -25,6 +25,7 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -634,7 +635,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			require.NoError(t, err)
 			expected := testData.setup(t, bucketClient)
 
-			c, err := NewMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, reg)
+			c, err := NewMultitenantCompactor(compactorCfg, storageCfg, ingest.Config{}, cfgProvider, logger, reg)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 			t.Cleanup(func() {
@@ -725,7 +726,7 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 	// Create a TSDB block in the storage.
 	blockID := createTSDBBlock(t, bucketClient, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, nil)
 
-	c, err := NewMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, reg)
+	c, err := NewMultitenantCompactor(compactorCfg, storageCfg, ingest.Config{}, cfgProvider, logger, reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	t.Cleanup(func() {

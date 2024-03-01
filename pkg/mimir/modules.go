@@ -954,7 +954,7 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	t.Cfg.Compactor.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	t.Compactor, err = compactor.NewMultitenantCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer)
+	t.Compactor, err = compactor.NewMultitenantCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Cfg.IngestStorage, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
 	}

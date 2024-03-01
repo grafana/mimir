@@ -44,7 +44,7 @@ func (s *MetadataStore) stopping(_ error) error {
 }
 
 // CommitSegment commits a Segment to the metadata store.
-func (s *MetadataStore) CommitSegment(ctx context.Context, partitionID int32, objectID ulid.ULID) (SegmentRef, error) {
+func (s *MetadataStore) CommitSegment(ctx context.Context, partitionID int32, objectID ulid.ULID, now time.Time) (SegmentRef, error) {
 	var lastErr error
 
 	try := backoff.New(ctx, backoff.Config{
@@ -56,7 +56,7 @@ func (s *MetadataStore) CommitSegment(ctx context.Context, partitionID int32, ob
 	for try.Ongoing() {
 		var offsetID int64
 
-		offsetID, lastErr = s.commitSegment(ctx, partitionID, objectID)
+		offsetID, lastErr = s.commitSegment(ctx, partitionID, objectID, now)
 		if lastErr != nil {
 			try.Wait()
 			continue
@@ -77,7 +77,7 @@ func (s *MetadataStore) CommitSegment(ctx context.Context, partitionID int32, ob
 	return SegmentRef{}, lastErr
 }
 
-func (s *MetadataStore) commitSegment(ctx context.Context, partitionID int32, objectID ulid.ULID) (int64, error) {
+func (s *MetadataStore) commitSegment(ctx context.Context, partitionID int32, objectID ulid.ULID, now time.Time) (int64, error) {
 	lastOffsetID, err := s.GetLastProducedOffsetID(ctx, partitionID)
 	if err != nil {
 		return 0, errors.Wrapf(err, "failed to get last offset ID for partition %d", partitionID)
@@ -94,11 +94,16 @@ func (s *MetadataStore) commitSegment(ctx context.Context, partitionID int32, ob
 	// Attempt to insert the segment with the next offset ID, optimistically
 	// hoping no other concurrent write on the same partition happened in the
 	// meanwhile. If it did, the INSERT will fail.
-	if err := s.db.InsertSegment(ctx, ref); err != nil {
+	if err := s.db.InsertSegment(ctx, ref, now); err != nil {
 		return 0, errors.Wrapf(err, "failed to offset segment for partition %d and offset %d", partitionID, nextOffsetID)
 	}
 
 	return nextOffsetID, nil
+}
+
+// DeleteSegment deletes the segment identified by ref from the metadata store.
+func (s *MetadataStore) DeleteSegment(ctx context.Context, ref SegmentRef) error {
+	return s.db.DeleteSegment(ctx, ref)
 }
 
 // GetLastProducedOffsetID returns the last produced offset ID for a given partitionID.
@@ -163,6 +168,13 @@ func (s *MetadataStore) GetLastConsumedOffsetID(ctx context.Context, partitionID
 	return *offsetID, nil
 }
 
+// GetSegmentsCreatedBefore returns a slice of SegmentRef created before threshold. The slice
+// is limited to limit entries.
+func (s *MetadataStore) GetSegmentsCreatedBefore(ctx context.Context, threshold time.Time, limit int) ([]SegmentRef, error) {
+	refs, err := s.db.ListSegmentsCreatedBefore(ctx, threshold, limit)
+	return refs, errors.Wrapf(err, "failed to get segments created before %s", threshold.String())
+}
+
 type MetadataStoreDatabase interface {
 	// Open the database client.
 	Open(ctx context.Context) error
@@ -170,8 +182,10 @@ type MetadataStoreDatabase interface {
 	// Close the database client.
 	Close()
 
-	InsertSegment(ctx context.Context, ref SegmentRef) error
-	ListSegments(ctx context.Context, partitionID int32, lastOffsetID int64) (segments []SegmentRef, returnErr error)
+	InsertSegment(ctx context.Context, ref SegmentRef, now time.Time) error
+	ListSegments(ctx context.Context, partitionID int32, lastOffsetID int64) ([]SegmentRef, error)
+	ListSegmentsCreatedBefore(ctx context.Context, threshold time.Time, limit int) ([]SegmentRef, error)
+	DeleteSegment(ctx context.Context, ref SegmentRef) error
 	MaxPartitionOffset(ctx context.Context, partitionID int32) (*int64, error)
 	UpsertConsumerOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error
 	GetConsumerOffset(ctx context.Context, partitionID int32, consumerID string) (*int64, error)
@@ -205,15 +219,25 @@ func (s *MetadataStorePostgresql) Close() {
 	s.connections.Close()
 }
 
-func (s *MetadataStorePostgresql) InsertSegment(ctx context.Context, ref SegmentRef) error {
-	_, err := s.connections.Exec(ctx, "INSERT INTO SEGMENTS (PARTITION_ID, OFFSET_ID, OBJECT_ID) VALUES ($1, $2, $3)", ref.PartitionID, ref.OffsetID, ref.ObjectID.String())
+func (s *MetadataStorePostgresql) InsertSegment(ctx context.Context, ref SegmentRef, now time.Time) error {
+	_, err := s.connections.Exec(ctx, "INSERT INTO SEGMENTS (PARTITION_ID, OFFSET_ID, OBJECT_ID, created_at) VALUES ($1, $2, $3, $4)", ref.PartitionID, ref.OffsetID, ref.ObjectID.String(), now.Unix())
 	return err
 }
 
-// ListSegments fetch all segments for the given partitionID committed after lastOffsetID.
+// ListSegments list all segments for the given partitionID committed after lastOffsetID.
 // This function may return some segments even if an error occurred.
 func (s *MetadataStorePostgresql) ListSegments(ctx context.Context, partitionID int32, lastOffsetID int64) (segments []SegmentRef, returnErr error) {
-	rows, err := s.connections.Query(ctx, "SELECT OFFSET_ID, OBJECT_ID FROM SEGMENTS WHERE PARTITION_ID = $1 AND OFFSET_ID > $2 ORDER BY OFFSET_ID", partitionID, lastOffsetID)
+	return s.listSegments(ctx, "SELECT partition_id, offset_id, object_id FROM segments WHERE PARTITION_ID = $1 AND OFFSET_ID > $2 ORDER BY OFFSET_ID", partitionID, lastOffsetID)
+}
+
+// ListSegmentsCreatedBefore list segments created before the input threshold.
+// This function may return some segments even if an error occurred.
+func (s *MetadataStorePostgresql) ListSegmentsCreatedBefore(ctx context.Context, threshold time.Time, limit int) ([]SegmentRef, error) {
+	return s.listSegments(ctx, "SELECT partition_id, offset_id, object_id FROM segments WHERE created_at < $1 LIMIT $2", threshold.Unix(), limit)
+}
+
+func (s *MetadataStorePostgresql) listSegments(ctx context.Context, sql string, args ...any) (segments []SegmentRef, returnErr error) {
+	rows, err := s.connections.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -224,11 +248,12 @@ func (s *MetadataStorePostgresql) ListSegments(ctx context.Context, partitionID 
 	// Parse rows (if any).
 	for rows.Next() {
 		var (
+			partitionID int32
 			offsetID    int64
 			rawObjectID string
 		)
 
-		if err := rows.Scan(&offsetID, &rawObjectID); err != nil {
+		if err := rows.Scan(&partitionID, &offsetID, &rawObjectID); err != nil {
 			returnErr = multierr.Append(returnErr, err)
 			return
 		}
@@ -252,6 +277,11 @@ func (s *MetadataStorePostgresql) ListSegments(ctx context.Context, partitionID 
 	return
 }
 
+func (s *MetadataStorePostgresql) DeleteSegment(ctx context.Context, ref SegmentRef) error {
+	_, err := s.connections.Exec(ctx, "DELETE FROM SEGMENTS WHERE PARTITION_ID = $1 AND OFFSET_ID = $2 AND OBJECT_ID = $3", ref.PartitionID, ref.OffsetID, ref.ObjectID.String())
+	return err
+}
+
 func (s *MetadataStorePostgresql) MaxPartitionOffset(ctx context.Context, partitionID int32) (*int64, error) {
 	var value *int64
 
@@ -265,7 +295,7 @@ func (s *MetadataStorePostgresql) MaxPartitionOffset(ctx context.Context, partit
 
 func (s *MetadataStorePostgresql) UpsertConsumerOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error {
 	_, err := s.connections.Exec(ctx,
-		"INSERT INTO CONSUMER_OFFSETS (PARTITION_ID, CONSUMER_ID, OFFSET_ID) VALUES ($1, $2, $3) ON CONFLICT (partition_id, consumer_id) DO UPDATE SET offset_id = $4",
+		"INSERT INTO CONSUMER_OFFSETS (PARTITION_ID, CONSUMER_ID, OFFSET_ID, ) VALUES ($1, $2, $3) ON CONFLICT (partition_id, consumer_id) DO UPDATE SET offset_id = $4",
 		partitionID, consumerID, offsetID, offsetID)
 	return err
 }

@@ -19,7 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest/ingestpb"
 )
 
-// SegmentStorage is a low-level client to write and read segments to/fron the storage.
+// SegmentStorage is a low-level client to write and read segments to/from the storage.
 // Use SegmentReader if you need an higher level client to read segments.
 type SegmentStorage struct {
 	bucket   objstore.Bucket
@@ -34,7 +34,7 @@ func NewSegmentStorage(bucket objstore.Bucket, metadata *MetadataStore) *Segment
 }
 
 // CommitSegment uploads and commits a segment to the storage.
-func (s *SegmentStorage) CommitSegment(ctx context.Context, partitionID int32, segmentData *ingestpb.Segment) (SegmentRef, error) {
+func (s *SegmentStorage) CommitSegment(ctx context.Context, partitionID int32, segmentData *ingestpb.Segment, now time.Time) (SegmentRef, error) {
 	// Marshal the segment.
 	rawData, err := segmentData.Marshal()
 	if err != nil {
@@ -42,7 +42,7 @@ func (s *SegmentStorage) CommitSegment(ctx context.Context, partitionID int32, s
 	}
 
 	// Upload the segment to the object storage.
-	objectID, err := ulid.New(uint64(time.Now().UnixMilli()), rand.Reader)
+	objectID, err := ulid.New(uint64(now.UnixMilli()), rand.Reader)
 	if err != nil {
 		return SegmentRef{}, errors.Wrap(err, "failed to generate segment object ID")
 	}
@@ -53,7 +53,7 @@ func (s *SegmentStorage) CommitSegment(ctx context.Context, partitionID int32, s
 	}
 
 	// Commit it to the metadata store after it has been successfully uploaded.
-	return s.metadata.CommitSegment(ctx, partitionID, objectID)
+	return s.metadata.CommitSegment(ctx, partitionID, objectID, now)
 }
 
 // FetchSegment reads a segment from the storage.
@@ -82,6 +82,23 @@ func (s *SegmentStorage) FetchSegment(ctx context.Context, ref SegmentRef) (_ *S
 		Ref:  ref,
 		Data: segmentData,
 	}, nil
+}
+
+// DeleteSegment deletes a segment from storage.
+func (s *SegmentStorage) DeleteSegment(ctx context.Context, ref SegmentRef) error {
+	// First delete it from the metadata store.
+	if err := s.metadata.DeleteSegment(ctx, ref); err != nil {
+		return errors.Wrap(err, "failed to delete segment from metadata store")
+	}
+
+	// Then we can delete it from object storage.
+	objectPath := getSegmentObjectPath(ref.PartitionID, ref.ObjectID)
+
+	if err := s.bucket.Delete(ctx, objectPath); err != nil {
+		return errors.Wrap(err, "failed to delete segment from object storage")
+	}
+
+	return nil
 }
 
 // FetchSegmentWithRetries is like FetchSegment but retries few times on failure.

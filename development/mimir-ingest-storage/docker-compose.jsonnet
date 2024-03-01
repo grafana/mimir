@@ -65,7 +65,7 @@ std.manifestYamlDoc({
     'mimir-write-agent': mimirService({
       name: 'mimir-write-agent',
       target: 'write-agent',
-      publishedHttpPort: 8021,
+      publishedHttpPort: 8022,
     }),
   },
 

@@ -32,6 +32,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
@@ -232,12 +233,13 @@ type ConfigProvider interface {
 type MultitenantCompactor struct {
 	services.Service
 
-	compactorCfg Config
-	storageCfg   mimir_tsdb.BlocksStorageConfig
-	cfgProvider  ConfigProvider
-	logger       log.Logger
-	parentLogger log.Logger
-	registerer   prometheus.Registerer
+	compactorCfg     Config
+	storageCfg       mimir_tsdb.BlocksStorageConfig
+	ingestStorageCfg ingest.Config
+	cfgProvider      ConfigProvider
+	logger           log.Logger
+	parentLogger     log.Logger
+	registerer       prometheus.Registerer
 
 	// Functions that create bucket client, grouper, planner and compactor using the context.
 	// Useful for injecting mock objects from tests.
@@ -247,6 +249,9 @@ type MultitenantCompactor struct {
 
 	// Blocks cleaner is responsible for hard deletion of blocks marked for deletion.
 	blocksCleaner *BlocksCleaner
+
+	// Garbage collection is responsible to delete segments when ingest storage is enabled.
+	garbageCollector *ingest.StandaloneGarbageCollector
 
 	// Underlying compactor and planner for compacting TSDB blocks.
 	blocksCompactor Compactor
@@ -291,7 +296,7 @@ type MultitenantCompactor struct {
 }
 
 // NewMultitenantCompactor makes a new MultitenantCompactor.
-func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, cfgProvider ConfigProvider, logger log.Logger, registerer prometheus.Registerer) (*MultitenantCompactor, error) {
+func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, ingestStorageCfg ingest.Config, cfgProvider ConfigProvider, logger log.Logger, registerer prometheus.Registerer) (*MultitenantCompactor, error) {
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucket.NewClient(ctx, storageCfg.Bucket, "compactor", logger, registerer)
 	}
@@ -304,7 +309,7 @@ func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksSt
 	blocksGrouperFactory := compactorCfg.BlocksGrouperFactory
 	blocksCompactorFactory := compactorCfg.BlocksCompactorFactory
 
-	mimirCompactor, err := newMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, registerer, bucketClientFactory, blocksGrouperFactory, blocksCompactorFactory)
+	mimirCompactor, err := newMultitenantCompactor(compactorCfg, storageCfg, ingestStorageCfg, cfgProvider, logger, registerer, bucketClientFactory, blocksGrouperFactory, blocksCompactorFactory)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create blocks compactor")
 	}
@@ -315,6 +320,7 @@ func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksSt
 func newMultitenantCompactor(
 	compactorCfg Config,
 	storageCfg mimir_tsdb.BlocksStorageConfig,
+	ingestStorageCfg ingest.Config,
 	cfgProvider ConfigProvider,
 	logger log.Logger,
 	registerer prometheus.Registerer,
@@ -325,6 +331,7 @@ func newMultitenantCompactor(
 	c := &MultitenantCompactor{
 		compactorCfg:           compactorCfg,
 		storageCfg:             storageCfg,
+		ingestStorageCfg:       ingestStorageCfg,
 		cfgProvider:            cfgProvider,
 		parentLogger:           logger,
 		logger:                 log.With(logger, "component", "compactor"),
@@ -512,6 +519,14 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		return errors.Wrap(err, "failed to start the blocks cleaner")
 	}
 
+	if c.ingestStorageCfg.Enabled {
+		c.garbageCollector = ingest.NewStandaloneGarbageCollector(c.ingestStorageCfg, c.logger, c.registerer)
+
+		if err := services.StartAndAwaitRunning(ctx, c.garbageCollector); err != nil {
+			return errors.Wrap(err, "failed to start segments garbage collector")
+		}
+	}
+
 	return nil
 }
 
@@ -548,9 +563,12 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 func (c *MultitenantCompactor) stopping(_ error) error {
 	ctx := context.Background()
 
-	services.StopAndAwaitTerminated(ctx, c.blocksCleaner) //nolint:errcheck
+	_ = services.StopAndAwaitTerminated(ctx, c.blocksCleaner)
+	if c.garbageCollector != nil {
+		_ = services.StopAndAwaitTerminated(ctx, c.garbageCollector)
+	}
 	if c.ringSubservices != nil {
-		return services.StopManagerAndAwaitStopped(ctx, c.ringSubservices)
+		_ = services.StopManagerAndAwaitStopped(ctx, c.ringSubservices)
 	}
 	return nil
 }

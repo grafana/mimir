@@ -156,7 +156,7 @@ func (a *WriteAgent) flushPartitionSegmentAndNotifyWaiters(ctx context.Context, 
 	}
 
 	start := time.Now()
-	segmentRef, err := a.segmentStorage.CommitSegment(ctx, partition, segment)
+	segmentRef, err := a.segmentStorage.CommitSegment(ctx, partition, segment, time.Now())
 	elapsed := time.Since(start)
 
 	if err == nil {

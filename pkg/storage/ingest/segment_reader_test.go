@@ -50,9 +50,9 @@ func TestSegmentReader_WaitNextSegment(t *testing.T) {
 
 		// Commit some segments.
 		storage := NewSegmentStorage(bucket, metadata)
-		ref1, err := storage.CommitSegment(ctx, partitionID, segment1)
+		ref1, err := storage.CommitSegment(ctx, partitionID, segment1, time.Now())
 		require.NoError(t, err)
-		ref2, err := storage.CommitSegment(ctx, partitionID, segment2)
+		ref2, err := storage.CommitSegment(ctx, partitionID, segment2, time.Now())
 		require.NoError(t, err)
 
 		// Read the committed segments.
@@ -84,7 +84,7 @@ func TestSegmentReader_WaitNextSegment(t *testing.T) {
 		}()
 
 		// Commit the next segment. We expect WaitNextSegment() will return it.
-		ref3, err := storage.CommitSegment(ctx, partitionID, segment3)
+		ref3, err := storage.CommitSegment(ctx, partitionID, segment3, time.Now())
 		require.NoError(t, err)
 
 		wg.Wait()

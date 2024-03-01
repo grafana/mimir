@@ -118,7 +118,7 @@
     "hostname": "mimir-write-agent"
     "image": "mimir"
     "ports":
-      - "8021:8080"
+      - "8022:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"

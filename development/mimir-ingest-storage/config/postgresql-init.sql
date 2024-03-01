@@ -5,7 +5,8 @@
 CREATE TABLE segments (
     partition_id    smallint NOT NULL,
     offset_id       bigint NOT NULL,
-    object_id       text NOT NULL
+    object_id       text NOT NULL,
+    created_at      int NOT NULL
 );
 
 ALTER TABLE ONLY segments ADD CONSTRAINT "segments_primary_key" PRIMARY KEY (partition_id, offset_id);

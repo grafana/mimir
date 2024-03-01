@@ -45,6 +45,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	testutil "github.com/grafana/mimir/pkg/util/test"
@@ -1791,7 +1792,7 @@ func prepareWithConfigProvider(t *testing.T, compactorCfg Config, bucketClient o
 		return tsdbCompactor, tsdbPlanner, nil
 	}
 
-	c, err := newMultitenantCompactor(compactorCfg, storageCfg, limits, logger, registry, bucketClientFactory, splitAndMergeGrouperFactory, blocksCompactorFactory)
+	c, err := newMultitenantCompactor(compactorCfg, storageCfg, ingest.Config{}, limits, logger, registry, bucketClientFactory, splitAndMergeGrouperFactory, blocksCompactorFactory)
 	require.NoError(t, err)
 
 	return c, tsdbCompactor, tsdbPlanner, logs, registry

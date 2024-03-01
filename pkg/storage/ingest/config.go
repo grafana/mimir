@@ -23,9 +23,10 @@ type Config struct {
 	BufferSize                     int           `yaml:"buffer_size"`
 	LastProducedOffsetPollInterval time.Duration `yaml:"last_produced_offset_poll_interval"`
 
-	PostgresConfig PostgresqlConfig `yaml:"postgresql"`
-	WriteAgent     WriteAgentConfig `yaml:"write_agent"`
-	Bucket         bucket.Config    `yaml:",inline"`
+	PostgresConfig         PostgresqlConfig       `yaml:"postgresql"`
+	WriteAgent             WriteAgentConfig       `yaml:"write_agent"`
+	GarbageCollectorConfig GarbageCollectorConfig `yaml:"garbage_collector"`
+	Bucket                 bucket.Config          `yaml:",inline"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -38,6 +39,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("ingest-storage.", "ingest", f)
 	cfg.PostgresConfig.RegisterFlagsWithPrefix("ingest-storage.postgresql", f)
 	cfg.WriteAgent.RegisterFlagsWithPrefix("ingest-storage.write-agent", f)
+	cfg.GarbageCollectorConfig.RegisterFlagsWithPrefix("ingest-storage.garbage-collector", f)
 }
 
 // Validate the config.
@@ -119,4 +121,20 @@ func (cfg *WriteAgentConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 	f.StringVar(&cfg.Address, prefix+".address", "", "The write-agent address.")
 	f.DurationVar(&cfg.DNSLookupPeriod, prefix+".dns-lookup-period", 10*time.Second, "How often to query DNS for query-frontend or query-scheduler address.")
 	cfg.WriteAgentGRPCClientConfig.RegisterFlagsWithPrefix(prefix+".write-agent.grpc-client-config", f)
+}
+
+type GarbageCollectorConfig struct {
+	CleanupInterval   time.Duration `yaml:"cleanup_interval"`
+	RetentionPeriod   time.Duration `yaml:"retention_period"`
+	DeleteConcurrency int           `yaml:"delete_concurrency"`
+}
+
+func (cfg *GarbageCollectorConfig) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix("", f)
+}
+
+func (cfg *GarbageCollectorConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.DurationVar(&cfg.CleanupInterval, prefix+".onTimerTick-interval", time.Minute, "How frequently to check for segments to delete.")
+	f.DurationVar(&cfg.RetentionPeriod, prefix+".retention-period", time.Hour, "The segments retention period.")
+	f.IntVar(&cfg.DeleteConcurrency, prefix+".delete-concurrency", 10, "How many concurrent delete operations to run.")
 }
