@@ -685,8 +685,9 @@ func (c *ownedSeriesWithPartitionsRingTestContext) removePartition(t *testing.T,
 
 const ownedServiceTestUserPartitionsRing = "test-user-123"
 
-var partitions_0_1_series_split = map[int32]int{0: 3, 1: 7}
-var partitions_1_2_series_split = map[int32]int{1: 2, 2: 8}
+// How many series from ownedServiceSeriesCount end up in given partition when tenant is using both of them.
+var seriesSplitForPartitions0And1 = map[int32]int{0: 3, 1: 7}
+var seriesSplitForPartitions1And2 = map[int32]int{1: 2, 2: 8}
 
 // This test shows which partitions are part of test user shuffle-shard. These properties are used in TestOwnedSeriesServiceWithPartitionsRing test.
 // Note that shuffle shard for given tenant and number of partitions is completely deterministic, because partitions use deterministic tokens.
@@ -703,9 +704,9 @@ func TestOwnedSeriesPartitionsTestUserShuffleSharding(t *testing.T) {
 	for _, tc := range []testCase{
 		{partitions: []int32{1}, shardSize: 1, expectedPartitionsInTheShard: []int32{1}, expectedSeriesPerPartition: map[int32]int{1: 10}},
 		{partitions: []int32{1, 2}, shardSize: 1, expectedPartitionsInTheShard: []int32{2}, expectedSeriesPerPartition: map[int32]int{2: 10}},
-		{partitions: []int32{1, 2}, shardSize: 2, expectedPartitionsInTheShard: []int32{1, 2}, expectedSeriesPerPartition: partitions_1_2_series_split},
+		{partitions: []int32{1, 2}, shardSize: 2, expectedPartitionsInTheShard: []int32{1, 2}, expectedSeriesPerPartition: seriesSplitForPartitions1And2},
 		{partitions: []int32{0, 1}, shardSize: 1, expectedPartitionsInTheShard: []int32{1}, expectedSeriesPerPartition: map[int32]int{1: 10}},
-		{partitions: []int32{0, 1}, shardSize: 2, expectedPartitionsInTheShard: []int32{0, 1}, expectedSeriesPerPartition: partitions_0_1_series_split},
+		{partitions: []int32{0, 1}, shardSize: 2, expectedPartitionsInTheShard: []int32{0, 1}, expectedSeriesPerPartition: seriesSplitForPartitions0And1},
 	} {
 		t.Run(fmt.Sprintf("%d/%d", tc.partitions, tc.shardSize), func(t *testing.T) {
 			rd := ring.NewPartitionRingDesc()
@@ -928,14 +929,14 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 
 				// will recompute because the local limit has changed (takes precedence over ring change)
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, partitions_0_1_series_split[0], 0, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 
 				// remove the second ingester
 				c.removePartition(t, 1)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, partitions_0_1_series_split[0], 0, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, ownedServiceTestUserSeriesLimit/2)
 
 				// will recompute because the local limit has changed (takes precedence over ring change)
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
@@ -960,7 +961,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 
 				// will recompute because the local limit has changed (takes precedence over ring change)
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, partitions_0_1_series_split[0], 0, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 
 				// now don't change the ring, but change shard size from 0 to 2, which is also our number of partitions.
@@ -968,10 +969,10 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 2
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, partitions_0_1_series_split[0], 0, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, ownedServiceTestUserSeriesLimit/2)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, partitions_0_1_series_split[0], 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 			},
 		},
@@ -1002,14 +1003,14 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, partitions_1_2_series_split[2], 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[2], 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 
 				// change shard size back to 1, moving the series back to the original ingester
 				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 1
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, partitions_1_2_series_split[2], 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[2], 2, ownedServiceTestUserSeriesLimit/2)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
@@ -1047,14 +1048,14 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, partitions_1_2_series_split[1], 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[1], 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 
 				// change shard size back to 1, moving the series back to the original partition.
 				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 1
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, partitions_1_2_series_split[1], 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[1], 2, ownedServiceTestUserSeriesLimit/2)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
 				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
@@ -1125,7 +1126,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, partitions_0_1_series_split[1], 2, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[1], 2, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 
 				// halve series limit and shard size
@@ -1133,7 +1134,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 1
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, partitions_0_1_series_split[1], 2, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[1], 2, ownedServiceTestUserSeriesLimit)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
