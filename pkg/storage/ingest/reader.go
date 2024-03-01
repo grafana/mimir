@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
 type recordConsumer interface {
@@ -29,7 +31,7 @@ type PartitionReader struct {
 	segmentReader *SegmentReader
 	metadataStore *MetadataStore
 
-	kafkaCfg      KafkaConfig
+	config        Config
 	partitionID   int32
 	consumerGroup string
 
@@ -48,14 +50,25 @@ type PartitionReader struct {
 	reg    prometheus.Registerer
 }
 
-func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, segmentReader *SegmentReader, metadataStore *MetadataStore, partitionID int32, consumerGroup string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func NewPartitionReaderForPusher(config Config, partitionID int32, consumerGroup string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	consumer := newPusherConsumer(pusher, reg, logger)
-	return newPartitionReader(kafkaCfg, segmentReader, metadataStore, partitionID, consumerGroup, consumer, logger, reg)
+	db := NewMetadataStorePostgresql(config.PostgresConfig)
+	metadataStore := NewMetadataStore(db, logger)
+	bucketClient, err := bucket.NewClient(context.Background(), config.Bucket, "segment-store", logger, reg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create segment store bucket client")
+	}
+	offset, err := metadataStore.GetLastConsumedOffsetID(context.Background(), partitionID, consumerGroup)
+	if err != nil {
+		return nil, errors.Wrap(err, fmt.Sprintf("failed to get last consumer offset: %v", partitionID))
+	}
+	segmentReader := NewSegmentReader(bucketClient, metadataStore, partitionID, offset, config.BufferSize, logger)
+	return newPartitionReader(config, segmentReader, metadataStore, partitionID, consumerGroup, consumer, logger, reg)
 }
 
-func newPartitionReader(kafkaCfg KafkaConfig, segmentReader *SegmentReader, metadataStore *MetadataStore, partitionID int32, consumerGroup string, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func newPartitionReader(config Config, segmentReader *SegmentReader, metadataStore *MetadataStore, partitionID int32, consumerGroup string, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	r := &PartitionReader{
-		kafkaCfg:              kafkaCfg,
+		config:                config,
 		segmentReader:         segmentReader,
 		metadataStore:         metadataStore,
 		partitionID:           partitionID,
@@ -82,7 +95,7 @@ func (r *PartitionReader) start(ctx context.Context) error {
 
 	r.committer = newConsumerCommitter(r.metadataStore, r.partitionID, r.consumerGroup, r.commitInterval, r.logger)
 
-	r.offsetReader = newPartitionOffsetReader(r.metadataStore, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.reg, r.logger)
+	r.offsetReader = newPartitionOffsetReader(r.metadataStore, r.partitionID, r.config.LastProducedOffsetPollInterval, r.reg, r.logger)
 
 	r.dependencies, err = services.NewManager(r.committer, r.offsetReader, r.consumedOffsetWatcher, r.segmentReader, r.metadataStore)
 	if err != nil {

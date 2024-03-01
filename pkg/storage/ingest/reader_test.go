@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -240,7 +241,7 @@ func produceRecord(ctx context.Context, t *testing.T, segmentStorage *SegmentSto
 }
 
 type readerTestCfg struct {
-	kafka          KafkaConfig
+	config         Config
 	partitionID    int32
 	consumer       recordConsumer
 	registry       prometheus.Registerer
@@ -258,7 +259,7 @@ func withCommitInterval(i time.Duration) func(cfg *readerTestCfg) {
 
 func withLastProducedOffsetPollInterval(i time.Duration) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
-		cfg.kafka.LastProducedOffsetPollInterval = i
+		cfg.config.LastProducedOffsetPollInterval = i
 	}
 }
 
@@ -268,23 +269,29 @@ func withRegistry(reg prometheus.Registerer) func(cfg *readerTestCfg) {
 	}
 }
 
-func defaultReaderTestConfig(addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
+func defaultReaderTestConfig(partitionID int32, consumer recordConsumer) *readerTestCfg {
 	return &readerTestCfg{
 		registry:       prometheus.NewPedanticRegistry(),
 		logger:         log.NewNopLogger(),
-		kafka:          createTestKafkaConfig(addr, topicName),
+		config:         createTestIngestConfig(),
 		partitionID:    partitionID,
 		consumer:       consumer,
 		commitInterval: 10 * time.Second,
 	}
 }
 
+func createTestIngestConfig() Config {
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	return cfg
+}
+
 func startReader(ctx context.Context, t *testing.T, segmentReader *SegmentReader, metadataStore *MetadataStore, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
-	cfg := defaultReaderTestConfig("", "", partitionID, consumer)
+	cfg := defaultReaderTestConfig(partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
 	}
-	reader, err := newPartitionReader(cfg.kafka, segmentReader, metadataStore, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.config, segmentReader, metadataStore, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	reader.commitInterval = cfg.commitInterval
 
