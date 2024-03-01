@@ -21,8 +21,9 @@ type WriteAgent struct {
 	services.Service
 
 	logger         log.Logger
-	metadataStore  *MetadataStore
+	dependencies   *services.Manager
 	segmentStorage *SegmentStorage
+	flushInterval  time.Duration
 
 	segmentUpdateAllowedMu  sync.Mutex
 	segmentUpdateAllowed    bool
@@ -32,8 +33,8 @@ type WriteAgent struct {
 	partitionSegments   map[int32]*partitionSegmentWithWaiters
 }
 
-func NewWriteAgent(cfg Config, logger log.Logger, reg prometheus.Registerer) (*WriteAgent, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), cfg.Bucket, "segment-store", logger, reg)
+func NewWriteAgent(cfg Config, flushInterval time.Duration, logger log.Logger, reg prometheus.Registerer) (*WriteAgent, error) {
+	bucketClient, err := bucket.NewClient(context.Background(), cfg.Bucket, "write-agent-segment-store", logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create segment store bucket client")
 	}
@@ -41,32 +42,47 @@ func NewWriteAgent(cfg Config, logger log.Logger, reg prometheus.Registerer) (*W
 	metadataStore := NewMetadataStore(NewMetadataStorePostgresql(cfg.PostgresConfig), logger)
 	segmentStorage := NewSegmentStorage(bucketClient, metadataStore)
 
+	mgr, err := services.NewManager(metadataStore)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create write agent dependencies")
+	}
+
+	return newWriteAgent(flushInterval, segmentStorage, logger, reg, mgr), nil
+}
+
+func newWriteAgent(flushInterval time.Duration, segmentStorage *SegmentStorage, logger log.Logger, reg prometheus.Registerer, dependencies *services.Manager) *WriteAgent {
 	a := &WriteAgent{
-		metadataStore:  metadataStore,
-		segmentStorage: segmentStorage,
-		logger:         logger,
+		segmentStorage:    segmentStorage,
+		logger:            logger,
+		flushInterval:     flushInterval,
+		partitionSegments: map[int32]*partitionSegmentWithWaiters{},
+		dependencies:      dependencies,
 	}
 
 	a.Service = services.NewBasicService(a.starting, a.running, a.stopping)
-	return a, nil
+	return a
 }
 
 func (a *WriteAgent) starting(ctx context.Context) error {
 	// Start dependencies.
-	if err := services.StartAndAwaitRunning(ctx, a.metadataStore); err != nil {
-		return err
+	if a.dependencies != nil {
+		if err := services.StartManagerAndAwaitHealthy(ctx, a.dependencies); err != nil {
+			return err
+		}
+
+		// TODO: listen for failures and stop write agent if any dependency fails.
 	}
 
+	// Enable segment updates in starting, so that when client observes Running state, this is already set.
+	a.segmentUpdateAllowedMu.Lock()
+	a.segmentUpdateAllowed = true
+	a.segmentUpdateAllowedMu.Unlock()
 	return nil
 }
 
 func (a *WriteAgent) running(ctx context.Context) error {
-	timer := time.NewTicker(250 * time.Millisecond)
+	timer := time.NewTicker(a.flushInterval)
 	defer timer.Stop()
-
-	a.segmentUpdateAllowedMu.Lock()
-	a.segmentUpdateAllowed = true
-	a.segmentUpdateAllowedMu.Unlock()
 
 	// Disable segment updates when running function stops.
 	defer func() {
@@ -88,14 +104,16 @@ func (a *WriteAgent) running(ctx context.Context) error {
 func (a *WriteAgent) stopping(_ error) error {
 	// No new segments can be created at this point, but we should write all pending segments one more time.
 	// But first wait until all segment updates are done. (This is safe to call,
-	// because no new segment updates can be started anymore).
+	// because no new segment updates can be started anymore -- running function disabled those).
 	a.segmentUpdateInProgress.Wait()
 
 	a.flushPendingSegments(context.Background())
 
 	// Stop dependencies.
-	if err := services.StopAndAwaitTerminated(context.Background(), a.metadataStore); err != nil {
-		level.Warn(a.logger).Log("msg", "failed to stop write agent dependencies", "err", err)
+	if a.dependencies != nil {
+		if err := services.StopManagerAndAwaitStopped(context.Background(), a.dependencies); err != nil {
+			level.Warn(a.logger).Log("msg", "failed to stop write agent dependencies", "err", err)
+		}
 	}
 
 	return nil
@@ -133,12 +151,21 @@ func (a *WriteAgent) flushPartitionSegmentAndNotifyWaiters(ctx context.Context, 
 	segment, waiters := ps.getCurrentSegmentAndReplaceItWithNewOne()
 
 	if len(segment.Pieces) == 0 {
-		sendErrorToWaitersWithoutBlocking(waiters, nil)
+		sendErrorToWaiters(waiters, nil)
 		return
 	}
 
-	_, err := a.segmentStorage.CommitSegment(ctx, partition, segment)
-	sendErrorToWaitersWithoutBlocking(waiters, err)
+	start := time.Now()
+	segmentRef, err := a.segmentStorage.CommitSegment(ctx, partition, segment)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		level.Debug(a.logger).Log("msg", "flushing partition succeeded", "partition", partition, "write_requests", len(segment.Pieces), "elapsed", elapsed, "segmentRef", segmentRef)
+	} else {
+		level.Error(a.logger).Log("msg", "flushing partition failed", "partition", partition, "write_requests", len(segment.Pieces), "elapsed", elapsed, "segmentRef", segmentRef, "err", err)
+	}
+
+	sendErrorToWaiters(waiters, err)
 }
 
 func (a *WriteAgent) getOrCreatePartitionSegment(partition int32) *partitionSegmentWithWaiters {
@@ -247,7 +274,7 @@ func newWaiters() []chan<- error {
 	return make([]chan<- error, 0, 128)
 }
 
-func sendErrorToWaitersWithoutBlocking(waiters []chan<- error, err error) {
+func sendErrorToWaiters(waiters []chan<- error, err error) {
 	for _, w := range waiters {
 		select {
 		case w <- err: // ok
