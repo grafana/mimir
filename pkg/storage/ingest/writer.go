@@ -310,11 +310,11 @@ func (w writeAgentServerSelector) PickServer(partitionID int32) (ingestpb.WriteA
 	if err != nil {
 		return nil, fmt.Errorf("picking server: %w", err)
 	}
-
-	// TODO dimitarvdimitrov remove
-	w.logger.Log("picked", addr.String(), "at", "writeAgentServerSelector", "for", partitionID)
-
-	return w.writeAgents[addr.String()], nil
+	agent := w.writeAgents[addr.String()]
+	if agent == nil {
+		return nil, fmt.Errorf("no write agent client for address %s, this shouldn't happen, report a bug", addr)
+	}
+	return agent, nil
 }
 
 func (w writeAgentServerSelector) start(ctx context.Context) error {
