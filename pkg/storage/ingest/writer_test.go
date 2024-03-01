@@ -52,7 +52,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		writer, reg := createTestWriter(t, createTestWriteAgentConfig(clusterAddr, topicName))
 
 		produceRequestProcessed := atomic.NewBool(false)
 
@@ -112,7 +112,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		)
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		writer, _ := createTestWriter(t, createTestWriteAgentConfig(clusterAddr, topicName))
 
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
 			numRecords, err := getProduceRequestRecordsCount(request.(*kmsg.ProduceRequest))
@@ -160,6 +160,7 @@ func TestWriter_WriteSync(t *testing.T) {
 	})
 
 	t.Run("should batch multiple subsequent records together while sending the previous batches to Kafka once max in-flight Produce requests limit has been reached", func(t *testing.T) {
+		t.Skip("there's no limit for the number of inflight requests when using grafana streams")
 		t.Parallel()
 
 		var (
@@ -171,7 +172,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		)
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		writer, _ := createTestWriter(t, createTestWriteAgentConfig(clusterAddr, topicName))
 
 		// Allow only 1 in-flight Produce request in this test, to easily reproduce the scenario.
 		writer.maxInflightProduceRequests = 1
@@ -225,7 +226,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		writer, _ := createTestWriter(t, createTestWriteAgentConfig(clusterAddr, topicName))
 
 		// Write to a non-existing partition.
 		err := writer.WriteSync(ctx, 100, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
@@ -233,10 +234,11 @@ func TestWriter_WriteSync(t *testing.T) {
 	})
 
 	t.Run("should return an error and stop retrying sending a record once the write timeout expires", func(t *testing.T) {
+		t.Skip("there's no connection timeout when sending to grafana streams")
 		t.Parallel()
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg := createTestWriteAgentConfig(clusterAddr, topicName)
 		writer, _ := createTestWriter(t, kafkaCfg)
 
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -255,10 +257,11 @@ func TestWriter_WriteSync(t *testing.T) {
 
 	// This test documents how the Kafka client works. It's not what we ideally want, but it's how it works.
 	t.Run("should fail all buffered records and close the connection on timeout while waiting for Produce response", func(t *testing.T) {
+		t.Skip("there's not connection timeout when sending to grafana streams")
 		t.Parallel()
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg := createTestWriteAgentConfig(clusterAddr, topicName)
 		writer, _ := createTestWriter(t, kafkaCfg)
 
 		var (
@@ -371,8 +374,7 @@ func createTestContextWithTimeout(t *testing.T, timeout time.Duration) context.C
 	return ctx
 }
 
-// TODO dimitarvdimitrov
-func createTestKafkaConfig(clusterAddr, topicName string) WriteAgentConfig {
+func createTestWriteAgentConfig(clusterAddr, topicName string) WriteAgentConfig {
 	cfg := WriteAgentConfig{}
 	flagext.DefaultValues(&cfg)
 
@@ -395,6 +397,7 @@ func createTestWriter(t *testing.T, cfg WriteAgentConfig) (*Writer, prometheus.G
 	return writer, reg
 }
 
+// TODO remove
 func createTestKafkaClient(t *testing.T, cfg KafkaConfig) *kgo.Client {
 	metrics := kprom.NewMetrics("", kprom.Registerer(prometheus.NewPedanticRegistry()))
 
