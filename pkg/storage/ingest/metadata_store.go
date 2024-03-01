@@ -10,6 +10,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -214,14 +215,14 @@ func (s *MetadataStorePostgresql) Close() {
 }
 
 func (s *MetadataStorePostgresql) InsertSegment(ctx context.Context, ref SegmentRef) error {
-	_, err := s.connections.Exec(ctx, "INSERT INTO segments (partition_id, offset_id, object_id) VALUES ($1, $2, $3)", ref.PartitionID, ref.OffsetID, ref.ObjectID.String())
+	_, err := s.connections.Exec(ctx, "INSERT INTO SEGMENTS (PARTITION_ID, OFFSET_ID, OBJECT_ID) VALUES ($1, $2, $3)", ref.PartitionID, ref.OffsetID, ref.ObjectID.String())
 	return err
 }
 
 // ListSegments fetch all segments for the given partitionID committed after lastOffsetID.
 // This function may return some segments even if an error occurred.
 func (s *MetadataStorePostgresql) ListSegments(ctx context.Context, partitionID int32, lastOffsetID int64) (segments []SegmentRef, returnErr error) {
-	rows, err := s.connections.Query(ctx, "SELECT offset_id, object_id FROM segments WHERE partition_id = $1 AND offset_id > $2 ORDER BY offset_id", partitionID, lastOffsetID)
+	rows, err := s.connections.Query(ctx, "SELECT OFFSET_ID, OBJECT_ID FROM SEGMENTS WHERE PARTITION_ID = $1 AND OFFSET_ID > $2 ORDER BY OFFSET_ID", partitionID, lastOffsetID)
 	if err != nil {
 		return nil, err
 	}
@@ -263,8 +264,8 @@ func (s *MetadataStorePostgresql) ListSegments(ctx context.Context, partitionID 
 func (s *MetadataStorePostgresql) MaxPartitionOffset(ctx context.Context, partitionID int32) (*int64, error) {
 	var value *int64
 
-	rows := s.connections.QueryRow(ctx, "SELECT MAX(offset_id) FROM segments WHERE partition_id = $1", partitionID)
-	if err := rows.Scan(&value); err != nil {
+	rows := s.connections.QueryRow(ctx, "SELECT MAX(OFFSET_ID) FROM SEGMENTS WHERE PARTITION_ID = $1", partitionID)
+	if err := rows.Scan(&value); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
 
@@ -273,7 +274,7 @@ func (s *MetadataStorePostgresql) MaxPartitionOffset(ctx context.Context, partit
 
 func (s *MetadataStorePostgresql) UpsertConsumerOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error {
 	_, err := s.connections.Exec(ctx,
-		"INSERT INTO consumer_offsets (partition_id, consumer_id, offset_id) VALUES ($1, $2, $3) ON CONFLICT (partition_id, consumer_id) DO UPDATE SET offset_id = $4",
+		"INSERT INTO CONSUMER_OFFSETS (PARTITION_ID, CONSUMER_ID, OFFSET_ID) VALUES ($1, $2, $3) ON CONFLICT (partition_id, consumer_id) DO UPDATE SET offset_id = $4",
 		partitionID, consumerID, offsetID, offsetID)
 	return err
 }
@@ -281,8 +282,8 @@ func (s *MetadataStorePostgresql) UpsertConsumerOffset(ctx context.Context, part
 func (s *MetadataStorePostgresql) GetConsumerOffset(ctx context.Context, partitionID int32, consumerID string) (*int64, error) {
 	var value *int64
 
-	rows := s.connections.QueryRow(ctx, "SELECT offset_id FROM consumer_offsets WHERE partition_id = $1 AND consumer_id = $2", partitionID, consumerID)
-	if err := rows.Scan(&value); err != nil {
+	rows := s.connections.QueryRow(ctx, "SELECT OFFSET_ID FROM CONSUMER_OFFSETS WHERE PARTITION_ID = $1 AND CONSUMER_ID = $2", partitionID, consumerID)
+	if err := rows.Scan(&value); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
 
