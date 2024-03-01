@@ -117,7 +117,7 @@ func (bs *batchStream) merge(batch chunk.Batch, size int) {
 		b.ValueType = valueType
 	}
 
-	populate := func(batch chunk.Batch, valueType chunkenc.ValueType) {
+	populate := func(batch *chunk.Batch, valueType chunkenc.ValueType) {
 		if b.Index == 0 {
 			// Starting to write this Batch, it is safe to set the value type
 			b.ValueType = valueType
@@ -141,17 +141,17 @@ func (bs *batchStream) merge(batch chunk.Batch, size int) {
 	for lt, rt := bs.hasNext(), batch.HasNext(); lt != chunkenc.ValNone && rt != chunkenc.ValNone; lt, rt = bs.hasNext(), batch.HasNext() {
 		t1, t2 := bs.curr().AtTime(), batch.AtTime()
 		if t1 < t2 {
-			populate(*bs.curr(), lt)
+			populate(bs.curr(), lt)
 			bs.next()
 		} else if t1 > t2 {
-			populate(batch, rt)
+			populate(&batch, rt)
 			batch.Next()
 		} else {
 			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
 				// Prefer histograms than floats. Take left side if both have histograms.
-				populate(batch, rt)
+				populate(&batch, rt)
 			} else {
-				populate(*bs.curr(), lt)
+				populate(bs.curr(), lt)
 				// if s.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
 				if rt == chunkenc.ValHistogram && bs.hPool != nil {
 					_, h := batch.AtHistogram()
@@ -169,12 +169,12 @@ func (bs *batchStream) merge(batch chunk.Batch, size int) {
 	}
 
 	for t := bs.hasNext(); t != chunkenc.ValNone; t = bs.hasNext() {
-		populate(*bs.curr(), t)
+		populate(bs.curr(), t)
 		bs.next()
 	}
 
 	for t := batch.HasNext(); t != chunkenc.ValNone; t = batch.HasNext() {
-		populate(batch, t)
+		populate(&batch, t)
 		batch.Next()
 	}
 
