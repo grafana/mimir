@@ -5,6 +5,7 @@ package storegateway
 import (
 	"bytes"
 	"encoding/gob"
+
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 )

@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
+* [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 
 ### Mixin
 
