@@ -87,14 +87,14 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 		assert.Equal(t, int64(-1), offset)
 
 		// Write the 1st message.
-		produceRecord(ctx, t, storage, partitionID, "message 1")
+		produceSegment(ctx, t, storage, partitionID, "message 1")
 
 		offset, err = reader.getLastProducedOffset(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), offset)
 
 		// Write the 2nd message.
-		produceRecord(ctx, t, storage, partitionID, "message 2")
+		produceSegment(ctx, t, storage, partitionID, "message 2")
 
 		offset, err = reader.getLastProducedOffset(ctx)
 		require.NoError(t, err)
@@ -120,29 +120,31 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 
 		var (
 			reg      = prometheus.NewPedanticRegistry()
-			metadata = NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())
+			db       = newMetadataDatabaseMemory()
+			metadata = NewMetadataStore(db, log.NewNopLogger())
 			storage  = NewSegmentStorage(bucket, metadata)
 			reader   = newPartitionOffsetReader(metadata, partitionID, pollInterval, reg, logger)
 
-			// firstRequest         = atomic.NewBool(true)
+			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
 			firstRequestTimeout  = time.Second
 		)
 
 		// Write some messages.
-		produceRecord(ctx, t, storage, partitionID, "message 1")
-		produceRecord(ctx, t, storage, partitionID, "message 2")
+		produceSegment(ctx, t, storage, partitionID, "message 1")
+		produceSegment(ctx, t, storage, partitionID, "message 2")
 		expectedOffset := int64(1)
 
-		// TODO possibly re-create this with MetadataStore
-		// Slow down the 1st ListOffsets request.
-		// cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
-		// 	if firstRequest.CompareAndSwap(true, false) {
-		// 		close(firstRequestReceived)
-		// 		time.Sleep(2 * firstRequestTimeout)
-		// 	}
-		// 	return nil, nil, false
-		// })
+		// Slow down the 1st MaxPartitionOffset() request.
+		db.registerBeforeMaxPartitionOffsetHook(func(ctx context.Context, partitionID int32) (*int64, error, bool) {
+			if firstRequest.CompareAndSwap(true, false) {
+				close(firstRequestReceived)
+				time.Sleep(2 * firstRequestTimeout)
+			}
+
+			// Let the in-memory database handle the request.
+			return nil, nil, false
+		})
 
 		wg := sync.WaitGroup{}
 
@@ -153,6 +155,7 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 			defer cancel()
 
 			_, err := reader.getLastProducedOffset(ctxWithTimeout)
+			require.Error(t, err)
 			require.ErrorIs(t, err, context.DeadlineExceeded)
 		})
 
@@ -165,41 +168,6 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 		})
 
 		wg.Wait()
-	})
-
-	t.Run("should honor the configured retry timeout", func(t *testing.T) {
-		t.Parallel()
-
-		reg := prometheus.NewPedanticRegistry()
-		metadata := NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())
-
-		// Configure a short retry timeout.
-		kafkaCfg := createTestKafkaConfig("", "")
-		kafkaCfg.LastProducedOffsetRetryTimeout = time.Second
-
-		reader := newPartitionOffsetReader(metadata, partitionID, pollInterval, reg, logger)
-
-		// Make the ListOffsets request failing.
-		actualTries := atomic.NewInt64(0)
-		// TODO possibly re-create this with MetadataStore
-		// cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
-		// 	cluster.KeepControl()
-		// 	actualTries.Inc()
-		// 	return nil, errors.New("mocked error"), true
-		// })
-
-		startTime := time.Now()
-		_, err := reader.getLastProducedOffset(ctx)
-		elapsedTime := time.Since(startTime)
-
-		require.Error(t, err)
-
-		// Ensure the retry timeout has been honored.
-		toleranceSeconds := 0.5
-		assert.InDelta(t, kafkaCfg.LastProducedOffsetRetryTimeout.Seconds(), elapsedTime.Seconds(), toleranceSeconds)
-
-		// Ensure the request was retried.
-		assert.Greater(t, actualTries.Load(), int64(1))
 	})
 }
 
@@ -216,35 +184,23 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 
 	t.Run("should wait the result of the next request issued", func(t *testing.T) {
 		var (
-			metadata = NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())
+			db       = newMetadataDatabaseMemory()
+			metadata = NewMetadataStore(db, log.NewNopLogger())
 			reader   = newPartitionOffsetReader(metadata, partitionID, pollInterval, nil, logger)
 
-			// lastOffset           = atomic.NewInt64(1)
+			lastOffset           = atomic.NewInt64(0)
 			firstRequestReceived = make(chan struct{})
 		)
 
-		// TODO possibly re-create this with MetadataStore
-		// cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
-		// 	cluster.KeepControl()
-		//
-		// 	if lastOffset.Load() == 1 {
-		// 		close(firstRequestReceived)
-		// 	}
-		//
-		// 	// Mock the response so that we can increase the offset each time.
-		// 	req := kreq.(*kmsg.ListOffsetsRequest)
-		// 	res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
-		// 	res.Topics = []kmsg.ListOffsetsResponseTopic{{
-		// 		Topic: topicName,
-		// 		Partitions: []kmsg.ListOffsetsResponseTopicPartition{{
-		// 			Partition: partitionID,
-		// 			ErrorCode: 0,
-		// 			Offset:    lastOffset.Inc(),
-		// 		}},
-		// 	}}
-		//
-		// 	return res, nil, true
-		// })
+		db.registerBeforeMaxPartitionOffsetHook(func(ctx context.Context, partitionID int32) (*int64, error, bool) {
+			if lastOffset.Load() == 0 {
+				close(firstRequestReceived)
+			}
+
+			// Mock the response so that we can increase the offset each time.
+			offset := lastOffset.Inc()
+			return &offset, nil, true
+		})
 
 		wg := sync.WaitGroup{}
 

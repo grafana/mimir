@@ -75,7 +75,7 @@ func newPartitionOffsetReader(metadataStore *MetadataStore, partitionID int32, p
 }
 
 func (p *partitionOffsetReader) onPollInterval(ctx context.Context) error {
-	// The following call blocks until the last produced offset has been fetched from Kafka. If fetching
+	// The following call blocks until the last produced offset has been fetched from metadata store. If fetching
 	// the offset takes longer than the poll interval, than we'll poll less frequently than configured.
 	p.getAndNotifyLastProducedOffset(ctx)
 
@@ -103,7 +103,7 @@ func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Conte
 	p.nextResultPromiseMx.Unlock()
 
 	// We call getLastProducedOffset() even if there are no goroutines waiting on the result in order to get
-	// a constant load on the Kafka backend. In other words, the load produced on Kafka by this component is
+	// a constant load on the metadata store. In other words, the load produced on metadata store by this component is
 	// constant, regardless the number of received queries with strong consistency enabled.
 	offset, err := p.getLastProducedOffset(ctx)
 	if err != nil {
@@ -115,8 +115,7 @@ func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Conte
 }
 
 // getLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if the
-// partition is empty. This function issues a single request, but the Kafka client used under the
-// hood may retry a failed request until the retry timeout is hit.
+// partition is empty. This function issues a single request.
 func (p *partitionOffsetReader) getLastProducedOffset(ctx context.Context) (_ int64, returnErr error) {
 	startTime := time.Now()
 

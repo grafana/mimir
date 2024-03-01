@@ -39,8 +39,8 @@ func TestPartitionReader(t *testing.T) {
 	consumer := newTestConsumer(2)
 	startReader(ctx, t, segmentReader, metadata, partitionID, consumer)
 
-	produceRecord(ctx, t, storage, partitionID, content)
-	produceRecord(ctx, t, storage, partitionID, content)
+	produceSegment(ctx, t, storage, partitionID, content)
+	produceSegment(ctx, t, storage, partitionID, content)
 
 	records, err := consumer.waitRequests(2, 5*time.Second, 0)
 	assert.NoError(t, err)
@@ -72,8 +72,8 @@ func TestReader_ConsumerError(t *testing.T) {
 
 	startReader(ctx, t, segmentReader, metadata, partitionID, consumer)
 
-	produceRecord(ctx, t, storage, partitionID, "1")
-	produceRecord(ctx, t, storage, partitionID, "2")
+	produceSegment(ctx, t, storage, partitionID, "1")
+	produceSegment(ctx, t, storage, partitionID, "2")
 
 	// There are more than one invocation because the reader will retry.
 	assert.Eventually(t, func() bool { return invocations.Load() > 1 }, 5*time.Second, 100*time.Millisecond)
@@ -135,8 +135,8 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		reader, storage, reg := setup(t, consumer)
 
 		// Produce some writeRequests.
-		produceRecord(ctx, t, storage, partitionID, "piece-1")
-		produceRecord(ctx, t, storage, partitionID, "piece-2")
+		produceSegment(ctx, t, storage, partitionID, "piece-1")
+		produceSegment(ctx, t, storage, partitionID, "piece-2")
 		t.Log("produced 2 writeRequests")
 
 		// WaitReadConsistency() should return after all writeRequests produced up until this
@@ -168,7 +168,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		reader, storage, reg := setup(t, consumer)
 
 		// Produce some writeRequests.
-		produceRecord(ctx, t, storage, partitionID, "record-1")
+		produceSegment(ctx, t, storage, partitionID, "record-1")
 		t.Log("produced 1 record")
 
 		err := reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
@@ -235,7 +235,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 	})
 }
 
-func produceRecord(ctx context.Context, t *testing.T, segmentStorage *SegmentStorage, partitionID int32, content string) {
+func produceSegment(ctx context.Context, t *testing.T, segmentStorage *SegmentStorage, partitionID int32, content string) {
 	_, err := segmentStorage.CommitSegment(ctx, partitionID, encodeSegment(content))
 	require.NoError(t, err)
 }
@@ -324,9 +324,9 @@ func TestPartitionReader_Commit(t *testing.T) {
 		consumer := newTestConsumer(3)
 		reader := startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
 
-		produceRecord(ctx, t, storage, partitionID, "1")
-		produceRecord(ctx, t, storage, partitionID, "2")
-		produceRecord(ctx, t, storage, partitionID, "3")
+		produceSegment(ctx, t, storage, partitionID, "1")
+		produceSegment(ctx, t, storage, partitionID, "2")
+		produceSegment(ctx, t, storage, partitionID, "3")
 
 		_, err = consumer.waitRequests(3, time.Second, commitInterval*2) // wait for a few commits to make sure empty commits don't cause issues
 		require.NoError(t, err)
@@ -334,7 +334,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
 		recordsSentAfterShutdown := "4"
-		produceRecord(ctx, t, storage, partitionID, recordsSentAfterShutdown)
+		produceSegment(ctx, t, storage, partitionID, recordsSentAfterShutdown)
 
 		segmentReader, metadata, storage = newDataServices(t, bucket, metadataDB, partitionID, 2)
 		startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
@@ -362,15 +362,15 @@ func TestPartitionReader_Commit(t *testing.T) {
 		consumer := newTestConsumer(4)
 		reader := startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
 
-		produceRecord(ctx, t, storage, partitionID, "1")
-		produceRecord(ctx, t, storage, partitionID, "2")
-		produceRecord(ctx, t, storage, partitionID, "3")
+		produceSegment(ctx, t, storage, partitionID, "1")
+		produceSegment(ctx, t, storage, partitionID, "2")
+		produceSegment(ctx, t, storage, partitionID, "3")
 
 		_, err = consumer.waitRequests(3, time.Second, 0)
 		require.NoError(t, err)
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		produceRecord(ctx, t, storage, partitionID, "4")
+		produceSegment(ctx, t, storage, partitionID, "4")
 
 		segmentReader, metadata, _ = newDataServices(t, bucket, metadataDB, partitionID, 2)
 		startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
@@ -397,9 +397,9 @@ func TestPartitionReader_Commit(t *testing.T) {
 		consumer := newTestConsumer(4)
 		reader := startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
 
-		produceRecord(ctx, t, storage, partitionID, "1")
-		produceRecord(ctx, t, storage, partitionID, "2")
-		produceRecord(ctx, t, storage, partitionID, "3")
+		produceSegment(ctx, t, storage, partitionID, "1")
+		produceSegment(ctx, t, storage, partitionID, "2")
+		produceSegment(ctx, t, storage, partitionID, "3")
 
 		_, err = consumer.waitRequests(3, time.Second, 0)
 		require.NoError(t, err)

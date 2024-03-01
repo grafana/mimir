@@ -168,6 +168,14 @@ type metadataDatabaseMemory struct {
 	mtx      sync.Mutex
 	segments []SegmentRef
 	offsets  map[offsetKey]int64
+
+	// Hooks to add custom logic before database APIs are called.
+	beforeHooksMx              sync.Mutex
+	beforeInsertSegment        func(ctx context.Context, ref SegmentRef) (error, bool)
+	beforeListSegments         func(ctx context.Context, partitionID int32, lastOffsetID int64) ([]SegmentRef, error, bool)
+	beforeMaxPartitionOffset   func(ctx context.Context, partitionID int32) (*int64, error, bool)
+	beforeUpsertConsumerOffset func(ctx context.Context, partitionID int32, consumerID string, offsetID int64) (error, bool)
+	beforeGetConsumerOffset    func(ctx context.Context, partitionID int32, consumerID string) (*int64, error, bool)
 }
 
 func newMetadataDatabaseMemory() *metadataDatabaseMemory {
@@ -187,7 +195,18 @@ func (m *metadataDatabaseMemory) Open(ctx context.Context) error {
 
 func (m *metadataDatabaseMemory) Close() {}
 
-func (m *metadataDatabaseMemory) InsertSegment(_ context.Context, ref SegmentRef) error {
+func (m *metadataDatabaseMemory) InsertSegment(ctx context.Context, ref SegmentRef) error {
+	if hook := m.getBeforeInsertSegmentHook(); hook != nil {
+		if err, handled := hook(ctx, ref); handled {
+			return err
+		}
+	}
+
+	// Ensure context hasn't been canceled in the meanwhile.
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -195,7 +214,18 @@ func (m *metadataDatabaseMemory) InsertSegment(_ context.Context, ref SegmentRef
 	return nil
 }
 
-func (m *metadataDatabaseMemory) ListSegments(_ context.Context, partitionID int32, lastOffsetID int64) ([]SegmentRef, error) {
+func (m *metadataDatabaseMemory) ListSegments(ctx context.Context, partitionID int32, lastOffsetID int64) ([]SegmentRef, error) {
+	if hook := m.getBeforeListSegmentsHook(); hook != nil {
+		if refs, err, handled := hook(ctx, partitionID, lastOffsetID); handled {
+			return refs, err
+		}
+	}
+
+	// Ensure context hasn't been canceled in the meanwhile.
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -215,7 +245,18 @@ func (m *metadataDatabaseMemory) ListSegments(_ context.Context, partitionID int
 	return res, nil
 }
 
-func (m *metadataDatabaseMemory) MaxPartitionOffset(_ context.Context, partitionID int32) (*int64, error) {
+func (m *metadataDatabaseMemory) MaxPartitionOffset(ctx context.Context, partitionID int32) (*int64, error) {
+	if hook := m.getBeforeMaxPartitionOffsetHook(); hook != nil {
+		if offset, err, handled := hook(ctx, partitionID); handled {
+			return offset, err
+		}
+	}
+
+	// Ensure context hasn't been canceled in the meanwhile.
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -233,7 +274,18 @@ func (m *metadataDatabaseMemory) MaxPartitionOffset(_ context.Context, partition
 	return res, nil
 }
 
-func (m *metadataDatabaseMemory) UpsertConsumerOffset(_ context.Context, partitionID int32, consumerID string, offsetID int64) error {
+func (m *metadataDatabaseMemory) UpsertConsumerOffset(ctx context.Context, partitionID int32, consumerID string, offsetID int64) error {
+	if hook := m.getBeforeUpsertConsumerOffsetHook(); hook != nil {
+		if err, handled := hook(ctx, partitionID, consumerID, offsetID); handled {
+			return err
+		}
+	}
+
+	// Ensure context hasn't been canceled in the meanwhile.
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -241,7 +293,18 @@ func (m *metadataDatabaseMemory) UpsertConsumerOffset(_ context.Context, partiti
 	return nil
 }
 
-func (m *metadataDatabaseMemory) GetConsumerOffset(_ context.Context, partitionID int32, consumerID string) (*int64, error) {
+func (m *metadataDatabaseMemory) GetConsumerOffset(ctx context.Context, partitionID int32, consumerID string) (*int64, error) {
+	if hook := m.getBeforeGetConsumerOffsetHook(); hook != nil {
+		if offset, err, handled := hook(ctx, partitionID, consumerID); handled {
+			return offset, err
+		}
+	}
+
+	// Ensure context hasn't been canceled in the meanwhile.
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -251,4 +314,69 @@ func (m *metadataDatabaseMemory) GetConsumerOffset(_ context.Context, partitionI
 	}
 
 	return &offsetVar, nil
+}
+
+func (m *metadataDatabaseMemory) registerBeforeInsertSegmentHook(hook func(ctx context.Context, ref SegmentRef) (error, bool)) {
+	m.beforeHooksMx.Lock()
+	m.beforeInsertSegment = hook
+	m.beforeHooksMx.Unlock()
+}
+
+func (m *metadataDatabaseMemory) registerBeforeListSegmentsHook(hook func(ctx context.Context, partitionID int32, lastOffsetID int64) ([]SegmentRef, error, bool)) {
+	m.beforeHooksMx.Lock()
+	m.beforeListSegments = hook
+	m.beforeHooksMx.Unlock()
+}
+
+func (m *metadataDatabaseMemory) registerBeforeMaxPartitionOffsetHook(hook func(ctx context.Context, partitionID int32) (*int64, error, bool)) {
+	m.beforeHooksMx.Lock()
+	m.beforeMaxPartitionOffset = hook
+	m.beforeHooksMx.Unlock()
+}
+
+func (m *metadataDatabaseMemory) registerBeforeUpsertConsumerOffsetHook(hook func(ctx context.Context, partitionID int32, consumerID string, offsetID int64) (error, bool)) {
+	m.beforeHooksMx.Lock()
+	m.beforeUpsertConsumerOffset = hook
+	m.beforeHooksMx.Unlock()
+}
+
+func (m *metadataDatabaseMemory) registerBeforeGetConsumerOffsetHook(hook func(ctx context.Context, partitionID int32, consumerID string) (*int64, error, bool)) {
+	m.beforeHooksMx.Lock()
+	m.beforeGetConsumerOffset = hook
+	m.beforeHooksMx.Unlock()
+}
+
+func (m *metadataDatabaseMemory) getBeforeInsertSegmentHook() func(ctx context.Context, ref SegmentRef) (error, bool) {
+	m.beforeHooksMx.Lock()
+	defer m.beforeHooksMx.Unlock()
+
+	return m.beforeInsertSegment
+}
+
+func (m *metadataDatabaseMemory) getBeforeListSegmentsHook() func(ctx context.Context, partitionID int32, lastOffsetID int64) ([]SegmentRef, error, bool) {
+	m.beforeHooksMx.Lock()
+	defer m.beforeHooksMx.Unlock()
+
+	return m.beforeListSegments
+}
+
+func (m *metadataDatabaseMemory) getBeforeMaxPartitionOffsetHook() func(ctx context.Context, partitionID int32) (*int64, error, bool) {
+	m.beforeHooksMx.Lock()
+	defer m.beforeHooksMx.Unlock()
+
+	return m.beforeMaxPartitionOffset
+}
+
+func (m *metadataDatabaseMemory) getBeforeUpsertConsumerOffsetHook() func(ctx context.Context, partitionID int32, consumerID string, offsetID int64) (error, bool) {
+	m.beforeHooksMx.Lock()
+	defer m.beforeHooksMx.Unlock()
+
+	return m.beforeUpsertConsumerOffset
+}
+
+func (m *metadataDatabaseMemory) getBeforeGetConsumerOffsetHook() func(ctx context.Context, partitionID int32, consumerID string) (*int64, error, bool) {
+	m.beforeHooksMx.Lock()
+	defer m.beforeHooksMx.Unlock()
+
+	return m.beforeGetConsumerOffset
 }
