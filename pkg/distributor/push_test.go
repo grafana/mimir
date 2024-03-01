@@ -662,6 +662,43 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 	return inputBytes
 }
 
+func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
+	pSpans := make([]mimirpb.BucketSpan, 0, len(h.PositiveSpans))
+	for _, span := range h.PositiveSpans {
+		pSpans = append(
+			pSpans, mimirpb.BucketSpan{
+				Offset: span.Offset,
+				Length: span.Length,
+			},
+		)
+	}
+	nSpans := make([]mimirpb.BucketSpan, 0, len(h.NegativeSpans))
+	for _, span := range h.NegativeSpans {
+		nSpans = append(
+			nSpans, mimirpb.BucketSpan{
+				Offset: span.Offset,
+				Length: span.Length,
+			},
+		)
+	}
+
+	return mimirpb.Histogram{
+		Count:          &mimirpb.Histogram_CountInt{CountInt: h.GetCountInt()},
+		Sum:            h.Sum,
+		Schema:         h.Schema,
+		ZeroThreshold:  h.ZeroThreshold,
+		ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: h.GetZeroCountInt()},
+		NegativeSpans:  nSpans,
+		NegativeDeltas: h.NegativeDeltas,
+		NegativeCounts: h.NegativeCounts,
+		PositiveSpans:  pSpans,
+		PositiveDeltas: h.PositiveDeltas,
+		PositiveCounts: h.PositiveCounts,
+		Timestamp:      h.Timestamp,
+		ResetHint:      mimirpb.Histogram_ResetHint(h.ResetHint),
+	}
+}
+
 func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool) []byte {
 	t.Helper()
 	h := remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1))
