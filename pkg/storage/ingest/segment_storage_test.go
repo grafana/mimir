@@ -165,8 +165,20 @@ func (m *metadataDatabaseMock) GetConsumerOffset(ctx context.Context, partitionI
 
 // metadataDatabaseMemory is an in-memory MetadataStoreDatabase implementation.
 type metadataDatabaseMemory struct {
-	segmentsMx sync.Mutex
-	segments   []SegmentRef
+	mtx      sync.Mutex
+	segments []SegmentRef
+	offsets  map[offsetKey]int64
+}
+
+func newMetadataDatabaseMemory() *metadataDatabaseMemory {
+	return &metadataDatabaseMemory{
+		offsets: make(map[offsetKey]int64),
+	}
+}
+
+type offsetKey struct {
+	partitionID int32
+	consumerID  string
 }
 
 func (m *metadataDatabaseMemory) Open(ctx context.Context) error {
@@ -176,16 +188,16 @@ func (m *metadataDatabaseMemory) Open(ctx context.Context) error {
 func (m *metadataDatabaseMemory) Close() {}
 
 func (m *metadataDatabaseMemory) InsertSegment(_ context.Context, ref SegmentRef) error {
-	m.segmentsMx.Lock()
-	defer m.segmentsMx.Unlock()
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
 
 	m.segments = append(m.segments, ref)
 	return nil
 }
 
 func (m *metadataDatabaseMemory) ListSegments(_ context.Context, partitionID int32, lastOffsetID int64) ([]SegmentRef, error) {
-	m.segmentsMx.Lock()
-	defer m.segmentsMx.Unlock()
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
 
 	// Filter segments.
 	var res []SegmentRef
@@ -204,8 +216,8 @@ func (m *metadataDatabaseMemory) ListSegments(_ context.Context, partitionID int
 }
 
 func (m *metadataDatabaseMemory) MaxPartitionOffset(_ context.Context, partitionID int32) (*int64, error) {
-	m.segmentsMx.Lock()
-	defer m.segmentsMx.Unlock()
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
 
 	var res *int64
 	for _, segment := range m.segments {
@@ -222,9 +234,21 @@ func (m *metadataDatabaseMemory) MaxPartitionOffset(_ context.Context, partition
 }
 
 func (m *metadataDatabaseMemory) UpsertConsumerOffset(_ context.Context, partitionID int32, consumerID string, offsetID int64) error {
-	return errors.New("not implemented")
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	m.offsets[offsetKey{partitionID, consumerID}] = offsetID
+	return nil
 }
 
 func (m *metadataDatabaseMemory) GetConsumerOffset(_ context.Context, partitionID int32, consumerID string) (*int64, error) {
-	return nil, errors.New("not implemented")
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	var offsetVar int64 = -1
+	if offset, ok := m.offsets[offsetKey{partitionID, consumerID}]; ok {
+		offsetVar = offset
+	}
+
+	return &offsetVar, nil
 }

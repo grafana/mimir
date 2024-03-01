@@ -35,7 +35,7 @@ func TestSegmentReader_WaitNextSegment(t *testing.T) {
 		t.Cleanup(cancel)
 
 		// Start the metadata store service.
-		metadata := NewMetadataStore(&metadataDatabaseMemory{}, log.NewNopLogger())
+		metadata := NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())
 		require.NoError(t, services.StartAndAwaitRunning(ctx, metadata))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, metadata))

@@ -16,82 +16,76 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/util/testkafka"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	"github.com/grafana/mimir/pkg/storage/ingest/ingestpb"
 )
 
 func TestPartitionReader(t *testing.T) {
 	const (
-		topicName   = "test"
 		partitionID = 1
 	)
 
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+	segmentReader, metadata, storage := newDataServices(t, nil, nil, partitionID, -1)
 
-	content := []byte("special content")
+	content := "special content"
 	consumer := newTestConsumer(2)
+	startReader(ctx, t, segmentReader, metadata, partitionID, consumer)
 
-	startReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
+	produceRecord(ctx, t, storage, partitionID, content)
+	produceRecord(ctx, t, storage, partitionID, content)
 
-	writeClient := newKafkaProduceClient(t, clusterAddr)
-
-	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
-	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
-
-	records, err := consumer.waitRecords(2, 5*time.Second, 0)
+	records, err := consumer.waitRequests(2, 5*time.Second, 0)
 	assert.NoError(t, err)
-	assert.Equal(t, [][]byte{content, content}, records)
+	assert.Equal(t, []string{content, content}, decodeContent(records))
 }
 
 func TestReader_ConsumerError(t *testing.T) {
 	const (
-		topicName   = "test"
 		partitionID = 1
 	)
 
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
-
 	invocations := atomic.NewInt64(0)
 	returnErrors := atomic.NewBool(true)
 	trackingConsumer := newTestConsumer(2)
-	consumer := consumerFunc(func(ctx context.Context, records []record) error {
+	consumer := consumerFunc(func(ctx context.Context, segment *Segment) error {
 		invocations.Inc()
 		if !returnErrors.Load() {
-			return trackingConsumer.consume(ctx, records)
+			return trackingConsumer.consume(ctx, segment)
 		}
-		// There may be more records, but we only care that the one we failed to consume in the first place is still there.
-		assert.Equal(t, "1", string(records[0].content))
+		// There may be more writeRequests, but we only care that the one we failed to consume in the first place is still there.
+		assert.Equal(t, "1", segment.Data.Pieces[0].WriteRequests.Metadata[0].Help)
 		return errors.New("consumer error")
 	})
-	startReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
 
-	// Write to Kafka.
-	writeClient := newKafkaProduceClient(t, clusterAddr)
+	segmentReader, metadata, storage := newDataServices(t, nil, nil, partitionID, -1)
 
-	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("1"))
-	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("2"))
+	startReader(ctx, t, segmentReader, metadata, partitionID, consumer)
+
+	produceRecord(ctx, t, storage, partitionID, "1")
+	produceRecord(ctx, t, storage, partitionID, "2")
 
 	// There are more than one invocation because the reader will retry.
 	assert.Eventually(t, func() bool { return invocations.Load() > 1 }, 5*time.Second, 100*time.Millisecond)
 
 	returnErrors.Store(false)
 
-	records, err := trackingConsumer.waitRecords(2, time.Second, 0)
+	records, err := trackingConsumer.waitRequests(2, time.Second, 0)
 	assert.NoError(t, err)
-	assert.Equal(t, [][]byte{[]byte("1"), []byte("2")}, records)
+	assert.Equal(t, []string{"1", "2"}, decodeContent(records))
 }
 
 func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 	const (
-		topicName   = "test"
 		partitionID = 0
 	)
 
@@ -99,22 +93,20 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		ctx = context.Background()
 	)
 
-	setup := func(t *testing.T, consumer recordConsumer) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
+	setup := func(t *testing.T, consumer recordConsumer) (*PartitionReader, *SegmentStorage, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 
-		_, clusterAddr := testkafka.CreateCluster(t, 1, topicName)
+		segmentReader, metadata, storage := newDataServices(t, nil, nil, partitionID, -1)
 
 		// Configure the reader to poll the "last produced offset" frequently.
-		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer,
+		reader := startReader(ctx, t, segmentReader, metadata, partitionID, consumer,
 			withLastProducedOffsetPollInterval(100*time.Millisecond),
 			withRegistry(reg))
 
-		writeClient := newKafkaProduceClient(t, clusterAddr)
-
-		return reader, writeClient, reg
+		return reader, storage, reg
 	}
 
-	t.Run("should return after all produced records have been consumed", func(t *testing.T) {
+	t.Run("should return after all produced writeRequests have been consumed", func(t *testing.T) {
 		t.Parallel()
 
 		consumedRecords := atomic.NewInt64(0)
@@ -122,30 +114,31 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		// We define a custom consume function which introduces a delay once the 2nd record
 		// has been consumed but before the function returns. From the PartitionReader perspective,
 		// the 2nd record consumption will be delayed.
-		consumer := consumerFunc(func(ctx context.Context, records []record) error {
-			for _, record := range records {
+		consumer := consumerFunc(func(ctx context.Context, segment *Segment) error {
+			for _, piece := range segment.Data.Pieces {
 				// Introduce a delay before returning from the consume function once
-				// the 2nd record has been consumed.
+				// the 2nd piece has been consumed.
 				if consumedRecords.Load()+1 == 2 {
 					time.Sleep(time.Second)
 				}
 
 				consumedRecords.Inc()
-				assert.Equal(t, fmt.Sprintf("record-%d", consumedRecords.Load()), string(record.content))
-				t.Logf("consumed record: %s", string(record.content))
+				content := piece.WriteRequests.Metadata[0].Help
+				assert.Equal(t, fmt.Sprintf("piece-%d", consumedRecords.Load()), content)
+				t.Logf("consumed piece: %s", content)
 			}
 
 			return nil
 		})
 
-		reader, writeClient, reg := setup(t, consumer)
+		reader, storage, reg := setup(t, consumer)
 
-		// Produce some records.
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
-		t.Log("produced 2 records")
+		// Produce some writeRequests.
+		produceRecord(ctx, t, storage, partitionID, "piece-1")
+		produceRecord(ctx, t, storage, partitionID, "piece-2")
+		t.Log("produced 2 writeRequests")
 
-		// WaitReadConsistency() should return after all records produced up until this
+		// WaitReadConsistency() should return after all writeRequests produced up until this
 		// point have been consumed.
 		t.Log("started waiting for read consistency")
 
@@ -165,25 +158,25 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
 	})
 
-	t.Run("should block until the context deadline exceed if produced records are not consumed", func(t *testing.T) {
+	t.Run("should block until the context deadline exceed if produced writeRequests are not consumed", func(t *testing.T) {
 		t.Parallel()
 
 		// Create a consumer with no buffer capacity.
 		consumer := newTestConsumer(0)
 
-		reader, writeClient, reg := setup(t, consumer)
+		reader, storage, reg := setup(t, consumer)
 
-		// Produce some records.
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+		// Produce some writeRequests.
+		produceRecord(ctx, t, storage, partitionID, "record-1")
 		t.Log("produced 1 record")
 
 		err := reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 
-		// Consume the records.
-		records, err := consumer.waitRecords(1, time.Second, 0)
+		// Consume the writeRequests.
+		records, err := consumer.waitRequests(1, time.Second, 0)
 		assert.NoError(t, err)
-		assert.Equal(t, [][]byte{[]byte("record-1")}, records)
+		assert.Equal(t, []string{"record-1"}, decodeContent(records))
 
 		// Now the WaitReadConsistency() should return soon.
 		err = reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
@@ -200,7 +193,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
 	})
 
-	t.Run("should return if no records have been produced yet", func(t *testing.T) {
+	t.Run("should return if no writeRequests have been produced yet", func(t *testing.T) {
 		t.Parallel()
 
 		reader, _, reg := setup(t, newTestConsumer(0))
@@ -241,25 +234,9 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 	})
 }
 
-func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
-	writeClient, err := kgo.NewClient(
-		kgo.SeedBrokers(addrs),
-		// We will choose the partition of each record.
-		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-	)
+func produceRecord(ctx context.Context, t *testing.T, segmentStorage *SegmentStorage, partitionID int32, content string) {
+	_, err := segmentStorage.CommitSegment(ctx, partitionID, encodeSegment(content))
 	require.NoError(t, err)
-	t.Cleanup(writeClient.Close)
-	return writeClient
-}
-
-func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte) {
-	rec := &kgo.Record{
-		Value:     content,
-		Topic:     topicName,
-		Partition: partitionID,
-	}
-	produceResult := writeClient.ProduceSync(ctx, rec)
-	require.NoError(t, produceResult.FirstErr())
 }
 
 type readerTestCfg struct {
@@ -302,12 +279,12 @@ func defaultReaderTestConfig(addr string, topicName string, partitionID int32, c
 	}
 }
 
-func startReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
-	cfg := defaultReaderTestConfig(addr, topicName, partitionID, consumer)
+func startReader(ctx context.Context, t *testing.T, segmentReader *SegmentReader, metadataStore *MetadataStore, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
+	cfg := defaultReaderTestConfig("", "", partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
 	}
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, segmentReader, metadataStore, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	reader.commitInterval = cfg.commitInterval
 
@@ -321,7 +298,6 @@ func startReader(ctx context.Context, t *testing.T, addr string, topicName strin
 
 func TestPartitionReader_Commit(t *testing.T) {
 	const (
-		topicName   = "test"
 		partitionID = 1
 	)
 
@@ -332,28 +308,34 @@ func TestPartitionReader_Commit(t *testing.T) {
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
-		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		// Reuse bucket and metadataDB across shutdowns
+		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+		require.NoError(t, err)
+		metadataDB := newMetadataDatabaseMemory()
 
+		segmentReader, metadata, storage := newDataServices(t, bucket, metadataDB, partitionID, -1)
 		consumer := newTestConsumer(3)
-		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		reader := startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
 
-		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
-		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("2"))
-		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("3"))
+		produceRecord(ctx, t, storage, partitionID, "1")
+		produceRecord(ctx, t, storage, partitionID, "2")
+		produceRecord(ctx, t, storage, partitionID, "3")
 
-		_, err := consumer.waitRecords(3, time.Second, commitInterval*2) // wait for a few commits to make sure empty commits don't cause issues
+		_, err = consumer.waitRequests(3, time.Second, commitInterval*2) // wait for a few commits to make sure empty commits don't cause issues
 		require.NoError(t, err)
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
-		recordsSentAfterShutdown := []byte("4")
-		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, recordsSentAfterShutdown)
+		recordsSentAfterShutdown := "4"
+		produceRecord(ctx, t, storage, partitionID, recordsSentAfterShutdown)
 
-		startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		segmentReader, metadata, storage = newDataServices(t, bucket, metadataDB, partitionID, 2)
+		startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
 
-		records, err := consumer.waitRecords(1, time.Second, 0)
+		records, err := consumer.waitRequests(1, time.Second, 0)
 		assert.NoError(t, err)
-		assert.Equal(t, [][]byte{recordsSentAfterShutdown}, records)
+		content := decodeContent(records)
+		assert.Equal(t, []string{recordsSentAfterShutdown}, content)
 	})
 
 	t.Run("commit at shutdown", func(t *testing.T) {
@@ -364,115 +346,166 @@ func TestPartitionReader_Commit(t *testing.T) {
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
-		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		// Reuse bucket and metadataDB across shutdowns
+		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+		require.NoError(t, err)
+		metadataDB := newMetadataDatabaseMemory()
 
+		segmentReader, metadata, storage := newDataServices(t, bucket, metadataDB, partitionID, -1)
 		consumer := newTestConsumer(4)
-		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		reader := startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
 
-		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
-		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("2"))
-		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("3"))
+		produceRecord(ctx, t, storage, partitionID, "1")
+		produceRecord(ctx, t, storage, partitionID, "2")
+		produceRecord(ctx, t, storage, partitionID, "3")
 
-		_, err := consumer.waitRecords(3, time.Second, 0)
+		_, err = consumer.waitRequests(3, time.Second, 0)
 		require.NoError(t, err)
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("4"))
-		startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		produceRecord(ctx, t, storage, partitionID, "4")
+
+		segmentReader, metadata, _ = newDataServices(t, bucket, metadataDB, partitionID, 2)
+		startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
 
 		// There should be only one record - the one produced after the shutdown.
 		// The offset of record "3" should have been committed at shutdown and the reader should have resumed from there.
-		_, err = consumer.waitRecords(1, time.Second, time.Second)
+		_, err = consumer.waitRequests(1, time.Second, time.Second)
 		assert.NoError(t, err)
 	})
 
-	t.Run("commit at shutdown doesn't persist if we haven't consumed any records since startup", func(t *testing.T) {
+	t.Run("commit at shutdown doesn't persist if we haven't consumed any writeRequests since startup", func(t *testing.T) {
 		t.Parallel()
 		// A very long commit interval effectively means no regular commits.
 		const commitInterval = time.Second * 15
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
-		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		// Reuse bucket and metadataDB across shutdowns
+		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+		require.NoError(t, err)
+		metadataDB := newMetadataDatabaseMemory()
 
+		segmentReader, metadata, storage := newDataServices(t, bucket, metadataDB, partitionID, -1)
 		consumer := newTestConsumer(4)
-		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		reader := startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
 
-		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
-		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("2"))
-		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("3"))
+		produceRecord(ctx, t, storage, partitionID, "1")
+		produceRecord(ctx, t, storage, partitionID, "2")
+		produceRecord(ctx, t, storage, partitionID, "3")
 
-		_, err := consumer.waitRecords(3, time.Second, 0)
+		_, err = consumer.waitRequests(3, time.Second, 0)
 		require.NoError(t, err)
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		reader = startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		segmentReader, metadata, _ = newDataServices(t, bucket, metadataDB, partitionID, 2)
+		reader = startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
 
-		// No new records since the last commit.
-		_, err = consumer.waitRecords(0, time.Second, 0)
+		// No new writeRequests since the last commit.
+		_, err = consumer.waitRequests(0, time.Second, 0)
 		assert.NoError(t, err)
 
-		// Shut down without having consumed any records.
+		// Shut down without having consumed any writeRequests.
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		_ = startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		segmentReader, metadata, _ = newDataServices(t, bucket, metadataDB, partitionID, 2)
+		_ = startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
 
-		// No new records since the last commit (2 shutdowns ago).
-		_, err = consumer.waitRecords(0, time.Second, 0)
+		// No new writeRequests since the last commit (2 shutdowns ago).
+		_, err = consumer.waitRequests(0, time.Second, 0)
 		assert.NoError(t, err)
 	})
 }
 
 type testConsumer struct {
-	records chan []byte
+	writeRequests chan *mimirpb.WriteRequest
 }
 
 func newTestConsumer(capacity int) testConsumer {
 	return testConsumer{
-		records: make(chan []byte, capacity),
+		writeRequests: make(chan *mimirpb.WriteRequest, capacity),
 	}
 }
 
-func (t testConsumer) consume(ctx context.Context, records []record) error {
-	for _, r := range records {
+func (t testConsumer) consume(ctx context.Context, segment *Segment) error {
+	for _, piece := range segment.Data.Pieces {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 
-		case t.records <- r.content:
+		case t.writeRequests <- piece.WriteRequests:
 			// Nothing to do.
 		}
 	}
 	return nil
 }
 
-// waitRecords expects to receive numRecords records within waitTimeout.
-// waitRecords waits for an additional drainPeriod after receiving numRecords records to ensure that no more records are received.
-// waitRecords returns an error if a different number of records is received.
-func (t testConsumer) waitRecords(numRecords int, waitTimeout, drainPeriod time.Duration) ([][]byte, error) {
-	var records [][]byte
+// waitRequests expects to receive numRecords writeRequests within waitTimeout.
+// waitRequests waits for an additional drainPeriod after receiving numRecords writeRequests to ensure that no more writeRequests are received.
+// waitRequests returns an error if a different number of writeRequests is received.
+func (t testConsumer) waitRequests(numRequests int, waitTimeout, drainPeriod time.Duration) ([]*mimirpb.WriteRequest, error) {
+	var writeRequests []*mimirpb.WriteRequest
 	timeout := time.After(waitTimeout)
 	for {
 		select {
-		case msg := <-t.records:
-			records = append(records, msg)
-			if len(records) != numRecords {
+		case wr := <-t.writeRequests:
+			writeRequests = append(writeRequests, wr)
+			if len(writeRequests) != numRequests {
 				continue
 			}
 			if drainPeriod == 0 {
-				return records, nil
+				return writeRequests, nil
 			}
 			timeout = time.After(drainPeriod)
 		case <-timeout:
-			if len(records) != numRecords {
-				return nil, fmt.Errorf("waiting for records: received %d, expected %d", len(records), numRecords)
+			if len(writeRequests) != numRequests {
+				return nil, fmt.Errorf("waiting for write requests: received %d, expected %d", len(writeRequests), numRequests)
 			}
-			return records, nil
+			return writeRequests, nil
 		}
 	}
 }
 
-type consumerFunc func(ctx context.Context, records []record) error
+type consumerFunc func(ctx context.Context, segment *Segment) error
 
-func (c consumerFunc) consume(ctx context.Context, records []record) error {
-	return c(ctx, records)
+func (c consumerFunc) consume(ctx context.Context, segment *Segment) error {
+	return c(ctx, segment)
+}
+
+func newDataServices(t *testing.T, bucket objstore.Bucket, metadataDB *metadataDatabaseMemory, partitionID int32, lastOffsetID int64) (*SegmentReader, *MetadataStore, *SegmentStorage) {
+	if bucket == nil {
+		var err error
+		bucket, err = filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+		require.NoError(t, err)
+	}
+	if metadataDB == nil {
+		metadataDB = newMetadataDatabaseMemory()
+	}
+	metadata := NewMetadataStore(metadataDB, log.NewNopLogger())
+	segmentReader := NewSegmentReader(bucket, metadata, partitionID, lastOffsetID, 1, log.NewNopLogger())
+	storage := NewSegmentStorage(bucket, metadata)
+	return segmentReader, metadata, storage
+}
+
+func encodeSegment(content string) *ingestpb.Segment {
+	return &ingestpb.Segment{
+		Pieces: []*ingestpb.Piece{
+			{
+				WriteRequests: &mimirpb.WriteRequest{
+					Metadata: []*mimirpb.MetricMetadata{
+						{
+							Help: content,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func decodeContent(writeRequests []*mimirpb.WriteRequest) []string {
+	var result []string
+	for _, wr := range writeRequests {
+		result = append(result, wr.Metadata[0].Help)
+	}
+	return result
 }

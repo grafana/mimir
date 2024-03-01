@@ -5,7 +5,6 @@ package ingest
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 	"sync"
 	"time"
@@ -15,9 +14,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 var (
@@ -31,10 +27,9 @@ var (
 type partitionOffsetReader struct {
 	services.Service
 
-	client      *kgo.Client
-	logger      log.Logger
-	topic       string
-	partitionID int32
+	metadataStore *MetadataStore
+	logger        log.Logger
+	partitionID   int32
 
 	// nextResultPromise is the promise that will be notified about the result of the *next* "last produced offset"
 	// request that will be issued (not the current in-flight one, if any).
@@ -47,10 +42,9 @@ type partitionOffsetReader struct {
 	lastProducedOffsetLatency       prometheus.Summary
 }
 
-func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
+func newPartitionOffsetReader(metadataStore *MetadataStore, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
 	p := &partitionOffsetReader{
-		client:            client,
-		topic:             topic,
+		metadataStore:     metadataStore,
 		partitionID:       partitionID,
 		logger:            logger, // Do not wrap with partition ID because it's already done by the caller.
 		nextResultPromise: newResultPromise[int64](),
@@ -137,58 +131,7 @@ func (p *partitionOffsetReader) getLastProducedOffset(ctx context.Context) (_ in
 		}
 	}()
 
-	// Create a custom request to fetch the latest offset of a specific partition.
-	partitionReq := kmsg.NewListOffsetsRequestTopicPartition()
-	partitionReq.Partition = p.partitionID
-	partitionReq.Timestamp = -1 // -1 means "latest".
-
-	topicReq := kmsg.NewListOffsetsRequestTopic()
-	topicReq.Topic = p.topic
-	topicReq.Partitions = []kmsg.ListOffsetsRequestTopicPartition{partitionReq}
-
-	req := kmsg.NewPtrListOffsetsRequest()
-	req.IsolationLevel = 0 // 0 means READ_UNCOMMITTED.
-	req.Topics = []kmsg.ListOffsetsRequestTopic{topicReq}
-
-	// Even if we share the same client, other in-flight requests are not canceled once this context is canceled
-	// (or its deadline is exceeded). We've verified it with a unit test.
-	resps := p.client.RequestSharded(ctx, req)
-
-	// Since we issued a request for only 1 partition, we expect exactly 1 response.
-	if expected := 1; len(resps) != expected {
-		return 0, fmt.Errorf("unexpected number of responses (expected: %d, got: %d)", expected, len(resps))
-	}
-
-	// Ensure no error occurred.
-	res := resps[0]
-	if res.Err != nil {
-		return 0, res.Err
-	}
-
-	// Parse the response.
-	listRes, ok := res.Resp.(*kmsg.ListOffsetsResponse)
-	if !ok {
-		return 0, errors.New("unexpected response type")
-	}
-	if expected, actual := 1, len(listRes.Topics); actual != expected {
-		return 0, fmt.Errorf("unexpected number of topics in the response (expected: %d, got: %d)", expected, actual)
-	}
-	if expected, actual := p.topic, listRes.Topics[0].Topic; expected != actual {
-		return 0, fmt.Errorf("unexpected topic in the response (expected: %s, got: %s)", expected, actual)
-	}
-	if expected, actual := 1, len(listRes.Topics[0].Partitions); actual != expected {
-		return 0, fmt.Errorf("unexpected number of partitions in the response (expected: %d, got: %d)", expected, actual)
-	}
-	if expected, actual := p.partitionID, listRes.Topics[0].Partitions[0].Partition; actual != expected {
-		return 0, fmt.Errorf("unexpected partition in the response (expected: %d, got: %d)", expected, actual)
-	}
-	if err := kerr.ErrorForCode(listRes.Topics[0].Partitions[0].ErrorCode); err != nil {
-		return 0, err
-	}
-
-	// The offset we get is the offset at which the next message will be written, so to get the last produced offset
-	// we have to subtract 1. See DESIGN.md for more details.
-	return listRes.Topics[0].Partitions[0].Offset - 1, nil
+	return p.metadataStore.GetLastProducedOffsetID(ctx, p.partitionID)
 }
 
 // FetchLastProducedOffset returns the result of the *next* "last produced offset" request

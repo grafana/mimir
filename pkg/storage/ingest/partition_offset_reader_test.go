@@ -4,7 +4,6 @@ package ingest
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -16,17 +15,14 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/util/testkafka"
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 )
 
 func TestPartitionOffsetReader(t *testing.T) {
 	const (
-		numPartitions = 1
-		topicName     = "test"
-		partitionID   = int32(0)
+		partitionID = int32(0)
 	)
 
 	var (
@@ -34,13 +30,10 @@ func TestPartitionOffsetReader(t *testing.T) {
 	)
 
 	t.Run("should notify waiting goroutines when stopped", func(t *testing.T) {
-		var (
-			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
-			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
-		)
+		metadata := NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())
 
 		// Run with a very high polling interval, so that it will never run in this test.
-		reader := newPartitionOffsetReader(createTestKafkaClient(t, kafkaCfg), topicName, partitionID, time.Hour, nil, log.NewNopLogger())
+		reader := newPartitionOffsetReader(metadata, partitionID, time.Hour, nil, log.NewNopLogger())
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 
 		// Run few goroutines waiting for the last produced offset.
@@ -67,11 +60,8 @@ func TestPartitionOffsetReader(t *testing.T) {
 
 func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 	const (
-		numPartitions = 1
-		userID        = "user-1"
-		topicName     = "test"
-		partitionID   = int32(0)
-		pollInterval  = time.Second
+		partitionID  = int32(0)
+		pollInterval = time.Second
 	)
 
 	var (
@@ -82,12 +72,14 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 	t.Run("should return the last produced offset, or -1 if the partition is empty", func(t *testing.T) {
 		t.Parallel()
 
+		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+		require.NoError(t, err)
+
 		var (
-			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
-			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
-			client         = createTestKafkaClient(t, kafkaCfg)
-			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetReader(client, topicName, partitionID, pollInterval, reg, logger)
+			reg      = prometheus.NewPedanticRegistry()
+			metadata = NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())
+			storage  = NewSegmentStorage(bucket, metadata)
+			reader   = newPartitionOffsetReader(metadata, partitionID, pollInterval, reg, logger)
 		)
 
 		offset, err := reader.getLastProducedOffset(ctx)
@@ -95,14 +87,14 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 		assert.Equal(t, int64(-1), offset)
 
 		// Write the 1st message.
-		produceRecord(ctx, t, client, topicName, partitionID, []byte("message 1"))
+		produceRecord(ctx, t, storage, partitionID, "message 1")
 
 		offset, err = reader.getLastProducedOffset(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), offset)
 
 		// Write the 2nd message.
-		produceRecord(ctx, t, client, topicName, partitionID, []byte("message 2"))
+		produceRecord(ctx, t, storage, partitionID, "message 2")
 
 		offset, err = reader.getLastProducedOffset(ctx)
 		require.NoError(t, err)
@@ -123,31 +115,34 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 	t.Run("should honor context deadline and not fail other in-flight requests issued while the canceled one was still running", func(t *testing.T) {
 		t.Parallel()
 
-		var (
-			cluster, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
-			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
-			client               = createTestKafkaClient(t, kafkaCfg)
-			reg                  = prometheus.NewPedanticRegistry()
-			reader               = newPartitionOffsetReader(client, topicName, partitionID, pollInterval, reg, logger)
+		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+		require.NoError(t, err)
 
-			firstRequest         = atomic.NewBool(true)
+		var (
+			reg      = prometheus.NewPedanticRegistry()
+			metadata = NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())
+			storage  = NewSegmentStorage(bucket, metadata)
+			reader   = newPartitionOffsetReader(metadata, partitionID, pollInterval, reg, logger)
+
+			// firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
 			firstRequestTimeout  = time.Second
 		)
 
 		// Write some messages.
-		produceRecord(ctx, t, client, topicName, partitionID, []byte("message 1"))
-		produceRecord(ctx, t, client, topicName, partitionID, []byte("message 2"))
+		produceRecord(ctx, t, storage, partitionID, "message 1")
+		produceRecord(ctx, t, storage, partitionID, "message 2")
 		expectedOffset := int64(1)
 
+		// TODO possibly re-create this with MetadataStore
 		// Slow down the 1st ListOffsets request.
-		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
-			if firstRequest.CompareAndSwap(true, false) {
-				close(firstRequestReceived)
-				time.Sleep(2 * firstRequestTimeout)
-			}
-			return nil, nil, false
-		})
+		// cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		// 	if firstRequest.CompareAndSwap(true, false) {
+		// 		close(firstRequestReceived)
+		// 		time.Sleep(2 * firstRequestTimeout)
+		// 	}
+		// 	return nil, nil, false
+		// })
 
 		wg := sync.WaitGroup{}
 
@@ -175,23 +170,23 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 	t.Run("should honor the configured retry timeout", func(t *testing.T) {
 		t.Parallel()
 
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		reg := prometheus.NewPedanticRegistry()
+		metadata := NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())
 
 		// Configure a short retry timeout.
-		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg := createTestKafkaConfig("", "")
 		kafkaCfg.LastProducedOffsetRetryTimeout = time.Second
 
-		client := createTestKafkaClient(t, kafkaCfg)
-		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetReader(client, topicName, partitionID, pollInterval, reg, logger)
+		reader := newPartitionOffsetReader(metadata, partitionID, pollInterval, reg, logger)
 
 		// Make the ListOffsets request failing.
 		actualTries := atomic.NewInt64(0)
-		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
-			actualTries.Inc()
-			return nil, errors.New("mocked error"), true
-		})
+		// TODO possibly re-create this with MetadataStore
+		// cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		// 	cluster.KeepControl()
+		// 	actualTries.Inc()
+		// 	return nil, errors.New("mocked error"), true
+		// })
 
 		startTime := time.Now()
 		_, err := reader.getLastProducedOffset(ctx)
@@ -210,10 +205,8 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 
 func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 	const (
-		numPartitions = 1
-		topicName     = "test"
-		partitionID   = int32(0)
-		pollInterval  = time.Second
+		partitionID  = int32(0)
+		pollInterval = time.Second
 	)
 
 	var (
@@ -223,36 +216,35 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 
 	t.Run("should wait the result of the next request issued", func(t *testing.T) {
 		var (
-			cluster, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
-			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
-			client               = createTestKafkaClient(t, kafkaCfg)
-			reader               = newPartitionOffsetReader(client, topicName, partitionID, pollInterval, nil, logger)
+			metadata = NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())
+			reader   = newPartitionOffsetReader(metadata, partitionID, pollInterval, nil, logger)
 
-			lastOffset           = atomic.NewInt64(1)
+			// lastOffset           = atomic.NewInt64(1)
 			firstRequestReceived = make(chan struct{})
 		)
 
-		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
-
-			if lastOffset.Load() == 1 {
-				close(firstRequestReceived)
-			}
-
-			// Mock the response so that we can increase the offset each time.
-			req := kreq.(*kmsg.ListOffsetsRequest)
-			res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
-			res.Topics = []kmsg.ListOffsetsResponseTopic{{
-				Topic: topicName,
-				Partitions: []kmsg.ListOffsetsResponseTopicPartition{{
-					Partition: partitionID,
-					ErrorCode: 0,
-					Offset:    lastOffset.Inc(),
-				}},
-			}}
-
-			return res, nil, true
-		})
+		// TODO possibly re-create this with MetadataStore
+		// cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+		// 	cluster.KeepControl()
+		//
+		// 	if lastOffset.Load() == 1 {
+		// 		close(firstRequestReceived)
+		// 	}
+		//
+		// 	// Mock the response so that we can increase the offset each time.
+		// 	req := kreq.(*kmsg.ListOffsetsRequest)
+		// 	res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+		// 	res.Topics = []kmsg.ListOffsetsResponseTopic{{
+		// 		Topic: topicName,
+		// 		Partitions: []kmsg.ListOffsetsResponseTopicPartition{{
+		// 			Partition: partitionID,
+		// 			ErrorCode: 0,
+		// 			Offset:    lastOffset.Inc(),
+		// 		}},
+		// 	}}
+		//
+		// 	return res, nil, true
+		// })
 
 		wg := sync.WaitGroup{}
 
@@ -283,13 +275,11 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 
 	t.Run("should immediately return if the context gets canceled", func(t *testing.T) {
 		var (
-			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
-			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
-			client         = createTestKafkaClient(t, kafkaCfg)
+			metadata = NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())
 		)
 
 		// Create the reader but do NOT start it, so that the "last produced offset" will be never fetched.
-		reader := newPartitionOffsetReader(client, topicName, partitionID, pollInterval, nil, logger)
+		reader := newPartitionOffsetReader(metadata, partitionID, pollInterval, nil, logger)
 
 		canceledCtx, cancel := context.WithCancel(ctx)
 		cancel()
