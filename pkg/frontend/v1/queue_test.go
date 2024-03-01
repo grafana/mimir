@@ -25,10 +25,10 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 )
 
-func setupFrontend(t *testing.T, config Config) (*Frontend, error) {
+func setupFrontend(t *testing.T, config Config) (*FrontendDownstreamClient, error) {
 	logger := log.NewNopLogger()
 
-	frontend, err := New(config, limits{queriers: 3}, logger, nil)
+	frontend, err := NewFrontendDownstreamClient(config, limits{queriers: 3}, logger, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), frontend))
 

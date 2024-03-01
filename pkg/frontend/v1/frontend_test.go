@@ -51,7 +51,7 @@ func TestFrontend(t *testing.T) {
 		_, err := w.Write([]byte("Hello World"))
 		require.NoError(t, err)
 	})
-	test := func(addr string, _ *Frontend) {
+	test := func(addr string, _ *FrontendDownstreamClient) {
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/", addr), nil)
 		require.NoError(t, err)
 		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(context.Background(), "1"), req)
@@ -88,7 +88,7 @@ func TestFrontendPropagateTrace(t *testing.T) {
 		require.NoError(t, err)
 	}))
 
-	test := func(addr string, _ *Frontend) {
+	test := func(addr string, _ *FrontendDownstreamClient) {
 		sp, ctx := opentracing.StartSpanFromContext(context.Background(), "client")
 		defer sp.Finish()
 		traceID := fmt.Sprintf("%v", sp.Context().(jaeger.SpanContext).TraceID())
@@ -135,7 +135,7 @@ func TestFrontendCheckReady(t *testing.T) {
 				QuerierForgetDelay:      0,
 			}
 
-			f, err := New(cfg, limits{}, log.NewNopLogger(), nil)
+			f, err := NewFrontendDownstreamClient(cfg, limits{}, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), f))
 			defer func() {
@@ -165,7 +165,7 @@ func TestFrontendCancel(t *testing.T) {
 		<-r.Context().Done()
 		tries.Inc()
 	})
-	test := func(addr string, _ *Frontend) {
+	test := func(addr string, _ *FrontendDownstreamClient) {
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/", addr), nil)
 		require.NoError(t, err)
 		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(context.Background(), "1"), req)
@@ -196,7 +196,7 @@ func TestFrontendMetricsCleanup(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 
-	test := func(addr string, fr *Frontend) {
+	test := func(addr string, fr *FrontendDownstreamClient) {
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/", addr), nil)
 		require.NoError(t, err)
 		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(context.Background(), "1"), req)
@@ -238,7 +238,7 @@ func TestFrontendStats(t *testing.T) {
 
 	tl := testLogger{}
 
-	test := func(addr string, fr *Frontend) {
+	test := func(addr string, fr *FrontendDownstreamClient) {
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/", addr), nil)
 		require.NoError(t, err)
 		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(context.Background(), "1"), req)
@@ -298,7 +298,7 @@ func (t *testLogger) getLogMessages() []map[string]interface{} {
 	return append([]map[string]interface{}(nil), t.logMessages...)
 }
 
-func testFrontend(t *testing.T, config Config, handler http.Handler, test func(addr string, frontend *Frontend), l log.Logger, reg prometheus.Registerer) {
+func testFrontend(t *testing.T, config Config, handler http.Handler, test func(addr string, frontend *FrontendDownstreamClient), l log.Logger, reg prometheus.Registerer) {
 	logger := log.NewNopLogger()
 	if l != nil {
 		logger = l
@@ -316,7 +316,7 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	httpListen, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
-	v1, err := New(config, limits{}, logger, reg)
+	v1, err := NewFrontendDownstreamClient(config, limits{}, logger, reg)
 	require.NoError(t, err)
 	require.NotNil(t, v1)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), v1))

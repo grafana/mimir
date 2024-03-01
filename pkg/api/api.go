@@ -447,11 +447,11 @@ func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http
 	a.RegisterQueryAPI(h, buildInfoHandler)
 }
 
-func (a *API) RegisterQueryFrontend1(f *frontendv1.Frontend) {
+func (a *API) RegisterQueryFrontend1(f *frontendv1.FrontendDownstreamClient) {
 	frontendv1pb.RegisterFrontendServer(a.server.GRPC, f)
 }
 
-func (a *API) RegisterQueryFrontend2(f *frontendv2.Frontend) {
+func (a *API) RegisterQueryFrontend2(f *frontendv2.FrontendDownstreamClient) {
 	frontendv2pb.RegisterFrontendForQuerierServer(a.server.GRPC, f)
 }
 

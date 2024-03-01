@@ -29,7 +29,7 @@ type CombinedFrontendConfig struct {
 
 	QueryMiddleware querymiddleware.Config `yaml:",inline"`
 
-	DownstreamURL string `yaml:"downstream_url" category:"advanced"`
+	DownstreamPrometheusURL string `yaml:"downstream_url" category:"advanced"`
 }
 
 func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -38,7 +38,7 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 	cfg.FrontendV2.RegisterFlags(f, logger)
 	cfg.QueryMiddleware.RegisterFlags(f)
 
-	f.StringVar(&cfg.DownstreamURL, "query-frontend.downstream-url", "", "URL of downstream Prometheus.")
+	f.StringVar(&cfg.DownstreamPrometheusURL, "query-frontend.downstream-url", "", "URL of downstream Prometheus.")
 }
 
 func (cfg *CombinedFrontendConfig) Validate() error {
@@ -51,24 +51,24 @@ func (cfg *CombinedFrontendConfig) Validate() error {
 	return nil
 }
 
-// InitFrontend initializes frontend (either V1 -- without scheduler, or V2 -- with scheduler) or no frontend at
+// InitFrontendDownstreamClient initializes frontend (either V1 -- without scheduler, or V2 -- with scheduler) or no frontend at
 // all if downstream Prometheus URL is used instead.
 //
 // Returned RoundTripper can be wrapped in more round-tripper middlewares, and then eventually registered
 // into HTTP server using the Handler from this package. Returned RoundTripper is always non-nil
 // (if there are no errors), and it uses the returned frontend (if any).
-func InitFrontend(
+func InitFrontendDownstreamClient(
 	cfg CombinedFrontendConfig,
 	v1Limits v1.Limits,
 	v2Limits v2.Limits,
 	grpcListenPort int,
 	log log.Logger,
 	reg prometheus.Registerer,
-) (http.RoundTripper, *v1.Frontend, *v2.Frontend, error) {
+) (http.RoundTripper, *v1.FrontendDownstreamClient, *v2.FrontendDownstreamClient, error) {
 	switch {
-	case cfg.DownstreamURL != "":
+	case cfg.DownstreamPrometheusURL != "":
 		// If the user has specified a downstream Prometheus, then we should use that.
-		rt, err := NewDownstreamRoundTripper(cfg.DownstreamURL)
+		rt, err := NewDownstreamRoundTripper(cfg.DownstreamPrometheusURL)
 		return rt, nil, nil, err
 
 	case cfg.FrontendV2.SchedulerAddress != "" || cfg.FrontendV2.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
@@ -86,12 +86,12 @@ func InitFrontend(
 			cfg.FrontendV2.Port = grpcListenPort
 		}
 
-		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, log, reg)
+		fr, err := v2.NewFrontendDownstreamClient(cfg.FrontendV2, v2Limits, log, reg)
 		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr), nil, fr, err
 
 	default:
 		// No scheduler = use original frontend.
-		fr, err := v1.New(cfg.FrontendV1, v1Limits, log, reg)
+		fr, err := v1.NewFrontendDownstreamClient(cfg.FrontendV1, v1Limits, log, reg)
 		if err != nil {
 			return nil, nil, nil, err
 		}
