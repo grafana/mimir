@@ -45,6 +45,7 @@
 * [CHANGE] Standardise exemplar label as "trace_id". #7475
 * [CHANGE] The configuration option `-querier.max-query-into-future` has been deprecated and will be removed in Mimir 2.14. #7496
 * [CHANGE] Distributor: the metric `cortex_distributor_sample_delay_seconds` has been deprecated and will be removed in Mimir 2.14. #7516
+* [CHANGE] Query-frontend: The deprecated YAML setting `frontend.cache_unaligned_requests` has been moved to `limits.cache_unaligned_requests`. #7519
 * [FEATURE] Introduce `-server.log-source-ips-full` option to log all IPs from `Forwarded`, `X-Real-IP`, `X-Forwarded-For` headers. #7250
 * [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
 * [FEATURE] Cardinality API: added a new `count_method` parameter which enables counting active label values. #7085
