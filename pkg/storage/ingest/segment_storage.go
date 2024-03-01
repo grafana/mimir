@@ -23,10 +23,10 @@ import (
 // Use SegmentReader if you need an higher level client to read segments.
 type SegmentStorage struct {
 	bucket   objstore.Bucket
-	metadata MetadataStoreClient
+	metadata *MetadataStore
 }
 
-func NewSegmentStorage(bucket objstore.Bucket, metadata MetadataStoreClient) *SegmentStorage {
+func NewSegmentStorage(bucket objstore.Bucket, metadata *MetadataStore) *SegmentStorage {
 	return &SegmentStorage{
 		bucket:   bucket,
 		metadata: metadata,
