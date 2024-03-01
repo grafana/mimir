@@ -134,7 +134,7 @@ func (cfg *GarbageCollectorConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *GarbageCollectorConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.DurationVar(&cfg.CleanupInterval, prefix+".onTimerTick-interval", time.Minute, "How frequently to check for segments to delete.")
+	f.DurationVar(&cfg.CleanupInterval, prefix+".cleanup-interval", time.Minute, "How frequently to check for segments to delete.")
 	f.DurationVar(&cfg.RetentionPeriod, prefix+".retention-period", time.Hour, "The segments retention period.")
 	f.IntVar(&cfg.DeleteConcurrency, prefix+".delete-concurrency", 10, "How many concurrent delete operations to run.")
 }
