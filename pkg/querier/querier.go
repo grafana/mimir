@@ -40,8 +40,9 @@ import (
 // Config contains the configuration require to create a querier
 type Config struct {
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
-	QueryStoreAfter    time.Duration `yaml:"query_store_after" category:"advanced"`
-	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future" category:"advanced"`
+	QueryStoreAfter time.Duration `yaml:"query_store_after" category:"advanced"`
+	// Deprecated in Mimir 2.12, remove in Mimir 2.14
+	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future" category:"deprecated"`
 
 	StoreGatewayClient ClientConfig `yaml:"store_gateway_client"`
 

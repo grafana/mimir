@@ -9,7 +9,6 @@ package blob
 import (
 	"context"
 	"io"
-	"math"
 	"os"
 	"sync"
 	"time"
@@ -37,16 +36,15 @@ type Client base.Client[generated.BlobClient]
 //   - cred - an Azure AD credential, typically obtained via the azidentity module
 //   - options - client options; pass nil to accept the default values
 func NewClient(blobURL string, cred azcore.TokenCredential, options *ClientOptions) (*Client, error) {
-	audience := base.GetAudience((*base.ClientOptions)(options))
-	authPolicy := shared.NewStorageChallengePolicy(cred, audience)
+	authPolicy := shared.NewStorageChallengePolicy(cred)
 	conOptions := shared.GetClientOptions(options)
 	plOpts := runtime.PipelineOptions{PerRetry: []policy.Policy{authPolicy}}
 
-	azClient, err := azcore.NewClient(exported.ModuleName, exported.ModuleVersion, plOpts, &conOptions.ClientOptions)
+	azClient, err := azcore.NewClient(shared.BlobClient, exported.ModuleVersion, plOpts, &conOptions.ClientOptions)
 	if err != nil {
 		return nil, err
 	}
-	return (*Client)(base.NewBlobClient(blobURL, azClient, &cred, (*base.ClientOptions)(conOptions))), nil
+	return (*Client)(base.NewBlobClient(blobURL, azClient, &cred)), nil
 }
 
 // NewClientWithNoCredential creates an instance of Client with the specified values.
@@ -56,11 +54,11 @@ func NewClient(blobURL string, cred azcore.TokenCredential, options *ClientOptio
 func NewClientWithNoCredential(blobURL string, options *ClientOptions) (*Client, error) {
 	conOptions := shared.GetClientOptions(options)
 
-	azClient, err := azcore.NewClient(exported.ModuleName, exported.ModuleVersion, runtime.PipelineOptions{}, &conOptions.ClientOptions)
+	azClient, err := azcore.NewClient(shared.BlobClient, exported.ModuleVersion, runtime.PipelineOptions{}, &conOptions.ClientOptions)
 	if err != nil {
 		return nil, err
 	}
-	return (*Client)(base.NewBlobClient(blobURL, azClient, nil, (*base.ClientOptions)(conOptions))), nil
+	return (*Client)(base.NewBlobClient(blobURL, azClient, nil)), nil
 }
 
 // NewClientWithSharedKeyCredential creates an instance of Client with the specified values.
@@ -72,11 +70,11 @@ func NewClientWithSharedKeyCredential(blobURL string, cred *SharedKeyCredential,
 	conOptions := shared.GetClientOptions(options)
 	plOpts := runtime.PipelineOptions{PerRetry: []policy.Policy{authPolicy}}
 
-	azClient, err := azcore.NewClient(exported.ModuleName, exported.ModuleVersion, plOpts, &conOptions.ClientOptions)
+	azClient, err := azcore.NewClient(shared.BlobClient, exported.ModuleVersion, plOpts, &conOptions.ClientOptions)
 	if err != nil {
 		return nil, err
 	}
-	return (*Client)(base.NewBlobClient(blobURL, azClient, cred, (*base.ClientOptions)(conOptions))), nil
+	return (*Client)(base.NewBlobClient(blobURL, azClient, cred)), nil
 }
 
 // NewClientFromConnectionString creates an instance of Client with the specified values.
@@ -114,10 +112,6 @@ func (b *Client) credential() any {
 	return base.Credential((*base.Client[generated.BlobClient])(b))
 }
 
-func (b *Client) getClientOptions() *base.ClientOptions {
-	return base.GetClientOptions((*base.Client[generated.BlobClient])(b))
-}
-
 // URL returns the URL endpoint used by the Client object.
 func (b *Client) URL() string {
 	return b.generated().Endpoint()
@@ -132,7 +126,7 @@ func (b *Client) WithSnapshot(snapshot string) (*Client, error) {
 	}
 	p.Snapshot = snapshot
 
-	return (*Client)(base.NewBlobClient(p.String(), b.generated().InternalClient(), b.credential(), b.getClientOptions())), nil
+	return (*Client)(base.NewBlobClient(p.String(), b.generated().InternalClient(), b.credential())), nil
 }
 
 // WithVersionID creates a new AppendBlobURL object identical to the source but with the specified version id.
@@ -144,7 +138,7 @@ func (b *Client) WithVersionID(versionID string) (*Client, error) {
 	}
 	p.VersionID = versionID
 
-	return (*Client)(base.NewBlobClient(p.String(), b.generated().InternalClient(), b.credential(), b.getClientOptions())), nil
+	return (*Client)(base.NewBlobClient(p.String(), b.generated().InternalClient(), b.credential())), nil
 }
 
 // Delete marks the specified blob or snapshot for deletion. The blob is later deleted during garbage collection.
@@ -470,18 +464,23 @@ func (b *Client) downloadFile(ctx context.Context, writer io.Writer, o downloadO
 
 	buffers := shared.NewMMBPool(int(o.Concurrency), o.BlockSize)
 	defer buffers.Free()
+	acquireBuffer := func() ([]byte, error) {
+		select {
+		case b := <-buffers.Acquire():
+			// got a buffer
+			return b, nil
+		default:
+			// no buffer available; allocate a new buffer if possible
+			if _, err := buffers.Grow(); err != nil {
+				return nil, err
+			}
 
-	numChunks := uint16((count-1)/o.BlockSize + 1)
-	for bufferCounter := float64(0); bufferCounter < math.Min(float64(numChunks), float64(o.Concurrency)); bufferCounter++ {
-		if _, err := buffers.Grow(); err != nil {
-			return 0, err
+			// either grab the newly allocated buffer or wait for one to become available
+			return <-buffers.Acquire(), nil
 		}
 	}
 
-	acquireBuffer := func() ([]byte, error) {
-		return <-buffers.Acquire(), nil
-	}
-
+	numChunks := uint16((count-1)/o.BlockSize) + 1
 	blocks := make([]chan []byte, numChunks)
 	for b := range blocks {
 		blocks[b] = make(chan []byte)
@@ -596,11 +595,6 @@ func (b *Client) DownloadFile(ctx context.Context, file *os.File, o *DownloadFil
 	}
 	do := (*downloadOptions)(o)
 
-	filePointer, err := file.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return 0, err
-	}
-
 	// 1. Calculate the size of the destination file
 	var size int64
 
@@ -629,15 +623,7 @@ func (b *Client) DownloadFile(ctx context.Context, file *os.File, o *DownloadFil
 	}
 
 	if size > 0 {
-		writeSize, err := b.downloadFile(ctx, file, *do)
-		if err != nil {
-			return 0, err
-		}
-		_, err = file.Seek(filePointer, io.SeekStart)
-		if err != nil {
-			return 0, err
-		}
-		return writeSize, nil
+		return b.downloadFile(ctx, file, *do)
 	} else { // if the blob's size is 0, there is no need in downloading it
 		return 0, nil
 	}
