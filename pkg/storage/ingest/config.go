@@ -32,7 +32,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka", f)
-	f.IntVar(&cfg.BufferSize, "ingest-storage.buffer-size", 1, "The segment reader's buffer size")
+	f.IntVar(&cfg.BufferSize, "ingest-storage.buffer-size", 10, "The segment reader's buffer size")
 	f.DurationVar(&cfg.LastProducedOffsetPollInterval, "ingest-storage.last-produced-offset-poll-interval", time.Second, "How frequently to poll the last produced offset, used to enforce strong read consistency.")
 
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("ingest-storage.", "ingest", f)

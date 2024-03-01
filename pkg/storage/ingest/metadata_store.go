@@ -42,7 +42,6 @@ func NewMetadataStore(db MetadataStoreDatabase, logger log.Logger) *MetadataStor
 	return s
 }
 
-// TODO correctly handle reconnections
 func (s *MetadataStore) starting(ctx context.Context) error {
 	return s.db.Open(ctx)
 }

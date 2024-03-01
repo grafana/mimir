@@ -17,10 +17,10 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/ingest/ingestpb"
 )
@@ -33,11 +33,16 @@ func TestPartitionReader(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	segmentReader, metadata, storage := newDataServices(t, nil, nil, partitionID, -1)
+	bucketDir := t.TempDir()
+	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: bucketDir})
+	require.NoError(t, err)
+
+	metadataDB := newMetadataDatabaseMemory()
+	storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
 
 	content := "special content"
 	consumer := newTestConsumer(2)
-	startReader(ctx, t, segmentReader, metadata, partitionID, consumer)
+	startReader(ctx, t, metadataDB, partitionID, consumer, withFilesystemBucket(bucketDir))
 
 	produceSegment(ctx, t, storage, partitionID, content)
 	produceSegment(ctx, t, storage, partitionID, content)
@@ -68,9 +73,14 @@ func TestReader_ConsumerError(t *testing.T) {
 		return errors.New("consumer error")
 	})
 
-	segmentReader, metadata, storage := newDataServices(t, nil, nil, partitionID, -1)
+	bucketDir := t.TempDir()
+	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: bucketDir})
+	require.NoError(t, err)
 
-	startReader(ctx, t, segmentReader, metadata, partitionID, consumer)
+	metadataDB := newMetadataDatabaseMemory()
+	storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
+
+	startReader(ctx, t, metadataDB, partitionID, consumer, withFilesystemBucket(bucketDir))
 
 	produceSegment(ctx, t, storage, partitionID, "1")
 	produceSegment(ctx, t, storage, partitionID, "2")
@@ -97,10 +107,16 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 	setup := func(t *testing.T, consumer recordConsumer) (*PartitionReader, *SegmentStorage, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 
-		segmentReader, metadata, storage := newDataServices(t, nil, nil, partitionID, -1)
+		bucketDir := t.TempDir()
+		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: bucketDir})
+		require.NoError(t, err)
+
+		metadataDB := newMetadataDatabaseMemory()
+		storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
 
 		// Configure the reader to poll the "last produced offset" frequently.
-		reader := startReader(ctx, t, segmentReader, metadata, partitionID, consumer,
+		reader := startReader(ctx, t, metadataDB, partitionID, consumer,
+			withFilesystemBucket(bucketDir),
 			withLastProducedOffsetPollInterval(100*time.Millisecond),
 			withRegistry(reg))
 
@@ -251,6 +267,13 @@ type readerTestCfg struct {
 
 type readerTestCfgOtp func(cfg *readerTestCfg)
 
+func withFilesystemBucket(dir string) func(cfg *readerTestCfg) {
+	return func(cfg *readerTestCfg) {
+		cfg.config.Bucket.Backend = bucket.Filesystem
+		cfg.config.Bucket.Filesystem.Directory = dir
+	}
+}
+
 func withCommitInterval(i time.Duration) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
 		cfg.commitInterval = i
@@ -286,12 +309,12 @@ func createTestIngestConfig() Config {
 	return cfg
 }
 
-func startReader(ctx context.Context, t *testing.T, segmentReader *SegmentReader, metadataStore *MetadataStore, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
+func startReader(ctx context.Context, t *testing.T, metadataDB MetadataStoreDatabase, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
 	cfg := defaultReaderTestConfig(partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
 	}
-	reader, err := newPartitionReader(cfg.config, segmentReader, metadataStore, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.config, metadataDB, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	reader.commitInterval = cfg.commitInterval
 
@@ -316,13 +339,18 @@ func TestPartitionReader_Commit(t *testing.T) {
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
 		// Reuse bucket and metadataDB across shutdowns
-		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+		bucketDir := t.TempDir()
+		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: bucketDir})
 		require.NoError(t, err)
-		metadataDB := newMetadataDatabaseMemory()
 
-		segmentReader, metadata, storage := newDataServices(t, bucket, metadataDB, partitionID, -1)
+		metadataDB := newMetadataDatabaseMemory()
+		storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
 		consumer := newTestConsumer(3)
-		reader := startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
+
+		// Start the reader.
+		reader := startReader(ctx, t, metadataDB, partitionID, consumer,
+			withFilesystemBucket(bucketDir),
+			withCommitInterval(commitInterval))
 
 		produceSegment(ctx, t, storage, partitionID, "1")
 		produceSegment(ctx, t, storage, partitionID, "2")
@@ -331,13 +359,16 @@ func TestPartitionReader_Commit(t *testing.T) {
 		_, err = consumer.waitRequests(3, time.Second, commitInterval*2) // wait for a few commits to make sure empty commits don't cause issues
 		require.NoError(t, err)
 
+		// Stop the reader.
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
 		recordsSentAfterShutdown := "4"
 		produceSegment(ctx, t, storage, partitionID, recordsSentAfterShutdown)
 
-		segmentReader, metadata, storage = newDataServices(t, bucket, metadataDB, partitionID, 2)
-		startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
+		// Restart the reader.
+		startReader(ctx, t, metadataDB, partitionID, consumer,
+			withFilesystemBucket(bucketDir),
+			withCommitInterval(commitInterval))
 
 		records, err := consumer.waitRequests(1, time.Second, 0)
 		assert.NoError(t, err)
@@ -354,13 +385,18 @@ func TestPartitionReader_Commit(t *testing.T) {
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
 		// Reuse bucket and metadataDB across shutdowns
-		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+		bucketDir := t.TempDir()
+		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: bucketDir})
 		require.NoError(t, err)
-		metadataDB := newMetadataDatabaseMemory()
 
-		segmentReader, metadata, storage := newDataServices(t, bucket, metadataDB, partitionID, -1)
+		metadataDB := newMetadataDatabaseMemory()
+		storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
 		consumer := newTestConsumer(4)
-		reader := startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
+
+		// Start the reader.
+		reader := startReader(ctx, t, metadataDB, partitionID, consumer,
+			withFilesystemBucket(bucketDir),
+			withCommitInterval(commitInterval))
 
 		produceSegment(ctx, t, storage, partitionID, "1")
 		produceSegment(ctx, t, storage, partitionID, "2")
@@ -369,11 +405,14 @@ func TestPartitionReader_Commit(t *testing.T) {
 		_, err = consumer.waitRequests(3, time.Second, 0)
 		require.NoError(t, err)
 
+		// Stop the reader.
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 		produceSegment(ctx, t, storage, partitionID, "4")
 
-		segmentReader, metadata, _ = newDataServices(t, bucket, metadataDB, partitionID, 2)
-		startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
+		// Restart the reader.
+		startReader(ctx, t, metadataDB, partitionID, consumer,
+			withFilesystemBucket(bucketDir),
+			withCommitInterval(commitInterval))
 
 		// There should be only one record - the one produced after the shutdown.
 		// The offset of record "3" should have been committed at shutdown and the reader should have resumed from there.
@@ -389,13 +428,18 @@ func TestPartitionReader_Commit(t *testing.T) {
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
 		// Reuse bucket and metadataDB across shutdowns
-		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+		bucketDir := t.TempDir()
+		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: bucketDir})
 		require.NoError(t, err)
-		metadataDB := newMetadataDatabaseMemory()
 
-		segmentReader, metadata, storage := newDataServices(t, bucket, metadataDB, partitionID, -1)
+		metadataDB := newMetadataDatabaseMemory()
+		storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
 		consumer := newTestConsumer(4)
-		reader := startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
+
+		// Start the reader.
+		reader := startReader(ctx, t, metadataDB, partitionID, consumer,
+			withFilesystemBucket(bucketDir),
+			withCommitInterval(commitInterval))
 
 		produceSegment(ctx, t, storage, partitionID, "1")
 		produceSegment(ctx, t, storage, partitionID, "2")
@@ -404,9 +448,13 @@ func TestPartitionReader_Commit(t *testing.T) {
 		_, err = consumer.waitRequests(3, time.Second, 0)
 		require.NoError(t, err)
 
+		// Stop the reader.
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		segmentReader, metadata, _ = newDataServices(t, bucket, metadataDB, partitionID, 2)
-		reader = startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
+
+		// Restart the reader.
+		reader = startReader(ctx, t, metadataDB, partitionID, consumer,
+			withFilesystemBucket(bucketDir),
+			withCommitInterval(commitInterval))
 
 		// No new writeRequests since the last commit.
 		_, err = consumer.waitRequests(0, time.Second, 0)
@@ -414,8 +462,9 @@ func TestPartitionReader_Commit(t *testing.T) {
 
 		// Shut down without having consumed any writeRequests.
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		segmentReader, metadata, _ = newDataServices(t, bucket, metadataDB, partitionID, 2)
-		_ = startReader(ctx, t, segmentReader, metadata, partitionID, consumer, withCommitInterval(commitInterval))
+		_ = startReader(ctx, t, metadataDB, partitionID, consumer,
+			withFilesystemBucket(bucketDir),
+			withCommitInterval(commitInterval))
 
 		// No new writeRequests since the last commit (2 shutdowns ago).
 		_, err = consumer.waitRequests(0, time.Second, 0)
@@ -476,21 +525,6 @@ type consumerFunc func(ctx context.Context, segment *Segment) error
 
 func (c consumerFunc) consume(ctx context.Context, segment *Segment) error {
 	return c(ctx, segment)
-}
-
-func newDataServices(t *testing.T, bucket objstore.Bucket, metadataDB *metadataDatabaseMemory, partitionID int32, lastOffsetID int64) (*SegmentReader, *MetadataStore, *SegmentStorage) {
-	if bucket == nil {
-		var err error
-		bucket, err = filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
-		require.NoError(t, err)
-	}
-	if metadataDB == nil {
-		metadataDB = newMetadataDatabaseMemory()
-	}
-	metadata := NewMetadataStore(metadataDB, log.NewNopLogger())
-	segmentReader := NewSegmentReader(bucket, metadata, partitionID, lastOffsetID, 1, log.NewNopLogger())
-	storage := NewSegmentStorage(bucket, metadata)
-	return segmentReader, metadata, storage
 }
 
 func encodeSegment(content string) *ingestpb.Segment {

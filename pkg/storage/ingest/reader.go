@@ -14,6 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -29,7 +30,9 @@ type PartitionReader struct {
 	dependencies *services.Manager
 
 	segmentReader *SegmentReader
+	metadataDB    MetadataStoreDatabase
 	metadataStore *MetadataStore
+	bucketClient  objstore.Bucket
 
 	config        Config
 	partitionID   int32
@@ -52,25 +55,21 @@ type PartitionReader struct {
 
 func NewPartitionReaderForPusher(config Config, partitionID int32, consumerGroup string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	consumer := newPusherConsumer(pusher, reg, logger)
-	db := NewMetadataStorePostgresql(config.PostgresConfig)
-	metadataStore := NewMetadataStore(db, logger)
+	metadataDB := NewMetadataStorePostgresql(config.PostgresConfig)
+
+	return newPartitionReader(config, metadataDB, partitionID, consumerGroup, consumer, logger, reg)
+}
+
+func newPartitionReader(config Config, metadataDB MetadataStoreDatabase, partitionID int32, consumerGroup string, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	bucketClient, err := bucket.NewClient(context.Background(), config.Bucket, "segment-store", logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create segment store bucket client")
 	}
-	offset, err := metadataStore.GetLastConsumedOffsetID(context.Background(), partitionID, consumerGroup)
-	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("failed to get last consumer offset: %v", partitionID))
-	}
-	segmentReader := NewSegmentReader(bucketClient, metadataStore, partitionID, offset, config.BufferSize, logger)
-	return newPartitionReader(config, segmentReader, metadataStore, partitionID, consumerGroup, consumer, logger, reg)
-}
 
-func newPartitionReader(config Config, segmentReader *SegmentReader, metadataStore *MetadataStore, partitionID int32, consumerGroup string, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	r := &PartitionReader{
 		config:                config,
-		segmentReader:         segmentReader,
-		metadataStore:         metadataStore,
+		bucketClient:          bucketClient,
+		metadataDB:            metadataDB,
 		partitionID:           partitionID,
 		consumer:              consumer,
 		consumerGroup:         consumerGroup,
@@ -86,6 +85,13 @@ func newPartitionReader(config Config, segmentReader *SegmentReader, metadataSto
 }
 
 func (r *PartitionReader) start(ctx context.Context) error {
+	// We need to start the metadata store in order to fetch the last committed offset.
+	r.metadataStore = NewMetadataStore(r.metadataDB, r.logger)
+	if err := services.StartAndAwaitRunning(ctx, r.metadataStore); err != nil {
+		return errors.Wrap(err, "failed to start metadata store")
+	}
+
+	// Fetch the last committed offset.
 	startFromOffset, err := r.fetchLastCommittedOffsetWithRetries(ctx)
 	if err != nil {
 		return err
@@ -93,11 +99,12 @@ func (r *PartitionReader) start(ctx context.Context) error {
 	r.consumedOffsetWatcher.Notify(startFromOffset - 1)
 	level.Info(r.logger).Log("msg", "resuming consumption from offset", "offset", startFromOffset)
 
+	// Start dependency services.
 	r.committer = newConsumerCommitter(r.metadataStore, r.partitionID, r.consumerGroup, r.commitInterval, r.logger)
-
 	r.offsetReader = newPartitionOffsetReader(r.metadataStore, r.partitionID, r.config.LastProducedOffsetPollInterval, r.reg, r.logger)
+	r.segmentReader = NewSegmentReader(r.bucketClient, r.metadataStore, r.partitionID, startFromOffset, r.config.BufferSize, r.logger)
 
-	r.dependencies, err = services.NewManager(r.committer, r.offsetReader, r.consumedOffsetWatcher, r.segmentReader, r.metadataStore)
+	r.dependencies, err = services.NewManager(r.committer, r.offsetReader, r.consumedOffsetWatcher, r.segmentReader)
 	if err != nil {
 		return errors.Wrap(err, "creating service manager")
 	}
@@ -111,10 +118,14 @@ func (r *PartitionReader) start(ctx context.Context) error {
 func (r *PartitionReader) stop(error) error {
 	level.Info(r.logger).Log("msg", "stopping partition reader")
 
-	err := services.StopManagerAndAwaitStopped(context.Background(), r.dependencies)
-	if err != nil {
-		return errors.Wrap(err, "stopping service manager")
+	if err := services.StopManagerAndAwaitStopped(context.Background(), r.dependencies); err != nil {
+		return errors.Wrap(err, "stopping dependencies")
 	}
+
+	if err := services.StopAndAwaitTerminated(context.Background(), r.metadataStore); err != nil {
+		return errors.Wrap(err, "stopping metadata store")
+	}
+
 	return nil
 }
 
@@ -122,7 +133,7 @@ func (r *PartitionReader) run(ctx context.Context) error {
 	for ctx.Err() == nil {
 		segment, err := r.segmentReader.WaitNextSegment(ctx)
 		if err != nil {
-			level.Error(r.logger).Log("err", err)
+			level.Error(r.logger).Log("msg", "failed waiting next segment", "err", err)
 			r.metrics.pollErrors.Add(1)
 			continue
 		}
