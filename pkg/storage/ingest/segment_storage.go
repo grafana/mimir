@@ -5,8 +5,8 @@ package ingest
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"io"
-	"math/rand"
 	"path"
 	"strconv"
 	"time"
@@ -24,14 +24,12 @@ import (
 type SegmentStorage struct {
 	bucket   objstore.Bucket
 	metadata MetadataStoreClient
-	random   *rand.Rand
 }
 
 func NewSegmentStorage(bucket objstore.Bucket, metadata MetadataStoreClient) *SegmentStorage {
 	return &SegmentStorage{
 		bucket:   bucket,
 		metadata: metadata,
-		random:   rand.New(rand.NewSource(time.Now().UnixMilli())),
 	}
 }
 
@@ -44,7 +42,7 @@ func (s *SegmentStorage) CommitSegment(ctx context.Context, partitionID int32, s
 	}
 
 	// Upload the segment to the object storage.
-	objectID, err := ulid.New(uint64(time.Now().UnixMilli()), s.random)
+	objectID, err := ulid.New(uint64(time.Now().UnixMilli()), rand.Reader)
 	if err != nil {
 		return SegmentRef{}, errors.Wrap(err, "failed to generate segment object ID")
 	}
