@@ -32,13 +32,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           utils.histogramRules('cortex_querier_request_duration_seconds', $._config.job_labels + ['route'], $._config.recording_rules_range_interval),
       },
       {
-        name: 'mimir_cache',
-        rules:
-          utils.histogramRules('cortex_memcache_request_duration_seconds', [$._config.per_cluster_label, 'job', 'method'], $._config.recording_rules_range_interval) +
-          utils.histogramRules('cortex_cache_request_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval) +
-          utils.histogramRules('cortex_cache_request_duration_seconds', [$._config.per_cluster_label, 'job', 'method'], $._config.recording_rules_range_interval),
-      },
-      {
         name: 'mimir_storage',
         rules:
           utils.histogramRules('cortex_kv_request_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval),
