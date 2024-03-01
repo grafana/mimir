@@ -13,6 +13,8 @@ ingest_storage:
   enabled:       true
   postgresql:
     address: postgres://postgres:supersecret@postgresql:5432/postgres
+  write_agent:
+    address: mimir-write-agent:9095
 
 ingester:
   return_only_grpc_errors: true
