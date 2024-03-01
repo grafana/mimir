@@ -54,7 +54,7 @@ func (c *SegmentReader) running(ctx context.Context) error {
 		for _, ref := range refs {
 			segment, err := c.storage.FetchSegmentWithRetries(ctx, ref)
 			if err != nil {
-				level.Warn(c.logger).Log("msg", "segment reader failed to fetch segment", "segment_ref", ref.String())
+				level.Warn(c.logger).Log("msg", "segment reader failed to fetch segment", "segment_ref", ref.String(), "err", err)
 
 				try.Wait()
 				break
