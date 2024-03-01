@@ -305,6 +305,10 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 	switch compression {
 	case NoCompression:
 	case RawSnappy:
+		if encodeLen := snappy.MaxEncodedLen(len(data)); encodeLen == -1 {
+			err = fmt.Errorf("response too large")
+			break
+		}
 		data = snappy.Encode(nil, data)
 	case Gzip:
 		var buf bytes.Buffer
