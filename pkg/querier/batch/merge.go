@@ -127,7 +127,8 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	// All we need to do is get enough batches that our first batch's last entry
 	// is before all iterators next entry.
 	for len(c.h) > 0 && (c.batches.len() == 0 || c.nextBatchEndTime() >= c.h[0].AtTime()) {
-		c.batches.merge(c.h[0].Batch(), size)
+		batch := c.h[0].Batch()
+		c.batches.merge(&batch, size)
 
 		if c.h[0].Next(size) != chunkenc.ValNone {
 			heap.Fix(&c.h, 0)

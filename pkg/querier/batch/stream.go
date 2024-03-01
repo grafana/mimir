@@ -35,7 +35,7 @@ func newBatchStream(size int, hPool *zeropool.Pool[*histogram.Histogram], fhPool
 	}
 }
 
-func (bs *batchStream) putPointerValuesToThePool(batch chunk.Batch) {
+func (bs *batchStream) putPointerValuesToThePool(batch *chunk.Batch) {
 	if batch.ValueType == chunkenc.ValHistogram && bs.hPool != nil {
 		for i := 0; i < batch.Length; i++ {
 			bs.hPool.Put((*histogram.Histogram)(batch.PointerValues[i]))
@@ -48,14 +48,14 @@ func (bs *batchStream) putPointerValuesToThePool(batch chunk.Batch) {
 }
 
 func (bs *batchStream) removeFirst() {
-	bs.putPointerValuesToThePool(*bs.curr())
+	bs.putPointerValuesToThePool(bs.curr())
 	copy(bs.batches, bs.batches[1:])
 	bs.batches = bs.batches[:len(bs.batches)-1]
 }
 
 func (bs *batchStream) empty() {
-	for _, batch := range bs.batches {
-		bs.putPointerValuesToThePool(batch)
+	for i := range bs.batches {
+		bs.putPointerValuesToThePool(&bs.batches[i])
 	}
 	bs.batches = bs.batches[:0]
 }
@@ -92,7 +92,7 @@ func (bs *batchStream) curr() *chunk.Batch {
 // merge merges this streams of chunk.Batch objects and the given chunk.Batch of the same series over time.
 // Samples are simply merged by time when they are the same type (float/histogram/...), with the left stream taking precedence if the timestamps are equal.
 // When sample are different type, batches are not merged. In case of equal timestamps, histograms take precedence since they have more information.
-func (bs *batchStream) merge(batch chunk.Batch, size int) {
+func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 	// Reset the Index and Length of existing batches.
 	for i := range bs.batchesBuf {
 		bs.batchesBuf[i].Index = 0
@@ -144,12 +144,12 @@ func (bs *batchStream) merge(batch chunk.Batch, size int) {
 			populate(bs.curr(), lt)
 			bs.next()
 		} else if t1 > t2 {
-			populate(&batch, rt)
+			populate(batch, rt)
 			batch.Next()
 		} else {
 			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
 				// Prefer histograms than floats. Take left side if both have histograms.
-				populate(&batch, rt)
+				populate(batch, rt)
 			} else {
 				populate(bs.curr(), lt)
 				// if s.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
@@ -174,7 +174,7 @@ func (bs *batchStream) merge(batch chunk.Batch, size int) {
 	}
 
 	for t := batch.HasNext(); t != chunkenc.ValNone; t = batch.HasNext() {
-		populate(&batch, t)
+		populate(batch, t)
 		batch.Next()
 	}
 
