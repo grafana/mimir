@@ -6,16 +6,18 @@ package ingestpb
 import (
 	context "context"
 	fmt "fmt"
-	proto "github.com/gogo/protobuf/proto"
-	mimirpb "github.com/grafana/mimir/pkg/mimirpb"
-	grpc "google.golang.org/grpc"
-	codes "google.golang.org/grpc/codes"
-	status "google.golang.org/grpc/status"
 	io "io"
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
 	strings "strings"
+
+	proto "github.com/gogo/protobuf/proto"
+	grpc "google.golang.org/grpc"
+	codes "google.golang.org/grpc/codes"
+	status "google.golang.org/grpc/status"
+
+	mimirpb "github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -73,8 +75,8 @@ func (m *Segment) GetPieces() []*Piece {
 }
 
 type Piece struct {
-	WriteRequests *mimirpb.WriteRequest `protobuf:"bytes,1,opt,name=write_requests,json=writeRequests,proto3" json:"write_requests,omitempty"`
-	TenantId      string                `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	WriteRequest *mimirpb.WriteRequest `protobuf:"bytes,1,opt,name=write_requests,json=writeRequests,proto3" json:"write_requests,omitempty"`
+	TenantId     string                `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 }
 
 func (m *Piece) Reset()      { *m = Piece{} }
@@ -111,7 +113,7 @@ var xxx_messageInfo_Piece proto.InternalMessageInfo
 
 func (m *Piece) GetWriteRequests() *mimirpb.WriteRequest {
 	if m != nil {
-		return m.WriteRequests
+		return m.WriteRequest
 	}
 	return nil
 }
@@ -291,7 +293,7 @@ func (this *Piece) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if !this.WriteRequests.Equal(that1.WriteRequests) {
+	if !this.WriteRequest.Equal(that1.WriteRequest) {
 		return false
 	}
 	if this.TenantId != that1.TenantId {
@@ -365,8 +367,8 @@ func (this *Piece) GoString() string {
 	}
 	s := make([]string, 0, 6)
 	s = append(s, "&ingestpb.Piece{")
-	if this.WriteRequests != nil {
-		s = append(s, "WriteRequests: "+fmt.Sprintf("%#v", this.WriteRequests)+",\n")
+	if this.WriteRequest != nil {
+		s = append(s, "WriteRequests: "+fmt.Sprintf("%#v", this.WriteRequest)+",\n")
 	}
 	s = append(s, "TenantId: "+fmt.Sprintf("%#v", this.TenantId)+",\n")
 	s = append(s, "}")
@@ -547,9 +549,9 @@ func (m *Piece) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x12
 	}
-	if m.WriteRequests != nil {
+	if m.WriteRequest != nil {
 		{
-			size, err := m.WriteRequests.MarshalToSizedBuffer(dAtA[:i])
+			size, err := m.WriteRequest.MarshalToSizedBuffer(dAtA[:i])
 			if err != nil {
 				return 0, err
 			}
@@ -657,8 +659,8 @@ func (m *Piece) Size() (n int) {
 	}
 	var l int
 	_ = l
-	if m.WriteRequests != nil {
-		l = m.WriteRequests.Size()
+	if m.WriteRequest != nil {
+		l = m.WriteRequest.Size()
 		n += 1 + l + sovIngest(uint64(l))
 	}
 	l = len(m.TenantId)
@@ -719,7 +721,7 @@ func (this *Piece) String() string {
 		return "nil"
 	}
 	s := strings.Join([]string{`&Piece{`,
-		`WriteRequests:` + strings.Replace(fmt.Sprintf("%v", this.WriteRequests), "WriteRequest", "mimirpb.WriteRequest", 1) + `,`,
+		`WriteRequests:` + strings.Replace(fmt.Sprintf("%v", this.WriteRequest), "WriteRequest", "mimirpb.WriteRequest", 1) + `,`,
 		`TenantId:` + fmt.Sprintf("%v", this.TenantId) + `,`,
 		`}`,
 	}, "")
@@ -898,10 +900,10 @@ func (m *Piece) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if m.WriteRequests == nil {
-				m.WriteRequests = &mimirpb.WriteRequest{}
+			if m.WriteRequest == nil {
+				m.WriteRequest = &mimirpb.WriteRequest{}
 			}
-			if err := m.WriteRequests.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+			if err := m.WriteRequest.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex

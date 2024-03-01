@@ -64,7 +64,7 @@ func TestReader_ConsumerError(t *testing.T) {
 			return trackingConsumer.consume(ctx, segment)
 		}
 		// There may be more writeRequests, but we only care that the one we failed to consume in the first place is still there.
-		assert.Equal(t, "1", segment.Data.Pieces[0].WriteRequests.Metadata[0].Help)
+		assert.Equal(t, "1", segment.Data.Pieces[0].WriteRequest.Metadata[0].Help)
 		return errors.New("consumer error")
 	})
 
@@ -124,7 +124,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 				}
 
 				consumedRecords.Inc()
-				content := piece.WriteRequests.Metadata[0].Help
+				content := piece.WriteRequest.Metadata[0].Help
 				assert.Equal(t, fmt.Sprintf("piece-%d", consumedRecords.Load()), content)
 				t.Logf("consumed piece: %s", content)
 			}
@@ -439,7 +439,7 @@ func (t testConsumer) consume(ctx context.Context, segment *Segment) error {
 		case <-ctx.Done():
 			return ctx.Err()
 
-		case t.writeRequests <- piece.WriteRequests:
+		case t.writeRequests <- piece.WriteRequest:
 			// Nothing to do.
 		}
 	}
@@ -497,7 +497,7 @@ func encodeSegment(content string) *ingestpb.Segment {
 	return &ingestpb.Segment{
 		Pieces: []*ingestpb.Piece{
 			{
-				WriteRequests: &mimirpb.WriteRequest{
+				WriteRequest: &mimirpb.WriteRequest{
 					Metadata: []*mimirpb.MetricMetadata{
 						{
 							Help: content,

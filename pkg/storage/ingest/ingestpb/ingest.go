@@ -4,6 +4,6 @@ package ingestpb
 
 func (m *Segment) ClearUnmarshalData() {
 	for _, piece := range m.Pieces {
-		piece.WriteRequests.ClearTimeseriesUnmarshalData()
+		piece.WriteRequest.ClearTimeseriesUnmarshalData()
 	}
 }

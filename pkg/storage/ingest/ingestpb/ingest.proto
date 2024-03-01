@@ -11,7 +11,7 @@ message Segment {
 }
 
 message Piece {
-  cortexpb.WriteRequest write_requests = 1;
+  cortexpb.WriteRequest write_request = 1;
   string tenant_id = 2;
 }
 

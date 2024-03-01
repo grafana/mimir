@@ -34,7 +34,7 @@ type pusherConsumer struct {
 func newPusherConsumer(p Pusher, reg prometheus.Registerer, l log.Logger) *pusherConsumer {
 	errRequestsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_ingest_storage_reader_records_failed_total",
-		Help: "Number of writeRequests (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.",
+		Help: "Number of write requests which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.",
 	}, []string{"cause"})
 
 	return &pusherConsumer{
@@ -42,7 +42,7 @@ func newPusherConsumer(p Pusher, reg prometheus.Registerer, l log.Logger) *pushe
 		l: l,
 		processingTimeSeconds: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
 			Name:       "cortex_ingest_storage_reader_processing_time_seconds",
-			Help:       "Time taken to process a single record (write request).",
+			Help:       "Time taken to process a single write request.",
 			Objectives: latencySummaryObjectives,
 			MaxAge:     time.Minute,
 			AgeBuckets: 10,
@@ -51,14 +51,14 @@ func newPusherConsumer(p Pusher, reg prometheus.Registerer, l log.Logger) *pushe
 		serverErrRequests: errRequestsCounter.WithLabelValues("server"),
 		totalRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_records_total",
-			Help: "Number of attempted writeRequests (write requests).",
+			Help: "Number of attempted write requests.",
 		}),
 	}
 }
 
 func (c pusherConsumer) consume(ctx context.Context, segment *Segment) error {
 	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(cancellation.NewErrorf("done consuming writeRequests"))
+	defer cancel(cancellation.NewErrorf("done consuming write requests"))
 
 	err := c.pushRequests(ctx, segment)
 	if err != nil {
@@ -72,7 +72,7 @@ func (c pusherConsumer) pushRequests(ctx context.Context, segment *Segment) erro
 		processingStart := time.Now()
 
 		ctx := user.InjectOrgID(ctx, piece.TenantId)
-		_, err := c.p.Push(ctx, piece.WriteRequests)
+		_, err := c.p.Push(ctx, piece.WriteRequest)
 
 		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 		c.totalRequests.Inc()

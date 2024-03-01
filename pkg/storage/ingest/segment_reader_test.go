@@ -99,8 +99,8 @@ func TestSegmentReader_WaitNextSegment(t *testing.T) {
 func mockSegmentData(tenantID string, series mimirpb.PreallocTimeseries) *ingestpb.Segment {
 	return &ingestpb.Segment{Pieces: []*ingestpb.Piece{
 		{
-			WriteRequests: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series}},
-			TenantId:      tenantID,
+			WriteRequest: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series}},
+			TenantId:     tenantID,
 		},
 	}}
 }
