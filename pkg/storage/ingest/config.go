@@ -3,18 +3,12 @@
 package ingest
 
 import (
-	"errors"
 	"flag"
 	"time"
 
 	"github.com/grafana/dskit/grpcclient"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-)
-
-var (
-	ErrMissingKafkaAddress = errors.New("the Kafka address has not been configured")
-	ErrMissingKafkaTopic   = errors.New("the Kafka topic has not been configured")
 )
 
 type Config struct {
@@ -85,13 +79,6 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 }
 
 func (cfg *KafkaConfig) Validate() error {
-	if cfg.Address == "" {
-		return ErrMissingKafkaAddress
-	}
-	if cfg.Topic == "" {
-		return ErrMissingKafkaTopic
-	}
-
 	return nil
 }
 
