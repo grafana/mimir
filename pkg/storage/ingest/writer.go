@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
 	"strconv"
 	"sync"
 	"time"
@@ -226,6 +227,11 @@ func (p *kafkaStaticPartitioner) Partition(_ *kgo.Record, _ int) int {
 	return p.partitionID
 }
 
+type dnsBalancingStrategy interface {
+	SetServers(servers ...string) error
+	PickServer(key string) (net.Addr, error)
+}
+
 type writeAgentServerSelector struct {
 	services.Service
 
@@ -234,7 +240,7 @@ type writeAgentServerSelector struct {
 	logger log.Logger
 
 	grpcConfig     grpcclient.Config
-	serverSelector *cache.MemcachedJumpHashSelector // it says memcached, but this is just a host jump hash selector; TODO: move in its own package
+	serverSelector dnsBalancingStrategy
 
 	writeAgentsMtx *sync.RWMutex
 	writeAgents    map[string]ingestpb.WriteAgentClient
@@ -244,7 +250,7 @@ func newWriteAgentServerSelector(waConfig WriteAgentConfig, logger log.Logger) (
 	w := writeAgentServerSelector{
 		logger:         logger,
 		grpcConfig:     waConfig.WriteAgentGRPCClientConfig,
-		serverSelector: &cache.MemcachedJumpHashSelector{},
+		serverSelector: getDNSBalancingStrategy(waConfig.DNSBalancingStrategy),
 		writeAgentsMtx: &sync.RWMutex{},
 		writeAgents:    map[string]ingestpb.WriteAgentClient{},
 	}
@@ -336,4 +342,14 @@ func (w writeAgentServerSelector) start(ctx context.Context) error {
 
 func (w writeAgentServerSelector) stop(err error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), w.subservices)
+}
+
+func getDNSBalancingStrategy(name string) dnsBalancingStrategy {
+	switch name {
+	case DNSBalancingStrategyMod:
+		return &dnsBalancingStrategyMod{}
+
+	default:
+		return &cache.MemcachedJumpHashSelector{} // it says memcached, but this is just a host jump hash selector; TODO: move in its own package
+	}
 }

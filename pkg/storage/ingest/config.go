@@ -4,11 +4,22 @@ package ingest
 
 import (
 	"flag"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/grafana/dskit/grpcclient"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+)
+
+const (
+	DNSBalancingStrategyJumpHash = "jump-hash"
+	DNSBalancingStrategyMod      = "mod"
+)
+
+var (
+	DNSBalancingStrategies = []string{DNSBalancingStrategyJumpHash, DNSBalancingStrategyMod}
 )
 
 type Config struct {
@@ -97,6 +108,7 @@ func (cfg *PostgresqlConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 type WriteAgentConfig struct {
 	Address                    string            `yaml:"address"`
 	DNSLookupPeriod            time.Duration     `yaml:"dns_lookup_duration" category:"advanced"`
+	DNSBalancingStrategy       string            `yaml:"dns_balancing_strategy"`
 	WriteAgentGRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the distributor and the write-agent."`
 }
 
@@ -107,6 +119,7 @@ func (cfg *WriteAgentConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *WriteAgentConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.Address, prefix+".address", "", "The write-agent address.")
 	f.DurationVar(&cfg.DNSLookupPeriod, prefix+".dns-lookup-period", 10*time.Second, "How often to query DNS for query-frontend or query-scheduler address.")
+	f.StringVar(&cfg.DNSBalancingStrategy, prefix+".dns-balancing-strategy", DNSBalancingStrategyMod, fmt.Sprintf("The balancing strategy to use. Values: %s.", strings.Join(DNSBalancingStrategies, ", ")))
 	cfg.WriteAgentGRPCClientConfig.RegisterFlagsWithPrefix(prefix+".write-agent.grpc-client-config", f)
 }
 
