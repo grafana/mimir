@@ -258,7 +258,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 }
 
 func produceSegment(ctx context.Context, t *testing.T, segmentStorage *SegmentStorage, partitionID int32, content string) {
-	_, err := segmentStorage.CommitSegment(ctx, partitionID, encodeSegment(content), time.Now())
+	_, err := segmentStorage.CommitSegment(ctx, partitionID, encodeSegment(content), time.Second, time.Now())
 	require.NoError(t, err)
 }
 

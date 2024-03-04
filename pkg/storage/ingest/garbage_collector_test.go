@@ -89,11 +89,11 @@ func TestGarbageCollector_cleanupSegments(t *testing.T) {
 		})
 
 		// Commit some segments.
-		ref1, err := segmentStore.CommitSegment(ctx, 1, segment1, time.Now())
+		ref1, err := segmentStore.CommitSegment(ctx, 1, segment1, time.Second, time.Now())
 		require.NoError(t, err)
-		ref2, err := segmentStore.CommitSegment(ctx, 1, segment2, time.Now().Add(-2*cfg.RetentionPeriod))
+		ref2, err := segmentStore.CommitSegment(ctx, 1, segment2, time.Second, time.Now().Add(-2*cfg.RetentionPeriod))
 		require.NoError(t, err)
-		ref3, err := segmentStore.CommitSegment(ctx, 1, segment3, time.Now())
+		ref3, err := segmentStore.CommitSegment(ctx, 1, segment3, time.Second, time.Now())
 		require.NoError(t, err)
 
 		// Run garbage collection.
@@ -158,11 +158,11 @@ func TestGarbageCollector_cleanupSegments(t *testing.T) {
 		})
 
 		// Commit some segments.
-		ref1, err := segmentStore.CommitSegment(ctx, 1, segment1, time.Now().Add(-2*cfg.RetentionPeriod))
+		ref1, err := segmentStore.CommitSegment(ctx, 1, segment1, time.Second, time.Now().Add(-2*cfg.RetentionPeriod))
 		require.NoError(t, err)
-		ref2, err := segmentStore.CommitSegment(ctx, 1, segment2, time.Now().Add(-2*cfg.RetentionPeriod))
+		ref2, err := segmentStore.CommitSegment(ctx, 1, segment2, time.Second, time.Now().Add(-2*cfg.RetentionPeriod))
 		require.NoError(t, err)
-		ref3, err := segmentStore.CommitSegment(ctx, 1, segment3, time.Now().Add(-2*cfg.RetentionPeriod))
+		ref3, err := segmentStore.CommitSegment(ctx, 1, segment3, time.Second, time.Now().Add(-2*cfg.RetentionPeriod))
 		require.NoError(t, err)
 
 		// Run garbage collection.

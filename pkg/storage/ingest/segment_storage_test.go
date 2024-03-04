@@ -57,7 +57,7 @@ func TestSegmentStorage_CommitSegment(t *testing.T) {
 		storage := NewSegmentStorage(instrumentedBucket, metadata, nil)
 
 		expectedData := mockSegmentData(tenantID, series1)
-		ref, err := storage.CommitSegment(ctx, 1, expectedData, time.Now())
+		ref, err := storage.CommitSegment(ctx, 1, expectedData, time.Second, time.Now())
 		require.NoError(t, err)
 
 		// Ensure the returned SegmentRef is the one committed to the metadata store.
@@ -145,11 +145,11 @@ func TestSegmentStorage_DeleteSegment(t *testing.T) {
 		storage := NewSegmentStorage(instrumentedBucket, NewMetadataStore(metadataDB, log.NewNopLogger()), nil)
 
 		// Commit some segments.
-		ref1, err := storage.CommitSegment(ctx, 1, segment1, time.Now())
+		ref1, err := storage.CommitSegment(ctx, 1, segment1, time.Second, time.Now())
 		require.NoError(t, err)
-		ref2, err := storage.CommitSegment(ctx, 1, segment2, time.Now())
+		ref2, err := storage.CommitSegment(ctx, 1, segment2, time.Second, time.Now())
 		require.NoError(t, err)
-		ref3, err := storage.CommitSegment(ctx, 1, segment3, time.Now())
+		ref3, err := storage.CommitSegment(ctx, 1, segment3, time.Second, time.Now())
 		require.NoError(t, err)
 
 		// Delete a segment.
@@ -182,7 +182,7 @@ func TestSegmentStorage_DeleteSegment(t *testing.T) {
 		storage := NewSegmentStorage(instrumentedBucket, NewMetadataStore(metadataDB, log.NewNopLogger()), nil)
 
 		// Commit a segment.
-		ref1, err := storage.CommitSegment(ctx, 1, segment1, time.Now())
+		ref1, err := storage.CommitSegment(ctx, 1, segment1, time.Second, time.Now())
 		require.NoError(t, err)
 
 		// Delete the same segment multiple times.

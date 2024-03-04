@@ -21,10 +21,11 @@ import (
 type WriteAgent struct {
 	services.Service
 
-	logger         log.Logger
-	dependencies   *services.Manager
-	segmentStorage *SegmentStorage
-	flushInterval  time.Duration
+	logger           log.Logger
+	dependencies     *services.Manager
+	segmentStorage   *SegmentStorage
+	flushInterval    time.Duration
+	uploadHedgeDelay time.Duration
 
 	segmentUpdateAllowedMu  sync.Mutex
 	segmentUpdateAllowed    bool
@@ -50,14 +51,15 @@ func NewWriteAgent(cfg Config, logger log.Logger, reg prometheus.Registerer) (*W
 		return nil, errors.Wrap(err, "failed to create write agent dependencies")
 	}
 
-	return newWriteAgent(250*time.Millisecond, segmentStorage, logger, reg, mgr), nil
+	return newWriteAgent(segmentStorage, cfg.FlushInterval, cfg.UploadHedgeDelay, logger, reg, mgr), nil
 }
 
-func newWriteAgent(flushInterval time.Duration, segmentStorage *SegmentStorage, logger log.Logger, reg prometheus.Registerer, dependencies *services.Manager) *WriteAgent {
+func newWriteAgent(segmentStorage *SegmentStorage, flushInterval time.Duration, uploadHedgeDelay time.Duration, logger log.Logger, reg prometheus.Registerer, dependencies *services.Manager) *WriteAgent {
 	a := &WriteAgent{
 		segmentStorage:    segmentStorage,
-		logger:            logger,
 		flushInterval:     flushInterval,
+		uploadHedgeDelay:  uploadHedgeDelay,
+		logger:            logger,
 		partitionSegments: map[int32]*partitionSegmentWithWaiters{},
 		dependencies:      dependencies,
 	}
@@ -168,7 +170,7 @@ func (a *WriteAgent) flushPartitionSegmentAndNotifyWaiters(ctx context.Context, 
 	}
 
 	start := time.Now()
-	segmentRef, err := a.segmentStorage.CommitSegment(ctx, partition, segment, time.Now())
+	segmentRef, err := a.segmentStorage.CommitSegment(ctx, partition, segment, a.uploadHedgeDelay, time.Now())
 	elapsed := time.Since(start)
 
 	a.flushLatency.Observe(elapsed.Seconds())

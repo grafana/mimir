@@ -41,7 +41,8 @@ func NewSegmentStorage(bucket objstore.InstrumentedBucket, metadata *MetadataSto
 }
 
 // CommitSegment uploads and commits a segment to the storage.
-func (s *SegmentStorage) CommitSegment(ctx context.Context, partitionID int32, segmentData *ingestpb.Segment, now time.Time) (SegmentRef, error) {
+// If an upload does not success within the hedgeDelay, a hedged upload will be performed.
+func (s *SegmentStorage) CommitSegment(ctx context.Context, partitionID int32, segmentData *ingestpb.Segment, hedgeDelay time.Duration, now time.Time) (SegmentRef, error) {
 	// Marshal the segment.
 	rawData, err := segmentData.Marshal()
 	if err != nil {
@@ -55,7 +56,7 @@ func (s *SegmentStorage) CommitSegment(ctx context.Context, partitionID int32, s
 	}
 	objectPath := getSegmentObjectPath(partitionID, objectID)
 
-	hedgePolicy := hedgepolicy.BuilderWithDelay[any](250 * time.Millisecond).
+	hedgePolicy := hedgepolicy.BuilderWithDelay[any](hedgeDelay).
 		OnHedge(func(f failsafe.ExecutionEvent[any]) {
 			s.metrics.uploadHedges.Inc()
 		}).Build()

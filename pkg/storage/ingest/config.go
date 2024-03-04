@@ -27,6 +27,8 @@ type Config struct {
 	KafkaConfig                    KafkaConfig   `yaml:"kafka"` // TODO remove
 	BufferSize                     int           `yaml:"buffer_size"`
 	LastProducedOffsetPollInterval time.Duration `yaml:"last_produced_offset_poll_interval"`
+	FlushInterval                  time.Duration `yaml:"flush_interval"`
+	UploadHedgeDelay               time.Duration `yaml:"upload_hedge_delay"`
 
 	PostgresConfig         PostgresqlConfig       `yaml:"postgresql"`
 	WriteAgent             WriteAgentConfig       `yaml:"write_agent"`
@@ -40,6 +42,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka", f)
 	f.IntVar(&cfg.BufferSize, "ingest-storage.buffer-size", 10, "The segment reader's buffer size")
 	f.DurationVar(&cfg.LastProducedOffsetPollInterval, "ingest-storage.last-produced-offset-poll-interval", time.Second, "How frequently to poll the last produced offset, used to enforce strong read consistency.")
+	f.DurationVar(&cfg.FlushInterval, "ingest-storage.flush-interval", 250*time.Millisecond, "The interval at which writes will be flushed to segment storage.")
+	f.DurationVar(&cfg.UploadHedgeDelay, "ingest-storage.upload-hedge-delay", 250*time.Millisecond, "The delay after which a hedged request should be sent for a pending segment upload.")
 
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("ingest-storage.", "ingest", f)
 	cfg.PostgresConfig.RegisterFlagsWithPrefix("ingest-storage.postgresql", f)

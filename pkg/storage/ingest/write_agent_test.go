@@ -31,7 +31,7 @@ func TestWriteAgent(t *testing.T) {
 
 	segStorage := NewSegmentStorage(objstore.WrapWithMetrics(bkt, nil, "test"), metadata, nil)
 
-	wa := newWriteAgent(250*time.Millisecond, segStorage, logger, nil, mgr)
+	wa := newWriteAgent(segStorage, 250*time.Millisecond, time.Second, logger, nil, mgr)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), wa))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), wa))
