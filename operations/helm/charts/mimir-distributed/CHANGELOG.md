@@ -55,6 +55,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] nginx, Gateway: set `proxy_http_version: 1.1` to proxy to HTTP 1.1. #5040
 * [ENHANCEMENT] Gateway: make Ingress/Route host templateable. #7218
 * [ENHANCEMENT] Make the PSP template configurable via `rbac.podSecurityPolicy`. #7190
+* [ENHANCEMENT] Recording rules: add native histogram recording rules to `cortex_request_duration_seconds`. #7528
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
 * [BUGFIX] Recording rules: drop rules for metrics removed in 2.0: `cortex_memcache_request_duration_seconds` and `cortex_cache_request_duration_seconds`. #7514
 * [BUGFIX] Store-gateway: setting "resources.requests.memory" with a quantity that used power-of-ten SI suffix, caused an error. #7506
