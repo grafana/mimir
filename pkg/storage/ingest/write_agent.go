@@ -31,6 +31,8 @@ type WriteAgent struct {
 
 	partitionSegmentsMu sync.RWMutex
 	partitionSegments   map[int32]*partitionSegmentWithWaiters
+
+	flushLatency prometheus.Histogram
 }
 
 func NewWriteAgent(cfg Config, logger log.Logger, reg prometheus.Registerer) (*WriteAgent, error) {
@@ -58,6 +60,15 @@ func newWriteAgent(flushInterval time.Duration, segmentStorage *SegmentStorage, 
 		partitionSegments: map[int32]*partitionSegmentWithWaiters{},
 		dependencies:      dependencies,
 	}
+
+	a.flushLatency = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:                            "cortex_write_agent_flush_latency_seconds",
+			Help:                            "Histogram of flush latency in seconds",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		})
 
 	a.Service = services.NewBasicService(a.starting, a.running, a.stopping)
 	return a
@@ -158,6 +169,8 @@ func (a *WriteAgent) flushPartitionSegmentAndNotifyWaiters(ctx context.Context, 
 	start := time.Now()
 	segmentRef, err := a.segmentStorage.CommitSegment(ctx, partition, segment, time.Now())
 	elapsed := time.Since(start)
+
+	a.flushLatency.Observe(elapsed.Seconds())
 
 	if err == nil {
 		level.Debug(a.logger).Log("msg", "flushing partition succeeded", "partition", partition, "write_requests", len(segment.Pieces), "elapsed", elapsed, "segmentRef", segmentRef)
