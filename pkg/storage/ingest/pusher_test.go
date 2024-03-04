@@ -25,6 +25,23 @@ func (p pusherFunc) Push(ctx context.Context, request *mimirpb.WriteRequest) (*m
 	return p(ctx, request)
 }
 
+func marshal(wr *mimirpb.WriteRequest) []byte {
+	d, err := wr.Marshal()
+	if err != nil {
+		panic(err.Error())
+	}
+	return d
+}
+
+func unmarshal(data []byte) *mimirpb.WriteRequest {
+	wr := &mimirpb.WriteRequest{}
+	err := wr.Unmarshal(data)
+	if err != nil {
+		panic(err.Error())
+	}
+	return wr
+}
+
 func TestPusherConsumer(t *testing.T) {
 	const tenantID = "t1"
 	writeReqs := []*mimirpb.WriteRequest{
@@ -52,7 +69,7 @@ func TestPusherConsumer(t *testing.T) {
 			segment: &Segment{
 				Data: &ingestpb.Segment{
 					Pieces: []*ingestpb.Piece{
-						{WriteRequest: writeReqs[0], TenantId: tenantID},
+						{Data: marshal(writeReqs[0]), TenantId: tenantID},
 					},
 				},
 			},
@@ -65,9 +82,9 @@ func TestPusherConsumer(t *testing.T) {
 			segment: &Segment{
 				Data: &ingestpb.Segment{
 					Pieces: []*ingestpb.Piece{
-						{WriteRequest: writeReqs[0], TenantId: tenantID},
-						{WriteRequest: writeReqs[1], TenantId: tenantID},
-						{WriteRequest: writeReqs[2], TenantId: tenantID},
+						{Data: marshal(writeReqs[0]), TenantId: tenantID},
+						{Data: marshal(writeReqs[1]), TenantId: tenantID},
+						{Data: marshal(writeReqs[2]), TenantId: tenantID},
 					},
 				},
 			},
@@ -82,9 +99,9 @@ func TestPusherConsumer(t *testing.T) {
 			segment: &Segment{
 				Data: &ingestpb.Segment{
 					Pieces: []*ingestpb.Piece{
-						{WriteRequest: writeReqs[0], TenantId: tenantID},
-						{WriteRequest: writeReqs[1], TenantId: tenantID},
-						{WriteRequest: writeReqs[2], TenantId: tenantID},
+						{Data: marshal(writeReqs[0]), TenantId: tenantID},
+						{Data: marshal(writeReqs[1]), TenantId: tenantID},
+						{Data: marshal(writeReqs[2]), TenantId: tenantID},
 					},
 				},
 			},
@@ -99,8 +116,8 @@ func TestPusherConsumer(t *testing.T) {
 			segment: &Segment{
 				Data: &ingestpb.Segment{
 					Pieces: []*ingestpb.Piece{
-						{WriteRequest: writeReqs[0], TenantId: tenantID},
-						{WriteRequest: writeReqs[1], TenantId: tenantID},
+						{Data: marshal(writeReqs[0]), TenantId: tenantID},
+						{Data: marshal(writeReqs[1]), TenantId: tenantID},
 					},
 				},
 			},
@@ -115,9 +132,9 @@ func TestPusherConsumer(t *testing.T) {
 			segment: &Segment{
 				Data: &ingestpb.Segment{
 					Pieces: []*ingestpb.Piece{
-						{WriteRequest: writeReqs[0], TenantId: tenantID},
-						{WriteRequest: writeReqs[1], TenantId: tenantID},
-						{WriteRequest: writeReqs[2], TenantId: tenantID},
+						{Data: marshal(writeReqs[0]), TenantId: tenantID},
+						{Data: marshal(writeReqs[1]), TenantId: tenantID},
+						{Data: marshal(writeReqs[2]), TenantId: tenantID},
 					},
 				},
 			},
@@ -133,11 +150,11 @@ func TestPusherConsumer(t *testing.T) {
 			segment: &Segment{
 				Data: &ingestpb.Segment{
 					Pieces: []*ingestpb.Piece{
-						{WriteRequest: writeReqs[0], TenantId: tenantID},
-						{WriteRequest: writeReqs[1], TenantId: tenantID},
-						{WriteRequest: writeReqs[2], TenantId: tenantID},
-						{WriteRequest: writeReqs[3], TenantId: tenantID},
-						{WriteRequest: writeReqs[4], TenantId: tenantID},
+						{Data: marshal(writeReqs[0]), TenantId: tenantID},
+						{Data: marshal(writeReqs[1]), TenantId: tenantID},
+						{Data: marshal(writeReqs[2]), TenantId: tenantID},
+						{Data: marshal(writeReqs[3]), TenantId: tenantID},
+						{Data: marshal(writeReqs[4]), TenantId: tenantID},
 					},
 				},
 			},

@@ -72,7 +72,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		assert.True(t, produceRequestProcessed.Load())
 
 		require.Len(t, wAgents.receivedWrites, 1)
-		received := wAgents.receivedWrites[0].Piece.WriteRequest
+		received := unmarshal(wAgents.receivedWrites[0].Piece.Data)
 		require.Len(t, received.Timeseries, len(multiSeries))
 
 		for idx, expected := range multiSeries {
