@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest/ingestpb"
@@ -61,7 +62,7 @@ func newWriteAgent(flushInterval time.Duration, segmentStorage *SegmentStorage, 
 		dependencies:      dependencies,
 	}
 
-	a.flushLatency = prometheus.NewHistogram(
+	a.flushLatency = promauto.With(reg).NewHistogram(
 		prometheus.HistogramOpts{
 			Name:                            "cortex_write_agent_flush_latency_seconds",
 			Help:                            "Histogram of flush latency in seconds",
