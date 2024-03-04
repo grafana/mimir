@@ -16,6 +16,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 )
@@ -29,6 +30,8 @@ func TestSegmentStorage_CommitSegment(t *testing.T) {
 
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
 	require.NoError(t, err)
+
+	instrumentedBucket := objstore.WrapWithMetrics(bucket, nil, "test")
 
 	db := &metadataDatabaseMock{}
 
@@ -51,7 +54,7 @@ func TestSegmentStorage_CommitSegment(t *testing.T) {
 			return nil
 		}
 
-		storage := NewSegmentStorage(bucket, metadata)
+		storage := NewSegmentStorage(instrumentedBucket, metadata)
 
 		expectedData := mockSegmentData(tenantID, series1)
 		ref, err := storage.CommitSegment(ctx, 1, expectedData, time.Now())
@@ -91,6 +94,8 @@ func TestSegmentStorage_FetchSegment(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
 	require.NoError(t, err)
 
+	instrumentedBucket := objstore.WrapWithMetrics(bucket, nil, "test")
+
 	t.Run("should read a segment from the storage", func(t *testing.T) {
 		// Upload a segment to the storage.
 		expectedData := mockSegmentData(tenantID, series1)
@@ -100,7 +105,7 @@ func TestSegmentStorage_FetchSegment(t *testing.T) {
 		require.NoError(t, bucket.Upload(ctx, getSegmentObjectPath(partitionID, objectID), bytes.NewReader(rawData)))
 
 		// Then read it back via SegmentStorage.
-		storage := NewSegmentStorage(bucket, NewMetadataStore(&metadataDatabaseMock{}, log.NewNopLogger()))
+		storage := NewSegmentStorage(instrumentedBucket, NewMetadataStore(&metadataDatabaseMock{}, log.NewNopLogger()))
 		actual, err := storage.FetchSegment(ctx, SegmentRef{PartitionID: partitionID, OffsetID: 0, ObjectID: objectID})
 		require.NoError(t, err)
 
@@ -120,6 +125,8 @@ func TestSegmentStorage_DeleteSegment(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
 	require.NoError(t, err)
 
+	instrumentedBucket := objstore.WrapWithMetrics(bucket, nil, "test")
+
 	t.Run("should delete the requested segment", func(t *testing.T) {
 		var (
 			deletedRefsMx sync.Mutex
@@ -135,7 +142,7 @@ func TestSegmentStorage_DeleteSegment(t *testing.T) {
 			return nil, false
 		})
 
-		storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
+		storage := NewSegmentStorage(instrumentedBucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
 
 		// Commit some segments.
 		ref1, err := storage.CommitSegment(ctx, 1, segment1, time.Now())
@@ -172,7 +179,7 @@ func TestSegmentStorage_DeleteSegment(t *testing.T) {
 
 	t.Run("should NOT return error if the segment has already been deleted", func(t *testing.T) {
 		metadataDB := newMetadataDatabaseMemory()
-		storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
+		storage := NewSegmentStorage(instrumentedBucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
 
 		// Commit a segment.
 		ref1, err := storage.CommitSegment(ctx, 1, segment1, time.Now())

@@ -15,6 +15,7 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
@@ -78,7 +79,7 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 		var (
 			reg      = prometheus.NewPedanticRegistry()
 			metadata = NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())
-			storage  = NewSegmentStorage(bucket, metadata)
+			storage  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadata)
 			reader   = newPartitionOffsetReader(metadata, partitionID, pollInterval, reg, logger)
 		)
 
@@ -122,7 +123,7 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 			reg      = prometheus.NewPedanticRegistry()
 			db       = newMetadataDatabaseMemory()
 			metadata = NewMetadataStore(db, log.NewNopLogger())
-			storage  = NewSegmentStorage(bucket, metadata)
+			storage  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadata)
 			reader   = newPartitionOffsetReader(metadata, partitionID, pollInterval, reg, logger)
 
 			firstRequest         = atomic.NewBool(true)

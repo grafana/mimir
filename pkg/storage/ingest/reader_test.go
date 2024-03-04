@@ -17,6 +17,7 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -38,7 +39,7 @@ func TestPartitionReader(t *testing.T) {
 	require.NoError(t, err)
 
 	metadataDB := newMetadataDatabaseMemory()
-	storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
+	storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()))
 
 	content := "special content"
 	consumer := newTestConsumer(2)
@@ -80,7 +81,7 @@ func TestReader_ConsumerError(t *testing.T) {
 	require.NoError(t, err)
 
 	metadataDB := newMetadataDatabaseMemory()
-	storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
+	storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()))
 
 	startReader(ctx, t, metadataDB, partitionID, consumer, withFilesystemBucket(bucketDir))
 
@@ -114,7 +115,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		require.NoError(t, err)
 
 		metadataDB := newMetadataDatabaseMemory()
-		storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
+		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()))
 
 		// Configure the reader to poll the "last produced offset" frequently.
 		reader := startReader(ctx, t, metadataDB, partitionID, consumer,
@@ -349,7 +350,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		require.NoError(t, err)
 
 		metadataDB := newMetadataDatabaseMemory()
-		storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
+		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()))
 		consumer := newTestConsumer(3)
 
 		// Start the reader.
@@ -395,7 +396,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		require.NoError(t, err)
 
 		metadataDB := newMetadataDatabaseMemory()
-		storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
+		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()))
 		consumer := newTestConsumer(4)
 
 		// Start the reader.
@@ -438,7 +439,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		require.NoError(t, err)
 
 		metadataDB := newMetadataDatabaseMemory()
-		storage := NewSegmentStorage(bucket, NewMetadataStore(metadataDB, log.NewNopLogger()))
+		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()))
 		consumer := newTestConsumer(4)
 
 		// Start the reader.

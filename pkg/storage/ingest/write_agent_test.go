@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/ingest/ingestpb"
@@ -28,7 +29,7 @@ func TestWriteAgent(t *testing.T) {
 	mgr, err := services.NewManager(metadata)
 	require.NoError(t, err)
 
-	segStorage := NewSegmentStorage(bkt, metadata)
+	segStorage := NewSegmentStorage(objstore.WrapWithMetrics(bkt, nil, "test"), metadata)
 
 	wa := newWriteAgent(250*time.Millisecond, segStorage, logger, nil, mgr)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), wa))

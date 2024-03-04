@@ -32,7 +32,7 @@ type PartitionReader struct {
 	segmentReader *SegmentReader
 	metadataDB    MetadataStoreDatabase
 	metadataStore *MetadataStore
-	bucketClient  objstore.Bucket
+	bucketClient  objstore.InstrumentedBucket
 
 	config        Config
 	partitionID   int32

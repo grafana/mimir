@@ -22,11 +22,11 @@ import (
 // SegmentStorage is a low-level client to write and read segments to/from the storage.
 // Use SegmentReader if you need an higher level client to read segments.
 type SegmentStorage struct {
-	bucket   objstore.Bucket
+	bucket   objstore.InstrumentedBucket
 	metadata *MetadataStore
 }
 
-func NewSegmentStorage(bucket objstore.Bucket, metadata *MetadataStore) *SegmentStorage {
+func NewSegmentStorage(bucket objstore.InstrumentedBucket, metadata *MetadataStore) *SegmentStorage {
 	return &SegmentStorage{
 		bucket:   bucket,
 		metadata: metadata,
@@ -88,7 +88,7 @@ func (s *SegmentStorage) FetchSegment(ctx context.Context, ref SegmentRef) (_ *S
 func (s *SegmentStorage) DeleteSegment(ctx context.Context, ref SegmentRef) error {
 	// First delete segment from object storage.
 	objectPath := getSegmentObjectPath(ref.PartitionID, ref.ObjectID)
-	if err := s.bucket.Delete(ctx, objectPath); err != nil {
+	if err := s.bucket.WithExpectedErrs(s.bucket.IsObjNotFoundErr).Delete(ctx, objectPath); err != nil && !s.bucket.IsObjNotFoundErr(err) {
 		return errors.Wrap(err, "failed to delete segment from object storage")
 	}
 

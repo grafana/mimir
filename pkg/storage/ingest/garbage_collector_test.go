@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 )
@@ -39,7 +40,7 @@ func TestGarbageCollector_cleanupSegments(t *testing.T) {
 			reg           = prometheus.NewPedanticRegistry()
 			metadataDB    = newMetadataDatabaseMemory()
 			metadataStore = NewMetadataStore(metadataDB, log.NewNopLogger())
-			segmentStore  = NewSegmentStorage(bucket, metadataStore)
+			segmentStore  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadataStore)
 			gc            = NewGarbageCollector(cfg, metadataStore, segmentStore, log.NewNopLogger(), reg)
 			expectedErr   = errors.New("mocked error")
 		)
@@ -71,7 +72,7 @@ func TestGarbageCollector_cleanupSegments(t *testing.T) {
 			reg           = prometheus.NewPedanticRegistry()
 			metadataDB    = newMetadataDatabaseMemory()
 			metadataStore = NewMetadataStore(metadataDB, log.NewNopLogger())
-			segmentStore  = NewSegmentStorage(bucket, metadataStore)
+			segmentStore  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadataStore)
 			gc            = NewGarbageCollector(cfg, metadataStore, segmentStore, log.NewNopLogger(), reg)
 			expectedErr   = errors.New("mocked error")
 
@@ -140,7 +141,7 @@ func TestGarbageCollector_cleanupSegments(t *testing.T) {
 			reg           = prometheus.NewPedanticRegistry()
 			metadataDB    = newMetadataDatabaseMemory()
 			metadataStore = NewMetadataStore(metadataDB, log.NewNopLogger())
-			segmentStore  = NewSegmentStorage(bucket, metadataStore)
+			segmentStore  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadataStore)
 			gc            = NewGarbageCollector(cfg, metadataStore, segmentStore, log.NewNopLogger(), reg)
 			expectedErr   = errors.New("mocked error")
 

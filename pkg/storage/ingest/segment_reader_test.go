@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
@@ -29,6 +30,8 @@ func TestSegmentReader_WaitNextSegment(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
 	require.NoError(t, err)
 
+	instrumentedBucket := objstore.WrapWithMetrics(bucket, nil, "test")
+
 	t.Run("should return the next segment", func(t *testing.T) {
 		// Ensure the test will not block indefinitely in case of bugs.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -42,14 +45,14 @@ func TestSegmentReader_WaitNextSegment(t *testing.T) {
 		})
 
 		// Start the reader.
-		reader := NewSegmentReader(bucket, metadata, partitionID, -1, 1, log.NewNopLogger())
+		reader := NewSegmentReader(instrumentedBucket, metadata, partitionID, -1, 1, log.NewNopLogger())
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 		})
 
 		// Commit some segments.
-		storage := NewSegmentStorage(bucket, metadata)
+		storage := NewSegmentStorage(instrumentedBucket, metadata)
 		ref1, err := storage.CommitSegment(ctx, partitionID, segment1, time.Now())
 		require.NoError(t, err)
 		ref2, err := storage.CommitSegment(ctx, partitionID, segment2, time.Now())

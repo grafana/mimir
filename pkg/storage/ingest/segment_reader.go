@@ -27,7 +27,7 @@ type SegmentReader struct {
 	segmentsBuffer chan *Segment
 }
 
-func NewSegmentReader(bucket objstore.Bucket, metadata *MetadataStore, partitionID int32, lastOffsetID int64, bufferSize int, logger log.Logger) *SegmentReader {
+func NewSegmentReader(bucket objstore.InstrumentedBucket, metadata *MetadataStore, partitionID int32, lastOffsetID int64, bufferSize int, logger log.Logger) *SegmentReader {
 	c := &SegmentReader{
 		partitionID:    partitionID,
 		lastOffsetID:   lastOffsetID,
