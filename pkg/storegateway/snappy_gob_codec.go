@@ -12,6 +12,8 @@ import (
 
 const gobCodecPrefix = "gob:"
 
+var snappyEncodingCheckFn = snappy.MaxEncodedLen
+
 func encodeSnappyGob(value interface{}) ([]byte, error) {
 	buf := bytes.Buffer{}
 	buf.WriteString(gobCodecPrefix)
@@ -20,7 +22,7 @@ func encodeSnappyGob(value interface{}) ([]byte, error) {
 		return nil, err
 	}
 
-	if maxEncodedLen := snappy.MaxEncodedLen(len(buf.Bytes())); maxEncodedLen == -1 {
+	if maxEncodedLen := snappyEncodingCheckFn(len(buf.Bytes())); maxEncodedLen == -1 {
 		return nil, errors.New("data too large")
 	}
 	encoded := snappy.Encode(nil, buf.Bytes())

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/golang/snappy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -167,59 +168,45 @@ func TestParseProtoReader(t *testing.T) {
 		},
 	}
 
-	hugeSamples := make([]mimirpb.Sample, 0, 3e8)
-
-	for i := 0; i < 3e8; i++ {
-		hugeSamples = append(hugeSamples, mimirpb.Sample{Value: float64(i), TimestampMs: int64(i)})
-	}
-
-	largeReq := &mimirpb.PreallocWriteRequest{
-		WriteRequest: mimirpb.WriteRequest{
-			Timeseries: []mimirpb.PreallocTimeseries{
-				{
-					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{
-							{Name: "foo", Value: "bar"},
-						},
-						Samples: hugeSamples,
-					},
-				},
-			},
-		},
-	}
-
 	for _, tt := range []struct {
 		name               string
 		compression        util.CompressionType
-		req                *mimirpb.PreallocWriteRequest
 		maxSize            int
 		expectSerializeErr bool
 		expectParseErr     bool
 		useBytesBuffer     bool
+		mockDataTooLarge   bool
 	}{
-		{"rawSnappy", util.RawSnappy, req, 53, false, false, false},
-		{"noCompression", util.NoCompression, req, 53, false, false, false},
-		{"gzip", util.Gzip, req, 53, false, false, false},
-		{"too big rawSnappy", util.RawSnappy, req, 10, false, true, false},
-		{"too big encoded rawSnappy", util.RawSnappy, largeReq, 10, true, false, false},
-		{"too big decoded rawSnappy", util.RawSnappy, req, 50, false, true, false},
-		{"too big noCompression", util.NoCompression, req, 10, false, true, false},
-		{"too big gzip", util.Gzip, req, 10, false, true, false},
-		{"too big decoded gzip", util.Gzip, req, 50, false, true, false},
+		{"rawSnappy", util.RawSnappy, 53, false, false, false, false},
+		{"noCompression", util.NoCompression, 53, false, false, false, false},
+		{"gzip", util.Gzip, 53, false, false, false, false},
+		{"too big rawSnappy", util.RawSnappy, 10, false, true, false, false},
+		{"too big encoded rawSnappy", util.RawSnappy, 10, true, false, false, true},
+		{"too big decoded rawSnappy", util.RawSnappy, 50, false, true, false, false},
+		{"too big noCompression", util.NoCompression, 10, false, true, false, false},
+		{"too big gzip", util.Gzip, 10, false, true, false, false},
+		{"too big decoded gzip", util.Gzip, 50, false, true, false, false},
 
-		{"bytesbuffer rawSnappy", util.RawSnappy, req, 53, false, false, true},
-		{"bytesbuffer noCompression", util.NoCompression, req, 53, false, false, true},
-		{"bytesbuffer gzip", util.Gzip, req, 53, false, false, true},
-		{"bytesbuffer too big rawSnappy", util.RawSnappy, req, 10, false, true, true},
-		{"bytesbuffer too big decoded rawSnappy", util.RawSnappy, req, 50, false, true, true},
-		{"bytesbuffer too big noCompression", util.NoCompression, req, 10, false, true, true},
-		{"bytesbuffer too big gzip", util.Gzip, req, 10, false, true, true},
-		{"bytesbuffer too big decoded gzip", util.Gzip, req, 50, false, true, true},
+		{"bytesbuffer rawSnappy", util.RawSnappy, 53, false, false, true, false},
+		{"bytesbuffer noCompression", util.NoCompression, 53, false, false, true, false},
+		{"bytesbuffer gzip", util.Gzip, 53, false, false, true, false},
+		{"bytesbuffer too big rawSnappy", util.RawSnappy, 10, false, true, true, false},
+		{"bytesbuffer too big decoded rawSnappy", util.RawSnappy, 50, false, true, true, false},
+		{"bytesbuffer too big noCompression", util.NoCompression, 10, false, true, true, false},
+		{"bytesbuffer too big gzip", util.Gzip, 10, false, true, true, false},
+		{"bytesbuffer too big decoded gzip", util.Gzip, 50, false, true, true, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
 
-			err := util.SerializeProtoResponse(w, tt.req, tt.compression)
+			if tt.mockDataTooLarge && tt.compression == util.RawSnappy {
+				util.SnappyEncodingCheckFn = func(_ int) int {
+					return -1
+				}
+				defer func() { util.SnappyEncodingCheckFn = snappy.MaxEncodedLen }()
+			}
+
+			err := util.SerializeProtoResponse(w, req, tt.compression)
 			if tt.expectSerializeErr {
 				require.Error(t, err)
 				return

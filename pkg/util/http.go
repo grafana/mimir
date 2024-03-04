@@ -294,6 +294,8 @@ func tryBufferFromReader(reader io.Reader) (*bytes.Buffer, bool) {
 	return nil, false
 }
 
+var SnappyEncodingCheckFn = snappy.MaxEncodedLen
+
 // SerializeProtoResponse serializes a protobuf response into an HTTP response.
 func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compression CompressionType) error {
 	data, err := proto.Marshal(resp)
@@ -305,7 +307,7 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 	switch compression {
 	case NoCompression:
 	case RawSnappy:
-		if encodeLen := snappy.MaxEncodedLen(len(data)); encodeLen == -1 {
+		if encodeLen := SnappyEncodingCheckFn(len(data)); encodeLen == -1 {
 			err = fmt.Errorf("response too large")
 			break
 		}
