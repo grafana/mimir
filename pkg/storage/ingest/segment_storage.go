@@ -11,10 +11,15 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go"
 	"github.com/grafana/dskit/backoff"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
+
+	"github.com/failsafe-go/failsafe-go/hedgepolicy"
 
 	"github.com/grafana/mimir/pkg/storage/ingest/ingestpb"
 )
@@ -24,12 +29,14 @@ import (
 type SegmentStorage struct {
 	bucket   objstore.InstrumentedBucket
 	metadata *MetadataStore
+	metrics  storeMetrics
 }
 
-func NewSegmentStorage(bucket objstore.InstrumentedBucket, metadata *MetadataStore) *SegmentStorage {
+func NewSegmentStorage(bucket objstore.InstrumentedBucket, metadata *MetadataStore, reg prometheus.Registerer) *SegmentStorage {
 	return &SegmentStorage{
 		bucket:   bucket,
 		metadata: metadata,
+		metrics:  newStoreMetrics(reg),
 	}
 }
 
@@ -48,7 +55,16 @@ func (s *SegmentStorage) CommitSegment(ctx context.Context, partitionID int32, s
 	}
 	objectPath := getSegmentObjectPath(partitionID, objectID)
 
-	if err := s.bucket.Upload(ctx, objectPath, bytes.NewReader(rawData)); err != nil {
+	hedgePolicy := hedgepolicy.BuilderWithDelay[any](250 * time.Millisecond).
+		OnHedge(func(f failsafe.ExecutionEvent[any]) {
+			s.metrics.uploadHedges.Inc()
+		}).Build()
+
+	// Attempt an upload with hedging
+	err = failsafe.Run(func() error {
+		return s.bucket.Upload(ctx, objectPath, bytes.NewReader(rawData))
+	}, hedgePolicy)
+	if err != nil {
 		return SegmentRef{}, errors.Wrapf(err, "failed to upload segment object %s", objectPath)
 	}
 
@@ -123,6 +139,21 @@ func (s *SegmentStorage) FetchSegmentWithRetries(ctx context.Context, ref Segmen
 	}
 
 	return
+}
+
+type storeMetrics struct {
+	uploadHedges prometheus.Counter
+}
+
+func newStoreMetrics(reg prometheus.Registerer) storeMetrics {
+	factory := promauto.With(reg)
+
+	return storeMetrics{
+		uploadHedges: factory.NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_segment_uploads_hedged_total",
+			Help: "Total number of hedges performed for segment uploads.",
+		}),
+	}
 }
 
 // getSegmentObjectPath returns the path of the segment object in the object storage.

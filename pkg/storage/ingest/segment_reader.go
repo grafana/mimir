@@ -10,6 +10,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 )
 
@@ -27,12 +28,12 @@ type SegmentReader struct {
 	segmentsBuffer chan *Segment
 }
 
-func NewSegmentReader(bucket objstore.InstrumentedBucket, metadata *MetadataStore, partitionID int32, lastOffsetID int64, bufferSize int, logger log.Logger) *SegmentReader {
+func NewSegmentReader(bucket objstore.InstrumentedBucket, metadata *MetadataStore, partitionID int32, lastOffsetID int64, bufferSize int, reg prometheus.Registerer, logger log.Logger) *SegmentReader {
 	c := &SegmentReader{
 		partitionID:    partitionID,
 		lastOffsetID:   lastOffsetID,
 		logger:         logger,
-		storage:        NewSegmentStorage(bucket, metadata),
+		storage:        NewSegmentStorage(bucket, metadata, reg),
 		metadata:       metadata,
 		segmentsBuffer: make(chan *Segment, bufferSize),
 	}

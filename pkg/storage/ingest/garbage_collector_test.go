@@ -40,7 +40,7 @@ func TestGarbageCollector_cleanupSegments(t *testing.T) {
 			reg           = prometheus.NewPedanticRegistry()
 			metadataDB    = newMetadataDatabaseMemory()
 			metadataStore = NewMetadataStore(metadataDB, log.NewNopLogger())
-			segmentStore  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadataStore)
+			segmentStore  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadataStore, reg)
 			gc            = NewGarbageCollector(cfg, metadataStore, segmentStore, log.NewNopLogger(), reg)
 			expectedErr   = errors.New("mocked error")
 		)
@@ -72,7 +72,7 @@ func TestGarbageCollector_cleanupSegments(t *testing.T) {
 			reg           = prometheus.NewPedanticRegistry()
 			metadataDB    = newMetadataDatabaseMemory()
 			metadataStore = NewMetadataStore(metadataDB, log.NewNopLogger())
-			segmentStore  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadataStore)
+			segmentStore  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadataStore, reg)
 			gc            = NewGarbageCollector(cfg, metadataStore, segmentStore, log.NewNopLogger(), reg)
 			expectedErr   = errors.New("mocked error")
 
@@ -141,7 +141,7 @@ func TestGarbageCollector_cleanupSegments(t *testing.T) {
 			reg           = prometheus.NewPedanticRegistry()
 			metadataDB    = newMetadataDatabaseMemory()
 			metadataStore = NewMetadataStore(metadataDB, log.NewNopLogger())
-			segmentStore  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadataStore)
+			segmentStore  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadataStore, reg)
 			gc            = NewGarbageCollector(cfg, metadataStore, segmentStore, log.NewNopLogger(), reg)
 			expectedErr   = errors.New("mocked error")
 

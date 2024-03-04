@@ -79,7 +79,7 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 		var (
 			reg      = prometheus.NewPedanticRegistry()
 			metadata = NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())
-			storage  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadata)
+			storage  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadata, reg)
 			reader   = newPartitionOffsetReader(metadata, partitionID, pollInterval, reg, logger)
 		)
 
@@ -123,7 +123,7 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 			reg      = prometheus.NewPedanticRegistry()
 			db       = newMetadataDatabaseMemory()
 			metadata = NewMetadataStore(db, log.NewNopLogger())
-			storage  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadata)
+			storage  = NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), metadata, reg)
 			reader   = newPartitionOffsetReader(metadata, partitionID, pollInterval, reg, logger)
 
 			firstRequest         = atomic.NewBool(true)

@@ -29,7 +29,7 @@ func TestWriteAgent(t *testing.T) {
 	mgr, err := services.NewManager(metadata)
 	require.NoError(t, err)
 
-	segStorage := NewSegmentStorage(objstore.WrapWithMetrics(bkt, nil, "test"), metadata)
+	segStorage := NewSegmentStorage(objstore.WrapWithMetrics(bkt, nil, "test"), metadata, nil)
 
 	wa := newWriteAgent(250*time.Millisecond, segStorage, logger, nil, mgr)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), wa))
@@ -75,9 +75,9 @@ func TestWriteAgent(t *testing.T) {
 	close(writeRequestsCh)
 	wg.Wait()
 
-	//// Stop WriteAgent to flush remaining in-memory segments.
+	// // Stop WriteAgent to flush remaining in-memory segments.
 	// We actually don't need to do that... since Write calls wait until writes are flushed.
-	//require.NoError(t, services.StopAndAwaitTerminated(context.Background(), wa))
+	// require.NoError(t, services.StopAndAwaitTerminated(context.Background(), wa))
 
 	foundPieces := map[string]bool{}
 

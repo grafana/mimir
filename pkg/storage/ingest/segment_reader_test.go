@@ -45,14 +45,14 @@ func TestSegmentReader_WaitNextSegment(t *testing.T) {
 		})
 
 		// Start the reader.
-		reader := NewSegmentReader(instrumentedBucket, metadata, partitionID, -1, 1, log.NewNopLogger())
+		reader := NewSegmentReader(instrumentedBucket, metadata, partitionID, -1, 1, nil, log.NewNopLogger())
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 		})
 
 		// Commit some segments.
-		storage := NewSegmentStorage(instrumentedBucket, metadata)
+		storage := NewSegmentStorage(instrumentedBucket, metadata, nil)
 		ref1, err := storage.CommitSegment(ctx, partitionID, segment1, time.Now())
 		require.NoError(t, err)
 		ref2, err := storage.CommitSegment(ctx, partitionID, segment2, time.Now())

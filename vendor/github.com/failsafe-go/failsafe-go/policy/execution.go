@@ -10,34 +10,32 @@ import (
 type ExecutionInternal[R any] interface {
 	failsafe.Execution[R]
 
-	// Result returns the last recorded result. If the execution was cancelled, this should be called to fetch the last
-	// recorded result.
-	Result() *common.PolicyResult[R]
+	// RecordResult records an execution result, such as before a retry attempt, and returns the result or the cancel result,
+	// if any.
+	RecordResult(policyIndex int, result *common.PolicyResult[R]) *common.PolicyResult[R]
 
-	// InitializeAttempt prepares a new execution attempt. Returns false if the attempt could not be initialized since it was
-	// canceled by an external Context or a timeout.Timeout composed outside the Executor.
-	InitializeAttempt(policyIndex int) bool
+	// InitializeRetry prepares a new execution retry. If the retry could not be initialized because was canceled, the associated
+	// cancellation result is returned.
+	InitializeRetry(policyIndex int) *common.PolicyResult[R]
 
-	// Record records the result of an execution attempt, if a result was not already recorded, and returns the recorded
-	// execution.
-	Record(result *common.PolicyResult[R]) *common.PolicyResult[R]
+	// InitializeHedge prepares a new hedge execution. If the attempt could not be initialized because was canceled, the associated
+	// cancellation result is returned.
+	InitializeHedge(policyIndex int) *common.PolicyResult[R]
 
-	// Cancel marks the execution as having been cancelled by the policyExecutor, which will also cancel pending executions
-	// of any inner policies of the policyExecutor, and also records the result. Outer policies of the policyExecutor will be
-	// unaffected.
-	Cancel(policyIndex int, result *common.PolicyResult[R])
+	// Cancel marks the execution as having been canceled by the policyIndex, if it wasn't already canceled, and returns the
+	// cancel result. Any pending executions of any inner policies of the policyIndex will be canceled. Outer policies of the
+	// policyIndex will be unaffected.
+	Cancel(policyIndex int, result *common.PolicyResult[R]) *common.PolicyResult[R]
 
-	// IsCanceledForPolicy returns whether the execution has been canceled by an external Context or a policy composed
-	// outside the Executor.
-	IsCanceledForPolicy(policyIndex int) bool
+	// IsCanceledForPolicy returns whether the execution has been canceled for the policyIndex, along with the associated
+	// cancellation result if so.
+	IsCanceledForPolicy(policyIndex int) (bool, *common.PolicyResult[R])
 
-	// Copy returns a copy of the failsafe.Execution. This is useful if you want to preserve the lastResult and lastError
-	// before passing the execution to an event listener, otherwise these may be changed at any time, such as by a Timeout.
-	Copy() failsafe.Execution[R]
-
-	// CopyWithResult returns a copy of the failsafe.Execution with the result.
+	// CopyWithResult returns a copy of the failsafe.Execution with the result. If the result is nil, this will preserve a
+	// copy of the lastResult and lastError. This is useful before passing the execution to an event listener, otherwise
+	// these may be changed if the execution is canceled.
 	CopyWithResult(result *common.PolicyResult[R]) failsafe.Execution[R]
 
-	// CopyWithContext returns a copy of the failsafe.Execution with the context.
-	CopyWithContext(ctx context.Context) failsafe.Execution[R]
+	// CopyWithContext returns a copy of the failsafe.Execution with the context and cancelFunc.
+	CopyWithContext(ctx context.Context, cancelFunc func()) failsafe.Execution[R]
 }

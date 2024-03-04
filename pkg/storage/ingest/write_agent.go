@@ -43,7 +43,7 @@ func NewWriteAgent(cfg Config, logger log.Logger, reg prometheus.Registerer) (*W
 	}
 
 	metadataStore := NewMetadataStore(NewMetadataStorePostgresql(cfg.PostgresConfig), logger)
-	segmentStorage := NewSegmentStorage(bucketClient, metadataStore)
+	segmentStorage := NewSegmentStorage(bucketClient, metadataStore, reg)
 
 	mgr, err := services.NewManager(metadataStore)
 	if err != nil {

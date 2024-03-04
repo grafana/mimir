@@ -102,7 +102,7 @@ func (r *PartitionReader) start(ctx context.Context) error {
 	// Start dependency services.
 	r.committer = newConsumerCommitter(r.metadataStore, r.partitionID, r.consumerGroup, r.commitInterval, r.logger)
 	r.offsetReader = newPartitionOffsetReader(r.metadataStore, r.partitionID, r.config.LastProducedOffsetPollInterval, r.reg, r.logger)
-	r.segmentReader = NewSegmentReader(r.bucketClient, r.metadataStore, r.partitionID, startFromOffset, r.config.BufferSize, r.logger)
+	r.segmentReader = NewSegmentReader(r.bucketClient, r.metadataStore, r.partitionID, startFromOffset, r.config.BufferSize, r.reg, r.logger)
 
 	r.dependencies, err = services.NewManager(r.committer, r.offsetReader, r.consumedOffsetWatcher, r.segmentReader)
 	if err != nil {

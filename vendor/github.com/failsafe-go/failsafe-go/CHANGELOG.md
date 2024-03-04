@@ -1,5 +1,27 @@
 ## Upcoming Release
 
+## 0.6.0
+
+### Improvements
+
+- Added HTTP support via `failsafehttp.NewRoundTripper`
+
+### Bug Fixes
+
+- Fixed #32 - RetryPolicy with no max retries.
+
+## 0.5.0
+
+### Improvements
+
+- Added a new `HedgePolicy`
+
+## 0.4.5
+
+### Bug Fixes
+
+- Fixed #29 - RetryPolicy `WithMaxDuration` not working
+
 ## 0.4.4
 
 ### Improvements

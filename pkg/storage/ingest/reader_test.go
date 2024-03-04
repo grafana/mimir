@@ -39,7 +39,7 @@ func TestPartitionReader(t *testing.T) {
 	require.NoError(t, err)
 
 	metadataDB := newMetadataDatabaseMemory()
-	storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()))
+	storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()), nil)
 
 	content := "special content"
 	consumer := newTestConsumer(2)
@@ -81,7 +81,7 @@ func TestReader_ConsumerError(t *testing.T) {
 	require.NoError(t, err)
 
 	metadataDB := newMetadataDatabaseMemory()
-	storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()))
+	storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()), nil)
 
 	startReader(ctx, t, metadataDB, partitionID, consumer, withFilesystemBucket(bucketDir))
 
@@ -115,7 +115,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		require.NoError(t, err)
 
 		metadataDB := newMetadataDatabaseMemory()
-		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()))
+		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()), reg)
 
 		// Configure the reader to poll the "last produced offset" frequently.
 		reader := startReader(ctx, t, metadataDB, partitionID, consumer,
@@ -350,7 +350,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		require.NoError(t, err)
 
 		metadataDB := newMetadataDatabaseMemory()
-		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()))
+		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()), nil)
 		consumer := newTestConsumer(3)
 
 		// Start the reader.
@@ -396,7 +396,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		require.NoError(t, err)
 
 		metadataDB := newMetadataDatabaseMemory()
-		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()))
+		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()), nil)
 		consumer := newTestConsumer(4)
 
 		// Start the reader.
@@ -439,7 +439,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		require.NoError(t, err)
 
 		metadataDB := newMetadataDatabaseMemory()
-		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()))
+		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()), nil)
 		consumer := newTestConsumer(4)
 
 		// Start the reader.

@@ -157,7 +157,7 @@ func (c *StandaloneGarbageCollector) starting(ctx context.Context) error {
 	var (
 		metadataDB    = NewMetadataStorePostgresql(c.cfg.PostgresConfig)
 		metadataStore = NewMetadataStore(metadataDB, c.logger)
-		segmentStore  = NewSegmentStorage(bucket, metadataStore)
+		segmentStore  = NewSegmentStorage(bucket, metadataStore, c.reg)
 		collector     = NewGarbageCollector(c.cfg.GarbageCollectorConfig, metadataStore, segmentStore, c.logger, c.reg)
 	)
 
