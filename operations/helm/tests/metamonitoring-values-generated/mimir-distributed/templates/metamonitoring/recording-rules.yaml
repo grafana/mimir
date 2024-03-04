@@ -28,6 +28,8 @@ spec:
       record: cluster_job:cortex_request_duration_seconds_sum:sum_rate
     - expr: sum(rate(cortex_request_duration_seconds_count[1m])) by (cluster, job)
       record: cluster_job:cortex_request_duration_seconds_count:sum_rate
+    - expr: sum(rate(cortex_request_duration_seconds[1m])) by (cluster, job)
+      record: cluster_job:cortex_request_duration_seconds:sum_rate
   - name: mimir_api_2
     rules:
     - expr: histogram_quantile(0.99, sum(rate(cortex_request_duration_seconds_bucket[1m]))
@@ -46,6 +48,8 @@ spec:
       record: cluster_job_route:cortex_request_duration_seconds_sum:sum_rate
     - expr: sum(rate(cortex_request_duration_seconds_count[1m])) by (cluster, job, route)
       record: cluster_job_route:cortex_request_duration_seconds_count:sum_rate
+    - expr: sum(rate(cortex_request_duration_seconds[1m])) by (cluster, job, route)
+      record: cluster_job_route:cortex_request_duration_seconds:sum_rate
   - name: mimir_api_3
     rules:
     - expr: histogram_quantile(0.99, sum(rate(cortex_request_duration_seconds_bucket[1m]))
@@ -67,6 +71,9 @@ spec:
     - expr: sum(rate(cortex_request_duration_seconds_count[1m])) by (cluster, namespace,
         job, route)
       record: cluster_namespace_job_route:cortex_request_duration_seconds_count:sum_rate
+    - expr: sum(rate(cortex_request_duration_seconds[1m])) by (cluster, namespace, job,
+        route)
+      record: cluster_namespace_job_route:cortex_request_duration_seconds:sum_rate
   - name: mimir_querier_api
     rules:
     - expr: histogram_quantile(0.99, sum(rate(cortex_querier_request_duration_seconds_bucket[1m]))
