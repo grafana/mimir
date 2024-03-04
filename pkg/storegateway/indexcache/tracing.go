@@ -27,8 +27,8 @@ func NewTracingIndexCache(cache IndexCache, logger log.Logger) IndexCache {
 	}
 }
 
-func (t *TracingIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
-	t.c.StorePostings(userID, blockID, l, v)
+func (t *TracingIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte, ttl time.Duration) {
+	t.c.StorePostings(userID, blockID, l, v, ttl)
 }
 
 func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits BytesResult) {

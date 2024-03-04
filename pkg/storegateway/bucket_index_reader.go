@@ -488,6 +488,9 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		return uint64(ptrs[i].ptr.Start), uint64(ptrs[i].ptr.End)
 	})
 
+	// Use a different TTL for postings based on the duration of the block.
+	postingsTTL := indexcache.BlockTTL(r.block.meta)
+
 	g, ctx := errgroup.WithContext(ctx)
 	for _, part := range parts {
 		i, j := part.ElemRng[0], part.ElemRng[1]
@@ -534,7 +537,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				compressionTime = time.Since(s)
 				if err == nil {
 					compressedSize = len(dataToCache)
-					r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache)
+					r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache, postingsTTL)
 				} else {
 					compressionErrors = 1
 					level.Warn(r.block.logger).Log(
