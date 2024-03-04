@@ -29,14 +29,14 @@ const (
 
 // IndexPostingsReader is a subset of IndexReader methods, the minimum required to evaluate PostingsForMatchers.
 type IndexPostingsReader interface {
+	index.PostingsReader
+
 	// LabelValues returns possible label values which may not be sorted.
 	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
 
-	// Postings returns the postings list iterator for the label pairs.
-	// The Postings here contain the offsets to the series inside the index.
-	// Found IDs are not strictly required to point to a valid Series, e.g.
-	// during background garbage collections. Input values must be sorted.
-	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
+	// PostingsForMatcher returns a sorted iterator over postings having a label matching the provided label matcher.
+	// If no postings are found having a label with the correct name and matching value, an empty iterator is returned.
+	PostingsForMatcher(ctx context.Context, m *labels.Matcher) index.Postings
 }
 
 // NewPostingsForMatchersCache creates a new PostingsForMatchersCache.
