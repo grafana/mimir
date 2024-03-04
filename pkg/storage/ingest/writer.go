@@ -5,7 +5,6 @@ package ingest
 import (
 	"context"
 	"fmt"
-	"math"
 	"net"
 	"strconv"
 	"sync"
@@ -20,19 +19,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest/ingestpb"
-)
-
-const (
-	// writerRequestTimeoutOverhead is the overhead applied by the Writer to every Kafka timeout.
-	// You can think about this overhead as an extra time for requests sitting in the client's buffer
-	// before being sent on the wire and the actual time it takes to send it over the network and
-	// start being processed by Kafka.
-	writerRequestTimeoutOverhead = 2 * time.Second
 )
 
 type writeAgentSelector interface {
@@ -141,90 +131,8 @@ func (w *Writer) getWriteAgentForPartition(partitionID int32) (ingestpb.WriteAge
 	return writer, nil
 }
 
-// TODO remove
-// newKafkaWriter creates a new Kafka client used to write to a specific partition.
-func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
-	//logger := log.With(w.logger, "partition", partitionID)
-
-	// Do not export the client ID, because we use it to specify options to the backend.
-	//metrics := kprom.NewMetrics("cortex_ingest_storage_writer",
-	//	kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, w.registerer)),
-	//	kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
-
-	opts := append([]kgo.Opt{},
-		//commonKafkaClientOptions(w.kafkaCfg, metrics, logger),
-		kgo.RequiredAcks(kgo.AllISRAcks()),
-		//kgo.DefaultProduceTopic(w.kafkaCfg.Topic),
-
-		// Use a static partitioner because we want to be in control of the partition.
-		kgo.RecordPartitioner(newKafkaStaticPartitioner(int(partitionID))),
-
-		// Set the upper bounds the size of a record batch.
-		kgo.ProducerBatchMaxBytes(16_000_000),
-
-		// By default, the Kafka client allows 1 Produce in-flight request per broker. Disabling write idempotency
-		// (which we don't need), we can increase the max number of in-flight Produce requests per broker. A higher
-		// number of in-flight requests, in addition to short buffering ("linger") in client side before firing the
-		// next Produce request allows us to reduce the end-to-end latency.
-		//
-		// The result of the multiplication of producer linger and max in-flight requests should match the maximum
-		// Produce latency expected by the Kafka backend in a steady state. For example, 50ms * 20 requests = 1s,
-		// which means the Kafka client will keep issuing a Produce request every 50ms as far as the Kafka backend
-		// doesn't take longer than 1s to process them (if it takes longer, the client will buffer data and stop
-		// issuing new Produce requests until some previous ones complete).
-		kgo.DisableIdempotentWrite(),
-		kgo.ProducerLinger(50*time.Millisecond),
-		kgo.MaxProduceRequestsInflightPerBroker(w.maxInflightProduceRequests),
-
-		// Unlimited number of Produce retries but a deadline on the max time a record can take to be delivered.
-		// With the default config it would retry infinitely.
-		//
-		// Details of the involved timeouts:
-		// - RecordDeliveryTimeout: how long a Kafka client Produce() call can take for a given record. The overhead
-		//   timeout is NOT applied.
-		// - ProduceRequestTimeout: how long to wait for the response to the Produce request (the Kafka protocol message)
-		//   after being sent on the network. The actual timeout is increased by the configured overhead.
-		//
-		// When a Produce request to Kafka fail, the client will retry up until the RecordDeliveryTimeout is reached.
-		// Once the timeout is reached, the Produce request will fail and all other buffered requests in the client
-		// (for the same partition) will fail too. See kgo.RecordDeliveryTimeout() documentation for more info.
-		kgo.RecordRetries(math.MaxInt64),
-		//kgo.RecordDeliveryTimeout(w.kafkaCfg.WriteTimeout),
-		//kgo.ProduceRequestTimeout(w.kafkaCfg.WriteTimeout),
-		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
-	)
-	return kgo.NewClient(opts...)
-}
-
 func (w *Writer) starting(ctx context.Context) error {
 	return services.StartAndAwaitRunning(ctx, w.writeAgents)
-}
-
-type kafkaStaticPartitioner struct {
-	partitionID int
-}
-
-func newKafkaStaticPartitioner(partitionID int) *kafkaStaticPartitioner {
-	return &kafkaStaticPartitioner{
-		partitionID: partitionID,
-	}
-}
-
-// ForTopic implements kgo.Partitioner.
-func (p *kafkaStaticPartitioner) ForTopic(string) kgo.TopicPartitioner {
-	return p
-}
-
-// RequiresConsistency implements kgo.TopicPartitioner.
-func (p *kafkaStaticPartitioner) RequiresConsistency(_ *kgo.Record) bool {
-	// Never let Kafka client to write the record to another partition
-	// if the partition is down.
-	return true
-}
-
-// Partition implements kgo.TopicPartitioner.
-func (p *kafkaStaticPartitioner) Partition(_ *kgo.Record, _ int) int {
-	return p.partitionID
 }
 
 type dnsBalancingStrategy interface {
