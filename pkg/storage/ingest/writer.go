@@ -110,19 +110,24 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 		return err
 	}
 
-	waReq := &ingestpb.WriteRequest{
-		Piece:       &ingestpb.Piece{WriteRequest: req, TenantId: userID},
-		PartitionId: partitionID,
-	}
+	var waReqSize int
+	data, err := req.Marshal()
+	if err == nil {
+		waReq := &ingestpb.WriteRequest{
+			Piece:       &ingestpb.Piece{Data: data, TenantId: userID},
+			PartitionId: partitionID,
+		}
+		waReqSize = waReq.Size()
 
-	_, err = writer.Write(ctx, waReq) // response is empty
+		_, err = writer.Write(ctx, waReq) // response is empty
+	}
 	if err != nil {
 		return errors.Wrap(err, "sending request to write agent")
 	}
 
 	// Track latency and payload size only for successful requests.
 	w.writeLatency.Observe(time.Since(startTime).Seconds())
-	w.writeBytesTotal.Add(float64(waReq.Size()))
+	w.writeBytesTotal.Add(float64(waReqSize))
 
 	return nil
 }

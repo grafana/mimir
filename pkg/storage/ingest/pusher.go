@@ -71,8 +71,11 @@ func (c pusherConsumer) pushRequests(ctx context.Context, segment *Segment) erro
 	for pieceIdx, piece := range segment.Data.Pieces {
 		processingStart := time.Now()
 
-		ctx := user.InjectOrgID(ctx, piece.TenantId)
-		_, err := c.p.Push(ctx, piece.WriteRequest)
+		wr, err := piece.WriteRequest()
+		if err == nil {
+			ctx := user.InjectOrgID(ctx, piece.TenantId)
+			_, err = c.p.Push(ctx, wr)
+		}
 
 		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 		c.totalRequests.Inc()
