@@ -304,7 +304,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			expBadRequest: fmt.Sprintf("version must be %d", block.TSDBVersion1),
 		},
 		{
-			name:            "invalid version",
+			name:            "block in the future",
 			tenantID:        tenantID,
 			blockID:         blockID,
 			setUpBucketMock: setUpPartialBlock,
