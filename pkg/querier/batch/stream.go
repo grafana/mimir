@@ -93,11 +93,18 @@ func (bs *batchStream) curr() *chunk.Batch {
 // Samples are simply merged by time when they are the same type (float/histogram/...), with the left stream taking precedence if the timestamps are equal.
 // When sample are different type, batches are not merged. In case of equal timestamps, histograms take precedence since they have more information.
 func (bs *batchStream) merge(batch *chunk.Batch, size int) {
-	bs.batches = append(bs.batches[:0], bs.mergeStreams(batch, size)...)
-	bs.reset()
-}
+	// We store this at the beginning to avoid additional allocations.
+	// Namely, the merge method will go through all the batches from bs.batch,
+	// check whether their elements should be kept (and copy them to the result)
+	// or discarded (and put them in the pool in order to reuse them), and then
+	// remove the batches from bs.batch.
+	// Eventually, at the end of the merge method, the resulting merged batches
+	// will be appended to the previously emptied bs.batches. At that point
+	// the cap(bs.batches) will be 0, so in order to save some allocations,
+	// we will use origBatches, i.e., bs.bathces' capacity from the beginning of
+	// the merge method.
+	origBatches := bs.batches[:0]
 
-func (bs *batchStream) mergeStreams(batch *chunk.Batch, size int) []chunk.Batch {
 	// Reset the Index and Length of existing batches.
 	for i := range bs.batchesBuf {
 		bs.batchesBuf[i].Index = 0
@@ -187,5 +194,6 @@ func (bs *batchStream) mergeStreams(batch *chunk.Batch, size int) []chunk.Batch 
 	// has to be appended, hence it tells the length.
 	b.Length = b.Index
 
-	return bs.batchesBuf[:resultLen]
+	bs.batches = append(origBatches, bs.batchesBuf[:resultLen]...)
+	bs.reset()
 }
