@@ -291,7 +291,7 @@ func copyLabel(l labels.Label) labels.Label {
 
 // StorePostings sets the postings identified by the ulid and label to the value v,
 // if the postings already exists in the cache it is not mutated.
-func (c *InMemoryIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
+func (c *InMemoryIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte, _ time.Duration) {
 	c.set(cacheKeyPostings{userID, blockID, copyLabel(l)}, v)
 }
 

@@ -960,7 +960,7 @@ func (c *spyPostingsCache) StoreExpandedPostings(_ string, _ ulid.ULID, _ indexc
 	c.storedExpandedPostingsVal = v
 }
 
-func (c *spyPostingsCache) StorePostings(_ string, _ ulid.ULID, l labels.Label, v []byte) {
+func (c *spyPostingsCache) StorePostings(_ string, _ ulid.ULID, l labels.Label, v []byte, _ time.Duration) {
 	if c.storedExpandedPostingsVal == nil {
 		c.storedPostingsVal = make(map[labels.Label][]byte)
 	}
