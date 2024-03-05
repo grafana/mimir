@@ -178,8 +178,11 @@ func (r *PartitionReader) consumeSegment(ctx context.Context, segment *Segment) 
 }
 
 func (r *PartitionReader) recordSegmentMetrics(segment *Segment) {
-	// TODO record receiveDelay for each piece
-	// Need to add timestamp to pieces when pushed
+	for _, piece := range segment.Data.Pieces {
+		if piece.CreatedAtMs > 0 {
+			r.metrics.receiveDelay.Observe(time.Since(time.UnixMilli(piece.CreatedAtMs)).Seconds())
+		}
+	}
 
 	r.metrics.segmentsTotal.Add(1)
 	r.metrics.piecesPerSegment.Observe(float64(len(segment.Data.Pieces)))

@@ -105,7 +105,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	data, err := req.Marshal()
 	if err == nil {
 		waReq := &ingestpb.WriteRequest{
-			Piece:       &ingestpb.Piece{Data: data, TenantId: userID},
+			Piece:       &ingestpb.Piece{Data: data, TenantId: userID, CreatedAtMs: startTime.UnixMilli()},
 			PartitionId: partitionID,
 		}
 		waReqSize = waReq.Size()

@@ -14,6 +14,7 @@ message Piece {
   cortexpb.WriteRequest obsolete_write_request = 1;
   string tenant_id = 2;
   bytes data = 3;
+  int64 created_at_ms = 4;
 }
 
 message WriteResponse {
