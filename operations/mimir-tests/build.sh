@@ -8,7 +8,7 @@ rm -rf jsonnet-tests && mkdir jsonnet-tests
 cd jsonnet-tests
 
 # Initialise the Tanka.
-tk init --k8s=1.21
+tk init --k8s=1.29
 
 # Install Mimir jsonnet from this branch.
 jb install ../operations/mimir
