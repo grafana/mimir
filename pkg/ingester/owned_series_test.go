@@ -25,8 +25,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -668,7 +668,33 @@ func generateSeriesWithTokens(testUser string) ([]series, []uint32) {
 type ownedSeriesWithPartitionsRingTestContext struct {
 	ownedSeriesTestContextBase
 
+	partitionID    int32 // Partition used by tested ingester.
 	partitionsRing *ring.PartitionRingWatcher
+}
+
+// Push series to Kafka, and wait for ingester to ingest them.
+func (c *ownedSeriesWithPartitionsRingTestContext) pushUserSeries(t *testing.T) {
+	// Create a Kafka writer and then write all series.
+	writer := ingest.NewWriter(c.cfg.IngestStorageConfig.KafkaConfig, log.NewNopLogger(), nil)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), writer))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), writer))
+	})
+
+	for _, s := range c.seriesToWrite {
+		req, _, _, _ := mockWriteRequest(t, s.lbls, s.value, s.timestamp)
+		require.NoError(t, writer.WriteSync(context.Background(), c.partitionID, c.user, req))
+	}
+
+	// Wait until the ingester ingested all series from Kafka.
+	test.Poll(t, 1*time.Second, len(c.seriesToWrite), func() interface{} {
+		return int(c.ing.getTSDB(c.user).Head().NumSeries())
+	})
+
+	// After pushing series, set db in test context.
+	db := c.ing.getTSDB(c.user)
+	require.NotNil(t, db)
+	c.db = db
 }
 
 func (c *ownedSeriesWithPartitionsRingTestContext) addPartition(t *testing.T, partitionID int32, partitionActive ring.PartitionState) {
@@ -681,6 +707,49 @@ func (c *ownedSeriesWithPartitionsRingTestContext) removePartition(t *testing.T,
 	updatePartitionRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(partitionRing *ring.PartitionRingDesc) {
 		partitionRing.RemovePartition(partitionID)
 	})
+}
+
+func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRing(t *testing.T) {
+	if c.ing != nil {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.ing))
+	}
+	if c.partitionsRing != nil {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.partitionsRing))
+	}
+
+	ing, _, prw := createTestIngesterWithIngestStorage(t, &c.cfg, c.overrides, nil)
+	c.ing = ing
+	c.partitionsRing = prw
+
+	// Ingester and partitions ring watcher are not started yet.
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c.partitionsRing))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.partitionsRing))
+	})
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c.ing))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.ing))
+	})
+
+	// Make sure that partition is now registered in the ring, and is active. This takes at least 1 sec.
+	test.Poll(t, 2*time.Second, true, func() interface{} {
+		p := prw.PartitionRing().ActivePartitionIDs()
+		return slices.Contains(p, c.partitionID)
+	})
+
+	c.buf = &concurrency.SyncBuffer{}
+
+	// Create owned series service tied to the new ingester. We don't start this service, and will only call its methods.
+	c.ownedSeries = newOwnedSeriesService(
+		10*time.Minute,
+		newOwnedSeriesPartitionRingStrategy(c.ing.ingestPartitionID, c.partitionsRing, c.ing.limits.IngestionPartitionsTenantShardSize),
+		log.NewLogfmtLogger(c.buf),
+		nil,
+		c.ing.limiter.maxSeriesPerUser,
+		c.ing.getTSDBUsers,
+		c.ing.getTSDB,
+	)
 }
 
 const ownedServiceTestUserPartitionsRing = "test-user-123"
@@ -733,8 +802,6 @@ func TestOwnedSeriesPartitionsTestUserShuffleSharding(t *testing.T) {
 }
 
 func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
-	const kafkaTopic = "topic"
-
 	seriesToWrite, _ := generateSeriesWithTokens(ownedServiceTestUserPartitionsRing)
 
 	testCases := map[string]struct {
@@ -790,13 +857,11 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				// initial state: all series are owned by the first ingester
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
 
-				dataDir := c.ing.cfg.BlocksStorageConfig.TSDB.Dir
-
 				// stop the ingester
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.ing))
 
 				// restart the ingester with the same TSDB directory to trigger WAL replay
-				c.ing = setupIngesterWithOverridesAndPartitionRing(t, c.cfg, c.overrides, c.partitionsRing, dataDir)
+				c.createIngesterAndPartitionRing(t)
 				c.db = c.ing.getTSDB(ownedServiceTestUserPartitionsRing)
 				require.NotNil(t, c.db)
 
@@ -1199,58 +1264,25 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 					user:          ownedServiceTestUserPartitionsRing,
 					seriesToWrite: seriesToWrite,
 				},
+				partitionID: tc.registerPartitionID,
 			}
-
-			ingesterKVStore, ingesterKvStoreCloser := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-			t.Cleanup(func() { assert.NoError(t, ingesterKvStoreCloser.Close()) })
 
 			partitionsKVStore, partitionsKVStoreCloser := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, partitionsKVStoreCloser.Close()) })
 
 			c.kvStore = &watchingKV{Client: partitionsKVStore}
 
-			_, kafkaAddr := testkafka.CreateCluster(t, 10, kafkaTopic)
-
-			// Ingester will not use this ring for anything, but it will register into it.
 			c.cfg = defaultIngesterTestConfig(t)
-			c.cfg.IngestStorageConfig.Enabled = true
-			c.cfg.IngestStorageConfig.KafkaConfig.Topic = kafkaTopic
-			c.cfg.IngestStorageConfig.KafkaConfig.Address = kafkaAddr
-			c.cfg.IngesterRing.KVStore.Mock = ingesterKVStore                                  // not using "watchingKV", we're not interested in ingester ring.
 			c.cfg.IngesterRing.InstanceID = fmt.Sprintf("ingester-%d", tc.registerPartitionID) // Ingester owns partition based on instance ID.
-			c.cfg.IngesterPartitionRing.kvMock = c.kvStore                                     // Set mock for ingester partition ring, otherwise ingester would use mock from IngesterRing.KVStore.Mock, but that mock one has wrong codec.
-
-			// We must start partition ring watcher, so that "watchingKV" will see updates.
-			prw := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, c.kvStore, log.NewNopLogger(), nil)
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), prw))
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), prw))
-			})
-
-			// Note that we don't start the ingester's owned series service (cfg.UseIngesterOwnedSeriesForLimits and cfg.UpdateIngesterOwnedSeries are false)
-			// because we'll be testing a stand-alone service to better control when it runs.
-
-			c.partitionsRing = prw
-			c.addPartition(t, tc.registerPartitionID, ring.PartitionActive)
+			c.cfg.IngesterPartitionRing.kvMock = c.kvStore                                     // Set ring with our in-memory KV, that we will use for watching.
+			c.cfg.BlocksStorageConfig.TSDB.Dir = ""                                            // Don't use default value, otherwise
 
 			var err error
 			c.overrides, err = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
 			require.NoError(t, err)
 
-			c.ing = setupIngesterWithOverridesAndPartitionRing(t, c.cfg, c.overrides, c.partitionsRing, "")
-
-			c.buf = &concurrency.SyncBuffer{}
-
-			// We also don't start this service, and will only call its methods.
-			c.ownedSeries = newOwnedSeriesService(
-				10*time.Minute,
-				newOwnedSeriesPartitionRingStrategy(c.ing.ingestPartitionID, c.partitionsRing, c.ing.limits.IngestionPartitionsTenantShardSize),
-				log.NewLogfmtLogger(c.buf),
-				nil,
-				c.ing.limiter.maxSeriesPerUser,
-				c.ing.getTSDBUsers,
-				c.ing.getTSDB,
-			)
+			// createTestIngesterWithIngestStorage will register partition and ingester into the partition ring.
+			c.createIngesterAndPartitionRing(t)
 
 			tc.testFunc(t, &c, tc.limits)
 		})
@@ -1455,17 +1487,6 @@ func userToken(user, zone string, skip int) uint32 {
 
 func setupIngesterWithOverrides(t *testing.T, cfg Config, overrides *validation.Overrides, ingesterRing ring.ReadRing, dataDir string) *Ingester {
 	ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, ingesterRing, dataDir, "", nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing))
-	})
-	return ing
-}
-
-func setupIngesterWithOverridesAndPartitionRing(t *testing.T, cfg Config, overrides *validation.Overrides, partitionRing *ring.PartitionRingWatcher, dataDir string) *Ingester {
-	// ingestersRing will be created automatically.
-	ing, err := prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t, cfg, overrides, nil, partitionRing, dataDir, "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 	t.Cleanup(func() {
