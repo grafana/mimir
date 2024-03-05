@@ -49,6 +49,42 @@ message PrometheusInstantQueryRequest {
   Hints hints = 6 [(gogoproto.nullable) = true];
 }
 
+message LabelMatchers {
+  repeated LabelMatcher matchers = 1;
+}
+
+enum MatchType {
+  EQUAL = 0;
+  NOT_EQUAL = 1;
+  REGEX_MATCH = 2;
+  REGEX_NO_MATCH = 3;
+}
+
+message LabelMatcher {
+  MatchType type = 1;
+  string name = 2;
+  string value = 3;
+}
+
+message PrometheusLabelNamesQueryRequest {
+  string path = 1;
+  string query = 2;
+
+  int64 start = 3;
+  int64 end = 4;
+
+  LabelMatchers matchers = 5;
+
+  Options options = 6 [(gogoproto.nullable) = false]; // why are these not nullable?
+
+  // ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
+  int64 id = 7;
+
+  // Hints that could be optionally attached to the request to pass down the stack.
+  // These hints can be used to optimize the query execution.
+  Hints hints = 8;
+}
+
 message PrometheusResponseHeader {
   string Name = 1 [(gogoproto.jsontag) = "-"];
   repeated string Values = 2 [(gogoproto.jsontag) = "-"];
