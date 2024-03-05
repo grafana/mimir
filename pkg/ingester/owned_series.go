@@ -244,7 +244,7 @@ func (ir *ownedSeriesIngesterRingStrategy) tokenRangesForUser(userID string, sha
 
 	ranges, err := subring.GetTokenRangesForInstance(ir.instanceID)
 	if errors.Is(err, ring.ErrInstanceNotFound) {
-		// Not an error.
+		// Not an error because it means the ingester doesn't own the tenant.
 		return nil, nil
 	}
 
@@ -257,7 +257,7 @@ type ownedSeriesPartitionRingStrategy struct {
 
 	getPartitionShardSize func(user string) int
 
-	previousActivePartition []int32
+	previousActivePartitions []int32
 }
 
 func newOwnedSeriesPartitionRingStrategy(partitionID int32, partitionRing *ring.PartitionRingWatcher, getPartitionShardSize func(user string) int) *ownedSeriesPartitionRingStrategy {
@@ -272,8 +272,8 @@ func (pr *ownedSeriesPartitionRingStrategy) checkRingForChanges() (bool, error) 
 	// When using partitions ring, we consider ring to be changed if active partitions have changed.
 	r := pr.partitionRingWatcher.PartitionRing()
 	activePartitions := r.ActivePartitionIDs()
-	ringChanged := !slices.Equal(pr.previousActivePartition, activePartitions)
-	pr.previousActivePartition = activePartitions
+	ringChanged := !slices.Equal(pr.previousActivePartitions, activePartitions)
+	pr.previousActivePartitions = activePartitions
 	return ringChanged, nil
 }
 
@@ -290,6 +290,7 @@ func (pr *ownedSeriesPartitionRingStrategy) tokenRangesForUser(userID string, sh
 
 	ranges, err := sr.GetTokenRangesForPartition(pr.partitionID)
 	if errors.Is(err, ring.ErrPartitionDoesNotExist) {
+		// Tenant doesn't use this partition.
 		return nil, nil
 	}
 	return ranges, err
