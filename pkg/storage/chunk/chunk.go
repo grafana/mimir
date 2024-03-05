@@ -113,6 +113,33 @@ type Batch struct {
 	Length        int
 }
 
+func (b *Batch) HasNext() chunkenc.ValueType {
+	if b.Index >= 0 && b.Index < b.Length {
+		return b.ValueType
+	}
+	return chunkenc.ValNone
+}
+
+func (b *Batch) Next() {
+	b.Index++
+}
+
+func (b *Batch) AtTime() int64 {
+	return b.Timestamps[b.Index]
+}
+
+func (b *Batch) At() (int64, float64) {
+	return b.Timestamps[b.Index], b.Values[b.Index]
+}
+
+func (b *Batch) AtHistogram() (int64, unsafe.Pointer) {
+	return b.Timestamps[b.Index], b.PointerValues[b.Index]
+}
+
+func (b *Batch) AtFloatHistogram() (int64, unsafe.Pointer) {
+	return b.Timestamps[b.Index], b.PointerValues[b.Index]
+}
+
 // Chunk contains encoded timeseries data
 type Chunk struct {
 	From    model.Time    `json:"from"`
