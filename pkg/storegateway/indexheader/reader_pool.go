@@ -46,11 +46,10 @@ func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 // and automatically close them once the idle timeout is reached. A closed lazy reader
 // will be automatically re-opened upon next usage.
 type ReaderPool struct {
-	lazyReaderEnabled        bool
-	lazyReaderIdleTimeout    time.Duration
-	sparsePersistenceEnabled bool
-	logger                   log.Logger
-	metrics                  *ReaderPoolMetrics
+	lazyReaderEnabled     bool
+	lazyReaderIdleTimeout time.Duration
+	logger                log.Logger
+	metrics               *ReaderPoolMetrics
 
 	// Gate used to limit the number of concurrent index-header loads.
 	lazyLoadingGate gate.Gate
@@ -176,15 +175,14 @@ func tryRestoreLazyLoadedHeadersSnapshot(logger log.Logger, cfg LazyLoadedHeader
 // newReaderPool makes a new ReaderPool.
 func newReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) *ReaderPool {
 	return &ReaderPool{
-		logger:                   logger,
-		metrics:                  metrics,
-		lazyReaderEnabled:        indexHeaderConfig.LazyLoadingEnabled,
-		lazyReaderIdleTimeout:    indexHeaderConfig.LazyLoadingIdleTimeout,
-		sparsePersistenceEnabled: indexHeaderConfig.SparsePersistenceEnabled,
-		lazyReaders:              make(map[*LazyBinaryReader]struct{}),
-		close:                    make(chan struct{}),
-		preShutdownLoadedBlocks:  lazyLoadedHeadersSnapshot,
-		lazyLoadingGate:          lazyLoadingGate,
+		logger:                  logger,
+		metrics:                 metrics,
+		lazyReaderEnabled:       indexHeaderConfig.LazyLoadingEnabled,
+		lazyReaderIdleTimeout:   indexHeaderConfig.LazyLoadingIdleTimeout,
+		lazyReaders:             make(map[*LazyBinaryReader]struct{}),
+		close:                   make(chan struct{}),
+		preShutdownLoadedBlocks: lazyLoadedHeadersSnapshot,
+		lazyLoadingGate:         lazyLoadingGate,
 	}
 }
 
@@ -210,7 +208,7 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	var err error
 
 	readerFactory = func() (Reader, error) {
-		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, p.sparsePersistenceEnabled, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
+		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
 	}
 
 	if p.lazyReaderEnabled {
