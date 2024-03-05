@@ -19,13 +19,14 @@ import (
 )
 
 type WriteAgent struct {
-	services.Service
+	*services.BasicService
 
-	logger           log.Logger
-	dependencies     *services.Manager
-	segmentStorage   *SegmentStorage
-	flushInterval    time.Duration
-	uploadHedgeDelay time.Duration
+	logger              log.Logger
+	dependencies        *services.Manager
+	segmentStorage      *SegmentStorage
+	flushInterval       time.Duration
+	maxSegmentSizeBytes int64
+	uploadHedgeDelay    time.Duration
 
 	segmentUpdateAllowedMu  sync.Mutex
 	segmentUpdateAllowed    bool
@@ -33,6 +34,8 @@ type WriteAgent struct {
 
 	partitionSegmentsMu sync.RWMutex
 	partitionSegments   map[int32]*partitionSegmentWithWaiters
+
+	asyncFlushWaitingGroup sync.WaitGroup
 
 	flushLatency prometheus.Histogram
 }
@@ -43,25 +46,29 @@ func NewWriteAgent(cfg Config, logger log.Logger, reg prometheus.Registerer) (*W
 		return nil, errors.Wrap(err, "failed to create segment store bucket client")
 	}
 
-	metadataStore := NewMetadataStore(NewMetadataStorePostgresql(cfg.PostgresConfig), logger)
-	segmentStorage := NewSegmentStorage(bucketClient, metadataStore, reg)
+	var (
+		wrappedReg     = prometheus.WrapRegistererWith(prometheus.Labels{"component": "write-agent"}, reg)
+		metadataStore  = NewMetadataStore(NewMetadataStorePostgresql(cfg.PostgresConfig), logger)
+		segmentStorage = NewSegmentStorage(bucketClient, metadataStore, wrappedReg)
+	)
 
 	mgr, err := services.NewManager(metadataStore)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create write agent dependencies")
 	}
 
-	return newWriteAgent(segmentStorage, cfg.FlushInterval, cfg.UploadHedgeDelay, logger, reg, mgr), nil
+	return newWriteAgent(cfg.FlushInterval, 4*1024*1024, cfg.UploadHedgeDelay, segmentStorage, logger, wrappedReg, mgr), nil
 }
 
-func newWriteAgent(segmentStorage *SegmentStorage, flushInterval time.Duration, uploadHedgeDelay time.Duration, logger log.Logger, reg prometheus.Registerer, dependencies *services.Manager) *WriteAgent {
+func newWriteAgent(flushInterval time.Duration, maxSegmentSizeBytes int64, uploadHedgeDelay time.Duration, segmentStorage *SegmentStorage, logger log.Logger, reg prometheus.Registerer, dependencies *services.Manager) *WriteAgent {
 	a := &WriteAgent{
-		segmentStorage:    segmentStorage,
-		flushInterval:     flushInterval,
-		uploadHedgeDelay:  uploadHedgeDelay,
-		logger:            logger,
-		partitionSegments: map[int32]*partitionSegmentWithWaiters{},
-		dependencies:      dependencies,
+		segmentStorage:      segmentStorage,
+		logger:              logger,
+		flushInterval:       flushInterval,
+		uploadHedgeDelay:    uploadHedgeDelay,
+		maxSegmentSizeBytes: maxSegmentSizeBytes,
+		partitionSegments:   map[int32]*partitionSegmentWithWaiters{},
+		dependencies:        dependencies,
 	}
 
 	a.flushLatency = promauto.With(reg).NewHistogram(
@@ -73,7 +80,7 @@ func newWriteAgent(segmentStorage *SegmentStorage, flushInterval time.Duration, 
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 		})
 
-	a.Service = services.NewBasicService(a.starting, a.running, a.stopping)
+	a.BasicService = services.NewBasicService(a.starting, a.running, a.stopping)
 	return a
 }
 
@@ -110,7 +117,8 @@ func (a *WriteAgent) running(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-timer.C:
-			a.flushPendingSegments(ctx)
+			// Trigger a flush of pending segments without waiting.
+			a.asyncFlushPendingSegments(ctx)
 		}
 	}
 }
@@ -121,7 +129,11 @@ func (a *WriteAgent) stopping(_ error) error {
 	// because no new segment updates can be started anymore -- running function disabled those).
 	a.segmentUpdateInProgress.Wait()
 
-	a.flushPendingSegments(context.Background())
+	// Trigger another async flush of pending segments (there may still be others still running from running() function).
+	a.asyncFlushPendingSegments(context.Background())
+
+	// Wait until all async flushes completed.
+	a.asyncFlushWaitingGroup.Wait()
 
 	// Stop dependencies.
 	if a.dependencies != nil {
@@ -133,7 +145,16 @@ func (a *WriteAgent) stopping(_ error) error {
 	return nil
 }
 
-func (a *WriteAgent) flushPendingSegments(ctx context.Context) {
+func (a *WriteAgent) asyncFlushPendingSegments(ctx context.Context) {
+	a.asyncFlushWaitingGroup.Add(1)
+
+	go func() {
+		defer a.asyncFlushWaitingGroup.Done()
+		a.syncFlushPendingSegments(ctx)
+	}()
+}
+
+func (a *WriteAgent) syncFlushPendingSegments(ctx context.Context) {
 	// Let's make a copy of partitionSegments that we will flush.
 	partitionsToFlush := map[int32]*partitionSegmentWithWaiters{}
 
@@ -155,14 +176,20 @@ func (a *WriteAgent) flushPendingSegments(ctx context.Context) {
 		go func() {
 			defer wg.Done()
 
-			a.flushPartitionSegmentAndNotifyWaiters(ctx, p, ps)
+			a.flushPartitionSegmentAndNotifyWaiters(ctx, p, ps, 0)
 		}()
 	}
 	wg.Wait()
 }
 
-func (a *WriteAgent) flushPartitionSegmentAndNotifyWaiters(ctx context.Context, partition int32, ps *partitionSegmentWithWaiters) {
-	segment, waiters := ps.getCurrentSegmentAndReplaceItWithNewOne()
+func (a *WriteAgent) flushPartitionSegmentAndNotifyWaiters(ctx context.Context, partition int32, ps *partitionSegmentWithWaiters, minSizeForFlushing int64) {
+	segment, waiters, hasCutNewSegment := ps.getCurrentSegmentAndReplaceItWithNewOne(minSizeForFlushing)
+
+	// A new segment may have not been cut if the minSizeForFlushing is not honored.
+	// If no new segment has been cut, we have to skip the flushing and we can't notify waiters (yet).
+	if !hasCutNewSegment {
+		return
+	}
 
 	if len(segment.Pieces) == 0 {
 		sendErrorToWaiters(waiters, nil)
@@ -182,6 +209,16 @@ func (a *WriteAgent) flushPartitionSegmentAndNotifyWaiters(ctx context.Context, 
 	}
 
 	sendErrorToWaiters(waiters, err)
+}
+
+func (a *WriteAgent) asyncFlushPartitionSegmentAndNotifyWaiters(partition int32, ps *partitionSegmentWithWaiters, minSizeForFlushing int64) {
+	a.asyncFlushWaitingGroup.Add(1)
+
+	go func() {
+		defer a.asyncFlushWaitingGroup.Done()
+
+		a.flushPartitionSegmentAndNotifyWaiters(a.BasicService.ServiceContext(), partition, ps, minSizeForFlushing)
+	}()
 }
 
 func (a *WriteAgent) getOrCreatePartitionSegment(partition int32) *partitionSegmentWithWaiters {
@@ -225,9 +262,14 @@ func (a *WriteAgent) Write(ctx context.Context, wr *ingestpb.WriteRequest) (*ing
 	}
 
 	ps := a.getOrCreatePartitionSegment(wr.PartitionId)
-	ch := ps.addPieceToCurrentSegment(wr.Piece)
+	ch, segmentSize := ps.addPieceToCurrentSegment(wr.Piece)
+
+	if segmentSize > a.maxSegmentSizeBytes {
+		a.asyncFlushPartitionSegmentAndNotifyWaiters(wr.PartitionId, ps, a.maxSegmentSizeBytes)
+	}
 
 	// Indicate that segment update was finished, and segments can be written (used when WriteAgent is stopping).
+	// IMPORTANT: this needs to be called after asyncFlushPartitionSegmentAndNotifyWaiters().
 	a.segmentUpdateInProgress.Done()
 
 	// Wait for response from writing.
@@ -243,43 +285,54 @@ func (a *WriteAgent) Write(ctx context.Context, wr *ingestpb.WriteRequest) (*ing
 }
 
 type partitionSegmentWithWaiters struct {
-	currentSegmentMu      sync.Mutex
-	currentSegment        *ingestpb.Segment
-	currentSegmentWaiters []chan<- error
+	currentSegmentMu        sync.Mutex
+	currentSegment          *ingestpb.Segment
+	currentSegmentSizeBytes int64
+	currentSegmentWaiters   []chan<- error
 }
 
 func newPartitionSegmentWithWaiters() *partitionSegmentWithWaiters {
 	return &partitionSegmentWithWaiters{
-		currentSegment:        newSegment(),
-		currentSegmentWaiters: newWaiters(),
+		currentSegment:          newSegment(),
+		currentSegmentSizeBytes: 0,
+		currentSegmentWaiters:   newWaiters(),
 	}
 }
 
-func (ps *partitionSegmentWithWaiters) addPieceToCurrentSegment(piece *ingestpb.Piece) <-chan error {
+func (ps *partitionSegmentWithWaiters) addPieceToCurrentSegment(piece *ingestpb.Piece) (<-chan error, int64) {
 	ch := make(chan error, 1)
 
 	ps.currentSegmentMu.Lock()
 	defer ps.currentSegmentMu.Unlock()
 
 	ps.currentSegment.Pieces = append(ps.currentSegment.Pieces, piece)
+	ps.currentSegmentSizeBytes += int64(piece.Size())
 	ps.currentSegmentWaiters = append(ps.currentSegmentWaiters, ch)
 
-	return ch
+	return ch, ps.currentSegmentSizeBytes
 }
 
-func (ps *partitionSegmentWithWaiters) getCurrentSegmentAndReplaceItWithNewOne() (*ingestpb.Segment, []chan<- error) {
+func (ps *partitionSegmentWithWaiters) getCurrentSegmentAndReplaceItWithNewOne(minSizeForFlushing int64) (*ingestpb.Segment, []chan<- error, bool) {
+	// Optimistically assume the new segment will be cut, so allocate new segments and waiters before taking the lock.
 	ns := newSegment()
 	nw := newWaiters()
 
 	ps.currentSegmentMu.Lock()
+	defer ps.currentSegmentMu.Unlock()
+
+	// First of all, check if the min size for flushing is honored.
+	if ps.currentSegmentSizeBytes < minSizeForFlushing {
+		return nil, nil, false
+	}
+
 	segmentToWrite := ps.currentSegment
 	waiters := ps.currentSegmentWaiters
 
 	ps.currentSegment = ns
+	ps.currentSegmentSizeBytes = 0
 	ps.currentSegmentWaiters = nw
-	ps.currentSegmentMu.Unlock()
 
-	return segmentToWrite, waiters
+	return segmentToWrite, waiters, true
 }
 
 func newSegment() *ingestpb.Segment {

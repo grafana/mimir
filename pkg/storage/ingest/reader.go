@@ -77,7 +77,7 @@ func newPartitionReader(config Config, metadataDB MetadataStoreDatabase, partiti
 		commitInterval:        time.Second,
 		consumedOffsetWatcher: newPartitionOffsetWatcher(),
 		logger:                log.With(logger, "partition", partitionID),
-		reg:                   reg,
+		reg:                   prometheus.WrapRegistererWith(prometheus.Labels{"component": "partition-reader"}, reg),
 	}
 
 	r.Service = services.NewBasicService(r.start, r.run, r.stop)

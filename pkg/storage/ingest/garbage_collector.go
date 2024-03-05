@@ -155,10 +155,11 @@ func (c *StandaloneGarbageCollector) starting(ctx context.Context) error {
 
 	// Create all services.
 	var (
+		wrappedReg    = prometheus.WrapRegistererWith(prometheus.Labels{"component": "garbage-collector"}, c.reg)
 		metadataDB    = NewMetadataStorePostgresql(c.cfg.PostgresConfig)
 		metadataStore = NewMetadataStore(metadataDB, c.logger)
-		segmentStore  = NewSegmentStorage(bucket, metadataStore, c.reg)
-		collector     = NewGarbageCollector(c.cfg.GarbageCollectorConfig, metadataStore, segmentStore, c.logger, c.reg)
+		segmentStore  = NewSegmentStorage(bucket, metadataStore, wrappedReg)
+		collector     = NewGarbageCollector(c.cfg.GarbageCollectorConfig, metadataStore, segmentStore, c.logger, wrappedReg)
 	)
 
 	// Start all services.
