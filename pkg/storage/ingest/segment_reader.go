@@ -54,12 +54,18 @@ func NewSegmentReader(bucket objstore.InstrumentedBucket, metadata *MetadataStor
 	return c
 }
 
+const maxInMemorySegments = 128
+
 func (c *SegmentReader) running(ctx context.Context) error {
 	try := backoff.New(ctx, c.backoffConfig)
 
 	var segments []*Segment
 	for try.Ongoing() {
 		refs := c.metadata.WatchSegments(ctx, c.partitionID, c.lastOffsetID)
+
+		if len(refs) > maxInMemorySegments {
+			refs = refs[:maxInMemorySegments]
+		}
 
 		var err error
 		segments, err = c.fetchSegments(ctx, refs, segments)
