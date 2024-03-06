@@ -4,6 +4,24 @@
 
 ### Grafana Mimir
 
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+### Mimir Continuous Test
+
+### Query-tee
+
+### Documentation
+
+### Tools
+
+## 2.12.0-rc.0
+
+### Grafana Mimir
+
 * [CHANGE] Alertmanager: Deprecates the `v1` API. All `v1` API endpoints now respond with a JSON deprecation notice and a status code of `410`. All endpoints have a `v2` equivalent. The list of endpoints is: #7103
   * `<alertmanager-web.external-url>/api/v1/alerts`
   * `<alertmanager-web.external-url>/api/v1/receivers`
@@ -32,7 +50,7 @@
 * [CHANGE] All: set `-server.report-grpc-codes-in-instrumentation-label-enabled` to `true` by default, which enables reporting gRPC status codes as `status_code` labels in the `cortex_request_duration_seconds` metric. #7144
 * [CHANGE] Distributor: report gRPC status codes as `status_code` labels in the `cortex_ingester_client_request_duration_seconds` metric by default. #7144
 * [CHANGE] Distributor: CLI flag `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled` has been deprecated, and its default value is set to `true`. #7144
-* [CHANGE] Ingester: CLI flag `-ingester.return-only-grpc-errors` has been deprecated, and its default value is set to `true`. To ensure backwards compatibility, during a migration from a version prior to 2.11.0 to 2.12 or later, `-ingester.return-only-grpc-errors` should be set to `false`. Once all the components are migrated, the flag can be removed.   #7151
+* [CHANGE] Ingester: CLI flag `-ingester.return-only-grpc-errors` has been deprecated, and its default value is set to `true`. To ensure backwards compatibility, during a migration from a version prior to 2.11.0 to 2.12 or later, `-ingester.return-only-grpc-errors` should be set to `false`. Once all the components are migrated, the flag can be removed. #7151
 * [CHANGE] Ingester: the following CLI flags have been moved from "experimental" to "advanced": #7169
   * `-ingester.ring.token-generation-strategy`
   * `-ingester.ring.spread-minimizing-zones`
@@ -64,15 +82,15 @@
 * [ENHANCEMENT] Distributor: Add a new metric `cortex_distributor_otlp_requests_total` to track the total number of OTLP requests. #7385
 * [ENHANCEMENT] Vault: add lifecycle manager for token used to authenticate to Vault. This ensures the client token is always valid. Includes a gauge (`cortex_vault_token_lease_renewal_active`) to check whether token renewal is active, and the counters `cortex_vault_token_lease_renewal_success_total` and `cortex_vault_auth_success_total` to see the total number of successful lease renewals / authentications. #7337
 * [ENHANCEMENT] Store-gateway: add no-compact details column on store-gateway tenants admin UI. #6848
-* [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
-* [ENHANCEMENT] Distributor: improve efficiency of some errors #6785
+* [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile. #6766
+* [ENHANCEMENT] Distributor: improve efficiency of some errors. #6785
 * [ENHANCEMENT] Ruler: exclude vector queries from being tracked in `cortex_ruler_queries_zero_fetched_series_total`. #6544
 * [ENHANCEMENT] Ruler: local storage backend now supports reading a rule group via `/config/api/v1/rules/{namespace}/{groupName}` configuration API endpoint. #6632
 * [ENHANCEMENT] Query-Frontend and Query-Scheduler: split tenant query request queues by query component with `query-frontend.additional-query-queue-dimensions-enabled` and `query-scheduler.additional-query-queue-dimensions-enabled`. #6772
 * [ENHANCEMENT] Distributor: support disabling metric relabel rules per-tenant via the flag `-distributor.metric-relabeling-enabled` or associated YAML. #6970
 * [ENHANCEMENT] Distributor: `-distributor.remote-timeout` is now accounted from the first ingester push request being sent. #6972
 * [ENHANCEMENT] Storage Provider: `-<prefix>.s3.sts-endpoint` sets a custom endpoint for AWS Security Token Service (AWS STS) in s3 storage provider. #6172
-* [ENHANCEMENT] Querier: add `cortex_querier_queries_storage_type_total ` metric that indicates how many queries have executed for a source, ingesters or store-gateways. Add `cortex_querier_query_storegateway_chunks_total` metric to count the number of chunks fetched from a store gateway. #7099,#7145
+* [ENHANCEMENT] Querier: add `cortex_querier_queries_storage_type_total ` metric that indicates how many queries have executed for a source, ingesters or store-gateways. Add `cortex_querier_query_storegateway_chunks_total` metric to count the number of chunks fetched from a store gateway. #7099 #7145
 * [ENHANCEMENT] Query-frontend: add experimental support for sharding active series queries via `-query-frontend.shard-active-series-queries`. #6784
 * [ENHANCEMENT] Distributor: set `-distributor.reusable-ingester-push-workers=2000` by default and mark feature as `advanced`. #7128
 * [ENHANCEMENT] All: set `-server.grpc.num-workers=100` by default and mark feature as `advanced`. #7131
@@ -88,10 +106,10 @@
 * [ENHANCEMENT] Ingester: Limiting on owned series (`-ingester.use-ingester-owned-series-for-limits`) now prevents discards in cases where a tenant is sharded across all ingesters (or shuffle sharding is disabled) and the ingester count increases. #7411
 * [ENHANCEMENT] Block upload: include converted timestamps in the error message if block is from the future. #7538
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
-* [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
-* [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
-* [BUGFIX] Fix panic during tsdb Commit #6766
-* [BUGFIX] tsdb/head: wlog exemplars after samples #6766
+* [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks. #6766
+* [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors. #6766
+* [BUGFIX] Fix panic during tsdb Commit. #6766
+* [BUGFIX] tsdb/head: wlog exemplars after samples. #6766
 * [BUGFIX] Ruler: fix issue where "failed to remotely evaluate query expression, will retry" messages are logged without context such as the trace ID and do not appear in trace events. #6789
 * [BUGFIX] Ruler: do not retry requests to remote querier when server's response exceeds its configured max payload size. #7216
 * [BUGFIX] Querier: fix issue where spans in query request traces were not nested correctly. #6893
@@ -99,8 +117,8 @@
 * [BUGFIX] Querier: do not retry requests to store-gateway when a query gets canceled. #6934
 * [BUGFIX] Querier: return 499 status code instead of 500 when a request to remote read endpoint gets canceled. #6934
 * [BUGFIX] Querier: fix issue where `-querier.max-fetched-series-per-query` is not applied to `/series` endpoint if the series are loaded from ingesters. #7055
-* [BUGFIX] Distributor: fix issue where `-distributor.metric-relabeling-enabled` may cause distributors to panic #7176
-* [BUGFIX] Distributor: fix issue where `-distributor.metric-relabeling-enabled` may cause distributors to write unsorted labels and corrupt blocks #7326
+* [BUGFIX] Distributor: fix issue where `-distributor.metric-relabeling-enabled` may cause distributors to panic. #7176
+* [BUGFIX] Distributor: fix issue where `-distributor.metric-relabeling-enabled` may cause distributors to write unsorted labels and corrupt blocks. #7326
 * [BUGFIX] Query-frontend: the `cortex_query_frontend_queries_total` report incorrectly reported `op="query"` for any request which wasn't a range query. Now the `op` label value can be one of the following: #7207
   * `query`: instant query
   * `query_range`: range query
@@ -123,7 +141,7 @@
 ### Mixin
 
 * [CHANGE] The `job` label matcher for distributor and gateway have been extended to include any deployment matching `distributor.*` and `cortex-gw.*` respectively. This change allows to match custom and multi-zone distributor and gateway deployments too. #6817
-* [ENHANCEMENT] Dashboards: Add panels for alertmanager activity of a tenant #6826
+* [ENHANCEMENT] Dashboards: Add panels for alertmanager activity of a tenant. #6826
 * [ENHANCEMENT] Dashboards: Add graphs to "Slow Queries" dashboard. #6880
 * [ENHANCEMENT] Dashboards: Update all deprecated "graph" panels to "timeseries" panels. #6864 #7413 #7457
 * [ENHANCEMENT] Dashboards: Make most columns in "Slow Queries" sortable. #7000
@@ -200,7 +218,7 @@
 * [ENHANCEMENT] Add template render command to render locally a template. #7325
 * [ENHANCEMENT] Add `--extra-headers` option to `mimirtool rules` command to add extra headers to requests for auth. #7141
 * [ENHANCEMENT] Analyze Prometheus: set tenant header. #6737
-* [ENHANCEMENT] Add argument `--output-dir` to `mimirtool alertmanager get` where the config and templates will be written to and can be loaded via `mimirtool alertmanager load` #6760
+* [ENHANCEMENT] Add argument `--output-dir` to `mimirtool alertmanager get` where the config and templates will be written to and can be loaded via `mimirtool alertmanager load`. #6760
 * [BUGFIX] Analyze rule-file: .metricsUsed field wasn't populated. #6953
 
 ### Mimir Continuous Test
