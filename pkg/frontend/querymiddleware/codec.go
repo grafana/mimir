@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"golang.org/x/exp/slices"
 
@@ -223,6 +224,8 @@ func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Requ
 		return c.decodeRangeQueryRequest(r)
 	case IsInstantQuery(r.URL.Path):
 		return c.decodeInstantQueryRequest(r)
+	case IsLabelNamesQuery(r.URL.Path):
+		return c.decodeLabelNamesQueryRequest(r)
 	default:
 		return nil, fmt.Errorf("prometheus codec doesn't support requests to %s", r.URL.Path)
 	}
@@ -248,6 +251,39 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, er
 	result.Time, err = DecodeInstantQueryTimeParams(r, time.Now)
 	if err != nil {
 		return nil, decorateWithParamName(err, "time")
+	}
+
+	result.Query = r.FormValue("query")
+	result.Path = r.URL.Path
+	decodeOptions(r, &result.Options)
+	return &result, nil
+}
+
+func (prometheusCodec) decodeLabelNamesQueryRequest(r *http.Request) (Request, error) {
+	var result PrometheusLabelNamesQueryRequest
+	var err error
+	result.Start, result.End, err = DecodeLabelsQueryTimeParams(r)
+	if err != nil {
+		return nil, err
+	}
+
+	urlQueryParams, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	promLabelMatcherSets, err := parseRequestMatchersParam(urlQueryParams, "match[]")
+	if err != nil {
+		return nil, err
+	}
+
+	codecLabelMatcherSets := make([]*LabelMatchers, len(promLabelMatcherSets))
+	for i, promLabelMatcher := range promLabelMatcherSets {
+		codecMatcherSet, err := toCodecLabelMatcherSet(promLabelMatcher)
+		if err != nil {
+			return nil, err
+		}
+		codecLabelMatcherSets[i] = &LabelMatchers{Matchers: codecMatcherSet}
 	}
 
 	result.Query = r.FormValue("query")
@@ -696,4 +732,54 @@ func decorateWithParamName(err error, field string) error {
 		return apierror.Newf(apierror.TypeBadData, errTmpl, field, status.Message())
 	}
 	return apierror.Newf(apierror.TypeBadData, errTmpl, field, err)
+}
+
+func toCodecLabelMatcherSet(matcherSet []*labels.Matcher) ([]*LabelMatcher, error) {
+	result := make([]*LabelMatcher, 0, len(matcherSet))
+	for _, matcher := range matcherSet {
+		var mType MatchType
+		switch matcher.Type {
+		case labels.MatchEqual:
+			mType = EQUAL
+		case labels.MatchNotEqual:
+			mType = NOT_EQUAL
+		case labels.MatchRegexp:
+			mType = REGEX_MATCH
+		case labels.MatchNotRegexp:
+			mType = REGEX_NO_MATCH
+		default:
+			return nil, fmt.Errorf("invalid matcher type")
+		}
+		result = append(result, &LabelMatcher{
+			Type:  mType,
+			Name:  matcher.Name,
+			Value: matcher.Value,
+		})
+	}
+	return result, nil
+}
+
+func fromCodecLabelMatcherSet(matcherSet []*LabelMatcher) ([]*labels.Matcher, error) {
+	result := make([]*labels.Matcher, 0, len(matcherSet))
+	for _, matcher := range matcherSet {
+		var mtype labels.MatchType
+		switch matcher.Type {
+		case EQUAL:
+			mtype = labels.MatchEqual
+		case NOT_EQUAL:
+			mtype = labels.MatchNotEqual
+		case REGEX_MATCH:
+			mtype = labels.MatchRegexp
+		case REGEX_NO_MATCH:
+			mtype = labels.MatchNotRegexp
+		default:
+			return nil, fmt.Errorf("invalid matcher type")
+		}
+		matcher, err := labels.NewMatcher(mtype, matcher.Name, matcher.Value)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, matcher)
+	}
+	return result, nil
 }

@@ -431,8 +431,16 @@ func IsCardinalityQuery(path string) bool {
 		strings.HasSuffix(path, cardinalityLabelValuesPathSuffix)
 }
 
+func IsLabelNamesQuery(path string) bool {
+	return strings.HasSuffix(path, labelNamesPathSuffix)
+}
+
+func IsLabelValuesQuery(path string) bool {
+	return labelValuesPathSuffix.MatchString(path)
+}
+
 func IsLabelsQuery(path string) bool {
-	return strings.HasSuffix(path, labelNamesPathSuffix) || labelValuesPathSuffix.MatchString(path)
+	return IsLabelNamesQuery(path) || IsLabelValuesQuery(path)
 }
 
 func IsActiveSeriesQuery(path string) bool {

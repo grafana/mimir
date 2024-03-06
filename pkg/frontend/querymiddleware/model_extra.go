@@ -161,6 +161,61 @@ func (r *PrometheusInstantQueryRequest) AddSpanTags(sp opentracing.Span) {
 	sp.SetTag("time", timestamp.Time(r.GetTime()).String())
 }
 
+func (r *PrometheusLabelNamesQueryRequest) GetStep() int64 {
+	return 0
+}
+
+func (r *PrometheusLabelNamesQueryRequest) WithID(id int64) Request {
+	newRequest := *r
+	newRequest.Id = id
+	return &newRequest
+}
+
+func (r *PrometheusLabelNamesQueryRequest) WithStartEnd(start int64, end int64) Request {
+	newRequest := *r
+	newRequest.Start = start
+	newRequest.End = end
+	return &newRequest
+}
+
+func (r *PrometheusLabelNamesQueryRequest) WithQuery(s string) Request {
+	newRequest := *r
+	newRequest.Query = s
+	return &newRequest
+}
+
+func (r *PrometheusLabelNamesQueryRequest) WithTotalQueriesHint(totalQueries int32) Request {
+	newRequest := *r
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{TotalQueries: totalQueries}
+	} else {
+		*newRequest.Hints = *(r.Hints)
+		newRequest.Hints.TotalQueries = totalQueries
+	}
+	return &newRequest
+}
+
+func (r *PrometheusLabelNamesQueryRequest) WithEstimatedSeriesCountHint(count uint64) Request {
+	newRequest := *r
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{
+			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
+		}
+	} else {
+		*newRequest.Hints = *(r.Hints)
+		newRequest.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
+	}
+	return &newRequest
+}
+
+// AddSpanTags writes query information about the current `PrometheusLabelNamesQueryRequest`
+// to a span's tag ("attributes" in OpenTelemetry parlance).
+func (r *PrometheusLabelNamesQueryRequest) AddSpanTags(sp opentracing.Span) {
+	sp.SetTag("query", r.GetQuery())
+	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
+	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+}
+
 func (d *PrometheusData) UnmarshalJSON(b []byte) error {
 	v := struct {
 		Type   model.ValueType    `json:"resultType"`
