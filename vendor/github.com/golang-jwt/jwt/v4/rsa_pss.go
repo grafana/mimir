@@ -82,7 +82,15 @@ func init() {
 
 // Verify implements token verification for the SigningMethod.
 // For this verify method, key must be an rsa.PublicKey struct
-func (m *SigningMethodRSAPSS) Verify(signingString string, sig []byte, key interface{}) error {
+func (m *SigningMethodRSAPSS) Verify(signingString, signature string, key interface{}) error {
+	var err error
+
+	// Decode the signature
+	var sig []byte
+	if sig, err = DecodeSegment(signature); err != nil {
+		return err
+	}
+
 	var rsaKey *rsa.PublicKey
 	switch k := key.(type) {
 	case *rsa.PublicKey:
@@ -108,19 +116,19 @@ func (m *SigningMethodRSAPSS) Verify(signingString string, sig []byte, key inter
 
 // Sign implements token signing for the SigningMethod.
 // For this signing method, key must be an rsa.PrivateKey struct
-func (m *SigningMethodRSAPSS) Sign(signingString string, key interface{}) ([]byte, error) {
+func (m *SigningMethodRSAPSS) Sign(signingString string, key interface{}) (string, error) {
 	var rsaKey *rsa.PrivateKey
 
 	switch k := key.(type) {
 	case *rsa.PrivateKey:
 		rsaKey = k
 	default:
-		return nil, ErrInvalidKeyType
+		return "", ErrInvalidKeyType
 	}
 
 	// Create the hasher
 	if !m.Hash.Available() {
-		return nil, ErrHashUnavailable
+		return "", ErrHashUnavailable
 	}
 
 	hasher := m.Hash.New()
@@ -128,8 +136,8 @@ func (m *SigningMethodRSAPSS) Sign(signingString string, key interface{}) ([]byt
 
 	// Sign the string and return the encoded bytes
 	if sigBytes, err := rsa.SignPSS(rand.Reader, rsaKey, m.Hash, hasher.Sum(nil), m.Options); err == nil {
-		return sigBytes, nil
+		return EncodeSegment(sigBytes), nil
 	} else {
-		return nil, err
+		return "", err
 	}
 }

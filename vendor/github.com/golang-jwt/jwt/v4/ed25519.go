@@ -34,7 +34,8 @@ func (m *SigningMethodEd25519) Alg() string {
 
 // Verify implements token verification for the SigningMethod.
 // For this verify method, key must be an ed25519.PublicKey
-func (m *SigningMethodEd25519) Verify(signingString string, sig []byte, key interface{}) error {
+func (m *SigningMethodEd25519) Verify(signingString, signature string, key interface{}) error {
+	var err error
 	var ed25519Key ed25519.PublicKey
 	var ok bool
 
@@ -44,6 +45,12 @@ func (m *SigningMethodEd25519) Verify(signingString string, sig []byte, key inte
 
 	if len(ed25519Key) != ed25519.PublicKeySize {
 		return ErrInvalidKey
+	}
+
+	// Decode the signature
+	var sig []byte
+	if sig, err = DecodeSegment(signature); err != nil {
+		return err
 	}
 
 	// Verify the signature
@@ -56,25 +63,23 @@ func (m *SigningMethodEd25519) Verify(signingString string, sig []byte, key inte
 
 // Sign implements token signing for the SigningMethod.
 // For this signing method, key must be an ed25519.PrivateKey
-func (m *SigningMethodEd25519) Sign(signingString string, key interface{}) ([]byte, error) {
+func (m *SigningMethodEd25519) Sign(signingString string, key interface{}) (string, error) {
 	var ed25519Key crypto.Signer
 	var ok bool
 
 	if ed25519Key, ok = key.(crypto.Signer); !ok {
-		return nil, ErrInvalidKeyType
+		return "", ErrInvalidKeyType
 	}
 
 	if _, ok := ed25519Key.Public().(ed25519.PublicKey); !ok {
-		return nil, ErrInvalidKey
+		return "", ErrInvalidKey
 	}
 
-	// Sign the string and return the result. ed25519 performs a two-pass hash
-	// as part of its algorithm. Therefore, we need to pass a non-prehashed
-	// message into the Sign function, as indicated by crypto.Hash(0)
+	// Sign the string and return the encoded result
+	// ed25519 performs a two-pass hash as part of its algorithm. Therefore, we need to pass a non-prehashed message into the Sign function, as indicated by crypto.Hash(0)
 	sig, err := ed25519Key.Sign(rand.Reader, []byte(signingString), crypto.Hash(0))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-
-	return sig, nil
+	return EncodeSegment(sig), nil
 }

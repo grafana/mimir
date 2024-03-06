@@ -97,11 +97,10 @@ func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, ex
 
 // Key outputs the key that can be used to uniquely look up this entry in a map.
 func (a AccessToken) Key() string {
-	key := strings.Join(
+	return strings.Join(
 		[]string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes},
 		shared.CacheKeySeparator,
 	)
-	return strings.ToLower(key)
 }
 
 // FakeValidate enables tests to fake access token validation
@@ -168,11 +167,10 @@ func NewIDToken(homeID, env, realm, clientID, idToken string) IDToken {
 
 // Key outputs the key that can be used to uniquely look up this entry in a map.
 func (id IDToken) Key() string {
-	key := strings.Join(
+	return strings.Join(
 		[]string{id.HomeAccountID, id.Environment, id.CredentialType, id.ClientID, id.Realm},
 		shared.CacheKeySeparator,
 	)
-	return strings.ToLower(key)
 }
 
 // AppMetaData is the JSON representation of application metadata for encoding to storage.
@@ -195,9 +193,8 @@ func NewAppMetaData(familyID, clientID, environment string) AppMetaData {
 
 // Key outputs the key that can be used to uniquely look up this entry in a map.
 func (a AppMetaData) Key() string {
-	key := strings.Join(
+	return strings.Join(
 		[]string{"AppMetaData", a.Environment, a.ClientID},
 		shared.CacheKeySeparator,
 	)
-	return strings.ToLower(key)
 }

@@ -28,8 +28,7 @@ func init() {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		TLSClientConfig: &tls.Config{
-			MinVersion:    tls.VersionTLS12,
-			Renegotiation: tls.RenegotiateFreelyAsClient,
+			MinVersion: tls.VersionTLS12,
 		},
 	}
 	defaultHTTPClient = &http.Client{

@@ -55,7 +55,15 @@ func (m *SigningMethodECDSA) Alg() string {
 
 // Verify implements token verification for the SigningMethod.
 // For this verify method, key must be an ecdsa.PublicKey struct
-func (m *SigningMethodECDSA) Verify(signingString string, sig []byte, key interface{}) error {
+func (m *SigningMethodECDSA) Verify(signingString, signature string, key interface{}) error {
+	var err error
+
+	// Decode the signature
+	var sig []byte
+	if sig, err = DecodeSegment(signature); err != nil {
+		return err
+	}
+
 	// Get the key
 	var ecdsaKey *ecdsa.PublicKey
 	switch k := key.(type) {
@@ -89,19 +97,19 @@ func (m *SigningMethodECDSA) Verify(signingString string, sig []byte, key interf
 
 // Sign implements token signing for the SigningMethod.
 // For this signing method, key must be an ecdsa.PrivateKey struct
-func (m *SigningMethodECDSA) Sign(signingString string, key interface{}) ([]byte, error) {
+func (m *SigningMethodECDSA) Sign(signingString string, key interface{}) (string, error) {
 	// Get the key
 	var ecdsaKey *ecdsa.PrivateKey
 	switch k := key.(type) {
 	case *ecdsa.PrivateKey:
 		ecdsaKey = k
 	default:
-		return nil, ErrInvalidKeyType
+		return "", ErrInvalidKeyType
 	}
 
 	// Create the hasher
 	if !m.Hash.Available() {
-		return nil, ErrHashUnavailable
+		return "", ErrHashUnavailable
 	}
 
 	hasher := m.Hash.New()
@@ -112,7 +120,7 @@ func (m *SigningMethodECDSA) Sign(signingString string, key interface{}) ([]byte
 		curveBits := ecdsaKey.Curve.Params().BitSize
 
 		if m.CurveBits != curveBits {
-			return nil, ErrInvalidKey
+			return "", ErrInvalidKey
 		}
 
 		keyBytes := curveBits / 8
@@ -127,8 +135,8 @@ func (m *SigningMethodECDSA) Sign(signingString string, key interface{}) ([]byte
 		r.FillBytes(out[0:keyBytes]) // r is assigned to the first half of output.
 		s.FillBytes(out[keyBytes:])  // s is assigned to the second half of output.
 
-		return out, nil
+		return EncodeSegment(out), nil
 	} else {
-		return nil, err
+		return "", err
 	}
 }

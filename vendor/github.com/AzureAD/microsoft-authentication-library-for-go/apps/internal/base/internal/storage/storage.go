@@ -134,7 +134,8 @@ const scopeSeparator = " "
 
 // Write writes a token response to the cache and returns the account information the token is stored with.
 func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error) {
-	homeAccountID := tokenResponse.HomeAccountID()
+	authParameters.HomeAccountID = tokenResponse.ClientInfo.HomeAccountID()
+	homeAccountID := authParameters.HomeAccountID
 	environment := authParameters.AuthorityInfo.Host
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID

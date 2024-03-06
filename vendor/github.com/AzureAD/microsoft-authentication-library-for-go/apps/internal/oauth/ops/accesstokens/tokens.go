@@ -146,6 +146,17 @@ func (c *ClientInfo) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// HomeAccountID creates the home account ID.
+func (c ClientInfo) HomeAccountID() string {
+	if c.UID == "" {
+		return ""
+	} else if c.UTID == "" {
+		return fmt.Sprintf("%s.%s", c.UID, c.UID)
+	} else {
+		return fmt.Sprintf("%s.%s", c.UID, c.UTID)
+	}
+}
+
 // Scopes represents scopes in a TokenResponse.
 type Scopes struct {
 	Slice []string
@@ -195,19 +206,6 @@ func (tr *TokenResponse) ComputeScope(authParams authority.AuthParams) {
 	tr.scopesComputed = true
 }
 
-// HomeAccountID uniquely identifies the authenticated account, if any. It's "" when the token is an app token.
-func (tr *TokenResponse) HomeAccountID() string {
-	id := tr.IDToken.Subject
-	if uid := tr.ClientInfo.UID; uid != "" {
-		utid := tr.ClientInfo.UTID
-		if utid == "" {
-			utid = uid
-		}
-		id = fmt.Sprintf("%s.%s", uid, utid)
-	}
-	return id
-}
-
 // Validate validates the TokenResponse has basic valid values. It must be called
 // after ComputeScopes() is called.
 func (tr *TokenResponse) Validate() error {
@@ -233,7 +231,7 @@ func (tr *TokenResponse) CacheKey(authParams authority.AuthParams) string {
 		return authParams.AppKey()
 	}
 	if authParams.IsConfidentialClient || authParams.AuthorizationType == authority.ATRefreshToken {
-		return tr.HomeAccountID()
+		return tr.ClientInfo.HomeAccountID()
 	}
 	return ""
 }
@@ -296,11 +294,10 @@ func (rt RefreshToken) Key() string {
 		fourth = rt.ClientID
 	}
 
-	key := strings.Join(
+	return strings.Join(
 		[]string{rt.HomeAccountID, rt.Environment, rt.CredentialType, fourth},
 		shared.CacheKeySeparator,
 	)
-	return strings.ToLower(key)
 }
 
 func (rt RefreshToken) GetSecret() string {
