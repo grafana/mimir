@@ -1013,29 +1013,6 @@ github.com/thanos-io/objstore/providers/gcs
 github.com/thanos-io/objstore/providers/s3
 github.com/thanos-io/objstore/providers/swift
 github.com/thanos-io/objstore/tracing/opentracing
-# github.com/thanos-io/promql-engine v0.0.0-20230821193351-e1ae4275b96e
-## explicit; go 1.19
-github.com/thanos-io/promql-engine/api
-github.com/thanos-io/promql-engine/engine
-github.com/thanos-io/promql-engine/execution
-github.com/thanos-io/promql-engine/execution/aggregate
-github.com/thanos-io/promql-engine/execution/binary
-github.com/thanos-io/promql-engine/execution/exchange
-github.com/thanos-io/promql-engine/execution/function
-github.com/thanos-io/promql-engine/execution/model
-github.com/thanos-io/promql-engine/execution/noop
-github.com/thanos-io/promql-engine/execution/parse
-github.com/thanos-io/promql-engine/execution/remote
-github.com/thanos-io/promql-engine/execution/scan
-github.com/thanos-io/promql-engine/execution/step_invariant
-github.com/thanos-io/promql-engine/execution/storage
-github.com/thanos-io/promql-engine/execution/unary
-github.com/thanos-io/promql-engine/execution/warnings
-github.com/thanos-io/promql-engine/extlabels
-github.com/thanos-io/promql-engine/logicalplan
-github.com/thanos-io/promql-engine/parser
-github.com/thanos-io/promql-engine/query
-github.com/thanos-io/promql-engine/worker
 # github.com/uber/jaeger-client-go v2.30.0+incompatible
 ## explicit
 github.com/uber/jaeger-client-go
@@ -1288,11 +1265,6 @@ golang.org/x/tools/internal/typesinternal
 ## explicit; go 1.17
 golang.org/x/xerrors
 golang.org/x/xerrors/internal
-# gonum.org/v1/gonum v0.12.0
-## explicit; go 1.18
-gonum.org/v1/gonum/floats
-gonum.org/v1/gonum/floats/scalar
-gonum.org/v1/gonum/internal/asm/f64
 # google.golang.org/api v0.135.0
 ## explicit; go 1.19
 google.golang.org/api/googleapi

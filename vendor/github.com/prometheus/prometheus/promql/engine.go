@@ -53,7 +53,7 @@ const (
 	subsystem            = "engine"
 	queryTag             = "query"
 	env                  = "query execution"
-	DefaultLookbackDelta = 5 * time.Minute
+	defaultLookbackDelta = 5 * time.Minute
 
 	// The largest SampleValue that can be converted to an int64 without overflow.
 	maxInt64 = 9223372036854774784
@@ -377,9 +377,9 @@ func NewEngine(opts EngineOpts) *Engine {
 	}
 
 	if opts.LookbackDelta == 0 {
-		opts.LookbackDelta = DefaultLookbackDelta
+		opts.LookbackDelta = defaultLookbackDelta
 		if l := opts.Logger; l != nil {
-			level.Debug(l).Log("msg", "Lookback delta is zero, setting to default value", "value", DefaultLookbackDelta)
+			level.Debug(l).Log("msg", "Lookback delta is zero, setting to default value", "value", defaultLookbackDelta)
 		}
 	}
 
