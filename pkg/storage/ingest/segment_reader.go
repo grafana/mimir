@@ -9,6 +9,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
@@ -56,18 +57,14 @@ func (c *SegmentReader) running(ctx context.Context) error {
 	for try.Ongoing() {
 		refs := c.metadata.WatchSegments(ctx, c.partitionID, c.lastOffsetID)
 
-		for _, ref := range refs {
-			segment, err := c.storage.FetchSegmentWithRetries(ctx, ref, c.hedgeDelay, c.readTimeout)
-			if err != nil {
-				level.Warn(c.logger).Log("msg", "segment reader failed to fetch segment", "segment_ref", ref.String(), "err", err)
+		segments, err := c.fetchSegments(ctx, refs)
+		if err != nil {
+			try.Wait()
+			break
+		}
+		try.Reset()
 
-				try.Wait()
-				break
-			}
-
-			// No error occurred, so we can reset the backoff.
-			try.Reset()
-
+		for _, segment := range segments {
 			// Add the fetched segment to the buffer.
 			select {
 			case c.segmentsBuffer <- segment:
@@ -81,6 +78,25 @@ func (c *SegmentReader) running(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Fetches segments in parallel. Returns segments in the same order as refs.
+func (c *SegmentReader) fetchSegments(ctx context.Context, segmentRefs []SegmentRef) ([]*Segment, error) {
+	segments := make([]*Segment, len(segmentRefs))
+
+	err := concurrency.ForEachJob(ctx, len(segmentRefs), 0, func(ctx context.Context, idx int) error {
+		ref := segmentRefs[idx]
+		segment, err := c.storage.FetchSegmentWithRetries(ctx, ref, c.hedgeDelay, c.readTimeout)
+		if err != nil {
+			level.Warn(c.logger).Log("msg", "segment reader failed to fetch segment", "segment_ref", ref.String(), "err", err)
+			return nil
+		}
+
+		level.Debug(c.logger).Log("msg", "segment reader fetched segment", "segment_ref", ref.String())
+		segments[idx] = segment
+		return nil
+	})
+	return segments, err
 }
 
 // WaitNextSegment blocks until the next segment has been fetched by the reader,
