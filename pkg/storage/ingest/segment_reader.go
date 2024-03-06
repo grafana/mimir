@@ -85,6 +85,8 @@ func (c *SegmentReader) running(ctx context.Context) error {
 	return nil
 }
 
+const maxSegmentsFetchConcurrency = 16
+
 // Fetches segments in parallel. Returns segments in the same order as refs.
 // SegmentBuf may have some segments already from previous fetch. If refs are correct, such segments are not reused.
 // If no error is returned, all segments were fetched.
@@ -95,7 +97,7 @@ func (c *SegmentReader) fetchSegments(ctx context.Context, segmentRefs []Segment
 	// We use cap, not len, because we want to clear the rest of the slice (after fetched segments) later.
 	segmentsBuf = segmentsBuf[:cap(segmentsBuf)]
 
-	err := concurrency.ForEachJob(ctx, len(segmentRefs), 0, func(ctx context.Context, idx int) error {
+	err := concurrency.ForEachJob(ctx, len(segmentRefs), maxSegmentsFetchConcurrency, func(ctx context.Context, idx int) error {
 		ref := segmentRefs[idx]
 		if segmentsBuf[idx] != nil && segmentsBuf[idx].Ref == ref {
 			// We already have the segment from previous fetch. No need to fetch it again.
