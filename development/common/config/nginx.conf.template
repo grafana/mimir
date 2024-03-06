@@ -69,7 +69,7 @@ http {
     location /prometheus/api/v1/rules {
       proxy_pass      http://${RULER_HOST}$request_uri;
     }
-
+    
     location /prometheus/api/v1/alerts {
       proxy_pass      http://${RULER_HOST}$request_uri;
     }
