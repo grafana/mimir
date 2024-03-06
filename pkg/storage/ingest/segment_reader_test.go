@@ -115,7 +115,8 @@ func TestSegmentReader_RefetchSegments(t *testing.T) {
 
 	instrumentedBucket := objstore.WrapWithMetrics(bkt, nil, "test")
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
 
 	// Start the metadata store service.
 	metadata := NewMetadataStore(newMetadataDatabaseMemory(), log.NewNopLogger())

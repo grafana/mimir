@@ -75,12 +75,14 @@ func (c *SegmentReader) running(ctx context.Context) error {
 		}
 		try.Reset()
 
-		for _, segment := range segments {
+		for ix, segment := range segments {
 			// Add the fetched segment to the buffer.
 			select {
 			case c.segmentsBuffer <- segment:
 				// The segment has been successfully loaded, so we can update the last offset ID.
 				c.lastOffsetID = segment.Ref.OffsetID
+				// we don't need to keep reference to the segment anymore.
+				segments[ix] = nil
 
 			case <-ctx.Done():
 				return ctx.Err()
