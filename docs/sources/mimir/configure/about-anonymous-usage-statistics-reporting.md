@@ -57,7 +57,9 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
       - Metadata query.
       - Cardinality analysis query.
 
-> **Note**: Mimir maintainers commit to keeping the list of tracked information updated over time, and reporting any change both via the CHANGELOG and the release notes.
+{{< admonition type="note" >}}
+Mimir maintainers commit to keeping the list of tracked information updated over time, and reporting any change both via the CHANGELOG and the release notes.
+{{< /admonition >}}
 
 ## Disable the anonymous usage statistics reporting
 

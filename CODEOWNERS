@@ -6,9 +6,11 @@
 /.github/workflows/publish-technical-documentation-release-helm-charts.yml  @grafana/docs-tooling @grafana/mimir-maintainers
 /.github/workflows/publish-technical-documentation-release-mimir.yml        @grafana/docs-tooling @grafana/mimir-maintainers
 /.github/workflows/update-make-docs.yml                                     @grafana/docs-tooling @grafana/mimir-maintainers
-/docs/                                                                      @grafana/docs-metrics @grafana/mimir-maintainers
+
+/docs/                                                                      @jdbaldry @grafana/mimir-maintainers
 /docs/docs.mk                                                               @grafana/docs-tooling @grafana/mimir-maintainers
 /docs/make-docs                                                             @grafana/docs-tooling @grafana/mimir-maintainers
+/docs/proposals                                                             @grafana/mimir-maintainers
 /docs/variables.mk                                                          @grafana/docs-tooling @grafana/mimir-maintainers
 
 # Alertmanager and ruler.
@@ -26,3 +28,4 @@ CHANGELOG.md
 go.mod @grafana/mimir-maintainers @grafanabot
 go.sum @grafana/mimir-maintainers @grafanabot
 /vendor/ @grafana/mimir-maintainers @grafanabot
+/vendor/github.com/prometheus/alertmanager @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers @grafanabot

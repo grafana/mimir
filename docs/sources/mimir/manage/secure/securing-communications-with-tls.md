@@ -19,7 +19,12 @@ components. This topic describes the process used to set up TLS.
 To establish secure inter-component communication in Grafana Mimir with TLS, you must generate certificates using a certificate authority (CA).
 The CA should be private to the organization because certificates signed by the CA will have permissions to communicate with the cluster.
 
-> **Note**: The generated certificates are valid for 100,000 days. You can change the duration by adjusting the `-days` option in the command. We recommend that you replace the certificates every two years.
+{{< admonition type="note" >}}
+The generated certificates are valid for 100,000 days.
+You can change the duration by adjusting the `-days` option in the command.
+
+You should replace certificates more regularly.
+{{< /admonition >}}
 
 The following script generates self-signed certificates for the cluster.
 The script generates private keys `client.key`, `server.key` and certificates `client.crt`, `server.crt` for both the client and server.

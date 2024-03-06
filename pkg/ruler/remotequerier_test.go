@@ -185,26 +185,22 @@ func TestRemoteQuerier_Query(t *testing.T) {
 	})
 }
 
-func TestRemoteQuerier_SendRequest(t *testing.T) {
+func TestRemoteQuerier_QueryRetryOnFailure(t *testing.T) {
 	const errMsg = "this is an error"
-	var (
-		successfulResponse = &httpgrpc.HTTPResponse{
-			Code: http.StatusOK,
-			Headers: []*httpgrpc.Header{
-				{Key: "Content-Type", Values: []string{"application/json"}},
-			},
-			Body: []byte(`{
-						"status": "success","data": {"resultType":"vector","result":[]}
-					}`),
-		}
-		erroneousResponse = &httpgrpc.HTTPResponse{
-			Code: http.StatusBadRequest,
-			Headers: []*httpgrpc.Header{
-				{Key: "Content-Type", Values: []string{"application/json"}},
-			},
-			Body: []byte("this is an error"),
-		}
-	)
+	successfulResponse := &httpgrpc.HTTPResponse{
+		Code: http.StatusOK,
+		Headers: []*httpgrpc.Header{
+			{Key: "Content-Type", Values: []string{"application/json"}},
+		},
+		Body: []byte(`{"status": "success","data": {"resultType":"vector","result":[]}}`),
+	}
+	erroneousResponse := &httpgrpc.HTTPResponse{
+		Code: http.StatusBadRequest,
+		Headers: []*httpgrpc.Header{
+			{Key: "Content-Type", Values: []string{"application/json"}},
+		},
+		Body: []byte("this is an error"),
+	}
 
 	tests := map[string]struct {
 		response        *httpgrpc.HTTPResponse
@@ -237,6 +233,16 @@ func TestRemoteQuerier_SendRequest(t *testing.T) {
 			expectedError:   status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
 			expectedRetries: true,
 		},
+		"gRPC ResourceExhausted error is retried": {
+			err:             status.Error(codes.ResourceExhausted, errMsg),
+			expectedError:   status.Error(codes.ResourceExhausted, errMsg),
+			expectedRetries: true,
+		},
+		"errors about execeeding gRPC server's limit are not retried": {
+			err:             status.Error(codes.ResourceExhausted, "trying to send message larger than max"),
+			expectedError:   status.Error(codes.ResourceExhausted, "trying to send message larger than max"),
+			expectedRetries: false,
+		},
 		"errors with code 4xx are not retried": {
 			err:             httpgrpc.Errorf(http.StatusBadRequest, errMsg),
 			expectedError:   httpgrpc.Errorf(http.StatusBadRequest, errMsg),
@@ -257,10 +263,7 @@ func TestRemoteQuerier_SendRequest(t *testing.T) {
 	}
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			var (
-				inReq *httpgrpc.HTTPRequest
-				count atomic.Int64
-			)
+			var count atomic.Int64
 
 			ctx, cancel := context.WithCancel(context.Background())
 			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
@@ -275,7 +278,7 @@ func TestRemoteQuerier_SendRequest(t *testing.T) {
 			}
 			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
 			require.Equal(t, int64(0), count.Load())
-			_, err := q.sendRequest(ctx, inReq, log.NewNopLogger())
+			_, err := q.Query(ctx, "qs", time.Now())
 			if testCase.err == nil {
 				if testCase.expectedError == nil {
 					require.NoError(t, err)
@@ -717,63 +720,6 @@ func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestRemoteQuerier_BackoffRetry(t *testing.T) {
-	tcs := map[string]struct {
-		failedRequests  int
-		expectedError   string
-		requestDeadline time.Duration
-	}{
-		"succeed on failed requests <= max retries": {
-			failedRequests: maxRequestRetries,
-		},
-		"fail on failed requests > max retries": {
-			failedRequests: maxRequestRetries + 1,
-			expectedError:  "failed request: 4",
-		},
-		"return last known error on context cancellation": {
-			failedRequests:  1,
-			requestDeadline: 50 * time.Millisecond, // force context cancellation while waiting for retry
-			expectedError:   "context deadline exceeded while retrying request, last err was: failed request: 1",
-		},
-	}
-	for tn, tc := range tcs {
-		t.Run(tn, func(t *testing.T) {
-			retries := 0
-			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
-				retries++
-				if retries <= tc.failedRequests {
-					return nil, fmt.Errorf("failed request: %d", retries)
-				}
-				return &httpgrpc.HTTPResponse{
-					Code: http.StatusOK,
-					Headers: []*httpgrpc.Header{
-						{Key: "Content-Type", Values: []string{"application/json"}},
-					},
-					Body: []byte(`{
-						"status": "success","data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"773054.5916666666"]}]}
-					}`),
-				}, nil
-			}
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
-
-			ctx := context.Background()
-			if tc.requestDeadline > 0 {
-				var cancelFn context.CancelFunc
-				ctx, cancelFn = context.WithTimeout(ctx, tc.requestDeadline)
-				defer cancelFn()
-			}
-
-			resp, err := q.Query(ctx, "qs", time.Now())
-			if tc.expectedError != "" {
-				require.EqualError(t, err, tc.expectedError)
-			} else {
-				require.NotNil(t, resp)
-				require.Len(t, resp, 1)
-			}
-		})
-	}
-}
-
 func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 	var (
 		errorResp = &httpgrpc.HTTPResponse{
@@ -785,8 +731,8 @@ func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 				"status": "error","errorType": "execution"
 			}`),
 		}
-		error4xx = status.Error(http.StatusUnprocessableEntity, "this is a 4xx error")
-		error5xx = status.Error(http.StatusInternalServerError, "this is a 5xx error")
+		error4xx = httpgrpc.Errorf(http.StatusUnprocessableEntity, "this is a 4xx error")
+		error5xx = httpgrpc.Errorf(http.StatusInternalServerError, "this is a 5xx error")
 	)
 	testCases := map[string]struct {
 		resp         *httpgrpc.HTTPResponse

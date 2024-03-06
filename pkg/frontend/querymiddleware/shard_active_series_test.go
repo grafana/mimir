@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -270,12 +272,6 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			// Stub upstream with valid or invalid responses.
 			var requestCount atomic.Int32
 			upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-				defer func(body io.ReadCloser) {
-					if body != nil {
-						_ = body.Close()
-					}
-				}(r.Body)
-
 				_, _, err := user.ExtractOrgIDFromHTTPRequest(r)
 				require.NoError(t, err)
 				_, err = user.ExtractOrgID(r.Context())
@@ -358,12 +354,135 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 	}
 }
 
-func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
-	type activeSeriesResponse struct {
-		Data []labels.Labels `json:"data"`
+func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
+	const shardCount = 4
+
+	upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		require.NoError(t, r.ParseForm())
+		req, err := cardinality.DecodeActiveSeriesRequestFromValues(r.Form)
+		require.NoError(t, err)
+		shard, _, err := sharding.ShardFromMatchers(req.Matchers)
+		require.NoError(t, err)
+		require.NotNil(t, shard)
+
+		resp := fmt.Sprintf(`{"data": [{"__name__": "metric-%d"}]}`, shard.ShardIndex)
+
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(resp))}, nil
+	})
+
+	s := newShardActiveSeriesMiddleware(
+		upstream,
+		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
+		log.NewNopLogger(),
+	)
+
+	assertRoundTrip := func(t *testing.T, trip http.RoundTripper, req *http.Request) {
+		resp, err := trip.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var body io.Reader = resp.Body
+		if resp.Header.Get("Content-Encoding") == encodingTypeSnappyFramed {
+			body = s2.NewReader(resp.Body)
+		}
+
+		// For this test, if we can decode the response, it is enough to guaranty it worked. We proof actual validity
+		// of all kinds of responses in the tests above.
+		var res result
+		err = json.NewDecoder(body).Decode(&res)
+		require.NoError(t, err)
+		require.Len(t, res.Data, shardCount)
 	}
 
-	bcs := []int{2, 4, 8, 16, 32, 64, 128, 256, 512}
+	const reqCount = 20
+
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	wg.Add(reqCount)
+
+	for n := reqCount; n > 0; n-- {
+		go func(n int) {
+			defer wg.Done()
+
+			req := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__=~"metric-.*"}`))
+			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+			// Send every other request as snappy to proof the middleware doesn't mess up body encoders
+			if n%2 == 0 {
+				req.Header.Add("Accept-Encoding", encodingTypeSnappyFramed)
+			}
+
+			req = req.WithContext(user.InjectOrgID(req.Context(), "test"))
+
+			assertRoundTrip(t, s, req)
+		}(n)
+	}
+}
+
+func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
+	s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(fmt.Errorf("test ran to completion"))
+
+	body, err := json.Marshal(&activeSeriesResponse{Data: []labels.Labels{
+		// Make this large enough to ensure the whole response isn't buffered.
+		labels.FromStrings("lbl1", strings.Repeat("a", os.Getpagesize())),
+		labels.FromStrings("lbl2", "val2"),
+		labels.FromStrings("lbl3", "val3"),
+	}})
+	require.NoError(t, err)
+
+	responses := []*http.Response{
+		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
+		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
+	}
+
+	resp := s.mergeResponses(ctx, responses, "")
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
+
+	var buf bytes.Buffer
+	_, err = io.CopyN(&buf, resp.Body, int64(os.Getpagesize()))
+	require.NoError(t, err)
+
+	cancelCause := "request canceled while streaming response"
+	cancel(fmt.Errorf(cancelCause))
+
+	_, err = io.Copy(&buf, resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), cancelCause)
+}
+
+func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
+	b.Run("encoding=none", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1)
+	})
+
+	b.Run("encoding=snappy", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, encodingTypeSnappyFramed, 1)
+	})
+
+	b.Run("seriesCount=1_000", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1_000)
+	})
+
+	b.Run("seriesCount=10_000", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 10_000)
+	})
+}
+
+type activeSeriesResponse struct {
+	Data []labels.Labels `json:"data"`
+}
+
+func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string, numSeries int) {
+
+	bcs := []int{4, 16, 64, 128}
 
 	for _, numResponses := range bcs {
 		b.Run(fmt.Sprintf("num-responses-%d", numResponses), func(b *testing.B) {
@@ -374,7 +493,14 @@ func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
 				for i := 0; i < numResponses; i++ {
 
 					var apiResp activeSeriesResponse
-					apiResp.Data = append(apiResp.Data, labels.FromStrings("__name__", "m_"+fmt.Sprint(i), "job", "prometheus"+fmt.Sprint(i), "instance", "instance"+fmt.Sprint(i)))
+					for k := 0; k < numSeries; k++ {
+						apiResp.Data = append(apiResp.Data, labels.FromStrings(
+							"__name__", "m_"+fmt.Sprint(i),
+							"job", "prometheus"+fmt.Sprint(i),
+							"instance", "instance"+fmt.Sprint(i),
+							"series", fmt.Sprintf("series_%d", k),
+						))
+					}
 					body, _ := json.Marshal(&apiResp)
 
 					responses = append(responses, &http.Response{
@@ -392,7 +518,7 @@ func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				resp := s.mergeResponses(context.Background(), benchResponses[i], "")
+				resp := s.mergeResponses(context.Background(), benchResponses[i], encoding)
 
 				_, _ = io.Copy(io.Discard, resp.Body)
 				_ = resp.Body.Close()

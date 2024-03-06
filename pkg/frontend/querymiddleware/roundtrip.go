@@ -36,10 +36,6 @@ const (
 	cardinalityActiveSeriesPathSuffix = "/api/v1/cardinality/active_series"
 	labelNamesPathSuffix              = "/api/v1/labels"
 
-	// DefaultDeprecatedCacheUnalignedRequests is the default value for the deprecated querier frontend config DeprecatedCacheUnalignedRequests
-	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.12
-	DefaultDeprecatedCacheUnalignedRequests = false
-
 	// DefaultDeprecatedAlignQueriesWithStep is the default value for the deprecated querier frontend config DeprecatedAlignQueriesWithStep
 	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.14
 	DefaultDeprecatedAlignQueriesWithStep = false
@@ -58,16 +54,15 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval           time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	DeprecatedAlignQueriesWithStep   bool          `yaml:"align_queries_with_step" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.12, remove in Mimir 2.14 (https://github.com/grafana/mimir/issues/6712)
-	ResultsCacheConfig               `yaml:"results_cache"`
-	CacheResults                     bool          `yaml:"cache_results"`
-	MaxRetries                       int           `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout                time.Duration `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries                   bool          `yaml:"parallelize_shardable_queries"`
-	DeprecatedCacheUnalignedRequests bool          `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
-	TargetSeriesPerShard             uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ShardActiveSeriesQueries         bool          `yaml:"shard_active_series_queries" category:"experimental"`
+	SplitQueriesByInterval         time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
+	DeprecatedAlignQueriesWithStep bool          `yaml:"align_queries_with_step" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.12, remove in Mimir 2.14 (https://github.com/grafana/mimir/issues/6712)
+	ResultsCacheConfig             `yaml:"results_cache"`
+	CacheResults                   bool          `yaml:"cache_results"`
+	MaxRetries                     int           `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout              time.Duration `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries                 bool          `yaml:"parallelize_shardable_queries"`
+	TargetSeriesPerShard           uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ShardActiveSeriesQueries       bool          `yaml:"shard_active_series_queries" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -87,12 +82,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
-
-	// The query-frontend.cache-unaligned-requests flag has been moved to the limits.go file
-	// cfg.DeprecatedCacheUnalignedRequests is set to the default here for clarity
-	// and consistency with the process for migrating limits to per-tenant config
-	// TODO: Remove in Mimir 2.12.0
-	cfg.DeprecatedCacheUnalignedRequests = DefaultDeprecatedCacheUnalignedRequests
 
 	// The query-frontend.align-queries-with-step flag has been moved to the limits.go file
 	// cfg.DeprecatedAlignQueriesWithStep is set to the default here for clarity

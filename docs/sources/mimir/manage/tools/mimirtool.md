@@ -85,8 +85,13 @@ The following sections outline the commands that you can run against Grafana Mim
 
 The following commands interact with Grafana Mimir Alertmanager configuration and alert template files.
 
-> **Note:** The Mimir Alertmanager exposes the configuration API based on the path that you set via the `-server.path-prefix` flag; it does not use the path of the `-http.alertmanager-http-prefix` flag.
-> If you run Mimir with the default configuration (`-server.path-prefix`, where the default value is `/`), then only set the hostname for the `--address` flag of the `mimirtool` command; do not set a path-specific address. For example, `/` is correct, and `/alertmanager` is incorrect.
+{{< admonition type="note" >}}
+The Mimir Alertmanager exposes the configuration API based on the path that you set via the `-server.path-prefix` flag; it doesn't use the path of the `-http.alertmanager-http-prefix` flag.
+
+If you run Mimir with the default configuration, `-server.path-prefix`, where the default value is `/`, then only set the hostname for the `--address` flag of the `mimirtool` command; do not set a path-specific address.
+
+For example, `/` is correct, and `/alertmanager` is incorrect.
+{{< /admonition >}}
 
 #### Get Alertmanager configuration
 
@@ -158,6 +163,49 @@ The following command deletes the Alertmanager configuration in the Grafana Mimi
 mimirtool alertmanager delete
 ```
 
+#### Migrate Alertmanager configuration for UTF-8 in Alertmanager 0.27 and later
+
+The migrate-utf8 command translates any matchers that are incompatible with the UTF-8 parser into
+equivalent matchers that are compatible by enforcing double quoting on the right hand side
+of the matcher. The translation does not change their behavior.
+
+The command takes as input an existing configuration and template files, and prints as output
+the migrated configuration and template files:
+
+```bash
+mimirtool alertmanager migrate-utf8 <config_file> [template_files...]
+```
+
+You can also output the migrated configuration and template files to a folder which can be
+reviewed before being loaded back into the Alertmanager at a later time. We recommended you output
+the migrated files to a different folder than the original files so you always have the original files
+as a backup. For example, the following command outputs the migrated configuration and template files
+to a folder called `migrated`:
+
+```bash
+mimirtool alertmanager migrate-utf8 <config_file> [template_files...] --output-dir="migrated"
+```
+
+Within the output dir, the configuration file is named `config.yaml` and the template files ends in
+`.tpl`, where each template is written out to its own file.
+
+{{< admonition type="note" >}}
+When you use the `--output-dir` flag, the command only writes the output to files and doesn't print the configuration to the console.
+{{< /admonition >}}
+
+Once you have migrated your configuration, verify it using the verify command and the
+`--utf8-strict-mode` flag:
+
+```bash
+mimirtool alertmanager verify <config_file> [template_files...] --utf8-strict-mode
+```
+
+The command prints a warning with the text `UTF-8 mode enabled` to let you know the command is using
+UTF-8 strict mode to validate your configuration.
+
+If the command exits without error, and you're satisfied with the changes made to the migrated
+configuration and template files, reload it using the `load` command.
+
 #### Validate Alertmanager configuration
 
 The following command validates an Alertmanager configuration file. It does not load the configuration to the Alertmanager instance.
@@ -172,6 +220,24 @@ The following command verifies if alerts in an Alertmanager cluster are deduplic
 
 ```bash
 mimirtool alerts verify
+```
+
+#### Render template
+
+You can render your Alertmanager template with the `render` command.
+
+The argument to the `--template.glob` option is a glob that expands to the alert template paths.
+
+The argument to the `--template.data` option is a JSON file containing Alertmanager template data.
+
+The argument to the `--template.text` option is a Go template.
+The command renders this template with the templates found be expanding `--template-glob`.
+
+The following command render a template and prints it to the terminal.
+It assumes you have written the templates to the directory `templates`.
+
+```bash
+mimirtool alertmanager render --template.glob 'templates/*' --template.data alert_data1.json --template.text '{{ template "my_message" . }}'
 ```
 
 ### Rules
@@ -268,7 +334,9 @@ The `lint` command provides YAML and PromQL expression formatting within the rul
 This command edits the rule file in place.
 To perform a trial run that does not make changes, you can use the dry run flag (`-n`).
 
-> **Note:** This command does not verify if a query is correct and does not interact with your Grafana Mimir cluster.
+{{< admonition type="note" >}}
+This command doesn't verify if a query is correct and doesn't interact with your Grafana Mimir cluster.
+{{< /admonition >}}
 
 ```bash
 mimirtool rules lint <file_path>...
@@ -282,7 +350,9 @@ This `prepare` command prepares a rules file that you upload to Grafana Mimir.
 It lints all PromQL expressions and adds a label to your PromQL query aggregations in the file.
 The format of the file is the same format as shown in [rules load](#load-rule-group).
 
-> **Note:** This command does not interact with your Grafana Mimir cluster.
+{{< admonition type="note" >}}
+This command doesn't interact with your Grafana Mimir cluster.
+{{< /admonition >}}
 
 ```bash
 mimirtool rules prepare <file_path>...
@@ -506,7 +576,9 @@ The `acl` command generates the label-based access control header used in Grafan
 
 The following command enables you to generate a header that you can use to enforce access control rules in Grafana Enterprise Metrics or Grafana Cloud.
 
-> **Note**: Grafana Mimir does not support ACLs.
+{{< admonition type="note" >}}
+Grafana Mimir doesn't support ACLs.
+{{< /admonition >}}
 
 ```bash
 mimirtool acl generate-header --id=<tenant_id> --rule=<promql_selector>
@@ -655,8 +727,10 @@ The command uses the output from a previous run of `analyze grafana`, `analyze d
 or `analyze rule-file` to show the number of series in the Prometheus instance that are used in dashboards or rules, or both.
 This command also shows which metrics exist in Grafana Cloud that are _not_ in dashboards or rules. The output is a JSON file.
 
-> **Note:** The command makes a request for every active series in the Prometheus instance.
-> For Prometheus instances with a large number of active series, this command might take time to complete.
+{{< admonition type="note" >}}
+The command makes a request for every active series in the Prometheus instance.
+For Prometheus instances with a large number of active series, this command might take time to complete.
+{{< /admonition >}}
 
 ```bash
 mimirtool analyze prometheus --address=<url> --id=<tenant_id>
@@ -824,7 +898,12 @@ server:
   http_listen_port: 80
 ```
 
-> **Note:** As a precaution,`server.http_listen_port` is included. The default value in Grafana Mimir changed from 80 to 8080. Unless you explicitly set the port in the input configuration, the tool outputs the old default value.
+{{< admonition type="note" >}}
+As a precaution,the output file includes `server.http_listen_port`.
+The default value in Grafana Mimir changed from 80 to 8080.
+
+Unless you explicitly set the port in the input configuration, the tool outputs the original default value.
+{{< /admonition >}}
 
 `mimir.flags` converted output file:
 

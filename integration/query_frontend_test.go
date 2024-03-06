@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -39,6 +40,7 @@ type queryFrontendTestConfig struct {
 	queryStatsEnabled           bool
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
 	withHistograms              bool
+	shardActiveSeriesQueries    bool
 }
 
 func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
@@ -317,6 +319,17 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
+	// When using the ingest storage, wait until partitions are ACTIVE in the ring.
+	if flags["-ingest-storage.enabled"] == "true" {
+		require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+			labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+
+		require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+			labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+	}
+
 	// Push a series for each user to Mimir.
 	now := time.Now()
 	expectedVectors := make([]model.Vector, numUsers)
@@ -526,10 +539,17 @@ overrides:
 	cQuerier, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "fake")
 	require.NoError(t, err)
 
+	queryClients := map[string]*e2emimir.Client{
+		"query-frontend":               cQueryFrontend,
+		"query-frontend with sharding": cQueryFrontendWithQuerySharding,
+		"querier":                      cQuerier,
+	}
+
 	for _, tc := range []struct {
 		name          string
 		query         func(*e2emimir.Client) (*http.Response, []byte, error)
 		expStatusCode int
+		expJSON       string
 		expBody       string
 	}{
 		{
@@ -538,7 +558,7 @@ overrides:
 				return c.QueryRangeRaw("unknown", now.Add(-time.Hour*24), now, time.Second)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "negative step",
@@ -546,7 +566,7 @@ overrides:
 				return c.QueryRangeRaw("unknown", now.Add(-time.Hour), now, -time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"step\": zero or negative query resolution step widths are not accepted. Try a positive integer", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"step\": zero or negative query resolution step widths are not accepted. Try a positive integer", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "unknown function",
@@ -554,7 +574,7 @@ overrides:
 				return c.QueryRangeRaw("unknown(up)", now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"query\": 1:1: parse error: unknown function with name \"unknown\"", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"query\": 1:1: parse error: unknown function with name \"unknown\"", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "range vector instead of instant vector",
@@ -562,7 +582,7 @@ overrides:
 				return c.QueryRangeRaw(`sum by(grpc_method)(grpc_server_handled_total{job="cortex-dedicated-06/etcd"}[1m])`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"query\": 1:21: parse error: expected type instant vector in aggregation expression, got range vector", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"query\": 1:21: parse error: expected type instant vector in aggregation expression, got range vector", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "start after end",
@@ -570,7 +590,7 @@ overrides:
 				return c.QueryRangeRaw("unknown", now, now.Add(-time.Hour), time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"end\": end timestamp must not be before start time", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"end\": end timestamp must not be before start time", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "wrong duration specified in step",
@@ -585,7 +605,7 @@ overrides:
 				))
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"step\": cannot parse \"123notafloat\" to a valid duration", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"step\": cannot parse \"123notafloat\" to a valid duration", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "wrong timestamp in start",
@@ -600,7 +620,7 @@ overrides:
 				))
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"start\": cannot parse \"depths-of-time\" to a valid timestamp", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"start\": cannot parse \"depths-of-time\" to a valid timestamp", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "max samples limit hit",
@@ -608,7 +628,7 @@ overrides:
 				return c.QueryRangeRaw(`metric`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expBody:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
+			expJSON:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
 		},
 		{
 			name: "query time range exceeds the limit",
@@ -616,7 +636,25 @@ overrides:
 				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expBody:       fmt.Sprintf(`{"error":"expanding series: %s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute), 720*time.Hour)),
+			expJSON:       fmt.Sprintf(`{"error":"expanding series: %s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute), 720*time.Hour)),
+		},
+		{
+			name: "query remote read time range exceeds the limit",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				httpR, _, respBytes, err := c.RemoteRead(`metric`, now.Add(-time.Hour*24*32), now)
+				return httpR, respBytes, err
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       mimirquerier.NewMaxQueryLengthError(time.Hour*24*32, 720*time.Hour).Error(),
+		},
+		{
+			name: "query remote read time range exceeds the limit (streaming chunks)",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				httpR, _, respBytes, err := c.RemoteReadChunks(`metric`, now.Add(-time.Hour*24*32), now)
+				return httpR, respBytes, err
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       mimirquerier.NewMaxQueryLengthError(time.Hour*24*32, 720*time.Hour).Error(),
 		},
 		{
 			name: "execution error",
@@ -624,7 +662,7 @@ overrides:
 				return c.QueryRangeRaw(`sum by (group_1) (metric{unique=~"0|1|2|3"}) * on(group_1) group_right(unique) (sum by (group_1,unique) (metric{unique=~"0|1|2|3"}))`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expBody:       `{"error":"multiple matches for labels: grouping labels must ensure unique matches", "errorType":"execution", "status":"error"}`,
+			expJSON:       `{"error":"multiple matches for labels: grouping labels must ensure unique matches", "errorType":"execution", "status":"error"}`,
 		},
 		{
 			name: "range query with range vector",
@@ -632,24 +670,24 @@ overrides:
 				return c.QueryRangeRaw(`(sum(rate(up[1m])))[5m:]`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, body, err := tc.query(cQuerier)
-			require.NoError(t, err)
-			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "querier returns unexpected statusCode")
-			assert.JSONEq(t, tc.expBody, string(body), "querier returns unexpected body")
+			if tc.expBody != "" && tc.expJSON != "" {
+				t.Fatalf("expected only one of expBody or expJSON to be set")
+			}
 
-			resp, body, err = tc.query(cQueryFrontend)
-			require.NoError(t, err)
-			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "query-frontend returns unexpected statusCode")
-			assert.JSONEq(t, tc.expBody, string(body), "query-frontend returns unexpected body")
-
-			resp, body, err = tc.query(cQueryFrontendWithQuerySharding)
-			require.NoError(t, err)
-			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "query-frontend with query-sharding returns unexpected statusCode")
-			assert.JSONEq(t, tc.expBody, string(body), "query-frontend with query-sharding returns unexpected body")
+			for name, c := range queryClients {
+				resp, body, err := tc.query(c)
+				require.NoError(t, err)
+				assert.Equal(t, tc.expStatusCode, resp.StatusCode, "querier returns unexpected statusCode for "+name)
+				if tc.expJSON != "" {
+					assert.JSONEq(t, tc.expJSON, string(body), "querier returns unexpected body for "+name)
+				} else {
+					assert.Equal(t, tc.expBody, strings.TrimSpace(string(body)), "querier returns unexpected body for "+name)
+				}
+			}
 		})
 	}
 }

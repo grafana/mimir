@@ -47,6 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	testutil "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -131,11 +132,12 @@ func TestConfig_Validate(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			logger := testutil.NewTestingLogger(t)
 			cfg := &Config{}
 			flagext.DefaultValues(cfg)
 			testData.setup(cfg)
 
-			if actualErr := cfg.Validate(); testData.expected != "" {
+			if actualErr := cfg.Validate(logger); testData.expected != "" {
 				assert.EqualError(t, actualErr, testData.expected)
 			} else {
 				assert.NoError(t, actualErr)
@@ -1663,7 +1665,7 @@ func findCompactorByUserID(compactors []*MultitenantCompactor, logs []*concurren
 	var log *concurrency.SyncBuffer
 
 	for i, c := range compactors {
-		owned, err := c.shardingStrategy.compactorOwnUser(userID)
+		owned, err := c.shardingStrategy.compactorOwnsUser(userID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2159,9 +2161,9 @@ func owningCompactors(t *testing.T, comps []*MultitenantCompactor, user string, 
 	for _, c := range comps {
 		var f func(string) (bool, error)
 		if reason == ownUserReasonCompactor {
-			f = c.shardingStrategy.compactorOwnUser
+			f = c.shardingStrategy.compactorOwnsUser
 		} else {
-			f = c.shardingStrategy.blocksCleanerOwnUser
+			f = c.shardingStrategy.blocksCleanerOwnsUser
 		}
 		ok, err := f(user)
 		require.NoError(t, err)

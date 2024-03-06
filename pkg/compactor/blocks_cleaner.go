@@ -162,8 +162,8 @@ func (c *BlocksCleaner) stopping(error) error {
 }
 
 func (c *BlocksCleaner) starting(ctx context.Context) error {
-	// Run an initial cleanup in starting state. (Note that compactor no longer waits
-	// for blocks cleaner to finish starting before it starts compactions.)
+	// Run an initial cleanup in starting state. (Note that the compactor no longer waits
+	// for the blocks cleaner to finish starting before it starts compactions.)
 	c.runCleanup(ctx, false)
 
 	return nil
@@ -331,7 +331,6 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 		level.Info(userLogger).Log("msg", "deleted block", "block", id)
 		return nil
 	})
-
 	if err != nil {
 		return err
 	}
@@ -381,7 +380,7 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 
 	level.Info(userLogger).Log("msg", "cleaning up remaining blocks data for tenant marked for deletion")
 
-	// Let's do final cleanup of tenant.
+	// Let's do a final cleanup of the tenant.
 	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.DebugMetas, userLogger); err != nil {
 		return errors.Wrap(err, "failed to delete "+block.DebugMetas)
 	} else if deleted > 0 {
@@ -474,7 +473,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).SetToCurrentTime()
 
 	// Compute pending compaction jobs based on current index.
-	splitJobs, mergeJobs, err := c.estimateCompactionJobsFrom(ctx, userID, userBucket, idx)
+	jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, userBucket, idx, c.cfg.CompactionBlockRanges, c.cfgProvider.CompactorSplitAndMergeShards(userID), c.cfgProvider.CompactorSplitGroups(userID))
 	if err != nil {
 		// When compactor is shutting down, we get context cancellation. There's no reason to report that as error.
 		if !errors.Is(err, context.Canceled) {
@@ -484,11 +483,24 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 			c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
 		}
 	} else {
+		splitJobs, mergeJobs := computeSplitAndMergeJobs(jobs)
+
 		c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageSplit)).Set(float64(splitJobs))
 		c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageMerge)).Set(float64(mergeJobs))
 	}
 
 	return nil
+}
+
+func computeSplitAndMergeJobs(jobs []*Job) (splitJobs int, mergeJobs int) {
+	for _, j := range jobs {
+		if j.UseSplitting() {
+			splitJobs++
+		} else {
+			mergeJobs++
+		}
+	}
+	return splitJobs, mergeJobs
 }
 
 // Concurrently deletes blocks marked for deletion, and removes blocks from index.
@@ -670,7 +682,7 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 	return lastModified, err
 }
 
-func (c *BlocksCleaner) estimateCompactionJobsFrom(ctx context.Context, userID string, userBucket objstore.InstrumentedBucket, idx *bucketindex.Index) (int, int, error) {
+func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, userBucket objstore.InstrumentedBucket, idx *bucketindex.Index, compactionBlockRanges mimir_tsdb.DurationList, mergeShards int, splitGroups int) ([]*Job, error) {
 	metas := convertBucketIndexToMetasForCompactionJobPlanning(idx)
 
 	// We need to pass this metric to MetadataFilters, but we don't need to report this value from BlocksCleaner.
@@ -683,27 +695,13 @@ func (c *BlocksCleaner) estimateCompactionJobsFrom(ctx context.Context, userID s
 	} {
 		err := f.Filter(ctx, metas, synced)
 		if err != nil {
-			return 0, 0, err
+			return nil, err
 		}
 	}
 
-	grouper := NewSplitAndMergeGrouper(userID, c.cfg.CompactionBlockRanges.ToMilliseconds(), uint32(c.cfgProvider.CompactorSplitAndMergeShards(userID)), uint32(c.cfgProvider.CompactorSplitGroups(userID)), log.NewNopLogger())
+	grouper := NewSplitAndMergeGrouper(userID, compactionBlockRanges.ToMilliseconds(), uint32(mergeShards), uint32(splitGroups), log.NewNopLogger())
 	jobs, err := grouper.Groups(metas)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	split := 0
-	merge := 0
-	for _, j := range jobs {
-		if j.UseSplitting() {
-			split++
-		} else {
-			merge++
-		}
-	}
-
-	return split, merge, nil
+	return jobs, err
 }
 
 // Convert index into map of block Metas, but ignore blocks marked for deletion.

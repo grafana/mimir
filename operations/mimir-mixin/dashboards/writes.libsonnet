@@ -4,6 +4,7 @@ local filename = 'mimir-writes.json';
 (import 'dashboard-utils.libsonnet') +
 (import 'dashboard-queries.libsonnet') {
   [filename]:
+    assert std.md5(filename) == '8280707b8f16e7b87b840fc1cc92d4c5' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Writes') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRowIf(
@@ -106,12 +107,12 @@ local filename = 'mimir-writes.json';
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel($.queries.gateway.writeRequestsPerSecond)
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -123,7 +124,7 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Distributor')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.panelDescription(
           'Requests / sec',
           |||
@@ -134,25 +135,26 @@ local filename = 'mimir-writes.json';
           |||
         ) +
         $.qpsPanel($.queries.distributor.writeRequestsPerSecond) +
-        if $._config.show_rejected_requests_on_writes_dashboard then {
-          targets: [
-            {
-              legendLink: null,
-              expr: 'sum (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.distributor)],
-              format: 'time_series',
-              intervalFactor: 2,
-              legendFormat: 'rejected',
-              refId: 'B',
-            },
-          ] + super.targets,
-          aliasColors+: {
+        if $._config.show_rejected_requests_on_writes_dashboard then
+          {
+            targets: [
+              {
+                legendLink: null,
+                expr: 'sum (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.distributor)],
+                format: 'time_series',
+                intervalFactor: 2,
+                legendFormat: 'rejected',
+                refId: 'B',
+              },
+            ] + super.targets,
+          } + $.aliasColors({
             rejected: '#EAB839',
-          },
-        } else {},
+          })
+        else {},
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/distributor.Distributor/Push|/httpgrpc.*|%s' % $.queries.write_http_routes_regex)])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/distributor.Distributor/Push|/httpgrpc.*|%s' % $.queries.write_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -165,7 +167,7 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.panelDescription(
           'Requests / sec',
           |||
@@ -176,25 +178,26 @@ local filename = 'mimir-writes.json';
           |||
         ) +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ingester)) +
-        if $._config.show_rejected_requests_on_writes_dashboard then {
-          targets: [
-            {
-              legendLink: null,
-              expr: 'sum (rate(cortex_ingester_instance_rejected_requests_total{%s, reason=~"ingester_max_inflight_push_requests|ingester_max_ingestion_rate"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-              format: 'time_series',
-              intervalFactor: 2,
-              legendFormat: 'rejected',
-              refId: 'B',
-            },
-          ] + super.targets,
-          aliasColors+: {
+        if $._config.show_rejected_requests_on_writes_dashboard then
+          {
+            targets: [
+              {
+                legendLink: null,
+                expr: 'sum (rate(cortex_ingester_instance_rejected_requests_total{%s, reason=~"ingester_max_inflight_push_requests|ingester_max_ingestion_rate"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+                format: 'time_series',
+                intervalFactor: 2,
+                legendFormat: 'rejected',
+                refId: 'B',
+              },
+            ] + super.targets,
+          } + $.aliasColors({
             rejected: '#EAB839',
-          },
-        } else {},
+          })
+        else {},
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('route', '/cortex.Ingester/Push')])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('route', '/cortex.Ingester/Push')])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -223,7 +226,7 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester - shipper')
       .addPanel(
-        $.panel('Uploaded blocks / sec') +
+        $.timeseriesPanel('Uploaded blocks / sec') +
         $.successFailurePanel(
           'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
@@ -238,7 +241,7 @@ local filename = 'mimir-writes.json';
         $.stack,
       )
       .addPanel(
-        $.panel('Upload latency') +
+        $.timeseriesPanel('Upload latency') +
         $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobMatcher($._config.job_names.ingester)) +
         $.panelDescription(
           'Upload latency',
@@ -252,7 +255,7 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester - TSDB head')
       .addPanel(
-        $.panel('Compactions / sec') +
+        $.timeseriesPanel('Compactions / sec') +
         $.successFailurePanel(
           'sum(rate(cortex_ingester_tsdb_compactions_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_compactions_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
@@ -268,7 +271,7 @@ local filename = 'mimir-writes.json';
         $.stack,
       )
       .addPanel(
-        $.panel('Compactions latency') +
+        $.timeseriesPanel('Compactions latency') +
         $.latencyPanel('cortex_ingester_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ingester)) +
         $.panelDescription(
           'Compaction latency',
@@ -282,7 +285,7 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester - TSDB write ahead log (WAL)')
       .addPanel(
-        $.panel('WAL truncations / sec') +
+        $.timeseriesPanel('WAL truncations / sec') +
         $.successFailurePanel(
           'sum(rate(cortex_ingester_tsdb_wal_truncations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
@@ -297,7 +300,7 @@ local filename = 'mimir-writes.json';
         $.stack,
       )
       .addPanel(
-        $.panel('Checkpoints created / sec') +
+        $.timeseriesPanel('Checkpoints created / sec') +
         $.successFailurePanel(
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
@@ -320,7 +323,7 @@ local filename = 'mimir-writes.json';
             sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_count{%s}[$__rate_interval])) >= 0
           ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)], 'avg'
         ) +
-        { fieldConfig: { defaults: { noValue: '0', unit: 's' } } } +
+        { fieldConfig+: { defaults+: { unit: 's', noValue: '0' } } } +
         $.panelDescription(
           'WAL truncations latency (including checkpointing)',
           |||
@@ -330,7 +333,7 @@ local filename = 'mimir-writes.json';
         ),
       )
       .addPanel(
-        $.panel('Corruptions / sec') +
+        $.timeseriesPanel('Corruptions / sec') +
         $.queryPanel([
           'sum(rate(cortex_ingester_tsdb_wal_corruptions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
           'sum(rate(cortex_ingester_tsdb_mmap_chunk_corruptions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
@@ -338,26 +341,25 @@ local filename = 'mimir-writes.json';
           'WAL',
           'mmap-ed chunks',
         ]) +
-        $.stack + {
-          yaxes: $.yaxes('ops'),
-          aliasColors: {
-            WAL: '#E24D42',
-            'mmap-ed chunks': '#E28A42',
-          },
-        },
+        $.stack +
+        { fieldConfig+: { defaults+: { unit: 'ops', noValue: '0' } } } +
+        $.aliasColors({
+          WAL: '#E24D42',
+          'mmap-ed chunks': '#E28A42',
+        }),
       )
     )
     .addRow(
       $.row('Exemplars')
       .addPanel(
         local title = 'Distributor exemplars incoming rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(%(group_prefix_jobs)s:cortex_distributor_exemplars_in:rate5m{%(job)s})'
           % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_jobs: $._config.group_prefix_jobs },
           'incoming exemplars',
         ) +
-        { yaxes: $.yaxes('ex/s') } +
+        { fieldConfig+: { defaults+: { unit: 'ex/s' } } } +
         $.panelDescription(
           title,
           |||
@@ -367,13 +369,13 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         local title = 'Distributor exemplars received rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(%(group_prefix_jobs)s:cortex_distributor_received_exemplars:rate5m{%(job)s})'
           % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_jobs: $._config.group_prefix_jobs },
           'received exemplars',
         ) +
-        { yaxes: $.yaxes('ex/s') } +
+        { fieldConfig+: { defaults+: { unit: 'ex/s' } } } +
         $.panelDescription(
           title,
           |||
@@ -384,7 +386,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         local title = 'Ingester ingested exemplars rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           |||
             sum(
@@ -400,7 +402,7 @@ local filename = 'mimir-writes.json';
           },
           'ingested exemplars',
         ) +
-        { yaxes: $.yaxes('ex/s') } +
+        { fieldConfig+: { defaults+: { unit: 'ex/s' } } } +
         $.panelDescription(
           title,
           |||
@@ -412,7 +414,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         local title = 'Ingester appended exemplars rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           |||
             sum(
@@ -428,7 +430,7 @@ local filename = 'mimir-writes.json';
           },
           'appended exemplars',
         ) +
-        { yaxes: $.yaxes('ex/s') } +
+        { fieldConfig+: { defaults+: { unit: 'ex/s' } } } +
         $.panelDescription(
           title,
           |||
@@ -441,22 +443,22 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Instance Limits')
       .addPanel(
-        $.panel('Rejected distributor requests') +
+        $.timeseriesPanel('Rejected distributor requests') +
         $.queryPanel(
           'sum by (reason) (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))'
           % $.jobMatcher($._config.job_names.distributor),
           '{{reason}}',
         ) +
-        { yaxes: $.yaxes('req/s') }
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } }
       )
       .addPanel(
-        $.panel('Rejected ingester requests') +
+        $.timeseriesPanel('Rejected ingester requests') +
         $.queryPanel(
           'sum by (reason) (rate(cortex_ingester_instance_rejected_requests_total{%s}[$__rate_interval]))'
           % $.jobMatcher($._config.job_names.ingester),
           '{{reason}}',
         ) +
-        { yaxes: $.yaxes('req/s') }
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } }
       ),
     ),
 }

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -178,7 +177,7 @@ func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 // Validate the config.
-func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, logger log.Logger) error {
+func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config) error {
 	if err := cfg.Bucket.Validate(); err != nil {
 		return err
 	}
@@ -187,7 +186,7 @@ func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, lo
 		return err
 	}
 
-	return cfg.BucketStore.Validate(logger)
+	return cfg.BucketStore.Validate()
 }
 
 // TSDBConfig holds the config for TSDB opened in the ingesters.
@@ -264,6 +263,10 @@ type TSDBConfig struct {
 
 	// HeadCompactionIntervalJitterEnabled is enabled by default, but allows to disable it in tests.
 	HeadCompactionIntervalJitterEnabled bool `yaml:"-"`
+
+	// TimelyHeadCompaction allows head compaction to happen when min block range can no longer be appended,
+	// without requiring 1.5x the chunk range worth of data in the head.
+	TimelyHeadCompaction bool `yaml:"timely_head_compaction_enabled" category:"experimental"`
 }
 
 // RegisterFlags registers the TSDBConfig flags.
@@ -308,6 +311,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.BlockPostingsForMatchersCacheForce, "blocks-storage.tsdb.block-postings-for-matchers-cache-force", tsdb.DefaultPostingsForMatchersCacheForce, "Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.")
 	f.Int64Var(&cfg.EarlyHeadCompactionMinInMemorySeries, "blocks-storage.tsdb.early-head-compaction-min-in-memory-series", 0, fmt.Sprintf("When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -%s time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -%s time ago (unless out of order ingestion is enabled). The ingester checks every -%s whether an early compaction is required. Use 0 to disable it.", activeseries.IdleTimeoutFlag, activeseries.IdleTimeoutFlag, headCompactionIntervalFlag))
 	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 15, "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).")
+	f.BoolVar(&cfg.TimelyHeadCompaction, "blocks-storage.tsdb.timely-head-compaction-enabled", false, "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
 }
@@ -394,10 +398,6 @@ type BucketStoreConfig struct {
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
 
-	// Controls whether index-header lazy loading is enabled.
-	DeprecatedIndexHeaderLazyLoadingEnabled     bool          `yaml:"index_header_lazy_loading_enabled" category:"deprecated"`      // Deprecated. TODO: Remove in Mimir 2.12.
-	DeprecatedIndexHeaderLazyLoadingIdleTimeout time.Duration `yaml:"index_header_lazy_loading_idle_timeout" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.12.
-
 	// Controls the partitioner, used to aggregate multiple GET object API requests.
 	PartitionerMaxGapBytes uint64 `yaml:"partitioner_max_gap_bytes" category:"advanced"`
 
@@ -408,8 +408,8 @@ type BucketStoreConfig struct {
 	// 1 will keep all in memory. Default value is the same as in Prometheus which gives a good balance.
 	PostingOffsetsInMemSampling int `yaml:"postings_offsets_in_mem_sampling" category:"advanced"`
 
-	// Controls experimental options for index-header file reading.
-	IndexHeader indexheader.Config `yaml:"index_header" category:"experimental"`
+	// Controls advanced options for index-header file reading.
+	IndexHeader indexheader.Config `yaml:"index_header" category:"advanced"`
 
 	StreamingBatchSize          int    `yaml:"streaming_series_batch_size" category:"advanced"`
 	SeriesSelectionStrategyName string `yaml:"series_selection_strategy" category:"experimental"`
@@ -451,8 +451,6 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 		"The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet.")
 	f.DurationVar(&cfg.IgnoreBlocksWithin, "blocks-storage.bucket-store.ignore-blocks-within", 10*time.Hour, "Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.")
 	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
-	f.BoolVar(&cfg.DeprecatedIndexHeaderLazyLoadingEnabled, "blocks-storage.bucket-store.index-header-lazy-loading-enabled", indexheader.DefaultIndexHeaderLazyLoadingEnabled, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
-	f.DurationVar(&cfg.DeprecatedIndexHeaderLazyLoadingIdleTimeout, "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout", indexheader.DefaultIndexHeaderLazyLoadingIdleTimeout, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
 	f.StringVar(&cfg.SeriesSelectionStrategyName, seriesSelectionStrategyFlag, WorstCasePostingsStrategy, "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): "+strings.Join(validSeriesSelectionStrategies, ", ")+".")
@@ -460,7 +458,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 // Validate the config.
-func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
+func (cfg *BucketStoreConfig) Validate() error {
 	if cfg.StreamingBatchSize <= 0 {
 		return errInvalidStreamingBatchSize
 	}
@@ -473,7 +471,7 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 	if err := cfg.MetadataCache.Validate(); err != nil {
 		return errors.Wrap(err, "metadata-cache configuration")
 	}
-	if err := cfg.BucketIndex.Validate(logger); err != nil {
+	if err := cfg.BucketIndex.Validate(); err != nil {
 		return errors.Wrap(err, "bucket-index configuration")
 	}
 	if !util.StringsContain(validSeriesSelectionStrategies, cfg.SeriesSelectionStrategyName) {
@@ -501,6 +499,6 @@ func (cfg *BucketIndexConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 }
 
 // Validate the config.
-func (cfg *BucketIndexConfig) Validate(_ log.Logger) error {
+func (cfg *BucketIndexConfig) Validate() error {
 	return nil
 }

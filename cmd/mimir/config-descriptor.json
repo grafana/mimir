@@ -91,10 +91,10 @@
           "required": false,
           "desc": "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "distributor.enable-otlp-metadata-storage",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -1651,12 +1651,12 @@
           "kind": "field",
           "name": "limit_inflight_requests_using_grpc_method_limiter",
           "required": false,
-          "desc": "Use experimental method of limiting push requests.",
+          "desc": "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "distributor.limit-inflight-requests-using-grpc-method-limiter",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -1699,7 +1699,7 @@
           "fieldDefaultValue": 600000000000,
           "fieldFlag": "querier.max-query-into-future",
           "fieldType": "duration",
-          "fieldCategory": "advanced"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "block",
@@ -3024,12 +3024,12 @@
           "kind": "field",
           "name": "limit_inflight_requests_using_grpc_method_limiter",
           "required": false,
-          "desc": "Use experimental method of limiting push requests.",
+          "desc": "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.limit-inflight-requests-using-grpc-method-limiter",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -4622,6 +4622,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "response_streaming_enabled",
+          "required": false,
+          "desc": "Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.response-streaming-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -8283,28 +8294,6 @@
             },
             {
               "kind": "field",
-              "name": "index_header_lazy_loading_enabled",
-              "required": false,
-              "desc": "If enabled, store-gateway will lazy load an index-header only once required by a query.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "deprecated"
-            },
-            {
-              "kind": "field",
-              "name": "index_header_lazy_loading_idle_timeout",
-              "required": false,
-              "desc": "If index-header lazy loading is enabled and this setting is \u003e 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.",
-              "fieldValue": null,
-              "fieldDefaultValue": 3600000000000,
-              "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout",
-              "fieldType": "duration",
-              "fieldCategory": "deprecated"
-            },
-            {
-              "kind": "field",
               "name": "partitioner_max_gap_bytes",
               "required": false,
               "desc": "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.",
@@ -8384,18 +8373,7 @@
                   "fieldDefaultValue": 4,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-concurrency",
                   "fieldType": "int",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "sparse_persistence_enabled",
-                  "required": false,
-                  "desc": "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": true,
-                  "fieldFlag": "blocks-storage.bucket-store.index-header.sparse-persistence-enabled",
-                  "fieldType": "boolean",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -8781,6 +8759,17 @@
               "fieldFlag": "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage",
               "fieldType": "int",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "timely_head_compaction_enabled",
+              "required": false,
+              "desc": "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.timely-head-compaction-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -8886,7 +8875,7 @@
           "kind": "field",
           "name": "cleanup_interval",
           "required": false,
-          "desc": "How frequently compactor should run blocks cleanup and maintenance, as well as update the bucket index.",
+          "desc": "How frequently the compactor should run blocks cleanup and maintenance, as well as update the bucket index.",
           "fieldValue": null,
           "fieldDefaultValue": 900000000000,
           "fieldFlag": "compactor.cleanup-interval",
@@ -8908,7 +8897,7 @@
           "kind": "field",
           "name": "deletion_delay",
           "required": false,
-          "desc": "Time before a block marked for deletion is deleted from bucket. If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.",
+          "desc": "Time before a block marked for deletion is deleted from bucket. If not 0, blocks will be marked for deletion and the compactor component will permanently delete blocks marked for deletion from the bucket. If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.",
           "fieldValue": null,
           "fieldDefaultValue": 43200000000000,
           "fieldFlag": "compactor.deletion-delay",
@@ -8919,7 +8908,7 @@
           "kind": "field",
           "name": "tenant_cleanup_delay",
           "required": false,
-          "desc": "For tenants marked for deletion, this is time between deleting of last block, and doing final cleanup (marker files, debug files) of the tenant.",
+          "desc": "For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant.",
           "fieldValue": null,
           "fieldDefaultValue": 21600000000000,
           "fieldFlag": "compactor.tenant-cleanup-delay",
@@ -8963,7 +8952,7 @@
           "kind": "field",
           "name": "max_closing_blocks_concurrency",
           "required": false,
-          "desc": "Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.",
+          "desc": "Max number of blocks that can be closed concurrently during split compaction. Note that closing a newly compacted block uses a lot of memory for writing the index.",
           "fieldValue": null,
           "fieldDefaultValue": 1,
           "fieldFlag": "compactor.max-closing-blocks-concurrency",
@@ -8996,7 +8985,7 @@
           "kind": "field",
           "name": "enabled_tenants",
           "required": false,
-          "desc": "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by compactor, otherwise all tenants can be compacted. Subject to sharding.",
+          "desc": "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "compactor.enabled-tenants",
@@ -9007,7 +8996,7 @@
           "kind": "field",
           "name": "disabled_tenants",
           "required": false,
-          "desc": "Comma separated list of tenants that cannot be compacted by this compactor. If specified, and compactor would normally pick given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.",
+          "desc": "Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "compactor.disabled-tenants",

@@ -26,8 +26,10 @@ import (
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
+	"github.com/prometheus/prometheus/storage/remote"
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
@@ -246,6 +248,138 @@ func (c *Client) QueryRangeRaw(query string, start, end time.Time, step time.Dur
 	)
 
 	return c.DoGetBody(addr)
+}
+
+// RemoteRead runs a remote read query against the querier.
+// RemoteRead uses samples streaming. See RemoteReadChunks as well for chunks streaming.
+// RemoteRead returns the HTTP response with consumed body, the remote read protobuf response and an error.
+// In case the response is not a protobuf, the plaintext body content is returned instead of the protobuf message.
+func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Response, _ *prompb.QueryResult, plaintextResponse []byte, _ error) {
+	req := &prompb.ReadRequest{
+		Queries: []*prompb.Query{{
+			Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}},
+			StartTimestampMs: start.UnixMilli(),
+			EndTimestampMs:   end.UnixMilli(),
+			Hints: &prompb.ReadHints{
+				StepMs:  1,
+				StartMs: start.UnixMilli(),
+				EndMs:   end.UnixMilli(),
+			},
+		}},
+	}
+	resp, err := c.doRemoteReadReq(req)
+	if err != nil {
+		return resp, nil, nil, fmt.Errorf("making remote read request: %w", err)
+	}
+	switch contentType := resp.Header.Get("Content-Type"); contentType {
+	case "application/x-protobuf":
+		if encoding := resp.Header.Get("Content-Encoding"); encoding != "snappy" {
+			return resp, nil, nil, fmt.Errorf("remote read should return snappy-encoded protobuf; got %s %s instead", encoding, contentType)
+		}
+		queryResult, err := parseRemoteReadSamples(resp)
+		if err != nil {
+			return resp, queryResult, nil, fmt.Errorf("parsing remote read response: %w", err)
+		}
+		return resp, queryResult, nil, nil
+	case "text/plain; charset=utf-8":
+		respBytes, err := io.ReadAll(resp.Body)
+		return resp, nil, respBytes, err
+	default:
+		return resp, nil, nil, fmt.Errorf("unexpected content type %s", contentType)
+	}
+}
+
+// RemoteReadChunks runs a remote read query against the querier.
+// RemoteReadChunks uses chunks streaming. See RemoteRead as well for samples streaming.
+// RemoteReadChunks returns the HTTP response with consumed body, the remote read protobuf response and an error.
+// In case the response is not a protobuf, the plaintext body content is returned instead of the protobuf message.
+func (c *Client) RemoteReadChunks(metricName string, start, end time.Time) (_ *http.Response, _ []prompb.ChunkedReadResponse, plaintextResponse []byte, _ error) {
+	req := &prompb.ReadRequest{
+		Queries: []*prompb.Query{{
+			Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}},
+			StartTimestampMs: start.UnixMilli(),
+			EndTimestampMs:   end.UnixMilli(),
+			Hints: &prompb.ReadHints{
+				StepMs:  1,
+				StartMs: start.UnixMilli(),
+				EndMs:   end.UnixMilli(),
+			},
+		}},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+	}
+
+	resp, err := c.doRemoteReadReq(req)
+	if err != nil {
+		return resp, nil, nil, err
+	}
+	if err != nil {
+		return resp, nil, nil, fmt.Errorf("making remote read request: %w", err)
+	}
+	switch contentType := resp.Header.Get("Content-Type"); contentType {
+	case api.ContentTypeRemoteReadStreamedChunks:
+		if encoding := resp.Header.Get("Content-Encoding"); encoding != "" {
+			return resp, nil, nil, fmt.Errorf("remote read should not return Content-Encoding; got %s %s instead", encoding, contentType)
+		}
+		chunks, err := parseRemoteReadChunks(resp)
+		if err != nil {
+			return resp, chunks, nil, fmt.Errorf("parsing remote read response: %w", err)
+		}
+		return resp, chunks, nil, nil
+	case "text/plain; charset=utf-8":
+		respBytes, err := io.ReadAll(resp.Body)
+		return resp, nil, respBytes, err
+	default:
+		return resp, nil, nil, fmt.Errorf("unexpected content type %s", contentType)
+	}
+}
+
+func (c *Client) doRemoteReadReq(req *prompb.ReadRequest) (*http.Response, error) {
+	addr := fmt.Sprintf(
+		"http://%s/prometheus/api/v1/read",
+		c.querierAddress,
+	)
+
+	reqBytes, err := req.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("marshalling remote read request: %w", err)
+	}
+
+	return c.DoPost(addr, bytes.NewReader(snappy.Encode(nil, reqBytes)))
+}
+
+func parseRemoteReadSamples(resp *http.Response) (*prompb.QueryResult, error) {
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading remote read response: %w", err)
+	}
+	uncompressedBytes, err := snappy.Decode(nil, respBytes)
+	if err != nil {
+		return nil, fmt.Errorf("decompressing remote read response: %w", err)
+	}
+	response := &prompb.ReadResponse{}
+	err = response.Unmarshal(uncompressedBytes)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshalling remote read response: %w", err)
+	}
+	return response.Results[0], nil
+}
+
+func parseRemoteReadChunks(resp *http.Response) ([]prompb.ChunkedReadResponse, error) {
+	stream := remote.NewChunkedReader(resp.Body, remote.DefaultChunkedReadLimit, nil)
+
+	var results []prompb.ChunkedReadResponse
+	for {
+		var res prompb.ChunkedReadResponse
+		err := stream.NextProto(&res)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading remote read response: %w", err)
+		}
+		results = append(results, res)
+	}
+	return results, nil
 }
 
 // QueryExemplars runs an exemplar query.
@@ -1288,6 +1422,24 @@ func (c *Client) DoGetBody(url string) (*http.Response, []byte, error) {
 // timeout configured by the client object.
 func (c *Client) DoPost(url string, body io.Reader) (*http.Response, error) {
 	return c.doRequest("POST", url, body)
+}
+
+// DoPostBody performs a HTTP POST request towards the supplied URL and returns
+// the full response body. The request contains the X-Scope-OrgID header and
+// the timeout configured by the client object.
+func (c *Client) DoPostBody(url string, body io.Reader) (*http.Response, []byte, error) {
+	resp, err := c.DoPost(url, body)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return resp, respBytes, nil
 }
 
 func (c *Client) doRequest(method, url string, body io.Reader) (*http.Response, error) {

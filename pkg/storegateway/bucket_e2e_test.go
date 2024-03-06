@@ -195,7 +195,6 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 				EagerLoadingStartupEnabled: true,
 				LazyLoadingEnabled:         true,
 				LazyLoadingIdleTimeout:     time.Minute,
-				SparsePersistenceEnabled:   true,
 			},
 		},
 		cfg.postingsStrategy,

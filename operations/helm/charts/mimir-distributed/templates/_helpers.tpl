@@ -64,13 +64,27 @@ For compatibility and to support upgrade from enterprise-metrics chart calculate
 {{- end -}}
 
 {{/*
-Create the name of the service account
+Create the name of the general service account
 */}}
 {{- define "mimir.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
     {{ default (include "mimir.fullname" .) .Values.serviceAccount.name }}
 {{- else -}}
     {{ default "default" .Values.serviceAccount.name }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the name of the ruler service account
+*/}}
+{{- define "mimir.ruler.serviceAccountName" -}}
+{{- if and .Values.ruler.serviceAccount.create (eq .Values.ruler.serviceAccount.name "") -}}
+{{- $sa := default (include "mimir.fullname" .) .Values.serviceAccount.name }}
+{{- printf "%s-%s" $sa "ruler" }}
+{{- else if and .Values.ruler.serviceAccount.create (not (eq .Values.ruler.serviceAccount.name "")) -}}
+{{- .Values.ruler.serviceAccount.name -}}
+{{- else -}}
+{{- include "mimir.serviceAccountName" . -}}
 {{- end -}}
 {{- end -}}
 
@@ -365,6 +379,18 @@ Prometheus http prefix
 {{- end -}}
 
 {{/*
+KEDA Autoscaling Prometheus address
+*/}}
+{{- define "mimir.kedaPrometheusAddress" -}}
+{{- if not .ctx.Values.kedaAutoscaling.prometheusAddress -}}
+{{ include "mimir.metaMonitoring.metrics.remoteReadUrl" . }}
+{{- else -}}
+{{ .ctx.Values.kedaAutoscaling.prometheusAddress }}
+{{- end -}}
+{{- end -}}
+
+
+{{/*
 Cluster name that shows up in dashboard metrics
 */}}
 {{- define "mimir.clusterName" -}}
@@ -497,6 +523,10 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 {{ include "mimir.gatewayUrl" . }}/api/v1/push
 {{- end -}}
 
+{{- define "mimir.remoteReadUrl.inCluster" -}}
+{{ include "mimir.gatewayUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
+{{- end -}}
+
 {{/*
 Creates dict for zone-aware replication configuration
 Params:
@@ -607,7 +637,7 @@ Params:
 
 {{/*
 siToBytes is used to convert Kubernetes byte units to bytes.
-Only works for limited set of SI prefixes: Ki, Mi, Gi, Ti.
+Works for a sub set of SI suffixes: m, k, M, G, T, and their power-of-two equivalents: Ki, Mi, Gi, Ti.
 
 mimir.siToBytes takes 1 argument
   .value = the input value with SI unit
@@ -621,6 +651,16 @@ mimir.siToBytes takes 1 argument
         {{- trimSuffix "Gi" .value | float64 | mul 1073741824 | ceil | int64 -}}
     {{- else if (hasSuffix "Ti" .value) -}}
         {{- trimSuffix "Ti" .value | float64 | mul 1099511627776 | ceil | int64 -}}
+    {{- else if (hasSuffix "k" .value) -}}
+        {{- trimSuffix "k" .value | float64 | mul 1000 | ceil | int64 -}}
+    {{- else if (hasSuffix "M" .value) -}}
+        {{- trimSuffix "M" .value | float64 | mul 1000000 | ceil | int64 -}}
+    {{- else if (hasSuffix "G" .value) -}}
+        {{- trimSuffix "G" .value | float64 | mul 1000000000 | ceil | int64 -}}
+    {{- else if (hasSuffix "T" .value) -}}
+        {{- trimSuffix "T" .value | float64 | mul 1000000000000 | ceil | int64 -}}
+    {{- else if (hasSuffix "m" .value) -}}
+        {{- trimSuffix "m" .value | float64 | mulf 0.001 | ceil | int64 -}}
     {{- else -}}
         {{- .value }}
     {{- end -}}

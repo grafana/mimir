@@ -443,22 +443,24 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 	case schedulerpb.ERROR:
 		level.Warn(spanLogger).Log("msg", "scheduler returned error", "err", resp.Error)
 		req.enqueue <- enqueueResult{status: waitForResponse}
-		req.response <- &frontendv2pb.QueryResultRequest{
-			HttpResponse: &httpgrpc.HTTPResponse{
-				Code: http.StatusInternalServerError,
-				Body: []byte(resp.Error),
-			},
-		}
+		req.response <- queryResultWithBody{
+			queryResult: &frontendv2pb.QueryResultRequest{
+				HttpResponse: &httpgrpc.HTTPResponse{
+					Code: http.StatusInternalServerError,
+					Body: []byte(resp.Error),
+				},
+			}}
 
 	case schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
 		level.Warn(spanLogger).Log("msg", "scheduler reported it has too many outstanding requests")
 		req.enqueue <- enqueueResult{status: waitForResponse}
-		req.response <- &frontendv2pb.QueryResultRequest{
-			HttpResponse: &httpgrpc.HTTPResponse{
-				Code: http.StatusTooManyRequests,
-				Body: []byte("too many outstanding requests"),
-			},
-		}
+		req.response <- queryResultWithBody{
+			queryResult: &frontendv2pb.QueryResultRequest{
+				HttpResponse: &httpgrpc.HTTPResponse{
+					Code: http.StatusTooManyRequests,
+					Body: []byte("too many outstanding requests"),
+				},
+			}}
 
 	default:
 		level.Error(spanLogger).Log("msg", "unknown response status from the scheduler", "resp", resp, "queryID", req.queryID)

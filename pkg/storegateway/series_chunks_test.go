@@ -318,8 +318,9 @@ func TestPreloadingSetIterator(t *testing.T) {
 			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
 				t.Parallel()
 
-				source := newSliceSeriesChunksSetIterator(sets...)
-				source = newDelayedSeriesChunksSetIterator(delay, source)
+				var source iterator[seriesChunksSet]
+				source = newSliceSeriesChunksSetIterator(sets...)
+				source = newDelayedSetIterator[seriesChunksSet](delay, source)
 
 				preloading := newPreloadingSetIterator[seriesChunksSet](context.Background(), preloadSize, source)
 
@@ -345,8 +346,9 @@ func TestPreloadingSetIterator(t *testing.T) {
 			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
 				t.Parallel()
 
-				source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
-				source = newDelayedSeriesChunksSetIterator(delay, source)
+				var source iterator[seriesChunksSet]
+				source = newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
+				source = newDelayedSetIterator[seriesChunksSet](delay, source)
 
 				preloading := newPreloadingSetIterator[seriesChunksSet](context.Background(), preloadSize, source)
 
@@ -370,8 +372,9 @@ func TestPreloadingSetIterator(t *testing.T) {
 
 		ctx, cancelCtx := context.WithCancel(context.Background())
 
-		source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
-		source = newDelayedSeriesChunksSetIterator(delay, source)
+		var source iterator[seriesChunksSet]
+		source = newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
+		source = newDelayedSetIterator[seriesChunksSet](delay, source)
 
 		preloading := newPreloadingSetIterator[seriesChunksSet](ctx, 1, source)
 
@@ -397,8 +400,9 @@ func TestPreloadingSetIterator(t *testing.T) {
 
 		ctx, cancelCtx := context.WithCancel(context.Background())
 
-		source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
-		source = newDelayedSeriesChunksSetIterator(delay, source)
+		var source iterator[seriesChunksSet]
+		source = newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
+		source = newDelayedSetIterator[seriesChunksSet](delay, source)
 
 		preloading := newPreloadingSetIterator[seriesChunksSet](ctx, 1, source)
 
@@ -832,7 +836,7 @@ func generateSeriesEntries(t testing.TB, numSeries int) []testBlockSeries {
 	return generateSeriesEntriesWithChunks(t, numSeries, 50)
 }
 
-// sliceSeriesChunksSetIterator implements seriesChunksSetIterator and
+// sliceSeriesChunksSetIterator implements iterator[seriesChunksSet] and
 // returns the provided err when the sets are exhausted
 type sliceSeriesChunksSetIterator struct {
 	current int
@@ -842,14 +846,14 @@ type sliceSeriesChunksSetIterator struct {
 	errAt int
 }
 
-func newSliceSeriesChunksSetIterator(sets ...seriesChunksSet) seriesChunksSetIterator {
+func newSliceSeriesChunksSetIterator(sets ...seriesChunksSet) *sliceSeriesChunksSetIterator {
 	return &sliceSeriesChunksSetIterator{
 		current: -1,
 		sets:    sets,
 	}
 }
 
-func newSliceSeriesChunksSetIteratorWithError(err error, errAt int, sets ...seriesChunksSet) seriesChunksSetIterator {
+func newSliceSeriesChunksSetIteratorWithError(err error, errAt int, sets ...seriesChunksSet) *sliceSeriesChunksSetIterator {
 	return &sliceSeriesChunksSetIterator{
 		current: -1,
 		sets:    sets,
@@ -880,31 +884,31 @@ func (s *sliceSeriesChunksSetIterator) Err() error {
 	return nil
 }
 
-// delayedSeriesChunksSetIterator implements seriesChunksSetIterator and
+// delayedSetIterator implements iterator and
 // introduces an artificial delay before returning from Next() and At().
-type delayedSeriesChunksSetIterator struct {
-	wrapped seriesChunksSetIterator
+type delayedSetIterator[S any] struct {
+	wrapped iterator[S]
 	delay   time.Duration
 }
 
-func newDelayedSeriesChunksSetIterator(delay time.Duration, wrapped seriesChunksSetIterator) seriesChunksSetIterator {
-	return &delayedSeriesChunksSetIterator{
+func newDelayedSetIterator[S any](delay time.Duration, wrapped iterator[S]) *delayedSetIterator[S] {
+	return &delayedSetIterator[S]{
 		wrapped: wrapped,
 		delay:   delay,
 	}
 }
 
-func (s *delayedSeriesChunksSetIterator) Next() bool {
+func (s *delayedSetIterator[S]) Next() bool {
 	time.Sleep(s.delay)
 	return s.wrapped.Next()
 }
 
-func (s *delayedSeriesChunksSetIterator) At() seriesChunksSet {
+func (s *delayedSetIterator[S]) At() S {
 	time.Sleep(s.delay)
 	return s.wrapped.At()
 }
 
-func (s *delayedSeriesChunksSetIterator) Err() error {
+func (s *delayedSetIterator[S]) Err() error {
 	return s.wrapped.Err()
 }
 
@@ -939,7 +943,7 @@ func (r *releaserMock) isReleased() bool {
 	return r.released.Load()
 }
 
-func readAllSeriesChunksSets(it seriesChunksSetIterator) []seriesChunksSet {
+func readAllSeriesChunksSets(it iterator[seriesChunksSet]) []seriesChunksSet {
 	var out []seriesChunksSet
 	for it.Next() {
 		out = append(out, it.At())
