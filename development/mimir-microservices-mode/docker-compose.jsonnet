@@ -20,7 +20,7 @@ std.manifestYamlDoc({
     ring: 'memberlist',
 
     // If true, a load generator is started.
-    enable_load_generator: false,
+    enable_load_generator: true,
 
     // If true, start and enable scraping by these components.
     // Note that if more than one component is enabled, the dashboards shown in Grafana may contain duplicate series or aggregates may be doubled or tripled.
@@ -33,10 +33,7 @@ std.manifestYamlDoc({
   services:
     self.distributor +
     self.ingesters +
-    self.read_components() + # Read path for visualisation and monitoring
-    self.read_components(suffix='standard', port_offset=200, promql_engine='standard') + # Standard read path for load testing
-    self.read_components(suffix='streaming', port_offset=300, promql_engine='streaming') + # Streaming read path for load testing
-    self.read_components(suffix='thanos', port_offset=400, promql_engine='thanos') + # Thanos read path for load testing
+    self.read_components +  // Querier, Frontend and query-scheduler, if enabled.
     self.store_gateways +
     self.compactor +
     self.rulers(2) +
@@ -51,7 +48,6 @@ std.manifestYamlDoc({
     (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
     (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
     (if $._config.enable_load_generator then self.load_generator else {}) +
-    self.query_tee +
     {},
 
   distributor:: {
@@ -86,46 +82,34 @@ std.manifestYamlDoc({
     }),
   },
 
-  read_components(suffix='', port_offset=0, use_query_scheduler=$._config.use_query_scheduler, promql_engine='')::
-    local name_suffix = if suffix == '' then '' else '-' + suffix;
-    local query_scheduler_port = 9011 + port_offset;
-    local query_scheduler_address = 'query-scheduler%s:%s' % [name_suffix, query_scheduler_port];
-    local extra_args = '-query-frontend.max-total-query-length=8760h' +
-      (if promql_engine == '' then '' else ' -querier.promql-engine=%s' % promql_engine) +
-      # Thanos' engine doesn't support streaming chunks.
-      (if promql_engine == 'thanos' then '' else ' -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true') +
-      (if suffix == '' then '' else ' -query-scheduler.ring.prefix=%s/' % suffix);
-
+  read_components::
     {
-      ['querier'+name_suffix]: mimirService({
-        name: 'querier' + name_suffix,
+      querier: mimirService({
+        name: 'querier',
         target: 'querier',
-        httpPort: 8004 + port_offset,
-        jaegerApp: 'querier' + name_suffix,
+        httpPort: 8004,
         extraArguments:
-          extra_args +
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
-          if use_query_scheduler then ' -querier.scheduler-address='+query_scheduler_address+' -querier.frontend-address=' else '',
+          if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9011 -querier.frontend-address=' else '',
       }),
 
-      ['query-frontend'+name_suffix]: mimirService({
-        name: 'query-frontend' + name_suffix,
+      'query-frontend': mimirService({
+        name: 'query-frontend',
         target: 'query-frontend',
-        httpPort: 8007 + port_offset,
-        jaegerApp: 'query-frontend' + name_suffix,
+        httpPort: 8007,
+        jaegerApp: 'query-frontend',
         extraArguments:
-          extra_args +
+          '-query-frontend.max-total-query-length=8760h' +
           // Use of scheduler is activated by `-query-frontend.scheduler-address` option.
-          (if use_query_scheduler then ' -query-frontend.scheduler-address='+query_scheduler_address else ''),
+          (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address=query-scheduler:9011' else ''),
       }),
     } + (
       if $._config.use_query_scheduler then {
-        ['query-scheduler'+name_suffix]: mimirService({
-          name: 'query-scheduler' + name_suffix,
+        'query-scheduler': mimirService({
+          name: 'query-scheduler',
           target: 'query-scheduler',
-          httpPort: 8011 + port_offset,
-          jaegerApp: 'query-scheduler' + name_suffix,
-          extraArguments: extra_args
+          httpPort: 8011,
+          extraArguments: '-query-frontend.max-total-query-length=8760h',
         }),
       } else {}
     ),
@@ -377,31 +361,15 @@ std.manifestYamlDoc({
         '--remote-url=http://distributor-2:8001/api/v1/push',
         '--remote-write-concurrency=5',
         '--remote-write-interval=10s',
-        '--series-count=100000',
+        '--series-count=1000',
         '--tenants-count=1',
         '--query-enabled=true',
-        '--query-interval=30s',
-        '--query-url=http://query-tee:8200/prometheus',
+        '--query-interval=1s',
+        '--query-url=http://querier:8004/prometheus',
         '--server-metrics-port=9900',
       ],
       ports: ['9900:9900'],
     },
-  },
-
-  query_tee:: {
-    'query-tee': {
-      image: 'grafana/query-tee:2.9.0',
-      command: [
-        '-backend.endpoints=http://querier-standard:8204,http://querier-streaming:8304',
-        '-backend.preferred=querier-standard',
-        '-server.metrics-port=9901',
-        '-server.http-service-port=8200',
-        '-server.path-prefix=/prometheus',
-        '-proxy.compare-responses=true',
-        '-proxy.passthrough-non-registered-routes=true',
-      ],
-      ports: ['8200:8200', '9901:9901'],
-    }
   },
 
   // docker-compose YAML output version.

@@ -14,7 +14,7 @@ ingester_client:
     # Configure the client to allow messages up to 100MB.
     max_recv_msg_size: 104857600
     max_send_msg_size: 104857600
-    grpc_compression: ""
+    grpc_compression: gzip
 
 ingester:
   ring:
@@ -159,9 +159,8 @@ limits:
   max_global_exemplars_per_user: 5000
   query_sharding_total_shards: 16
   query_sharding_max_sharded_queries: 32
-  ingestion_rate: 20000000
+  ingestion_rate: 50000
   native_histograms_ingestion_enabled: true
-  out_of_order_time_window: 13h # To make it easier to load 12 hours of data for testing.
 
 runtime_config:
   file: ./config/runtime.yaml
