@@ -9,8 +9,8 @@ metadata:
     app.kubernetes.io/instance: metamonitoring-values
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: operator
-    helm.sh/chart: grafana-agent-operator-0.3.15
-    app.kubernetes.io/version: "0.39.1"
+    helm.sh/chart: grafana-agent-operator-0.3.17
+    app.kubernetes.io/version: "0.40.1"
 spec:
   replicas: 1
   selector:
@@ -33,7 +33,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: grafana-agent-operator
-        image: "docker.io/grafana/agent-operator:v0.39.1"
+        image: "docker.io/grafana/agent-operator:v0.40.1"
         imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
