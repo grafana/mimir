@@ -178,6 +178,11 @@ func (r *PartitionReader) consumeSegment(ctx context.Context, segment *Segment) 
 }
 
 func (r *PartitionReader) recordSegmentMetrics(segment *Segment) {
+	var (
+		highestDelay time.Duration
+		lowestDelay  time.Duration
+	)
+
 	for _, piece := range segment.Data.Pieces {
 		if piece.CreatedAtMs > 0 {
 			var (
@@ -187,11 +192,19 @@ func (r *PartitionReader) recordSegmentMetrics(segment *Segment) {
 
 			r.metrics.receiveDelay.Observe(delay.Seconds())
 
-			// Log high delay for debugging purposes.
-			if r.config.LogSlowRequests && delay > 5*time.Second {
-				level.Info(r.logger).Log("msg", "partition reader processed write request with high delay", "created_at", createdAt.Second(), "delay", delay)
+			// Keep track of the highest and lowest delay.
+			if highestDelay == 0 || delay > highestDelay {
+				highestDelay = delay
+			}
+			if lowestDelay == 0 || delay < lowestDelay {
+				lowestDelay = delay
 			}
 		}
+	}
+
+	// Log high delay for debugging purposes.
+	if r.config.LogSlowRequests && highestDelay > 5*time.Second {
+		level.Info(r.logger).Log("msg", "partition reader processed segment with high delay", "highest_delay", highestDelay, "lowest_delay", lowestDelay)
 	}
 
 	r.metrics.segmentsTotal.Add(1)
