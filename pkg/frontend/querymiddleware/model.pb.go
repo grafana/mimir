@@ -366,8 +366,10 @@ type PrometheusLabelNamesQueryRequest struct {
 	Query string `protobuf:"bytes,2,opt,name=query,proto3" json:"query,omitempty"`
 	Start int64  `protobuf:"varint,3,opt,name=start,proto3" json:"start,omitempty"`
 	End   int64  `protobuf:"varint,4,opt,name=end,proto3" json:"end,omitempty"`
-	// matcherSets is a repeated field here unlike the protos used for downstream queriers,
-	// as the label request has not been split at this point in the stack
+	// matcherSets is a repeated field here in order to enable the representation
+	// of labels queries which have not yet been split; the prometheus querier code
+	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
+	// into separate queries, one for each matcher set
 	MatcherSets []*LabelMatchers `protobuf:"bytes,5,rep,name=matcherSets,proto3" json:"matcherSets,omitempty"`
 	Options     Options          `protobuf:"bytes,6,opt,name=options,proto3" json:"options"`
 	// ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
