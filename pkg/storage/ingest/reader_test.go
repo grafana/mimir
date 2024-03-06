@@ -115,7 +115,8 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		require.NoError(t, err)
 
 		metadataDB := newMetadataDatabaseMemory()
-		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()), reg)
+		storage := NewSegmentStorage(objstore.WrapWithMetrics(bucket, nil, "test"), NewMetadataStore(metadataDB, log.NewNopLogger()),
+			prometheus.WrapRegistererWith(prometheus.Labels{"component": "test"}, reg))
 
 		// Configure the reader to poll the "last produced offset" frequently.
 		reader := startReader(ctx, t, metadataDB, partitionID, consumer,

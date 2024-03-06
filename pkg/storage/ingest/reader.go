@@ -180,7 +180,17 @@ func (r *PartitionReader) consumeSegment(ctx context.Context, segment *Segment) 
 func (r *PartitionReader) recordSegmentMetrics(segment *Segment) {
 	for _, piece := range segment.Data.Pieces {
 		if piece.CreatedAtMs > 0 {
-			r.metrics.receiveDelay.Observe(time.Since(time.UnixMilli(piece.CreatedAtMs)).Seconds())
+			var (
+				createdAt = time.UnixMilli(piece.CreatedAtMs)
+				delay     = time.Since(createdAt)
+			)
+
+			r.metrics.receiveDelay.Observe(delay.Seconds())
+
+			// Log high delay for debugging purposes.
+			if r.config.LogSlowRequests && delay > 5*time.Second {
+				level.Info(r.logger).Log("msg", "partition reader processed write request with high delay", "created_at", createdAt.Second(), "delay", delay)
+			}
 		}
 	}
 
