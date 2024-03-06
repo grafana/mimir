@@ -21,13 +21,14 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -46,7 +47,7 @@ var (
 	errRequestEntityTooLarge = httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "http: request body too large")
 )
 
-// Config for a Handler.
+// HandlerConfig is a config for the handler.
 type HandlerConfig struct {
 	LogQueriesLongerThan   time.Duration          `yaml:"log_queries_longer_than"`
 	LogQueryRequestHeaders flagext.StringSliceCSV `yaml:"log_query_request_headers" category:"advanced"`
@@ -151,7 +152,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mtx.Lock()
 	if f.stopped {
 		f.mtx.Unlock()
-		writeError(w, fmt.Errorf("frontend not running"))
+		http.Error(w, "frontend stopped", http.StatusServiceUnavailable)
 		return
 	}
 	f.inflightRequests++
@@ -164,13 +165,13 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.mtx.Unlock()
 	}()
 
-	var stats *querier_stats.Stats
+	var queryDetails *querymiddleware.QueryDetails
 
-	// Initialise the stats in the context and make sure it's propagated
+	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
 	if f.cfg.QueryStatsEnabled {
 		var ctx context.Context
-		stats, ctx = querier_stats.ContextWithEmptyStats(r.Context())
+		queryDetails, ctx = querymiddleware.ContextWithEmptyDetails(r.Context())
 		r = r.WithContext(ctx)
 	}
 
@@ -186,7 +187,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, params) })
+	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, r.Header.Get("User-Agent"), params) })
 	defer f.at.Delete(activityIndex)
 
 	startTime := time.Now()
@@ -195,7 +196,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		writeError(w, err)
-		f.reportQueryStats(r, params, queryResponseTime, 0, stats, err)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, 0, err)
 		return
 	}
 
@@ -205,7 +206,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if f.cfg.QueryStatsEnabled {
-		writeServiceTimingHeader(queryResponseTime, hs, stats)
+		writeServiceTimingHeader(queryResponseTime, hs, queryDetails.QuerierStats)
 	}
 
 	w.WriteHeader(resp.StatusCode)
@@ -213,22 +214,22 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	queryResponseSize, _ := io.Copy(w, resp.Body)
 
 	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
-		f.reportSlowQuery(r, params, queryResponseTime)
+		f.reportSlowQuery(r, params, queryResponseTime, queryDetails)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, params, queryResponseTime, queryResponseSize, stats, nil)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, nil)
 	}
 }
 
 // reportSlowQuery reports slow queries.
-func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration) {
-	logMessage := append([]interface{}{
+func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querymiddleware.QueryDetails) {
+	logMessage := append([]any{
 		"msg", "slow query detected",
 		"method", r.Method,
 		"host", r.Host,
 		"path", r.URL.Path,
 		"time_taken", queryResponseTime.String(),
-	}, formatQueryString(queryString)...)
+	}, formatQueryString(details, queryString)...)
 
 	if len(f.cfg.LogQueryRequestHeaders) != 0 {
 		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
@@ -237,12 +238,25 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryResponseTime time.Duration, queryResponseSizeBytes int64, stats *querier_stats.Stats, queryErr error) {
+func (f *Handler) reportQueryStats(
+	r *http.Request,
+	queryString url.Values,
+	queryStartTime time.Time,
+	queryResponseTime time.Duration,
+	queryResponseSizeBytes int64,
+	details *querymiddleware.QueryDetails,
+	queryResponseStatusCode int,
+	queryErr error,
+) {
 	tenantIDs, err := tenant.TenantIDs(r.Context())
 	if err != nil {
 		return
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
+	var stats *querier_stats.Stats
+	if details != nil {
+		stats = details.QuerierStats
+	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
 	numBytes := stats.LoadFetchedChunkBytes()
@@ -261,12 +275,13 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	}
 
 	// Log stats.
-	logMessage := append([]interface{}{
+	logMessage := append([]any{
 		"msg", "query stats",
 		"component", "query-frontend",
 		"method", r.Method,
 		"path", r.URL.Path,
 		"user_agent", r.UserAgent(),
+		"status_code", queryResponseStatusCode,
 		"response_time", queryResponseTime,
 		"response_size_bytes", queryResponseSizeBytes,
 		"query_wall_time_seconds", wallTime.Seconds(),
@@ -277,10 +292,39 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"sharded_queries", stats.LoadShardedQueries(),
 		"split_queries", stats.LoadSplitQueries(),
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
-	}, formatQueryString(queryString)...)
+		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
+	}, formatQueryString(details, queryString)...)
+
+	if details != nil {
+		// Start and End may be zero when the request wasn't a query (e.g. /metadata)
+		// or if the query was a constant expression and didn't need to process samples.
+		if !details.MinT.IsZero() && !details.MaxT.IsZero() {
+			logMessage = append(logMessage, "length", details.MaxT.Sub(details.MinT).String())
+		}
+		if !details.MinT.IsZero() {
+			logMessage = append(logMessage, "time_since_min_time", queryStartTime.Sub(details.MinT))
+		}
+		if !details.MaxT.IsZero() {
+			logMessage = append(logMessage, "time_since_max_time", queryStartTime.Sub(details.MaxT))
+		}
+		logMessage = append(logMessage,
+			"results_cache_hit_bytes", details.ResultsCacheHitBytes,
+			"results_cache_miss_bytes", details.ResultsCacheMissBytes,
+		)
+	}
+
+	// Log the read consistency only when explicitly defined.
+	if consistency, ok := querierapi.ReadConsistencyFromContext(r.Context()); ok {
+		logMessage = append(logMessage, "read_consistency", consistency)
+	}
 
 	if len(f.cfg.LogQueryRequestHeaders) != 0 {
 		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
+	}
+
+	if queryErr == nil && queryResponseStatusCode/100 != 2 {
+		// If downstream replied with non-2xx, log this as a failure.
+		queryErr = fmt.Errorf("downstream replied with %s", http.StatusText(queryResponseStatusCode))
 	}
 
 	if queryErr != nil {
@@ -302,14 +346,44 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func formatQueryString(queryString url.Values) (fields []interface{}) {
+// formatQueryString prefers printing start, end, and step from details if they are not nil.
+func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Values) (fields []any) {
 	for k, v := range queryString {
-		fields = append(fields, fmt.Sprintf("param_%s", k), strings.Join(v, ","))
+		var formattedValue string
+		if details != nil {
+			formattedValue = paramValueFromDetails(details, k)
+		}
+
+		if formattedValue == "" {
+			formattedValue = strings.Join(v, ",")
+		}
+		fields = append(fields, fmt.Sprintf("param_%s", k), formattedValue)
 	}
 	return fields
 }
 
-func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []interface{}) {
+// paramValueFromDetails returns the value of the parameter from details if the value there is non-zero.
+// Otherwise, it returns an empty string.
+// One reason why details field may be zero-values is if the value was not parseable.
+func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName string) string {
+	switch paramName {
+	case "start", "time":
+		if !details.Start.IsZero() {
+			return details.Start.Format(time.RFC3339Nano)
+		}
+	case "end":
+		if !details.End.IsZero() {
+			return details.End.Format(time.RFC3339Nano)
+		}
+	case "step":
+		if details.Step != 0 {
+			return strconv.FormatInt(details.Step.Milliseconds(), 10)
+		}
+	}
+	return ""
+}
+
+func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) {
 	for _, s := range headersToLog {
 		if v := h.Get(s); v != "" {
 			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)
@@ -332,11 +406,11 @@ func writeError(w http.ResponseWriter, err error) {
 
 	// if the error is an APIError, ensure it gets written as a JSON response
 	if resp, ok := apierror.HTTPResponseFromError(err); ok {
-		_ = server.WriteResponse(w, resp)
+		_ = httpgrpc.WriteResponse(w, resp)
 		return
 	}
 
-	server.WriteError(w, err)
+	httpgrpc.WriteError(w, err)
 }
 
 func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Header, stats *querier_stats.Stats) {
@@ -353,7 +427,7 @@ func statsValue(name string, d time.Duration) string {
 	return name + ";dur=" + durationInMs
 }
 
-func httpRequestActivity(request *http.Request, requestParams url.Values) string {
+func httpRequestActivity(request *http.Request, userAgent string, requestParams url.Values) string {
 	tenantID := "(unknown)"
 	if tenantIDs, err := tenant.TenantIDs(request.Context()); err == nil {
 		tenantID = tenant.JoinTenantIDs(tenantIDs)
@@ -365,5 +439,5 @@ func httpRequestActivity(request *http.Request, requestParams url.Values) string
 	}
 
 	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
-	return strings.Join([]string{tenantID, request.Method, request.URL.Path, params}, " ")
+	return fmt.Sprintf("user:%s UA:%s req:%s %s %s", tenantID, userAgent, request.Method, request.URL.Path, params)
 }

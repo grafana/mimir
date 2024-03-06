@@ -112,7 +112,7 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StorePostings(p.userID, p.block, p.label, p.value)
+				c.StorePostings(p.userID, p.block, p.label, p.value, time.Hour)
 			}
 
 			// Fetch postings from cached and assert on it.
@@ -175,7 +175,7 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 
 			// Store the postings expected before running the benchmark.
 			for i := 0; i < numHits; i++ {
-				c.StorePostings(userID, blockID, fetchLabels[i], []byte{1})
+				c.StorePostings(userID, blockID, fetchLabels[i], []byte{1}, time.Hour)
 			}
 
 			b.ResetTimer()
@@ -279,7 +279,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			// Store the series expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreSeriesForRef(p.userID, p.block, p.id, p.value)
+				c.StoreSeriesForRef(p.userID, p.block, p.id, p.value, time.Hour)
 			}
 
 			// Fetch series from cached and assert on it.
@@ -934,10 +934,14 @@ func (c *mockedRemoteCacheClient) GetMulti(_ context.Context, keys []string, _ .
 	return hits
 }
 
-func (c *mockedRemoteCacheClient) SetAsync(key string, value []byte, _ time.Duration) error {
+func (c *mockedRemoteCacheClient) SetAsync(key string, value []byte, _ time.Duration) {
 	c.cache[key] = value
+}
 
-	return nil
+func (c *mockedRemoteCacheClient) SetMultiAsync(data map[string][]byte, _ time.Duration) {
+	for key, value := range data {
+		c.cache[key] = value
+	}
 }
 
 func (c *mockedRemoteCacheClient) Delete(_ context.Context, key string) error {
@@ -948,6 +952,10 @@ func (c *mockedRemoteCacheClient) Delete(_ context.Context, key string) error {
 
 func (c *mockedRemoteCacheClient) Stop() {
 	// Nothing to do.
+}
+
+func (c *mockedRemoteCacheClient) Name() string {
+	return "mock"
 }
 
 // remove a string from a slice of strings

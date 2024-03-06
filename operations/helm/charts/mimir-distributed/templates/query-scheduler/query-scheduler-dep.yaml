@@ -44,8 +44,6 @@ spec:
             - "-target=query-scheduler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
-            - "-server.grpc.keepalive.max-connection-age=2562047h" # 100000 days, effectively infinity
-            - "-server.grpc.keepalive.max-connection-age-grace=2562047h" # 100000 days, effectively infinity
           {{- range $key, $value := .Values.query_scheduler.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}
@@ -89,6 +87,11 @@ spec:
             {{- end }}
             {{- with .Values.query_scheduler.env }}
               {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.query_scheduler }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

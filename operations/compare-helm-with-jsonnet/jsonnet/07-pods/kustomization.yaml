@@ -5,14 +5,6 @@ components:
   - ../../components/pods
 
 patches:
-  # TODO(logiraptor): Jsonnet sets JAEGER_REPORTER_MAX_QUEUE_SIZE on the querier
-  - target:
-      name: mimir-querier
-      kind: Deployment
-    patch: |-
-      - op: remove
-        path: /spec/template/spec/containers/0/env/1
-
   # TODO(logiraptor): Jsonnet sets POD_IP on the alertmanager
   - target:
       name: mimir-alertmanager

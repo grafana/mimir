@@ -54,7 +54,6 @@ func TestMimirShouldStartInSingleBinaryModeWithAllMemcachedConfigured(t *testing
 		// Compactor.
 		"-compactor.ring.store":           "consul",
 		"-compactor.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
-		"-compactor.cleanup-interval":     "2s", // Update bucket index often.
 	})
 
 	// Ensure Mimir successfully starts.
@@ -62,14 +61,17 @@ func TestMimirShouldStartInSingleBinaryModeWithAllMemcachedConfigured(t *testing
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	// Ensure proper memcached metrics are present.
-	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"thanos_memcached_client_info"}, e2e.WithLabelMatchers(
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"thanos_cache_client_info"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "name", "frontend-cache"),
+		labels.MustNewMatcher(labels.MatchEqual, "backend", "memcached"),
 	)))
-	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"thanos_memcached_client_info"}, e2e.WithLabelMatchers(
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"thanos_cache_client_info"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "name", "chunks-cache"),
+		labels.MustNewMatcher(labels.MatchEqual, "backend", "memcached"),
 	)))
-	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"thanos_memcached_client_info"}, e2e.WithLabelMatchers(
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"thanos_cache_client_info"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "name", "metadata-cache"),
+		labels.MustNewMatcher(labels.MatchEqual, "backend", "memcached"),
 	)))
 }
 

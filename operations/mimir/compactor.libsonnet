@@ -37,9 +37,13 @@
 
       // Configure sharding.
       'compactor.ring.store': 'consul',
-      'compactor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'compactor.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'compactor.ring.prefix': '',
       'compactor.ring.wait-stability-min-duration': '1m',  // Wait until ring is stable before switching to ACTIVE.
+
+      // Relax pressure on KV store when running at scale.
+      'compactor.ring.heartbeat-period': '1m',
+      'compactor.ring.heartbeat-timeout': '4m',
 
       // The compactor wait period is the amount of time that compactors will wait before compacting
       // 1st level blocks (uploaded by ingesters) since the last block was uploaded. In the worst
@@ -84,6 +88,8 @@
 
   compactor_env_map:: {},
 
+  compactor_node_affinity_matchers:: [],
+
   compactor_container::
     container.new('compactor', $._images.compactor) +
     container.withPorts($.compactor_ports) +
@@ -96,13 +102,14 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  newCompactorStatefulSet(name, container)::
+  newCompactorStatefulSet(name, container, nodeAffinityMatchers=[])::
     $.newMimirStatefulSet(name, 1, container, compactor_data_pvc) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
     $.mimirVolumeMounts,
 
   compactor_statefulset: if !$._config.is_microservices_deployment_mode then null else
-    $.newCompactorStatefulSet('compactor', $.compactor_container),
+    $.newCompactorStatefulSet('compactor', $.compactor_container, $.compactor_node_affinity_matchers),
 
   compactor_service: if !$._config.is_microservices_deployment_mode then null else
     local service = $.core.v1.service;

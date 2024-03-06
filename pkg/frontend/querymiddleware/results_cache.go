@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -154,9 +155,10 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 		}
 	}
 	return &PrometheusResponse{
-		Status:  promRes.Status,
-		Data:    data,
-		Headers: promRes.Headers,
+		Status:   promRes.Status,
+		Data:     data,
+		Headers:  promRes.Headers,
+		Warnings: promRes.Warnings,
 	}
 }
 
@@ -172,23 +174,42 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 		}
 	}
 	return &PrometheusResponse{
-		Status: promRes.Status,
-		Data:   data,
+		Status:   promRes.Status,
+		Data:     data,
+		Warnings: promRes.Warnings,
 	}
 }
 
-// CacheSplitter generates cache keys. This is a useful interface for downstream
+// ErrUnsupportedRequest is intended to be used with CacheKeyGenerator
+var ErrUnsupportedRequest = errors.New("request is not cacheable")
+
+// CacheKeyGenerator generates cache keys. This is a useful interface for downstream
 // consumers who wish to implement their own strategies.
-type CacheSplitter interface {
-	GenerateCacheKey(ctx context.Context, userID string, r Request) string
+type CacheKeyGenerator interface {
+	// QueryRequest should generate a cache key based on the tenant ID and Request.
+	QueryRequest(ctx context.Context, tenantID string, r Request) string
+
+	// LabelValues should return a cache key for a label values request. The cache key does not need to contain the tenant ID.
+	// LabelValues can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
+	// LabelValues should return a nil *GenericQueryCacheKey when it returns an error and
+	// should always return non-nil *GenericQueryCacheKey when the returned error is nil.
+	LabelValues(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
+
+	// LabelValuesCardinality should return a cache key for a label values cardinality request. The cache key does not need to contain the tenant ID.
+	// LabelValuesCardinality can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
+	// LabelValuesCardinality should return a nil *GenericQueryCacheKey when it returns an error and
+	// should always return non-nil *GenericQueryCacheKey when the returned error is nil.
+	LabelValuesCardinality(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
 }
 
-// ConstSplitter is a utility for using a constant split interval when determining cache keys
-type ConstSplitter time.Duration
+type DefaultCacheKeyGenerator struct {
+	// Interval is a constant split interval when determining cache keys for QueryRequest.
+	Interval time.Duration
+}
 
-// GenerateCacheKey generates a cache key based on the userID, Request and interval.
-func (t ConstSplitter) GenerateCacheKey(_ context.Context, userID string, r Request) string {
-	startInterval := r.GetStart() / time.Duration(t).Milliseconds()
+// QueryRequest generates a cache key based on the userID, Request and interval.
+func (t DefaultCacheKeyGenerator) QueryRequest(_ context.Context, userID string, r Request) string {
+	startInterval := r.GetStart() / t.Interval.Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 
 	// Use original format for step-aligned request, so that we can use existing cached results for such requests.

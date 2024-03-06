@@ -81,7 +81,7 @@ func TestConcreteSeriesSetIterator(t *testing.T) {
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, float64(2), v)
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	ts, h := it.AtHistogram()
+	ts, h := it.AtHistogram(nil)
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, generateTestHistogram(4), h)
 	require.Equal(t, chunkenc.ValFloat, it.Next())
@@ -89,7 +89,7 @@ func TestConcreteSeriesSetIterator(t *testing.T) {
 	require.Equal(t, int64(5), ts)
 	require.Equal(t, float64(6), v)
 	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
-	ts, fh := it.AtFloatHistogram()
+	ts, fh := it.AtFloatHistogram(nil)
 	require.Equal(t, int64(7), ts)
 	require.Equal(t, generateTestFloatHistogram(8), fh)
 	require.Equal(t, chunkenc.ValFloat, it.Next())
@@ -97,24 +97,24 @@ func TestConcreteSeriesSetIterator(t *testing.T) {
 	require.Equal(t, int64(9), ts)
 	require.Equal(t, float64(10), v)
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	ts, h = it.AtHistogram()
+	ts, h = it.AtHistogram(nil)
 	require.Equal(t, int64(11), ts)
 	require.Equal(t, generateTestHistogram(12), h)
 	// You can also call AtFloatHistogram() on ValHistogram.
-	ts, fh = it.AtFloatHistogram()
+	ts, fh = it.AtFloatHistogram(nil)
 	require.Equal(t, int64(11), ts)
-	require.Equal(t, generateTestHistogram(12).ToFloat(), fh)
+	require.Equal(t, generateTestHistogram(12).ToFloat(nil), fh)
 
 	require.Equal(t, chunkenc.ValNone, it.Next())
 
 	// test seek to same and next
 	it = series.Iterator(nil)
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(3)) // Seek to middle
-	ts, h = it.AtHistogram()
+	ts, h = it.AtHistogram(nil)
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, generateTestHistogram(4), h)
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(3)) // Seek to same place
-	ts, h = it.AtHistogram()
+	ts, h = it.AtHistogram(nil)
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, generateTestHistogram(4), h)
 	require.Equal(t, chunkenc.ValFloat, it.Next())
@@ -125,11 +125,11 @@ func TestConcreteSeriesSetIterator(t *testing.T) {
 	// test seek to earlier and next, then to later and next
 	it = series.Iterator(nil)
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(3)) // Seek to middle
-	ts, h = it.AtHistogram()
+	ts, h = it.AtHistogram(nil)
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, generateTestHistogram(4), h)
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(1)) // Ensure seek doesn't do anything if already past seek target.
-	ts, h = it.AtHistogram()
+	ts, h = it.AtHistogram(nil)
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, generateTestHistogram(4), h)
 	require.Equal(t, chunkenc.ValFloat, it.Next())
@@ -137,7 +137,7 @@ func TestConcreteSeriesSetIterator(t *testing.T) {
 	require.Equal(t, int64(5), ts)
 	require.Equal(t, float64(6), v)
 	require.Equal(t, chunkenc.ValFloatHistogram, it.Seek(7)) // Seek to later
-	ts, fh = it.AtFloatHistogram()
+	ts, fh = it.AtFloatHistogram(nil)
 	require.Equal(t, int64(7), ts)
 	require.Equal(t, generateTestFloatHistogram(8), fh)
 	require.Equal(t, chunkenc.ValFloat, it.Next())
@@ -145,7 +145,7 @@ func TestConcreteSeriesSetIterator(t *testing.T) {
 	require.Equal(t, int64(9), ts)
 	require.Equal(t, float64(10), v)
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(11)) // Seek to end
-	ts, h = it.AtHistogram()
+	ts, h = it.AtHistogram(nil)
 	require.Equal(t, int64(11), ts)
 	require.Equal(t, generateTestHistogram(12), h)
 	require.Equal(t, chunkenc.ValNone, it.Seek(13)) // Seek to past end

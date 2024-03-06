@@ -20,8 +20,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/status"
-	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/munnerz/goautoneg"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
@@ -33,6 +32,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -111,8 +111,8 @@ type Request interface {
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
 	WithEstimatedSeriesCountHint(uint64) Request
 	proto.Message
-	// LogToSpan writes information about this request to an OpenTracing span
-	LogToSpan(opentracing.Span)
+	// AddSpanTags writes information about this request to an OpenTracing span
+	AddSpanTags(opentracing.Span)
 }
 
 // Response represents a query range response.
@@ -180,6 +180,8 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	}
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
+	promWarningsMap := make(map[string]struct{}, 0)
+	var present struct{}
 
 	for _, res := range responses {
 		pr := res.(*PrometheusResponse)
@@ -192,6 +194,14 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 		}
 
 		promResponses = append(promResponses, pr)
+		for _, warning := range pr.Warnings {
+			promWarningsMap[warning] = present
+		}
+	}
+
+	var promWarnings []string
+	for warning := range promWarningsMap {
+		promWarnings = append(promWarnings, warning)
 	}
 
 	// Merge the responses.
@@ -203,51 +213,27 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 			ResultType: model.ValMatrix.String(),
 			Result:     matrixMerge(promResponses),
 		},
+		Warnings: promWarnings,
 	}, nil
 }
 
 func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Request, error) {
 	switch {
-	case isRangeQuery(r.URL.Path):
+	case IsRangeQuery(r.URL.Path):
 		return c.decodeRangeQueryRequest(r)
-	case isInstantQuery(r.URL.Path):
+	case IsInstantQuery(r.URL.Path):
 		return c.decodeInstantQueryRequest(r)
 	default:
 		return nil, fmt.Errorf("prometheus codec doesn't support requests to %s", r.URL.Path)
 	}
-
 }
 
 func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error) {
 	var result PrometheusRangeQueryRequest
 	var err error
-	result.Start, err = util.ParseTime(r.FormValue("start"))
+	result.Start, result.End, result.Step, err = DecodeRangeQueryTimeParams(r)
 	if err != nil {
-		return nil, decorateWithParamName(err, "start")
-	}
-
-	result.End, err = util.ParseTime(r.FormValue("end"))
-	if err != nil {
-		return nil, decorateWithParamName(err, "end")
-	}
-
-	if result.End < result.Start {
-		return nil, errEndBeforeStart
-	}
-
-	result.Step, err = parseDurationMs(r.FormValue("step"))
-	if err != nil {
-		return nil, decorateWithParamName(err, "step")
-	}
-
-	if result.Step <= 0 {
-		return nil, errNegativeStep
-	}
-
-	// For safety, limit the number of returned points per timeseries.
-	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
-	if (result.End-result.Start)/result.Step > 11000 {
-		return nil, errStepTooSmall
+		return nil, err
 	}
 
 	result.Query = r.FormValue("query")
@@ -259,7 +245,7 @@ func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error)
 func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, error) {
 	var result PrometheusInstantQueryRequest
 	var err error
-	result.Time, err = util.ParseTime(r.FormValue("time"))
+	result.Time, err = DecodeInstantQueryTimeParams(r, time.Now)
 	if err != nil {
 		return nil, decorateWithParamName(err, "time")
 	}
@@ -268,6 +254,71 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, er
 	result.Path = r.URL.Path
 	decodeOptions(r, &result.Options)
 	return &result, nil
+}
+
+// DecodeRangeQueryTimeParams encapsulates Prometheus instant query time param parsing,
+// emulating the logic in prometheus/prometheus/web/api/v1#API.query_range.
+func DecodeRangeQueryTimeParams(r *http.Request) (start, end, step int64, err error) {
+	start, err = util.ParseTime(r.FormValue("start"))
+	if err != nil {
+		return 0, 0, 0, decorateWithParamName(err, "start")
+	}
+
+	end, err = util.ParseTime(r.FormValue("end"))
+	if err != nil {
+		return 0, 0, 0, decorateWithParamName(err, "end")
+	}
+
+	if end < start {
+		return 0, 0, 0, errEndBeforeStart
+	}
+
+	step, err = parseDurationMs(r.FormValue("step"))
+	if err != nil {
+		return 0, 0, 0, decorateWithParamName(err, "step")
+	}
+
+	if step <= 0 {
+		return 0, 0, 0, errNegativeStep
+	}
+
+	// For safety, limit the number of returned points per timeseries.
+	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
+	if (end-start)/step > 11000 {
+		return 0, 0, 0, errStepTooSmall
+	}
+
+	return start, end, step, nil
+}
+
+// DecodeInstantQueryTimeParams encapsulates Prometheus instant query time param parsing,
+// emulating the logic in prometheus/prometheus/web/api/v1#API.query.
+func DecodeInstantQueryTimeParams(r *http.Request, now func() time.Time) (int64, error) {
+	time, err := util.ParseTimeParam(r, "time", now().UnixMilli())
+	if err != nil {
+		return 0, decorateWithParamName(err, "time")
+	}
+	return time, nil
+}
+
+// DecodeLabelsQueryTimeParams encapsulates Prometheus label names query time param parsing,
+// emulating the logic in prometheus/prometheus/web/api/v1#API.labelNames and v1#API.labelValues.
+func DecodeLabelsQueryTimeParams(r *http.Request) (start, end int64, err error) {
+	start, err = util.ParseTimeParam(r, "start", v1.MinTime.UnixMilli())
+	if err != nil {
+		return 0, 0, decorateWithParamName(err, "start")
+	}
+
+	end, err = util.ParseTimeParam(r, "end", v1.MaxTime.UnixMilli())
+	if err != nil {
+		return 0, 0, decorateWithParamName(err, "end")
+	}
+
+	if end < start {
+		return 0, 0, errEndBeforeStart
+	}
+
+	return start, end, nil
 }
 
 func decodeOptions(r *http.Request, opts *Options) {
@@ -340,6 +391,8 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 		Header:     http.Header{},
 	}
 
+	encodeOptions(req, r.GetOptions())
+
 	switch c.preferredQueryResultResponseFormat {
 	case formatJSON:
 		req.Header.Set("Accept", jsonMimeType)
@@ -349,19 +402,43 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
+	if consistency, ok := api.ReadConsistencyFromContext(ctx); ok {
+		req.Header.Add(api.ReadConsistencyHeader, consistency)
+	}
+
 	return req.WithContext(ctx), nil
 }
 
+func encodeOptions(req *http.Request, o Options) {
+	if o.CacheDisabled {
+		req.Header.Set(cacheControlHeader, noStoreValue)
+	}
+	if o.ShardingDisabled {
+		req.Header.Set(totalShardsControlHeader, "0")
+	}
+	if o.TotalShards > 0 {
+		req.Header.Set(totalShardsControlHeader, strconv.Itoa(int(o.TotalShards)))
+	}
+	if o.InstantSplitDisabled {
+		req.Header.Set(instantSplitControlHeader, "0")
+	}
+	if o.InstantSplitInterval > 0 {
+		req.Header.Set(instantSplitControlHeader, time.Duration(o.InstantSplitInterval).String())
+	}
+}
+
 func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
-	if r.StatusCode/100 == 5 {
-		return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
-			Code: int32(r.StatusCode),
-			Body: mustReadResponseBody(r),
-		})
-	} else if r.StatusCode == http.StatusTooManyRequests {
+	switch r.StatusCode {
+	case http.StatusServiceUnavailable:
+		return nil, apierror.New(apierror.TypeUnavailable, string(mustReadResponseBody(r)))
+	case http.StatusTooManyRequests:
 		return nil, apierror.New(apierror.TypeTooManyRequests, string(mustReadResponseBody(r)))
-	} else if r.StatusCode == http.StatusRequestEntityTooLarge {
+	case http.StatusRequestEntityTooLarge:
 		return nil, apierror.New(apierror.TypeTooLargeEntry, string(mustReadResponseBody(r)))
+	default:
+		if r.StatusCode/100 == 5 {
+			return nil, apierror.New(apierror.TypeInternal, string(mustReadResponseBody(r)))
+		}
 	}
 
 	log := spanlogger.FromContext(ctx, logger)
@@ -615,7 +692,7 @@ func encodeDurationMs(d int64) string {
 
 func decorateWithParamName(err error, field string) error {
 	errTmpl := "invalid parameter %q: %v"
-	if status, ok := status.FromError(err); ok {
+	if status, ok := grpcutil.ErrorToStatus(err); ok {
 		return apierror.Newf(apierror.TypeBadData, errTmpl, field, status.Message())
 	}
 	return apierror.Newf(apierror.TypeBadData, errTmpl, field, err)

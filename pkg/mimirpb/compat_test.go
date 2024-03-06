@@ -17,7 +17,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -154,22 +153,22 @@ func TestMetricMetadataToMetricTypeToMetricType(t *testing.T) {
 	tc := []struct {
 		desc     string
 		input    MetricMetadata_MetricType
-		expected textparse.MetricType
+		expected model.MetricType
 	}{
 		{
 			desc:     "with a single-word metric",
 			input:    COUNTER,
-			expected: textparse.MetricTypeCounter,
+			expected: model.MetricTypeCounter,
 		},
 		{
 			desc:     "with a two-word metric",
 			input:    STATESET,
-			expected: textparse.MetricTypeStateset,
+			expected: model.MetricTypeStateset,
 		},
 		{
 			desc:     "with an unknown metric",
 			input:    MetricMetadata_MetricType(100),
-			expected: textparse.MetricTypeUnknown,
+			expected: model.MetricTypeUnknown,
 		},
 	}
 
@@ -463,7 +462,7 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 	p := FromHistogramToHistogramProto(ts, h)
 
 	expected := Histogram{
-		Count:          &Histogram_CountInt{18},
+		Count:          &Histogram_CountInt{21},
 		Sum:            36.8,
 		Schema:         1,
 		ZeroThreshold:  0.001,
@@ -511,7 +510,7 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	p := FromFloatHistogramToHistogramProto(ts, h)
 
 	expected := Histogram{
-		Count:          &Histogram_CountFloat{18},
+		Count:          &Histogram_CountFloat{21},
 		Sum:            36.8,
 		Schema:         1,
 		ZeroThreshold:  0.001,
@@ -644,4 +643,102 @@ func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(_ *testing.T) {
 // are compatible, same as above.
 func TestPrometheusHistogramSpanInSyncWithMimirPbBucketSpan(_ *testing.T) {
 	_ = histogram.Span(BucketSpan{})
+}
+
+func TestCompareLabelAdapters(t *testing.T) {
+	labels := []LabelAdapter{
+		{Name: "aaa", Value: "111"},
+		{Name: "bbb", Value: "222"},
+	}
+
+	tests := []struct {
+		compared []LabelAdapter
+		expected int
+	}{
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "110"},
+				{Name: "bbb", Value: "222"},
+			},
+			expected: 1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbb", Value: "233"},
+			},
+			expected: -1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bar", Value: "222"},
+			},
+			expected: 1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbc", Value: "222"},
+			},
+			expected: -1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bb", Value: "222"},
+			},
+			expected: 1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbbb", Value: "222"},
+			},
+			expected: -1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+			},
+			expected: 1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbb", Value: "222"},
+				{Name: "ccc", Value: "333"},
+				{Name: "ddd", Value: "444"},
+			},
+			expected: -2,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbb", Value: "222"},
+			},
+			expected: 0,
+		},
+		{
+			compared: []LabelAdapter{},
+			expected: 1,
+		},
+	}
+
+	sign := func(a int) int {
+		switch {
+		case a < 0:
+			return -1
+		case a > 0:
+			return 1
+		}
+		return 0
+	}
+
+	for i, test := range tests {
+		got := CompareLabelAdapters(labels, test.compared)
+		require.Equal(t, sign(test.expected), sign(got), "unexpected comparison result for test case %d", i)
+		got = CompareLabelAdapters(test.compared, labels)
+		require.Equal(t, -sign(test.expected), sign(got), "unexpected comparison result for reverse test case %d", i)
+	}
 }

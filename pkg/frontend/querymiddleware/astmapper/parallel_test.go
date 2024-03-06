@@ -37,6 +37,21 @@ func TestCanParallel(t *testing.T) {
 			},
 			true,
 		},
+		// simple group
+		{
+			&parser.AggregateExpr{
+				Op:      parser.GROUP,
+				Without: true,
+				Expr: &parser.VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					},
+				},
+				Grouping: []string{"foo"},
+			},
+			true,
+		},
 		/*
 			  sum(
 				  sum by (foo) bar1{baz=”blip”}[1m])
@@ -210,6 +225,10 @@ func TestFunctionsWithDefaultsIsUpToDate(t *testing.T) {
 			}
 			if f.Name == "round" {
 				// round has a default value for the second scalar value, which is not relevant for sharding purposes.
+				return
+			}
+			if f.Name == "sort_by_label" || f.Name == "sort_by_label_desc" {
+				// sort by label functions are variadic but no parameter is a timestamp, so they're not relevant for sharding purposes.
 				return
 			}
 

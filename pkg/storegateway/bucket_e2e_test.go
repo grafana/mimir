@@ -11,12 +11,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -32,11 +31,9 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 var (
@@ -46,15 +43,10 @@ var (
 
 type swappableCache struct {
 	indexcache.IndexCache
-	chunkscache.Cache
 }
 
 func (c *swappableCache) SwapIndexCacheWith(cache indexcache.IndexCache) {
 	c.IndexCache = cache
-}
-
-func (c *swappableCache) SwapChunksCacheWith(cache chunkscache.Cache) {
-	c.Cache = cache
 }
 
 type storeSuite struct {
@@ -122,7 +114,6 @@ type prepareStoreConfig struct {
 	seriesLimiterFactory SeriesLimiterFactory
 	series               []labels.Labels
 	indexCache           indexcache.IndexCache
-	chunksCache          chunkscache.Cache
 	metricsRegistry      *prometheus.Registry
 	postingsStrategy     postingsSelectionStrategy
 	// When nonOverlappingBlocks is false, prepare store creates 2 blocks per block range.
@@ -151,7 +142,6 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		indexCache:           noopCache{},
 		postingsStrategy:     selectAllStrategy{},
-		chunksCache:          chunkscache.NoopCache{},
 		series: []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"),
 			labels.FromStrings("a", "1", "b", "2"),
@@ -181,7 +171,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	s := &storeSuite{
 		logger:          log.NewNopLogger(),
 		metricsRegistry: cfg.metricsRegistry,
-		cache:           &swappableCache{IndexCache: cfg.indexCache, Cache: cfg.chunksCache},
+		cache:           &swappableCache{IndexCache: cfg.indexCache},
 		minTime:         minTime,
 		maxTime:         maxTime,
 	}
@@ -190,25 +180,27 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	assert.NoError(t, err)
 
 	// Have our options in the beginning so tests can override logger and index cache if they need to
-	storeOpts := []BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache), WithChunksCache(s.cache)}
+	storeOpts := []BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache)}
 
 	store, err := NewBucketStore(
 		"tenant",
 		objstore.WithNoopInstr(bkt),
 		metaFetcher,
 		cfg.tempDir,
-		cfg.maxSeriesPerBatch,
-		1,
+		mimir_tsdb.BucketStoreConfig{
+			StreamingBatchSize:          cfg.maxSeriesPerBatch,
+			BlockSyncConcurrency:        20,
+			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+			IndexHeader: indexheader.Config{
+				EagerLoadingStartupEnabled: true,
+				LazyLoadingEnabled:         true,
+				LazyLoadingIdleTimeout:     time.Minute,
+			},
+		},
 		cfg.postingsStrategy,
 		cfg.chunksLimiterFactory,
 		cfg.seriesLimiterFactory,
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-		20,
-		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-		indexheader.Config{},
-		true,
-		time.Minute,
-		true,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(s.metricsRegistry),
 		storeOpts...,
@@ -255,7 +247,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, vals.Values)
 
-	srv := newBucketStoreTestServer(t, s.store)
+	srv := newStoreGatewayTestServer(t, s.store)
 
 	// TODO(bwplotka): Add those test cases to TSDB querier_test.go as well, there are no tests for matching.
 	testCases := []testBucketStoreCase{
@@ -436,7 +428,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 		for _, streamingBatchSize := range []int{0, 1, 5, 256} {
 			if ok := t.Run(fmt.Sprintf("%d,streamingBatchSize=%d", i, streamingBatchSize), func(t *testing.T) {
 				tcase.req.StreamingChunksBatchSize = uint64(streamingBatchSize)
-				seriesSet, _, _, err := srv.Series(context.Background(), tcase.req)
+				seriesSet, _, _, _, err := srv.Series(context.Background(), tcase.req)
 				require.NoError(t, err)
 
 				assert.Equal(t, len(tcase.expected), len(seriesSet))
@@ -467,23 +459,13 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
 
 		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_request_stage_duration_seconds", metrics))
-		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_refs_fetch_duration_seconds", metrics))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_blocks_queried", metrics, "source", "test", "level", "1"))
 	}
 	if numChunksPerSeries > 0 {
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "chunks"))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "chunks"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_blocks_queried", metrics, "source", "test", "level", "1"))
 	}
-}
-
-func getMetricsMatchingLabels(mf *dto.MetricFamily, selectors []labels.Label) []*dto.Metric {
-	var result []*dto.Metric
-	for _, m := range mf.GetMetric() {
-		if !util.MatchesSelectors(m, selectors) {
-			continue
-		}
-		result = append(result, m)
-	}
-	return result
 }
 
 func TestBucketStore_e2e(t *testing.T) {
@@ -495,7 +477,6 @@ func TestBucketStore_e2e(t *testing.T) {
 
 		if ok := t.Run("no caches", func(t *testing.T) {
 			s.cache.SwapIndexCacheWith(noopCache{})
-			s.cache.SwapChunksCacheWith(chunkscache.NoopCache{})
 			testBucketStore_e2e(t, ctx, s)
 		}); !ok {
 			return
@@ -513,27 +494,13 @@ func TestBucketStore_e2e(t *testing.T) {
 			return
 		}
 
-		if ok := t.Run("with small index cache", func(t *testing.T) {
+		t.Run("with small index cache", func(t *testing.T) {
 			indexCache2, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 				MaxItemSize: 50,
 				MaxSize:     100,
 			})
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache2)
-			testBucketStore_e2e(t, ctx, s)
-		}); !ok {
-			return
-		}
-
-		t.Run("with large, sufficient index cache, and chunks cache", func(t *testing.T) {
-			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
-				MaxItemSize: 1e5,
-				MaxSize:     2e5,
-			})
-			assert.NoError(t, err)
-			assert.NoError(t, err)
-			s.cache.SwapIndexCacheWith(indexCache)
-			s.cache.SwapChunksCacheWith(newInMemoryChunksCache())
 			testBucketStore_e2e(t, ctx, s)
 		})
 	})
@@ -573,7 +540,6 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 
 		if ok := t.Run("no caches", func(t *testing.T) {
 			s.cache.SwapIndexCacheWith(noopCache{})
-			s.cache.SwapChunksCacheWith(chunkscache.NoopCache{})
 			testBucketStore_e2e(t, ctx, s, additionalCases...)
 		}); !ok {
 			return
@@ -591,27 +557,13 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 			return
 		}
 
-		if ok := t.Run("with small index cache", func(t *testing.T) {
+		t.Run("with small index cache", func(t *testing.T) {
 			indexCache2, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 				MaxItemSize: 50,
 				MaxSize:     100,
 			})
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache2)
-			testBucketStore_e2e(t, ctx, s)
-		}); !ok {
-			return
-		}
-
-		t.Run("with large, sufficient index cache, and chunks cache", func(t *testing.T) {
-			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
-				MaxItemSize: 1e5,
-				MaxSize:     2e5,
-			})
-			assert.NoError(t, err)
-			assert.NoError(t, err)
-			s.cache.SwapIndexCacheWith(indexCache)
-			s.cache.SwapChunksCacheWith(newInMemoryChunksCache())
 			testBucketStore_e2e(t, ctx, s)
 		})
 	})
@@ -670,12 +622,12 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 		},
 		"should fail if the max chunks limit is exceeded - 422": {
 			maxChunksLimit: expectedChunks - 1,
-			expectedErr:    "exceeded chunks limit",
+			expectedErr:    "the query exceeded the maximum number of chunks (limit: 11 chunks) (err-mimir-max-chunks-per-query)",
 			expectedCode:   http.StatusUnprocessableEntity,
 		},
 		"should fail if the max series limit is exceeded - 422": {
 			maxChunksLimit: expectedChunks,
-			expectedErr:    "exceeded series limit",
+			expectedErr:    "the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query)",
 			maxSeriesLimit: 1,
 			expectedCode:   http.StatusUnprocessableEntity,
 		},
@@ -705,15 +657,15 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 						StreamingChunksBatchSize: uint64(streamingBatchSize),
 					}
 
-					srv := newBucketStoreTestServer(t, s.store)
-					_, _, _, err := srv.Series(context.Background(), req)
+					srv := newStoreGatewayTestServer(t, s.store)
+					_, _, _, _, err := srv.Series(context.Background(), req)
 
 					if testData.expectedErr == "" {
 						assert.NoError(t, err)
 					} else {
 						assert.Error(t, err)
-						assert.True(t, strings.Contains(err.Error(), testData.expectedErr))
-						status, ok := status.FromError(err)
+						assert.Contains(t, err.Error(), testData.expectedErr)
+						status, ok := grpcutil.ErrorToStatus(err)
 						assert.Equal(t, true, ok)
 						assert.Equal(t, testData.expectedCode, status.Code())
 					}
@@ -736,7 +688,6 @@ func assertQueryStatsLabelNamesMetricsRecorded(t *testing.T, numLabelNames int, 
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
 
 		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_request_stage_duration_seconds", metrics))
-		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_refs_fetch_duration_seconds", metrics))
 	}
 }
 
@@ -961,8 +912,8 @@ func TestBucketStore_ValueTypes_e2e(t *testing.T) {
 					StreamingChunksBatchSize: uint64(streamingBatchSize),
 				}
 
-				srv := newBucketStoreTestServer(t, s.store)
-				seriesSet, _, _, err := srv.Series(ctx, req)
+				srv := newStoreGatewayTestServer(t, s.store)
+				seriesSet, _, _, _, err := srv.Series(ctx, req)
 				require.NoError(t, err)
 
 				counts := map[storepb.Chunk_Encoding]int{}
@@ -1016,27 +967,15 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 	})
 }
 
-func toLabels(t *testing.T, labelValuePairs []string) (result []labels.Label) {
-	t.Helper()
-
-	if len(labelValuePairs)%2 != 0 {
-		t.Fatalf("invalid label name-value pairs %s", strings.Join(labelValuePairs, ""))
-	}
-	for i := 0; i < len(labelValuePairs); i += 2 {
-		result = append(result, labels.Label{Name: labelValuePairs[i], Value: labelValuePairs[i+1]})
-	}
-	return
-}
-
 func numObservationsForSummaries(t *testing.T, summaryName string, metrics dskit_metrics.MetricFamilyMap, labelValuePairs ...string) uint64 {
 	t.Helper()
 
 	summaryData := &dskit_metrics.SummaryData{}
-	for _, metric := range getMetricsMatchingLabels(metrics[summaryName], toLabels(t, labelValuePairs)) {
+	for _, metric := range dskit_metrics.FindMetricsInFamilyMatchingLabels(metrics[summaryName], labelValuePairs...) {
 		summaryData.AddSummary(metric.GetSummary())
 	}
 	m := &dto.Metric{}
-	require.NoError(t, summaryData.Metric(&prometheus.Desc{}).Write(m))
+	require.NoError(t, summaryData.Metric(prometheus.NewDesc("test", "", nil, nil)).Write(m))
 	return m.GetSummary().GetSampleCount()
 }
 
@@ -1044,10 +983,10 @@ func numObservationsForHistogram(t *testing.T, histogramName string, metrics dsk
 	t.Helper()
 
 	histogramData := &dskit_metrics.HistogramData{}
-	for _, metric := range getMetricsMatchingLabels(metrics[histogramName], toLabels(t, labelValuePairs)) {
+	for _, metric := range dskit_metrics.FindMetricsInFamilyMatchingLabels(metrics[histogramName], labelValuePairs...) {
 		histogramData.AddHistogram(metric.GetHistogram())
 	}
 	m := &dto.Metric{}
-	require.NoError(t, histogramData.Metric(&prometheus.Desc{}).Write(m))
+	require.NoError(t, histogramData.Metric(prometheus.NewDesc("test", "", nil, nil)).Write(m))
 	return m.GetHistogram().GetSampleCount()
 }

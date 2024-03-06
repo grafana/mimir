@@ -11,8 +11,9 @@
   "grafana-agent":
     "command":
       - "-config.file=/etc/agent-config/grafana-agent.yaml"
-      - "-prometheus.wal-directory=/tmp"
-    "image": "grafana/agent:v0.21.2"
+      - "-metrics.wal-directory=/tmp"
+      - "-server.http.address=127.0.0.1:9091"
+    "image": "grafana/agent:v0.37.3"
     "ports":
       - "9091:9091"
     "volumes":

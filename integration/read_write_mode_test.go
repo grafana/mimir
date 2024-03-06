@@ -287,7 +287,7 @@ receivers:
 	// Verify alert is firing
 	require.NoError(t, cluster.backendInstance.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_alertmanager_alerts_received_total"}, e2e.WaitMissingMetrics))
 
-	alerts, err := client.GetAlertsV1(context.Background())
+	alerts, err := client.GetAlerts(context.Background())
 	require.NoError(t, err)
 	require.Len(t, alerts, 1)
 	require.Equal(t, testAlertName, alerts[0].Name())
@@ -308,7 +308,6 @@ func TestReadWriteModeCompaction(t *testing.T) {
 		// Frequently cleanup old blocks.
 		// While this doesn't test the compaction functionality of the compactor, it does verify that the compactor
 		// is correctly configured and able to interact with storage, which is the intention of this test.
-		"-compactor.cleanup-interval":        "2s",
 		"-compactor.blocks-retention-period": "5s",
 	})
 
@@ -341,6 +340,7 @@ func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[
 
 	flagSets := []map[string]string{
 		CommonStorageBackendFlags(),
+		BlocksStorageFlags(),
 		{
 			"-memberlist.join": "mimir-backend-1",
 		},

@@ -10,10 +10,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
-	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/config"
 )

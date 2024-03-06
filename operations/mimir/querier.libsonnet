@@ -21,7 +21,7 @@
       'querier.max-concurrent': $._config.querier_max_concurrency,
 
       'querier.frontend-address': if !$._config.is_microservices_deployment_mode || $._config.query_scheduler_enabled then null else
-        'query-frontend-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
+        'query-frontend-discovery.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
       'querier.frontend-client.grpc-max-send-msg-size': 100 << 20,
 
       // We request high memory but the Go heap is typically very low (< 100MB) and this causes
@@ -42,7 +42,7 @@
     $.util.resourcesLimits(null, '24Gi'),
 
   querier_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '5000',
 
     // Dynamically set GOMAXPROCS based on CPU request.
     GOMAXPROCS: std.toString(
@@ -55,21 +55,24 @@
     ),
   },
 
+  querier_node_affinity_matchers:: [],
+
   querier_container::
     self.newQuerierContainer('querier', $.querier_args, $.querier_env_map),
 
-  local deployment = $.apps.v1.deployment,
+  newQuerierDeployment(name, container, nodeAffinityMatchers=[])::
+    local deployment = $.apps.v1.deployment;
 
-  newQuerierDeployment(name, container)::
     deployment.new(name, 6, [container]) +
     $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
   querier_deployment: if !$._config.is_microservices_deployment_mode then null else
-    self.newQuerierDeployment('querier', $.querier_container),
+    self.newQuerierDeployment('querier', $.querier_container, $.querier_node_affinity_matchers),
 
   querier_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.querier_deployment, $._config.service_ignored_labels),

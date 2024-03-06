@@ -51,7 +51,9 @@ Consider the following guidelines when you scale down Alertmanagers:
 - Scale down no more than two Alertmanagers at the same time.
 - Ensure at least `-alertmanager.sharding-ring.replication-factor` Alertmanager instances are running (three when running Grafana Mimir with the default configuration).
 
-> **Note:** If you enabled [zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication" >}}) for Alertmanagers, you can, in parallel, scale down any number of Alertmanager instances within one zone at a time.
+{{< admonition type="note" >}}
+If you enabled [zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication" >}}) for Alertmanagers, you can, in parallel, scale down any number of Alertmanager instances within one zone at a time.
+{{< /admonition >}}
 
 ### Scaling down ingesters
 

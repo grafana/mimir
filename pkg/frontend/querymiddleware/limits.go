@@ -7,16 +7,18 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"golang.org/x/sync/semaphore"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util"
@@ -24,6 +26,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+var errExecutingParallelQueriesFinished = cancellation.NewErrorf("executing parallel queries finished")
 
 // Limits allows us to specify per-tenant runtime limits on the behavior of
 // the query handling code.
@@ -93,6 +97,15 @@ type Limits interface {
 
 	// ResultsCacheForUnalignedQueryEnabled returns whether to cache results for queries that are not step-aligned
 	ResultsCacheForUnalignedQueryEnabled(userID string) bool
+
+	// BlockedQueries returns the blocked queries.
+	BlockedQueries(userID string) []*validation.BlockedQuery
+
+	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
+	AlignQueriesWithStep(userID string) bool
+
+	// QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
+	QueryIngestersWithin(userID string) time.Duration
 }
 
 type limitsMiddleware struct {
@@ -156,25 +169,23 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 
 	// Enforce the max end time.
 	creationGracePeriod := validation.LargestPositiveNonZeroDurationPerTenant(tenantIDs, l.CreationGracePeriod)
-	if creationGracePeriod > 0 {
-		maxEndTime := util.TimeToMillis(time.Now().Add(creationGracePeriod))
-		if r.GetEnd() > maxEndTime {
-			// Replace the end time in the request.
-			level.Debug(log).Log(
-				"msg", "the end time of the query has been manipulated because of the 'creation grace period' setting",
-				"original", util.FormatTimeMillis(r.GetEnd()),
-				"updated", util.FormatTimeMillis(maxEndTime),
-				"creationGracePeriod", creationGracePeriod)
+	maxEndTime := util.TimeToMillis(time.Now().Add(creationGracePeriod))
+	if r.GetEnd() > maxEndTime {
+		// Replace the end time in the request.
+		level.Debug(log).Log(
+			"msg", "the end time of the query has been manipulated because of the 'creation grace period' setting",
+			"original", util.FormatTimeMillis(r.GetEnd()),
+			"updated", util.FormatTimeMillis(maxEndTime),
+			"creationGracePeriod", creationGracePeriod)
 
-			r = r.WithStartEnd(r.GetStart(), maxEndTime)
-		}
+		r = r.WithStartEnd(r.GetStart(), maxEndTime)
 	}
 
 	// Enforce max query size, in bytes.
 	if maxQuerySize := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, l.MaxQueryExpressionSizeBytes); maxQuerySize > 0 {
 		querySize := len(r.GetQuery())
 		if querySize > maxQuerySize {
-			return nil, apierror.New(apierror.TypeBadData, validation.NewMaxQueryExpressionSizeBytesError(querySize, maxQuerySize).Error())
+			return nil, newMaxQueryExpressionSizeBytesError(querySize, maxQuerySize)
 		}
 	}
 
@@ -182,7 +193,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	if maxQueryLength := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxTotalQueryLength); maxQueryLength > 0 {
 		queryLen := timestamp.Time(r.GetEnd()).Sub(timestamp.Time(r.GetStart()))
 		if queryLen > maxQueryLength {
-			return nil, apierror.New(apierror.TypeBadData, validation.NewMaxTotalQueryLengthError(queryLen, maxQueryLength).Error())
+			return nil, newMaxTotalQueryLengthError(queryLen, maxQueryLength)
 		}
 	}
 
@@ -210,35 +221,9 @@ func newLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limi
 	}
 }
 
-type subRequest struct {
-	req    Request
-	ctx    context.Context
-	result chan result
-}
-
-type result struct {
-	response Response
-	err      error
-}
-
-func newSubRequest(ctx context.Context, req Request) subRequest {
-	return subRequest{
-		req:    req,
-		ctx:    ctx,
-		result: make(chan result, 1),
-	}
-}
-
 func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	var (
-		wg           sync.WaitGroup
-		intermediate = make(chan subRequest)
-		ctx, cancel  = context.WithCancel(r.Context())
-	)
-	defer func() {
-		cancel()
-		wg.Wait()
-	}()
+	ctx, cancel := context.WithCancelCause(r.Context())
+	defer cancel(errExecutingParallelQueriesFinished)
 
 	request, err := rt.codec.DecodeRequest(ctx, r)
 	if err != nil {
@@ -246,52 +231,28 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	}
 
 	if span := opentracing.SpanFromContext(ctx); span != nil {
-		request.LogToSpan(span)
+		request.AddSpanTags(span)
 	}
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	// Creates workers that will process the sub-requests in parallel for this query.
-	// The amount of workers is limited by the MaxQueryParallelism tenant setting.
+	// Limit the amount of parallel sub-requests according to the MaxQueryParallelism tenant setting.
 	parallelism := validation.SmallestPositiveIntPerTenant(tenantIDs, rt.limits.MaxQueryParallelism)
-	for i := 0; i < parallelism; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case w := <-intermediate:
-					resp, err := rt.downstream.Do(w.ctx, w.req)
-					w.result <- result{response: resp, err: err}
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
-	}
+	sem := semaphore.NewWeighted(int64(parallelism))
 
-	// Wraps middlewares with a final handler, which will receive requests in
-	// parallel from upstream handlers. Then each requests gets scheduled to a
-	// different worker via the `intermediate` channel, so the maximum
-	// parallelism is limited. This worker will then call `Do` on the resulting
-	// handler.
+	// Wraps middlewares with a final handler, which will receive sub-requests in
+	// parallel from upstream handlers and ensure that no more than MaxQueryParallelism
+	// sub-requests run in parallel.
 	response, err := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r Request) (Response, error) {
-			s := newSubRequest(ctx, r)
-			select {
-			case intermediate <- s:
-			case <-ctx.Done():
-				return nil, ctx.Err()
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, fmt.Errorf("could not acquire work: %w", err)
 			}
+			defer sem.Release(1)
 
-			select {
-			case response := <-s.result:
-				return response.response, response.err
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
+			return rt.downstream.Do(ctx, r)
 		})).Do(ctx, request)
 	if err != nil {
 		return nil, err

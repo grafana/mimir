@@ -98,9 +98,6 @@ const (
 
 	// Storage class header.
 	amzStorageClass = "X-Amz-Storage-Class"
-
-	// amzKmsKeyAccessDeniedErrorMessage is the error message returned by s3 when the permissions to the KMS key is revoked.
-	amzKmsKeyAccessDeniedErrorMessage = "The ciphertext refers to a customer master key that does not exist, does not exist in this region, or you are not allowed to access."
 )
 
 var DefaultConfig = Config{
@@ -116,6 +113,7 @@ var DefaultConfig = Config{
 	},
 	PartSize:         1024 * 1024 * 64, // 64MB.
 	BucketLookupType: AutoLookup,
+	SendContentMd5:   true, // Default to using MD5.
 }
 
 // HTTPConfig exists here only because Cortex depends on it, and we depend on Cortex.
@@ -139,6 +137,7 @@ type Config struct {
 	TraceConfig        TraceConfig        `yaml:"trace"`
 	ListObjectsVersion string             `yaml:"list_objects_version"`
 	BucketLookupType   BucketLookupType   `yaml:"bucket_lookup_type"`
+	SendContentMd5     bool               `yaml:"send_content_md5"`
 	// PartSize used for multipart upload. Only used if uploaded object size is known and larger than configured PartSize.
 	// NOTE we need to make sure this number does not produce more parts than 10 000.
 	PartSize    uint64    `yaml:"part_size"`
@@ -169,6 +168,7 @@ type Bucket struct {
 	storageClass    string
 	partSize        uint64
 	listObjectsV1   bool
+	sendContentMd5  bool
 }
 
 // parseConfig unmarshals a buffer into a Config with default values.
@@ -337,6 +337,7 @@ func NewBucketWithConfig(logger log.Logger, config Config, component string) (*B
 		storageClass:    storageClass,
 		partSize:        config.PartSize,
 		listObjectsV1:   config.ListObjectsVersion == "v1",
+		sendContentMd5:  config.SendContentMd5,
 	}
 	return bkt, nil
 }
@@ -495,6 +496,13 @@ func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader) error {
 	if size < int64(partSize) {
 		partSize = 0
 	}
+
+	// Cloning map since minio may modify it
+	userMetadata := make(map[string]string, len(b.putUserMetadata))
+	for k, v := range b.putUserMetadata {
+		userMetadata[k] = v
+	}
+
 	if _, err := b.client.PutObject(
 		ctx,
 		b.name,
@@ -504,8 +512,9 @@ func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader) error {
 		minio.PutObjectOptions{
 			PartSize:             partSize,
 			ServerSideEncryption: sse,
-			UserMetadata:         b.putUserMetadata,
+			UserMetadata:         userMetadata,
 			StorageClass:         b.storageClass,
+			SendContentMd5:       b.sendContentMd5,
 			// 4 is what minio-go have as the default. To be certain we do micro benchmark before any changes we
 			// ensure we pin this number to four.
 			// TODO(bwplotka): Consider adjusting this number to GOMAXPROCS or to expose this in config if it becomes bottleneck.
@@ -541,10 +550,9 @@ func (b *Bucket) IsObjNotFoundErr(err error) bool {
 	return minio.ToErrorResponse(errors.Cause(err)).Code == "NoSuchKey"
 }
 
-// IsCustomerManagedKeyError returns true if the permissions for key used to encrypt the object was revoked.
-func (b *Bucket) IsCustomerManagedKeyError(err error) bool {
-	errResponse := minio.ToErrorResponse(errors.Cause(err))
-	return errResponse.Code == "AccessDenied" && errResponse.Message == amzKmsKeyAccessDeniedErrorMessage
+// IsAccessDeniedErr returns true if access to object is denied.
+func (b *Bucket) IsAccessDeniedErr(err error) bool {
+	return minio.ToErrorResponse(errors.Cause(err)).Code == "AccessDenied"
 }
 
 func (b *Bucket) Close() error { return nil }

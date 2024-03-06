@@ -41,13 +41,14 @@ import (
 // BucketHandle provides operations on a Google Cloud Storage bucket.
 // Use Client.Bucket to get a handle.
 type BucketHandle struct {
-	c                *Client
-	name             string
-	acl              ACLHandle
-	defaultObjectACL ACLHandle
-	conds            *BucketConditions
-	userProject      string // project for Requester Pays buckets
-	retry            *retryConfig
+	c                     *Client
+	name                  string
+	acl                   ACLHandle
+	defaultObjectACL      ACLHandle
+	conds                 *BucketConditions
+	userProject           string // project for Requester Pays buckets
+	retry                 *retryConfig
+	enableObjectRetention *bool
 }
 
 // Bucket returns a BucketHandle, which provides operations on the named bucket.
@@ -85,7 +86,8 @@ func (b *BucketHandle) Create(ctx context.Context, projectID string, attrs *Buck
 	defer func() { trace.EndSpan(ctx, err) }()
 
 	o := makeStorageOpts(true, b.retry, b.userProject)
-	if _, err := b.c.tc.CreateBucket(ctx, projectID, b.name, attrs, o...); err != nil {
+
+	if _, err := b.c.tc.CreateBucket(ctx, projectID, b.name, attrs, b.enableObjectRetention, o...); err != nil {
 		return err
 	}
 	return nil
@@ -152,7 +154,7 @@ func (b *BucketHandle) Attrs(ctx context.Context) (attrs *BucketAttrs, err error
 
 // Update updates a bucket's attributes.
 func (b *BucketHandle) Update(ctx context.Context, uattrs BucketAttrsToUpdate) (attrs *BucketAttrs, err error) {
-	ctx = trace.StartSpan(ctx, "cloud.google.com/go/storage.Bucket.Create")
+	ctx = trace.StartSpan(ctx, "cloud.google.com/go/storage.Bucket.Update")
 	defer func() { trace.EndSpan(ctx, err) }()
 
 	isIdempotent := b.conds != nil && b.conds.MetagenerationMatch != 0
@@ -273,18 +275,24 @@ func (b *BucketHandle) detectDefaultGoogleAccessID() (string, error) {
 		err := json.Unmarshal(b.c.creds.JSON, &sa)
 		if err != nil {
 			returnErr = err
-		} else if sa.CredType == "impersonated_service_account" {
-			start, end := strings.LastIndex(sa.SAImpersonationURL, "/"), strings.LastIndex(sa.SAImpersonationURL, ":")
-
-			if end <= start {
-				returnErr = errors.New("error parsing impersonated service account credentials")
-			} else {
-				return sa.SAImpersonationURL[start+1 : end], nil
-			}
-		} else if sa.CredType == "service_account" && sa.ClientEmail != "" {
-			return sa.ClientEmail, nil
 		} else {
-			returnErr = errors.New("unable to parse credentials; only service_account and impersonated_service_account credentials are supported")
+			switch sa.CredType {
+			case "impersonated_service_account", "external_account":
+				start, end := strings.LastIndex(sa.SAImpersonationURL, "/"), strings.LastIndex(sa.SAImpersonationURL, ":")
+
+				if end <= start {
+					returnErr = errors.New("error parsing external or impersonated service account credentials")
+				} else {
+					return sa.SAImpersonationURL[start+1 : end], nil
+				}
+			case "service_account":
+				if sa.ClientEmail != "" {
+					return sa.ClientEmail, nil
+				}
+				returnErr = errors.New("empty service account client email")
+			default:
+				returnErr = errors.New("unable to parse credentials; only service_account, external_account and impersonated_service_account credentials are supported")
+			}
 		}
 	}
 
@@ -300,7 +308,7 @@ func (b *BucketHandle) detectDefaultGoogleAccessID() (string, error) {
 		}
 
 	}
-	return "", fmt.Errorf("storage: unable to detect default GoogleAccessID: %w. Please provide the GoogleAccessID or use a supported means for autodetecting it (see https://pkg.go.dev/cloud.google.com/go/storage#hdr-Credential_requirements_for_[BucketHandle.SignedURL]_and_[BucketHandle.GenerateSignedPostPolicyV4])", returnErr)
+	return "", fmt.Errorf("storage: unable to detect default GoogleAccessID: %w. Please provide the GoogleAccessID or use a supported means for autodetecting it (see https://pkg.go.dev/cloud.google.com/go/storage#hdr-Credential_requirements_for_signing)", returnErr)
 }
 
 func (b *BucketHandle) defaultSignBytesFunc(email string) func([]byte) ([]byte, error) {
@@ -462,6 +470,15 @@ type BucketAttrs struct {
 	// allows for the automatic selection of the best storage class
 	// based on object access patterns.
 	Autoclass *Autoclass
+
+	// ObjectRetentionMode reports whether individual objects in the bucket can
+	// be configured with a retention policy. An empty value means that object
+	// retention is disabled.
+	// This field is read-only. Object retention can be enabled only by creating
+	// a bucket with SetObjectRetention set to true on the BucketHandle. It
+	// cannot be modified once the bucket is created.
+	// ObjectRetention cannot be configured or reported through the gRPC API.
+	ObjectRetentionMode string
 }
 
 // BucketPolicyOnly is an alias for UniformBucketLevelAccess.
@@ -740,6 +757,13 @@ type Autoclass struct {
 	// If Autoclass is enabled when the bucket is created, the ToggleTime
 	// is set to the bucket creation time. This field is read-only.
 	ToggleTime time.Time
+	// TerminalStorageClass: The storage class that objects in the bucket
+	// eventually transition to if they are not read for a certain length of
+	// time. Valid values are NEARLINE and ARCHIVE.
+	TerminalStorageClass string
+	// TerminalStorageClassUpdateTime represents the time of the most recent
+	// update to "TerminalStorageClass".
+	TerminalStorageClassUpdateTime time.Time
 }
 
 func newBucket(b *raw.Bucket) (*BucketAttrs, error) {
@@ -750,6 +774,7 @@ func newBucket(b *raw.Bucket) (*BucketAttrs, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &BucketAttrs{
 		Name:                     b.Name,
 		Location:                 b.Location,
@@ -764,6 +789,7 @@ func newBucket(b *raw.Bucket) (*BucketAttrs, error) {
 		RequesterPays:            b.Billing != nil && b.Billing.RequesterPays,
 		Lifecycle:                toLifecycle(b.Lifecycle),
 		RetentionPolicy:          rp,
+		ObjectRetentionMode:      toBucketObjectRetention(b.ObjectRetention),
 		CORS:                     toCORS(b.Cors),
 		Encryption:               toBucketEncryption(b.Encryption),
 		Logging:                  toBucketLogging(b.Logging),
@@ -1241,9 +1267,11 @@ func (ua *BucketAttrsToUpdate) toRawBucket() *raw.Bucket {
 	}
 	if ua.Autoclass != nil {
 		rb.Autoclass = &raw.BucketAutoclass{
-			Enabled:         ua.Autoclass.Enabled,
-			ForceSendFields: []string{"Enabled"},
+			Enabled:              ua.Autoclass.Enabled,
+			TerminalStorageClass: ua.Autoclass.TerminalStorageClass,
+			ForceSendFields:      []string{"Enabled"},
 		}
+		rb.ForceSendFields = append(rb.ForceSendFields, "Autoclass")
 	}
 	if ua.PredefinedACL != "" {
 		// Clear ACL or the call will fail.
@@ -1339,6 +1367,17 @@ func (b *BucketHandle) LockRetentionPolicy(ctx context.Context) error {
 	return b.c.tc.LockBucketRetentionPolicy(ctx, b.name, b.conds, o...)
 }
 
+// SetObjectRetention returns a new BucketHandle that will enable object retention
+// on bucket creation. To enable object retention, you must use the returned
+// handle to create the bucket. This has no effect on an already existing bucket.
+// ObjectRetention is not enabled by default.
+// ObjectRetention cannot be configured through the gRPC API.
+func (b *BucketHandle) SetObjectRetention(enable bool) *BucketHandle {
+	b2 := *b
+	b2.enableObjectRetention = &enable
+	return &b2
+}
+
 // applyBucketConds modifies the provided call using the conditions in conds.
 // call is something that quacks like a *raw.WhateverCall.
 func applyBucketConds(method string, conds *BucketConditions, call interface{}) error {
@@ -1351,11 +1390,11 @@ func applyBucketConds(method string, conds *BucketConditions, call interface{}) 
 	cval := reflect.ValueOf(call)
 	switch {
 	case conds.MetagenerationMatch != 0:
-		if !setConditionField(cval, "IfMetagenerationMatch", conds.MetagenerationMatch) {
+		if !setIfMetagenerationMatch(cval, conds.MetagenerationMatch) {
 			return fmt.Errorf("storage: %s: ifMetagenerationMatch not supported", method)
 		}
 	case conds.MetagenerationNotMatch != 0:
-		if !setConditionField(cval, "IfMetagenerationNotMatch", conds.MetagenerationNotMatch) {
+		if !setIfMetagenerationNotMatch(cval, conds.MetagenerationNotMatch) {
 			return fmt.Errorf("storage: %s: ifMetagenerationNotMatch not supported", method)
 		}
 	}
@@ -1436,6 +1475,13 @@ func toRetentionPolicyFromProto(rp *storagepb.Bucket_RetentionPolicy) *Retention
 		EffectiveTime:   rp.GetEffectiveTime().AsTime(),
 		IsLocked:        rp.GetIsLocked(),
 	}
+}
+
+func toBucketObjectRetention(or *raw.BucketObjectRetention) string {
+	if or == nil {
+		return ""
+	}
+	return or.Mode
 }
 
 func toRawCORS(c []CORS) []*raw.BucketCors {
@@ -1558,7 +1604,6 @@ func toProtoLifecycle(l Lifecycle) *storagepb.Bucket_Lifecycle {
 				// doc states "format: int32"), so the client types used int64,
 				// but the proto uses int32 so we have a potentially lossy
 				// conversion.
-				AgeDays:                 proto.Int32(int32(r.Condition.AgeInDays)),
 				DaysSinceCustomTime:     proto.Int32(int32(r.Condition.DaysSinceCustomTime)),
 				DaysSinceNoncurrentTime: proto.Int32(int32(r.Condition.DaysSinceNoncurrentTime)),
 				MatchesPrefix:           r.Condition.MatchesPrefix,
@@ -1568,7 +1613,11 @@ func toProtoLifecycle(l Lifecycle) *storagepb.Bucket_Lifecycle {
 			},
 		}
 
-		// TODO(#6205): This may not be needed for gRPC
+		// Only set AgeDays in the proto if it is non-zero, or if the user has set
+		// Condition.AllObjects.
+		if r.Condition.AgeInDays != 0 {
+			rr.Condition.AgeDays = proto.Int32(int32(r.Condition.AgeInDays))
+		}
 		if r.Condition.AllObjects {
 			rr.Condition.AgeDays = proto.Int32(0)
 		}
@@ -1667,8 +1716,8 @@ func toLifecycleFromProto(rl *storagepb.Bucket_Lifecycle) Lifecycle {
 			},
 		}
 
-		// TODO(#6205): This may not be needed for gRPC
-		if rr.GetCondition().GetAgeDays() == 0 {
+		// Only set Condition.AllObjects if AgeDays is zero, not if it is nil.
+		if rr.GetCondition().AgeDays != nil && rr.GetCondition().GetAgeDays() == 0 {
 			r.Condition.AllObjects = true
 		}
 
@@ -1951,9 +2000,10 @@ func (a *Autoclass) toRawAutoclass() *raw.BucketAutoclass {
 	if a == nil {
 		return nil
 	}
-	// Excluding read only field ToggleTime.
+	// Excluding read only fields ToggleTime and TerminalStorageClassUpdateTime.
 	return &raw.BucketAutoclass{
-		Enabled: a.Enabled,
+		Enabled:              a.Enabled,
+		TerminalStorageClass: a.TerminalStorageClass,
 	}
 }
 
@@ -1961,27 +2011,34 @@ func (a *Autoclass) toProtoAutoclass() *storagepb.Bucket_Autoclass {
 	if a == nil {
 		return nil
 	}
-	// Excluding read only field ToggleTime.
-	return &storagepb.Bucket_Autoclass{
+	// Excluding read only fields ToggleTime and TerminalStorageClassUpdateTime.
+	ba := &storagepb.Bucket_Autoclass{
 		Enabled: a.Enabled,
 	}
+	if a.TerminalStorageClass != "" {
+		ba.TerminalStorageClass = &a.TerminalStorageClass
+	}
+	return ba
 }
 
 func toAutoclassFromRaw(a *raw.BucketAutoclass) *Autoclass {
 	if a == nil || a.ToggleTime == "" {
 		return nil
 	}
-	// Return Autoclass.ToggleTime only if parsed with a valid value.
+	ac := &Autoclass{
+		Enabled:              a.Enabled,
+		TerminalStorageClass: a.TerminalStorageClass,
+	}
+	// Return ToggleTime and TSCUpdateTime only if parsed with valid values.
 	t, err := time.Parse(time.RFC3339, a.ToggleTime)
-	if err != nil {
-		return &Autoclass{
-			Enabled: a.Enabled,
-		}
+	if err == nil {
+		ac.ToggleTime = t
 	}
-	return &Autoclass{
-		Enabled:    a.Enabled,
-		ToggleTime: t,
+	ut, err := time.Parse(time.RFC3339, a.TerminalStorageClassUpdateTime)
+	if err == nil {
+		ac.TerminalStorageClassUpdateTime = ut
 	}
+	return ac
 }
 
 func toAutoclassFromProto(a *storagepb.Bucket_Autoclass) *Autoclass {
@@ -1989,8 +2046,10 @@ func toAutoclassFromProto(a *storagepb.Bucket_Autoclass) *Autoclass {
 		return nil
 	}
 	return &Autoclass{
-		Enabled:    a.GetEnabled(),
-		ToggleTime: a.GetToggleTime().AsTime(),
+		Enabled:                        a.GetEnabled(),
+		ToggleTime:                     a.GetToggleTime().AsTime(),
+		TerminalStorageClass:           a.GetTerminalStorageClass(),
+		TerminalStorageClassUpdateTime: a.GetTerminalStorageClassUpdateTime().AsTime(),
 	}
 }
 

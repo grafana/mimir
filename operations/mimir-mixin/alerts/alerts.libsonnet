@@ -291,6 +291,42 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s has no rule groups assigned.' % $._config,
           },
         },
+        {
+          // Alert if a ruler instance has no rule groups assigned while other instances in the same cell do.
+          alert: $.alertName('IngestedDataTooFarInTheFuture'),
+          'for': '5m',
+          expr: |||
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
+                cortex_ingester_tsdb_head_max_timestamp_seconds - time()
+                and
+                cortex_ingester_tsdb_head_max_timestamp_seconds > 0
+            ) > 60*60
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has ingested samples with timestamps more than 1h in the future.' % $._config,
+          },
+        },
+        {
+          alert: $.alertName('StoreGatewayTooManyFailedOperations'),
+          'for': '5m',
+          expr: |||
+            sum by(%(alert_aggregation_labels)s, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[1m])) > 0
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s store-gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
+          },
+        },
       ] + [
         {
           alert: $.alertName('RingMembersMismatch'),
@@ -677,17 +713,47 @@ local utils = import 'mixin-utils/utils.libsonnet';
       name: 'gossip_alerts',
       rules: [
         {
-          alert: $.alertName('GossipMembersMismatch'),
+          // What's the purpose of this alert? We want to know if two databases' Memberlist clusters have merged.
+          // We do this by comparing the reported number of cluster members with the expected number of members based on the number of running pods in that namespace.
+          // If two Memberlist clusters have merged, then the reported number of members will be higher than the expected number.
+          // However, during rollouts, the number of reported cluster members can be higher than the expected number because it takes some time for the removal of old
+          // pods to be propagated to all members of the cluster, so we add a fudge factor of 10 extra members.
+          // This value is designed to be low enough that the alert will trigger if another cluster merges with this one (assuming that most clusters have more than 10
+          // members), but high enough to not result in false positives during rollouts.
+          // We don't use a percentage because this would not be reliable: in a large Mimir cluster of 1000+ instances, even a small percentage like 5% would be 50
+          // instances - too high to catch a small cluster merging with a big one.
+          alert: $.alertName('GossipMembersTooHigh'),
           expr:
             |||
-              avg by (%s) (memberlist_client_cluster_members_count) != sum by (%s) (up{%s=~".+/%s"})
+              max by (%s) (memberlist_client_cluster_members_count)
+              >
+              (sum by (%s) (up{%s=~".+/%s"}) + 10)
             ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $._config.per_job_label, simpleRegexpOpt($._config.job_names.ring_members)],
-          'for': '15m',
+          'for': '20m',
           labels: {
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s instance %(alert_instance_variable)s in %(alert_aggregation_variables)s sees incorrect number of gossip members.' % $._config,
+            message: 'One or more %(product)s instances in %(alert_aggregation_variables)s consistently sees a higher than expected number of gossip members.' % $._config,
+          },
+        },
+        {
+          // What's the purpose of this alert? We want to know if a cell has reached a split brain scenario.
+          // We do this by comparing the reported number of cluster members with the expected number of members based on the number of running pods in that namespace.
+          // If a split has occurred, then the reported number of members will be lower than the expected number.
+          alert: $.alertName('GossipMembersTooLow'),
+          expr:
+            |||
+              min by (%s) (memberlist_client_cluster_members_count)
+              <
+              (sum by (%s) (up{%s=~".+/%s"}) * 0.5)
+            ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $._config.per_job_label, simpleRegexpOpt($._config.job_names.ring_members)],
+          'for': '20m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: 'One or more %(product)s instances in %(alert_aggregation_variables)s consistently sees a lower than expected number of gossip members.' % $._config,
           },
         },
       ],
@@ -737,5 +803,5 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   ],
 
-  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', alertGroups),
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
 }

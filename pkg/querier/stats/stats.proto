@@ -32,4 +32,6 @@ message Stats {
   uint64 fetched_index_bytes = 7;
   // The estimated number of series to be fetched for the query
   uint64 estimated_series_count = 8;
+  // The sum of durations that the query spent in the queue, before it was handled by querier.
+  google.protobuf.Duration queue_time = 9 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
 }

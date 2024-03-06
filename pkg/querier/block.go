@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/series"
@@ -61,7 +62,7 @@ func (bqss *blockQuerierSeriesSet) Next() bool {
 		return false
 	}
 
-	currLabels := mimirpb.FromLabelAdaptersToLabels(bqss.series[bqss.next].Labels)
+	currLabels := bqss.series[bqss.next].Labels
 	currChunks := bqss.series[bqss.next].Chunks
 
 	bqss.next++
@@ -69,12 +70,12 @@ func (bqss *blockQuerierSeriesSet) Next() bool {
 	// Merge chunks for current series. Chunks may come in multiple responses, but as soon
 	// as the response has chunks for a new series, we can stop searching. Series are sorted.
 	// See documentation for StoreClient.Series call for details.
-	for bqss.next < len(bqss.series) && labels.Compare(currLabels, mimirpb.FromLabelAdaptersToLabels(bqss.series[bqss.next].Labels)) == 0 {
+	for bqss.next < len(bqss.series) && mimirpb.CompareLabelAdapters(currLabels, bqss.series[bqss.next].Labels) == 0 {
 		currChunks = append(currChunks, bqss.series[bqss.next].Chunks...)
 		bqss.next++
 	}
 
-	bqss.currSeries = newBlockQuerierSeries(currLabels, currChunks)
+	bqss.currSeries = newBlockQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), currChunks)
 	return true
 }
 
@@ -86,7 +87,7 @@ func (bqss *blockQuerierSeriesSet) Err() error {
 	return nil
 }
 
-func (bqss *blockQuerierSeriesSet) Warnings() storage.Warnings {
+func (bqss *blockQuerierSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
@@ -190,7 +191,7 @@ func (it *blockQuerierSeriesIterator) Seek(t int64) chunkenc.ValueType {
 			// Once we found an iterator which covers a time range that reaches beyond the seeked <t>
 			// we try to seek to and return the result.
 			if typ := it.iterators[it.i].Seek(t); typ != chunkenc.ValNone {
-				it.updateLastT(typ)
+				it.lastT = it.iterators[it.i].AtT()
 				return typ
 			}
 		}
@@ -209,22 +210,22 @@ func (it *blockQuerierSeriesIterator) At() (int64, float64) {
 	return t, v
 }
 
-func (it *blockQuerierSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (it *blockQuerierSeriesIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
 	if it.i >= len(it.iterators) {
 		return 0, nil
 	}
 
-	t, h := it.iterators[it.i].AtHistogram()
+	t, h := it.iterators[it.i].AtHistogram(h)
 	it.lastT = t
 	return t, h
 }
 
-func (it *blockQuerierSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (it *blockQuerierSeriesIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if it.i >= len(it.iterators) {
 		return 0, nil
 	}
 
-	t, fh := it.iterators[it.i].AtFloatHistogram()
+	t, fh := it.iterators[it.i].AtFloatHistogram(fh)
 	it.lastT = t
 	return t, fh
 }
@@ -245,7 +246,7 @@ func (it *blockQuerierSeriesIterator) Next() chunkenc.ValueType {
 	}
 
 	if typ := it.iterators[it.i].Next(); typ != chunkenc.ValNone {
-		it.updateLastT(typ)
+		it.lastT = it.iterators[it.i].AtT()
 		return typ
 	}
 	if it.iterators[it.i].Err() != nil {
@@ -274,17 +275,4 @@ func (it *blockQuerierSeriesIterator) Err() error {
 		return errors.Wrapf(err, "cannot iterate chunk for series: %v", it.labels)
 	}
 	return nil
-}
-
-func (it *blockQuerierSeriesIterator) updateLastT(typ chunkenc.ValueType) {
-	switch typ {
-	case chunkenc.ValFloat:
-		it.lastT, _ = it.iterators[it.i].At()
-	case chunkenc.ValHistogram:
-		it.lastT, _ = it.iterators[it.i].AtHistogram()
-	case chunkenc.ValFloatHistogram:
-		it.lastT, _ = it.iterators[it.i].AtFloatHistogram()
-	default:
-		panic("Unsupported chunktype in blockQuerierSeriesIterator iterator")
-	}
 }

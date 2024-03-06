@@ -7,13 +7,14 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"testing"
 
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -32,35 +33,7 @@ type storeTestServer struct {
 	// requestSeries is the function to call the Series() API endpoint
 	// via gRPC. The actual implementation depends whether we're calling
 	// the StoreGateway or BucketStore API endpoint.
-	requestSeries func(ctx context.Context, conn *grpc.ClientConn, req *storepb.SeriesRequest) (storepb.Store_SeriesClient, error)
-}
-
-func newBucketStoreTestServer(t testing.TB, store storepb.StoreServer) *storeTestServer {
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = listener.Close()
-	})
-
-	s := &storeTestServer{
-		server:         grpc.NewServer(),
-		serverListener: listener,
-		requestSeries: func(ctx context.Context, conn *grpc.ClientConn, req *storepb.SeriesRequest) (storepb.Store_SeriesClient, error) {
-			client := storepb.NewStoreClient(conn)
-			return client.Series(ctx, req)
-		},
-	}
-
-	storepb.RegisterStoreServer(s.server, store)
-
-	go func() {
-		_ = s.server.Serve(listener)
-	}()
-
-	// Stop the gRPC server once the test has done.
-	t.Cleanup(s.server.GracefulStop)
-
-	return s
+	requestSeries func(ctx context.Context, conn *grpc.ClientConn, req *storepb.SeriesRequest) (storegatewaypb.StoreGateway_SeriesClient, error)
 }
 
 func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewayServer) *storeTestServer {
@@ -73,8 +46,8 @@ func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewaySe
 	s := &storeTestServer{
 		server:         grpc.NewServer(),
 		serverListener: listener,
-		requestSeries: func(ctx context.Context, conn *grpc.ClientConn, req *storepb.SeriesRequest) (storepb.Store_SeriesClient, error) {
-			client := storegatewaypb.NewStoreGatewayClient(conn)
+		requestSeries: func(ctx context.Context, conn *grpc.ClientConn, req *storepb.SeriesRequest) (storegatewaypb.StoreGateway_SeriesClient, error) {
+			client := storegatewaypb.NewCustomStoreGatewayClient(conn)
 			return client.Series(ctx, req)
 		},
 	}
@@ -93,10 +66,10 @@ func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewaySe
 
 // Series calls the store server's Series() endpoint via gRPC and returns the responses collected
 // via the gRPC stream.
-func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.Series, warnings storage.Warnings, hints hintspb.SeriesResponseHints, err error) {
+func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.Series, warnings annotations.Annotations, hints hintspb.SeriesResponseHints, estimatedChunks uint64, err error) {
 	var (
 		conn               *grpc.ClientConn
-		stream             storepb.Store_SeriesClient
+		stream             storegatewaypb.StoreGateway_SeriesClient
 		res                *storepb.SeriesResponse
 		streamingSeriesSet []*storepb.StreamingSeries
 	)
@@ -135,7 +108,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		}
 
 		if res.GetWarning() != "" {
-			warnings = append(warnings, errors.New(res.GetWarning()))
+			warnings.Add(errors.New(res.GetWarning()))
 		}
 
 		if rawHints := res.GetHints(); rawHints != nil {
@@ -203,6 +176,24 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 	}
 
 	if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
+		res, err = stream.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// This is expected if there are no matching series: no estimate is sent and the stream is closed.
+				err = nil
+			}
+
+			return
+		}
+
+		estimate := res.GetStreamingChunksEstimate()
+		if estimate == nil {
+			err = fmt.Errorf("expected to get streaming chunks estimate message before all chunks messages, but got %T", res.Result)
+			return
+		}
+
+		estimatedChunks = estimate.EstimatedChunkCount
+
 		// Get the streaming chunks.
 		idx := -1
 		for idx < len(streamingSeriesSet)-1 {
@@ -213,6 +204,11 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 			}
 
 			chksBatch := res.GetStreamingChunks()
+			if chksBatch == nil {
+				err = errors.Errorf("received unexpected response type %T, expected streaming chunks batch", res.Result)
+				return
+			}
+
 			for _, chks := range chksBatch.Series {
 				idx++
 				if chksBatch == nil {
@@ -249,7 +245,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		res, err = stream.Recv()
 		for err == nil {
 			if res.GetHints() == nil && res.GetStats() == nil {
-				err = errors.Errorf("got unexpected response type")
+				err = errors.Errorf("got unexpected response type %T", res.Result)
 				break
 			}
 			res, err = stream.Recv()

@@ -7,6 +7,7 @@ package indexheader
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -35,7 +36,7 @@ var implementations = []struct {
 	{
 		name: "stream binary reader",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
-			br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, true, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -45,7 +46,7 @@ var implementations = []struct {
 		name: "lazy stream binary reader",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
 			readerFactory := func() (Reader, error) {
-				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, true, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			}
 
 			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
@@ -129,6 +130,8 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 }
 
 func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerReader Reader) {
+	ctx := context.Background()
+
 	indexReader, err := index.NewReader(indexByteSlice)
 	require.NoError(t, err)
 	defer func() { _ = indexReader.Close() }()
@@ -151,7 +154,6 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		require.NoError(t, iter.Err())
 		_, err := headerReader.LookupSymbol(uint32(i))
 		require.Error(t, err)
-
 	} else {
 		// For v1 symbols refs are actual offsets in the index.
 		symbols, err := getSymbolTable(indexByteSlice)
@@ -166,7 +168,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		require.Error(t, err)
 	}
 
-	expLabelNames, err := indexReader.LabelNames()
+	expLabelNames, err := indexReader.LabelNames(ctx)
 	require.NoError(t, err)
 	actualLabelNames, err := headerReader.LabelNames()
 	require.NoError(t, err)
@@ -176,7 +178,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 	require.NoError(t, err)
 
 	for _, lname := range expLabelNames {
-		expectedLabelVals, err := indexReader.SortedLabelValues(lname)
+		expectedLabelVals, err := indexReader.SortedLabelValues(ctx, lname)
 		require.NoError(t, err)
 
 		valOffsets, err := headerReader.LabelValuesOffsets(lname, "", nil)
@@ -262,6 +264,38 @@ func TestReadersLabelValuesOffsets(t *testing.T) {
 					}
 				})
 			}
+		})
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		setup       func(*Config)
+		expectedErr error
+	}{
+		"should fail on invalid index-header lazy loading max concurrency": {
+			setup: func(cfg *Config) {
+				cfg.LazyLoadingConcurrency = -1
+			},
+			expectedErr: errInvalidIndexHeaderLazyLoadingConcurrency,
+		},
+	}
+
+	for testName, testData := range tests {
+		testData := testData
+
+		t.Run(testName, func(t *testing.T) {
+			indexHeaderConfig := &Config{}
+
+			fs := flag.NewFlagSet("", flag.PanicOnError)
+			indexHeaderConfig.RegisterFlagsWithPrefix(fs, "blocks-storage.bucket-store.index-header.")
+
+			testData.setup(indexHeaderConfig)
+
+			actualErr := indexHeaderConfig.Validate()
+			assert.Equal(t, testData.expectedErr, actualErr)
 		})
 	}
 }

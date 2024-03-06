@@ -3,7 +3,7 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM debian:11
+FROM debian:12
 ENV container docker
 ENV LC_ALL C
 ENV DEBIAN_FRONTEND noninteractive

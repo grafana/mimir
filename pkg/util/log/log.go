@@ -6,7 +6,6 @@
 package log
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -15,7 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	dslog "github.com/grafana/dskit/log"
-	"github.com/grafana/dskit/server"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
@@ -26,23 +25,53 @@ var (
 	bufferedLogger *dslog.BufferedLogger
 )
 
-// InitLogger initialises the global gokit logger (util_log.Logger) and overrides the
-// default logger for the server.
-func InitLogger(cfg *server.Config, buffered bool) {
-	l := newBasicLogger(cfg.LogFormat, buffered)
-
-	// when using util_log.Logger, skip 5 stack frames.
-	logger := log.With(l, "caller", log.Caller(5))
-	// Must put the level filter last for efficiency.
-	Logger = level.NewFilter(logger, cfg.LogLevel.Gokit)
-
-	// cfg.Log wraps log function, skip 6 stack frames to get caller information.
-	cfg.Log = dslog.GoKit(level.NewFilter(log.With(l, "caller", log.Caller(6)), cfg.LogLevel.Gokit))
+type RateLimitedLoggerCfg struct {
+	Enabled       bool
+	LogsPerSecond float64
+	LogsBurstSize int
+	Registry      prometheus.Registerer
 }
 
-func newBasicLogger(format dslog.Format, buffered bool) log.Logger {
-	var logger log.Logger
-	var writer io.Writer = os.Stderr
+// InitLogger initialises the global gokit logger (util_log.Logger) and returns that logger.
+func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimitedCfg RateLimitedLoggerCfg) log.Logger {
+	writer := getWriter(buffered)
+	logger := dslog.NewGoKitWithWriter(logFormat, writer)
+
+	if rateLimitedCfg.Enabled {
+		// use UTC timestamps and skip 6 stack frames if rate limited logger is needed.
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(6))
+		logger = dslog.NewRateLimitedLogger(logger, rateLimitedCfg.LogsPerSecond, rateLimitedCfg.LogsBurstSize, rateLimitedCfg.Registry)
+	} else {
+		// use UTC timestamps and skip 5 stack frames if no rate limited logger is needed.
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
+	}
+	// Must put the level filter last for efficiency.
+	logger = newFilter(logger, logLevel)
+
+	// Set global logger.
+	Logger = logger
+	return logger
+}
+
+// Pass through Logger and implement the DebugEnabled interface that spanlogger looks for.
+type levelFilter struct {
+	log.Logger
+	debugEnabled bool
+}
+
+func newFilter(logger log.Logger, lvl dslog.Level) log.Logger {
+	return &levelFilter{
+		Logger:       level.NewFilter(logger, lvl.Option),
+		debugEnabled: lvl.String() == "debug", // Using inside knowledge about the hierarchy of possible options.
+	}
+}
+
+func (f *levelFilter) DebugEnabled() bool {
+	return f.debugEnabled
+}
+
+func getWriter(buffered bool) io.Writer {
+	writer := os.Stderr
 
 	if buffered {
 		var (
@@ -58,25 +87,9 @@ func newBasicLogger(format dslog.Format, buffered bool) log.Logger {
 			dslog.WithPrellocatedBuffer(logBufferSize),
 		)
 
-		writer = bufferedLogger
-	} else {
-		writer = log.NewSyncWriter(writer)
+		return bufferedLogger
 	}
-
-	if format.String() == "json" {
-		logger = log.NewJSONLogger(writer)
-	} else {
-		logger = log.NewLogfmtLogger(writer)
-	}
-
-	// return a Logger without filter or caller information, shouldn't use directly
-	return log.With(logger, "ts", log.DefaultTimestampUTC)
-}
-
-// NewDefaultLogger creates a new gokit logger with the configured level and format
-func NewDefaultLogger(l dslog.Level, format dslog.Format) log.Logger {
-	logger := newBasicLogger(format, false)
-	return level.NewFilter(log.With(logger, "ts", log.DefaultTimestampUTC), l.Gokit)
+	return log.NewSyncWriter(writer)
 }
 
 // CheckFatal prints an error and exits with error code 1 if err is non-nil
@@ -105,9 +118,3 @@ func Flush() error {
 
 	return nil
 }
-
-type DoNotLogError struct{ Err error }
-
-func (i DoNotLogError) Error() string                                     { return i.Err.Error() }
-func (i DoNotLogError) Unwrap() error                                     { return i.Err }
-func (i DoNotLogError) ShouldLog(_ context.Context, _ time.Duration) bool { return false }

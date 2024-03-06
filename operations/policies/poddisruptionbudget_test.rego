@@ -2,7 +2,7 @@ package main
 
 poddisruptionbudget_root_test_fixture_dir := "test_fixtures/poddisruptionbudget"
 
-no_violations {
+no_pdb_violations {
 	missing_pdb_denies := deny_missing_poddisruptionbudget with input as input
 	trace(sprintf("Missing PDB denies: %v", [missing_pdb_denies]))
 	count(missing_pdb_denies) == 0
@@ -28,7 +28,7 @@ test_deployment_with_matching_pdb {
 	pdb_file := sprintf("%s/pdb.yaml", [input_directory])
 	input := parse_combined_config_files([deployment_file, pdb_file])
 
-	no_violations with input as input
+	no_pdb_violations with input as input
 }
 
 test_deployment_with_many_labels_and_matching_pdb {
@@ -37,7 +37,7 @@ test_deployment_with_many_labels_and_matching_pdb {
 	pdb_file := sprintf("%s/pdb.yaml", [input_directory])
 	input := parse_combined_config_files([deployment_file, pdb_file])
 
-	no_violations with input as input
+	no_pdb_violations with input as input
 }
 
 test_mismatched_deployment_and_pdb {
@@ -71,7 +71,7 @@ test_statefulset_with_matching_pdb {
 	pdb_file := sprintf("%s/pdb.yaml", [input_directory])
 	input := parse_combined_config_files([statefulset_file, pdb_file])
 
-	no_violations with input as input
+	no_pdb_violations with input as input
 }
 
 test_mismatched_deployment_and_pdb {

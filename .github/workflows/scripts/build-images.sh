@@ -16,5 +16,5 @@ for target in $@
 do
   DIRNAME="$(dirname "$target")"
   NAME="$(basename "$DIRNAME")"
-  make BUILD_IN_CONTAINER=false PUSH_MULTIARCH_TARGET="type=oci,dest=$OUTPUT/$NAME.oci" push-multiarch-$target
+  make BUILD_IN_CONTAINER=false PUSH_MULTIARCH_TARGET="type=oci,dest=$OUTPUT/$NAME.oci" PUSH_MULTIARCH_TARGET_DISTROLESS="type=oci,dest=$OUTPUT/$NAME\-distroless.oci" push-multiarch-$target
 done

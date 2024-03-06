@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/client_golang/prometheus"
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
@@ -890,7 +891,7 @@ alertmanager_config: |
 			limits.maxTemplatesCount = tc.maxTemplates
 			limits.maxSizeOfTemplate = tc.maxTemplateSize
 
-			req := httptest.NewRequest(http.MethodPost, "http://alertmanager/api/v1/alerts", bytes.NewReader([]byte(tc.cfg)))
+			req := httptest.NewRequest(http.MethodPost, "http://alertmanager/api/v2/alerts", bytes.NewReader([]byte(tc.cfg)))
 			ctx := user.InjectOrgID(req.Context(), "testing")
 			w := httptest.NewRecorder()
 			am.SetUserConfig(w, req.WithContext(ctx))
@@ -1013,7 +1014,7 @@ receivers:
 	// Create the Multitenant Alertmanager.
 	reg := prometheus.NewPedanticRegistry()
 	cfg := mockAlertmanagerConfig(t)
-	am := setupSingleMultitenantAlertmanager(t, cfg, alertStore, nil, log.NewNopLogger(), reg)
+	am := setupSingleMultitenantAlertmanager(t, cfg, alertStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
@@ -1115,6 +1116,34 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			},
 			expected: errPasswordFileNotAllowed,
 		},
+		"*DiscordConfig.HTTPConfig": {
+			input: &config.DiscordConfig{
+				HTTPConfig: &commoncfg.HTTPClientConfig{
+					BearerTokenFile: "/file",
+				},
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"DiscordConfig.HTTPConfig": {
+			input: &config.DiscordConfig{
+				HTTPConfig: &commoncfg.HTTPClientConfig{
+					BearerTokenFile: "/file",
+				},
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"*DiscordConfig.WebhookURLFile": {
+			input: &config.DiscordConfig{
+				WebhookURLFile: "/file",
+			},
+			expected: errWebhookURLFileNotAllowed,
+		},
+		"DiscordConfig.WebhookURLFile": {
+			input: config.DiscordConfig{
+				WebhookURLFile: "/file",
+			},
+			expected: errWebhookURLFileNotAllowed,
+		},
 		"*EmailConfig.AuthPasswordFile": {
 			input: &config.EmailConfig{
 				AuthPasswordFile: "/file",
@@ -1126,6 +1155,34 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 				AuthPasswordFile: "/file",
 			},
 			expected: errPasswordFileNotAllowed,
+		},
+		"*MSTeams.HTTPConfig": {
+			input: &config.MSTeamsConfig{
+				HTTPConfig: &commoncfg.HTTPClientConfig{
+					BearerTokenFile: "/file",
+				},
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"MSTeams.HTTPConfig": {
+			input: &config.MSTeamsConfig{
+				HTTPConfig: &commoncfg.HTTPClientConfig{
+					BearerTokenFile: "/file",
+				},
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"*MSTeams.WebhookURLFile": {
+			input: &config.MSTeamsConfig{
+				WebhookURLFile: "/file",
+			},
+			expected: errWebhookURLFileNotAllowed,
+		},
+		"MSTeams.WebhookURLFile": {
+			input: config.MSTeamsConfig{
+				WebhookURLFile: "/file",
+			},
+			expected: errWebhookURLFileNotAllowed,
 		},
 		"struct containing *HTTPClientConfig as direct child": {
 			input: config.GlobalConfig{

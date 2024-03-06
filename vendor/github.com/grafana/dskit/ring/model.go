@@ -7,12 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafana/dskit/loser"
-
 	"github.com/gogo/protobuf/proto"
 
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
+	"github.com/grafana/dskit/loser"
 )
 
 // ByAddr is a sortable list of InstanceDesc.
@@ -21,6 +20,13 @@ type ByAddr []InstanceDesc
 func (ts ByAddr) Len() int           { return len(ts) }
 func (ts ByAddr) Swap(i, j int)      { ts[i], ts[j] = ts[j], ts[i] }
 func (ts ByAddr) Less(i, j int) bool { return ts[i].Addr < ts[j].Addr }
+
+// ByID is a sortable list of InstanceDesc.
+type ByID []InstanceDesc
+
+func (ts ByID) Len() int           { return len(ts) }
+func (ts ByID) Swap(i, j int)      { ts[i], ts[j] = ts[j], ts[i] }
+func (ts ByID) Less(i, j int) bool { return ts[i].Id < ts[j].Id }
 
 // ProtoDescFactory makes new Descs
 func ProtoDescFactory() proto.Message {
@@ -52,6 +58,7 @@ func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state Instanc
 	}
 
 	ingester := InstanceDesc{
+		Id:                  id,
 		Addr:                addr,
 		Timestamp:           time.Now().Unix(),
 		RegisteredTimestamp: registeredTimestamp,
@@ -195,7 +202,6 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 
 	other, ok := mergeable.(*Desc)
 	if !ok {
-		// This method only deals with non-nil rings.
 		return nil, fmt.Errorf("expected *ring.Desc, got %T", mergeable)
 	}
 
@@ -512,6 +518,16 @@ func (d *Desc) getOldestRegisteredTimestamp() int64 {
 	return result
 }
 
+func (d *Desc) instancesCountPerZone() map[string]int {
+	instancesCountPerZone := map[string]int{}
+	if d != nil {
+		for _, ingester := range d.Ingesters {
+			instancesCountPerZone[ingester.Zone]++
+		}
+	}
+	return instancesCountPerZone
+}
+
 type CompareResult int
 
 // CompareResult responses
@@ -585,10 +601,19 @@ func (d *Desc) RingCompare(o *Desc) CompareResult {
 	return EqualButStatesAndTimestamps
 }
 
+// setInstanceIDs sets the ID of each InstanceDesc object managed by this Desc
+func (d *Desc) setInstanceIDs() {
+	for id, inst := range d.Ingesters {
+		inst.Id = id
+		d.Ingesters[id] = inst
+	}
+}
+
 func GetOrCreateRingDesc(d interface{}) *Desc {
 	if d == nil {
 		return NewDesc()
 	}
+
 	return d.(*Desc)
 }
 

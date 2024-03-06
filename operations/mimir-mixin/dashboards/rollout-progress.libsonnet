@@ -8,9 +8,18 @@ local filename = 'mimir-rollout-progress.json';
     per_cluster_label: $._config.per_cluster_label,
     write_job_matcher: if $._config.gateway_enabled then $.jobMatcher($._config.job_names.gateway) else $.jobMatcher($._config.job_names.distributor),
     read_job_matcher: if $._config.gateway_enabled then $.jobMatcher($._config.job_names.gateway) else $.jobMatcher($._config.job_names.query_frontend),
+    workload_label_replace_open:
+      std.repeat('label_replace(', std.length($._config.rollout_dashboard.workload_label_replaces)),
+    workload_label_replace_close:
+      (if std.length($._config.rollout_dashboard.workload_label_replaces) > 0 then ', ' else '')
+      + std.join(', ', [
+        '"workload", "%(replacement)s", "%(src_label)s", "%(regex)s")' % replace
+        for replace in $._config.rollout_dashboard.workload_label_replaces
+      ]),
   },
 
   [filename]:
+    assert std.md5(filename) == '7f0b5567d543a1698e695b530eb7f5de' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Rollout progress') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false) + {
       // This dashboard uses the new grid system in order to place panels (using gridPos).
@@ -28,92 +37,56 @@ local filename = 'mimir-rollout-progress.json';
             // After the grouping, the resulting label is called "cortex_service".
             |||
               (
-                sum by(cortex_service) (
-                  label_replace(
-                    label_replace(
-                      label_replace(
-                        {__name__=~"kube_(deployment|statefulset)_status_replicas_updated", %(namespace_matcher)s},
-                        "cortex_service", "$1", "deployment", "(.+)"
-                      ),
-                      "cortex_service", "$1", "statefulset", "(.+)"
-                    ),
-                    # Strip the -zone-X suffix, if there is one
-                    "cortex_service", "$1", "cortex_service", "(.*?)(?:-zone-[a-z])?"
-                  )
+                sum by (workload) (
+                  %(workload_label_replace_open)s
+                    kube_deployment_status_replicas_updated{%(namespace_matcher)s}
+                    or
+                    kube_statefulset_status_replicas_updated{%(namespace_matcher)s}
+                  %(workload_label_replace_close)s
                 )
                 /
-                sum by(cortex_service) (
-                  label_replace(
-                    label_replace(
-                      label_replace(
-                        {__name__=~"kube_(deployment|statefulset)_status_replicas", %(namespace_matcher)s},
-                        "cortex_service", "$1", "deployment", "(.+)"
-                      ),
-                      "cortex_service", "$1", "statefulset", "(.+)"
-                    ),
-                    # Strip the -zone-X suffix, if there is one
-                    "cortex_service", "$1", "cortex_service", "(.*?)(?:-zone-[a-z])?"
-                  )
+                sum by (workload) (
+                  %(workload_label_replace_open)s
+                    kube_deployment_status_replicas{%(namespace_matcher)s}
+                    or
+                    kube_statefulset_status_replicas{%(namespace_matcher)s}
+                  %(workload_label_replace_close)s
                 )
               ) and (
-                sum by(cortex_service) (
-                  label_replace(
-                    label_replace(
-                      label_replace(
-                        {__name__=~"kube_(deployment|statefulset)_status_replicas", %(namespace_matcher)s},
-                        "cortex_service", "$1", "deployment", "(.+)"
-                      ),
-                      "cortex_service", "$1", "statefulset", "(.+)"
-                    ),
-                    # Strip the -zone-X suffix, if there is one
-                    "cortex_service", "$1", "cortex_service", "(.*?)(?:-zone-[a-z])?"
-                  )
+                sum by (workload) (
+                  %(workload_label_replace_open)s
+                    kube_deployment_status_replicas{%(namespace_matcher)s}
+                    or
+                    kube_statefulset_status_replicas{%(namespace_matcher)s}
+                  %(workload_label_replace_close)s
                 )
                 > 0
               )
             ||| % config,
             |||
               (
-                sum by(cortex_service) (
-                  label_replace(
-                    label_replace(
-                      label_replace(
-                        {__name__=~"kube_(deployment|statefulset)_status_replicas_ready", %(namespace_matcher)s},
-                        "cortex_service", "$1", "deployment", "(.+)"
-                      ),
-                      "cortex_service", "$1", "statefulset", "(.+)"
-                    ),
-                    # Strip the -zone-X suffix, if there is one
-                    "cortex_service", "$1", "cortex_service", "(.*?)(?:-zone-[a-z])?"
-                  )
+                sum by (workload) (
+                  %(workload_label_replace_open)s
+                    kube_deployment_status_replicas_ready{%(namespace_matcher)s}
+                    or
+                    kube_statefulset_status_replicas_ready{%(namespace_matcher)s}
+                  %(workload_label_replace_close)s
                 )
                 /
-                sum by(cortex_service) (
-                  label_replace(
-                    label_replace(
-                      label_replace(
-                        {__name__=~"kube_(deployment|statefulset)_status_replicas", %(namespace_matcher)s},
-                        "cortex_service", "$1", "deployment", "(.+)"
-                      ),
-                      "cortex_service", "$1", "statefulset", "(.+)"
-                    ),
-                    # Strip the -zone-X suffix, if there is one
-                    "cortex_service", "$1", "cortex_service", "(.*?)(?:-zone-[a-z])?"
-                  )
+                sum by (workload) (
+                  %(workload_label_replace_open)s
+                    kube_deployment_status_replicas{%(namespace_matcher)s}
+                    or
+                    kube_statefulset_status_replicas{%(namespace_matcher)s}
+                  %(workload_label_replace_close)s
                 )
               ) and (
-                sum by(cortex_service) (
-                  label_replace(
-                    label_replace(
-                      label_replace(
-                        {__name__=~"kube_(deployment|statefulset)_status_replicas", %(namespace_matcher)s},
-                        "cortex_service", "$1", "deployment", "(.+)"
-                      ),
-                      "cortex_service", "$1", "statefulset", "(.+)"
-                    ),
-                    # Strip the -zone-X suffix, if there is one
-                    "cortex_service", "$1", "cortex_service", "(.*?)(?:-zone-[a-z])?"
-                  )
+                sum by (workload) (
+                  %(workload_label_replace_open)s
+                    kube_deployment_status_replicas{%(namespace_matcher)s}
+                    or
+                    kube_statefulset_status_replicas{%(namespace_matcher)s}
+                  %(workload_label_replace_close)s
                 )
                 > 0
               )
@@ -157,7 +130,7 @@ local filename = 'mimir-rollout-progress.json';
           transformations: [
             {
               id: 'joinByField',
-              options: { byField: 'cortex_service', mode: 'outer' },
+              options: { byField: 'workload', mode: 'outer' },
             },
             {
               id: 'organize',
@@ -167,7 +140,7 @@ local filename = 'mimir-rollout-progress.json';
                   'Time 2': true,
                 },
                 renameByName: {
-                  cortex_service: 'Workload',
+                  workload: 'Workload',
                   'Value #A': 'Updated',
                   'Value #B': 'Ready',
                 },
@@ -382,7 +355,7 @@ local filename = 'mimir-rollout-progress.json';
         //
         // Performance comparison with 24h ago
         //
-        $.panel('Latency vs 24h ago') +
+        $.timeseriesPanel('Latency vs 24h ago') +
         $.queryPanel([|||
           1 - (
             avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"} offset 24h))[1h:])
@@ -395,12 +368,18 @@ local filename = 'mimir-rollout-progress.json';
             /
             avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"}))[1h:])
           )
-        ||| % config], ['writes', 'reads']) + {
-          yaxes: $.yaxes({
-            format: 'percentunit',
-            min: null,  // Can be negative.
-          }),
-
+        ||| % config], ['writes', 'reads']) +
+        {
+          fieldConfig: {
+            defaults: {
+              unit: 'percentunit',
+              custom: {
+                fillOpacity: 10,
+              },
+            },
+          },
+        } +
+        {
           id: 12,
           gridPos: { h: 8, w: 8, x: 16, y: 8 },
         },

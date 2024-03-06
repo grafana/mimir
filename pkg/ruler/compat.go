@@ -12,8 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
-	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -23,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 
@@ -79,6 +79,10 @@ func (a *PusherAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	return 0, nil
 }
 
+func (a *PusherAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("CT zero samples are unsupported")
+}
+
 func (a *PusherAppender) Commit() error {
 	a.totalWrites.Inc()
 
@@ -89,8 +93,9 @@ func (a *PusherAppender) Commit() error {
 	_, err := a.pusher.Push(user.InjectOrgID(a.ctx, a.userID), req)
 
 	if err != nil {
-		// Don't report errors that ended with 4xx HTTP status code (series limits, duplicate samples, out of order, etc.)
-		if resp, ok := httpgrpc.HTTPResponseFromError(err); !ok || resp.Code/100 != 4 {
+		// Don't report client errors, which are the same ones that would be reported with 4xx HTTP status code
+		// (e.g. series limits, duplicate samples, out of order, etc.)
+		if !mimirpb.IsClientError(err) {
 			a.failedWrites.Inc()
 		}
 	}
@@ -175,7 +180,7 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 			return result, origErr
 		} else if err != nil {
 			// When remote querier enabled, consider anything an error except those with 4xx status code.
-			st, ok := status.FromError(err)
+			st, ok := grpcutil.ErrorToStatus(err)
 			if !(ok && st.Code()/100 == 4) {
 				failedQueries.Inc()
 			}
@@ -184,8 +189,8 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 	}
 }
 
-func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime prometheus.Counter, logger log.Logger) rules.QueryFunc {
-	if queryTime == nil {
+func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedSeriesCount prometheus.Counter, logger log.Logger) rules.QueryFunc {
+	if queryTime == nil || zeroFetchedSeriesCount == nil {
 		return qf
 	}
 
@@ -196,6 +201,7 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime prometheus.Co
 		stats, ctx := querier_stats.ContextWithEmptyStats(ctx)
 		// If we've been passed a counter we want to record the wall time spent executing this request.
 		timer := prometheus.NewTimer(nil)
+		var err error
 		defer func() {
 			// Update stats wall time based on the timer created above.
 			stats.AddWallTime(timer.ObserveDuration())
@@ -207,6 +213,15 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime prometheus.Co
 			shardedQueries := stats.LoadShardedQueries()
 
 			queryTime.Add(wallTime.Seconds())
+			// Do not count queries with errors for zero fetched series, or queries
+			// with no selectors that are not meant to fetch any series.
+			if err == nil && numSeries == 0 {
+				if expr, err := parser.ParseExpr(qs); err == nil {
+					if len(parser.ExtractSelectors(expr)) > 0 {
+						zeroFetchedSeriesCount.Add(1)
+					}
+				}
+			}
 
 			// Log ruler query stats.
 			logMessage := []interface{}{
@@ -248,7 +263,7 @@ type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.
 func DefaultTenantManagerFactory(
 	cfg Config,
 	p Pusher,
-	embeddedQueryable storage.Queryable,
+	queryable storage.Queryable,
 	queryFunc rules.QueryFunc,
 	overrides RulesLimits,
 	reg prometheus.Registerer,
@@ -271,25 +286,36 @@ func DefaultTenantManagerFactory(
 		Help: "Number of failed queries by ruler.",
 	})
 	var rulerQuerySeconds *prometheus.CounterVec
+	var zeroFetchedSeriesQueries *prometheus.CounterVec
 	if cfg.EnableQueryStats {
 		rulerQuerySeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ruler_query_seconds_total",
 			Help: "Total amount of wall clock time spent processing queries by the ruler.",
 		}, []string{"user"})
+		zeroFetchedSeriesQueries = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ruler_queries_zero_fetched_series_total",
+			Help: "Number of queries that did not fetch any series by ruler.",
+		}, []string{"user"})
 	}
 	return func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager {
 		var queryTime prometheus.Counter
+		var zeroFetchedSeriesCount prometheus.Counter
 		if rulerQuerySeconds != nil {
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
+			zeroFetchedSeriesCount = zeroFetchedSeriesQueries.WithLabelValues(userID)
 		}
-		var wrappedQueryFunc rules.QueryFunc
 
-		wrappedQueryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
-		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, logger)
+		// Wrap the query function with our custom logic.
+		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, logger)
+		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, totalQueries, failedQueries)
+		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, logger)
+
+		// Wrap the queryable with our custom logic.
+		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
 
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 NewPusherAppendable(p, userID, totalWrites, failedWrites),
-			Queryable:                  embeddedQueryable,
+			Queryable:                  wrappedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
 			Context:                    user.InjectOrgID(ctx, userID),
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,

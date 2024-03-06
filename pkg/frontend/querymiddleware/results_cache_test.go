@@ -35,33 +35,37 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 			}(),
 		},
 		"should pass with memcached backend": {
-			cfg: ResultsCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: cache.BackendMemcached,
-					Memcached: cache.MemcachedClientConfig{
-						Addresses:           []string{"localhost"},
-						MaxAsyncConcurrency: 1,
-					},
-				},
-			},
+			cfg: func() ResultsCacheConfig {
+				cfg := ResultsCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = cache.BackendMemcached
+				cfg.Memcached.Addresses = []string{"localhost"}
+
+				return cfg
+			}(),
 		},
 		"should fail with invalid memcached config": {
-			cfg: ResultsCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: cache.BackendMemcached,
-					Memcached: cache.MemcachedClientConfig{
-						Addresses: nil,
-					},
-				},
-			},
+			cfg: func() ResultsCacheConfig {
+				cfg := ResultsCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = cache.BackendMemcached
+				cfg.Memcached.Addresses = []string{}
+
+				return cfg
+			}(),
 			expected: cache.ErrNoMemcachedAddresses,
 		},
 		"should fail with unsupported backend": {
-			cfg: ResultsCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: "unsupported",
-				},
-			},
+			cfg: func() ResultsCacheConfig {
+				cfg := ResultsCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = "unsupported"
+
+				return cfg
+			}(),
 			expected: errUnsupportedBackend,
 		},
 	}
@@ -548,7 +552,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 	}
 }
 
-func TestConstSplitter_generateCacheKey(t *testing.T) {
+func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
@@ -571,7 +575,7 @@ func TestConstSplitter_generateCacheKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s - %s", tt.name, tt.interval), func(t *testing.T) {
-			if got := ConstSplitter(tt.interval).GenerateCacheKey(ctx, "fake", tt.r); got != tt.want {
+			if got := (DefaultCacheKeyGenerator{tt.interval}).QueryRequest(ctx, "fake", tt.r); got != tt.want {
 				t.Errorf("generateKey() = %v, want %v", got, tt.want)
 			}
 		})

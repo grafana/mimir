@@ -6,6 +6,7 @@
 package util
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -172,5 +173,34 @@ func TestNewDisableableTicker_Disabled(t *testing.T) {
 		t.Error("ticker should not have ticked when disabled")
 	default:
 		break
+	}
+}
+
+func TestUnixSecondsJSON(t *testing.T) {
+	now := time.Now()
+
+	type obj struct {
+		Val UnixSeconds `json:"val,omitempty"`
+	}
+
+	type testCase struct {
+		obj  obj
+		json string
+	}
+
+	for _, tc := range []testCase{
+		{obj: obj{Val: 0}, json: `{}`},
+		{obj: obj{Val: UnixSecondsFromTime(now)}, json: fmt.Sprintf(`{"val":%d}`, now.Unix())},
+	} {
+		t.Run(tc.json, func(t *testing.T) {
+			out, err := json.Marshal(tc.obj)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.json, string(out))
+
+			var newObj obj
+			err = json.Unmarshal([]byte(tc.json), &newObj)
+			require.NoError(t, err)
+			require.Equal(t, tc.obj, newObj)
+		})
 	}
 }

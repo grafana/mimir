@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/netutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -18,7 +19,6 @@ import (
 	v1 "github.com/grafana/mimir/pkg/frontend/v1"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // CombinedFrontendConfig combines several configuration options together to preserve backwards compatibility.
@@ -57,7 +57,14 @@ func (cfg *CombinedFrontendConfig) Validate() error {
 // Returned RoundTripper can be wrapped in more round-tripper middlewares, and then eventually registered
 // into HTTP server using the Handler from this package. Returned RoundTripper is always non-nil
 // (if there are no errors), and it uses the returned frontend (if any).
-func InitFrontend(cfg CombinedFrontendConfig, limits v1.Limits, grpcListenPort int, log log.Logger, reg prometheus.Registerer) (http.RoundTripper, *v1.Frontend, *v2.Frontend, error) {
+func InitFrontend(
+	cfg CombinedFrontendConfig,
+	v1Limits v1.Limits,
+	v2Limits v2.Limits,
+	grpcListenPort int,
+	log log.Logger,
+	reg prometheus.Registerer,
+) (http.RoundTripper, *v1.Frontend, *v2.Frontend, error) {
 	switch {
 	case cfg.DownstreamURL != "":
 		// If the user has specified a downstream Prometheus, then we should use that.
@@ -67,7 +74,7 @@ func InitFrontend(cfg CombinedFrontendConfig, limits v1.Limits, grpcListenPort i
 	case cfg.FrontendV2.SchedulerAddress != "" || cfg.FrontendV2.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
 		// Query-scheduler is enabled when its address is configured or ring-based service discovery is configured.
 		if cfg.FrontendV2.Addr == "" {
-			addr, err := util.GetFirstAddressOf(cfg.FrontendV2.InfNames)
+			addr, err := netutil.GetFirstAddressOf(cfg.FrontendV2.InfNames, log, cfg.FrontendV2.EnableIPv6)
 			if err != nil {
 				return nil, nil, nil, errors.Wrap(err, "failed to get frontend address")
 			}
@@ -79,12 +86,12 @@ func InitFrontend(cfg CombinedFrontendConfig, limits v1.Limits, grpcListenPort i
 			cfg.FrontendV2.Port = grpcListenPort
 		}
 
-		fr, err := v2.NewFrontend(cfg.FrontendV2, log, reg)
+		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, log, reg)
 		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr), nil, fr, err
 
 	default:
 		// No scheduler = use original frontend.
-		fr, err := v1.New(cfg.FrontendV1, limits, log, reg)
+		fr, err := v1.New(cfg.FrontendV1, v1Limits, log, reg)
 		if err != nil {
 			return nil, nil, nil, err
 		}

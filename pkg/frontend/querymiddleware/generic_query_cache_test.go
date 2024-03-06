@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type newGenericQueryCacheFunc func(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper
+type newGenericQueryCacheFunc func(cache cache.Cache, splitter CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper
 
 type testGenericQueryCacheRequestType struct {
 	reqPath        string
@@ -215,7 +215,8 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 						}
 
 						// Inject the tenant ID in the request.
-						req = req.WithContext(user.InjectOrgID(context.Background(), userID))
+						queryDetails, ctx := ContextWithEmptyDetails(context.Background())
+						req = req.WithContext(user.InjectOrgID(ctx, userID))
 
 						// Init the cache.
 						cacheBackend := cache.NewInstrumentedMockCache()
@@ -225,7 +226,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 						initialStoreCallsCount := cacheBackend.CountStoreCalls()
 
 						reg := prometheus.NewPedanticRegistry()
-						rt := newRoundTripper(cacheBackend, limits, downstream, testutil.NewLogger(t), reg)
+						rt := newRoundTripper(cacheBackend, DefaultCacheKeyGenerator{}, limits, downstream, testutil.NewLogger(t), reg)
 						res, err := rt.RoundTrip(req)
 						require.NoError(t, err)
 
@@ -258,6 +259,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 							assert.Equal(t, testData.expectedBody, cached.Body)
 							assert.Equal(t, reqData.cacheKey, cached.CacheKey)
 							assert.WithinDuration(t, time.Now().Add(testData.cacheTTL), items[reqData.hashedCacheKey].ExpiresAt, 5*time.Second)
+							assert.Equal(t, cached.Size(), queryDetails.ResultsCacheMissBytes)
 						} else {
 							assert.Equal(t, initialStoreCallsCount, cacheBackend.CountStoreCalls())
 						}

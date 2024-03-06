@@ -171,6 +171,22 @@ func (s *Stats) LoadEstimatedSeriesCount() uint64 {
 	return atomic.LoadUint64(&s.EstimatedSeriesCount)
 }
 
+func (s *Stats) AddQueueTime(t time.Duration) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddInt64((*int64)(&s.QueueTime), int64(t))
+}
+
+func (s *Stats) LoadQueueTime() time.Duration {
+	if s == nil {
+		return 0
+	}
+
+	return time.Duration(atomic.LoadInt64((*int64)(&s.QueueTime)))
+}
+
 // Merge the provided Stats into this one.
 func (s *Stats) Merge(other *Stats) {
 	if s == nil || other == nil {
@@ -185,6 +201,7 @@ func (s *Stats) Merge(other *Stats) {
 	s.AddSplitQueries(other.LoadSplitQueries())
 	s.AddFetchedIndexBytes(other.LoadFetchedIndexBytes())
 	s.AddEstimatedSeriesCount(other.LoadEstimatedSeriesCount())
+	s.AddQueueTime(other.LoadQueueTime())
 }
 
 func ShouldTrackHTTPGRPCResponse(r *httpgrpc.HTTPResponse) bool {

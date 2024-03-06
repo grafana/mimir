@@ -11,27 +11,24 @@ import (
 	"github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func streamingChunkSeriesTestIteratorFunc(_ chunkenc.Iterator, chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
-	return streamingChunkSeriesTestIterator{
-		chunks:  chunks,
-		from:    from,
-		through: through,
-	}
-}
-
 func TestStreamingChunkSeries_HappyPath(t *testing.T) {
+	const (
+		minT = 1000
+		maxT = 6000
+	)
 	chunkUniqueToFirstSource := createTestChunk(t, 1500, 1.23)
 	chunkUniqueToSecondSource := createTestChunk(t, 2000, 4.56)
 	chunkPresentInBothSources := createTestChunk(t, 2500, 7.89)
@@ -45,24 +42,19 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToSecondSource, chunkPresentInBothSources}}})},
 		},
 		context: &streamingChunkSeriesContext{
-			chunkIteratorFunc: streamingChunkSeriesTestIteratorFunc,
-			mint:              1000,
-			maxt:              6000,
-			queryMetrics:      stats.NewQueryMetrics(reg),
-			queryStats:        queryStats,
+			mint:         minT,
+			maxt:         maxT,
+			queryMetrics: stats.NewQueryMetrics(reg),
+			queryStats:   queryStats,
 		},
 	}
 
 	iterator := series.Iterator(nil)
 	require.NotNil(t, iterator)
-	testIterator, ok := iterator.(streamingChunkSeriesTestIterator)
-	require.True(t, ok)
-	require.Equal(t, model.Time(1000), testIterator.from)
-	require.Equal(t, model.Time(6000), testIterator.through)
 
 	expectedChunks, err := client.FromChunks(series.labels, []client.Chunk{chunkUniqueToFirstSource, chunkUniqueToSecondSource, chunkPresentInBothSources})
 	require.NoError(t, err)
-	require.ElementsMatch(t, testIterator.chunks, expectedChunks)
+	assertChunkIteratorsEqual(t, iterator, batch.NewChunkMergeIterator(nil, expectedChunks, minT, maxT))
 
 	m, err := metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
@@ -71,6 +63,37 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 
 	require.Equal(t, uint64(3), queryStats.FetchedChunksCount)
 	require.Equal(t, uint64(114), queryStats.FetchedChunkBytes)
+}
+
+func assertChunkIteratorsEqual(t testing.TB, c1, c2 chunkenc.Iterator) {
+	for sampleIdx := 0; ; sampleIdx++ {
+		c1Next := c1.Next()
+		c2Next := c2.Next()
+
+		require.Equal(t, c1Next, c2Next, sampleIdx)
+		if c1Next == chunkenc.ValNone {
+			break
+		}
+		var (
+			atT1, atT2 int64
+			atV1, atV2 any
+		)
+		switch c1Next {
+		case chunkenc.ValHistogram:
+			atT1, atV1 = c1.AtHistogram(nil)
+			atT2, atV2 = c2.AtHistogram(nil)
+		case chunkenc.ValFloatHistogram:
+			atT1, atV1 = c1.AtFloatHistogram(nil)
+			atT2, atV2 = c2.AtFloatHistogram(nil)
+		case chunkenc.ValFloat:
+			atT1, atV1 = c1.At()
+			atT2, atV2 = c2.At()
+		default:
+			panic("unhandled chunkenc.ValueType")
+		}
+		assert.Equal(t, atT1, atT2, sampleIdx)
+		assert.Equal(t, atV1, atV2, sampleIdx)
+	}
 }
 
 func TestStreamingChunkSeries_StreamReaderReturnsError(t *testing.T) {
@@ -83,17 +106,16 @@ func TestStreamingChunkSeries_StreamReaderReturnsError(t *testing.T) {
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{})},
 		},
 		context: &streamingChunkSeriesContext{
-			chunkIteratorFunc: nil,
-			mint:              1000,
-			maxt:              6000,
-			queryMetrics:      stats.NewQueryMetrics(reg),
-			queryStats:        queryStats,
+			mint:         1000,
+			maxt:         6000,
+			queryMetrics: stats.NewQueryMetrics(reg),
+			queryStats:   queryStats,
 		},
 	}
 
 	iterator := series.Iterator(nil)
 	require.NotNil(t, iterator)
-	require.EqualError(t, iterator.Err(), "attempted to read series at index 0 from stream, but the stream has already been exhausted")
+	require.EqualError(t, iterator.Err(), "attempted to read series at index 0 from ingester chunks stream, but the stream has already been exhausted (was expecting 0 series)")
 }
 
 func TestStreamingChunkSeries_CreateIteratorTwice(t *testing.T) {
@@ -103,11 +125,10 @@ func TestStreamingChunkSeries_CreateIteratorTwice(t *testing.T) {
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{createTestChunk(t, 1500, 1.23)}}})},
 		},
 		context: &streamingChunkSeriesContext{
-			chunkIteratorFunc: streamingChunkSeriesTestIteratorFunc,
-			mint:              1000,
-			maxt:              6000,
-			queryMetrics:      stats.NewQueryMetrics(prometheus.NewPedanticRegistry()),
-			queryStats:        &stats.Stats{},
+			mint:         1000,
+			maxt:         6000,
+			queryMetrics: stats.NewQueryMetrics(prometheus.NewPedanticRegistry()),
+			queryStats:   &stats.Stats{},
 		},
 	}
 
@@ -140,51 +161,18 @@ func createTestStreamReader(batches ...[]client.QueryStreamSeriesChunks) *client
 		seriesCount += len(batch)
 	}
 
+	ctx := context.Background()
 	mockClient := &mockQueryStreamClient{
-		ctx:     context.Background(),
+		ctx:     ctx,
 		batches: batches,
 	}
 
 	cleanup := func() {}
 
-	reader := client.NewSeriesChunksStreamReader(mockClient, seriesCount, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+	reader := client.NewSeriesChunksStreamReader(ctx, mockClient, seriesCount, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	return reader
-}
-
-type streamingChunkSeriesTestIterator struct {
-	chunks  []chunk.Chunk
-	from    model.Time
-	through model.Time
-}
-
-func (s streamingChunkSeriesTestIterator) Next() chunkenc.ValueType {
-	panic("not implemented")
-}
-
-func (s streamingChunkSeriesTestIterator) Seek(int64) chunkenc.ValueType {
-	panic("not implemented")
-}
-
-func (s streamingChunkSeriesTestIterator) At() (int64, float64) {
-	panic("not implemented")
-}
-
-func (s streamingChunkSeriesTestIterator) AtHistogram() (int64, *histogram.Histogram) {
-	panic("not implemented")
-}
-
-func (s streamingChunkSeriesTestIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	panic("not implemented")
-}
-
-func (s streamingChunkSeriesTestIterator) AtT() int64 {
-	panic("not implemented")
-}
-
-func (s streamingChunkSeriesTestIterator) Err() error {
-	return nil
 }
 
 type mockQueryStreamClient struct {

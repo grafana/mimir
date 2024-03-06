@@ -33,7 +33,7 @@ services:
 
   prometheus:
 
-    image: prom/prometheus:v2.45.0
+    image: prom/prometheus:v2.50.0
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus
@@ -43,8 +43,8 @@ services:
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is not supported by Prometheus).
   grafana-agent:
-    image: grafana/agent:v0.2.0
-    command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-prometheus.wal-directory=/tmp"]
+    image: grafana/agent:v0.39.2
+    command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-metrics.wal-directory=/tmp", "-server.http.address=127.0.0.1:9091"]
     volumes:
       - ./config:/etc/agent-config
     ports:
@@ -71,6 +71,7 @@ services:
       - JAEGER_TAGS=app=mimir-1
       - JAEGER_SAMPLER_TYPE=const
       - JAEGER_SAMPLER_PARAM=1
+      - JAEGER_REPORTER_MAX_QUEUE_SIZE=1000
     ports:
       - 8001:8001
     volumes:
@@ -92,6 +93,7 @@ services:
       - JAEGER_TAGS=app=mimir-2
       - JAEGER_SAMPLER_TYPE=const
       - JAEGER_SAMPLER_PARAM=1
+      - JAEGER_REPORTER_MAX_QUEUE_SIZE=1000
     ports:
       - 8002:8002
     volumes:

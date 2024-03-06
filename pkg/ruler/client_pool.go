@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -22,16 +23,16 @@ import (
 // ClientsPool is the interface used to get the client from the pool for a specified address.
 type ClientsPool interface {
 	services.Service
-	// GetClientFor returns the ruler client for the given address.
-	GetClientFor(addr string) (RulerClient, error)
+	// GetClientForInstance returns the ruler client for the ring instance.
+	GetClientForInstance(inst ring.InstanceDesc) (RulerClient, error)
 }
 
 type rulerClientsPool struct {
 	*client.Pool
 }
 
-func (p *rulerClientsPool) GetClientFor(addr string) (RulerClient, error) {
-	c, err := p.Pool.GetClientFor(addr)
+func (p *rulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (RulerClient, error) {
+	c, err := p.Pool.GetClientForInstance(inst)
 	if err != nil {
 		return nil, err
 	}
@@ -63,20 +64,20 @@ func newRulerClientFactory(clientCfg grpcclient.Config, reg prometheus.Registere
 		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
 	}, []string{"operation", "status_code"})
 
-	return func(addr string) (client.PoolClient, error) {
-		return dialRulerClient(clientCfg, addr, requestDuration)
-	}
+	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
+		return dialRulerClient(clientCfg, inst, requestDuration)
+	})
 }
 
-func dialRulerClient(clientCfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*rulerExtendedClient, error) {
+func dialRulerClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*rulerExtendedClient, error) {
 	opts, err := clientCfg.DialOption(grpcclient.Instrument(requestDuration))
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := grpc.Dial(addr, opts...)
+	conn, err := grpc.Dial(inst.Addr, opts...)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to dial ruler %s", addr)
+		return nil, errors.Wrapf(err, "failed to dial ruler %s %s", inst.Id, inst.Addr)
 	}
 
 	return &rulerExtendedClient{

@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -46,7 +47,7 @@ func (t *timeSeriesSeriesSet) At() storage.Series {
 func (t *timeSeriesSeriesSet) Err() error { return nil }
 
 // Warnings implements storage.SeriesSet interface.
-func (t *timeSeriesSeriesSet) Warnings() storage.Warnings { return nil }
+func (t *timeSeriesSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // timeseries is a type wrapper that implements the storage.Series interface
 type timeseries struct {
@@ -66,7 +67,7 @@ type byTimeSeriesLabels []mimirpb.TimeSeries
 func (b byTimeSeriesLabels) Len() int      { return len(b) }
 func (b byTimeSeriesLabels) Swap(i, j int) { b[i], b[j] = b[j], b[i] }
 func (b byTimeSeriesLabels) Less(i, j int) bool {
-	return labels.Compare(mimirpb.FromLabelAdaptersToLabels(b[i].Labels), mimirpb.FromLabelAdaptersToLabels(b[j].Labels)) < 0
+	return mimirpb.CompareLabelAdapters(b[i].Labels, b[j].Labels) < 0
 }
 
 // Labels implements the storage.Series interface.
@@ -155,7 +156,7 @@ func (t *timeSeriesSeriesIterator) At() (int64, float64) {
 }
 
 // AtHistogram implements chunkenc.Iterator.
-func (t *timeSeriesSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (t *timeSeriesSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	if !t.atH {
 		panic(errors.New("timeSeriesSeriesIterator: Calling AtHistogram() when cursor is not at histogram"))
 	}
@@ -167,7 +168,7 @@ func (t *timeSeriesSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
-func (t *timeSeriesSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (t *timeSeriesSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if !t.atH {
 		panic(errors.New("timeSeriesSeriesIterator: Calling AtFloatHistogram() when cursor is not at histogram"))
 	}

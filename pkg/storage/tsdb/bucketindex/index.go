@@ -90,6 +90,13 @@ type Block struct {
 
 	// Block's compactor shard ID, copied from tsdb.CompactorShardIDExternalLabel label.
 	CompactorShardID string `json:"compactor_shard_id,omitempty"`
+
+	// Source is the real upload source of the block
+	Source          string `json:"source,omitempty"`
+	CompactionLevel int    `json:"compaction_level,omitempty"`
+
+	// Whether the block was from out of order samples
+	OutOfOrder bool `json:"out_of_order,omitempty"`
 }
 
 // Within returns whether the block contains samples within the provided range.
@@ -107,16 +114,25 @@ func (m *Block) GetUploadedAt() time.Time {
 // The returned meta doesn't include all original meta.json data but only a subset
 // of it.
 func (m *Block) ThanosMeta() *block.Meta {
+	var compactionHints []string
+	if m.OutOfOrder {
+		compactionHints = []string{tsdb.CompactionHintFromOutOfOrder}
+	}
 	return &block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    m.ID,
 			MinTime: m.MinTime,
 			MaxTime: m.MaxTime,
 			Version: block.TSDBVersion1,
+			Compaction: tsdb.BlockMetaCompaction{
+				Level: m.CompactionLevel,
+				Hints: compactionHints,
+			},
 		},
 		Thanos: block.ThanosMeta{
 			Version:      block.ThanosVersion1,
 			SegmentFiles: m.thanosMetaSegmentFiles(),
+			Source:       block.SourceType(m.Source),
 		},
 	}
 }
@@ -153,6 +169,9 @@ func BlockFromThanosMeta(meta block.Meta) *Block {
 		SegmentsFormat:   segmentsFormat,
 		SegmentsNum:      segmentsNum,
 		CompactorShardID: meta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel],
+		Source:           string(meta.Thanos.Source),
+		CompactionLevel:  meta.Compaction.Level,
+		OutOfOrder:       meta.Compaction.FromOutOfOrder(),
 	}
 }
 

@@ -10,18 +10,26 @@ import (
 	crand "crypto/rand"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
+	"net"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
+	gogoStatus "github.com/gogo/status"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -30,9 +38,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -43,7 +53,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestBlocksStoreQuerier_Select(t *testing.T) {
@@ -61,7 +71,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 		metricNameLabel  = labels.FromStrings(labels.MetricName, metricName)
 		series1Label     = labels.FromStrings(labels.MetricName, metricName, "series", "1")
 		series2Label     = labels.FromStrings(labels.MetricName, metricName, "series", "2")
-		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, nil)
+		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, 0, nil)
 	)
 
 	type valueResult struct {
@@ -264,7 +274,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			storeSetResponses: []interface{}{
 				map[BlocksStoreClient][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
-						mockSeriesResponse(series1Label, minT+1, 2),
+						mockSeriesResponse(series1Label, minT+1, 2), // a chunk is written for each mockSeriesResponse
 						mockSeriesResponse(series2Label, minT, 1),
 						mockHintsResponse(block1),
 					}}: {block1},
@@ -333,6 +343,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
 				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
 				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 6
 			`,
 		},
 		"a single store-gateway instance has some missing blocks (consistency check failed)": {
@@ -469,6 +482,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
 				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
 				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 4
 			`,
 		},
 		"max chunks per query limit greater then the number of chunks fetched": {
@@ -512,8 +528,26 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
-			queryLimiter: limiter.NewQueryLimiter(0, 0, 1, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, 1)),
+			queryLimiter: limiter.NewQueryLimiter(0, 0, 1, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			expectedErr:  limiter.NewMaxChunksPerQueryLimitError(1),
+		},
+		"max estimated chunks per query limit hit while fetching chunks": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponse(series1Label, minT, 1),
+						mockSeriesResponse(series1Label, minT+1, 2),
+						mockHintsResponse(block1, block2),
+					}}: {block1, block2},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: limiter.NewQueryLimiter(0, 0, 0, 1, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			expectedErr:  limiter.NewMaxEstimatedChunksPerQueryLimitError(1),
 		},
 		"max chunks per query limit hit while fetching chunks during subsequent attempts": {
 			finderResult: bucketindex.Blocks{
@@ -550,8 +584,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
-			queryLimiter: limiter.NewQueryLimiter(0, 0, 3, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, 3)),
+			queryLimiter: limiter.NewQueryLimiter(0, 0, 3, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			expectedErr:  limiter.NewMaxChunksPerQueryLimitError(3),
 		},
 		"max series per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -568,8 +602,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
-			queryLimiter: limiter.NewQueryLimiter(1, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxSeriesHitMsgFormat, 1)),
+			queryLimiter: limiter.NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			expectedErr:  limiter.NewMaxSeriesHitLimitError(1),
 		},
 		"max chunk bytes per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -586,8 +620,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{maxChunksPerQuery: 1},
-			queryLimiter: limiter.NewQueryLimiter(0, 8, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunkBytesHitMsgFormat, 8)),
+			queryLimiter: limiter.NewQueryLimiter(0, 8, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			expectedErr:  limiter.NewMaxChunkBytesHitLimitError(8),
 		},
 		"blocks with non-matching shard are filtered out": {
 			finderResult: bucketindex.Blocks{
@@ -654,6 +688,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_refetches_per_query_sum 0
 					cortex_querier_storegateway_refetches_per_query_count 1
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total 2
 			`,
 		},
 		"all blocks are queried if shards don't match": {
@@ -721,6 +758,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_refetches_per_query_sum 0
 					cortex_querier_storegateway_refetches_per_query_count 1
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total 2
 			`,
 		},
 		"multiple store-gateways have the block, but one of them fails to return": {
@@ -788,6 +828,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_refetches_per_query_sum 1
 					cortex_querier_storegateway_refetches_per_query_count 1
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total 1
 			`,
 		},
 	}
@@ -833,16 +876,18 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					finder := &blocksFinderMock{}
 					finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
 
-					ctx := limiter.AddQueryLimiterToContext(context.Background(), testData.queryLimiter)
+					ctx, cancel := context.WithCancel(context.Background())
+					t.Cleanup(cancel)
+					ctx = limiter.AddQueryLimiterToContext(ctx, testData.queryLimiter)
 					st, ctx := stats.ContextWithEmptyStats(ctx)
+					const tenantID = "user-1"
+					ctx = user.InjectOrgID(ctx, tenantID)
 					q := &blocksStoreQuerier{
-						ctx:         ctx,
 						minT:        minT,
 						maxT:        maxT,
-						userID:      "user-1",
 						finder:      finder,
 						stores:      stores,
-						consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+						consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
 						logger:      log.NewNopLogger(),
 						metrics:     newBlocksStoreQueryableMetrics(reg),
 						limits:      testData.limits,
@@ -856,7 +901,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					}
 
 					sp := &storage.SelectHints{Start: minT, End: maxT}
-					set := q.Select(true, sp, matchers...)
+					set := q.Select(ctx, true, sp, matchers...)
 					if testData.expectedErr != nil {
 						if streaming && set.Err() == nil {
 							// In case of streaming, the error can happen during iteration.
@@ -915,7 +960,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					if testData.expectedMetrics != "" {
 						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics),
 							"cortex_querier_storegateway_instances_hit_per_query", "cortex_querier_storegateway_refetches_per_query",
-							"cortex_querier_blocks_found_total", "cortex_querier_blocks_queried_total", "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total"))
+							"cortex_querier_blocks_found_total", "cortex_querier_blocks_queried_total", "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total",
+							"cortex_querier_query_storegateway_chunks_total"))
 					}
 				})
 			}
@@ -923,11 +969,186 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 	}
 }
 
+func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhileRunningRequestOnStoreGateway(t *testing.T) {
+	const (
+		tenantID   = "user-1"
+		metricName = "test_metric"
+		minT       = int64(math.MinInt64)
+		maxT       = int64(math.MaxInt64)
+	)
+
+	var (
+		block1 = ulid.MustNew(1, nil)
+		logger = test.NewTestingLogger(t)
+	)
+
+	// Create an utility to easily run each test case in isolation.
+	prepareTestCase := func(t *testing.T) (*mockStoreGatewayServer, *blocksStoreQuerier) {
+		// Create a GRPC server used to query the mocked service.
+		grpcServer := grpc.NewServer()
+		t.Cleanup(grpcServer.GracefulStop)
+
+		srv := &mockStoreGatewayServer{}
+		storegatewaypb.RegisterStoreGatewayServer(grpcServer, srv)
+
+		listener, err := net.Listen("tcp", "localhost:0")
+		require.NoError(t, err)
+
+		go func() {
+			require.NoError(t, grpcServer.Serve(listener))
+		}()
+
+		// Mock the blocks finder.
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, tenantID, minT, maxT).Return(bucketindex.Blocks{{ID: block1}}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
+
+		// Create a real gRPC client connecting to the gRPC server we control in this test.
+		clientCfg := grpcclient.Config{}
+		flagext.DefaultValues(&clientCfg)
+
+		client, err := dialStoreGatewayClient(clientCfg, ring.InstanceDesc{Addr: listener.Addr().String()}, promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{}, []string{"route", "status_code"}))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, client.Close())
+		})
+
+		// Mock the stores, returning a gRPC client connecting to the gRPC server controlled in this test.
+		stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+			// These tests only require 1 mocked response, but we mock it multiple times to make debugging easier
+			// when the tests fail because the request is retried (even if we expect not to be retried).
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+		}}
+
+		q := &blocksStoreQuerier{
+			minT:        minT,
+			maxT:        maxT,
+			finder:      finder,
+			stores:      stores,
+			consistency: NewBlocksConsistency(0, 0, logger, nil),
+			logger:      logger,
+			metrics:     newBlocksStoreQueryableMetrics(nil),
+			limits:      &blocksStoreLimitsMock{},
+		}
+
+		return srv, q
+	}
+
+	t.Run("Series()", func(t *testing.T) {
+		// Mock the gRPC server to control the execution of Series().
+		var (
+			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			numExecutions     = atomic.NewInt64(0)
+			waitExecution     = make(chan struct{})
+			continueExecution = make(chan struct{})
+		)
+
+		srv, q := prepareTestCase(t)
+
+		srv.onSeries = func(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+			if numExecutions.Inc() == 1 {
+				close(waitExecution)
+				<-continueExecution
+			}
+			return nil
+		}
+
+		go func() {
+			// Cancel the context while Series() is executing.
+			<-waitExecution
+			cancelCtx()
+			close(continueExecution)
+		}()
+
+		sp := &storage.SelectHints{Start: minT, End: maxT}
+		set := q.Select(ctx, true, sp, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+
+		// We expect the returned error to be context.Canceled and not a gRPC error.
+		assert.ErrorIs(t, set.Err(), context.Canceled)
+
+		// Ensure the blocks store querier didn't retry requests to store-gateways.
+		assert.Equal(t, int64(1), numExecutions.Load())
+	})
+
+	t.Run("LabelNames()", func(t *testing.T) {
+		// Mock the gRPC server to control the execution of LabelNames().
+		var (
+			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			numExecutions     = atomic.NewInt64(0)
+			waitExecution     = make(chan struct{})
+			continueExecution = make(chan struct{})
+		)
+
+		srv, q := prepareTestCase(t)
+
+		srv.onLabelNames = func(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+			if numExecutions.Inc() == 1 {
+				close(waitExecution)
+				<-continueExecution
+			}
+			return &storepb.LabelNamesResponse{}, nil
+		}
+
+		go func() {
+			// Cancel the context while Series() is executing.
+			<-waitExecution
+			cancelCtx()
+			close(continueExecution)
+		}()
+
+		_, _, err := q.LabelNames(ctx, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+
+		// We expect the returned error to be context.Canceled and not a gRPC error.
+		assert.ErrorIs(t, err, context.Canceled)
+
+		// Ensure the blocks store querier didn't retry requests to store-gateways.
+		assert.Equal(t, int64(1), numExecutions.Load())
+	})
+
+	t.Run("LabelValues()", func(t *testing.T) {
+		// Mock the gRPC server to control the execution of LabelValues().
+		var (
+			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			numExecutions     = atomic.NewInt64(0)
+			waitExecution     = make(chan struct{})
+			continueExecution = make(chan struct{})
+		)
+
+		srv, q := prepareTestCase(t)
+
+		srv.onLabelValues = func(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+			if numExecutions.Inc() == 1 {
+				close(waitExecution)
+				<-continueExecution
+			}
+			return &storepb.LabelValuesResponse{}, nil
+		}
+
+		go func() {
+			// Cancel the context while Series() is executing.
+			<-waitExecution
+			cancelCtx()
+			close(continueExecution)
+		}()
+
+		_, _, err := q.LabelValues(ctx, labels.MetricName)
+
+		// We expect the returned error to be context.Canceled and not a gRPC error.
+		assert.ErrorIs(t, err, context.Canceled)
+
+		// Ensure the blocks store querier didn't retry requests to store-gateways.
+		assert.Equal(t, int64(1), numExecutions.Load())
+	})
+}
+
 func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*storepb.SeriesResponse {
+	chunksEstimate := 0
 	var series, chunks, others, final []*storepb.SeriesResponse
 	for i, mr := range seriesResponses {
 		s := mr.GetSeries()
 		if s != nil {
+			chunksEstimate += len(s.Chunks)
 			series = append(series, mockStreamingSeriesBatchResponse(false, s.Labels))
 			chunks = append(chunks, mockStreamingSeriesChunksResponse(uint64(len(series)-1), s.Chunks))
 			continue
@@ -940,6 +1161,7 @@ func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*st
 	final = append(final, others...)
 	// End of stream response goes after the hints and stats.
 	final = append(final, mockStreamingSeriesBatchResponse(true))
+	final = append(final, storepb.NewStreamingChunksEstimate(uint64(chunksEstimate)))
 	final = append(final, chunks...)
 	return final
 }
@@ -953,7 +1175,7 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 
 	var (
 		block            = ulid.MustNew(1, nil)
-		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, nil)
+		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, 0, nil)
 	)
 
 	canceledRequestTests := map[string]bool{
@@ -968,6 +1190,9 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 
 			ctx = limiter.AddQueryLimiterToContext(ctx, noOpQueryLimiter)
 			reg := prometheus.NewPedanticRegistry()
+
+			const tenantID = "user-1"
+			ctx = user.InjectOrgID(ctx, tenantID)
 
 			storeGateway := &cancelerStoreGatewayClientMock{
 				remoteAddr:    "1.1.1.1",
@@ -986,13 +1211,11 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
 
 			q := &blocksStoreQuerier{
-				ctx:         ctx,
 				minT:        minT,
 				maxT:        maxT,
-				userID:      "user-1",
 				finder:      finder,
 				stores:      stores,
-				consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+				consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
 				logger:      log.NewNopLogger(),
 				metrics:     newBlocksStoreQueryableMetrics(reg),
 				limits:      &blocksStoreLimitsMock{},
@@ -1003,7 +1226,7 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			}
 
 			sp := &storage.SelectHints{Start: minT, End: maxT}
-			set := q.Select(true, sp, matchers...)
+			set := q.Select(ctx, true, sp, matchers...)
 			require.Error(t, set.Err())
 			require.ErrorIs(t, set.Err(), context.Canceled)
 		})
@@ -1414,6 +1637,9 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_refetches_per_query_sum 2
 				cortex_querier_storegateway_refetches_per_query_count 1
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 4
 			`,
 		},
 		"multiple store-gateways have the block, but one of them fails to return": {
@@ -1488,20 +1714,18 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
 
 				q := &blocksStoreQuerier{
-					ctx:         ctx,
 					minT:        minT,
 					maxT:        maxT,
-					userID:      "user-1",
 					finder:      finder,
 					stores:      stores,
-					consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+					consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
 					logger:      log.NewNopLogger(),
 					metrics:     newBlocksStoreQueryableMetrics(reg),
 					limits:      &blocksStoreLimitsMock{},
 				}
 
 				if testFunc == "LabelNames" {
-					names, warnings, err := q.LabelNames()
+					names, warnings, err := q.LabelNames(ctx)
 					if testData.expectedErr != "" {
 						require.Equal(t, testData.expectedErr, err.Error())
 						continue
@@ -1518,7 +1742,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}
 
 				if testFunc == "LabelValues" {
-					values, warnings, err := q.LabelValues(labels.MetricName)
+					values, warnings, err := q.LabelValues(ctx, labels.MetricName)
 					if testData.expectedErr != "" {
 						require.Equal(t, testData.expectedErr, err.Error())
 						continue
@@ -1540,7 +1764,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 	t.Run("canceled request", func(t *testing.T) {
 		for _, testFunc := range []string{"LabelNames", "LabelValues"} {
 			t.Run(testFunc, func(t *testing.T) {
-				ctx, cancel := context.WithCancel(context.Background())
+				ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), "user-1"))
 				defer cancel()
 
 				reg := prometheus.NewPedanticRegistry()
@@ -1561,13 +1785,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
 
 				q := &blocksStoreQuerier{
-					ctx:         ctx,
 					minT:        minT,
 					maxT:        maxT,
-					userID:      "user-1",
 					finder:      finder,
 					stores:      stores,
-					consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+					consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
 					logger:      log.NewNopLogger(),
 					metrics:     newBlocksStoreQueryableMetrics(reg),
 					limits:      &blocksStoreLimitsMock{},
@@ -1576,9 +1798,9 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				var err error
 				switch testFunc {
 				case "LabelNames":
-					_, _, err = q.LabelNames()
+					_, _, err = q.LabelNames(ctx)
 				case "LabelValues":
-					_, _, err = q.LabelValues(labels.MetricName)
+					_, _, err = q.LabelValues(ctx, labels.MetricName)
 				}
 
 				require.Error(t, err)
@@ -1590,6 +1812,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 
 func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T) {
 	now := time.Now()
+	ctx := context.Background()
 
 	tests := map[string]struct {
 		queryStoreAfter time.Duration
@@ -1633,14 +1856,14 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
 
+			const tenantID = "user-1"
+			ctx = user.InjectOrgID(ctx, tenantID)
 			q := &blocksStoreQuerier{
-				ctx:             context.Background(),
 				minT:            testData.queryMinT,
 				maxT:            testData.queryMaxT,
-				userID:          "user-1",
 				finder:          finder,
 				stores:          &blocksStoreSetMock{},
-				consistency:     NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+				consistency:     NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
 				logger:          log.NewNopLogger(),
 				metrics:         newBlocksStoreQueryableMetrics(nil),
 				limits:          &blocksStoreLimitsMock{},
@@ -1652,7 +1875,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 				End:   testData.queryMaxT,
 			}
 
-			set := q.selectSorted(sp)
+			set := q.selectSorted(ctx, sp, tenantID)
 			require.NoError(t, set.Err())
 
 			if testData.expectedMinT == 0 && testData.expectedMaxT == 0 {
@@ -1708,14 +1931,13 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
 
+			ctx := user.InjectOrgID(context.Background(), "user-1")
 			q := &blocksStoreQuerier{
-				ctx:         user.InjectOrgID(context.Background(), "user-1"),
 				minT:        testData.queryMinT,
 				maxT:        testData.queryMaxT,
-				userID:      "user-1",
 				finder:      finder,
 				stores:      &blocksStoreSetMock{},
-				consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+				consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
 				logger:      log.NewNopLogger(),
 				metrics:     newBlocksStoreQueryableMetrics(nil),
 				limits: &blocksStoreLimitsMock{
@@ -1723,13 +1945,13 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 				},
 			}
 
-			_, _, err := q.LabelNames()
+			_, _, err := q.LabelNames(ctx)
 			require.NoError(t, err)
 			require.Len(t, finder.Calls, 1)
 			assert.Equal(t, testData.expectedMinT, finder.Calls[0].Arguments.Get(2))
 			assert.Equal(t, testData.expectedMaxT, finder.Calls[0].Arguments.Get(3))
 
-			_, _, err = q.LabelValues("foo")
+			_, _, err = q.LabelValues(ctx, "foo")
 			require.Len(t, finder.Calls, 2)
 			require.NoError(t, err)
 			assert.Equal(t, testData.expectedMinT, finder.Calls[1].Arguments.Get(2))
@@ -1811,6 +2033,8 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			for _, streaming := range []bool{true, false} {
 				t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
+					ctx := context.Background()
+
 					block1 := ulid.MustNew(1, nil)
 					block2 := ulid.MustNew(2, nil)
 
@@ -1843,7 +2067,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 					// Instantiate the querier that will be executed to run the query.
 					logger := log.NewNopLogger()
-					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
+					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistency(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
 					require.NoError(t, err)
 					require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
 					defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
@@ -1855,7 +2079,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 					})
 
 					// Query metrics.
-					ctx := user.InjectOrgID(context.Background(), "user-1")
+					ctx = user.InjectOrgID(ctx, "user-1")
 					q, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, queryStart, queryEnd, 15*time.Second)
 					require.NoError(t, err)
 
@@ -1876,7 +2100,6 @@ func TestCanBlockWithCompactorShardIdContainQueryShard(t *testing.T) {
 	const numSeries = 1000
 	const maxShards = 512
 
-	rand.Seed(time.Now().UnixNano())
 	hashes := make([]uint64, numSeries)
 	for ix := 0; ix < numSeries; ix++ {
 		hashes[ix] = rand.Uint64()
@@ -2293,6 +2516,60 @@ func TestBlocksStoreQueryableErrMsgs(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, tc.msg, tc.err.Error())
+		})
+	}
+}
+
+func TestShouldStopQueryFunc(t *testing.T) {
+	tests := map[string]struct {
+		err      error
+		expected bool
+	}{
+		"should return true on context canceled": {
+			err:      context.Canceled,
+			expected: true,
+		},
+		"should return true on wrapped context canceled": {
+			err:      errors.Wrap(context.Canceled, "test"),
+			expected: true,
+		},
+		"should return true on deadline exceeded": {
+			err:      context.DeadlineExceeded,
+			expected: true,
+		},
+		"should return true on wrapped deadline exceeded": {
+			err:      errors.Wrap(context.DeadlineExceeded, "test"),
+			expected: true,
+		},
+		"should return true on gRPC error with status code = 422": {
+			err:      status.Error(http.StatusUnprocessableEntity, "test"),
+			expected: true,
+		},
+		"should return true on wrapped gRPC error with status code = 422": {
+			err:      errors.Wrap(status.Error(http.StatusUnprocessableEntity, "test"), "test"),
+			expected: true,
+		},
+		"should return true on gogo error with status code = 422": {
+			err:      gogoStatus.Error(http.StatusUnprocessableEntity, "test"),
+			expected: true,
+		},
+		"should return true on wrapped gogo error with status code = 422": {
+			err:      errors.Wrap(gogoStatus.Error(http.StatusUnprocessableEntity, "test"), "test"),
+			expected: true,
+		},
+		"should return false on gRPC error with status code != 422": {
+			err:      status.Error(http.StatusInternalServerError, "test"),
+			expected: false,
+		},
+		"should return false on generic error": {
+			err:      errors.New("test"),
+			expected: false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, shouldStopQueryFunc(testData.err))
 		})
 	}
 }

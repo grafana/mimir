@@ -74,31 +74,37 @@ func BuildArgs(flags map[string]string) []string {
 	return args
 }
 
-// DoGet performs a HTTP GET request towards the supplied URL and using a
+// DoGet performs an HTTP GET request towards the supplied URL and using a
 // timeout of 1 second.
 func DoGet(url string) (*http.Response, error) {
-	return doRequest("GET", url, nil, nil)
+	return doRequestWithTimeout("GET", url, nil, nil, time.Second)
+}
+
+// DoGetWithTimeout performs an HTTP GET request towards the supplied URL and using a
+// specified timeout.
+func DoGetWithTimeout(url string, timeout time.Duration) (*http.Response, error) {
+	return doRequestWithTimeout("GET", url, nil, nil, timeout)
 }
 
 // DoGetTLS is like DoGet but allows to configure a TLS config.
 func DoGetTLS(url string, tlsConfig *tls.Config) (*http.Response, error) {
-	return doRequest("GET", url, nil, tlsConfig)
+	return doRequestWithTimeout("GET", url, nil, tlsConfig, time.Second)
 }
 
 // DoPost performs a HTTP POST request towards the supplied URL with an empty
 // body and using a timeout of 1 second.
 func DoPost(url string) (*http.Response, error) {
-	return doRequest("POST", url, strings.NewReader(""), nil)
+	return doRequestWithTimeout("POST", url, strings.NewReader(""), nil, time.Second)
 }
 
-func doRequest(method, url string, body io.Reader, tlsConfig *tls.Config) (*http.Response, error) {
+func doRequestWithTimeout(method, url string, body io.Reader, tlsConfig *tls.Config, timeout time.Duration) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
 	}
 
 	client := &http.Client{
-		Timeout: time.Second,
+		Timeout: timeout,
 		Transport: &http.Transport{
 			TLSClientConfig: tlsConfig,
 		},

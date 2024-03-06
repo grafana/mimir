@@ -8,11 +8,14 @@ package storegateway
 import (
 	"sync"
 	"time"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 // queryStats holds query statistics. This data structure is NOT concurrency safe.
 type queryStats struct {
-	blocksQueried int
+	blocksQueried            int
+	blocksQueriedByBlockMeta map[blockQueriedMeta]int
 
 	postingsTouched          int
 	postingsTouchedSizeSum   int
@@ -56,9 +59,6 @@ type queryStats struct {
 	mergedSeriesCount int
 	mergedChunksCount int
 
-	// The total time spent fetching series and chunk refs.
-	streamingSeriesFetchRefsDuration time.Duration
-
 	// The number of batches the Series() request has been split into.
 	streamingSeriesBatchCount int
 
@@ -70,16 +70,42 @@ type queryStats struct {
 	streamingSeriesWaitBatchLoadedDuration time.Duration
 
 	// The Series() request timing breakdown.
-	streamingSeriesExpandPostingsDuration       time.Duration
-	streamingSeriesFetchSeriesAndChunksDuration time.Duration
-	streamingSeriesEncodeResponseDuration       time.Duration
-	streamingSeriesSendResponseDuration         time.Duration
-	streamingSeriesOtherDuration                time.Duration
-	streamingSeriesIndexHeaderLoadDuration      time.Duration
+	streamingSeriesExpandPostingsDuration  time.Duration
+	streamingSeriesEncodeResponseDuration  time.Duration
+	streamingSeriesSendResponseDuration    time.Duration
+	streamingSeriesIndexHeaderLoadDuration time.Duration
+
+	// streamingSeriesAmbientTime is the total wall clock time spent serving the request. It includes all other durations.
+	streamingSeriesAmbientTime time.Duration
+}
+
+func newQueryStats() *queryStats {
+	return &queryStats{
+		blocksQueriedByBlockMeta: make(map[blockQueriedMeta]int),
+	}
+}
+
+// blockQueriedMeta encapsulate a block's thanos source, compaction level, and if it
+// was created from out-or-order samples
+type blockQueriedMeta struct {
+	source     block.SourceType
+	level      int
+	outOfOrder bool
+}
+
+func newBlockQueriedMeta(meta *block.Meta) blockQueriedMeta {
+	return blockQueriedMeta{
+		source:     meta.Thanos.Source,
+		level:      meta.Compaction.Level,
+		outOfOrder: meta.Compaction.FromOutOfOrder(),
+	}
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {
 	s.blocksQueried += o.blocksQueried
+	for m, count := range o.blocksQueriedByBlockMeta {
+		s.blocksQueriedByBlockMeta[m] += count
+	}
 
 	s.postingsTouched += o.postingsTouched
 	s.postingsTouchedSizeSum += o.postingsTouchedSizeSum
@@ -123,15 +149,13 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.mergedSeriesCount += o.mergedSeriesCount
 	s.mergedChunksCount += o.mergedChunksCount
 
-	s.streamingSeriesFetchRefsDuration += o.streamingSeriesFetchRefsDuration
 	s.streamingSeriesBatchCount += o.streamingSeriesBatchCount
 	s.streamingSeriesBatchLoadDuration += o.streamingSeriesBatchLoadDuration
 	s.streamingSeriesWaitBatchLoadedDuration += o.streamingSeriesWaitBatchLoadedDuration
 	s.streamingSeriesExpandPostingsDuration += o.streamingSeriesExpandPostingsDuration
-	s.streamingSeriesFetchSeriesAndChunksDuration += o.streamingSeriesFetchSeriesAndChunksDuration
 	s.streamingSeriesEncodeResponseDuration += o.streamingSeriesEncodeResponseDuration
 	s.streamingSeriesSendResponseDuration += o.streamingSeriesSendResponseDuration
-	s.streamingSeriesOtherDuration += o.streamingSeriesOtherDuration
+	s.streamingSeriesAmbientTime += o.streamingSeriesAmbientTime
 
 	s.streamingSeriesIndexHeaderLoadDuration += o.streamingSeriesIndexHeaderLoadDuration
 
@@ -146,7 +170,7 @@ type safeQueryStats struct {
 
 func newSafeQueryStats() *safeQueryStats {
 	return &safeQueryStats{
-		unsafeStats: &queryStats{},
+		unsafeStats: newQueryStats(),
 	}
 }
 

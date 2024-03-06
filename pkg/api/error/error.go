@@ -61,6 +61,8 @@ func (e *apiError) statusCode() int {
 		return http.StatusRequestEntityTooLarge
 	case TypeNotAcceptable:
 		return http.StatusNotAcceptable
+	case TypeUnavailable:
+		return http.StatusServiceUnavailable
 	}
 	return http.StatusInternalServerError
 }
@@ -120,11 +122,11 @@ func IsAPIError(err error) bool {
 func IsNonRetryableAPIError(err error) bool {
 	apiErr := &apiError{}
 	// Reasoning:
-	// TypeNone, TypeUnavailable and TypeNotFound are not used anywhere in Mimir or Prometheus;
-	// TypeTimeout, TypeTooManyRequests, TypeNotAcceptable we presume a retry of the same request will fail in the same way.
+	// TypeNone and TypeNotFound are not used anywhere in Mimir nor Prometheus;
+	// TypeTimeout, TypeTooManyRequests, TypeNotAcceptable, TypeUnavailable we presume a retry of the same request will fail in the same way.
 	// TypeCanceled means something wants us to stop.
 	// TypeExec, TypeBadData and TypeTooLargeEntry are caused by the input data.
-	// TypeInternal can be a 500 error e.g. from querier failing to contact storegateway.
+	// TypeInternal can be a 500 error e.g. from querier failing to contact store-gateway.
 
 	return errors.As(err, &apiErr) && apiErr.Type != TypeInternal
 }

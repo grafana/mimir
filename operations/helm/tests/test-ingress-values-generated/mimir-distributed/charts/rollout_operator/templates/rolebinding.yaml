@@ -1,0 +1,13 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: test-ingress-values-rollout-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: test-ingress-values-rollout-operator
+subjects:
+- kind: ServiceAccount
+  name: test-ingress-values-rollout-operator

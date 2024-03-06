@@ -38,6 +38,8 @@
 
   overrides_exporter_container_env_map:: {},
 
+  overrides_exporter_node_affinity_matchers:: [],
+
   local container = $.core.v1.container,
   overrides_exporter_container::
     container.new(name, $._images.overrides_exporter) +
@@ -53,8 +55,11 @@
   local deployment = $.apps.v1.deployment,
   overrides_exporter_deployment: if !$._config.overrides_exporter_enabled then null else
     deployment.new(name, 1, [$.overrides_exporter_container], { name: name }) +
+    $.newMimirNodeAffinityMatchers($.overrides_exporter_node_affinity_matchers) +
     $.mimirVolumeMounts +
-    deployment.mixin.metadata.withLabels({ name: name }),
+    deployment.mixin.metadata.withLabels({ name: name }) +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
   overrides_exporter_service: if !$._config.overrides_exporter_enabled then null else
     $.util.serviceFor($.overrides_exporter_deployment, $._config.service_ignored_labels),

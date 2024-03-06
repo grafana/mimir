@@ -54,6 +54,9 @@ local consul = import 'consul/consul.libsonnet';
         podAffinityTerm.withTopologyKey('kubernetes.io/hostname'),
       ]) +
 
+      deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
+      deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
+
       $.util.podPriority('high'),
 
     // Don't healthcheck services, adds load to consul.

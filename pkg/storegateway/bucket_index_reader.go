@@ -59,7 +59,9 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 		block:            block,
 		postingsStrategy: postingsStrategy,
 		dec: &index.Decoder{
-			LookupSymbol: block.indexHeaderReader.LookupSymbol,
+			LookupSymbol: func(_ context.Context, o uint32) (string, error) {
+				return block.indexHeaderReader.LookupSymbol(o)
+			},
 		},
 		indexHeaderReader: block.indexHeaderReader,
 	}
@@ -221,11 +223,11 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 				postingIndex++
 			}
 
-			groupAdds = append(groupAdds, index.Merge(toMerge...))
+			groupAdds = append(groupAdds, index.Merge(ctx, toMerge...))
 		}
 	}
 
-	result := index.Without(index.Intersect(groupAdds...), index.Merge(groupRemovals...))
+	result := index.Without(index.Intersect(groupAdds...), index.Merge(ctx, groupRemovals...))
 
 	ps, err := index.ExpandPostings(result)
 	if err != nil {
@@ -270,7 +272,7 @@ func logSelectedPostingGroups(ctx context.Context, logger log.Logger, blockID ul
 		keyvals = append(keyvals, fmt.Sprintf("omitted_%d", i), matcherStr)
 		keyvals = append(keyvals, fmt.Sprintf("omitted_%d_size", i), groupSize)
 	}
-	level.Debug(spanlogger.FromContext(ctx, logger)).Log(keyvals...)
+	spanlogger.FromContext(ctx, logger).DebugLog(keyvals...)
 }
 
 func extractLabelMatchers(groups []postingGroup) []*labels.Matcher {
@@ -486,6 +488,9 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		return uint64(ptrs[i].ptr.Start), uint64(ptrs[i].ptr.End)
 	})
 
+	// Use a different TTL for postings based on the duration of the block.
+	postingsTTL := indexcache.BlockTTL(r.block.meta)
+
 	g, ctx := errgroup.WithContext(ctx)
 	for _, part := range parts {
 		i, j := part.ElemRng[0], part.ElemRng[1]
@@ -532,7 +537,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				compressionTime = time.Since(s)
 				if err == nil {
 					compressedSize = len(dataToCache)
-					r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache)
+					r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache, postingsTTL)
 				} else {
 					compressionErrors = 1
 					level.Warn(r.block.logger).Log(
@@ -607,7 +612,7 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (loadedSeries *bucketIndexLoadedSeries, err error) {
 	defer func(startTime time.Time) {
 		spanLog := spanlogger.FromContext(ctx, r.block.logger)
-		level.Debug(spanLog).Log(
+		spanLog.DebugLog(
 			"msg", "fetched series and chunk refs from object store",
 			"block_id", r.block.meta.ULID.String(),
 			"series_count", len(loadedSeries.series),
@@ -667,6 +672,10 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 	// But in order to avoid a race condition with an async cache, we never release the pool and let the GC collect it.
 	bytesPool := pool.NewSlabPool[byte](pool.NoopPool{}, seriesBytesSlabSize)
 
+	// Use a different TTL for these series based on the duration of the block. Use a shorter TTL for blocks that
+	// are going to be compacted and deleted shortly anyway.
+	cacheTTL := indexcache.BlockTTL(r.block.meta)
+
 	for i, id := range ids {
 		// We iterate the series in order assuming they are sorted.
 		err := offsetReader.SkipTo(uint64(id))
@@ -693,7 +702,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		}
 		loaded.addSeries(id, seriesBytes)
 
-		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, seriesBytes)
+		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, seriesBytes, cacheTTL)
 	}
 	return nil
 }
@@ -718,14 +727,14 @@ func (r *bucketIndexReader) Close() error {
 }
 
 // LookupLabelsSymbols populates label set strings from symbolized label set.
-func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel, builder *labels.ScratchBuilder) (labels.Labels, error) {
+func (r *bucketIndexReader) LookupLabelsSymbols(ctx context.Context, symbolized []symbolizedLabel, builder *labels.ScratchBuilder) (labels.Labels, error) {
 	builder.Reset()
 	for _, s := range symbolized {
-		ln, err := r.dec.LookupSymbol(s.name)
+		ln, err := r.dec.LookupSymbol(ctx, s.name)
 		if err != nil {
 			return labels.EmptyLabels(), errors.Wrap(err, "lookup label name")
 		}
-		lv, err := r.dec.LookupSymbol(s.value)
+		lv, err := r.dec.LookupSymbol(ctx, s.value)
 		if err != nil {
 			return labels.EmptyLabels(), errors.Wrap(err, "lookup label value")
 		}
@@ -763,12 +772,12 @@ func (l *bucketIndexLoadedSeries) addSeries(ref storage.SeriesRef, data []byte) 
 // Error is returned on decoding error or if the reference does not resolve to a known series.
 //
 // It's NOT safe to call this function concurrently with addSeries().
-func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, chks *[]chunks.Meta, strategy seriesIteratorStrategy, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) (ok bool, _ []symbolizedLabel, err error) {
+func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, chks *[]chunks.Meta, skipChunks bool, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) (ok bool, _ []symbolizedLabel, err error) {
 	b, ok := l.series[ref]
 	if !ok {
 		return false, nil, errors.Errorf("series %d not found", ref)
 	}
 	stats.seriesProcessed++
 	stats.seriesProcessedSizeSum += len(b)
-	return decodeSeries(b, lsetPool, chks, strategy)
+	return decodeSeries(b, lsetPool, chks, skipChunks)
 }

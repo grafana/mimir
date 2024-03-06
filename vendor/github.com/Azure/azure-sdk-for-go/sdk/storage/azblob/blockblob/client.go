@@ -11,9 +11,13 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"io"
 	"math"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 
@@ -43,10 +47,13 @@ type Client base.CompositeClient[generated.BlobClient, generated.BlockBlobClient
 func NewClient(blobURL string, cred azcore.TokenCredential, options *ClientOptions) (*Client, error) {
 	authPolicy := shared.NewStorageChallengePolicy(cred)
 	conOptions := shared.GetClientOptions(options)
-	conOptions.PerRetryPolicies = append(conOptions.PerRetryPolicies, authPolicy)
-	pl := runtime.NewPipeline(exported.ModuleName, exported.ModuleVersion, runtime.PipelineOptions{}, &conOptions.ClientOptions)
+	plOpts := runtime.PipelineOptions{PerRetry: []policy.Policy{authPolicy}}
 
-	return (*Client)(base.NewBlockBlobClient(blobURL, pl, nil)), nil
+	azClient, err := azcore.NewClient(shared.BlockBlobClient, exported.ModuleVersion, plOpts, &conOptions.ClientOptions)
+	if err != nil {
+		return nil, err
+	}
+	return (*Client)(base.NewBlockBlobClient(blobURL, azClient, nil)), nil
 }
 
 // NewClientWithNoCredential creates an instance of Client with the specified values.
@@ -55,9 +62,13 @@ func NewClient(blobURL string, cred azcore.TokenCredential, options *ClientOptio
 //   - options - client options; pass nil to accept the default values
 func NewClientWithNoCredential(blobURL string, options *ClientOptions) (*Client, error) {
 	conOptions := shared.GetClientOptions(options)
-	pl := runtime.NewPipeline(exported.ModuleName, exported.ModuleVersion, runtime.PipelineOptions{}, &conOptions.ClientOptions)
 
-	return (*Client)(base.NewBlockBlobClient(blobURL, pl, nil)), nil
+	azClient, err := azcore.NewClient(shared.BlockBlobClient, exported.ModuleVersion, runtime.PipelineOptions{}, &conOptions.ClientOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	return (*Client)(base.NewBlockBlobClient(blobURL, azClient, nil)), nil
 }
 
 // NewClientWithSharedKeyCredential creates an instance of Client with the specified values.
@@ -67,10 +78,14 @@ func NewClientWithNoCredential(blobURL string, options *ClientOptions) (*Client,
 func NewClientWithSharedKeyCredential(blobURL string, cred *blob.SharedKeyCredential, options *ClientOptions) (*Client, error) {
 	authPolicy := exported.NewSharedKeyCredPolicy(cred)
 	conOptions := shared.GetClientOptions(options)
-	conOptions.PerRetryPolicies = append(conOptions.PerRetryPolicies, authPolicy)
-	pl := runtime.NewPipeline(exported.ModuleName, exported.ModuleVersion, runtime.PipelineOptions{}, &conOptions.ClientOptions)
+	plOpts := runtime.PipelineOptions{PerRetry: []policy.Policy{authPolicy}}
 
-	return (*Client)(base.NewBlockBlobClient(blobURL, pl, cred)), nil
+	azClient, err := azcore.NewClient(shared.BlockBlobClient, exported.ModuleVersion, plOpts, &conOptions.ClientOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	return (*Client)(base.NewBlockBlobClient(blobURL, azClient, cred)), nil
 }
 
 // NewClientFromConnectionString creates an instance of Client with the specified values.
@@ -115,7 +130,7 @@ func (bb *Client) URL() string {
 	return bb.generated().Endpoint()
 }
 
-// BlobClient returns the embedded blob client for this AppendBlob client.
+// BlobClient returns the embedded blob client for this BlockBlob client.
 func (bb *Client) BlobClient() *blob.Client {
 	blobClient, _ := base.InnerClients((*base.CompositeClient[generated.BlobClient, generated.BlockBlobClient])(bb))
 	return (*blob.Client)(blobClient)
@@ -130,7 +145,7 @@ func (bb *Client) WithSnapshot(snapshot string) (*Client, error) {
 	}
 	p.Snapshot = snapshot
 
-	return (*Client)(base.NewBlockBlobClient(p.String(), bb.generated().Pipeline(), bb.sharedKey())), nil
+	return (*Client)(base.NewBlockBlobClient(p.String(), bb.generated().Internal(), bb.sharedKey())), nil
 }
 
 // WithVersionID creates a new AppendBlobURL object identical to the source but with the specified version id.
@@ -142,7 +157,7 @@ func (bb *Client) WithVersionID(versionID string) (*Client, error) {
 	}
 	p.VersionID = versionID
 
-	return (*Client)(base.NewBlockBlobClient(p.String(), bb.generated().Pipeline(), bb.sharedKey())), nil
+	return (*Client)(base.NewBlockBlobClient(p.String(), bb.generated().Internal(), bb.sharedKey())), nil
 }
 
 // Upload creates a new block blob or overwrites an existing block blob.
@@ -159,6 +174,13 @@ func (bb *Client) Upload(ctx context.Context, body io.ReadSeekCloser, options *U
 	}
 
 	opts, httpHeaders, leaseInfo, cpkV, cpkN, accessConditions := options.format()
+
+	if options != nil && options.TransactionalValidation != nil {
+		body, err = options.TransactionalValidation.Apply(body, opts)
+		if err != nil {
+			return UploadResponse{}, err
+		}
+	}
 
 	resp, err := bb.generated().Upload(ctx, count, body, opts, httpHeaders, leaseInfo, cpkV, cpkN, accessConditions)
 	return resp, err
@@ -246,6 +268,11 @@ func (bb *Client) CommitBlockList(ctx context.Context, base64BlockIDs []string, 
 			LegalHold:                 options.LegalHold,
 			ImmutabilityPolicyMode:    options.ImmutabilityPolicyMode,
 			ImmutabilityPolicyExpiry:  options.ImmutabilityPolicyExpiryTime,
+		}
+
+		// If user attempts to pass in their own checksum, errors out.
+		if options.TransactionalContentMD5 != nil || options.TransactionalContentCRC64 != nil {
+			return CommitBlockListResponse{}, bloberror.UnsupportedChecksum
 		}
 
 		headers = options.HTTPHeaders
@@ -384,6 +411,12 @@ func (bb *Client) CopyFromURL(ctx context.Context, copySource string, o *blob.Co
 	return bb.BlobClient().CopyFromURL(ctx, copySource, o)
 }
 
+// GetSASURL is a convenience method for generating a SAS token for the currently pointed at block blob.
+// It can only be used if the credential supplied during creation was a SharedKeyCredential.
+func (bb *Client) GetSASURL(permissions sas.BlobPermissions, expiry time.Time, o *blob.GetSASURLOptions) (string, error) {
+	return bb.BlobClient().GetSASURL(permissions, expiry, o)
+}
+
 // Concurrent Upload Functions -----------------------------------------------------------------------------------------
 
 // uploadFromReader uploads a buffer in blocks to a block blob.
@@ -440,6 +473,7 @@ func (bb *Client) uploadFromReader(ctx context.Context, reader io.ReaderAt, actu
 		OperationName: "uploadFromReader",
 		TransferSize:  actualSize,
 		ChunkSize:     o.BlockSize,
+		NumChunks:     uint16(((actualSize - 1) / o.BlockSize) + 1),
 		Concurrency:   o.Concurrency,
 		Operation: func(ctx context.Context, offset int64, chunkSize int64) error {
 			// This function is called once per block.
@@ -494,6 +528,12 @@ func (bb *Client) UploadBuffer(ctx context.Context, buffer []byte, o *UploadBuff
 	if o != nil {
 		uploadOptions = *o
 	}
+
+	// If user attempts to pass in their own checksum, errors out.
+	if uploadOptions.TransactionalValidation != nil && reflect.TypeOf(uploadOptions.TransactionalValidation).Kind() != reflect.Func {
+		return UploadBufferResponse{}, bloberror.UnsupportedChecksum
+	}
+
 	return bb.uploadFromReader(ctx, bytes.NewReader(buffer), int64(len(buffer)), &uploadOptions)
 }
 
@@ -507,6 +547,12 @@ func (bb *Client) UploadFile(ctx context.Context, file *os.File, o *UploadFileOp
 	if o != nil {
 		uploadOptions = *o
 	}
+
+	// If user attempts to pass in their own checksum, errors out.
+	if uploadOptions.TransactionalValidation != nil && reflect.TypeOf(uploadOptions.TransactionalValidation).Kind() != reflect.Func {
+		return UploadFileResponse{}, bloberror.UnsupportedChecksum
+	}
+
 	return bb.uploadFromReader(ctx, file, stat.Size(), &uploadOptions)
 }
 
@@ -517,7 +563,12 @@ func (bb *Client) UploadStream(ctx context.Context, body io.Reader, o *UploadStr
 		o = &UploadStreamOptions{}
 	}
 
-	result, err := copyFromReader(ctx, body, bb, *o, newMMBPool)
+	// If user attempts to pass in their own checksum, errors out.
+	if o.TransactionalValidation != nil && reflect.TypeOf(o.TransactionalValidation).Kind() != reflect.Func {
+		return UploadStreamResponse{}, bloberror.UnsupportedChecksum
+	}
+
+	result, err := copyFromReader(ctx, body, bb, *o, shared.NewMMBPool)
 	if err != nil {
 		return CommitBlockListResponse{}, err
 	}

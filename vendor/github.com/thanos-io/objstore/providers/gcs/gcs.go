@@ -19,6 +19,9 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v2"
 
 	"github.com/thanos-io/objstore"
@@ -31,6 +34,12 @@ const DirDelim = "/"
 type Config struct {
 	Bucket         string `yaml:"bucket"`
 	ServiceAccount string `yaml:"service_account"`
+	UseGRPC        bool   `yaml:"use_grpc"`
+	// GRPCConnPoolSize controls the size of the gRPC connection pool and should only be used
+	// when direct path is not enabled.
+	// See https://pkg.go.dev/cloud.google.com/go/storage#hdr-Experimental_gRPC_API for more details
+	// on how to enable direct path.
+	GRPCConnPoolSize int `yaml:"grpc_conn_pool_size"`
 }
 
 // Bucket implements the store.Bucket and shipper.Bucket interfaces against GCS.
@@ -73,7 +82,23 @@ func NewBucketWithConfig(ctx context.Context, logger log.Logger, gc Config, comp
 		option.WithUserAgent(fmt.Sprintf("thanos-%s/%s (%s)", component, version.Version, runtime.Version())),
 	)
 
-	gcsClient, err := storage.NewClient(ctx, opts...)
+	return newBucket(ctx, logger, gc, opts)
+}
+
+func newBucket(ctx context.Context, logger log.Logger, gc Config, opts []option.ClientOption) (*Bucket, error) {
+	var (
+		err       error
+		gcsClient *storage.Client
+	)
+	if gc.UseGRPC {
+		opts = append(opts,
+			option.WithGRPCDialOption(grpc.WithRecvBufferPool(grpc.NewSharedBufferPool())),
+			option.WithGRPCConnectionPool(gc.GRPCConnPoolSize),
+		)
+		gcsClient, err = storage.NewGRPCClient(ctx, opts...)
+	} else {
+		gcsClient, err = storage.NewClient(ctx, opts...)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -106,10 +131,16 @@ func (b *Bucket) Iter(ctx context.Context, dir string, f func(string) error, opt
 		delimiter = ""
 	}
 
-	it := b.bkt.Objects(ctx, &storage.Query{
+	query := &storage.Query{
 		Prefix:    dir,
 		Delimiter: delimiter,
-	})
+	}
+	err := query.SetAttrSelection([]string{"Name"})
+	if err != nil {
+		return err
+	}
+
+	it := b.bkt.Objects(ctx, query)
 	for {
 		select {
 		case <-ctx.Done():
@@ -188,8 +219,11 @@ func (b *Bucket) IsObjNotFoundErr(err error) bool {
 	return errors.Is(err, storage.ErrObjectNotExist)
 }
 
-// IsCustomerManagedKeyError returns true if the permissions for key used to encrypt the object was revoked.
-func (b *Bucket) IsCustomerManagedKeyError(_ error) bool {
+// IsAccessDeniedErr returns true if access to object is denied.
+func (b *Bucket) IsAccessDeniedErr(err error) bool {
+	if s, ok := status.FromError(err); ok && s.Code() == codes.PermissionDenied {
+		return true
+	}
 	return false
 }
 

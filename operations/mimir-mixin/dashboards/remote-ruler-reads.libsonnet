@@ -7,6 +7,7 @@ local filename = 'mimir-remote-ruler-reads.json';
   local rulerRoutesRegex = '/httpgrpc.HTTP/Handle|.*api_v1_query',
 
   [filename]:
+    assert std.md5(filename) == 'f103238f7f5ab2f1345ce650cbfbfe2f' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Remote ruler reads') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRowIf(
@@ -55,12 +56,12 @@ local filename = 'mimir-remote-ruler-reads.json';
     .addRow(
       $.row('Query-frontend (dedicated to ruler)')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.ruler_query_frontend), rulerRoutesRegex])
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ruler_query_frontend) + [utils.selector.re('route', rulerRoutesRegex)])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ruler_query_frontend) + [utils.selector.re('route', rulerRoutesRegex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -70,25 +71,112 @@ local filename = 'mimir-remote-ruler-reads.json';
       )
     )
     .addRow(
+      local description = |||
+        <p>
+          The query scheduler is an optional service that moves
+          the internal queue from the query-frontend into a
+          separate component.
+          If this service is not deployed,
+          these panels will show "No data."
+        </p>
+      |||;
       $.row('Query-scheduler (dedicated to ruler)')
       .addPanel(
-        $.panel('Requests / sec') +
+        local title = 'Requests / sec';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
         $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
       )
       .addPanel(
-        $.panel('Latency (time in queue)') +
+        local title = 'Latency (Time in Queue)';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
         $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
+      )
+      .addPanel(
+        local title = 'Queue length';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.hiddenLegendQueryPanel(
+          'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher($._config.job_names.ruler_query_scheduler)],
+          'Queue length'
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'queries' } } },
+      )
+    )
+    .addRow(
+      local description = |||
+        <p>
+          The query scheduler can optionally create subqueues
+          in order to enforce round-robin query queuing fairness
+          across additional queue dimensions beyond the default.
+
+          By default, query queuing fairness is only applied by tenant ID.
+          Queries without additional queue dimensions are labeled 'none'.
+        </p>
+      |||;
+      local metricName = 'cortex_query_scheduler_queue_duration_seconds';
+      local selector = '{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler);
+      local labels = ['additional_queue_dimensions'];
+      local labelReplaceArgSets = [
+        {
+          dstLabel: 'additional_queue_dimensions',
+          replacement: 'none',
+          srcLabel:
+            'additional_queue_dimensions',
+          regex: '^$',
+        },
+      ];
+      $.row('Query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions')
+      .addPanel(
+        local title = '99th Percentile Latency by Queue Dimension';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=['0.99'],
+          includeAverage=false,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
+      )
+      .addPanel(
+        local title = '50th Percentile Latency by Queue Dimension';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=['0.50'],
+          includeAverage=false,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
+      )
+      .addPanel(
+        local title = 'Average Latency by Queue Dimension';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=[],
+          includeAverage=true,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
       )
     )
     .addRow(
       $.row('Querier (dedicated to ruler)')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.ruler_querier), $.queries.read_http_routes_regex])
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.ruler_querier) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.ruler_querier) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -99,64 +187,6 @@ local filename = 'mimir-remote-ruler-reads.json';
     )
     .addRowIf(
       $._config.autoscaling.ruler_querier.enabled,
-      $.row('Querier (dedicated to ruler) - autoscaling')
-      .addPanel(
-        local title = 'Replicas';
-        $.panel(title) +
-        $.queryPanel(
-          [
-            'kube_horizontalpodautoscaler_spec_min_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.ruler_querier.hpa_name],
-            'kube_horizontalpodautoscaler_spec_max_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.ruler_querier.hpa_name],
-            'kube_horizontalpodautoscaler_status_current_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.ruler_querier.hpa_name],
-          ],
-          [
-            'Min',
-            'Max',
-            'Current',
-          ],
-        ) +
-        $.panelDescription(
-          title,
-          |||
-            The minimum, maximum, and current number of querier replicas.
-          |||
-        ),
-      )
-      .addPanel(
-        local title = 'Scaling metric';
-        $.panel(title) +
-        $.queryPanel(
-          [
-            $.filterKedaMetricByHPA('keda_metrics_adapter_scaler_metrics_value', $._config.autoscaling.ruler_querier.hpa_name),
-            'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.ruler_querier.hpa_name],
-          ], [
-            'Scaling metric',
-            'Target per replica',
-          ]
-        ) +
-        $.panelDescription(
-          title,
-          |||
-            This panel shows the result of the query that is used as the scaling metric, and the target and threshold used.
-            The desired number of replicas is computed by HPA as: <scaling metric> / <target per replica>.
-          |||
-        ) +
-        $.panelAxisPlacement('Target per replica', 'right'),
-      )
-      .addPanel(
-        local title = 'Autoscaler failures rate';
-        $.panel(title) +
-        $.queryPanel(
-          $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling.ruler_querier.hpa_name),
-          '{{metric}} failures'
-        ) +
-        $.panelDescription(
-          title,
-          |||
-            The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
-            metrics server is unable to query the scaling metric from Prometheus so the autoscaler does not work properly.
-          |||
-        ),
-      )
+      $.cpuAndMemoryBasedAutoScalingRow('Ruler-Querier'),
     ),
 }

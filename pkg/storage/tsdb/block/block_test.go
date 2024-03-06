@@ -206,7 +206,8 @@ func TestUpload(t *testing.T) {
 		require.Equal(t, 3, len(bkt.Objects()))
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), ChunksDirname, "000001"))
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")])))
-		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
+		indexFileSize := getFileSize(t, path.Join(tmpDir, b1.String(), IndexFilename))
+		require.Equal(t, indexFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), IndexFilename)])))
 		require.Equal(t, 568, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
 
 		origMeta, err := ReadMetaFromDir(path.Join(tmpDir, "test", b1.String()))
@@ -218,7 +219,7 @@ func TestUpload(t *testing.T) {
 		files := uploadedMeta.Thanos.Files
 		require.Len(t, files, 3)
 		require.Equal(t, File{RelPath: "chunks/000001", SizeBytes: chunkFileSize}, files[0])
-		require.Equal(t, File{RelPath: "index", SizeBytes: 401}, files[1])
+		require.Equal(t, File{RelPath: "index", SizeBytes: indexFileSize}, files[1])
 		require.Equal(t, File{RelPath: "meta.json", SizeBytes: 0}, files[2]) // meta.json is added to the files without its size.
 
 		// clear files before comparing against original meta.json
@@ -233,7 +234,8 @@ func TestUpload(t *testing.T) {
 		require.Equal(t, 3, len(bkt.Objects()))
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), ChunksDirname, "000001"))
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")])))
-		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
+		indexFileSize := getFileSize(t, path.Join(tmpDir, b1.String(), IndexFilename))
+		require.Equal(t, indexFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), IndexFilename)])))
 		require.Equal(t, 568, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
 	})
 
@@ -254,7 +256,8 @@ func TestUpload(t *testing.T) {
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b2.String(), ChunksDirname, "000001"))
 		require.Equal(t, 6, len(bkt.Objects())) // 3 from b1, 3 from b2
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b2.String(), ChunksDirname, "000001")])))
-		require.Equal(t, 401, len(bkt.Objects()[path.Join(b2.String(), IndexFilename)]))
+		indexFileSize := getFileSize(t, path.Join(tmpDir, b2.String(), IndexFilename))
+		require.Equal(t, indexFileSize, int64(len(bkt.Objects()[path.Join(b2.String(), IndexFilename)])))
 		require.Equal(t, 547, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]))
 
 		origMeta, err := ReadMetaFromDir(path.Join(tmpDir, b2.String()))
@@ -407,6 +410,56 @@ func TestMarkForNoCompact(t *testing.T) {
 			err = MarkForNoCompact(ctx, log.NewNopLogger(), bkt, id, ManualNoCompactReason, "", c)
 			require.NoError(t, err)
 			require.Equal(t, float64(tcase.blocksMarked), promtest.ToFloat64(c))
+		})
+	}
+}
+
+func TestUnMarkForNoCompact(t *testing.T) {
+	testutil.VerifyNoLeak(t)
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	for tname, tcase := range map[string]struct {
+		setupTest     func(t testing.TB, id ulid.ULID, bkt objstore.Bucket)
+		expectedError func(id ulid.ULID) error
+	}{
+		"unmark existing block should succeed": {
+			setupTest: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {
+				// upload blocks and no-compact marker
+				err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil)
+				require.NoError(t, err)
+				m, err := json.Marshal(NoCompactMark{
+					ID:            id,
+					NoCompactTime: time.Now().Unix(),
+					Version:       NoCompactMarkVersion1,
+				})
+				require.NoError(t, err)
+				require.NoError(t, bkt.Upload(ctx, path.Join(id.String(), NoCompactMarkFilename), bytes.NewReader(m)))
+			},
+			expectedError: func(_ ulid.ULID) error {
+				return nil
+			},
+		},
+		"unmark non-existing block should fail": {
+			setupTest: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {},
+			expectedError: func(id ulid.ULID) error {
+				return errors.Errorf("deletion of no-compaction marker for block %s has failed: inmem: object not found", id.String())
+			},
+		},
+	} {
+		t.Run(tname, func(t *testing.T) {
+			bkt := objstore.NewInMemBucket()
+			id, err := CreateBlock(ctx, tmpDir, fiveLabels,
+				100, 0, 1000, labels.FromStrings("ext1", "val1"))
+			require.NoError(t, err)
+			tcase.setupTest(t, id, bkt)
+			err = DeleteNoCompactMarker(ctx, log.NewNopLogger(), bkt, id)
+			if expErr := tcase.expectedError(id); expErr != nil {
+				require.EqualError(t, err, expErr.Error())
+			} else {
+				require.NoError(t, err)
+				_, ok := bkt.Objects()[path.Join(id.String(), NoCompactMarkFilename)]
+				require.False(t, ok)
+			}
 		})
 	}
 }

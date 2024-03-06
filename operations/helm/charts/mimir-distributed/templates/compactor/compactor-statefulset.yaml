@@ -8,6 +8,12 @@ metadata:
     {{- toYaml .Values.compactor.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  podManagementPolicy: {{ .Values.compactor.podManagementPolicy }}
+  {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.compactor.persistentVolume.enableRetentionPolicy)  }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: {{ .Values.compactor.persistentVolume.whenDeleted }}
+    whenScaled: {{ .Values.compactor.persistentVolume.whenScaled }}
+  {{- end }}
   replicas: {{ .Values.compactor.replicas }}
   selector:
     matchLabels:
@@ -147,6 +153,11 @@ spec:
             {{- end }}
             {{- with .Values.compactor.env }}
               {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.compactor }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

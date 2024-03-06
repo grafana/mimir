@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -101,12 +102,18 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 		}, []string{"user"}),
 		queueDuration: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_query_frontend_queue_duration_seconds",
-			Help:    "Time spend by requests queued.",
+			Help:    "Time spent by requests in queue before getting picked up by a querier.",
 			Buckets: prometheus.DefBuckets,
 		}),
 	}
 
-	f.requestQueue = queue.NewRequestQueue(cfg.MaxOutstandingPerTenant, cfg.QuerierForgetDelay, f.queueLength, f.discardedRequests)
+	enqueueDuration := promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+		Name: "cortex_query_frontend_enqueue_duration_seconds",
+		Help: "Time spent by requests waiting to join the queue or be rejected.",
+	})
+
+	// additional queue dimensions not used in v1/frontend
+	f.requestQueue = queue.NewRequestQueue(log, cfg.MaxOutstandingPerTenant, false, cfg.QuerierForgetDelay, f.queueLength, f.discardedRequests, enqueueDuration)
 	f.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(f.cleanupInactiveUserMetrics)
 
 	var err error
@@ -156,14 +163,14 @@ func (f *Frontend) cleanupInactiveUserMetrics(user string) {
 }
 
 // RoundTripGRPC round trips a proto (instead of an HTTP request).
-func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
 	// Propagate trace context in gRPC too - this will be ignored if using HTTP.
 	tracer, span := opentracing.GlobalTracer(), opentracing.SpanFromContext(ctx)
 	if tracer != nil && span != nil {
 		carrier := (*httpgrpcutil.HttpgrpcHeadersCarrier)(req)
 		err := tracer.Inject(span.Context(), opentracing.HTTPHeaders, carrier)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -179,18 +186,18 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	}
 
 	if err := f.queueRequest(ctx, &request); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 
 	case resp := <-request.response:
-		return resp, nil
+		return resp, nil, nil
 
 	case err := <-request.err:
-		return nil, err
+		return nil, nil, err
 	}
 }
 
@@ -215,7 +222,8 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 
 		req := reqWrapper.(*request)
 
-		f.queueDuration.Observe(time.Since(req.enqueueTime).Seconds())
+		queueTime := time.Since(req.enqueueTime)
+		f.queueDuration.Observe(queueTime.Seconds())
 		req.queueSpan.Finish()
 
 		/*
@@ -240,9 +248,10 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		errs := make(chan error, 1)
 		go func() {
 			err = server.Send(&frontendv1pb.FrontendToClient{
-				Type:         frontendv1pb.HTTP_REQUEST,
-				HttpRequest:  req.request,
-				StatsEnabled: stats.IsEnabled(req.originalCtx),
+				Type:           frontendv1pb.HTTP_REQUEST,
+				HttpRequest:    req.request,
+				StatsEnabled:   stats.IsEnabled(req.originalCtx),
+				QueueTimeNanos: queueTime.Nanoseconds(),
 			})
 			if err != nil {
 				errs <- err
@@ -329,7 +338,7 @@ func (f *Frontend) queueRequest(ctx context.Context, req *request) error {
 	joinedTenantID := tenant.JoinTenantIDs(tenantIDs)
 	f.activeUsers.UpdateUserTimestamp(joinedTenantID, now)
 
-	err = f.requestQueue.EnqueueRequest(joinedTenantID, req, maxQueriers, nil)
+	err = f.requestQueue.EnqueueRequestToDispatcher(joinedTenantID, req, maxQueriers, nil)
 	if errors.Is(err, queue.ErrTooManyRequests) {
 		return errTooManyRequest
 	}

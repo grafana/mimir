@@ -13,6 +13,7 @@ metadata:
     {}
   namespace: "citestns"
 spec:
+  # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
   replicas: 1
   selector:
     matchLabels:
@@ -20,6 +21,9 @@ spec:
       app.kubernetes.io/instance: test-oss-multizone-values
       app.kubernetes.io/component: query-frontend
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -48,6 +52,9 @@ spec:
             - "-target=query-frontend"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Reduce the likelihood of queries hitting terminated query-frontends.
+            - "-server.grpc.keepalive.max-connection-age=30s"
+            - "-shutdown-delay=90s"
           volumeMounts:
             - name: runtime-config
               mountPath: /var/mimir
@@ -82,6 +89,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "5000"
           envFrom:
       nodeSelector:
         {}
@@ -98,7 +107,7 @@ spec:
             app.kubernetes.io/component: query-frontend
       tolerations:
         []
-      terminationGracePeriodSeconds: 180
+      terminationGracePeriodSeconds: 390
       volumes:
         - name: config
           configMap:

@@ -104,7 +104,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 50
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -174,14 +174,17 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		sampleTimes  []time.Time
 	)
 
-	cfg := defaultIngesterTestConfig(t)
-	cfg.ActiveSeriesMetrics.Enabled = true
-	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
-	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
-	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
-	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+	ingesterCfg := defaultIngesterTestConfig(t)
+	ingesterCfg.ActiveSeriesMetrics.Enabled = true
+	ingesterCfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
+	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
+	ingesterCfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
+	ingesterCfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	limitsCfg := defaultLimitsTestConfig()
+	limitsCfg.CreationGracePeriod = model.Duration(24 * time.Hour) // This test writes samples in the future.
+
+	ingester, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, nil, "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -334,7 +337,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -405,7 +408,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -481,7 +484,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-			ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+			ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 			t.Cleanup(func() {
@@ -631,8 +634,14 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
 			require.NoError(t, err)
 
-			slices.SortFunc(res, func(a, b *model.SampleStream) bool {
-				return a.Metric.Before(b.Metric)
+			slices.SortFunc(res, func(a, b *model.SampleStream) int {
+				if a.Metric.Before(b.Metric) {
+					return -1
+				}
+				if a.Metric.Equal(b.Metric) {
+					return 0
+				}
+				return 1
 			})
 
 			require.Len(t, res, numSeries)
@@ -672,8 +681,8 @@ func listBlocksInDir(t *testing.T, dir string) (ids []ulid.ULID) {
 	}
 
 	// Ensure the block IDs are sorted.
-	slices.SortFunc(ids, func(a, b ulid.ULID) bool {
-		return a.Compare(b) < 0
+	slices.SortFunc(ids, func(a, b ulid.ULID) int {
+		return a.Compare(b)
 	})
 
 	return ids
@@ -702,7 +711,9 @@ func readMetricSamplesFromBlock(t *testing.T, block *tsdb.Block, metricName stri
 		require.NoError(t, chunksReader.Close())
 	}()
 
-	postings, err := indexReader.Postings(labels.MetricName, metricName)
+	ctx := context.Background()
+
+	postings, err := indexReader.Postings(ctx, labels.MetricName, metricName)
 	require.NoError(t, err)
 
 	for postings.Next() {
@@ -718,8 +729,10 @@ func readMetricSamplesFromBlock(t *testing.T, block *tsdb.Block, metricName stri
 
 		// Read samples from chunks.
 		for idx, chk := range chks {
-			chks[idx].Chunk, err = chunksReader.Chunk(chk)
+			chunk, iter, err := chunksReader.ChunkOrIterable(chk)
 			require.NoError(t, err)
+			require.Nil(t, iter)
+			chks[idx].Chunk = chunk
 
 			it := chks[idx].Chunk.Iterator(nil)
 			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {

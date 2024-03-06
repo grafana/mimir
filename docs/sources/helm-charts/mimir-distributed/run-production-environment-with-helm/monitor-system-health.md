@@ -12,9 +12,9 @@ weight: 60
 You can monitor Grafana Mimir or Grafana Enterprise Metrics itself, by collecting metrics and logs from Mimir or GEM that is running on a Kubernetes cluster. This is called _metamonitoring_.
 
 > **Note:** In Grafana, you can create dashboards and receive alerts about those metrics and logs. To set up dashboards and alerts,
-> see [Installing Grafana Mimir dashboards and alerts](/docs/mimir/{{< param "mimir_docs_version" >}}/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/) or [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/integrations/integrations/integration-mimir/).
+> see [Installing Grafana Mimir dashboards and alerts] or [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/).
 
-Alternatively, to monitor the health of your system without using the Helm chart, see [Collect metrics and logs without the Helm chart](/docs/mimir/{{< param "mimir_docs_version" >}}/manage/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-without-the-helm-chart).
+Alternatively, to monitor the health of your system without using the Helm chart, see [Collect metrics and logs without the Helm chart].
 
 ## Configure the Grafana Agent operator via the Helm chart
 
@@ -27,14 +27,14 @@ The Helm chart does not collect Prometheus node_exporter metrics;
 metrics from node_exporter must all have an instance label on them
 that has the same value as the instance label on Mimir metrics.
 For the list of necessary node_exporter metrics see the metrics
-prefixed with `node` in [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/integrations/integrations/integration-mimir/#metrics).
+prefixed with `node` in [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/#metrics).
 
 You can configure your collection of metrics and logs
 by using the [Grafana Agent operator](/docs/agent/latest/operator/).
 The Helm chart can install and use the Grafana Agent operator.
 
 > **Note:** Before the Helm chart can use the operator,
-> you need to manually install all of the Kubernetes [Custom Resource Definitions (CRDs)](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/) from the [Grafana Agent operator YAML files](https://github.com/grafana/agent/tree/main/production/operator/crds).
+> you need to manually install all of the Kubernetes [Custom Resource Definitions (CRDs)](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/) from the [Grafana Agent operator YAML files](https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds).
 
 It’s best to use the Grafana Agent operator for metrics and logs collection.
 However, if you prefer not to use it or you already have an existing Grafana Agent that you want to use, see _Collect metrics and logs via Grafana Agent_ documentation in Grafana Mimir version 2.5.0.
@@ -138,3 +138,8 @@ metaMonitoring:
           passwordSecretName: gem-tokens
           passwordSecretKey: metamonitoring
 ```
+
+{{% docs/reference %}}
+[Installing Grafana Mimir dashboards and alerts]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts"
+[Collect metrics and logs without the Helm chart]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/collecting-metrics-and-logs#collect-metrics-and-logs-without-the-helm-chart"
+{{% /docs/reference %}}

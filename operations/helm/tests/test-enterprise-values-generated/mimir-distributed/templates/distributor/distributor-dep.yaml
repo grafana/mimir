@@ -14,6 +14,7 @@ metadata:
     {}
   namespace: "citestns"
 spec:
+  # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
   replicas: 1
   selector:
     matchLabels:
@@ -21,6 +22,9 @@ spec:
       app.kubernetes.io/instance: test-enterprise-values
       app.kubernetes.io/component: distributor
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -50,6 +54,13 @@ spec:
             - "-target=distributor"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # When write requests go through distributors via gRPC, we want gRPC clients to re-resolve the distributors DNS
+            # endpoint before the distributor process is terminated, in order to avoid any failures during graceful shutdown.
+            # To achieve it, we set a shutdown delay greater than the gRPC max connection age.
+            - "-server.grpc.keepalive.max-connection-age=60s"
+            - "-server.grpc.keepalive.max-connection-age-grace=5m"
+            - "-server.grpc.keepalive.max-connection-idle=1m"
+            - "-shutdown-delay=90s"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -92,6 +103,8 @@ spec:
           env:
             - name: "GOMAXPROCS"
               value: "8"
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
           envFrom:
       nodeSelector:
         {}
@@ -108,7 +121,7 @@ spec:
             app.kubernetes.io/component: distributor
       tolerations:
         []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 100
       volumes:
         - name: config
           secret:

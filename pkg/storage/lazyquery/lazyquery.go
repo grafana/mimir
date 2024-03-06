@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 // LazyQueryable wraps a storage.Queryable
@@ -18,8 +19,8 @@ type LazyQueryable struct {
 }
 
 // Querier implements storage.Queryable
-func (lq LazyQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	q, err := lq.q.Querier(ctx, mint, maxt)
+func (lq LazyQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := lq.q.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
@@ -44,12 +45,12 @@ func NewLazyQuerier(next storage.Querier) storage.Querier {
 }
 
 // Select implements Storage.Querier
-func (l LazyQuerier) Select(selectSorted bool, params *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (l LazyQuerier) Select(ctx context.Context, selectSorted bool, params *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	// make sure there is space in the buffer, to unblock the goroutine and let it die even if nobody is
 	// waiting for the result yet (or anymore).
 	future := make(chan storage.SeriesSet, 1)
 	go func() {
-		future <- l.next.Select(selectSorted, params, matchers...)
+		future <- l.next.Select(ctx, selectSorted, params, matchers...)
 	}()
 
 	return &lazySeriesSet{
@@ -58,13 +59,13 @@ func (l LazyQuerier) Select(selectSorted bool, params *storage.SelectHints, matc
 }
 
 // LabelValues implements Storage.Querier
-func (l LazyQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return l.next.LabelValues(name, matchers...)
+func (l LazyQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return l.next.LabelValues(ctx, name, matchers...)
 }
 
 // LabelNames implements Storage.Querier
-func (l LazyQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return l.next.LabelNames(matchers...)
+func (l LazyQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return l.next.LabelNames(ctx, matchers...)
 }
 
 // Close implements Storage.Querier
@@ -102,6 +103,6 @@ func (s *lazySeriesSet) Err() error {
 }
 
 // Warnings implements storage.SeriesSet.
-func (s *lazySeriesSet) Warnings() storage.Warnings {
+func (s *lazySeriesSet) Warnings() annotations.Annotations {
 	return nil
 }

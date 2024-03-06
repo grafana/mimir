@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
@@ -60,7 +61,8 @@ type DefaultMultiTenantManager struct {
 }
 
 func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
-	ncfg, err := buildNotifierConfig(&cfg, dnsResolver)
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	ncfg, err := buildNotifierConfig(&cfg, dnsResolver, refreshMetrics)
 	if err != nil {
 		return nil, err
 	}
@@ -171,12 +173,9 @@ func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.C
 		users = append(users, userID)
 	}
 
-	// concurrency.ForEachJob is a helper function that runs a function for each job in parallel.
-	// It cancel context of jobFunc once iteration is done.
-	// That is why the context passed to syncRulesToManager should be the global context not the context of jobFunc.
 	err := concurrency.ForEachJob(ctx, len(users), 10, func(_ context.Context, idx int) error {
 		userID := users[idx]
-		r.syncRulesToManager(ctx, userID, ruleGroups[userID])
+		r.syncRulesToManager(userID, ruleGroups[userID])
 		return nil
 	})
 
@@ -191,7 +190,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.C
 // syncRulesToManager maps the rule files to disk, detects any changes and will create/update
 // the user's Prometheus Rules Manager. Since this method writes to disk it is not safe to call
 // concurrently for the same user.
-func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user string, groups rulespb.RuleGroupList) {
+func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rulespb.RuleGroupList) {
 	// Map the files to disk and return the file names to be passed to the users manager if they
 	// have been updated
 	update, files, err := r.mapper.MapRules(user, groups.Formatted())
@@ -201,7 +200,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 		return
 	}
 
-	manager, created, err := r.getOrCreateManager(ctx, user)
+	manager, created, err := r.getOrCreateManager(user)
 	if err != nil {
 		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
 		level.Error(r.logger).Log("msg", "unable to create rule manager", "user", user, "err", err)
@@ -229,7 +228,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 }
 
 // getOrCreateManager retrieves the user manager. If it doesn't exist, it will create and start it first.
-func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user string) (RulesManager, bool, error) {
+func (r *DefaultMultiTenantManager) getOrCreateManager(user string) (RulesManager, bool, error) {
 	// Check if it already exists. Since rules are synched frequently, we expect to already exist
 	// most of the times.
 	r.userManagerMtx.RLock()
@@ -251,7 +250,7 @@ func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user
 	}
 
 	level.Debug(r.logger).Log("msg", "creating rule manager for user", "user", user)
-	manager, err := r.newManager(ctx, user)
+	manager, err := r.newManager(user)
 	if err != nil {
 		return nil, false, err
 	}
@@ -269,7 +268,7 @@ func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user
 
 // newManager creates a prometheus rule manager wrapped with a user id
 // configured storage, appendable, notifier, and instrumentation
-func (r *DefaultMultiTenantManager) newManager(ctx context.Context, userID string) (RulesManager, error) {
+func (r *DefaultMultiTenantManager) newManager(userID string) (RulesManager, error) {
 	notifier, err := r.getOrCreateNotifier(userID)
 	if err != nil {
 		return nil, err
@@ -280,7 +279,10 @@ func (r *DefaultMultiTenantManager) newManager(ctx context.Context, userID strin
 	reg := prometheus.NewRegistry()
 	r.userManagerMetrics.AddUserRegistry(userID, reg)
 
-	return r.managerFactory(ctx, userID, notifier, r.logger, reg), nil
+	// We pass context.Background() to the managerFactory because the manager is shut down via Stop()
+	// instead of context cancellations. Cancelling the context might cause inflight evaluations to be immediately
+	// aborted. We want a graceful shutdown of evaluations.
+	return r.managerFactory(context.Background(), userID, notifier, r.logger, reg), nil
 }
 
 func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifier.Manager, error) {
@@ -294,7 +296,8 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"user": userID}, r.registry)
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
-	n = newRulerNotifier(&notifier.Options{
+	var err error
+	if n, err = newRulerNotifier(&notifier.Options{
 		QueueCapacity: r.cfg.NotificationQueueCapacity,
 		Registerer:    reg,
 		Do: func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
@@ -312,7 +315,9 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 			_ = ot.GlobalTracer().Inject(sp.Context(), ot.HTTPHeaders, ot.HTTPHeadersCarrier(req.Header))
 			return ctxhttp.Do(ctx, client, req)
 		},
-	}, log.With(r.logger, "user", userID))
+	}, log.With(r.logger, "user", userID)); err != nil {
+		return nil, err
+	}
 
 	n.run()
 

@@ -142,6 +142,9 @@ type AlertingRule struct {
 	active map[uint64]*Alert
 
 	logger log.Logger
+
+	noDependentRules  *atomic.Bool
+	noDependencyRules *atomic.Bool
 }
 
 // NewAlertingRule constructs a new AlertingRule.
@@ -168,6 +171,8 @@ func NewAlertingRule(
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
 		lastError:           atomic.NewError(nil),
+		noDependentRules:    atomic.NewBool(false),
+		noDependencyRules:   atomic.NewBool(false),
 	}
 }
 
@@ -261,7 +266,7 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 }
 
 // QueryforStateSeries returns the series for ALERTS_FOR_STATE.
-func (r *AlertingRule) QueryforStateSeries(alert *Alert, q storage.Querier) (storage.Series, error) {
+func (r *AlertingRule) QueryforStateSeries(ctx context.Context, alert *Alert, q storage.Querier) (storage.Series, error) {
 	smpl := r.forStateSample(alert, time.Now(), 0)
 	var matchers []*labels.Matcher
 	smpl.Metric.Range(func(l labels.Label) {
@@ -271,7 +276,7 @@ func (r *AlertingRule) QueryforStateSeries(alert *Alert, q storage.Querier) (sto
 		}
 		matchers = append(matchers, mt)
 	})
-	sset := q.Select(false, nil, matchers...)
+	sset := q.Select(ctx, false, nil, matchers...)
 
 	var s storage.Series
 	for sset.Next() {
@@ -315,6 +320,22 @@ func (r *AlertingRule) SetRestored(restored bool) {
 // Restored returns the restoration state of the alerting rule.
 func (r *AlertingRule) Restored() bool {
 	return r.restored.Load()
+}
+
+func (r *AlertingRule) SetNoDependentRules(noDependentRules bool) {
+	r.noDependentRules.Store(noDependentRules)
+}
+
+func (r *AlertingRule) NoDependentRules() bool {
+	return r.noDependentRules.Load()
+}
+
+func (r *AlertingRule) SetNoDependencyRules(noDependencyRules bool) {
+	r.noDependencyRules.Store(noDependencyRules)
+}
+
+func (r *AlertingRule) NoDependencyRules() bool {
+	return r.noDependencyRules.Load()
 }
 
 // resolvedRetention is the duration for which a resolved alert instance
@@ -472,7 +493,7 @@ func (r *AlertingRule) Eval(ctx context.Context, evalDelay time.Duration, ts tim
 }
 
 // State returns the maximum state of alert instances for this rule.
-// StateFiring > StatePending > StateInactive
+// StateFiring > StatePending > StateInactive.
 func (r *AlertingRule) State() AlertState {
 	r.activeMtx.Lock()
 	defer r.activeMtx.Unlock()

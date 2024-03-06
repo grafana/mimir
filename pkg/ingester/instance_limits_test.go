@@ -6,17 +6,13 @@
 package ingester
 
 import (
-	"context"
-	"fmt"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/grafana/dskit/middleware"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestInstanceLimitsUnmarshal(t *testing.T) {
@@ -42,29 +38,22 @@ max_tenants: 50000
 }
 
 func TestInstanceLimitErr(t *testing.T) {
-	t.Run("bare error implements ShouldLog()", func(t *testing.T) {
-		var optional middleware.OptionalLogging
-		require.ErrorAs(t, errMaxInflightRequestsReached, &optional)
-		require.False(t, optional.ShouldLog(context.Background(), time.Duration(0)))
-	})
+	userID := "1"
+	limitErrors := []error{
+		errMaxIngestionRateReached,
+		errMaxTenantsReached,
+		errMaxInMemorySeriesReached,
+		errMaxInflightRequestsReached,
+	}
+	for _, limitError := range limitErrors {
+		var instanceLimitErr instanceLimitReachedError
+		require.Error(t, instanceLimitErr)
+		require.ErrorAs(t, limitError, &instanceLimitErr)
+		checkIngesterError(t, limitError, mimirpb.INSTANCE_LIMIT, false)
 
-	t.Run("wrapped error implements ShouldLog()", func(t *testing.T) {
-		err := fmt.Errorf("%w: oh no", errMaxTenantsReached)
-		var optional middleware.OptionalLogging
-		require.ErrorAs(t, err, &optional)
-		require.False(t, optional.ShouldLog(context.Background(), time.Duration(0)))
-	})
-
-	t.Run("bare error implements GRPCStatus()", func(t *testing.T) {
-		s, ok := status.FromError(errMaxInMemorySeriesReached)
-		require.True(t, ok, "expected to be able to convert to gRPC status")
-		require.Equal(t, codes.Unavailable, s.Code())
-	})
-
-	t.Run("wrapped error implements GRPCStatus()", func(t *testing.T) {
-		err := fmt.Errorf("%w: oh no", errMaxIngestionRateReached)
-		s, ok := status.FromError(err)
-		require.True(t, ok, "expected to be able to convert to gRPC status")
-		require.Equal(t, codes.Unavailable, s.Code())
-	})
+		wrappedWithUserErr := wrapOrAnnotateWithUser(limitError, userID)
+		require.Error(t, wrappedWithUserErr)
+		require.ErrorIs(t, wrappedWithUserErr, limitError)
+		checkIngesterError(t, wrappedWithUserErr, mimirpb.INSTANCE_LIMIT, false)
+	}
 }

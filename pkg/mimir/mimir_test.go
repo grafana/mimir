@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	dslog "github.com/grafana/dskit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
@@ -161,6 +162,7 @@ func TestMimir(t *testing.T) {
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},
 	}
+	require.NoError(t, cfg.Server.LogLevel.Set("info"))
 
 	tests := map[string]struct {
 		target                  []string
@@ -171,7 +173,7 @@ func TestMimir(t *testing.T) {
 			target: []string{All, AlertManager},
 			expectedEnabledModules: []string{
 				// Check random modules that we expect to be configured when using Target=All.
-				Server, IngesterService, Ring, DistributorService, Compactor,
+				Server, IngesterService, IngesterRing, DistributorService, Compactor,
 
 				// Check that Alertmanager is configured which is not part of Target=All.
 				AlertManager,
@@ -232,11 +234,9 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	cfg.ActivityTracker.Filepath = filepath.Join(tmpDir, "activity.log") // Enable activity tracker
 
 	cfg.Target = []string{Querier}
-	cfg.Server = getServerConfig(t)
-	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
-	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
+	cfg.Server = getServerConfig(t, dslog.LogfmtFormat, "debug")
 
-	util_log.InitLogger(&cfg.Server, false)
+	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, false, util_log.RateLimitedLoggerCfg{})
 
 	c, err := New(cfg, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
@@ -420,6 +420,34 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectAnyError: true,
 		},
+		{
+			name: "should pass if grpc errors are disabled, and the distributor is running with ingest storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("distributor")
+				cfg.IngestStorage.Enabled = true
+				cfg.IngestStorage.KafkaConfig.Address = "localhost:123"
+				cfg.IngestStorage.KafkaConfig.Topic = "topic"
+				cfg.Ingester.DeprecatedReturnOnlyGRPCErrors = false
+
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should fails if grpc errors are disabled, and the ingester is running with ingest storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("ingester")
+				cfg.IngestStorage.Enabled = true
+				cfg.IngestStorage.KafkaConfig.Address = "localhost:123"
+				cfg.IngestStorage.KafkaConfig.Topic = "topic"
+				cfg.Ingester.DeprecatedReturnOnlyGRPCErrors = false
+
+				return cfg
+			},
+			expectAnyError: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.getTestConfig().Validate(log.NewNopLogger())
@@ -470,31 +498,6 @@ func TestConfig_ValidateLimits(t *testing.T) {
 			}
 		})
 	}
-}
-
-// Temporary behavior to keep supporting global query-ingesters-within flag for two Mimir versions
-// TODO: Remove in Mimir 2.11.0
-func TestQueryIngestersWithinGlobalConfigIsUsedInsteadOfDefaultLimitConfig(t *testing.T) {
-	dir := t.TempDir()
-
-	cfg := Config{}
-	flagext.DefaultValues(&cfg)
-
-	cfg.Querier.QueryIngestersWithin = 5 * time.Hour
-	cfg.Target = []string{Overrides}
-
-	cfg.RuntimeConfig.LoadPath = []string{filepath.Join(dir, "config.yaml")}
-
-	c, err := New(cfg, prometheus.NewPedanticRegistry())
-	require.NoError(t, err)
-
-	_, err = c.ModuleManager.InitModuleServices(cfg.Target...)
-	require.NoError(t, err)
-	defer c.Server.Stop()
-
-	duration := c.Overrides.QueryIngestersWithin("test")
-
-	require.Equal(t, 5*time.Hour, duration)
 }
 
 func TestConfig_validateFilesystemPaths(t *testing.T) {
@@ -734,7 +737,7 @@ func TestIsAbsPathOverlapping(t *testing.T) {
 func TestGrpcAuthMiddleware(t *testing.T) {
 	cfg := Config{
 		MultitenancyEnabled: true, // We must enable this to enable Auth middleware for gRPC server.
-		Server:              getServerConfig(t),
+		Server:              getServerConfig(t, dslog.LogfmtFormat, "debug"),
 		Target:              []string{API}, // Something innocent that doesn't require much config.
 	}
 
@@ -947,19 +950,23 @@ overrides:
 }
 
 // Generates server config, with gRPC listening on random port.
-func getServerConfig(t *testing.T) server.Config {
+func getServerConfig(t *testing.T, logFormat, logLevel string) server.Config {
 	grpcHost, grpcPortNum := getHostnameAndRandomPort(t)
 	httpHost, httpPortNum := getHostnameAndRandomPort(t)
 
-	return server.Config{
+	cfg := server.Config{
 		HTTPListenAddress: httpHost,
 		HTTPListenPort:    httpPortNum,
 
 		GRPCListenAddress: grpcHost,
 		GRPCListenPort:    grpcPortNum,
 
-		GPRCServerMaxRecvMsgSize: 1024,
+		GRPCServerMaxRecvMsgSize: 1024,
+		LogFormat:                logFormat,
+		Registerer:               prometheus.NewPedanticRegistry(),
 	}
+	require.NoError(t, cfg.LogLevel.Set(logLevel))
+	return cfg
 }
 
 func getHostnameAndRandomPort(t *testing.T) (string, int) {

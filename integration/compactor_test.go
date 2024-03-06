@@ -23,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -71,15 +70,15 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		spec := block.SeriesSpec{
 			Labels: labels.FromStrings("case", "native_histogram", "i", strconv.Itoa(i)),
 			Chunks: []chunks.Meta{
-				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				must(chunks.ChunkFromSamples([]chunks.Sample{
 					sample{10, 0, test.GenerateTestHistogram(1), nil},
 					sample{20, 0, test.GenerateTestHistogram(2), nil},
 				})),
-				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				must(chunks.ChunkFromSamples([]chunks.Sample{
 					sample{30, 0, test.GenerateTestHistogram(3), nil},
 					sample{40, 0, test.GenerateTestHistogram(4), nil},
 				})),
-				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				must(chunks.ChunkFromSamples([]chunks.Sample{
 					sample{50, 0, test.GenerateTestHistogram(5), nil},
 					sample{2*time.Hour.Milliseconds() - 1, 0, test.GenerateTestHistogram(6), nil},
 				})),
@@ -91,13 +90,13 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		for _, chk := range spec.Chunks {
 			it := chk.Chunk.Iterator(nil)
 			for it.Next() != chunkenc.ValNone {
-				ts, h := it.AtHistogram()
+				ts, h := it.AtHistogram(nil)
 				samples = append(samples, sample{t: ts, h: h})
 			}
 		}
 		expectedSeries[i] = series{lbls: spec.Labels, samples: samples}
 
-		meta, err := block.GenerateBlockFromSpec(userID, inDir, []*block.SeriesSpec{&spec})
+		meta, err := block.GenerateBlockFromSpec(inDir, []*block.SeriesSpec{&spec})
 		require.NoError(t, err)
 
 		require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bktClient, filepath.Join(inDir, meta.ULID.String()), meta))
@@ -137,7 +136,8 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		ixReader, err := index.NewFileReader(filepath.Join(outDir, blockID, block.IndexFilename))
 		require.NoError(t, err)
 
-		all, err := ixReader.Postings(index.AllPostingsKey())
+		n, v := index.AllPostingsKey()
+		all, err := ixReader.Postings(context.Background(), n, v)
 		require.NoError(t, err)
 
 		for p := ixReader.SortedPostings(all); p.Next(); {
@@ -149,8 +149,10 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 			require.NoError(t, ixReader.Series(p.At(), &lbls, &chks))
 
 			for _, c := range chks {
-				c.Chunk, err = chkReader.Chunk(c)
+				chunk, iter, err := chkReader.ChunkOrIterable(c)
 				require.NoError(t, err)
+				require.Nil(t, iter)
+				c.Chunk = chunk
 
 				it := c.Chunk.Iterator(nil)
 				for {
@@ -159,7 +161,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 					if valType == chunkenc.ValNone {
 						break
 					} else if valType == chunkenc.ValHistogram {
-						ts, h := it.AtHistogram()
+						ts, h := it.AtHistogram(nil)
 						samples = append(samples, sample{
 							t: ts,
 							h: h,

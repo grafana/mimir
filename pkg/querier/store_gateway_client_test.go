@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -47,7 +48,8 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 	factory := newStoreGatewayClientFactory(cfg, reg)
 
 	for i := 0; i < 2; i++ {
-		client, err := factory(listener.Addr().String())
+		inst := ring.InstanceDesc{Addr: listener.Addr().String()}
+		client, err := factory.FromInstance(inst)
 		require.NoError(t, err)
 		defer client.Close() //nolint:errcheck
 
@@ -72,16 +74,32 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 	assert.Equal(t, uint64(2), metrics[0].GetMetric()[0].GetHistogram().GetSampleCount())
 }
 
-type mockStoreGatewayServer struct{}
+type mockStoreGatewayServer struct {
+	onSeries      func(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error
+	onLabelNames  func(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error)
+	onLabelValues func(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error)
+}
 
-func (m *mockStoreGatewayServer) Series(_ *storepb.SeriesRequest, _ storegatewaypb.StoreGateway_SeriesServer) error {
+func (m *mockStoreGatewayServer) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+	if m.onSeries != nil {
+		return m.onSeries(req, srv)
+	}
+
 	return nil
 }
 
-func (m *mockStoreGatewayServer) LabelNames(context.Context, *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+func (m *mockStoreGatewayServer) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+	if m.onLabelNames != nil {
+		return m.onLabelNames(ctx, req)
+	}
+
 	return nil, nil
 }
 
-func (m *mockStoreGatewayServer) LabelValues(context.Context, *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+func (m *mockStoreGatewayServer) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+	if m.onLabelValues != nil {
+		return m.onLabelValues(ctx, req)
+	}
+
 	return nil, nil
 }

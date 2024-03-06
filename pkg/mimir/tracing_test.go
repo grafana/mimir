@@ -3,6 +3,7 @@
 package mimir
 
 import (
+	"context"
 	crand "crypto/rand"
 	"encoding/binary"
 	"errors"
@@ -204,4 +205,13 @@ func (m *TracingSpanMock) LogEventWithPayload(event string, payload interface{})
 
 func (m *TracingSpanMock) Log(data opentracing.LogData) {
 	m.Called(data)
+}
+
+func TestOpenTelemetryTracerBridge_Start(t *testing.T) {
+	bridge := NewOpenTelemetryProviderBridge(opentracing.GlobalTracer())
+	tracer := bridge.Tracer("")
+	ctx, span := tracer.Start(context.Background(), "test")
+	ctxSpan := trace.SpanFromContext(ctx)
+
+	require.Same(t, span, ctxSpan, "returned context should contain span")
 }

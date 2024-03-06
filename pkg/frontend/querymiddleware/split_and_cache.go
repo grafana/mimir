@@ -92,7 +92,7 @@ type splitAndCacheMiddleware struct {
 	// Results caching.
 	cacheEnabled   bool
 	cache          cache.Cache
-	splitter       CacheSplitter
+	splitter       CacheKeyGenerator
 	extractor      Extractor
 	shouldCacheReq shouldCacheFn
 
@@ -108,7 +108,7 @@ func newSplitAndCacheMiddleware(
 	limits Limits,
 	merger Merger,
 	cache cache.Cache,
-	splitter CacheSplitter,
+	splitter CacheKeyGenerator,
 	extractor Extractor,
 	shouldCacheReq shouldCacheFn,
 	logger log.Logger,
@@ -135,6 +135,7 @@ func newSplitAndCacheMiddleware(
 }
 
 func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response, error) {
+	spanLog := spanlogger.FromContext(ctx, s.logger)
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -163,12 +164,13 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 		for _, splitReq := range splitReqs {
 			// Do not try to pick response from cache at all if the request is not cachable.
 			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
+				level.Debug(spanLog).Log("msg", "skipping response cache as query is not cacheable", "query", splitReq.orig.GetQuery(), "reason", reason, "tenants", tenant.JoinTenantIDs(tenantIDs))
 				splitReq.downstreamRequests = []Request{splitReq.orig}
 				s.metrics.queryResultCacheSkippedCount.WithLabelValues(reason).Inc()
 				continue
 			}
 
-			splitReq.cacheKey = s.splitter.GenerateCacheKey(ctx, tenant.JoinTenantIDs(tenantIDs), splitReq.orig)
+			splitReq.cacheKey = s.splitter.QueryRequest(ctx, tenant.JoinTenantIDs(tenantIDs), splitReq.orig)
 			lookupKeys = append(lookupKeys, splitReq.cacheKey)
 			lookupReqs = append(lookupReqs, splitReq)
 		}
@@ -223,7 +225,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 	queryTime := s.currentTime()
 
 	if len(execReqs) > 0 {
-		execResps, err := doRequests(ctx, s.next, execReqs, true)
+		execResps, err := doRequests(ctx, s.next, execReqs)
 		if err != nil {
 			return nil, err
 		}
@@ -231,6 +233,10 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 		// Store the downstream responses in our internal data structure.
 		if err := splitReqs.storeDownstreamResponses(execResps); err != nil {
 			return nil, err
+		}
+
+		if details := QueryDetailsFromContext(ctx); details != nil {
+			details.ResultsCacheMissBytes = splitReqs.countDownstreamResponseBytes()
 		}
 	}
 
@@ -341,7 +347,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 		hashedKeys = append(hashedKeys, hashed)
 		hashedKeysIdx[hashed] = idx
 
-		spanLog.LogKV("key", key, "hashedKey", hashed)
+		spanLog.LogKV("msg", "looking up", "key", key, "hashedKey", hashed)
 	}
 
 	// Lookup the cache.
@@ -351,12 +357,14 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 
 	// Decode all cached responses.
 	extents := make([][]Extent, len(keys))
-	returnedBytes := 0
+	fetchedBytes := 0
+	usedBytes := 0
 	extentsOutOfTTL := 0
 
 	ttl, ttlForExtentsInOOOWindow, oooWindow := s.getCacheOptions(tenantIDs)
 
 	for foundKey, foundData := range founds {
+		fetchedBytes += len(foundData)
 		// Find the index of this cache key.
 		keyIdx, ok := hashedKeysIdx[foundKey]
 		if !ok {
@@ -381,29 +389,43 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 		extents[keyIdx] = make([]Extent, 0, len(resp.Extents))
 
 		// Filter out extents that are outside TTL.
-		for ix := range resp.Extents {
+		for _, cachedExtent := range resp.Extents {
 			// If we don't know the query timestamp, we use the cached result.
 			// This is temporary ... after max 7 days (previous hardcoded TTL) all cached results will have query timestamp recorded.
-			usedTTL := getTTLForExtent(now, ttl, ttlForExtentsInOOOWindow, oooWindow, &resp.Extents[ix])
-			if resp.Extents[ix].QueryTimestampMs > 0 && resp.Extents[ix].QueryTimestampMs < now.UnixMilli()-usedTTL.Milliseconds() {
+			usedTTL := getTTLForExtent(now, ttl, ttlForExtentsInOOOWindow, oooWindow, cachedExtent)
+			if cachedExtent.QueryTimestampMs > 0 && cachedExtent.QueryTimestampMs < now.UnixMilli()-usedTTL.Milliseconds() {
 				extentsOutOfTTL++
 				continue
 			}
 
-			extents[keyIdx] = append(extents[keyIdx], resp.Extents[ix])
+			extents[keyIdx] = append(extents[keyIdx], cachedExtent)
+			// log only hashed key so that we keep the logs briefer
+			spanLog.LogKV(
+				"msg", "fetched",
+				"hashedKey", foundKey,
+				"traceID", cachedExtent.TraceId,
+				"start", time.UnixMilli(cachedExtent.Start),
+				"end", time.UnixMilli(cachedExtent.Start),
+			)
+			usedBytes += cachedExtent.Response.Size()
 		}
 
 		if len(extents[keyIdx]) == 0 {
 			extents[keyIdx] = nil
 		}
-
-		returnedBytes += len(foundData)
 	}
 
-	spanLog.LogKV("requested keys", len(hashedKeys))
-	spanLog.LogKV("found keys", len(founds))
-	spanLog.LogKV("returned bytes", returnedBytes)
-	spanLog.LogKV("extents filtered out due to ttl", extentsOutOfTTL)
+	spanLog.LogKV(
+		"requested keys", len(hashedKeys),
+		"found keys", len(founds),
+		"fetched bytes", fetchedBytes,
+		"used bytes", usedBytes,
+		"extents filtered out due to ttl", extentsOutOfTTL,
+	)
+
+	if details := QueryDetailsFromContext(ctx); details != nil {
+		details.ResultsCacheHitBytes = usedBytes
+	}
 
 	return extents
 }
@@ -422,7 +444,7 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []stri
 	}
 
 	ttl, ttlInOOO, oooWindow := s.getCacheOptions(tenantIDs)
-	usedTTL := getTTLForExtent(time.Now(), ttl, ttlInOOO, oooWindow, &extents[len(extents)-1])
+	usedTTL := getTTLForExtent(time.Now(), ttl, ttlInOOO, oooWindow, extents[len(extents)-1])
 
 	buf, err := proto.Marshal(&CachedResponse{
 		Key:     key,
@@ -436,7 +458,7 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []stri
 	s.cache.StoreAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
 }
 
-func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e *Extent) time.Duration {
+func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e Extent) time.Duration {
 	if oooWindow > 0 && e.End >= now.Add(-oooWindow).UnixMilli() {
 		return ttlInOOOWindow
 	}
@@ -482,6 +504,17 @@ func (s *splitRequests) countDownstreamRequests() int {
 		count += len(req.downstreamRequests)
 	}
 	return count
+}
+
+// countDownstreamRequests returns the total number of bytes returned from downstream requests.
+func (s *splitRequests) countDownstreamResponseBytes() int {
+	bytes := 0
+	for _, req := range *s {
+		for _, resp := range req.downstreamResponses {
+			bytes += proto.Size(resp)
+		}
+	}
+	return bytes
 }
 
 // prepareDownstreamRequests injects a unique ID and hints to all downstream requests and
@@ -560,7 +593,7 @@ type requestResponse struct {
 }
 
 // doRequests executes a list of requests in parallel.
-func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordSpan bool) ([]requestResponse, error) {
+func doRequests(ctx context.Context, downstream Handler, reqs []Request) ([]requestResponse, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
 	resps := make([]requestResponse, 0, len(reqs))
@@ -571,12 +604,10 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 			// partialStats are the statistics for this partial query, which we'll need to
 			// get correct aggregation of statistics for partial queries.
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
-			if recordSpan {
-				var span opentracing.Span
-				span, childCtx = opentracing.StartSpanFromContext(childCtx, "doRequests")
-				req.LogToSpan(span)
-				defer span.Finish()
-			}
+			var span opentracing.Span
+			span, childCtx = opentracing.StartSpanFromContext(childCtx, "doRequests")
+			req.AddSpanTags(span)
+			defer span.Finish()
 
 			resp, err := downstream.Do(childCtx, req)
 			queryStatistics.Merge(partialStats)

@@ -1,6 +1,8 @@
 ---
+aliases:
+  - ../operators-guide/configure/about-anonymous-usage-statistics-reporting/ # /docs/mimir/<MIMIR_VERSION>/operators-guide/configure/about-anonymous-usage-statistics-reporting/
 description: Learn about Grafana Mimir anonymous usage statistics reporting
-menuTitle: About anonymous usage statistics reporting
+menuTitle: Anonymous usage statistics reporting
 title: About Grafana Mimir anonymous usage statistics reporting
 weight: 30
 ---
@@ -55,7 +57,9 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
       - Metadata query.
       - Cardinality analysis query.
 
-> **Note**: Mimir maintainers commit to keeping the list of tracked information updated over time, and reporting any change both via the CHANGELOG and the release notes.
+{{< admonition type="note" >}}
+Mimir maintainers commit to keeping the list of tracked information updated over time, and reporting any change both via the CHANGELOG and the release notes.
+{{< /admonition >}}
 
 ## Disable the anonymous usage statistics reporting
 

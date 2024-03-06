@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -338,6 +339,11 @@ func testSingle(t *testing.T, arguments []string, configYAML string, stdoutMessa
 
 	// reset default flags
 	flag.CommandLine = flag.NewFlagSet(arguments[0], flag.ExitOnError)
+
+	// reset Prometheus registerer and gatherer to default state to avoid "duplicate registration" errors
+	reg := prometheus.NewRegistry()
+	prometheus.DefaultRegisterer = reg
+	prometheus.DefaultGatherer = reg
 
 	main()
 

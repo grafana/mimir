@@ -16,27 +16,9 @@ The querier uses the [store-gateway]({{< relref "./store-gateway" >}}) component
 
 ## How it works
 
-To find the correct blocks to look up at query time, the querier requires an almost up-to-date view of the bucket in long-term storage. The querier performs one of the following actions to ensure that the bucket view is updated:
-
-1. Periodically download the [bucket index]({{< relref "../bucket-index" >}}) (default)
-2. Periodically scan the bucket
-
-Queriers do not need any content from blocks except their metadata, which includes the minimum and maximum timestamp of samples within the block.
-
-### Bucket index enabled (default)
-
-Queriers lazily download the bucket index when they receive the first query for a given tenant. The querier caches the bucket index in memory and periodically keeps it up-to-date.
+To find the correct blocks to look up at query time, queriers lazily download the bucket index when they receive the first query for a given tenant. The querier caches the bucket index in memory and periodically keeps it up-to-date.
 
 The bucket index contains a list of blocks and block deletion marks of a tenant. The querier later uses the list of blocks and block deletion marks to locate the set of blocks that need to be queried for the given query.
-
-When the querier runs with the bucket index enabled, the querier startup time and the volume of API calls to object storage are reduced.
-We recommend that you keep the bucket index enabled.
-
-### Bucket index disabled
-
-When [bucket index]({{< relref "../bucket-index" >}}) is disabled, queriers iterate over the storage bucket to discover blocks for all tenants and download the `meta.json` of each block. During this initial bucket scanning phase, a querier cannot process incoming queries and its `/ready` readiness probe endpoint will not return the HTTP status code `200`.
-
-When running, queriers periodically iterate over the storage bucket to discover new tenants and recently uploaded blocks.
 
 ### Anatomy of a query request
 
@@ -62,11 +44,11 @@ Query failure due to the querier not querying all blocks ensures the correctness
 If the query time range overlaps with the `-querier.query-ingesters-within` duration, the querier also sends the request to ingesters.
 The request to the ingesters fetches samples that have not yet been uploaded to the long-term storage or are not yet available for querying through the store-gateway.
 
-The configured period for `-querier.query-ingesters-within` should be:
+The configured period for `-querier.query-ingesters-within` should be greater than both:
 
-- greater than `-querier.query-store-after` and,
-  - greater than the estimated minimum amount of time for the oldest samples stored in a block uploaded by ingester to be discovered and available for querying.
-    When running Grafana Mimir with the default configuration, the estimated minimum amount of time for the oldest sample in an uploaded block to be available for querying is `3h`.
+- `-querier.query-store-after`
+- the estimated minimum amount of time for the oldest samples stored in a block uploaded by ingester to be discovered and available for querying.
+  When running Grafana Mimir with the default configuration, the estimated minimum amount of time for the oldest sample in an uploaded block to be available for querying is `3h`.
 
 After all samples have been fetched from both the store-gateways and the ingesters, the querier runs the PromQL engine to execute the query and sends back the result to the client.
 
@@ -100,12 +82,18 @@ Using the metadata cache reduces the number of API calls to long-term storage an
 
 To enable the metadata cache, set `-blocks-storage.bucket-store.metadata-cache.backend`.
 
-> **Note**: Currently, only the `memcached` backend is supported. The Memcached client includes additional configuration available via flags that begin with the prefix `-blocks-storage.bucket-store.metadata-cache.memcached.*`.
+{{< admonition type="note" >}}
+Currently, Mimir supports caching with the `memcached` backend.
+
+The Memcached client includes additional configuration available via flags that begin with the prefix `-blocks-storage.bucket-store.metadata-cache.memcached.*`.
+{{< /admonition >}}
 
 Additional flags for configuring the metadata cache begin with the prefix `-blocks-storage.bucket-store.metadata-cache.*`. By configuring the TTL to zero or a negative value, caching of given item type is disabled.
 
-> **Note:** The same Memcached backend cluster should be shared between store-gateways and queriers.
+{{< admonition type="note" >}}
+You should use the same Memcached backend cluster for both the store-gateways and queriers.
+{{< /admonition >}}
 
 ## Querier configuration
 
-For details about querier configuration, refer to [querier]({{< relref "../../configuration-parameters#querier" >}}).
+For details about querier configuration, refer to [querier]({{< relref "../../../configure/configuration-parameters#querier" >}}).

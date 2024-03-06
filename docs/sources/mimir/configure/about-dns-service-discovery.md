@@ -4,7 +4,7 @@ aliases:
 description:
   DNS service discovery finds addresses of backend services to which Grafana
   Mimir connects.
-menuTitle: About DNS service discovery
+menuTitle: DNS service discovery
 title: About Grafana Mimir DNS service discovery
 weight: 20
 ---
@@ -13,14 +13,14 @@ weight: 20
 
 Some clients in Grafana Mimir support service discovery via DNS to locate the addresses of backend servers to connect to. The following clients support service discovery via DNS:
 
-- [Memcached server addresses]({{< relref "../references/configuration-parameters#memcached" >}})
+- [Memcached server addresses]({{< relref "./configuration-parameters#memcached" >}})
   - `-blocks-storage.bucket-store.chunks-cache.memcached.addresses`
   - `-blocks-storage.bucket-store.index-cache.memcached.addresses`
   - `-blocks-storage.bucket-store.metadata-cache.memcached.addresses`
   - `-query-frontend.results-cache.memcached.addresses`
-- [Memberlist KV store]({{< relref "../references/configuration-parameters#memberlist" >}})
+- [Memberlist KV store]({{< relref "./configuration-parameters#memberlist" >}})
   - `-memberlist.join`
-- [Alertmanager URL configured in the ruler]({{< relref "../references/configuration-parameters#ruler" >}})
+- [Alertmanager URL configured in the ruler]({{< relref "./configuration-parameters#ruler" >}})
   - `-ruler.alertmanager-url`
 
 ## Supported discovery modes

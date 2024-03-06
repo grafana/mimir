@@ -8,9 +8,11 @@ package querier
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/prometheus/prometheus/scrape"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -23,7 +25,7 @@ const (
 // exists to allow us to wrap the default implementation (the distributor embedded
 // in a querier) with logic for handling tenant federated metadata requests.
 type MetadataSupplier interface {
-	MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error)
+	MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error)
 }
 
 type metricMetadata struct {
@@ -46,7 +48,32 @@ type metadataErrorResult struct {
 // Mimir for a given tenant. It is kept and returned as a set.
 func NewMetadataHandler(m MetadataSupplier) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp, err := m.MetricsMetadata(r.Context())
+		limit := -1
+		if s := r.FormValue("limit"); s != "" {
+			var err error
+			if limit, err = strconv.Atoi(s); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				util.WriteJSONResponse(w, metadataErrorResult{Status: statusError, Error: "limit must be a number"})
+				return
+			}
+		}
+		limitPerMetric := -1
+		if s := r.FormValue("limit_per_metric"); s != "" {
+			var err error
+			if limitPerMetric, err = strconv.Atoi(s); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				util.WriteJSONResponse(w, metadataErrorResult{Status: statusError, Error: "limit_per_metric must be a number"})
+				return
+			}
+		}
+		metric := r.FormValue("metric")
+		req := &client.MetricsMetadataRequest{
+			Limit:          int32(limit),
+			LimitPerMetric: int32(limitPerMetric),
+			Metric:         metric,
+		}
+
+		resp, err := m.MetricsMetadata(r.Context(), req)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			util.WriteJSONResponse(w, metadataErrorResult{Status: statusError, Error: err.Error()})
@@ -57,7 +84,16 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 		metrics := map[string][]metricMetadata{}
 		for _, m := range resp {
 			ms, ok := metrics[m.Metric]
+			// We enforce this both here and in the ingesters. Doing it in the ingesters is
+			// more efficient as it is earlier in the process, but since that one is per user,
+			// we still need to do it here after all the results are merged.
+			if limitPerMetric > 0 && len(ms) >= limitPerMetric {
+				continue
+			}
 			if !ok {
+				if limit >= 0 && len(metrics) >= limit {
+					break
+				}
 				// Most metrics will only hold 1 copy of the same metadata.
 				ms = make([]metricMetadata, 0, 1)
 				metrics[m.Metric] = ms

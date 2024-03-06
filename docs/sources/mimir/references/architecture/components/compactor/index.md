@@ -140,7 +140,7 @@ Alternatively, assuming the largest `-compactor.block-ranges` is `24h` (the defa
 
 ## Compactor configuration
 
-Refer to the [compactor]({{< relref "../../../configuration-parameters#compactor" >}})
-block section and the [limits]({{< relref "../../../configuration-parameters#limits" >}}) block section for details of compaction-related configuration.
+Refer to the [compactor]({{< relref "../../../../configure/configuration-parameters#compactor" >}})
+block section and the [limits]({{< relref "../../../../configure/configuration-parameters#limits" >}}) block section for details of compaction-related configuration.
 
 The [alertmanager]({{< relref "../alertmanager" >}}) and [ruler]({{< relref "../ruler" >}}) components can also use object storage to store their configurations and rules uploaded by users. In that case a separate bucket should be created to store alertmanager configurations and rules: using the same bucket between ruler/alertmanager and blocks will cause issues with the compactor.

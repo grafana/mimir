@@ -13,6 +13,9 @@ std.manifestYamlDoc({
     // Whether query-frontend and querier should use query-scheduler. If set to true, query-scheduler is started as well.
     use_query_scheduler: true,
 
+    // Whether ruler should use the query-frontend and queriers to execute queries, rather than executing them in-process
+    ruler_use_remote_execution: false,
+
     // Three options are supported for ring in this jsonnet:
     // - consul
     // - memberlist (consul is not started at all)
@@ -80,6 +83,14 @@ std.manifestYamlDoc({
       jaegerApp: 'ingester-2',
       extraVolumes: ['.data-ingester-2:/tmp/mimir-tsdb-ingester:delegated'],
     }),
+
+    'ingester-3': mimirService({
+      name: 'ingester-3',
+      target: 'ingester',
+      httpPort: 8004,
+      jaegerApp: 'ingester-3',
+      extraVolumes: ['.data-ingester-3:/tmp/mimir-tsdb-ingester:delegated'],
+    }),
   },
 
   read_components::
@@ -87,7 +98,7 @@ std.manifestYamlDoc({
       querier: mimirService({
         name: 'querier',
         target: 'querier',
-        httpPort: 8004,
+        httpPort: 8005,
         extraArguments:
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
           if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9011 -querier.frontend-address=' else '',
@@ -126,8 +137,9 @@ std.manifestYamlDoc({
     ['ruler-%d' % id]: mimirService({
       name: 'ruler-' + id,
       target: 'ruler',
-      httpPort: 8020 + id,
+      httpPort: 8021 + id,
       jaegerApp: 'ruler-%d' % id,
+      extraArguments: if $._config.ruler_use_remote_execution then '-ruler.query-frontend.address=dns:///query-frontend:9007' else '',
     })
     for id in std.range(1, count)
   },
@@ -183,6 +195,7 @@ std.manifestYamlDoc({
         JAEGER_SAMPLER_TYPE: 'const',
         JAEGER_SAMPLER_PARAM: 1,
         JAEGER_TAGS: 'app=%s' % s.jaegerApp,
+        JAEGER_REPORTER_MAX_QUEUE_SIZE: 1000,
       },
       extraVolumes: [],
       memberlistNodeName: self.jaegerApp,
@@ -243,7 +256,7 @@ std.manifestYamlDoc({
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
         'DISTRIBUTOR_HOST=distributor-1:8000',
         'ALERT_MANAGER_HOST=alertmanager-1:8031',
-        'RULER_HOST=ruler-1:8021',
+        'RULER_HOST=ruler-1:8022',
         'QUERY_FRONTEND_HOST=query-frontend:8007',
         'COMPACTOR_HOST=compactor:8007',
       ],
@@ -296,7 +309,7 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v2.45.0',
+      image: 'prom/prometheus:v2.47.2',
       command: [
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
@@ -313,7 +326,7 @@ std.manifestYamlDoc({
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:9.4.3',
+      image: 'grafana/grafana:10.1.5',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
@@ -331,8 +344,8 @@ std.manifestYamlDoc({
     // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
     // until metadata remote write is not supported by Prometheus).
     'grafana-agent': {
-      image: 'grafana/agent:v0.21.2',
-      command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-prometheus.wal-directory=/tmp'],
+      image: 'grafana/agent:v0.37.3',
+      command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-metrics.wal-directory=/tmp', '-server.http.address=127.0.0.1:9091'],
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],
     },
@@ -347,7 +360,7 @@ std.manifestYamlDoc({
 
   otel_collector:: {
     otel_collector: {
-      image: 'otel/opentelemetry-collector-contrib:0.54.0',
+      image: 'otel/opentelemetry-collector-contrib:0.88.0',
       command: ['--config=/etc/otel-collector/otel-collector.yaml'],
       volumes: ['./config:/etc/otel-collector'],
       ports: ['8083:8083'],
@@ -365,7 +378,7 @@ std.manifestYamlDoc({
         '--tenants-count=1',
         '--query-enabled=true',
         '--query-interval=1s',
-        '--query-url=http://querier:8004/prometheus',
+        '--query-url=http://querier:8005/prometheus',
         '--server-metrics-port=9900',
       ],
       ports: ['9900:9900'],

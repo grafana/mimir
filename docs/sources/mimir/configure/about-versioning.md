@@ -2,7 +2,7 @@
 aliases:
   - ../configuring/about-versioning/
 description: Learn about guarantees for this Grafana Mimir major release.
-menuTitle: About versioning
+menuTitle: Versioning
 title: About Grafana Mimir versioning
 weight: 50
 ---
@@ -46,6 +46,11 @@ Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
 
+- Alertmanager
+  - Enable a set of experimental API endpoints to help support the migration of the Grafana Alertmanager to the Mimir Alertmanager.
+    - `-alertmanager.grafana-alertmanager-compatibility-enabled`
+  - Enable support for any UTF-8 character as part of Alertmanager configuration/API matchers and labels.
+    - `-alertmanager.utf8-strict-mode-enabled`
 - Compactor
   - Enable cleanup of remaining files in the tenant bucket when there are no blocks remaining in the bucket index.
     - `-compactor.no-blocks-file-cleanup-enabled`
@@ -55,11 +60,15 @@ The following features are currently experimental:
     - `-ruler.recording-rules-evaluation-enabled`
     - `-ruler.alerting-rules-evaluation-enabled`
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
-  - Ruler storage cache
-    - `-ruler-storage.cache.*`
 - Distributor
   - Metrics relabeling
-  - OTLP ingestion path
+    - `-distributor.metric-relabeling-enabled`
+  - Using status code 529 instead of 429 upon rate limit exhaustion.
+    - `distributor.service-overload-status-code-on-rate-limit-enabled`
+  - Set Retry-After header in recoverable error responses
+    - `-distributor.retry-after-header.enabled`
+    - `-distributor.retry-after-header.base-seconds`
+    - `-distributor.retry-after-header.max-backoff-exponent`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -77,7 +86,6 @@ The following features are currently experimental:
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
     - `-overrides-exporter.ring.heartbeat-period=0`
-  - Exclude ingesters running in specific zones (`-ingester.ring.excluded-zones`)
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
@@ -85,10 +93,12 @@ The following features are currently experimental:
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Postings for matchers cache configuration:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size` (deprecated)
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
+    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size` (deprecated)
+    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes`
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
   - CPU/memory utilization based read request limiting:
     - `-ingester.read-path-cpu-utilization-limit`
@@ -96,53 +106,87 @@ The following features are currently experimental:
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
+  - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
+  - Count owned series and use them to enforce series limits:
+    - `-ingester.track-ingester-owned-series`
+    - `-ingester.use-ingester-owned-series-for-limits`
+    - `-ingester.owned-series-update-interval`
+- Ingester client
+  - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
+    - `-ingester.client.circuit-breaker.enabled`
+    - `-ingester.client.circuit-breaker.failure-threshold`
+    - `-ingester.client.circuit-breaker.failure-execution-threshold`
+    - `-ingester.client.circuit-breaker.period`
+    - `-ingester.client.circuit-breaker.cooldown-period`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
-  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks`, `-querier.streaming-chunks-per-ingester-buffer-size`)
+  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks-from-ingesters`)
+  - Streaming chunks from store-gateway to querier (`-querier.prefer-streaming-chunks-from-store-gateways`, `-querier.streaming-chunks-per-store-gateway-buffer-size`)
+  - Ingester query request minimisation (`-querier.minimize-ingester-requests`)
+  - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
+  - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
+  - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
+  - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
+  - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
-  - Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
-  - Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
-  - Cardinality query result caching (`-query-frontend.results-cache-ttl-for-cardinality-query`)
-  - Label names and values query result caching (`-query-frontend.results-cache-ttl-for-labels-query`)
+  - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
+  - Max number of tenants that may be queried at once (`-tenant-federation.max-tenants`)
+  - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
-  - `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`
-  - `-blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series`
   - Use of Redis cache backend (`-blocks-storage.bucket-store.chunks-cache.backend=redis`, `-blocks-storage.bucket-store.index-cache.backend=redis`, `-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - `-blocks-storage.bucket-store.series-selection-strategy`
+  - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
 - Read-write deployment mode
-- `/api/v1/user_limits` API endpoint
+- API endpoints:
+  - `/api/v1/user_limits`
+  - `/api/v1/cardinality/active_series`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
-- Overrides-exporter
-  - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
-  - Configuring enabled metrics (`-overrides-exporter.enabled-metrics`)
-- Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
-- Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
+- Vault
+  - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
+  - Vault client authentication token lifetime watcher. Ensures the client token is always valid by renewing the token lease or re-authenticating. Includes the metrics:
+    - `cortex_vault_token_lease_renewal_active`
+    - `cortex_vault_token_lease_renewal_success_total`
+    - `cortex_vault_auth_success_total`
+- Logger
+  - Rate limited logger support
+    - `log.rate-limit-enabled`
+    - `log.rate-limit-logs-per-second`
+    - `log.rate-limit-logs-burst-size`
+- Memcached client
+  - Customise write and read buffer size
+    - `-<prefix>.memcached.write-buffer-size-bytes`
+    - `-<prefix>.memcached.read-buffer-size-bytes`
+- Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
+- Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
+- Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
+- Ingester: track "owned series" and use owned series instead of in-memory series for tenant limits.
+  - `-ingester.use-ingester-owned-series-for-limits`
+  - `-ingester.track-ingester-owned-series`
+  - `-ingester.owned-series-update-interval`
 
 ## Deprecated features
 
 Deprecated features are usable up until the release that indicates their removal.
-For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "../references/configuration-parameters#parameter-lifecycle" >}}).
+For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "./configuration-parameters#parameter-lifecycle" >}}).
 
-The following features are currently deprecated and will be **removed in Mimir 2.10**:
+The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.13**:
 
+- Logging
+  - `-log.buffered`
+
+The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.14**:
+
+- Distributor
+  - the metric `cortex_distributor_sample_delay_seconds`
 - Ingester
-  - `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup`
-
-The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.11**:
-
-- Store-gateway
-  - `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
-  - `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
-  - `-blocks-storage.bucket-store.max-chunk-pool-bytes`
-- Querier, ruler, store-gateway
-  - `-blocks-storage.bucket-store.bucket-index.enabled`
-- Querier
-  - `-querier.iterators` and `-querier.batch-iterators` (Mimir 2.11 onwards will always use `-querier.batch-iterators=true`)
+  - `-ingester.return-only-grpc-errors`
+- Ingester client
+  - `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled`

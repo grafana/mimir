@@ -17,6 +17,10 @@ upgrade() {
     :
 }
 
+purge() {
+    :
+}
+
 # Step 2, check if this is a clean install or an upgrade
 action="$1"
 
@@ -24,11 +28,13 @@ case "$action" in
   "0" | "remove")
     uninstall
     ;;
-  "2" | "upgrade")
+  "1" | "upgrade")
     upgrade
     ;;
+  "purge")
+    purge
+    ;;
   *)
-    echo "Unsupported action: ${action}"
-    exit 1
+    echo "Unsupported action: ${action}. ignoring."
     ;;
 esac

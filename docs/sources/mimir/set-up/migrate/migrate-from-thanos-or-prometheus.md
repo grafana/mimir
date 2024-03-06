@@ -2,6 +2,7 @@
 aliases:
   - migrating-from-thanos-or-prometheus/
   - ../../migrate/migrate-from-thanos-or-prometheus/
+  - ../../migrate/migrating-from-thanos-or-prometheus/
 description: Learn how to migrate from Thanos or Prometheus to Grafana Mimir.
 menuTitle: Migrate from Thanos or Prometheus
 title: Migrate from Thanos or Prometheus to Grafana Mimir
@@ -45,8 +46,9 @@ Use Grafana mimirtool to upload each block, such as those identified by the prev
 mimirtool backfill --address=http://<mimir-hostname> --id=<tenant> <block1> <block2>...
 ```
 
-> **Note**: If you need to authenticate against Grafana Mimir, you can provide an API key via the `--key` flag,
-> for example `--key=$(cat token.txt)`.
+{{< admonition type="note" >}}
+If you need to authenticate against Grafana Mimir, you can provide an API key via the `--key` flag, for example `--key=$(cat token.txt)`.
+{{< /admonition >}}
 
 Grafana Mimir performs some sanitization and validation of each block's metadata.
 As a result, it rejects Thanos blocks due to unsupported labels.
@@ -62,7 +64,10 @@ In the Grafana Mimir 2.1 (or earlier) release, the ingesters added an external l
 
 In the Grafana Mimir 2.2 (or later) release, blocks no longer have a label that identifies the tenant.
 
-> **Note**: Blocks from Prometheus do not have any external labels stored in them; only blocks from Thanos use labels.
+{{< admonition type="note" >}}
+Blocks from Prometheus don't have any external labels stored in them.
+Only blocks from Thanos use labels.
+{{< /admonition >}}
 
 ## Considerations on Thanos specific features
 
@@ -92,7 +97,9 @@ This may cause that incorrect results are returned for the query.
 
    Create an intermediate object storage bucket (such as Amazon S3 or GCS) within your cloud provider, where you can copy the historical blocks and work on them before uploading them to the Mimir bucket.
 
-   > **Tip:** Run the commands within a `screen` or `tmux` session, to avoid any interruptions because the steps might take time depending on the amount of data being processed.
+   {{< admonition type="tip" >}}
+   Run the commands within a `screen` or `tmux` session, to avoid any interruptions because the steps might take some time depending on the amount of data.
+   {{< /admonition >}}
 
    For Amazon S3, use the `aws` tool:
 
@@ -113,7 +120,7 @@ This may cause that incorrect results are returned for the query.
        --objstore.config-file bucket.yaml
    ```
 
-2. Remove the downsampled blocks.
+1. Remove the downsampled blocks.
 
    Mimir doesn’t understand the downsampled blocks from Thanos, such as blocks with a non-zero `Resolution` field in the `meta.json` file. Therefore, you need to remove the `5m` and `1h` downsampled blocks from this bucket.
 
@@ -135,7 +142,7 @@ This may cause that incorrect results are returned for the query.
        --delete-delay=0
    ```
 
-3. Remove the duplicated blocks.
+1. Remove the duplicated blocks.
 
    If two replicas of Prometheus instances are deployed for high-availability, then only upload the blocks from one of the replicas and drop from the other replica.
 
@@ -160,7 +167,9 @@ This may cause that incorrect results are returned for the query.
    done
    ```
 
-   > **Note:** Replace `prometheus_replica` with the unique label that would differentiate Prometheus replicas in your setup.
+   {{< admonition type="note" >}}
+   You must replace `prometheus_replica` with the unique label that would differentiate Prometheus replicas in your setup.
+   {{< /admonition >}}
 
    Clean up the duplicate blocks marked for deletion again:
 
@@ -170,19 +179,24 @@ This may cause that incorrect results are returned for the query.
        --delete-delay=0
    ```
 
-   > **Tip:** If you want to visualize exactly what is happening in the blocks, with respect to the source of blocks, external labels, compaction levels, and more, you can use the following command to get the output as CSV and import it into a Google spreadsheet:
-   >
-   > ```bash
-   > thanos tools bucket inspect \
-   >     --objstore.config-file bucket-prod.yaml \
-   >     --output=csv > thanos-blocks.csv
-   > ```
+   {{< admonition type="tip" >}}
+   If you want to visualize exactly what's happening in the blocks, with respect to the source of blocks, external labels, compaction levels, and more, you can use the following command to get the output as CSV and import it into a spreadsheet:
 
-4. Relabel the blocks with external labels.
+   ```bash
+   thanos tools bucket inspect \
+       --objstore.config-file bucket-prod.yaml \
+       --output=csv > thanos-blocks.csv
+   ```
+
+   {{< /admonition >}}
+
+1. Relabel the blocks with external labels.
 
    Mimir doesn’t inject external labels from the `meta.json` file into query results. Therefore, you need to relabel the blocks with the required external labels in the `meta.json` file.
 
-   > **Note:** You can get the external labels in the `meta.json` file of each block from the CSV file that is imported (as mentioned in the preceding tip), and build the rewrite configuration accordingly.
+   {{< admonition type="tip" >}}
+   You can get the external labels in the `meta.json` file of each block from the CSV file that's imported, and build the rewrite configuration accordingly.
+   {{< /admonition >}}
 
    Create a rewrite configuration that is similar to this:
 
@@ -260,30 +274,34 @@ This may cause that incorrect results are returned for the query.
        --delete-delay=0
    ```
 
-   > **Note**: If there are multiple prometheus clusters, then relabelling each of them in parallel may speed up the entire process.
-   > Get the list of blocks that for each cluster, and process it separately.
-   >
-   > ```bash
-   > thanos tools bucket inspect \
-   >     --objstore.config-file bucket.yaml \
-   >     --output=tsv \
-   >     | grep <PROMETHEUS-CLUSTER-NAME> \
-   >     | awk '{print $1}' > prod-blocks.tsv
-   > ```
+   {{< admonition type="note" >}}
+   If there are multiple Prometheus clusters, then relabelling each of them in parallel may speed up the entire process.
 
-   > ```bash
-   > for ID in `cat prod-blocks.tsv`
-   > do
-   >     thanos tools bucket rewrite  \
-   >        --objstore.config-file bucket.yaml \
-   >        --rewrite.to-relabel-config-file relabel-config.yaml \
-   >        --delete-blocks \
-   >        --no-dry-run \
-   >        --id $ID
-   > done
-   > ```
+   Get the list of blocks that for each cluster, and process it separately.
 
-5) Remove external labels from meta.json.
+   ```bash
+   thanos tools bucket inspect \
+       --objstore.config-file bucket.yaml \
+       --output=tsv \
+       | grep <PROMETHEUS-CLUSTER-NAME> \
+       | awk '{print $1}' > prod-blocks.tsv
+   ```
+
+   ```bash
+   for ID in `cat prod-blocks.tsv`
+   do
+       thanos tools bucket rewrite  \
+          --objstore.config-file bucket.yaml \
+          --rewrite.to-relabel-config-file relabel-config.yaml \
+          --delete-blocks \
+          --no-dry-run \
+          --id $ID
+   done
+   ```
+
+   {{< /admonition >}}
+
+1. Remove external labels from meta.json.
 
    Mimir compactor will not be able to compact the blocks having external labels with Mimir's own blocks that don't have any such labels in their meta.json. Therefore these external labels have to be removed before copying them to the Mimir bucket.
 
@@ -343,7 +361,7 @@ This may cause that incorrect results are returned for the query.
    done
    ```
 
-6. Copy the blocks from the intermediate bucket to the Mimir bucket.
+1. Copy the blocks from the intermediate bucket to the Mimir bucket.
 
    For Amazon S3, use the `aws` tool:
 
@@ -359,4 +377,4 @@ This may cause that incorrect results are returned for the query.
 
    Historical blocks are not available for querying immediately after they are uploaded because the bucket index with the list of all available blocks first needs to be updated by the compactor. The compactor typically perform such an update every 15 minutes. After an update completes, other components such as the querier or store-gateway are able to work with the historical blocks, and the blocks are available for querying through Grafana.
 
-7. Check the `store-gateway` HTTP endpoint at `http://<STORE-GATEWAY-ENDPOINT>/store-gateway/tenant/<TENANT-NAME>/blocks` to verify that the uploaded blocks are there.
+1. Check the `store-gateway` HTTP endpoint at `http://<STORE-GATEWAY-ENDPOINT>/store-gateway/tenant/<TENANT-NAME>/blocks` to verify that the uploaded blocks are there.

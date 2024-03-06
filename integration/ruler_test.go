@@ -35,13 +35,14 @@ import (
 
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 func TestRulerAPI(t *testing.T) {
 	var (
 		namespaceOne = "test_/encoded_+namespace/?"
 		namespaceTwo = "test_/encoded_+namespace/?/two"
-		ruleGroup    = createTestRuleGroup(t)
+		ruleGroup    = createTestRuleGroup()
 	)
 
 	s, err := e2e.NewScenario(networkName)
@@ -292,6 +293,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	require.NoError(t, mimir.WaitSumMetrics(e2e.Greater(ruleEvaluationsAfterPush[0]+float64(samplesToSend)), "cortex_prometheus_rule_evaluations_total"))
 
 	// query all results to verify rules have been evaluated correctly
+	t.Log("querying from ", now.Add(-evaluationDelay), "to", now)
 	result, err = c.QueryRange("stale_nan_eval", now.Add(-evaluationDelay), now, time.Second)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, result.Type())
@@ -309,7 +311,13 @@ func TestRulerEvaluationDelay(t *testing.T) {
 			}
 
 			expectedValue := model.SampleValue(2 * (inputPos + 1))
-			require.Equal(t, expectedValue, v.Value)
+			assert.Equal(t, expectedValue, v.Value)
+			t.Log(
+				"expected value", expectedValue,
+				"actual value", v.Value,
+				"actual timestamp", v.Timestamp,
+				"expected timestamp", now.Add(-evaluationDelay).Add(time.Duration(inputPos)*time.Second),
+			)
 
 			// Look for next value
 			inputPos++
@@ -320,7 +328,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, len(series.Samples), inputPos, "expect to have returned all evaluations")
+	assert.Equal(t, len(series.Samples), inputPos, "expect to have returned all evaluations")
 }
 
 func TestRulerSharding(t *testing.T) {
@@ -364,8 +372,6 @@ func TestRulerSharding(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
 		map[string]string{
-			// Enable the bucket index so we can skip the initial bucket scan.
-			"-blocks-storage.bucket-store.bucket-index.enabled": "true",
 			// Disable rule group limit
 			"-ruler.max-rule-groups-per-tenant": "0",
 		},
@@ -406,7 +412,7 @@ func TestRulerSharding(t *testing.T) {
 
 func TestRulerAlertmanager(t *testing.T) {
 	var namespaceOne = "test_/encoded_+namespace/?"
-	ruleGroup := createTestRuleGroup(t)
+	ruleGroup := createTestRuleGroup()
 
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -460,7 +466,7 @@ func TestRulerAlertmanager(t *testing.T) {
 
 func TestRulerAlertmanagerTLS(t *testing.T) {
 	var namespaceOne = "test_/encoded_+namespace/?"
-	ruleGroup := createTestRuleGroup(t)
+	ruleGroup := createTestRuleGroup()
 
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -540,7 +546,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_notifications_alertmanagers_discovered"}, e2e.WaitMissingMetrics))
 }
 
-func TestRulerMetricsForInvalidQueries(t *testing.T) {
+func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -556,8 +562,6 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 		RulerFlags(),
 		BlocksStorageFlags(),
 		map[string]string{
-			// Enable the bucket index so we can skip the initial bucket scan.
-			"-blocks-storage.bucket-store.bucket-index.enabled": "true",
 			// Evaluate rules often, so that we don't need to wait for metrics to show up.
 			"-ruler.evaluation-interval": "2s",
 			"-ruler.poll-interval":       "2s",
@@ -573,6 +577,9 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 
 			// Very low limit so that ruler hits it.
 			"-querier.max-fetched-chunks-per-query": "5",
+
+			// Enable query stats for ruler to test metric for no fetched series
+			"-ruler.query-stats-enabled": "true",
 		},
 	)
 
@@ -607,6 +614,33 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	totalQueries, err := ruler.SumMetrics([]string{"cortex_ruler_queries_total"})
 	require.NoError(t, err)
 
+	addNewRuleAndWait := func(groupName, expression string, shouldFail bool) {
+		require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
+		m := ruleGroupMatcher(user, namespace, groupName)
+
+		// Wait until ruler has loaded the group.
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_rule_group_rules"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+
+		// Wait until rule group has tried to evaluate the rule, and succeeded.
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+
+		if shouldFail {
+			// Verify that evaluation of the rule failed.
+			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+		} else {
+			// Verify that evaluation of the rule succeeded.
+			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+		}
+	}
+
+	deleteRuleAndWait := func(groupName string) {
+		// Delete rule to prepare for next part of test.
+		require.NoError(t, c.DeleteRuleGroup(namespace, groupName))
+
+		// Wait until ruler has unloaded the group. We don't use any matcher, so there should be no groups (in fact, metric disappears).
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_group_rules"}, e2e.SkipMissingMetrics))
+	}
+
 	// Verify that user-failures don't increase cortex_ruler_queries_failed_total
 	for groupName, expression := range map[string]string{
 		// Syntactically correct expression (passes check in ruler), but failing because of invalid regex. This fails in PromQL engine.
@@ -616,28 +650,15 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 		"too_many_chunks_group": `sum(metric)`,
 	} {
 		t.Run(groupName, func(t *testing.T) {
-			require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
-			m := ruleGroupMatcher(user, namespace, groupName)
+			addNewRuleAndWait(groupName, expression, true)
 
-			// Wait until ruler has loaded the group.
-			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_rule_group_rules"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-
-			// Wait until rule group has tried to evaluate the rule.
-			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-
-			// Verify that evaluation of the rule failed.
-			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-
-			// But these failures were not reported as "failed queries"
+			// Ensure that these failures were not reported as "failed queries"
 			sum, err := ruler.SumMetrics([]string{"cortex_ruler_queries_failed_total"})
 			require.NoError(t, err)
 			require.Equal(t, float64(0), sum[0])
 
 			// Delete rule before checking "cortex_ruler_queries_total", as we want to reuse value for next test.
-			require.NoError(t, c.DeleteRuleGroup(namespace, groupName))
-
-			// Wait until ruler has unloaded the group. We don't use any matcher, so there should be no groups (in fact, metric disappears).
-			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_group_rules"}, e2e.SkipMissingMetrics))
+			deleteRuleAndWait(groupName)
 
 			// Check that cortex_ruler_queries_total went up since last test.
 			newTotalQueries, err := ruler.SumMetrics([]string{"cortex_ruler_queries_total"})
@@ -649,27 +670,112 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 		})
 	}
 
+	getZeroSeriesQueriesTotal := func() int {
+		sum, err := ruler.SumMetrics([]string{"cortex_ruler_queries_zero_fetched_series_total"})
+		require.NoError(t, err)
+		return int(sum[0])
+	}
+
+	getLastEvalSamples := func() int {
+		sum, err := ruler.SumMetrics([]string{"cortex_prometheus_last_evaluation_samples"})
+		require.NoError(t, err)
+		return int(sum[0])
+	}
+
 	// Now let's upload a non-failing rule, and make sure that it works.
 	t.Run("real_error", func(t *testing.T) {
 		const groupName = "good_rule"
 		const expression = `sum(metric{foo=~"1|2"})`
-
-		require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
-		m := ruleGroupMatcher(user, namespace, groupName)
-
-		// Wait until ruler has loaded the group.
-		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_rule_group_rules"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-
-		// Wait until rule group has tried to evaluate the rule, and succeeded.
-		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+		addNewRuleAndWait(groupName, expression, false)
 
 		// Still no failures.
 		sum, err := ruler.SumMetrics([]string{"cortex_ruler_queries_failed_total"})
 		require.NoError(t, err)
 		require.Equal(t, float64(0), sum[0])
 
-		// Now let's stop ingester, and recheck metrics. This should increase cortex_ruler_queries_failed_total failures.
+		deleteRuleAndWait(groupName)
+	})
+
+	// Now let's test the metric for no fetched series.
+	t.Run("no_fetched_series_metric", func(t *testing.T) {
+		const groupName = "good_rule_with_fetched_series_but_no_samples"
+		const expression = `sum(metric{foo=~"1|2"}) < -1`
+		addNewRuleAndWait(groupName, expression, false)
+
+		// Ensure that no samples were returned.
+		require.Zero(t, getLastEvalSamples())
+
+		// Ensure that the metric for no fetched series was not incremented.
+		require.Zero(t, getZeroSeriesQueriesTotal())
+
+		deleteRuleAndWait(groupName)
+		zeroSeriesQueries := getZeroSeriesQueriesTotal()
+
+		const groupName2 = "good_rule_with_fetched_series_and_samples"
+		const expression2 = `sum(metric{foo=~"1|2"})`
+		addNewRuleAndWait(groupName2, expression2, false)
+
+		// Ensure that samples were returned.
+		require.Less(t, 0, getLastEvalSamples())
+
+		// Ensure that the metric for no fetched series was not incremented.
+		require.Equal(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
+
+		deleteRuleAndWait(groupName2)
+		zeroSeriesQueries = getZeroSeriesQueriesTotal()
+
+		const groupName3 = "good_rule_with_no_series_selector"
+		const expression3 = `vector(1.2345)`
+		addNewRuleAndWait(groupName3, expression3, false)
+
+		// Ensure that samples were returned.
+		require.Less(t, 0, getLastEvalSamples())
+
+		// Ensure that the metric for no fetched series was not incremented.
+		require.Equal(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
+
+		deleteRuleAndWait(groupName3)
+		zeroSeriesQueries = getZeroSeriesQueriesTotal()
+
+		const groupName4 = "good_rule_with_fetched_series_and_samples_and_non_series_selector"
+		const expression4 = `sum(metric{foo=~"1|2"}) + vector(1.2345)`
+		addNewRuleAndWait(groupName4, expression4, false)
+
+		// Ensure that samples were not returned.
+		require.Less(t, 0, getLastEvalSamples())
+
+		// Ensure that the metric for no fetched series was not incremented.
+		require.Equal(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
+
+		deleteRuleAndWait(groupName4)
+		zeroSeriesQueries = getZeroSeriesQueriesTotal()
+
+		const groupName5 = "good_rule_with_no_fetched_series_and_no_samples_and_non_series_selector"
+		const expression5 = `sum(metric{foo="10000"}) + vector(1.2345)`
+		addNewRuleAndWait(groupName5, expression5, false)
+
+		// Ensure that no samples were returned.
+		require.Zero(t, getLastEvalSamples())
+
+		// Ensure that the metric for no fetched series was incremented.
+		require.Less(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
+
+		deleteRuleAndWait(groupName5)
+		zeroSeriesQueries = getZeroSeriesQueriesTotal()
+
+		const groupName6 = "good_rule_with_no_fetched_series_and_no_samples"
+		const expression6 = `sum(metric{foo="10000"})`
+		addNewRuleAndWait(groupName6, expression6, false)
+
+		// Ensure that no samples were returned.
+		require.Zero(t, getLastEvalSamples())
+
+		// Ensure that the metric for no fetched series was incremented.
+		require.Less(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
+	})
+
+	// Now let's stop ingester, and recheck metrics. This should increase cortex_ruler_queries_failed_total failures.
+	t.Run("stop_ingester", func(t *testing.T) {
 		require.NoError(t, s.Stop(ingester))
 
 		// We should start getting "real" failures now.
@@ -996,6 +1102,137 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 	}
 }
 
+func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRulesWhenUsingTheIngestStorage(t *testing.T) {
+	const (
+		ruleGroupNamespace = "test"
+		ruleGroupName      = "test"
+	)
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	t.Cleanup(s.Close)
+
+	flags := mergeFlags(
+		CommonStorageBackendFlags(),
+		RulerFlags(),
+		BlocksStorageFlags(),
+		IngestStorageFlags(),
+		map[string]string{
+			"-ingester.ring.replication-factor": "1",
+
+			// No strong read consistency by default for this test. We want the ruler to enforce the strong
+			// consistency when required.
+			"-ingest-storage.read-consistency": api.ReadConsistencyEventual,
+		},
+	)
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	kafka := e2edb.NewKafka()
+	require.NoError(t, s.StartAndWaitReady(minio, consul, kafka))
+
+	// Start the query-frontend.
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
+	require.NoError(t, s.Start(queryFrontend))
+	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
+
+	// Use query-frontend for rule evaluation.
+	flags["-ruler.query-frontend.address"] = fmt.Sprintf("dns:///%s", queryFrontend.NetworkGRPCEndpoint())
+
+	// Start up services
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester-0", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+	require.NoError(t, s.WaitReady(queryFrontend))
+
+	// Wait until the distributor is ready.
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring.
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+
+	// Wait until partitions are ACTIVE in the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+
+	// Push a test series.
+	now := time.Now()
+	series, _, _ := generateFloatSeries("series_1", now)
+
+	res, err := client.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	t.Run("evaluation of independent rules should not require strong consistency", func(t *testing.T) {
+		ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+		require.NoError(t, s.StartAndWaitReady(ruler))
+		t.Cleanup(func() {
+			require.NoError(t, s.Stop(ruler))
+		})
+
+		rulerClient, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), userID)
+		require.NoError(t, err)
+
+		// Create a rule group containing 2 independent rules.
+		group := ruleGroupWithRules(ruleGroupName, time.Second,
+			recordingRule("series_1:count", "count(series_1)"),
+			recordingRule("series_1:sum", "sum(series_1)"),
+		)
+		require.NoError(t, rulerClient.SetRuleGroup(group, ruleGroupNamespace))
+
+		// Cleanup the ruler config when the test will end, so that it doesn't interfere with other test cases.
+		t.Cleanup(func() {
+			require.NoError(t, rulerClient.DeleteRuleNamespace(ruleGroupNamespace))
+		})
+
+		// Wait until the rules are evaluated.
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(float64(len(group.Rules))), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
+
+		// The rules have been evaluated at least once. We expect the rule queries
+		// have run with eventual consistency because they are independent.
+		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(0), "cortex_ingest_storage_strong_consistency_requests_total"))
+	})
+
+	t.Run("evaluation of dependent rules should require strong consistency", func(t *testing.T) {
+		ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+		require.NoError(t, s.StartAndWaitReady(ruler))
+		t.Cleanup(func() {
+			require.NoError(t, s.Stop(ruler))
+		})
+
+		rulerClient, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), userID)
+		require.NoError(t, err)
+
+		// Create a rule group containing 2 rules: the 2nd one depends on the 1st one.
+		group := ruleGroupWithRules(ruleGroupName, time.Second,
+			recordingRule("series_1:count", "count(series_1)"),
+			recordingRule("series_1:count:sum", "sum(series_1:count)"),
+		)
+		require.NoError(t, rulerClient.SetRuleGroup(group, ruleGroupNamespace))
+
+		// Cleanup the ruler config when the test will end, so that it doesn't interfere with other test cases.
+		t.Cleanup(func() {
+			require.NoError(t, rulerClient.DeleteRuleNamespace(ruleGroupNamespace))
+		})
+
+		// Wait until the rules are evaluated.
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(float64(len(group.Rules))), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
+
+		// The rules have been evaluated at least once. We expect the 2nd rule query
+		// has run with strong consistency because it depends on the 1st one.
+		require.NoError(t, ingester.WaitSumMetrics(e2e.GreaterOrEqual(1), "cortex_ingest_storage_strong_consistency_requests_total"))
+	})
+}
+
 func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	const (
 		forGracePeriod    = 5 * time.Second
@@ -1206,58 +1443,48 @@ func ruleGroupMatcher(user, namespace, groupName string) *labels.Matcher {
 }
 
 func ruleGroupWithRecordingRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {
-	var recordNode = yaml.Node{}
-	var exprNode = yaml.Node{}
-
-	recordNode.SetString(ruleName)
-	exprNode.SetString(expression)
-
-	return rulefmt.RuleGroup{
-		Name:     groupName,
-		Interval: 10,
-		Rules: []rulefmt.RuleNode{{
-			Record: recordNode,
-			Expr:   exprNode,
-		}},
-	}
+	return ruleGroupWithRules(groupName, 10, recordingRule(ruleName, expression))
 }
 
 func ruleGroupWithAlertingRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {
-	var recordNode = yaml.Node{}
-	var exprNode = yaml.Node{}
+	return ruleGroupWithRules(groupName, 10, alertingRule(ruleName, expression))
+}
 
-	recordNode.SetString(ruleName)
-	exprNode.SetString(expression)
-
+func ruleGroupWithRules(groupName string, interval time.Duration, rules ...rulefmt.RuleNode) rulefmt.RuleGroup {
 	return rulefmt.RuleGroup{
 		Name:     groupName,
-		Interval: 10,
-		Rules: []rulefmt.RuleNode{{
-			Alert: recordNode,
-			Expr:  exprNode,
-			For:   30,
-		}},
+		Interval: model.Duration(interval),
+		Rules:    rules,
 	}
 }
 
-func createTestRuleGroup(t *testing.T) rulefmt.RuleGroup {
-	t.Helper()
+func createTestRuleGroup() rulefmt.RuleGroup {
+	return ruleGroupWithRules("test_encoded_+\"+group_name/?", 100, recordingRule("test_rule", "up"))
+}
 
-	var (
-		recordNode = yaml.Node{}
-		exprNode   = yaml.Node{}
-	)
+func recordingRule(record, expr string) rulefmt.RuleNode {
+	var recordNode = yaml.Node{}
+	var exprNode = yaml.Node{}
 
-	recordNode.SetString("test_rule")
-	exprNode.SetString("up")
-	return rulefmt.RuleGroup{
-		Name:     "test_encoded_+\"+group_name/?",
-		Interval: 100,
-		Rules: []rulefmt.RuleNode{
-			{
-				Record: recordNode,
-				Expr:   exprNode,
-			},
-		},
+	recordNode.SetString(record)
+	exprNode.SetString(expr)
+
+	return rulefmt.RuleNode{
+		Record: recordNode,
+		Expr:   exprNode,
+	}
+}
+
+func alertingRule(alert, expr string) rulefmt.RuleNode {
+	var alertNode = yaml.Node{}
+	var exprNode = yaml.Node{}
+
+	alertNode.SetString(alert)
+	exprNode.SetString(expr)
+
+	return rulefmt.RuleNode{
+		Alert: alertNode,
+		Expr:  exprNode,
+		For:   30,
 	}
 }

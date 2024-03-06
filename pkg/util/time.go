@@ -6,6 +6,7 @@
 package util
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"net/http"
@@ -33,6 +34,19 @@ func FormatTimeMillis(ms int64) string {
 // FormatTimeModel returns a human readable version of the input time.
 func FormatTimeModel(t model.Time) string {
 	return TimeFromMillis(int64(t)).String()
+}
+
+// ParseTimeParam parses the desired time param from a Prometheus http request into an int64, milliseconds since epoch.
+func ParseTimeParam(r *http.Request, paramName string, defaultValue int64) (int64, error) {
+	val := r.FormValue(paramName)
+	if val == "" {
+		return defaultValue, nil
+	}
+	result, err := ParseTime(val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid time value for '%s': %w", paramName, err)
+	}
+	return result, nil
 }
 
 // ParseTime parses the string into an int64, milliseconds since epoch.
@@ -97,4 +111,15 @@ func NewDisableableTicker(interval time.Duration) (func(), <-chan time.Time) {
 
 	tick := time.NewTicker(interval)
 	return func() { tick.Stop() }, tick.C
+}
+
+// UnixSeconds is Unix timestamp with seconds precision.
+type UnixSeconds int64
+
+func UnixSecondsFromTime(t time.Time) UnixSeconds {
+	return UnixSeconds(t.Unix())
+}
+
+func (t UnixSeconds) Time() time.Time {
+	return time.Unix(int64(t), 0)
 }

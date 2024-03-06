@@ -50,6 +50,8 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Prepare for Shutdown](#prepare-for-shutdown) | Ingester | `GET,POST,DELETE /ingester/prepare-shutdown` |
 | [Shutdown](#shutdown) | Ingester | `GET,POST /ingester/shutdown` |
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
+| [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
+| [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
 | [Instant query](#instant-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query` |
 | [Range query](#range-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
 | [Exemplar query](#exemplar-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
@@ -95,6 +97,8 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Check block upload](#check-block-upload) | Compactor | `GET /api/v1/upload/block/{block}/check` |
 | [Tenant delete request](#tenant-delete-request) | Compactor | `POST /compactor/delete_tenant` |
 | [Tenant delete status](#tenant-delete-status) | Compactor | `GET /compactor/delete_tenant_status` |
+| [Compactor tenants](#compactor-tenants) | Compactor | `GET /compactor/tenants` |
+| [Compactor tenant planned jobs](#compactor-tenant-planned-jobs) | Compactor | `GET /compactor/tenant/{tenant}/planned_jobs` |
 | [Overrides-exporter ring status](#overrides-exporter-ring-status) | Overrides-exporter | `GET /overrides-exporter/ring` |
 {{% /responsive-table %}}
 
@@ -137,7 +141,9 @@ GET /config
 
 This endpoint displays the configuration currently applied to Grafana Mimir including default values and settings via CLI flags. This endpoint provides the configuration in YAML format and masks sensitive data.
 
-> **Note**: The exported configuration doesn't include the per-tenant overrides.
+{{< admonition type="note" >}}
+The exported configuration doesn't include the per-tenant overrides.
+{{< /admonition >}}
 
 #### Different modes
 
@@ -316,7 +322,11 @@ Requires [authentication](#authentication).
 POST /otlp/v1/metrics
 ```
 
-Entrypoint for the [OTLP HTTP](https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md). Experimental.
+{{% admonition type="note" %}}
+To send OTLP data to Grafana Cloud, refer to [Send data using OpenTelemetry Protocol (OTLP)](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/).
+{{% /admonition %}}
+
+Entrypoint for the [OTLP HTTP](https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md).
 
 This endpoint accepts an HTTP POST request with a body that contains a request encoded with [Protocol Buffers](https://developers.google.com/protocol-buffers) and optionally compressed with [GZIP](https://www.gnu.org/software/gzip/).
 You can find the definition of the protobuf message in [metrics.proto](https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto).
@@ -339,7 +349,9 @@ GET /distributor/all_user_stats
 
 This endpoint displays a web page that shows per-tenant statistics updated in real time, including the total number of active series across all ingesters and the current ingestion rate displayed in samples per second.
 
-> **Note:** This endpoint requires all ingesters to be `ACTIVE` in the ring for a successful response.
+{{< admonition type="note" >}}
+This endpoint requires all ingesters to be `ACTIVE` in the ring for a successful response.
+{{< /admonition >}}
 
 ### HA tracker status
 
@@ -368,7 +380,9 @@ If no tenant is specified, all tenants are flushed.
 
 The flush endpoint also accepts a `wait=true` parameter, which makes the call synchronous, and only returns a status code after flushing completes.
 
-> **Note**: The returned status code does not reflect the result of flush operation.
+{{< admonition type="note" >}}
+The returned status code doesn't reflect the result of flush operation.
+{{< /admonition >}}
 
 ### Prepare for Shutdown
 
@@ -424,6 +438,22 @@ GET /ingester/ring
 ```
 
 This endpoint displays a web page with the ingesters hash ring status, including the state, health, and last heartbeat time of each ingester.
+
+### Ingester tenants
+
+```
+GET /ingester/tenants
+```
+
+Displays a web page with the list of tenants with open TSDB on given ingester.
+
+### Ingester tenant TSDB
+
+```
+GET /ingester/tsdb/{tenant}
+```
+
+Displays a web page with details about tenant's open TSDB on given ingester.
 
 ## Querier / Query-frontend
 
@@ -536,15 +566,26 @@ GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_names
 Returns label names cardinality across all ingesters, for the authenticated tenant, in `JSON` format.
 It counts distinct label values per label name.
 
-As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
-cutting between the calls.
-
 The items in the field `cardinality` are sorted by `label_values_count` in DESC order and by `label_name` in ASC order.
 The count of items is limited by `limit` request param.
 
 This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+#### Count series by `inmemory` or `active`
+
+Two methods of counting are available: `inmemory` and `active`. To choose one, use the `count_method` parameter.
+
+The `inmemory` method counts the labels in currently opened TSDBs in Mimir's ingesters.
+Two subsequent calls might return completely different results if an ingester cut a block between calls.
+This method of counting is most useful for understanding ingester memory usage.
+
+The `active` method also counts labels in currently opened TSDBs in Mimir's ingesters, but filters out values that have not received a sample within a configurable duration of time.
+To configure this duration, use the `-ingester.active-series-metrics-idle-timeout` parameter.
+This method of counting is most useful for understanding what label values are represented in the samples ingested by Mimir in the last `-ingester.active-series-metrics-idle-timeout`.
+Two subsequent calls will likely return similar results, because this window of time is not related to the block cutting on ingesters.
+Values will change only as a result of changes in the data ingested by Mimir.
 
 #### Caching
 
@@ -553,6 +594,7 @@ The query-frontend can return a stale response fetched from the query results ca
 #### Request params
 
 - **selector** - _optional_ - specifies PromQL selector that will be used to filter series that must be analyzed.
+- **count_method** - _optional_ - specifies which series counting method will be used. (default="inmemory", available options=["inmemory", "active"])
 - **limit** - _optional_ - specifies max count of items in field `cardinality` in response (default=20, min=0, max=500)
 
 #### Response schema
@@ -723,7 +765,9 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../manage/tools/mimirtool#list-rules" >}}).
+{{< admonition type="note" >}}
+To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../manage/tools/mimirtool#list-rules" >}}).
+{{< /admonition >}}
 
 **Example response**
 
@@ -818,7 +862,9 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../manage/tools/mimirtool#get-rule-group" >}}) .
+{{< admonition type="note" >}}
+To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../manage/tools/mimirtool#get-rule-group" >}}) .
+{{< /admonition >}}
 
 ### Set rule group
 
@@ -834,10 +880,15 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../manage/tools/mimirtool#load-rule-group" >}}) .
+{{< admonition type="note" >}}
+To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../manage/tools/mimirtool#load-rule-group" >}}) .
+{{< /admonition >}}
 
-> **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
-> The latter options do not preserve carriage returns and newlines.
+{{< admonition type="note" >}}
+When using `curl` to send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
+
+The latter options don't preserve carriage returns and newlines.
+{{< /admonition >}}
 
 #### Example request body
 
@@ -862,7 +913,9 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../manage/tools/mimirtool#delete-rule-group" >}}).
+{{< admonition type="note" >}}
+To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../manage/tools/mimirtool#delete-rule-group" >}}).
+{{< /admonition >}}
 
 ### Delete namespace
 
@@ -950,7 +1003,9 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../manage/tools/mimirtool#get-alertmanager-configuration" >}}).
+{{< admonition type="note" >}}
+To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../manage/tools/mimirtool#get-alertmanager-configuration" >}}).
+{{< /admonition >}}
 
 ### Set Alertmanager configuration
 
@@ -962,14 +1017,21 @@ Stores or updates the Alertmanager configuration for the authenticated tenant. T
 
 This endpoint expects the Alertmanager **YAML** configuration in the request body and returns `201` on success.
 
+The names of the templates in `template_files` must be valid file names and not contain any path separators. For example, both `/templates/my-template.tpl` and `./my-template.tpl` are invalid, whereas `my-template.tpl` is valid.
+
 This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
 
-> **Note:** To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../manage/tools/mimirtool#load-alertmanager-configuration" >}}).
+{{< admonition type="note" >}}
+To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../manage/tools/mimirtool#load-alertmanager-configuration" >}}).
+{{< /admonition >}}
 
-> **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
-> The latter options do not preserve carriage returns and newlines.
+{{< admonition type="note" >}}
+When using `curl` to send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
+
+The latter options don't preserve carriage returns and newlines.
+{{< /admonition >}}
 
 #### Example request body
 
@@ -1006,7 +1068,9 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../manage/tools/mimirtool#delete-alertmanager-configuration" >}}).
+{{< admonition type="note" >}}
+To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../manage/tools/mimirtool#delete-alertmanager-configuration" >}}).
+{{< /admonition >}}
 
 ## Store-gateway
 
@@ -1165,7 +1229,8 @@ This API endpoint is experimental and subject to change.
 POST /compactor/delete_tenant
 ```
 
-Request deletion of ALL tenant data.
+Request deletion of ALL tenant data for the tenant specified in the `X-Scope-OrgID` header. If authentication is disabled,
+then the default `anonymous` tenant is deleted (configurable by `-auth.no-auth-tenant`).
 
 Requires [authentication](#authentication).
 
@@ -1189,6 +1254,22 @@ Returns status of tenant deletion.
 The `blocks_deleted` field will be set to `true` if all the tenant's blocks have been deleted.
 
 Requires [authentication](#authentication).
+
+### Compactor tenants
+
+```
+GET /compactor/tenants
+```
+
+Displays a web page with the list of tenants that have blocks in the storage configured for the compactor.
+
+### Compactor tenant planned jobs
+
+```
+GET /compactor/tenant/{tenant}/planned_jobs
+```
+
+Displays a web page listing planned compaction jobs computed from the bucket index for the given tenant.
 
 ## Overrides-exporter
 

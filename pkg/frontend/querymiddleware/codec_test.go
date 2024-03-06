@@ -19,17 +19,18 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
 	jsoniter "github.com/json-iterator/go"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 var (
@@ -124,6 +125,18 @@ func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
 			default:
 				t.Fatalf(fmt.Sprintf("unknown query result payload format: %v", queryResultPayloadFormat))
 			}
+		})
+	}
+}
+
+func TestPrometheusCodec_EncodeRequest_ReadConsistency(t *testing.T) {
+	for _, consistencyLevel := range api.ReadConsistencies {
+		t.Run(consistencyLevel, func(t *testing.T) {
+			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), formatProtobuf)
+			ctx := api.ContextWithReadConsistency(context.Background(), consistencyLevel)
+			encodedRequest, err := codec.EncodeRequest(ctx, &PrometheusInstantQueryRequest{})
+			require.NoError(t, err)
+			require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
 		})
 	}
 }
@@ -228,7 +241,8 @@ func TestDecodeFailedResponse(t *testing.T) {
 		}, nil, log.NewNopLogger())
 		require.Error(t, err)
 
-		resp, ok := httpgrpc.HTTPResponseFromError(err)
+		require.True(t, apierror.IsAPIError(err))
+		resp, ok := apierror.HTTPResponseFromError(err)
 		require.True(t, ok, "Error should have an HTTPResponse encoded")
 		require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
 	})
@@ -257,6 +271,19 @@ func TestDecodeFailedResponse(t *testing.T) {
 		resp, ok := apierror.HTTPResponseFromError(err)
 		require.True(t, ok, "Error should have an HTTPResponse encoded")
 		require.Equal(t, int32(http.StatusRequestEntityTooLarge), resp.Code)
+	})
+
+	t.Run("service unavailable", func(t *testing.T) {
+		_, err := codec.DecodeResponse(context.Background(), &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(strings.NewReader("something failed")),
+		}, nil, log.NewNopLogger())
+		require.Error(t, err)
+
+		require.True(t, apierror.IsAPIError(err))
+		resp, ok := apierror.HTTPResponseFromError(err)
+		require.True(t, ok, "Error should have an HTTPResponse encoded")
+		require.Equal(t, int32(http.StatusServiceUnavailable), resp.Code)
 	})
 }
 
@@ -719,6 +746,9 @@ func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
 			StatusCode:    200,
 			Body:          io.NopCloser(bytes.NewReader(encodedRes)),
 			ContentLength: int64(len(encodedRes)),
+			Header: map[string][]string{
+				"Content-Type": {"application/json"},
+			},
 		}, nil, log.NewNopLogger())
 		require.NoError(b, err)
 	}
@@ -886,6 +916,67 @@ func Test_DecodeOptions(t *testing.T) {
 			actual := &Options{}
 			decodeOptions(tt.input, actual)
 			require.Equal(t, tt.expected, actual)
+		})
+	}
+}
+
+// TestPrometheusCodec_DecodeEncode tests that decoding and re-encoding a
+// request does not lose relevant information about the original request.
+func TestPrometheusCodec_DecodeEncode(t *testing.T) {
+	codec := newTestPrometheusCodec().(prometheusCodec)
+	for _, tt := range []struct {
+		name    string
+		headers http.Header
+	}{
+		{
+			name: "no custom headers",
+		},
+		{
+			name:    "shard count header",
+			headers: http.Header{totalShardsControlHeader: []string{"128"}},
+		},
+		{
+			name:    "shard count disabled via header",
+			headers: http.Header{totalShardsControlHeader: []string{"0"}},
+		},
+		{
+			name:    "split interval header",
+			headers: http.Header{instantSplitControlHeader: []string{"1h0m0s"}},
+		},
+		{
+			name:    "split interval disabled via header",
+			headers: http.Header{instantSplitControlHeader: []string{"0"}},
+		},
+		{
+			name:    "cache disabled via header",
+			headers: http.Header{cacheControlHeader: []string{noStoreValue}},
+		},
+	} {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			queryURL := "/api/v1/query?query=sum%28container_memory_rss%29+by+%28namespace%29&time=1704270202.066"
+			expected, err := http.NewRequest("GET", queryURL, nil)
+			require.NoError(t, err)
+			expected.Body = http.NoBody
+			expected.Header = tt.headers
+			if expected.Header == nil {
+				expected.Header = make(http.Header)
+			}
+
+			// This header is set by EncodeRequest according to the codec's config, so we
+			// should always expect it to be present on the re-encoded request.
+			expected.Header.Set("Accept", "application/json")
+
+			ctx := context.Background()
+			decoded, err := codec.DecodeRequest(ctx, expected)
+			require.NoError(t, err)
+			encoded, err := codec.EncodeRequest(ctx, decoded)
+			require.NoError(t, err)
+
+			assert.Equal(t, expected.URL, encoded.URL)
+			assert.Equal(t, expected.Header, encoded.Header)
 		})
 	}
 }

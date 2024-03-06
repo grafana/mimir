@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 
@@ -55,12 +54,6 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.TSDB.ShipInterval = 0
 			},
 			expectedErr: nil,
-		},
-		"should fail on invalid opening concurrency": {
-			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {
-				cfg.TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup = 0
-			},
-			expectedErr: errInvalidOpeningConcurrency,
 		},
 		"should fail on invalid compaction interval": {
 			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {
@@ -128,12 +121,6 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errInvalidStreamingBatchSize,
 		},
-		"should fail on invalid index-header lazy loading max concurrency": {
-			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {
-				cfg.BucketStore.IndexHeaderLazyLoadingConcurrency = -1
-			},
-			expectedErr: errInvalidIndexHeaderLazyLoadingConcurrency,
-		},
 		"should fail if forced compaction is enabled but active series tracker is not": {
 			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {
 				cfg.TSDB.EarlyHeadCompactionMinInMemorySeries = 1_000_000
@@ -160,7 +147,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(activeSeriesCfg)
 			testData.setup(storageCfg, activeSeriesCfg)
 
-			actualErr := storageCfg.Validate(*activeSeriesCfg, log.NewNopLogger())
+			actualErr := storageCfg.Validate(*activeSeriesCfg)
 			assert.Equal(t, testData.expectedErr, actualErr)
 		})
 	}

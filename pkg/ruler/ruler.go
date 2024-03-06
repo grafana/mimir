@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -408,15 +409,26 @@ func enableSharding(r *Ruler, ringStore kv.Client) error {
 	return nil
 }
 
-func (r *Ruler) starting(ctx context.Context) error {
-	var err error
-
+func (r *Ruler) starting(ctx context.Context) (err error) {
 	if r.subservices, err = services.NewManager(r.lifecycler, r.ring, r.clientsPool, r.outboundSyncQueue, r.outboundSyncQueueProcessor, r.inboundSyncQueue); err != nil {
 		return errors.Wrap(err, "unable to start ruler subservices")
 	}
 
 	r.subservicesWatcher = services.NewFailureWatcher()
 	r.subservicesWatcher.WatchManager(r.subservices)
+
+	defer func() {
+		if err != nil {
+			// The startup can fail when waiting for some subservices to complete starting.
+			// If this happens or the startup fails for any other reason after all subservices are healthy,
+			// then we need to stop the subservices. For example, the lifecycler needs to deregister the
+			// instance from the ring instead of leaving it there to be autoforgotten.
+			//
+			// We use a context.Background() because ctx may already be cancelled,
+			// and we want to make sure the subservices have the chance of a graceful stop.
+			_ = services.StopManagerAndAwaitStopped(context.Background(), r.subservices)
+		}
+	}()
 
 	if err = services.StartManagerAndAwaitHealthy(ctx, r.subservices); err != nil {
 		return errors.Wrap(err, "unable to start ruler subservices")
@@ -444,10 +456,13 @@ func (r *Ruler) starting(ctx context.Context) error {
 	}
 	level.Info(r.logger).Log("msg", "ruler is ACTIVE in the ring")
 
+	// TODO: ideally, ruler would wait until its queryable is finished starting.
+
 	r.manager.Start()
 	level.Info(r.logger).Log("msg", "ruler is only now starting to evaluate rules")
 
-	// TODO: ideally, ruler would wait until its queryable is finished starting.
+	// After the manager has been started we should return a nil error. This ensures that the stopping function is called
+	// and the manager is gracefully stopped when the process need to shut down.
 	return nil
 }
 
@@ -925,10 +940,10 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
-	ring := ring.ReadRing(r.ring)
+	rr := ring.ReadRing(r.ring)
 
 	if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
-		ring = r.ring.ShuffleShard(userID, shardSize)
+		rr = r.ring.ShuffleShard(userID, shardSize)
 	}
 
 	ctx, err = user.InjectIntoGRPCRequest(ctx)
@@ -943,7 +958,7 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 
 	// Concurrently fetch rules from all rulers. Since rules are not replicated,
 	// we need all requests to succeed.
-	err = r.forEachRulerInTheRing(ctx, ring, RuleEvalRingOp, func(ctx context.Context, rulerAddr string, rulerClient RulerClient, rulerClientErr error) error {
+	err = r.forEachRulerInTheRing(ctx, rr, RuleEvalRingOp, func(ctx context.Context, rulerInst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
 		// Fail if we have not been able to get the client for a ruler.
 		if rulerClientErr != nil {
 			return err
@@ -951,7 +966,7 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 
 		newGrps, err := rulerClient.Rules(ctx, &req)
 		if err != nil {
-			return errors.Wrapf(err, "unable to retrieve rules from ruler %s", rulerAddr)
+			return errors.Wrapf(err, "unable to retrieve rules from ruler %s %s", rulerInst.Id, rulerInst.Addr)
 		}
 
 		mergedMx.Lock()
@@ -977,7 +992,7 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
-	groupDescs, err := r.getLocalRules(userID, *in)
+	groupDescs, err := r.getLocalRules(ctx, userID, *in)
 	if err != nil {
 		return nil, err
 	}
@@ -1005,8 +1020,15 @@ func (fs StringFilterSet) IsFiltered(val string) bool {
 	return !ok
 }
 
-func (r *Ruler) getLocalRules(userID string, req RulesRequest) ([]*GroupStateDesc, error) {
+func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesRequest) ([]*GroupStateDesc, error) {
+	spanLog, _ := spanlogger.NewWithLogger(ctx, r.logger, "Ruler.getLocalRules")
+	defer spanLog.Finish()
+
+	// Get the rule groups from the manager. We track the time it takes because the manager needs to
+	// take a lock to run GetRules() and we want to make sure we're not hanging here.
+	getRulesStart := time.Now()
 	groups := r.manager.GetRules(userID)
+	spanLog.DebugLog("msg", "fetched rules from manager", "duration", time.Since(getRulesStart))
 
 	groupDescs := make([]*GroupStateDesc, 0, len(groups))
 	prefix := filepath.Join(r.cfg.RulePath, userID) + "/"
@@ -1073,7 +1095,7 @@ func (r *Ruler) getLocalRules(userID string, req RulesRequest) ([]*GroupStateDes
 				if !getAlertingRules {
 					continue
 				}
-				rule.ActiveAlerts()
+
 				alerts := []*AlertStateDesc{}
 				for _, a := range rule.ActiveAlerts() {
 					alerts = append(alerts, &AlertStateDesc{
@@ -1268,7 +1290,7 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 	// the client-side gRPC instrumentation fails.
 	ctx = user.InjectOrgID(ctx, "")
 
-	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, rulerAddr string, rulerClient RulerClient, rulerClientErr error) error {
+	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, inst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
 		var err error
 
 		if rulerClientErr != nil {
@@ -1294,23 +1316,21 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 
 // forEachRulerInTheRing calls f() for each ruler in the ring which is part of the replication set for the input op.
 // The execution breaks on first error returned by f().
-func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, op ring.Operation, f func(_ context.Context, rulerAddr string, rulerClient RulerClient, rulerClientErr error) error) error {
+func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, op ring.Operation, f func(_ context.Context, inst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error) error {
 	rulers, err := ring.GetReplicationSetForOperation(op)
 	if err != nil {
 		return err
 	}
 
-	addrs := rulers.GetAddresses()
-
 	// The execution breaks on first error encountered.
-	return concurrency.ForEachJob(ctx, len(addrs), len(addrs), func(ctx context.Context, idx int) error {
-		rulerAddr := addrs[idx]
+	return concurrency.ForEachJob(ctx, len(rulers.Instances), len(rulers.Instances), func(ctx context.Context, idx int) error {
+		rulerInst := rulers.Instances[idx]
 
-		rulerClient, err := r.clientsPool.GetClientFor(rulerAddr)
+		rulerClient, err := r.clientsPool.GetClientForInstance(rulerInst)
 		if err != nil {
-			return f(ctx, rulerAddr, nil, errors.Wrapf(err, "unable to get client for ruler %s", rulerAddr))
+			return f(ctx, &rulerInst, nil, errors.Wrapf(err, "unable to get client for ruler %s %s", rulerInst.Id, rulerInst.Addr))
 		}
 
-		return f(ctx, rulerAddr, rulerClient, nil)
+		return f(ctx, &rulerInst, rulerClient, nil)
 	})
 }

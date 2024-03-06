@@ -30,6 +30,7 @@ func setupFrontend(t *testing.T, config Config) (*Frontend, error) {
 
 	frontend, err := New(config, limits{queriers: 3}, logger, nil)
 	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), frontend))
 
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), frontend))

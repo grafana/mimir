@@ -20,6 +20,9 @@ spec:
       app.kubernetes.io/instance: test-oss-multizone-values
       app.kubernetes.io/component: overrides-exporter
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:

@@ -7,6 +7,7 @@ package compactor
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
-func TestGroupKey(t *testing.T) {
+func TestDefaultGroupKey(t *testing.T) {
 	for _, tcase := range []struct {
 		input    block.ThanosMeta
 		expected string
@@ -58,7 +59,7 @@ func TestGroupKey(t *testing.T) {
 		},
 	} {
 		if ok := t.Run("", func(t *testing.T) {
-			assert.Equal(t, tcase.expected, DefaultGroupKey(tcase.input))
+			assert.Equal(t, tcase.expected, defaultGroupKey(tcase.input.Downsample.Resolution, labels.FromMap(tcase.input.Labels)))
 		}); !ok {
 			return
 		}
@@ -81,10 +82,10 @@ func TestGroupMaxMinTime(t *testing.T) {
 func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 	jobsFn := func() []*Job {
 		return []*Job{
-			NewJob("user", "key1", labels.EmptyLabels(), 0, false, 0, ""),
-			NewJob("user", "key2", labels.EmptyLabels(), 0, false, 0, ""),
-			NewJob("user", "key3", labels.EmptyLabels(), 0, false, 0, ""),
-			NewJob("user", "key4", labels.EmptyLabels(), 0, false, 0, ""),
+			newJob("user", "key1", labels.EmptyLabels(), 0, false, 0, ""),
+			newJob("user", "key2", labels.EmptyLabels(), 0, false, 0, ""),
+			newJob("user", "key3", labels.EmptyLabels(), 0, false, 0, ""),
+			newJob("user", "key4", labels.EmptyLabels(), 0, false, 0, ""),
 		}
 	}
 
@@ -131,7 +132,7 @@ func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 }
 
 func TestBlockMaxTimeDeltas(t *testing.T) {
-	j1 := NewJob("user", "key1", labels.EmptyLabels(), 0, false, 0, "")
+	j1 := newJob("user", "key1", labels.EmptyLabels(), 0, false, 0, "")
 	require.NoError(t, j1.AppendMeta(&block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			MinTime: 1500002700159,
@@ -139,7 +140,7 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 		},
 	}))
 
-	j2 := NewJob("user", "key2", labels.EmptyLabels(), 0, false, 0, "")
+	j2 := newJob("user", "key2", labels.EmptyLabels(), 0, false, 0, "")
 	require.NoError(t, j2.AppendMeta(&block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			MinTime: 1500002600159,
@@ -174,27 +175,6 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 	block5 := ulid.MustParse("01DTVP434PA9VFXSW2JK000005") // No mark file.
 
 	for name, testFn := range map[string]func(t *testing.T, synced block.GaugeVec){
-		"filter with no deletion of blocks marked for no-compaction": func(t *testing.T, synced block.GaugeVec) {
-			metas := map[ulid.ULID]*block.Meta{
-				block1: blockMeta(block1.String(), 100, 200, nil),
-				block2: blockMeta(block2.String(), 200, 300, nil), // Has no-compaction marker.
-				block4: blockMeta(block4.String(), 400, 500, nil), // Invalid marker is still a marker, and block will be in NoCompactMarkedBlocks.
-				block5: blockMeta(block5.String(), 500, 600, nil),
-			}
-
-			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), false)
-			require.NoError(t, f.Filter(ctx, metas, synced))
-
-			require.Contains(t, metas, block1)
-			require.Contains(t, metas, block2)
-			require.Contains(t, metas, block4)
-			require.Contains(t, metas, block5)
-
-			require.Len(t, f.NoCompactMarkedBlocks(), 2)
-			require.Contains(t, f.NoCompactMarkedBlocks(), block2, block4)
-
-			assert.Equal(t, 2.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
-		},
 		"filter with deletion enabled": func(t *testing.T, synced block.GaugeVec) {
 			metas := map[ulid.ULID]*block.Meta{
 				block1: blockMeta(block1.String(), 100, 200, nil),
@@ -203,7 +183,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 				block5: blockMeta(block5.String(), 500, 600, nil),
 			}
 
-			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt))
 			require.NoError(t, f.Filter(ctx, metas, synced))
 
 			require.Contains(t, metas, block1)
@@ -229,7 +209,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			canceledCtx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt))
 			require.Error(t, f.Filter(canceledCtx, metas, synced))
 
 			require.Contains(t, metas, block1)
@@ -246,7 +226,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 				block3: blockMeta(block3.String(), 300, 300, nil), // Has compaction marker with invalid version, but Filter doesn't check for that.
 			}
 
-			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt))
 			err := f.Filter(ctx, metas, synced)
 			require.NoError(t, err)
 			require.Empty(t, metas)
@@ -279,4 +259,76 @@ func TestConvertCompactionResultToForEachJobs(t *testing.T) {
 	require.Len(t, res, 2)
 	require.Equal(t, ulidWithShardIndex{ulid: ulid1, shardIndex: 1}, res[0])
 	require.Equal(t, ulidWithShardIndex{ulid: ulid2, shardIndex: 3}, res[1])
+}
+
+func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
+	const (
+		sourceMinTime = 1000
+		sourceMaxTime = 2500
+	)
+
+	tests := map[string]struct {
+		compactedBlockMinTime int64
+		compactedBlockMaxTime int64
+		shouldErr             bool
+		expectedErrMsg        string
+	}{
+		"should pass with minTime and maxTime matching the source blocks": {
+			compactedBlockMinTime: sourceMinTime,
+			compactedBlockMaxTime: sourceMaxTime,
+			shouldErr:             false,
+		},
+		"should fail with compacted block minTime < source minTime": {
+			compactedBlockMinTime: sourceMinTime - 500,
+			compactedBlockMaxTime: sourceMaxTime,
+			shouldErr:             true,
+			expectedErrMsg:        fmt.Sprintf("compacted block minTime %d is before source minTime %d", sourceMinTime-500, sourceMinTime),
+		},
+		"should fail with compacted block maxTime > source maxTime": {
+			compactedBlockMinTime: sourceMinTime,
+			compactedBlockMaxTime: sourceMaxTime + 500,
+			shouldErr:             true,
+			expectedErrMsg:        fmt.Sprintf("compacted block maxTime %d is after source maxTime %d", sourceMaxTime+500, sourceMaxTime),
+		},
+		"should fail due to minTime and maxTime not found": {
+			compactedBlockMinTime: sourceMinTime + 250,
+			compactedBlockMaxTime: sourceMaxTime - 250,
+			shouldErr:             true,
+			expectedErrMsg:        fmt.Sprintf("compacted block(s) do not contain minTime %d and maxTime %d from the source blocks", sourceMinTime, sourceMaxTime),
+		},
+	}
+
+	for testName, testData := range tests {
+		testData := testData // Prevent loop variable being captured by func literal
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			tempDir := t.TempDir()
+
+			compactedBlock1, err := block.CreateBlock(
+				context.Background(), tempDir,
+				[]labels.Labels{
+					labels.FromStrings("test", "foo", "a", "1"),
+					labels.FromStrings("test", "foo", "a", "2"),
+					labels.FromStrings("test", "foo", "a", "3"),
+				}, 10, testData.compactedBlockMinTime, testData.compactedBlockMinTime+500, labels.EmptyLabels())
+			require.NoError(t, err)
+
+			compactedBlock2, err := block.CreateBlock(
+				context.Background(), tempDir,
+				[]labels.Labels{
+					labels.FromStrings("test", "foo", "a", "1"),
+					labels.FromStrings("test", "foo", "a", "2"),
+					labels.FromStrings("test", "foo", "a", "3"),
+				}, 10, testData.compactedBlockMaxTime-500, testData.compactedBlockMaxTime, labels.EmptyLabels())
+			require.NoError(t, err)
+
+			err = verifyCompactedBlocksTimeRanges([]ulid.ULID{compactedBlock1, compactedBlock2}, sourceMinTime, sourceMaxTime, tempDir)
+			if testData.shouldErr {
+				require.ErrorContains(t, err, testData.expectedErrMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

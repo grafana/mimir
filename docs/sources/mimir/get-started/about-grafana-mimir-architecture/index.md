@@ -44,7 +44,7 @@ This gives [queriers]({{< relref "../../references/architecture/components/queri
 To effectively use the WAL, and to be able to recover the in-memory series if an ingester abruptly terminates, store the WAL to a persistent disk that can survive an ingester failure.
 For example, when running in the cloud, include an AWS EBS volume or a GCP persistent disk.
 If you are running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a persistent volume claim for the ingesters.
-The location on the filesystem where the WAL is stored is the same location where local TSDB blocks (compacted from head) are stored. The location of the filesystem and the location of the local TSDB blocks cannot be decoupled.
+The location on the filesystem where the WAL is stored is the same location where local TSDB blocks (compacted from head) are stored. The locations of the WAL and the local TSDB blocks cannot be decoupled.
 
 For more information, refer to [timeline of block uploads]({{< relref "../../manage/run-production-environment/production-tips#how-to-estimate--querierquery-store-after" >}}) and [Ingester]({{< relref "../../references/architecture/components/ingester" >}}).
 
@@ -65,7 +65,9 @@ Queries coming into Grafana Mimir arrive at the [query-frontend]({{< relref "../
 
 The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are put into an in-memory queue within the query-frontend.
 
-> **Note:** If you run the optional [query-scheduler]({{< relref "../../references/architecture/components/query-scheduler" >}}) component, this queue is maintained in the query-scheduler instead of the query-frontend.
+{{< admonition type="note" >}}
+If you run the optional [query-scheduler]({{< relref "../../references/architecture/components/query-scheduler" >}}) component, the query-schedule maintains the queue instead of the query-frontend.
+{{< /admonition >}}
 
 The queriers act as workers, pulling queries from the queue.
 

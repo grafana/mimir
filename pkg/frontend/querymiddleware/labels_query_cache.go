@@ -3,6 +3,7 @@
 package querymiddleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -28,23 +29,23 @@ const (
 	stringParamSeparator = rune(0)
 )
 
-func newLabelsQueryCacheRoundTripper(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
-	delegate := &labelsQueryCache{
+func newLabelsQueryCacheRoundTripper(cache cache.Cache, generator CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
+	ttl := &labelsQueryTTL{
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, delegate, next, logger, newResultsCacheMetrics("label_names_and_values", reg))
+	return newGenericQueryCacheRoundTripper(cache, generator.LabelValues, ttl, next, logger, newResultsCacheMetrics(queryTypeLabels, reg))
 }
 
-type labelsQueryCache struct {
+type labelsQueryTTL struct {
 	limits Limits
 }
 
-func (c *labelsQueryCache) getTTL(userID string) time.Duration {
+func (c *labelsQueryTTL) ttl(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForLabelsQuery(userID)
 }
 
-func (c *labelsQueryCache) parseRequest(path string, values url.Values) (*genericQueryRequest, error) {
+func (DefaultCacheKeyGenerator) LabelValues(_ context.Context, path string, values url.Values) (*GenericQueryCacheKey, error) {
 	var (
 		cacheKeyPrefix string
 		labelName      string
@@ -78,9 +79,9 @@ func (c *labelsQueryCache) parseRequest(path string, values url.Values) (*generi
 		return nil, err
 	}
 
-	return &genericQueryRequest{
-		cacheKey:       generateLabelsQueryRequestCacheKey(startTime, endTime, labelName, matcherSets),
-		cacheKeyPrefix: cacheKeyPrefix,
+	return &GenericQueryCacheKey{
+		CacheKey:       generateLabelsQueryRequestCacheKey(startTime, endTime, labelName, matcherSets),
+		CacheKeyPrefix: cacheKeyPrefix,
 	}, nil
 }
 
@@ -154,22 +155,28 @@ func parseRequestMatchersParam(values url.Values, paramName string) ([][]*labels
 
 	// Ensure stable sorting (improves query results cache hit ratio).
 	for _, set := range matcherSets {
-		slices.SortFunc(set, func(a, b *labels.Matcher) bool {
-			return compareLabelMatchers(a, b) < 0
+		slices.SortFunc(set, func(a, b *labels.Matcher) int {
+			return compareLabelMatchers(a, b)
 		})
 	}
 
-	slices.SortFunc(matcherSets, func(a, b []*labels.Matcher) bool {
+	slices.SortFunc(matcherSets, func(a, b []*labels.Matcher) int {
 		idx := 0
 
 		for ; idx < len(a) && idx < len(b); idx++ {
 			if c := compareLabelMatchers(a[idx], b[idx]); c != 0 {
-				return c < 0
+				return c
 			}
 		}
 
 		// All label matchers are equal so far. Check which one has fewer matchers.
-		return idx < len(b)
+		if idx < len(b) {
+			return -1
+		}
+		if idx < len(a) {
+			return 1
+		}
+		return 0
 	})
 
 	return matcherSets, nil

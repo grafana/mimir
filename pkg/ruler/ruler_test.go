@@ -35,7 +35,6 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/rules"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -107,9 +106,9 @@ type mockRulerClientsPool struct {
 	numberOfCalls atomic.Int32
 }
 
-func (p *mockRulerClientsPool) GetClientFor(addr string) (RulerClient, error) {
+func (p *mockRulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (RulerClient, error) {
 	for _, r := range p.rulerAddrMap {
-		if r.lifecycler.GetInstanceAddr() == addr {
+		if r.lifecycler.GetInstanceAddr() == inst.Addr {
 			return &mockRulerClient{
 				ruler:           r,
 				rulesCallsCount: &p.numberOfCalls,
@@ -117,7 +116,7 @@ func (p *mockRulerClientsPool) GetClientFor(addr string) (RulerClient, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("unable to find ruler for addr %s", addr)
+	return nil, fmt.Errorf("unable to find ruler for addr %s %s", inst.Id, inst.Addr)
 }
 
 func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer, rulerAddrMap map[string]*Ruler) *mockRulerClientsPool {
@@ -225,7 +224,7 @@ func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ..
 func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *DefaultMultiTenantManager {
 	options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID, opts...)
 
-	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	noopQueryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return storage.NoopQuerier(), nil
 	})
 	noopQueryFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
@@ -1218,7 +1217,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 		var actualRulersWithRuleGroups int
 
 		for _, ruler := range rulers {
-			actualRuleGroups, err := ruler.getLocalRules(userID, RulesRequest{Filter: AnyRule})
+			actualRuleGroups, err := ruler.getLocalRules(ctx, userID, RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 			actualRuleGroupsCount += len(actualRuleGroups)
 
@@ -1256,7 +1255,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 		var actualRuleGroupsCountPerRuler []int
 
 		for _, ruler := range rulers {
-			actualRuleGroups, err := ruler.getLocalRules(userID, RulesRequest{Filter: AnyRule})
+			actualRuleGroups, err := ruler.getLocalRules(ctx, userID, RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 			actualRuleGroupsCountPerRuler = append(actualRuleGroupsCountPerRuler, len(actualRuleGroups))
 		}
@@ -1641,7 +1640,7 @@ func TestSendAlerts(t *testing.T) {
 				}
 				require.Equal(t, tc.exp, alerts)
 			})
-			rules.SendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
+			promRules.SendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
 		})
 	}
 }

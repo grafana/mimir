@@ -277,7 +277,7 @@ How to **investigate**:
 - If the failing service is going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
   - If crashing service is query-frontend, querier or store-gateway, and you have "activity tracker" feature enabled, look for `found unfinished activities from previous run` message and subsequent `activity` messages in the log file to see which queries caused the crash.
-- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
+- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 #### Alertmanager
 
@@ -302,7 +302,7 @@ This alert fires when a Mimir process has a number of memory map areas close to 
 How to **fix** it:
 
 - Increase the limit on your system: `sysctl --write vm.max_map_count=<NEW LIMIT>`
-- If it's caused by a store-gateway, consider enabling `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=true` to lazy mmap index-headers at query time
+- If it's caused by a store-gateway, consider enabling `-blocks-storage.bucket-store.index-header.lazy-loading-enabled=true` to lazy mmap index-headers at query time
 
 More information:
 
@@ -313,7 +313,7 @@ More information:
 
 This alert occurs when a ruler is unable to validate whether or not it should claim ownership over the evaluation of a rule group. The most likely cause is that one of the rule ring entries is unhealthy. If this is the case proceed to the ring admin http page and forget the unhealth ruler. The other possible cause would be an error returned the ring client. If this is the case look into debugging the ring based on the in-use backend implementation.
 
-When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
+When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 ### MimirRulerTooManyFailedPushes
 
@@ -325,7 +325,7 @@ This alert fires only for first kind of problems, and not for problems caused by
 How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot write samples. Note that ruler logs all push errors, including "user errors", but those are not causing the alert to fire. Focus on problems with ingesters.
-- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
+- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 ### MimirRulerTooManyFailedQueries
 
@@ -341,7 +341,7 @@ How to **fix** it:
 - In case remote operational mode is enabled the problem could be at any of the ruler query path components (ruler-query-frontend, ruler-query-scheduler and ruler-querier). Check the `Mimir / Remote ruler reads` and `Mimir / Remote ruler reads resources` dashboards to find out in which Mimir service the error is being originated.
   - If the ruler is logging the gRPC error "received message larger than max", consider increasing `-ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size` in the ruler. This configuration option sets the maximum size of a message received by the ruler from the query-frontend (or ruler-query-frontend if you're running a dedicated read path for rule evaluations). If you're using jsonnet, you should just tune `_config.ruler_remote_evaluation_max_query_response_size_bytes`.
   - If the ruler is logging the gRPC error "trying to send message larger than max", consider increasing `-server.grpc-max-send-msg-size-bytes` in the query-frontend (or ruler-query-frontend if you're running a dedicated read path for rule evaluations). If you're using jsonnet, you should just tune `_config.ruler_remote_evaluation_max_query_response_size_bytes`.
-- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
+- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 ### MimirRulerMissedEvaluations
 
@@ -386,7 +386,7 @@ _If the alert `MimirIngesterTSDBHeadCompactionFailed` fired as well, then give p
 
 If the ingester hit the disk capacity, any attempt to append samples will fail. You should:
 
-1. Increase the disk size and restart the ingester. If the ingester is running in Kubernetes with a Persistent Volume, please refers to [Resizing Persistent Volumes using Kubernetes](#resizing-persistent-volumes-using-kubernetes).
+1. Increase the disk size and restart the ingester. If the ingester is running in Kubernetes with a Persistent Volume, please refer to [Resizing Persistent Volumes using Kubernetes](#resizing-persistent-volumes-using-kubernetes).
 2. Investigate why the disk capacity has been hit
 
 - Was the disk just too small?
@@ -522,14 +522,6 @@ How to **fix** it:
 - Set the shard size of one or more tenants to `0`; this will shard the given tenant's rule groups across all ingesters.
 - Decrease the total number of ruler replicas by the number of idle replicas.
 
-### MimirQuerierHasNotScanTheBucket
-
-This alert fires when a Mimir querier is not successfully scanning blocks in the storage (bucket). A querier is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket since a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
-
-How to **investigate**:
-
-- Look for any scan error in the querier logs (ie. networking or rate limiting issues)
-
 ### MimirStoreGatewayHasNotSyncTheBucket
 
 This alert fires when a Mimir store-gateway is not successfully scanning blocks in the storage (bucket). A store-gateway is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket for a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
@@ -638,28 +630,31 @@ How to **investigate**:
       - If you encounter any Compactor resource issues, add CPU/Memory as needed temporarily, then scale back later.
       - You can also optionally scale replicas and shards further to split the work up into even smaller pieces until the situation has recovered.
 
-### MimirCompactorSkippedBlocksWithOutOfOrderChunks
+### MimirCompactorSkippedUnhealthyBlocks
 
-This alert fires when compactor tries to compact a block, but finds that given block has out-of-order chunks. This indicates a bug in Prometheus TSDB library and should be investigated.
+This alert fires when compactor tries to compact a block, but finds that given block is unhealthy. This indicates a bug in Prometheus TSDB library and should be investigated.
 
 #### Compactor is failing because of `not healthy index found`
 
-The compactor may fail to compact blocks due a corrupted block index found in one of the source blocks:
+The compactor may fail to compact blocks due to a corrupted block index found in one of the source blocks:
 
 ```
 level=error ts=2020-07-12T17:35:05.516823471Z caller=compactor.go:339 component=compactor msg="failed to compact user blocks" user=REDACTED-TENANT err="compaction: group 0@6672437747845546250: block with not healthy index found /data/compact/0@6672437747845546250/REDACTED-BLOCK; Compaction level 1; Labels: map[__org_id__:REDACTED]: 1/1183085 series have an average of 1.000 out-of-order chunks: 0.000 of these are exact duplicates (in terms of data and time range)"
 ```
 
-When this happen you should:
+When this happens, the affected block(s) will be marked as non-compact by the compactor in order to prevent the next execution from being blocked, which could potentially have a negative impact on the performance of the read path.
 
-1. Rename the block prefixing it with `corrupted-` so that it will be skipped by the compactor and queriers. Keep in mind that doing so the block will become invisible to the queriers too, so its series/samples will not be queried. If the corruption affects only 1 block whose compaction `level` is 1 (the information is stored inside its `meta.json`) then Mimir guarantees no data loss because all the data is replicated across other blocks. In all other cases, there may be some data loss once you rename the block and stop querying it.
-2. Ensure the compactor has recovered
-3. Investigate offline the root cause (eg. download the corrupted block and debug it locally)
+If the corruption affects only 1 block whose compaction `level` is 1 (the information is stored inside its `meta.json`) then Mimir guarantees no data loss because all the data is replicated across other blocks. In all other cases, there may be some data loss.
 
-To rename a block stored on GCS you can use the `gsutil` CLI command:
+Once this alert has been triggered, it is recommended to follow the following steps:
+
+1. Ensure the compactor has recovered.
+2. Investigate offline the root cause by downloading the corrupted block and debugging it locally
+
+To download a block stored on GCS you can use the `gsutil` CLI command:
 
 ```
-gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
+gsutil cp gs://[BUCKET_NAME]/[OBJECT_NAME] [LOCAL_DESTINATION]
 ```
 
 Where:
@@ -720,6 +715,9 @@ The procedure to investigate it is the same as the one for [`MimirSchedulerQueri
 ### MimirSchedulerQueriesStuck
 
 This alert fires if queries are piling up in the query-scheduler.
+
+The size of the queue is shown on the `Queue length` dashboard panel on the `Mimir / Reads` (for the standard query path) or `Mimir / Remote Ruler Reads`
+(for the dedicated rule evaluation query path) dashboards.
 
 How it **works**:
 
@@ -816,9 +814,39 @@ How to **fix** it:
   - Scale up ingesters; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of ingesters (also keep in mind that each ingester should handle ~1.5 million series, and the series will be duplicated across three instances)
   - Memory is expected to be reclaimed at the next TSDB head compaction (occurring every 2h)
 
-### MimirGossipMembersMismatch
+### MimirGossipMembersTooHigh
 
-This alert fires when any instance does not register all other instances as members of the memberlist cluster.
+This alert fires when any instance registers too many instances as members of the memberlist cluster.
+
+How it **works**:
+
+- This alert applies when memberlist is used as KV store for hash rings.
+- All Mimir instances using the ring, regardless of type, join a single memberlist cluster.
+- Each instance (ie. memberlist cluster member) should see all memberlist cluster members, but not see any other instances (eg. from Loki or Tempo, or other Mimir clusters).
+- Therefore the following should be equal for every instance:
+  - The reported number of cluster members (`memberlist_client_cluster_members_count`)
+  - The total number of currently responsive instances that use memberlist KV store for hash ring.
+- During rollouts, the number of members reported by some instances may be higher than expected as it takes some time for notifications of instances that have shut down
+  to propagate throughout the cluster.
+
+How to **investigate**:
+
+- Check which instances are reporting a higher than expected number of cluster members (the `memberlist_client_cluster_members_count` metric)
+- If most or all instances are reporting a higher than expected number of cluster members, then this cluster may have merged with another cluster
+  - Check the instances listed on each instance's view of the memberlist cluster using the `/memberlist` admin page on that instance, and confirm that all instances listed there are expected
+- If only a small number of instances are reporting a higher than expected number of cluster members, these instances may be experiencing memberlist communication issues:
+  - Verify communication with other members by checking memberlist traffic is being sent and received by the instance using the following metrics:
+    - `memberlist_tcp_transport_packets_received_total`
+    - `memberlist_tcp_transport_packets_sent_total`
+  - If traffic is present, then verify there are no errors sending or receiving packets using the following metrics:
+    - `memberlist_tcp_transport_packets_sent_errors_total`
+    - `memberlist_tcp_transport_packets_received_errors_total`
+    - These errors (and others) can be found by searching for messages prefixed with `TCPTransport:`.
+- Logs coming directly from memberlist are also logged by Mimir; they may indicate where to investigate further. These can be identified as such due to being tagged with `caller=memberlist_logger.go:<line>`.
+
+### MimirGossipMembersTooLow
+
+This alert fires when any instance registers too few instances as members of the memberlist cluster.
 
 How it **works**:
 
@@ -831,19 +859,17 @@ How it **works**:
 
 How to **investigate**:
 
-- The instance which has the incomplete view of the cluster (too few members) is specified in the alert.
-- If the count is zero:
-  - It is possible that the joining the cluster has yet to succeed.
-  - The following log message indicates that the _initial_ initial join did not succeed: `failed to join memberlist cluster`
-  - The following log message indicates that subsequent re-join attempts are failing: `re-joining memberlist cluster failed`
-  - If it is the case that the initial join failed, take action according to the reason given.
-- Verify communication with other members by checking memberlist traffic is being sent and received by the instance using the following metrics:
-  - `memberlist_tcp_transport_packets_received_total`
-  - `memberlist_tcp_transport_packets_sent_total`
-- If traffic is present, then verify there are no errors sending or receiving packets using the following metrics:
-  - `memberlist_tcp_transport_packets_sent_errors_total`
-  - `memberlist_tcp_transport_packets_received_errors_total`
-  - These errors (and others) can be found by searching for messages prefixed with `TCPTransport:`.
+- Check which instances are reporting a lower than expected number of cluster members (the `memberlist_client_cluster_members_count` metric)
+- If most or all instances are reporting a lower than expected number of cluster members, then there may be a configuration issue preventing cluster members from finding each other
+  - Check the instances listed on each instance's view of the memberlist cluster using the `/memberlist` admin page on that instance, and confirm that all expected instances are listed there
+- If only a small number of instances are reporting a lower than expected number of cluster members, these instances may be experiencing memberlist communication issues:
+  - Verify communication with other members by checking memberlist traffic is being sent and received by the instance using the following metrics:
+    - `memberlist_tcp_transport_packets_received_total`
+    - `memberlist_tcp_transport_packets_sent_total`
+  - If traffic is present, then verify there are no errors sending or receiving packets using the following metrics:
+    - `memberlist_tcp_transport_packets_sent_errors_total`
+    - `memberlist_tcp_transport_packets_received_errors_total`
+    - These errors (and others) can be found by searching for messages prefixed with `TCPTransport:`.
 - Logs coming directly from memberlist are also logged by Mimir; they may indicate where to investigate further. These can be identified as such due to being tagged with `caller=memberlist_logger.go:<line>`.
 
 ### EtcdAllocatingTooMuchMemory
@@ -863,6 +889,9 @@ This can be triggered if there are too many HA dedupe keys in etcd. We saw this 
     },
   },
 ```
+
+Note that you may need to recreate each etcd pod in order for this change to take effect, as etcd-operator does not automatically recreate pods in response to changes like these.
+First, check that all etcd pods are running and healthy. Then delete one pod at a time and wait for it to be recreated and become healthy before repeating for the next pod until all pods have been recreated.
 
 ### MimirAlertmanagerSyncConfigsFailing
 
@@ -897,7 +926,7 @@ The metric for this alert is `cortex_alertmanager_ring_check_errors_total`.
 How to **investigate**:
 
 - Look at the error message that is logged and attempt to understand what is causing the failure. In most cases the error will be encountered when attempting to read from the ring, which can fail if there is an issue with in-use backend implementation.
-- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
+- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 ### MimirAlertmanagerPartialStateMergeFailing
 
@@ -1025,9 +1054,9 @@ How it **works**:
 How to **investigate**:
 
 - Limit reached in `gateway`:
-  - Check if it's caused by an **high latency on write path**:
+  - Check if it's caused by **high latency on write path**:
     - Check the distributors and ingesters latency in the `Mimir / Writes` dashboard
-    - An high latency on write path could lead our customers Prometheus / Agent to increase the number of shards nearly at the same time, leading to a significantly higher number of concurrent requests to the load balancer and thus gateway
+    - High latency on write path could lead our customers Prometheus / Agent to increase the number of shards nearly at the same time, leading to a significantly higher number of concurrent requests to the load balancer and thus gateway
   - Check if it's caused by a **single tenant**:
     - We don't have a metric tracking the active TCP connections or QPS per tenant
     - As a proxy metric, you can check if the ingestion rate has significantly increased for any tenant (it's not a very accurate proxy metric for number of TCP connections so take it with a grain of salt):
@@ -1074,8 +1103,8 @@ How to **investigate**:
   kubectl --namespace default get pod --selector='name=prometheus'
   ```
 
-For scaled objects with 0 `minReplicas` it is expected for HPA to be inactive when the scaling metric exposed in `keda_metrics_adapter_scaler_metrics_value` is 0.
-When `keda_metrics_adapter_scaler_metrics_value` value is 0 or missing, the alert should not be firing.
+For scaled objects with 0 `minReplicas` it is expected for HPA to be inactive when the scaling metric exposed in `keda_scaler_metrics_value` is 0.
+When `keda_scaler_metrics_value` value is 0 or missing, the alert should not be firing.
 
 ### MimirAutoscalerKedaFailing
 
@@ -1178,6 +1207,106 @@ How to **investigate**:
   {name="rollout-operator",namespace="<namespace>"}
   ```
 
+### MimirIngestedDataTooFarInTheFuture
+
+This alert fires when Mimir ingester accepts a sample with timestamp that is too far in the future.
+This is typically a result of processing of corrupted message, and it can cause rejection of other samples with timestamp close to "now" (real-world time).
+
+How it **works**:
+
+- The metric exported by ingester computes maximum timestamp from all TSDBs open in ingester.
+- Alert checks this exported metric and fires if maximum timestamp is more than 1h in the future.
+
+How to **investigate**
+
+- Find the tenant with bad sample on ingester's tenants list, where a warning "TSDB Head max timestamp too far in the future" is displayed.
+- Flush tenant's data to blocks storage.
+- Remove tenant's directory on disk and restart ingester.
+
+### MimirStoreGatewayTooManyFailedOperations
+
+How it **works**:
+
+- This alert fires when the `store-gateways` report errors when interacting with the object storage for an extended period of time.
+- This is usually because Mimir cannot read an object due to an issue with the object itself or the object storage.
+
+How to **investigate**
+
+- Check the `store-gateways` logs which should contain details about the error such as tenant or object id, e.g. with the following Grafana Loki query:
+
+```
+{cluster="<cluster>",namespace="<namespace>", name=~"store-gateway.*"} |= "level=warn"
+```
+
+You might find logs similar to the following:
+
+```
+create index header reader: write index header: new index reader: get TOC from object storage of 01H9QMTQRE2MT8XVDWP6RWAMC6/index: Multipart upload has broken segment data.
+```
+
+- Use the `Mimir / Object Store` dashboard to check for error rate and the failed object storage's operation impacted, e.g: `get_range`.
+
+### KubePersistentVolumeFillingUp
+
+This alert is not defined in the Mimir mixin, but it's part of [`kube-prometheus`](https://github.com/prometheus-operator/kube-prometheus) alerts.
+This alert fires when a `PersistentVolume` is nearing capacity.
+
+#### Compactor
+
+How it **works**:
+
+- The compactor uses the volume to temporarily store blocks to compact. The compactor doesn't require persistence, so it's safe to stop the compactor, delete the volume content and restart it with an empty disk.
+- The compactor disk utilization is typically a function of the size of source blocks to compact as part of a compaction job and the configured number of maximum concurrent compactions (`-compactor.compaction-concurrency`).
+
+How to **fix** it:
+
+- Increase the compactor volume size to stop the bleed. You can either:
+  - Resize the volume
+  - Delete the compactor StatefulSet and its PersistentVolumeClaims, then re-create the compactor StatefulSet with a bigger volume size request
+- Check if the compactor is configured with `-compactor.compaction-concurrency` greater than 1 and there are multiple concurrent compactions running in the affected compactor. If so, you can consider lowering the concurrency.
+
+#### Store-gateway
+
+How it **works**:
+
+- Blocks in the long-term storage are sharded and replicated between store-gateway replicas using the store-gateway hash ring. This means that each store-gateway owns a subset of the blocks.
+  - The sharding algorithm is designed to try to evenly balance the number of blocks per store-gateway replica, but not their size. This means that in case of a tenant with uneven blocks sizes, some store-gateways may use more disk than others even if the number of blocks assigned to each replicas are perfectly balanced.
+  - The sharding algorithm can achieve a fair balance of the number of blocks between store-gateway replicas only on a large number of blocks. This means that in case of a Mimir cluster with a small number of blocks, these may not be evenly balanced between replicas. Currently, a perfect (or even very good) balance between store-gateway replicas is nearly impossible to achieve.
+  - When store-gateway shuffle sharding is in use for a given tenant and the tenant's shard size is smaller than the number of store-gateway replicas, the tenant's blocks are sharded only across a subset of replicas. Shuffle sharding can cause an imbalance in store-gateway disk utilization.
+- The store-gateway uses the volume to store the [index-header]({{< relref "../../references/architecture/binary-index-header.md" >}}) of each owned block.
+
+How to **investigate** and **fix** it:
+
+- Check the `Mimir / Compactor` dashboard
+
+  - Ensure the compactor is healthy and running successfully.
+    - The "Last successful run per-compactor replica" panel should show all compactors are running Ok and none of them having Delayed, Late or Very Late status.
+    - "Tenants with largest number of blocks" must not be trending upwards
+  - An issue in the compactor (e.g. compactor is crashing, OOMKilled or can't catch up with compaction jobs) would cause the number of non-compacted blocks to increase, causing an increased disk utilization in the store-gateway. In case of an issue with the compactor you should fix it first:
+    - If the compactor is OOMKilled, increase compactor memory request.
+    - If the compactor is lagging behind or there are many blocks to compactor, temporarily increase increase the compactor replicas to let the compactor catching up quickly.
+
+- Check the `Mimir / Reads resources` dashboard
+
+  - Check if disk utilization is nearly balanced between store-gateway replicas (e.g. a 20-30% variance between replicas is expected)
+    - If disk utilization is nearly balanced you can scale out store-gateway replicas to lower disk utilization on average
+    - If disk utilization is unbalanced you may consider the other options before scaling out store-gateways
+
+- Check if disk utilization unbalance is caused by shuffle sharding
+
+  - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. To investigate it you can run the following command for a given store-gateway replica. The command returns the top 10 tenants by disk utilization (in megabytes):
+    ```
+    kubectl --context $CLUSTER --namespace $CELL exec -ti $POD -- sh -c 'du -sm /data/tsdb/* | sort -n -r | head -10'
+    ```
+  - Check the configured `-store-gateway.tenant-shard-size` (`store_gateway_tenant_shard_size`) of each tenant that mostly contributes to disk utilization. Consider increase the tenant's the shard size if it's smaller than the number of available store-gateway replicas (a value of `0` disables shuffle sharding for the tenant, effectively sharding their blocks across all replicas).
+
+- Check if disk utilization unbalance is caused by a tenant with uneven block sizes
+  - Even if a tenant has no shuffle sharding and their blocks are sharded across all replicas, it may still cause unbalance in store-gateway disk utilization if the size of their blocks dramatically changed over time (e.g. because the number of series per block significantly changed over time). As a proxy metric, the number of series per block is roughly the total number of series across all blocks for the largest `-compactor.block-ranges` (default is 24h) divided by the number of `-compactor.split-and-merge-shards` (`compactor_split_and_merge_shards`).
+  - If you suspect this may be an issue:
+    - Check the number of series in each block in the store-gateway blocks list for the affected tenant, through the web page exposed by the store-gateway at `/store-gateway/tenant/<tenant ID>/blocks`
+    - Check the number of in-memory series shown on the `Mimir / Tenants` dashboard for an approximation of the number of series that will be compacted once these blocks are shipped from ingesters.
+    - Check the configured `compactor_split_and_merge_shards` for the tenant. A reasonable rule of thumb is 8-10 million series per compactor shard - if the number of series per shard is above this range, increase `compactor_split_and_merge_shards` for the affected tenant(s) accordingly.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
@@ -1188,56 +1317,89 @@ These error IDs allow you to read related details in the documentation that foll
 This non-critical error occurs when Mimir receives a write request that contains a series without a metric name.
 Each series must have a metric name. Rarely it does not, in which case there might be a bug in the sender client.
 
-> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-metric-name-invalid
 
 This non-critical error occurs when Mimir receives a write request that contains a series with an invalid metric name.
 A metric name can only contain characters as defined by Prometheus’ [Metric names and labels](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
 
-> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-max-label-names-per-series
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a number of labels that exceed the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-series` option.
 
-> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-max-native-histogram-buckets
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram that has too many observation buckets.
 The limit protects the system from using too much memory. To configure the limit on a per-tenant basis, use the `-validation.max-native-histogram-buckets` option.
 
-> **Note:** The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-not-reducible-native-histogram
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram that has too many observation buckets and it is not possible to reduce the buckets further. Since native buckets at the lowest resolution of -4 can cover all 64 bit float observations with a handful of buckets, this indicates that the
+`-validation.max-native-histogram-buckets` option is set too low (<20).
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-invalid-native-histogram-schema
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram with an invalid schema number. Currently, valid schema numbers are from the range [-4, 8].
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-label-invalid
 
 This non-critical error occurs when Mimir receives a write request that contains a series with an invalid label name.
 A label name name can only contain characters as defined by Prometheus’ [Metric names and labels](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
 
-> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-label-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label name whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-name` option.
 
-> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-label-value-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label value whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-value` option.
 
-> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-duplicate-label-names
 
 This non-critical error occurs when Mimir receives a write request that contains a series with the same label name two or more times.
 A series that contains a duplicated label name is invalid and gets skipped during the ingestion.
 
-> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-labels-not-sorted
 
@@ -1245,57 +1407,83 @@ This error occurs when Mimir receives a write request that contains a series who
 However, Mimir internally sorts labels for series that it receives, so this error should not occur in practice.
 If you experience this error, [open an issue in the Mimir repository](https://github.com/grafana/mimir/issues).
 
-> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-too-far-in-future
 
 This non-critical error occurs when Mimir receives a write request that contains a sample whose timestamp is in the future compared to the current "real world" time.
 Mimir accepts timestamps that are slightly in the future, due to skewed clocks for example. It rejects timestamps that are too far in the future, based on the definition that you can set via the `-validation.create-grace-period` option.
-On a per-tenant basis, you can fine tune the tolerance by configuring the `-validation.max-length-label-value` option.
+On a per-tenant basis, you can fine tune the tolerance by configuring the `creation_grace_period` option.
 
-> **Note:** Series with invalid samples are skipped during the ingestion, and series within the same request are ingested.
+{{< admonition type="note" >}}
+Only series with invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
+{{< /admonition >}}
+
+### err-mimir-exemplar-too-far-in-future
+
+This non-critical error occurs when Mimir receives a write request that contains an exemplar whose timestamp is in the future compared to the current "real world" time.
+Mimir accepts timestamps that are slightly in the future, due to skewed clocks for example. It rejects timestamps that are too far in the future, based on the definition that you can set via the `-validation.create-grace-period` option.
+On a per-tenant basis, you can fine tune the tolerance by configuring the `creation_grace_period` option.
+
+{{< admonition type="note" >}}
+Only series with invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
+{{< /admonition >}}
 
 ### err-mimir-exemplar-labels-missing
 
 This non-critical error occurs when Mimir receives a write request that contains an exemplar without a label that identifies the related metric.
 An exemplar must have at least one valid label pair, otherwise it cannot be associated with any metric.
 
-> **Note:** Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-exemplar-labels-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains an exemplar where the combined set size of its labels exceeds the limit.
 The limit is used to protect the system’s stability from potential abuse or mistakes, and it cannot be configured.
 
-> **Note:** Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-exemplar-timestamp-invalid
 
 This non-critical error occurs when Mimir receives a write request that contains an exemplar without a timestamp.
 An exemplar must have a valid timestamp, otherwise it cannot be correlated to any point in time.
 
-> **Note:** Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-metadata-missing-metric-name
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata without a metric name.
 Each metric metadata must have a metric name. Rarely it does not, in which case there might be a bug in the sender client.
 
-> **Note:** Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-metric-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with a metric name whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
 
-> **Note:** Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-unit-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with unit name whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
 
-> **Note:** Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+{{< admonition type="note" >}}
+Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+{{< /admonition >}}
 
 ### err-mimir-distributor-max-ingestion-rate
 
@@ -1395,6 +1583,22 @@ How to **fix** it:
 - Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
 - Consider scaling out the ingesters.
 
+### err-mimir-ingester-max-inflight-push-requests-bytes
+
+This error occurs when an ingester rejects a write request because of the maximum size of all in-flight push requests has been reached.
+
+How it **works**:
+
+- The ingester has a per-instance limit on the total size of the in-flight write (push) requests.
+- The limit applies to all in-flight write requests, across all tenants, and it protects the ingester from using too much memory for incoming requests in case of high traffic.
+- To configure the limit, set the `-ingester.instance-limits.max-inflight-push-requests-bytes` option (or `max_inflight_push_requests_bytes` in the runtime config).
+
+How to **fix** it:
+
+- Increase the limit by setting the `-ingester.instance-limits.max-inflight-push-requests-bytes` option (or `max_inflight_push_requests_bytes` in the runtime config), if possible.
+- Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
+- Consider scaling out the ingesters.
+
 ### err-mimir-max-series-per-user
 
 This error occurs when the number of in-memory series for a given tenant exceeds the configured limit.
@@ -1461,7 +1665,7 @@ How to **fix** it:
 
 ### err-mimir-max-chunks-per-query
 
-This error occurs when a query execution exceeds the limit on the number of series chunks fetched.
+This error occurs when execution of a query exceeds the limit on the number of series chunks fetched.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
 To configure the limit on a per-tenant basis, use the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
@@ -1471,9 +1675,23 @@ How to **fix** it:
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
 - Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
 
+### err-mimir-max-estimated-chunks-per-query
+
+This error occurs when execution of a query exceeds the limit on the estimated number of series chunks expected to be fetched.
+
+The estimate is based on the actual number of chunks that will be sent from ingesters to queriers, and an estimate of the number of chunks that will be sent from store-gateways to queriers.
+
+This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
+To configure the limit on a per-tenant basis, use the `-querier.max-estimated-fetched-chunks-per-query-multiplier` option (or `max_estimated_fetched_chunks_per_query_multiplier` in the runtime configuration).
+
+How to **fix** it:
+
+- Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
+- Consider increasing the per-tenant limit by using the`-querier.max-estimated-fetched-chunks-per-query-multiplier` option (or `max_estimated_fetched_chunks_per_query_multiplier` in the runtime configuration).
+
 ### err-mimir-max-series-per-query
 
-This error occurs when a query execution exceeds the limit on the maximum number of series.
+This error occurs when execution of a query exceeds the limit on the maximum number of series.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
 To configure the limit on a per-tenant basis, use the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
@@ -1485,7 +1703,7 @@ How to **fix** it:
 
 ### err-mimir-max-chunks-bytes-per-query
 
-This error occurs when a query execution exceeds the limit on aggregated size (in bytes) of fetched chunks.
+This error occurs when execution of a query exceeds the limit on aggregated size (in bytes) of fetched chunks.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
 To configure the limit on a per-tenant basis, use the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
@@ -1581,7 +1799,9 @@ How it **works**:
 
 - If the incoming timestamp is more than 1 hour older than the most recent timestamp ingested for the tenant, the sample will be rejected.
 
-> **Note:** If the out-of-order sample ingestion is enabled, then this error is similar to `err-mimir-sample-out-of-order` below with a difference that the sample is older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
+{{< admonition type="note" >}}
+If the out-of-order sample ingestion is enabled, then this error is similar to `err-mimir-sample-out-of-order` below with a difference that the sample is older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
+{{< /admonition >}}
 
 ### err-mimir-sample-out-of-order
 
@@ -1600,7 +1820,9 @@ Common **causes**:
 - A Prometheus instance was restarted, and it pushed all data from its Write-Ahead Log to remote write upon restart, some of which has already been pushed and ingested. This is normal and can be ignored.
 - Prometheus and Mimir have the same recording rule, which generates the exact same series in both places and causes either the remote write or the rule evaluation to fail randomly, depending on timing.
 
-> **Note:** You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
+{{< admonition type="note" >}}
+You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
+{{< /admonition >}}
 
 ### err-mimir-sample-duplicate-timestamp
 
@@ -1665,6 +1887,19 @@ How it **works**:
 How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
+
+### err-mimir-query-blocked
+
+This error occurs when a query-frontend blocks a read request because the query matches at least one of the rules defined in the limits.
+
+How it **works**:
+
+- The query-frontend implements a middleware responsible for assessing whether the query is blocked or not.
+- To configure the limit, set the block `blocked_queries` in the `limits`.
+
+How to **fix** it:
+
+This error only occurs when an administrator has explicitly define a blocked list for a given tenant. After assessing whether or not the reason for blocking one or multiple queries you can update the tenant's limits and remove the pattern.
 
 ## Mimir routes by path
 
@@ -1880,9 +2115,9 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 
 _This runbook assumes you've enabled versioning in your GCS bucket and the retention of deleted blocks didn't expire yet._
 
-#### Recover accidentally deleted blocks using `undelete_block_gcs`
+#### Recover accidentally deleted blocks using `undelete-block-gcs`
 
-Step 1: Compile the `undelete_block_gcs` tool, whose sources are available in the Mimir repository at `tools/undelete_block_gcs/`.
+Step 1: Compile the `undelete-block-gcs` tool, whose sources are available in the Mimir repository at `tools/undelete-block-gcs/`.
 
 Step 2: Build a list of TSDB blocks to undelete and store it to a file named `deleted-list`. The file should contain the path of 1 block per line, prefixed by `gs://`. For example:
 
@@ -1892,13 +2127,15 @@ gs://bucket/tenant-1/01H6NCR7HSZ8DHKEG9SSJ0QZKQ
 gs://bucket/tenant-1/01H6NCRBJTY8R1F4FQJ3B1QK9W
 ```
 
-Step 3: Run the `undelete_block_gcs` tool to recover the deleted blocks:
+Step 3: Run the `undelete-block-gcs` tool to recover the deleted blocks:
 
 ```
-cat deleted-list | undelete_block_gcs -concurrency 16
+cat deleted-list | undelete-block-gcs -concurrency 16
 ```
 
-> **Note**: we recommend to try the `undelete_block_gcs` on a single block first, ensure that it gets recovered correctly and then run it against a bigger set of blocks to recover.
+{{< admonition type="note" >}}
+we recommend to try the `undelete-block-gcs` on a single block first, ensure that it gets recovered correctly and then run it against a bigger set of blocks to recover.
+{{< /admonition >}}
 
 #### Recover accidentally deleted blocks using `gsutil`
 

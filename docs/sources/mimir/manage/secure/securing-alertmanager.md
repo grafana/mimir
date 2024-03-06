@@ -23,4 +23,6 @@ Although hardening the network is out of the scope for Grafana Mimir, Grafana Mi
 
 You can override the Alertmanager built-in firewall settings on a per-tenant basis in the overrides section of the [runtime configuration]({{< relref "../../configure/about-runtime-configuration" >}}).
 
-> **Note:** You can disable the Alertmanager configuration API by setting `-alertmanager.enable-api=false`.
+{{< admonition type="note" >}}
+You can disable the Alertmanager configuration API by setting `-alertmanager.enable-api=false`.
+{{< /admonition >}}

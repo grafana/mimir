@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 )
 
@@ -33,10 +34,12 @@ func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 		GRPCListenAddress: "localhost",
 		MetricsNamespace:  "without_source_ip_extractor",
 	}
+	federationCfg := tenantfederation.Config{}
+	require.NoError(t, serverCfg.LogLevel.Set("info"))
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
-	api, err := New(cfg, serverCfg, srv, &FakeLogger{})
+	api, err := New(cfg, federationCfg, serverCfg, srv, &FakeLogger{})
 	require.NoError(t, err)
 	require.Nil(t, api.sourceIPs)
 }
@@ -49,10 +52,12 @@ func TestNewApiWithSourceIPExtractor(t *testing.T) {
 		GRPCListenAddress: "localhost",
 		MetricsNamespace:  "with_source_ip_extractor",
 	}
+	federationCfg := tenantfederation.Config{}
+	require.NoError(t, serverCfg.LogLevel.Set("info"))
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
-	api, err := New(cfg, serverCfg, srv, &FakeLogger{})
+	api, err := New(cfg, federationCfg, serverCfg, srv, &FakeLogger{})
 	require.NoError(t, err)
 	require.NotNil(t, api.sourceIPs)
 }
@@ -68,8 +73,9 @@ func TestNewApiWithInvalidSourceIPExtractor(t *testing.T) {
 		LogSourceIPsRegex:  "[*",
 		MetricsNamespace:   "with_invalid_source_ip_extractor",
 	}
+	federationCfg := tenantfederation.Config{}
 
-	api, err := New(cfg, serverCfg, &s, &FakeLogger{})
+	api, err := New(cfg, federationCfg, serverCfg, &s, &FakeLogger{})
 	require.Error(t, err)
 	require.Nil(t, api)
 }
@@ -77,12 +83,13 @@ func TestNewApiWithInvalidSourceIPExtractor(t *testing.T) {
 func TestApiGzip(t *testing.T) {
 	cfg := Config{}
 	serverCfg := getServerConfig(t)
+	federationCfg := tenantfederation.Config{}
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 	go func() { _ = srv.Run() }()
 	t.Cleanup(srv.Stop)
 
-	api, err := New(cfg, serverCfg, srv, log.NewNopLogger())
+	api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger())
 	require.NoError(t, err)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -191,15 +198,17 @@ func getServerConfig(t *testing.T) server.Config {
 	grpcHost, grpcPortNum := getHostnameAndRandomPort(t)
 	httpHost, httpPortNum := getHostnameAndRandomPort(t)
 
-	return server.Config{
+	cfg := server.Config{
 		HTTPListenAddress: httpHost,
 		HTTPListenPort:    httpPortNum,
 
 		GRPCListenAddress: grpcHost,
 		GRPCListenPort:    grpcPortNum,
 
-		GPRCServerMaxRecvMsgSize: 1024,
+		GRPCServerMaxRecvMsgSize: 1024,
 	}
+	require.NoError(t, cfg.LogLevel.Set("info"))
+	return cfg
 }
 
 func getHostnameAndRandomPort(t *testing.T) (string, int) {

@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
 func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
@@ -36,12 +37,12 @@ func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 			// No query to execute, so wait until terminated.
 			<-processClient.Context().Done()
-			return nil, processClient.Context().Err()
+			return nil, toRPCErr(processClient.Context().Err())
 		})
 
 		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
 
-		fp.processQueriesOnSingleStream(workerCtx, nil, "12.0.0.1")
+		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
 		// We expect at this point, the execution context has been canceled too.
 		require.Error(t, processClient.Context().Err())
@@ -65,7 +66,7 @@ func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
 			default:
 				// No more messages to process, so waiting until terminated.
 				<-processClient.Context().Done()
-				return nil, processClient.Context().Err()
+				return nil, toRPCErr(processClient.Context().Err())
 			}
 		})
 
@@ -91,6 +92,58 @@ func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		// We expect Send() to be called once, to send the query result.
 		processClient.AssertNumberOfCalls(t, "Send", 1)
+	})
+}
+
+func TestFrontendProcessor_QueryTime(t *testing.T) {
+	runTest := func(t *testing.T, statsEnabled bool) {
+		fp, processClient, requestHandler := prepareFrontendProcessor()
+
+		recvCount := atomic.NewInt64(0)
+		queueTime := 3 * time.Second
+
+		processClient.On("Recv").Return(func() (*frontendv1pb.FrontendToClient, error) {
+			switch recvCount.Inc() {
+			case 1:
+				return &frontendv1pb.FrontendToClient{
+					Type:           frontendv1pb.HTTP_REQUEST,
+					HttpRequest:    nil,
+					QueueTimeNanos: queueTime.Nanoseconds(),
+					StatsEnabled:   statsEnabled,
+				}, nil
+			default:
+				// No more messages to process, so waiting until terminated.
+				<-processClient.Context().Done()
+				return nil, toRPCErr(processClient.Context().Err())
+			}
+		})
+
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			workerCancel()
+
+			stat := stats.FromContext(args.Get(0).(context.Context))
+
+			if statsEnabled {
+				require.Equal(t, queueTime, stat.LoadQueueTime())
+			} else {
+				require.Equal(t, time.Duration(0), stat.LoadQueueTime())
+			}
+		}).Return(&httpgrpc.HTTPResponse{}, nil)
+
+		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+
+		// We expect Send() to be called once, to send the query result.
+		processClient.AssertNumberOfCalls(t, "Send", 1)
+	}
+
+	t.Run("query stats enabled should record query time", func(t *testing.T) {
+		runTest(t, true)
+	})
+
+	t.Run("query stats disabled will not record query time", func(t *testing.T) {
+		runTest(t, false)
 	})
 }
 
@@ -136,7 +189,7 @@ func TestContextCancelStopsProcess(t *testing.T) {
 	require.NoError(t, err)
 
 	pm := newProcessorManager(ctx, &mockProcessor{}, cc, "test")
-	pm.concurrency(1)
+	pm.concurrency(1, "starting")
 
 	test.Poll(t, time.Second, 1, func() interface{} {
 		return int(pm.currentProcessors.Load())
@@ -148,7 +201,7 @@ func TestContextCancelStopsProcess(t *testing.T) {
 		return int(pm.currentProcessors.Load())
 	})
 
-	pm.stop()
+	pm.stop("stopping")
 	test.Poll(t, time.Second, 0, func() interface{} {
 		return int(pm.currentProcessors.Load())
 	})

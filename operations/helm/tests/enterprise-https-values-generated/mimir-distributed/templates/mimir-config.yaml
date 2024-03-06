@@ -64,6 +64,7 @@ data:
             addresses: dns+enterprise-https-values-mimir-index-cache.citestns.svc:11211
             max_idle_connections: 150
             max_item_size: 5242880
+            timeout: 450ms
         metadata_cache:
           backend: memcached
           memcached:
@@ -90,8 +91,14 @@ data:
       max_closing_blocks_concurrency: 2
       max_opening_blocks_concurrency: 4
       sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
         wait_stability_min_duration: 1m
       symbols_flushers_concurrency: 4
+    distributor:
+      ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
     frontend:
       cache_results: true
       grpc_client_config:
@@ -191,6 +198,8 @@ data:
     ingester:
       ring:
         final_sleep: 0s
+        heartbeat_period: 2m
+        heartbeat_timeout: 10m
         kvstore:
           store: memberlist
         num_tokens: 512
@@ -208,7 +217,7 @@ data:
         tls_server_name: gem.grafana.com
     instrumentation:
       distributor_client:
-        address: dns:///enterprise-https-values-mimir-distributor-headless.citestns.svc.cluster.local:9095
+        address: dns:///enterprise-https-values-mimir-distributor-headless.citestns.svc.cluster.local.:9095
         tls_cert_path: /certs/tls.crt
         tls_enabled: true
         tls_insecure_skip_verify: false
@@ -225,7 +234,7 @@ data:
       abort_if_cluster_join_fails: false
       compression_enabled: false
       join_members:
-      - dns+enterprise-https-values-mimir-gossip-ring.citestns.svc.cluster.local:7946
+      - dns+enterprise-https-values-mimir-gossip-ring.citestns.svc.cluster.local.:7946
       tls_cert_path: /certs/tls.crt
       tls_enabled: true
       tls_insecure_skip_verify: false
@@ -254,7 +263,7 @@ data:
         tls_insecure_skip_verify: false
         tls_key_path: /certs/tls.key
         tls_server_name: gem.grafana.com
-      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.enterprise-https-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.enterprise-https-values-mimir-alertmanager-headless.citestns.svc.cluster.local./alertmanager
       enable_api: true
       rule_path: /data
       ruler_client:
@@ -277,10 +286,6 @@ data:
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:
-      grpc_server_max_concurrent_streams: 1000
-      grpc_server_max_connection_age: 2m
-      grpc_server_max_connection_age_grace: 5m
-      grpc_server_max_connection_idle: 1m
       grpc_tls_config:
         cert_file: /certs/tls.crt
         client_auth_type: VerifyClientCertIfGiven
@@ -291,6 +296,8 @@ data:
         key_file: /certs/tls.key
     store_gateway:
       sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
         kvstore:
           prefix: multi-zone/
         tokens_file_path: /data/tokens

@@ -1,0 +1,34 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/ingester.tenantsPageContent */ -}}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ingester tenants</title>
+</head>
+<body>
+<h1>Ingester tenants</h1>
+<p>Current time: {{ .Now }}</p>
+<table border="1" cellpadding="5" style="border-collapse: collapse">
+    <thead>
+    <tr>
+        <th>Tenant</th>
+        <th>Blocks</th>
+        <th>Head MinT</th>
+        <th>Head MaxT</th>
+        <th>Warning</th>
+    </tr>
+    </thead>
+    <tbody style="font-family: monospace;">
+    {{ range .Tenants }}
+        <tr>
+            <td><a href="tsdb/{{ .Tenant }}">{{ .Tenant }}</a></td>
+            <td>{{.Blocks}}</td>
+            <td>{{.MinTime}}</td>
+            <td>{{.MaxTime}}</td>
+            <td>{{.Warning}}</td>
+        </tr>
+    {{ end }}
+    </tbody>
+</table>
+</body>
+</html>

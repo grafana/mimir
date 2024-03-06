@@ -42,8 +42,8 @@ const (
 	DebugMetas = "debug/metas"
 )
 
-// Download downloads directory that is meant to be block directory. If any of the files
-// have a hash calculated in the meta file and it matches with what is in the destination path then
+// Download downloads a directory meant to be a block directory. If any one of the files
+// has a hash calculated in the meta file and it matches with what is in the destination path then
 // we do not download it. We always re-download the meta file.
 func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id ulid.ULID, dst string, options ...objstore.DownloadOption) error {
 	if err := os.MkdirAll(dst, 0750); err != nil {
@@ -354,5 +354,14 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 	}
 	markedForNoCompact.Inc()
 	level.Info(logger).Log("msg", "block has been marked for no compaction", "block", id)
+	return nil
+}
+
+func DeleteNoCompactMarker(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID) error {
+	m := path.Join(id.String(), NoCompactMarkFilename)
+	if err := bkt.Delete(ctx, m); err != nil {
+		return errors.Wrapf(err, "deletion of no-compaction marker for block %s has failed", id.String())
+	}
+	level.Info(logger).Log("msg", "no-compaction marker has been deleted; block can be compacted in the future", "block", id)
 	return nil
 }

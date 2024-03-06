@@ -34,8 +34,9 @@ const (
 )
 
 type LabelNamesRequest struct {
-	Matchers []*labels.Matcher
-	Limit    int
+	Matchers    []*labels.Matcher
+	CountMethod CountMethod
+	Limit       int
 }
 
 // Strings returns a full representation of the request. The returned string can be
@@ -50,6 +51,10 @@ func (r *LabelNamesRequest) String() string {
 		}
 		b.WriteString(matcher.String())
 	}
+
+	// Add count method.
+	b.WriteRune(stringParamSeparator)
+	b.WriteString(string(r.CountMethod))
 
 	// Add limit.
 	b.WriteRune(stringParamSeparator)
@@ -81,6 +86,11 @@ func DecodeLabelNamesRequestFromValues(values url.Values) (*LabelNamesRequest, e
 	}
 
 	parsed.Limit, err = extractLimit(values)
+	if err != nil {
+		return nil, err
+	}
+
+	parsed.CountMethod, err = extractCountMethod(values)
 	if err != nil {
 		return nil, err
 	}
@@ -183,14 +193,23 @@ func extractSelector(values url.Values) (matchers []*labels.Matcher, err error) 
 	}
 
 	// Ensure stable sorting (improves query results cache hit ratio).
-	slices.SortFunc(matchers, func(a, b *labels.Matcher) bool {
-		if a.Name != b.Name {
-			return a.Name < b.Name
+	slices.SortFunc(matchers, func(a, b *labels.Matcher) int {
+		switch {
+		case a.Name < b.Name:
+			return -1
+		case a.Name > b.Name:
+			return 1
+		case a.Type < b.Type:
+			return -1
+		case a.Type > b.Type:
+			return 1
+		case a.Value < b.Value:
+			return -1
+		case a.Value > b.Value:
+			return 1
+		default:
+			return 0
 		}
-		if a.Type != b.Type {
-			return a.Type < b.Type
-		}
-		return a.Value < b.Value
 	})
 
 	return matchers, nil
@@ -254,4 +273,50 @@ func extractCountMethod(values url.Values) (countMethod CountMethod, err error) 
 	default:
 		return "", fmt.Errorf("invalid 'count_method' param '%v'. valid options are: [%s]", countMethodParams[0], strings.Join([]string{string(ActiveMethod), string(InMemoryMethod)}, ","))
 	}
+}
+
+type ActiveSeriesRequest struct {
+	Matchers []*labels.Matcher
+}
+
+// DecodeActiveSeriesRequest decodes the input http.Request into an ActiveSeriesRequest.
+func DecodeActiveSeriesRequest(r *http.Request) (*ActiveSeriesRequest, error) {
+	if err := r.ParseForm(); err != nil {
+		return nil, err
+	}
+
+	return DecodeActiveSeriesRequestFromValues(r.Form)
+}
+
+// DecodeActiveSeriesRequestFromValues is like DecodeActiveSeriesRequest but takes an url.Values parameter.
+func DecodeActiveSeriesRequestFromValues(values url.Values) (*ActiveSeriesRequest, error) {
+	var (
+		parsed = &ActiveSeriesRequest{}
+		err    error
+	)
+
+	if !values.Has("selector") {
+		return nil, fmt.Errorf("missing 'selector' parameter")
+	}
+
+	parsed.Matchers, err = extractSelector(values)
+	if err != nil {
+		return nil, err
+	}
+
+	return parsed, nil
+}
+
+// String returns a string representation that uniquely identifies the request.
+func (r *ActiveSeriesRequest) String() string {
+	b := strings.Builder{}
+
+	for idx, matcher := range r.Matchers {
+		if idx > 0 {
+			b.WriteRune(stringValueSeparator)
+		}
+		b.WriteString(matcher.String())
+	}
+
+	return b.String()
 }

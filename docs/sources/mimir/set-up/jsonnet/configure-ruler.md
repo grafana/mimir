@@ -44,8 +44,10 @@ To get started, use the `local` client type for initial testing:
 
 If you are using object storage, you must set `ruler_storage_bucket_name` to the name of the bucket that you want to use.
 
-> **Note:** If ruler object storage credentials differ from the ones defined in the common section, you need to manually provide them by using additional command line arguments.
-> For more information, see [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../references/configuration-parameters#ruler_storage" >}}).
+{{< admonition type="note" >}}
+If ruler object storage credentials differ from the ones defined in the common section, you need to manually provide them by using additional command line arguments.
+For more information, refer to [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../configure/configuration-parameters#ruler_storage" >}}).
+{{< /admonition >}}
 
 ## Operational modes
 
@@ -56,17 +58,22 @@ To enable the remote operational mode, add the following code to the Jsonnet:
 
 ```jsonnet
 {
-  _config+:: {
+  _config+:: {n
     ruler_remote_evaluation_enabled: true,
   },
 }
 ```
 
-> **Note:** To support the _remote_ operational mode, a separate query path is deployed to evaluate rules that consist of three additional Kubernetes deployments:
->
-> - `ruler-query-frontend`
-> - `ruler-query-scheduler`
-> - `ruler-querier`
+{{< admonition type="note" >}}
+To support the _remote_ operational mode, the configuration includes three additional Kubernetes Deployments as a separate query path.
+
+These are:
+
+- `ruler-query-frontend`
+- `ruler-query-scheduler`
+- `ruler-querier`
+
+{{< /admonition >}}
 
 ### Migrate to remote evaluation
 

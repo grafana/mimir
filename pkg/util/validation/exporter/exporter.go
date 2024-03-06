@@ -67,6 +67,7 @@ const (
 	maxChunksPerQuery                          = "max_fetched_chunks_per_query"
 	maxFetchedSeriesPerQuery                   = "max_fetched_series_per_query"
 	maxFetchedChunkBytesPerQuery               = "max_fetched_chunk_bytes_per_query"
+	maxEstimatedChunksPerQueryMultiplier       = "max_estimated_fetched_chunks_per_query_multiplier"
 	rulerMaxRulesPerRuleGroup                  = "ruler_max_rules_per_rule_group"
 	rulerMaxRuleGroupsPerTenant                = "ruler_max_rule_groups_per_tenant"
 	maxGlobalMetricsWithMetadataPerUser        = "max_global_metadata_per_user"
@@ -82,7 +83,7 @@ const (
 // Config holds the configuration for an overrides-exporter
 type Config struct {
 	Ring           RingConfig             `yaml:"ring"`
-	EnabledMetrics flagext.StringSliceCSV `yaml:"enabled_metrics" category:"experimental"`
+	EnabledMetrics flagext.StringSliceCSV `yaml:"enabled_metrics"`
 
 	// This allows downstream projects to define their own metrics and expose them via the exporter.
 	// Donwstream projects should be responsible for enabling/disabling their own metrics,
@@ -217,6 +218,9 @@ func setupExportedMetrics(enabledMetrics *util.AllowedTenants, extraMetrics []Ex
 	}
 	if enabledMetrics.IsAllowed(maxFetchedChunkBytesPerQuery) {
 		exportedMetrics = append(exportedMetrics, ExportedMetric{maxFetchedChunkBytesPerQuery, func(limits *validation.Limits) float64 { return float64(limits.MaxFetchedChunkBytesPerQuery) }})
+	}
+	if enabledMetrics.IsAllowed(maxEstimatedChunksPerQueryMultiplier) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{maxEstimatedChunksPerQueryMultiplier, func(limits *validation.Limits) float64 { return limits.MaxEstimatedChunksPerQueryMultiplier }})
 	}
 
 	// Ruler limits
