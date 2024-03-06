@@ -29,6 +29,8 @@ type SegmentReader struct {
 
 	// segmentsBuffer holds a buffer of fetched segments, ready to be returned by WaitNextSegment().
 	segmentsBuffer chan *Segment
+
+	backoffConfig backoff.Config // Storing backoff config in the field allows us to override it in the test.
 }
 
 func NewSegmentReader(bucket objstore.InstrumentedBucket, metadata *MetadataStore, partitionID int32, lastOffsetID int64, bufferSize int, hedgeDelay, readTimeout time.Duration, reg prometheus.Registerer, logger log.Logger) *SegmentReader {
@@ -44,23 +46,26 @@ func NewSegmentReader(bucket objstore.InstrumentedBucket, metadata *MetadataStor
 	}
 
 	c.Service = services.NewBasicService(nil, c.running, nil)
+	c.backoffConfig = backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: time.Second,
+		MaxRetries: 0,
+	}
 	return c
 }
 
 func (c *SegmentReader) running(ctx context.Context) error {
-	try := backoff.New(ctx, backoff.Config{
-		MinBackoff: 100 * time.Millisecond,
-		MaxBackoff: time.Second,
-		MaxRetries: 0,
-	})
+	try := backoff.New(ctx, c.backoffConfig)
 
+	var segments []*Segment
 	for try.Ongoing() {
 		refs := c.metadata.WatchSegments(ctx, c.partitionID, c.lastOffsetID)
 
-		segments, err := c.fetchSegments(ctx, refs)
+		var err error
+		segments, err = c.fetchSegments(ctx, refs, segments)
 		if err != nil {
 			try.Wait()
-			break
+			continue
 		}
 		try.Reset()
 
@@ -81,22 +86,40 @@ func (c *SegmentReader) running(ctx context.Context) error {
 }
 
 // Fetches segments in parallel. Returns segments in the same order as refs.
-func (c *SegmentReader) fetchSegments(ctx context.Context, segmentRefs []SegmentRef) ([]*Segment, error) {
-	segments := make([]*Segment, len(segmentRefs))
+// SegmentBuf may have some segments already from previous fetch. If refs are correct, such segments are not reused.
+// If no error is returned, all segments were fetched.
+func (c *SegmentReader) fetchSegments(ctx context.Context, segmentRefs []SegmentRef, segmentsBuf []*Segment) ([]*Segment, error) {
+	if cap(segmentsBuf) < len(segmentRefs) {
+		segmentsBuf = make([]*Segment, len(segmentRefs))
+	}
+	// We use cap, not len, because we want to clear the rest of the slice (after fetched segments) later.
+	segmentsBuf = segmentsBuf[:cap(segmentsBuf)]
 
 	err := concurrency.ForEachJob(ctx, len(segmentRefs), 0, func(ctx context.Context, idx int) error {
 		ref := segmentRefs[idx]
-		segment, err := c.storage.FetchSegmentWithRetries(ctx, ref, c.hedgeDelay, c.readTimeout)
-		if err != nil {
-			level.Warn(c.logger).Log("msg", "segment reader failed to fetch segment", "segment_ref", ref.String(), "err", err)
+		if segmentsBuf[idx] != nil && segmentsBuf[idx].Ref == ref {
+			// We already have the segment from previous fetch. No need to fetch it again.
 			return nil
 		}
 
+		segment, err := c.storage.FetchSegmentWithRetries(ctx, ref, c.hedgeDelay, c.readTimeout)
+		if err != nil {
+			level.Warn(c.logger).Log("msg", "segment reader failed to fetch segment", "segment_ref", ref.String(), "err", err)
+			return err
+		}
+
 		level.Debug(c.logger).Log("msg", "segment reader fetched segment", "segment_ref", ref.String())
-		segments[idx] = segment
+		segmentsBuf[idx] = segment
 		return nil
 	})
-	return segments, err
+
+	// Clear remaining segments in the buffer.
+	for idx := len(segmentRefs); idx < cap(segmentsBuf); idx++ {
+		segmentsBuf[idx] = nil
+	}
+
+	// Only return fetched segments. In case of error, caller will pass the same buffer, and we may find that some segments are already fetched.
+	return segmentsBuf[:len(segmentRefs)], err
 }
 
 // WaitNextSegment blocks until the next segment has been fetched by the reader,

@@ -27,9 +27,10 @@ import (
 // SegmentStorage is a low-level client to write and read segments to/from the storage.
 // Use SegmentReader if you need an higher level client to read segments.
 type SegmentStorage struct {
-	bucket   objstore.InstrumentedBucket
-	metadata *MetadataStore
-	metrics  storeMetrics
+	bucket        objstore.InstrumentedBucket
+	metadata      *MetadataStore
+	metrics       storeMetrics
+	backoffConfig backoff.Config // Using field allows us to override backoff config in the test.
 }
 
 func NewSegmentStorage(bucket objstore.InstrumentedBucket, metadata *MetadataStore, reg prometheus.Registerer) *SegmentStorage {
@@ -37,6 +38,11 @@ func NewSegmentStorage(bucket objstore.InstrumentedBucket, metadata *MetadataSto
 		bucket:   bucket,
 		metadata: metadata,
 		metrics:  newStoreMetrics(reg),
+		backoffConfig: backoff.Config{
+			MinBackoff: 100 * time.Millisecond,
+			MaxBackoff: 500 * time.Millisecond,
+			MaxRetries: 3,
+		},
 	}
 }
 
@@ -133,11 +139,7 @@ func (s *SegmentStorage) DeleteSegment(ctx context.Context, ref SegmentRef) erro
 
 // FetchSegmentWithRetries is like FetchSegment but retries few times on failure.
 func (s *SegmentStorage) FetchSegmentWithRetries(ctx context.Context, ref SegmentRef, hedgeDelay, readTimeout time.Duration) (segment *Segment, returnErr error) {
-	try := backoff.New(ctx, backoff.Config{
-		MinBackoff: 100 * time.Millisecond,
-		MaxBackoff: 500 * time.Millisecond,
-		MaxRetries: 3,
-	})
+	try := backoff.New(ctx, s.backoffConfig)
 
 	for try.Ongoing() {
 		segment, returnErr = s.FetchSegment(ctx, ref, hedgeDelay, readTimeout)
