@@ -20,6 +20,8 @@ type SegmentReader struct {
 
 	partitionID  int32
 	lastOffsetID int64
+	hedgeDelay   time.Duration
+	readTimeout  time.Duration
 	logger       log.Logger
 	storage      *SegmentStorage
 	metadata     *MetadataStore
@@ -28,10 +30,12 @@ type SegmentReader struct {
 	segmentsBuffer chan *Segment
 }
 
-func NewSegmentReader(bucket objstore.InstrumentedBucket, metadata *MetadataStore, partitionID int32, lastOffsetID int64, bufferSize int, reg prometheus.Registerer, logger log.Logger) *SegmentReader {
+func NewSegmentReader(bucket objstore.InstrumentedBucket, metadata *MetadataStore, partitionID int32, lastOffsetID int64, bufferSize int, hedgeDelay, readTimeout time.Duration, reg prometheus.Registerer, logger log.Logger) *SegmentReader {
 	c := &SegmentReader{
 		partitionID:    partitionID,
 		lastOffsetID:   lastOffsetID,
+		hedgeDelay:     hedgeDelay,
+		readTimeout:    readTimeout,
 		logger:         logger,
 		storage:        NewSegmentStorage(bucket, metadata, reg),
 		metadata:       metadata,
@@ -53,7 +57,7 @@ func (c *SegmentReader) running(ctx context.Context) error {
 		refs := c.metadata.WatchSegments(ctx, c.partitionID, c.lastOffsetID)
 
 		for _, ref := range refs {
-			segment, err := c.storage.FetchSegmentWithRetries(ctx, ref)
+			segment, err := c.storage.FetchSegmentWithRetries(ctx, ref, c.hedgeDelay, c.readTimeout)
 			if err != nil {
 				level.Warn(c.logger).Log("msg", "segment reader failed to fetch segment", "segment_ref", ref.String(), "err", err)
 

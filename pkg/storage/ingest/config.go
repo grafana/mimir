@@ -29,6 +29,8 @@ type Config struct {
 	LastProducedOffsetPollInterval time.Duration `yaml:"last_produced_offset_poll_interval"`
 	FlushInterval                  time.Duration `yaml:"flush_interval"`
 	UploadHedgeDelay               time.Duration `yaml:"upload_hedge_delay"`
+	ReadHedgeDelay                 time.Duration `yaml:"read_hedge_delay"`
+	ReadTimeout                    time.Duration `yaml:"read_timeout"`
 	LogSlowRequests                bool          `yaml:"log_slow_requests"`
 
 	PostgresConfig         PostgresqlConfig       `yaml:"postgresql"`
@@ -45,6 +47,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.LastProducedOffsetPollInterval, "ingest-storage.last-produced-offset-poll-interval", time.Second, "How frequently to poll the last produced offset, used to enforce strong read consistency.")
 	f.DurationVar(&cfg.FlushInterval, "ingest-storage.flush-interval", 250*time.Millisecond, "The interval at which writes will be flushed to segment storage.")
 	f.DurationVar(&cfg.UploadHedgeDelay, "ingest-storage.upload-hedge-delay", 250*time.Millisecond, "The delay after which a hedged request should be sent for a pending segment upload.")
+	f.DurationVar(&cfg.ReadHedgeDelay, "ingest-storage.read-hedge-delay", time.Second, "The delay after which a hedged request should be sent for a segment read request.")
+	f.DurationVar(&cfg.ReadTimeout, "ingest-storage.read-timeout", 5*time.Second, "Read segment timeout.")
 	f.BoolVar(&cfg.LogSlowRequests, "ingest-storage.log-slow-requests", false, "Log slow requests.")
 
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("ingest-storage.", "ingest", f)

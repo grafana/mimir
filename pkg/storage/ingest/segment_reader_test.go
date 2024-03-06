@@ -45,7 +45,7 @@ func TestSegmentReader_WaitNextSegment(t *testing.T) {
 		})
 
 		// Start the reader.
-		reader := NewSegmentReader(instrumentedBucket, metadata, partitionID, -1, 1, nil, log.NewNopLogger())
+		reader := NewSegmentReader(instrumentedBucket, metadata, partitionID, -1, 1, time.Second, time.Second, nil, log.NewNopLogger())
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))

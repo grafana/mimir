@@ -74,7 +74,21 @@ func (s *SegmentStorage) CommitSegment(ctx context.Context, partitionID int32, s
 }
 
 // FetchSegment reads a segment from the storage.
-func (s *SegmentStorage) FetchSegment(ctx context.Context, ref SegmentRef) (_ *Segment, returnErr error) {
+func (s *SegmentStorage) FetchSegment(ctx context.Context, ref SegmentRef, hedgeDelay, readTimeout time.Duration) (_ *Segment, returnErr error) {
+	hedgePolicy := hedgepolicy.BuilderWithDelay[*Segment](hedgeDelay).
+		OnHedge(func(f failsafe.ExecutionEvent[*Segment]) {
+			s.metrics.readHedges.Inc()
+		}).Build()
+
+	return failsafe.NewExecutor[*Segment](hedgePolicy).WithContext(ctx).GetWithExecution(func(exec failsafe.Execution[*Segment]) (*Segment, error) {
+		ctxWithTimeout, cancel := context.WithTimeout(exec.Context(), readTimeout)
+		defer cancel()
+
+		return s.fetchSegment(ctxWithTimeout, ref)
+	})
+}
+
+func (s *SegmentStorage) fetchSegment(ctx context.Context, ref SegmentRef) (_ *Segment, returnErr error) {
 	objectPath := getSegmentObjectPath(ref.PartitionID, ref.ObjectID)
 
 	reader, err := s.bucket.Get(ctx, objectPath)
@@ -118,7 +132,7 @@ func (s *SegmentStorage) DeleteSegment(ctx context.Context, ref SegmentRef) erro
 }
 
 // FetchSegmentWithRetries is like FetchSegment but retries few times on failure.
-func (s *SegmentStorage) FetchSegmentWithRetries(ctx context.Context, ref SegmentRef) (segment *Segment, returnErr error) {
+func (s *SegmentStorage) FetchSegmentWithRetries(ctx context.Context, ref SegmentRef, hedgeDelay, readTimeout time.Duration) (segment *Segment, returnErr error) {
 	try := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: 500 * time.Millisecond,
@@ -126,7 +140,7 @@ func (s *SegmentStorage) FetchSegmentWithRetries(ctx context.Context, ref Segmen
 	})
 
 	for try.Ongoing() {
-		segment, returnErr = s.FetchSegment(ctx, ref)
+		segment, returnErr = s.FetchSegment(ctx, ref, hedgeDelay, readTimeout)
 		if returnErr == nil {
 			return
 		}
@@ -144,6 +158,7 @@ func (s *SegmentStorage) FetchSegmentWithRetries(ctx context.Context, ref Segmen
 
 type storeMetrics struct {
 	uploadHedges prometheus.Counter
+	readHedges   prometheus.Counter
 }
 
 func newStoreMetrics(reg prometheus.Registerer) storeMetrics {
@@ -153,6 +168,10 @@ func newStoreMetrics(reg prometheus.Registerer) storeMetrics {
 		uploadHedges: factory.NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_segment_uploads_hedged_total",
 			Help: "Total number of hedges performed for segment uploads.",
+		}),
+		readHedges: factory.NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_segment_reads_hedged_total",
+			Help: "Total number of hedges performed for segment reads.",
 		}),
 	}
 }

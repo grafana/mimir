@@ -93,7 +93,7 @@ func TestWriteAgent(t *testing.T) {
 		partitionPrefix := fmt.Sprintf("%d-", p)
 
 		for _, s := range segments {
-			seg, err := segStorage.FetchSegment(context.Background(), s)
+			seg, err := segStorage.FetchSegment(context.Background(), s, time.Second, time.Second)
 			require.NoError(t, err)
 
 			piecesCount += len(seg.Data.Pieces)
@@ -207,7 +207,7 @@ func TestWriteAgent_ConcurrentFlushes(t *testing.T) {
 		partitionPrefix := fmt.Sprintf("%d-", p)
 
 		for _, s := range segments {
-			seg, err := segmentStore.FetchSegment(context.Background(), s)
+			seg, err := segmentStore.FetchSegment(context.Background(), s, time.Second, time.Second)
 			require.NoError(t, err)
 			require.Greater(t, len(seg.Data.Pieces), 0)
 
@@ -306,7 +306,7 @@ func TestWriteAgent_FlushOnceSegmentSizeIsGreaterThanMax(t *testing.T) {
 		partitionPrefix := fmt.Sprintf("%d-", p)
 
 		for _, s := range segments {
-			seg, err := segmentStore.FetchSegment(context.Background(), s)
+			seg, err := segmentStore.FetchSegment(context.Background(), s, time.Second, time.Second)
 			require.NoError(t, err)
 			require.Greater(t, len(seg.Data.Pieces), 0)
 

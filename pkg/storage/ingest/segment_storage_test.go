@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"slices"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 )
@@ -97,6 +99,8 @@ func TestSegmentStorage_FetchSegment(t *testing.T) {
 	instrumentedBucket := objstore.WrapWithMetrics(bucket, nil, "test")
 
 	t.Run("should read a segment from the storage", func(t *testing.T) {
+		t.Parallel()
+
 		// Upload a segment to the storage.
 		expectedData := mockSegmentData(tenantID, series1)
 
@@ -106,11 +110,105 @@ func TestSegmentStorage_FetchSegment(t *testing.T) {
 
 		// Then read it back via SegmentStorage.
 		storage := NewSegmentStorage(instrumentedBucket, NewMetadataStore(&metadataDatabaseMock{}, log.NewNopLogger()), nil)
-		actual, err := storage.FetchSegment(ctx, SegmentRef{PartitionID: partitionID, OffsetID: 0, ObjectID: objectID})
+		actual, err := storage.FetchSegment(ctx, SegmentRef{PartitionID: partitionID, OffsetID: 0, ObjectID: objectID}, time.Second, time.Second)
 		require.NoError(t, err)
 
 		actual.Data.ClearUnmarshalData()
 		require.Equal(t, expectedData, actual.Data)
+	})
+
+	t.Run("should enforce timeout", func(t *testing.T) {
+		t.Parallel()
+
+		const timeout = time.Second
+
+		// Upload a segment to the storage.
+		expectedData := mockSegmentData(tenantID, series1)
+
+		rawData, err := expectedData.Marshal()
+		require.NoError(t, err)
+		require.NoError(t, bucket.Upload(ctx, getSegmentObjectPath(partitionID, objectID), bytes.NewReader(rawData)))
+
+		// Mock the bucket to simulate a very slow Get().
+		slowBucket := newBucketWithHooks(bucket)
+		slowBucket.beforeGet = func(ctx context.Context, name string) (io.ReadCloser, error, bool) {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err(), true
+
+			case <-time.After(timeout * 5):
+				t.Error("expected to get context canceled but wasn't")
+				return nil, nil, false
+			}
+		}
+
+		// Read the segment. Should hit timeout.
+		storage := NewSegmentStorage(objstore.WrapWithMetrics(slowBucket, nil, "test"), NewMetadataStore(&metadataDatabaseMock{}, log.NewNopLogger()), nil)
+
+		startTime := time.Now()
+		segment, err := storage.FetchSegment(ctx, SegmentRef{PartitionID: partitionID, OffsetID: 0, ObjectID: objectID}, time.Hour, timeout)
+		elapsedTime := time.Since(startTime)
+
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.Nil(t, segment)
+		assert.InDelta(t, elapsedTime.Seconds(), timeout.Seconds(), (250 * time.Millisecond).Seconds())
+	})
+
+	t.Run("should hedge the request if the first one is slow", func(t *testing.T) {
+		t.Parallel()
+
+		const (
+			timeout    = 5 * time.Second
+			hedgeDelay = time.Second
+		)
+
+		// Upload a segment to the storage.
+		expectedData := mockSegmentData(tenantID, series1)
+
+		rawData, err := expectedData.Marshal()
+		require.NoError(t, err)
+		require.NoError(t, bucket.Upload(ctx, getSegmentObjectPath(partitionID, objectID), bytes.NewReader(rawData)))
+
+		// Mock the bucket to simulate a very slow 1st Get().
+		getCount := atomic.NewInt64(0)
+		getRequests := sync.WaitGroup{}
+		slowBucket := newBucketWithHooks(bucket)
+		slowBucket.beforeGet = func(ctx context.Context, name string) (io.ReadCloser, error, bool) {
+			getRequests.Add(1)
+			defer getRequests.Done()
+
+			// Simulate a slow request only for the 1st one.
+			if getCount.Inc() != 1 {
+				return nil, nil, false
+			}
+
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err(), true
+
+			case <-time.After(timeout * 5):
+				t.Error("expected to get context canceled but wasn't")
+				return nil, nil, false
+			}
+		}
+
+		// Read the segment. Should hit timeout.
+		storage := NewSegmentStorage(objstore.WrapWithMetrics(slowBucket, nil, "test"), NewMetadataStore(&metadataDatabaseMock{}, log.NewNopLogger()), nil)
+
+		startTime := time.Now()
+		segment, err := storage.FetchSegment(ctx, SegmentRef{PartitionID: partitionID, OffsetID: 0, ObjectID: objectID}, hedgeDelay, timeout)
+		elapsedTime := time.Since(startTime)
+
+		require.NoError(t, err)
+		require.NotNil(t, segment)
+		assert.Equal(t, int64(2), getCount.Load())
+		assert.InDelta(t, elapsedTime.Seconds(), hedgeDelay.Seconds(), (250 * time.Millisecond).Seconds())
+
+		segment.Data.ClearUnmarshalData()
+		require.Equal(t, expectedData, segment.Data)
+
+		// Wait until all Get() requests have done to ensure the slow one was canceled.
+		getRequests.Wait()
 	})
 }
 
@@ -576,4 +674,26 @@ func (m *metadataDatabaseMemory) getBeforeGetConsumerOffsetHook() func(ctx conte
 	defer m.beforeHooksMx.Unlock()
 
 	return m.beforeGetConsumerOffset
+}
+
+type bucketWithHooks struct {
+	objstore.Bucket
+
+	beforeGet func(ctx context.Context, name string) (io.ReadCloser, error, bool)
+}
+
+func newBucketWithHooks(wrapped objstore.Bucket) *bucketWithHooks {
+	return &bucketWithHooks{
+		Bucket: wrapped,
+	}
+}
+
+func (b *bucketWithHooks) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	if hook := b.beforeGet; hook != nil {
+		if reader, err, handled := hook(ctx, name); handled {
+			return reader, err
+		}
+	}
+
+	return b.Bucket.Get(ctx, name)
 }
