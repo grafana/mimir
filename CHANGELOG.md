@@ -1,8 +1,6 @@
 # Changelog
 
 ## main / unreleased
-* [CHANGE] Ruler: add the possibility to set alert_relabel_configs to relabel labels before sending to the alertmanager.
-* [CHANGE] Ruler: add the possibility to add exteranl label labels before sending to the alertmanager.
 
 ### Grafana Mimir
 
@@ -47,6 +45,8 @@
 * [FEATURE] Alertmanager API: added `-alertmanager.grafana-alertmanager-compatibility-enabled` CLI flag (and respective YAML config option) to enable an experimental API endpoints that support the migration of the Grafana Alertmanager. #7057
 * [FEATURE] Alertmanager: Added `-alertmanager.utf8-strict-mode-enabled` to control support for any UTF-8 character as part of Alertmanager configuration/API matchers and labels. It's default value is set to `false`. #6898
 * [FEATURE] Querier: added `histogram_avg()` function support to PromQL. #7293
+* [FEATURE] Ruler: add the possibility to set alert_relabel_configs to relabel labels before sending to the alertmanager.
+* [FEATURE] Ruler: add the possibility to add exteranl label labels before sending to the alertmanager.
 * [ENHANCEMENT] Store-gateway: add no-compact details column on store-gateway tenants admin UI. #6848
 * [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
 * [ENHANCEMENT] Distributor: improve efficiency of some errors #6785
