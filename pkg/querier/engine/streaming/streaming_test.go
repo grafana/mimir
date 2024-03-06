@@ -14,13 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 )
 
 func setupTestData(stor *teststorage.TestStorage, interval, numIntervals int) error {
@@ -351,8 +350,8 @@ func TestQuery(t *testing.T) {
 				require.NoError(t, err)
 
 				// There's no guarantee that series from the standard engine are sorted.
-				slices.SortFunc(standardVector, func(a, b promql.Sample) bool {
-					return labels.Compare(a.Metric, b.Metric) < 0
+				slices.SortFunc(standardVector, func(a, b promql.Sample) int {
+					return labels.Compare(a.Metric, b.Metric)
 				})
 
 				require.Len(t, streamingVector, len(standardVector))
@@ -372,8 +371,8 @@ func TestQuery(t *testing.T) {
 				require.NoError(t, err)
 
 				// There's no guarantee that series from the standard engine are sorted.
-				slices.SortFunc(standardMatrix, func(a, b promql.Series) bool {
-					return labels.Compare(a.Metric, b.Metric) < 0
+				slices.SortFunc(standardMatrix, func(a, b promql.Series) int {
+					return labels.Compare(a.Metric, b.Metric)
 				})
 
 				require.Len(t, streamingMatrix, len(standardMatrix))

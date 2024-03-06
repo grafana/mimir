@@ -10,12 +10,11 @@ import (
 	"fmt"
 	"time"
 
-	"golang.org/x/exp/slices"
-
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/querier/engine/streaming/operator"
 )

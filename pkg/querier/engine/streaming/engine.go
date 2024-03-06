@@ -13,10 +13,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
+
 func NewEngine(opts promql.EngineOpts) promql.QueryEngine {
 	lookbackDelta := opts.LookbackDelta
 	if lookbackDelta == 0 {
-		lookbackDelta = promql.DefaultLookbackDelta
+		lookbackDelta = defaultLookbackDelta
 	}
 
 	// TODO: add support for features in EngineOpts (logging, metrics, stats, limits, timeouts, query tracker)

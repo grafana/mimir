@@ -70,12 +70,12 @@ func (m *MatrixSelectorWithTransformationOverRange) Series(ctx context.Context) 
 	}
 
 	var err error
-	m.querier, err = m.Queryable.Querier(ctx, start, m.endTimestamp)
+	m.querier, err = m.Queryable.Querier(start, m.endTimestamp)
 	if err != nil {
 		return nil, err
 	}
 
-	ss := m.querier.Select(true, hints, m.Matchers...)
+	ss := m.querier.Select(ctx, true, hints, m.Matchers...)
 	m.currentSeriesBatch = m.Pool.GetSeriesBatch()
 	incompleteBatch := m.currentSeriesBatch
 	totalSeries := 0

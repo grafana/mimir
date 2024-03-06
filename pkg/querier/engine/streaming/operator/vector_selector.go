@@ -62,12 +62,12 @@ func (v *VectorSelector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	}
 
 	var err error
-	v.querier, err = v.Queryable.Querier(ctx, start, v.endTimestamp)
+	v.querier, err = v.Queryable.Querier(start, v.endTimestamp)
 	if err != nil {
 		return nil, err
 	}
 
-	ss := v.querier.Select(true, hints, v.Matchers...)
+	ss := v.querier.Select(ctx, true, hints, v.Matchers...)
 	v.currentSeriesBatch = v.Pool.GetSeriesBatch()
 	incompleteBatch := v.currentSeriesBatch
 	totalSeries := 0
