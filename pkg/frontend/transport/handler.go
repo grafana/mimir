@@ -190,6 +190,17 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, r.Header.Get("User-Agent"), params) })
 	defer f.at.Delete(activityIndex)
 
+	if isStreamingEndpoint(r) {
+		// Disable the write deadline for streaming endpoints.
+		rc := http.NewResponseController(w)
+		err = rc.SetWriteDeadline(time.Time{})
+		if err != nil {
+			err := fmt.Errorf("failed to set write deadline for response writer: %w", err)
+			writeError(w, apierror.New(apierror.TypeInternal, err.Error()))
+			return
+		}
+	}
+
 	startTime := time.Now()
 	resp, err := f.roundTripper.RoundTrip(r)
 	queryResponseTime := time.Since(startTime)
@@ -440,4 +451,8 @@ func httpRequestActivity(request *http.Request, userAgent string, requestParams 
 
 	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
 	return fmt.Sprintf("user:%s UA:%s req:%s %s %s", tenantID, userAgent, request.Method, request.URL.Path, params)
+}
+
+func isStreamingEndpoint(r *http.Request) bool {
+	return strings.HasSuffix(r.URL.Path, "api/v1/cardinality/active_series")
 }
