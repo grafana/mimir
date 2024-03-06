@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -15,6 +16,10 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"go.uber.org/multierr"
+)
+
+const (
+	consistencyErrTolerance = 5 * time.Second
 )
 
 type MetadataStore struct {
@@ -126,24 +131,83 @@ func (s *MetadataStore) GetLastProducedOffsetID(ctx context.Context, partitionID
 // you can specify lastOffsetID set to -1.
 func (s *MetadataStore) WatchSegments(ctx context.Context, partitionID int32, lastOffsetID int64) []SegmentRef {
 	try := backoff.New(ctx, backoff.Config{
-		MinBackoff: 100 * time.Millisecond,
-		MaxBackoff: 500 * time.Millisecond,
+		MinBackoff: 25 * time.Millisecond,
+		MaxBackoff: 250 * time.Millisecond,
 		MaxRetries: 0, // Retry indefinitely.
 	})
 
+	// Keep track of when a consistency error start.
+	var consistencyErrSince time.Time
+
 	for try.Ongoing() {
-		segments, err := s.db.ListSegments(ctx, partitionID, lastOffsetID)
-		if err != nil {
-			level.Warn(s.logger).Log("msg", "failed to fetch segments while watching", "partition_id", partitionID, "last_offset_id", lastOffsetID, "err", err)
+		uncheckedSegments, listErr := s.db.ListSegments(ctx, partitionID, lastOffsetID)
+		if listErr != nil {
+			level.Warn(s.logger).Log("msg", "failed to fetch segments while watching", "partition_id", partitionID, "last_offset_id", lastOffsetID, "err", listErr)
+			// Continue to execute because ListSegments() may return error and segments at the same time.
 		}
-		if len(segments) > 0 {
-			return segments
+
+		// Enforce consistent segments.
+		consistentSegments, consistencyErr := enforceConsistentSegments(uncheckedSegments, lastOffsetID)
+		if consistencyErr != nil {
+			// This is not necessarily a critical error because a missing segment may be uploaded later
+			// but it's unexpected because we would expect the metadata store to enforce strong consistency.
+			// Moreover, some consistent segments may have been returned by enforceConsistentSegments() so
+			// we should move on anyway.
+			level.Warn(s.logger).Log("msg", "segments inconsistency detected", "err", consistencyErr)
+
+			if consistencyErrSince.IsZero() {
+				consistencyErrSince = time.Now()
+			}
+		} else if listErr == nil {
+			// Reset consistency error tracker.
+			consistencyErrSince = time.Time{}
+		}
+
+		if len(consistentSegments) > 0 {
+			return consistentSegments
+		}
+
+		if consistencyErr != nil {
+			// Detected a consistency error and no valid segments. We tolerate this error for a short period of time
+			// but then we move on, otherwise the reader is blocked forever.
+			if time.Since(consistencyErrSince) > consistencyErrTolerance {
+				level.Error(s.logger).Log("msg", "segments inconsistency detected since long time, skipping inconsistent segments and moving on", "since", time.Since(consistencyErrSince))
+				return uncheckedSegments
+			}
 		}
 
 		try.Wait()
 	}
 
 	return nil
+}
+
+func enforceConsistentSegments(segments []SegmentRef, lastOffsetID int64) (filtered []SegmentRef, err error) {
+	if len(segments) == 0 {
+		return segments, nil
+	}
+
+	var (
+		inconsistencyAtIdx int
+		inconsistencyErr   error
+	)
+
+	// Ensure all segment offsets are consistent.
+	for idx, segment := range segments {
+		if expectedOffsetID := lastOffsetID + 1 + int64(idx); segment.OffsetID != expectedOffsetID {
+			inconsistencyAtIdx = idx
+			inconsistencyErr = fmt.Errorf("segments inconsistency detected (expected offset ID: %d found: %d)", expectedOffsetID, segment.OffsetID)
+			break
+		}
+	}
+
+	// If no inconsistency has been found we can simply return the input list of segments.
+	if inconsistencyErr == nil {
+		return segments, nil
+	}
+
+	// We've found an inconsistency. We need to filter input segments and return a descriptive error.
+	return segments[:inconsistencyAtIdx], inconsistencyErr
 }
 
 // CommitLastConsumedOffset updates the last offset consumed by a given consumerID for a specific partitionID.
