@@ -73,7 +73,9 @@ message PrometheusLabelNamesQueryRequest {
   int64 start = 3;
   int64 end = 4;
 
-  LabelMatchers matchers = 5;
+  // matcherSets is a repeated field here unlike the protos used for downstream queriers,
+  // as the label request has not been split at this point in the stack
+  repeated LabelMatchers matcherSets = 5;
 
   Options options = 6 [(gogoproto.nullable) = false]; // why are these not nullable?
 
