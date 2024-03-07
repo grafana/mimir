@@ -87,7 +87,7 @@
 * [ENHANCEMENT] API: Use github.com/klauspost/compress for faster gzip and deflate compression of API responses. #7475
 * [ENHANCEMENT] Ingester: Limiting on owned series (`-ingester.use-ingester-owned-series-for-limits`) now prevents discards in cases where a tenant is sharded across all ingesters (or shuffle sharding is disabled) and the ingester count increases. #7411
 * [ENHANCEMENT] Block upload: include converted timestamps in the error message if block is from the future. #7538
-* [ENHANCEMENT] Query-frontend: Disable server-side write timeout for active series requests. #7553
+* [ENHANCEMENT] Query-frontend: Introduce `-query-frontend.response-stream-timeout` to allow configuring the server-side write timeout for active series requests. #7553
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
 * [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
