@@ -119,6 +119,7 @@
 * [BUGFIX] Ruler: fix regression that caused client errors to be tracked in `cortex_ruler_write_requests_failed_total` metric. #7472
 * [BUGFIX] promql: Fix Range selectors with an @ modifier are wrongly scoped in range queries. #7475
 * [BUGFIX] Fix metadata API using wrong JSON field names. #7475
+* [BUGFIX] Ruler: fix native histogram recording rule result corruption. #7552
 
 ### Mixin
 
