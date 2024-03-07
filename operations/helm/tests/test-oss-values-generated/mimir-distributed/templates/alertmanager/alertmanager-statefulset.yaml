@@ -45,10 +45,6 @@ spec:
           type: RuntimeDefault
       initContainers:
         []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -58,8 +54,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-values
             app.kubernetes.io/component: alertmanager
-      tolerations:
-        []
       terminationGracePeriodSeconds: 60
       volumes:
         - name: config

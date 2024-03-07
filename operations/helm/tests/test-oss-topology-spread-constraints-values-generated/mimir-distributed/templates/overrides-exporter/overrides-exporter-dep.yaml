@@ -43,8 +43,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: overrides-exporter
           imagePullPolicy: IfNotPresent
@@ -93,10 +91,6 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -104,8 +98,6 @@ spec:
         labelSelector:
           matchLabels:
             foo: bar
-      tolerations:
-        []
       terminationGracePeriodSeconds: 60
       volumes:
         - name: config
