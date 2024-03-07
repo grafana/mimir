@@ -15,6 +15,7 @@ message Piece {
   string tenant_id = 2;
   bytes data = 3;
   int64 created_at_ms = 4;
+  bool snappy_encoded = 6;
 }
 
 message WriteResponse {

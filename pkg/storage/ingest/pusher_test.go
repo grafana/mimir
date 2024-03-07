@@ -156,6 +156,23 @@ func TestPusherConsumer(t *testing.T) {
 			expectedWRs: writeReqs[0:2], // the rest of the requests are not attempted
 			expErr:      "ingester internal error",
 		},
+		"should skip requests with invalid data": {
+			segment: &Segment{
+				Data: &ingestpb.Segment{
+					Pieces: []*ingestpb.Piece{
+						{Data: []byte("xxx"), TenantId: tenantID},
+						{Data: marshal(writeReqs[0]), TenantId: tenantID},
+						{Data: []byte("yyy"), TenantId: tenantID},
+						{Data: marshal(writeReqs[1]), TenantId: tenantID},
+					},
+				},
+			},
+			responses: []response{
+				okResponse,
+				okResponse,
+			},
+			expectedWRs: writeReqs[0:2],
+		},
 	}
 
 	for name, tc := range testCases {

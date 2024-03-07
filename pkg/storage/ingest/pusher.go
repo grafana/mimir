@@ -71,14 +71,21 @@ func (c pusherConsumer) pushRequests(ctx context.Context, segment *Segment) erro
 	for pieceIdx, piece := range segment.Data.Pieces {
 		processingStart := time.Now()
 
+		c.totalRequests.Inc()
+
 		wr, err := piece.WriteRequest()
-		if err == nil {
-			ctx := user.InjectOrgID(ctx, piece.TenantId)
-			_, err = c.p.Push(ctx, wr)
+		if err != nil {
+			c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
+			c.clientErrRequests.Inc()
+			level.Warn(c.l).Log("msg", "failed to unmarshal write request", "err", err, "user", piece.TenantId)
+			continue
 		}
 
+		// Push it.
+		ctx := user.InjectOrgID(ctx, piece.TenantId)
+		_, err = c.p.Push(ctx, wr)
+
 		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
-		c.totalRequests.Inc()
 		if err != nil {
 			if !mimirpb.IsClientError(err) {
 				c.serverErrRequests.Inc()

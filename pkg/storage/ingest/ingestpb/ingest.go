@@ -5,6 +5,9 @@ package ingestpb
 import (
 	"fmt"
 
+	"github.com/golang/snappy"
+	"github.com/pkg/errors"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -25,8 +28,20 @@ func (m *Piece) WriteRequest() (*mimirpb.WriteRequest, error) {
 		return nil, fmt.Errorf("no data")
 	}
 
+	// Decode data.
+	var decodedData []byte
+	if m.SnappyEncoded {
+		var err error
+		decodedData, err = snappy.Decode(nil, m.Data)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to snappy decode data")
+		}
+	} else {
+		decodedData = m.Data
+	}
+
 	wr := &mimirpb.PreallocWriteRequest{}
-	if err := wr.Unmarshal(m.Data); err != nil {
+	if err := wr.Unmarshal(decodedData); err != nil {
 		return nil, err
 	}
 	return &wr.WriteRequest, nil

@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/golang/snappy"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/servicediscovery"
@@ -34,8 +35,9 @@ type writeAgentSelector interface {
 type Writer struct {
 	services.Service
 
-	logger     log.Logger
-	registerer prometheus.Registerer
+	logger             log.Logger
+	registerer         prometheus.Registerer
+	compressionEnabled bool
 
 	writeAgents writeAgentSelector
 
@@ -52,12 +54,13 @@ func NewWriter(waConfig WriteAgentConfig, logger log.Logger, reg prometheus.Regi
 	if err != nil {
 		return nil, errors.Wrap(err, "creating write agent server selector")
 	}
-	return newWriter(waSelector, logger, reg)
+	return newWriter(waSelector, waConfig.CompressionEnabled, logger, reg)
 }
 
-func newWriter(waSelector writeAgentSelector, logger log.Logger, reg prometheus.Registerer) (*Writer, error) {
+func newWriter(waSelector writeAgentSelector, compressionEnabled bool, logger log.Logger, reg prometheus.Registerer) (*Writer, error) {
 	w := &Writer{
 		logger:                     logger,
+		compressionEnabled:         compressionEnabled,
 		registerer:                 reg,
 		writeAgents:                waSelector,
 		maxInflightProduceRequests: 20,
@@ -102,16 +105,26 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	}
 
 	var waReqSize int
-	data, err := req.Marshal()
-	if err == nil {
-		waReq := &ingestpb.WriteRequest{
-			Piece:       &ingestpb.Piece{Data: data, TenantId: userID, CreatedAtMs: startTime.UnixMilli()},
-			PartitionId: partitionID,
-		}
-		waReqSize = waReq.Size()
-
-		_, err = writer.Write(ctx, waReq) // response is empty
+	unencodedData, err := req.Marshal()
+	if err != nil {
+		return errors.Wrap(err, "sending request to write agent")
 	}
+
+	// Snappy encode it (if enabled).
+	var dataToSend []byte
+	if w.compressionEnabled {
+		dataToSend = snappy.Encode(nil, unencodedData)
+	} else {
+		dataToSend = unencodedData
+	}
+
+	waReq := &ingestpb.WriteRequest{
+		Piece:       &ingestpb.Piece{Data: dataToSend, SnappyEncoded: w.compressionEnabled, TenantId: userID, CreatedAtMs: startTime.UnixMilli()},
+		PartitionId: partitionID,
+	}
+	waReqSize = waReq.Size()
+
+	_, err = writer.Write(ctx, waReq) // response is empty
 	if err != nil {
 		return errors.Wrap(err, "sending request to write agent")
 	}
