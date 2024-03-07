@@ -8,6 +8,7 @@ package ruler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -161,6 +162,7 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 		// and not interesting here.
 		qerr := QueryableError{}
 		if err != nil && errors.As(err, &qerr) {
+			panic(fmt.Sprintf("unexpected QueryableError %T", err))
 			origErr := qerr.Unwrap()
 
 			// Not all errors returned by Queryable are interesting, only those that would result in 500 status code.
@@ -179,6 +181,7 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 			// Return unwrapped error.
 			return result, origErr
 		} else if err != nil {
+			panic(fmt.Sprintf("unexpected NON QueryableError %T", err))
 			// When remote querier enabled, consider anything an error except those with 4xx status code.
 			st, ok := grpcutil.ErrorToStatus(err)
 			if !(ok && st.Code()/100 == 4) {

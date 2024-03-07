@@ -266,6 +266,11 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	for m := range matchers {
+		fmt.Printf("matcher: %v\n", matchers[m])
+	}
+
+
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "querier.Select")
 	defer spanLog.Span.Finish()
 

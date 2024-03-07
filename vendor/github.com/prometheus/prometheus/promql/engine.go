@@ -1044,12 +1044,16 @@ func (ev *evaluator) recover(expr parser.Expr, ws *annotations.Annotations, errp
 
 		level.Error(ev.logger).Log("msg", "runtime panic in parser", "expr", expr.String(), "err", e, "stacktrace", string(buf))
 		*errp = fmt.Errorf("unexpected error: %w", err)
+		fmt.Printf("recover runtime: %T %v\n", err, err)
 	case errWithWarnings:
+		fmt.Printf("recover errWithWarnings: %T %v\n", err, err)
 		*errp = err.err
 		ws.Merge(err.warnings)
 	case error:
+		fmt.Printf("recover error: %T %v\n", err, err)
 		*errp = err
 	default:
+		fmt.Printf("recover default: %T %v\n", err, err)
 		*errp = fmt.Errorf("%v", err)
 	}
 }
