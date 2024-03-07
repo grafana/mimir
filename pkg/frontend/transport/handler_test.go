@@ -533,7 +533,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 	}
 }
 
-func TestHandler_StreamingWriteTimeout(t *testing.T) {
+func TestHandler_ActiveSeriesWriteTimeout(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
 		path      string
@@ -543,7 +543,7 @@ func TestHandler_StreamingWriteTimeout(t *testing.T) {
 		{name: "deadline not exceeded for streaming endpoint", path: "/api/v1/cardinality/active_series"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			const serverWriteTimeout = 10 * time.Millisecond
+			const serverWriteTimeout = 50 * time.Millisecond
 
 			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 				// Simulate a request that takes longer than the server write timeout.
@@ -551,7 +551,7 @@ func TestHandler_StreamingWriteTimeout(t *testing.T) {
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
 			})
 
-			handler := NewHandler(HandlerConfig{}, roundTripper, log.NewNopLogger(), nil, nil)
+			handler := NewHandler(HandlerConfig{ActiveSeriesWriteTimeout: time.Minute}, roundTripper, log.NewNopLogger(), nil, nil)
 
 			server := httptest.NewUnstartedServer(handler)
 			server.Config.WriteTimeout = serverWriteTimeout

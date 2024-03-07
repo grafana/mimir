@@ -4689,12 +4689,12 @@
         },
         {
           "kind": "field",
-          "name": "response_stream_timeout",
+          "name": "active_series_write_timeout",
           "required": false,
-          "desc": "Timeout for streaming responses. 0 means no timeout.",
+          "desc": "Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used.",
           "fieldValue": null,
-          "fieldDefaultValue": 600000000000,
-          "fieldFlag": "query-frontend.response-stream-timeout",
+          "fieldDefaultValue": 300000000000,
+          "fieldFlag": "query-frontend.active-series-write-timeout",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

@@ -1385,9 +1385,10 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.query-stats-enabled
 [query_stats_enabled: <boolean> | default = true]
 
-# (experimental) Timeout for streaming responses. 0 means no timeout.
-# CLI flag: -query-frontend.response-stream-timeout
-[response_stream_timeout: <duration> | default = 10m]
+# (experimental) Timeout for writing active series responses. 0 means the value
+# from `-server.http-write-timeout` is used.
+# CLI flag: -query-frontend.active-series-write-timeout
+[active_series_write_timeout: <duration> | default = 5m]
 
 # (advanced) Maximum number of outstanding requests per tenant per frontend;
 # requests beyond this error with HTTP 429.

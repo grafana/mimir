@@ -1799,6 +1799,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
+  -query-frontend.active-series-write-timeout duration
+    	[experimental] Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used. (default 5m0s)
   -query-frontend.additional-query-queue-dimensions-enabled
     	[experimental] Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
   -query-frontend.align-queries-with-step
@@ -1895,8 +1897,6 @@ Usage of ./cmd/mimir/mimir:
     	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
-  -query-frontend.response-stream-timeout duration
-    	[experimental] Timeout for streaming responses. 0 means no timeout. (default 10m0s)
   -query-frontend.results-cache-ttl duration
     	Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
   -query-frontend.results-cache-ttl-for-cardinality-query duration
