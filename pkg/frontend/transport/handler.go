@@ -53,6 +53,7 @@ type HandlerConfig struct {
 	LogQueryRequestHeaders flagext.StringSliceCSV `yaml:"log_query_request_headers" category:"advanced"`
 	MaxBodySize            int64                  `yaml:"max_body_size" category:"advanced"`
 	QueryStatsEnabled      bool                   `yaml:"query_stats_enabled" category:"advanced"`
+	ResponseStreamTimeout  time.Duration          `yaml:"response_stream_timeout" category:"experimental"`
 }
 
 func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
@@ -60,6 +61,7 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&cfg.LogQueryRequestHeaders, "query-frontend.log-query-request-headers", "Comma-separated list of request header names to include in query logs. Applies to both query stats and slow queries logs.")
 	f.Int64Var(&cfg.MaxBodySize, "query-frontend.max-body-size", 10*1024*1024, "Max body size for downstream prometheus.")
 	f.BoolVar(&cfg.QueryStatsEnabled, "query-frontend.query-stats-enabled", true, "False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query.")
+	f.DurationVar(&cfg.ResponseStreamTimeout, "query-frontend.response-stream-timeout", 10*time.Minute, "Timeout for streaming responses. 0 means no timeout.")
 }
 
 // Handler accepts queries and forwards them to RoundTripper. It can wait on in-flight requests and log slow queries,
@@ -191,9 +193,12 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.at.Delete(activityIndex)
 
 	if isStreamingEndpoint(r) {
-		// Disable the write deadline for streaming endpoints.
-		rc := http.NewResponseController(w)
-		err = rc.SetWriteDeadline(time.Time{})
+		// Set write deadline for streaming responses.
+		var deadline time.Time
+		if f.cfg.ResponseStreamTimeout > 0 {
+			deadline = time.Now().Add(f.cfg.ResponseStreamTimeout)
+		}
+		err = http.NewResponseController(w).SetWriteDeadline(deadline)
 		if err != nil {
 			err := fmt.Errorf("failed to set write deadline for response writer: %w", err)
 			writeError(w, apierror.New(apierror.TypeInternal, err.Error()))

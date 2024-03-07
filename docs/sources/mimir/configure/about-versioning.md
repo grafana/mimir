@@ -136,6 +136,7 @@ The following features are currently experimental:
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Max number of tenants that may be queried at once (`-tenant-federation.max-tenants`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
+  - Server-side write timeout for streaming responses (`-query-frontend.response-stream-timeout`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway

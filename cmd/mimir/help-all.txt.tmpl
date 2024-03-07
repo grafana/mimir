@@ -1895,6 +1895,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
+  -query-frontend.response-stream-timeout duration
+    	[experimental] Timeout for streaming responses. 0 means no timeout. (default 10m0s)
   -query-frontend.results-cache-ttl duration
     	Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
   -query-frontend.results-cache-ttl-for-cardinality-query duration
