@@ -533,6 +533,47 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 	}
 }
 
+func TestHandler_ActiveSeriesWriteTimeout(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		path      string
+		wantError bool
+	}{
+		{name: "deadline exceeded for non-streaming endpoint", path: "/api/v1/query", wantError: true},
+		{name: "deadline not exceeded for streaming endpoint", path: "/api/v1/cardinality/active_series"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			const serverWriteTimeout = 50 * time.Millisecond
+
+			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				// Simulate a request that takes longer than the server write timeout.
+				time.Sleep(2 * serverWriteTimeout)
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+			})
+
+			handler := NewHandler(HandlerConfig{ActiveSeriesWriteTimeout: time.Minute}, roundTripper, log.NewNopLogger(), nil, nil)
+
+			server := httptest.NewUnstartedServer(handler)
+			server.Config.WriteTimeout = serverWriteTimeout
+			server.Start()
+			defer server.Close()
+
+			req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s%s", server.URL, tt.path), nil)
+			require.NoError(t, err)
+			resp, err := http.DefaultClient.Do(req)
+			if tt.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			defer func() {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			}()
+		})
+	}
+}
+
 type testLogger struct {
 	logMessages []map[string]interface{}
 }

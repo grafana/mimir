@@ -4689,6 +4689,17 @@
         },
         {
           "kind": "field",
+          "name": "active_series_write_timeout",
+          "required": false,
+          "desc": "Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used.",
+          "fieldValue": null,
+          "fieldDefaultValue": 300000000000,
+          "fieldFlag": "query-frontend.active-series-write-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_outstanding_per_tenant",
           "required": false,
           "desc": "Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429.",
