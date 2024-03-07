@@ -44,10 +44,13 @@ func TestProtobufDecoderDecodeVectorHistogramMemoryHandling(t *testing.T) {
 	v, err := decoder.decodeVector(vd)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(v))
+	// If the encoding takes the address of the loop variable, the value will be 1337.
 	require.Equal(t, float64(3), v[0].H.Count)
 
-	// Check that the decoding is zero copy
-	ph := &(vd.Histograms[0].Histogram)
-	ph.Count = 42
+	// Also check the second histogram.
+	require.Equal(t, float64(1337), v[1].H.Count)
+
+	// Ensure that the decoding is zero copy for performance reasons.
+	vd.Histograms[0].Histogram.Count = 42
 	require.Equal(t, float64(42), v[0].H.Count)
 }
