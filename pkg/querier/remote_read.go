@@ -127,7 +127,7 @@ func remoteReadSamples(
 	w.Header().Add("Content-Type", "application/x-protobuf")
 	w.Header().Set("Content-Encoding", "snappy")
 
-	if err := util.SerializeProtoResponse(w, &resp, util.RawSnappy); err != nil {
+	if err := util.SerializeProtoResponse(w, &resp, util.RawSnappy, nil); err != nil {
 		level.Error(logger).Log("msg", "error sending remote read response", "err", err)
 	}
 }

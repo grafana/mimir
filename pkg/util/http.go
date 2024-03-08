@@ -294,10 +294,8 @@ func tryBufferFromReader(reader io.Reader) (*bytes.Buffer, bool) {
 	return nil, false
 }
 
-var SnappyEncodingCheckFn = snappy.MaxEncodedLen
-
 // SerializeProtoResponse serializes a protobuf response into an HTTP response.
-func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compression CompressionType) error {
+func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compression CompressionType, snappyEncodingFn func([]byte, []byte) ([]byte, error)) error {
 	data, err := proto.Marshal(resp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -307,11 +305,14 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 	switch compression {
 	case NoCompression:
 	case RawSnappy:
-		if encodeLen := SnappyEncodingCheckFn(len(data)); encodeLen == -1 {
-			err = fmt.Errorf("response too large")
+		if snappyEncodingFn == nil {
+			snappyEncodingFn = snappyCheckAndEncode
+		}
+		data, err = snappyEncodingFn(nil, data)
+		if err != nil {
+			err = errors.Wrap(err, "snappy encoding")
 			break
 		}
-		data = snappy.Encode(nil, data)
 	case Gzip:
 		var buf bytes.Buffer
 		buf.Grow(len(data))
@@ -396,4 +397,11 @@ func IsValidURL(endpoint string) bool {
 	}
 
 	return u.Scheme != "" && u.Host != ""
+}
+
+func snappyCheckAndEncode(dst []byte, data []byte) ([]byte, error) {
+	if encodeLen := snappy.MaxEncodedLen(len(data)); encodeLen == -1 {
+		return nil, fmt.Errorf("data too large to encode")
+	}
+	return snappy.Encode(dst, data), nil
 }

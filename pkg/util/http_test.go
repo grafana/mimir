@@ -8,6 +8,7 @@ package util_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"html/template"
 	"io"
 	"math/rand"
@@ -18,7 +19,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/golang/snappy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -199,14 +199,16 @@ func TestParseProtoReader(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
 
+			var snappyEncodingFn func([]byte, []byte) ([]byte, error)
+
 			if tt.mockDataTooLarge && tt.compression == util.RawSnappy {
-				util.SnappyEncodingCheckFn = func(_ int) int {
-					return -1
+				snappyEncodingFn = func([]byte, []byte) ([]byte, error) {
+					return nil, fmt.Errorf("data too large to encode")
 				}
-				defer func() { util.SnappyEncodingCheckFn = snappy.MaxEncodedLen }()
 			}
 
-			err := util.SerializeProtoResponse(w, req, tt.compression)
+			err := util.SerializeProtoResponse(w, req, tt.compression, snappyEncodingFn)
+
 			if tt.expectSerializeErr {
 				require.Error(t, err)
 				return
