@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
@@ -200,6 +201,9 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, apierror.New(apierror.TypeInternal, err.Error()))
 			return
 		}
+		ctx, _ := context.WithDeadlineCause(r.Context(), deadline,
+			cancellation.NewErrorf("write deadline exceeded (timeout: %v)", f.cfg.ActiveSeriesWriteTimeout))
+		r = r.WithContext(ctx)
 	}
 
 	startTime := time.Now()
