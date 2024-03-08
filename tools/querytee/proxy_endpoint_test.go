@@ -352,29 +352,46 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 
 func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 	scenarios := map[string]struct {
-		slowResponseThreshold    time.Duration
-		preferredResponseLatency time.Duration
-		secondaryResponseLatency time.Duration
+		slowResponseThreshold         time.Duration
+		preferredResponseLatency      time.Duration
+		secondaryResponseLatency      time.Duration
+		expectLatencyExceedsThreshold bool
 	}{
 		"responses are below threshold": {
-			slowResponseThreshold:    100 * time.Millisecond,
-			preferredResponseLatency: 0 * time.Millisecond,
-			secondaryResponseLatency: 0 * time.Millisecond,
+			slowResponseThreshold:         100 * time.Millisecond,
+			preferredResponseLatency:      0 * time.Millisecond,
+			secondaryResponseLatency:      0 * time.Millisecond,
+			expectLatencyExceedsThreshold: false,
 		},
 		"one response above threshold": {
-			slowResponseThreshold:    100 * time.Millisecond,
-			preferredResponseLatency: 0 * time.Millisecond,
-			secondaryResponseLatency: 101 * time.Millisecond,
+			slowResponseThreshold:         100 * time.Millisecond,
+			preferredResponseLatency:      0 * time.Millisecond,
+			secondaryResponseLatency:      101 * time.Millisecond,
+			expectLatencyExceedsThreshold: true,
 		},
 		"responses are both above threshold, but lower than threshold between themselves": {
-			slowResponseThreshold:    100 * time.Millisecond,
-			preferredResponseLatency: 101 * time.Millisecond,
-			secondaryResponseLatency: 150 * time.Millisecond,
+			slowResponseThreshold:         100 * time.Millisecond,
+			preferredResponseLatency:      101 * time.Millisecond,
+			secondaryResponseLatency:      150 * time.Millisecond,
+			expectLatencyExceedsThreshold: false,
 		},
 		"responses are both above threshold, and above threshold between themselves": {
-			slowResponseThreshold:    100 * time.Millisecond,
-			preferredResponseLatency: 101 * time.Millisecond,
-			secondaryResponseLatency: 202 * time.Millisecond,
+			slowResponseThreshold:         100 * time.Millisecond,
+			preferredResponseLatency:      101 * time.Millisecond,
+			secondaryResponseLatency:      202 * time.Millisecond,
+			expectLatencyExceedsThreshold: true,
+		},
+		"secondary latency is faster than primary, and difference is below threshold": {
+			slowResponseThreshold:         100 * time.Millisecond,
+			preferredResponseLatency:      50 * time.Millisecond,
+			secondaryResponseLatency:      0 * time.Millisecond,
+			expectLatencyExceedsThreshold: false,
+		},
+		"secondary latency is faster than primary, and difference is above threshold": {
+			slowResponseThreshold:         100 * time.Millisecond,
+			preferredResponseLatency:      101 * time.Millisecond,
+			secondaryResponseLatency:      0 * time.Millisecond,
+			expectLatencyExceedsThreshold: true,
 		},
 	}
 
@@ -426,16 +443,10 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 			// Wait for the response comparison to complete before checking the logged messages.
 			waitForResponseComparisonMetric(t, reg, ComparisonSuccess)
 
-			for _, m := range logger.messages {
-				fmt.Println(m)
-			}
-			if (scenario.preferredResponseLatency >= scenario.secondaryResponseLatency &&
-				scenario.preferredResponseLatency-scenario.secondaryResponseLatency < scenario.slowResponseThreshold) ||
-				(scenario.secondaryResponseLatency >= scenario.preferredResponseLatency &&
-					scenario.secondaryResponseLatency-scenario.preferredResponseLatency < scenario.slowResponseThreshold) {
-				requireNoLogMessages(t, logger.messages, "response time between backends exceeded threshold")
+			if scenario.expectLatencyExceedsThreshold {
+				requireLogMessage(t, logger.messages, "response time difference between backends exceeded threshold")
 			} else {
-				requireLogMessage(t, logger.messages, "response time between backends exceeded threshold")
+				requireNoLogMessages(t, logger.messages, "response time difference between backends exceeded threshold")
 			}
 		})
 	}
