@@ -137,7 +137,7 @@ If either Mimir cluster is running with a non-default value of `-ruler.evaluatio
 
 ### Slow query log
 
-You can configure query-tee to log requests that take longer than the fastest backend by by setting the flag `-proxy.log-slow-query-response-threshold`.
+You can configure query-tee to log requests that take longer than the fastest backend by setting the flag `-proxy.log-slow-query-response-threshold`.
 
 The default value is `10s` which logs requests that are ten seconds slower than the fastest backend.
 

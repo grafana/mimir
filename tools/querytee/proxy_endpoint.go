@@ -217,7 +217,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 		// Log queries that are slower in some backends than others
 		if p.slowResponseThreshold > 0 && slowestDuration-fastestDuration >= p.slowResponseThreshold {
 			level.Warn(p.logger).Log(
-				"msg", "response time between backends exceeded threshold",
+				"msg", "response time difference between backends exceeded threshold",
 				"route-name", p.routeName,
 				"query", query,
 				"user", req.Header.Get("X-Scope-OrgID"),
