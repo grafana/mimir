@@ -650,7 +650,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		// This one fails in querier code, because of limits.
 		"too_many_chunks_group": `sum(metric)`,
 
-		// Combine the errors above to have a componed error.
+		// Combine the errors above to have a compound error.
 		"invalid_and_too_many_chunks_group": `label_replace(metric, "foo", "$1", "service", "[")`,
 	} {
 		t.Run(groupName, func(t *testing.T) {
