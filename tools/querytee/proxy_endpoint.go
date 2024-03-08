@@ -195,22 +195,22 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 		if result == ComparisonFailed {
 			level.Error(p.logger).Log(
 				"msg", "response comparison failed",
-				"route-name", p.routeName,
+				"route_name", p.routeName,
 				"query", query,
 				"user", req.Header.Get("X-Scope-OrgID"),
 				"err", err,
-				"expected-response-duration", expectedResponse.elapsedTime,
-				"actual-response-duration", actualResponse.elapsedTime,
+				"expected_response_duration", expectedResponse.elapsedTime,
+				"actual_response_duration", actualResponse.elapsedTime,
 			)
 		} else if result == ComparisonSkipped {
 			level.Warn(p.logger).Log(
 				"msg", "response comparison skipped",
-				"route-name", p.routeName,
+				"route_name", p.routeName,
 				"query", query,
 				"user", req.Header.Get("X-Scope-OrgID"),
 				"err", err,
-				"expected-response-duration", expectedResponse.elapsedTime,
-				"actual-response-duration", actualResponse.elapsedTime,
+				"expected_response_duration", expectedResponse.elapsedTime,
+				"actual_response_duration", actualResponse.elapsedTime,
 			)
 		}
 
@@ -218,13 +218,13 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 		if p.slowResponseThreshold > 0 && slowestDuration-fastestDuration >= p.slowResponseThreshold {
 			level.Warn(p.logger).Log(
 				"msg", "response time difference between backends exceeded threshold",
-				"route-name", p.routeName,
+				"route_name", p.routeName,
 				"query", query,
 				"user", req.Header.Get("X-Scope-OrgID"),
-				"slowest-duration", slowestDuration,
-				"slowest-backend", slowestBackend.name,
-				"fastest-duration", fastestDuration,
-				"fastest-backend", fastestBackend.name,
+				"slowest_duration", slowestDuration,
+				"slowest_backend", slowestBackend.name,
+				"fastest_duration", fastestDuration,
+				"fastest_backend", fastestBackend.name,
 			)
 		}
 
