@@ -415,6 +415,16 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 				"query": []string{r.Query},
 			}.Encode(),
 		}
+
+	case *PrometheusLabelNamesQueryRequest:
+		u = &url.URL{
+			Path: r.Path,
+			RawQuery: url.Values{
+				"start": []string{encodeTime(r.Start)},
+				"end":   []string{encodeTime(r.End)},
+				"query": []string{r.Query},
+			}.Encode(),
+		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", r)
 	}
@@ -755,31 +765,6 @@ func toCodecLabelMatcherSet(matcherSet []*labels.Matcher) ([]*LabelMatcher, erro
 			Name:  matcher.Name,
 			Value: matcher.Value,
 		})
-	}
-	return result, nil
-}
-
-func fromCodecLabelMatcherSet(matcherSet []*LabelMatcher) ([]*labels.Matcher, error) {
-	result := make([]*labels.Matcher, 0, len(matcherSet))
-	for _, matcher := range matcherSet {
-		var mtype labels.MatchType
-		switch matcher.Type {
-		case EQUAL:
-			mtype = labels.MatchEqual
-		case NOT_EQUAL:
-			mtype = labels.MatchNotEqual
-		case REGEX_MATCH:
-			mtype = labels.MatchRegexp
-		case REGEX_NO_MATCH:
-			mtype = labels.MatchNotRegexp
-		default:
-			return nil, fmt.Errorf("invalid matcher type")
-		}
-		matcher, err := labels.NewMatcher(mtype, matcher.Name, matcher.Value)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, matcher)
 	}
 	return result, nil
 }
