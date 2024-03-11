@@ -534,7 +534,7 @@ func (e ingesterPushAPIDisabledError) Error() string {
 }
 
 func (e ingesterPushAPIDisabledError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.SERVICE_UNAVAILABLE
+	return mimirpb.METHOD_NOT_ALLOWED
 }
 
 // Ensure that ingesterPushAPIDisabledError is an ingesterError.

@@ -901,10 +901,6 @@ type pushStats struct {
 //
 // In the second case, returned errors will not be logged, because request will not reach any middleware.
 func (i *Ingester) StartPushRequest(requestSize int64) error {
-	if !i.cfg.EnablePushAPI {
-		return errPushAPIDisabled
-	}
-
 	if err := i.checkAvailable(); err != nil {
 		return err
 	}
@@ -964,10 +960,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
 	defer cleanUp()
-
-	if !i.cfg.EnablePushAPI {
-		return errPushAPIDisabled
-	}
 
 	// If we're using grpc handlers, we don't need to start/finish request here.
 	if !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
@@ -3499,14 +3491,26 @@ func (i *Ingester) checkAvailable() error {
 	return newUnavailableError(s)
 }
 
+// PushToStorage is a low-level implementation of Push() for block storage.
+func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
+	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+	if err != nil {
+		return i.mapPushErrorToErrorWithStatus(err)
+	}
+	return nil
+}
+
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
-	if err == nil {
-		return &mimirpb.WriteResponse{}, nil
+	if !i.cfg.EnablePushAPI {
+		return nil, errPushAPIDisabled
 	}
-	handledErr := i.mapPushErrorToErrorWithStatus(err)
-	return nil, handledErr
+
+	err := i.PushToStorage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &mimirpb.WriteResponse{}, err
 }
 
 func (i *Ingester) mapPushErrorToErrorWithStatus(err error) error {

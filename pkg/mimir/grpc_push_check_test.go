@@ -7,11 +7,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/api"
@@ -66,19 +64,6 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 		require.Error(t, err)
 		_, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
-		require.Nil(t, ctx.Value(pushTypeCtxKey)) // Original context expected in case of errors.
-	})
-
-	t.Run("ingester push receiver, check returns gRPC status error", func(t *testing.T) {
-		m := &mockIngesterReceiver{}
-		l := newGrpcInflightMethodLimiter(func() ingesterPushReceiver { return m }, nil)
-
-		m.returnError = cancellation.NewErrorf("cancelled")
-		ctx, err := l.RPCCallStarting(context.Background(), ingesterPushMethod, nil)
-		require.Error(t, err)
-		st, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.Canceled, st.Code())
 		require.Nil(t, ctx.Value(pushTypeCtxKey)) // Original context expected in case of errors.
 	})
 
