@@ -3263,6 +3263,8 @@ metaMonitoring:
           namespace: kube-system
           labelSelectors:
             app.kubernetes.io/name: kube-state-metrics
+          service:
+            port: http-metrics
 
       # -- The scrape interval for all ServiceMonitors.
       scrapeInterval: 60s
