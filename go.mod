@@ -106,8 +106,8 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.19 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.47.0 // indirect
-	k8s.io/apimachinery v0.28.6 // indirect
-	k8s.io/client-go v0.28.6 // indirect
+	k8s.io/apimachinery v0.29.2 // indirect
+	k8s.io/client-go v0.29.2 // indirect
 	k8s.io/klog/v2 v2.120.1 // indirect
 )
 
@@ -256,7 +256,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240305114356-f1f7b4f2e5dc
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240306152319-eefee5e7407f
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
