@@ -121,6 +121,7 @@
 * [BUGFIX] promql: Fix Range selectors with an @ modifier are wrongly scoped in range queries. #7475
 * [BUGFIX] Fix metadata API using wrong JSON field names. #7475
 * [BUGFIX] Ruler: fix native histogram recording rule result corruption. #7552
+* [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 
 ### Mixin
 

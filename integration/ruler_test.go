@@ -644,10 +644,14 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 	// Verify that user-failures don't increase cortex_ruler_queries_failed_total
 	for groupName, expression := range map[string]string{
 		// Syntactically correct expression (passes check in ruler), but failing because of invalid regex. This fails in PromQL engine.
-		"invalid_group": `label_replace(metric, "foo", "$1", "service", "[")`,
+		// This selects the label "nolabel" which does not exist, thus too many chunks doesn't apply.
+		"invalid_group": `label_replace(metric{nolabel="none"}, "foo", "$1", "service", "[")`,
 
 		// This one fails in querier code, because of limits.
 		"too_many_chunks_group": `sum(metric)`,
+
+		// Combine the errors above to have a compound error.
+		"invalid_and_too_many_chunks_group": `label_replace(metric, "foo", "$1", "service", "[")`,
 	} {
 		t.Run(groupName, func(t *testing.T) {
 			addNewRuleAndWait(groupName, expression, true)
