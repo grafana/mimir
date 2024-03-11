@@ -122,6 +122,7 @@
 * [BUGFIX] Fix metadata API using wrong JSON field names. #7475
 * [BUGFIX] Ruler: fix native histogram recording rule result corruption. #7552
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
+* [BUGFIX] Querier: fix HTTP status code translations for remote read requests. previously endpoints would return either only HTTP 400 or HTTP 500 on any error. #7487
 
 ### Mixin
 
