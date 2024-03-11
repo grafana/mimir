@@ -103,6 +103,10 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		Name:    "operation_duration_seconds",
 		Help:    "Duration of operations against cache.",
 		Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 3, 6, 10},
+		// Use defaults recommended by Prometheus for native histograms.
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: time.Hour,
 	}, []string{"operation"})
 	cm.duration.WithLabelValues(opGetMulti)
 	cm.duration.WithLabelValues(opSet)

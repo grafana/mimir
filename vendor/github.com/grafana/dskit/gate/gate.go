@@ -68,6 +68,10 @@ func NewInstrumented(reg prometheus.Registerer, maxConcurrent int, gate Gate) Ga
 			Name:    "gate_duration_seconds",
 			Help:    "How many seconds it took for queries to wait at the gate.",
 			Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
+			// Use defaults recommended by Prometheus for native histograms.
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
 		}),
 	}
 
