@@ -66,8 +66,8 @@
         {
           alert: $.alertName('AlertmanagerPersistStateFailing'),
           expr: |||
-            rate(cortex_alertmanager_state_persist_failed_total[15m]) > 0
-          |||,
+            rate(cortex_alertmanager_state_persist_failed_total[%ss]) > 0
+          ||| % $.alertRangeInterval(15),
           'for': '1h',
           labels: {
             severity: 'critical',
@@ -82,7 +82,7 @@
           alert: $.alertName('AlertmanagerInitialSyncFailed'),
           expr: |||
             increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[%ss]) > 0
-          ||| % $.alertRangeInterval(5),
+          ||| % $.alertRangeInterval(1),
           labels: {
             severity: 'critical',
           },
