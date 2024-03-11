@@ -5,12 +5,14 @@ package ingester
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
@@ -37,6 +39,10 @@ const (
 
 // ownedSeriesRingStrategy wraps access to the ring, to allow owned series service to be ignorant to whether it uses ingester ring or partitions ring.
 type ownedSeriesRingStrategy interface {
+	// Do initial wait suitable for given ring. Called by ownedSeriesService from starting method.
+	// Should return error if ownedSeriesService cannot proceed.
+	waitForRing(ctx context.Context) error
+
 	// checkRingForChanges reads current ring, stores it, and returns bool indicating whether ring has changed since last call
 	// of this method in such a way that new recomputation of token ranges is needed.
 	checkRingForChanges() (bool, error)
@@ -87,13 +93,23 @@ func newOwnedSeriesService(
 		}),
 	}
 
-	oss.Service = services.NewTimerService(interval, nil, oss.onPeriodicCheck, nil)
+	oss.Service = services.NewTimerService(interval, oss.starting, oss.checkOwnedSeries, nil)
 	return oss
+}
+
+func (oss *ownedSeriesService) starting(ctx context.Context) error {
+	err := oss.ringStrategy.waitForRing(ctx)
+	if err != nil {
+		return fmt.Errorf("initial wait for ring: %v", err)
+	}
+
+	_ = oss.checkOwnedSeries(ctx)
+	return nil
 }
 
 // This function runs periodically. It checks if ring has changed, and updates number of owned series for any
 // user that requires it (due to ring change, compaction, shard size change, ...).
-func (oss *ownedSeriesService) onPeriodicCheck(ctx context.Context) error {
+func (oss *ownedSeriesService) checkOwnedSeries(ctx context.Context) error {
 	ringChanged, err := oss.ringStrategy.checkRingForChanges()
 	if err != nil {
 		level.Error(oss.logger).Log("msg", "can't check ring for updates", "err", err)
@@ -251,6 +267,11 @@ func (ir *ownedSeriesIngesterRingStrategy) tokenRangesForUser(userID string, sha
 	return ranges, err
 }
 
+func (ir *ownedSeriesIngesterRingStrategy) waitForRing(_ context.Context) error {
+	// For ingester ring we perform initial check in ingester, before the ownedSeriesService is even started.
+	return nil
+}
+
 type ownedSeriesPartitionRingStrategy struct {
 	partitionID          int32
 	partitionRingWatcher *ring.PartitionRingWatcher
@@ -298,4 +319,27 @@ func (pr *ownedSeriesPartitionRingStrategy) tokenRangesForUser(userID string, sh
 
 func (pr *ownedSeriesPartitionRingStrategy) ownerKeyAndValue() (string, string) {
 	return "partition", strconv.Itoa(int(pr.partitionID))
+}
+
+func (pr *ownedSeriesPartitionRingStrategy) waitForRing(ctx context.Context) error {
+	// Wait until partition is available in the ring.
+
+	cfg := backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: 100 * time.Millisecond,
+		MaxRetries: 0,
+	}
+
+	b := backoff.New(ctx, cfg)
+	for b.Ongoing() {
+		r := pr.partitionRingWatcher.PartitionRing()
+		allPartitions := r.PartitionIDs()
+		_, found := slices.BinarySearch(allPartitions, pr.partitionID)
+		if found {
+			return nil
+		}
+
+		b.Wait()
+	}
+	return b.Err()
 }

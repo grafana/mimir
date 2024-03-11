@@ -1289,6 +1289,58 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 	}
 }
 
+func TestIngesterWaitsForPartitionToAppearInTheRingBeforeRunningOwnedSeries(t *testing.T) {
+	partitionsKVStore, partitionsKVStoreCloser := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, partitionsKVStoreCloser.Close()) })
+
+	kvStore := &watchingKV{Client: partitionsKVStore}
+
+	prw := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, kvStore, log.NewNopLogger(), nil)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), prw))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), prw))
+	})
+
+	startCh := make(chan struct{})
+
+	const partitionID = 5
+	const minWait = 500 * time.Millisecond
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-startCh
+
+		// Add different partition to the ring.
+		updatePartitionRingAndWaitForWatcherToReadUpdate(t, kvStore, func(partitionRing *ring.PartitionRingDesc) {
+			partitionRing.AddPartition(partitionID+1, ring.PartitionActive, time.Now())
+		})
+
+		// Add "real" partition to ring after 500ms.
+		time.Sleep(minWait)
+
+		updatePartitionRingAndWaitForWatcherToReadUpdate(t, kvStore, func(partitionRing *ring.PartitionRingDesc) {
+			partitionRing.AddPartition(partitionID, ring.PartitionPending, time.Now())
+		})
+	}()
+
+	partitionRingStrategy := newOwnedSeriesPartitionRingStrategy(partitionID, prw, nil)
+
+	contextWithTimeout, cancel := context.WithTimeout(context.Background(), 10*minWait)
+	t.Cleanup(cancel)
+
+	startTime := time.Now()
+	close(startCh)
+	err := partitionRingStrategy.waitForRing(contextWithTimeout)
+	elapsed := time.Since(startTime)
+
+	require.NoError(t, err)
+	require.Greater(t, elapsed, minWait)
+	wg.Wait()
+}
+
 func TestOwnedSeriesIngesterRingStrategyRingChanged(t *testing.T) {
 	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })

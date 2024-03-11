@@ -525,7 +525,9 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		return errors.Wrap(err, "opening existing TSDBs")
 	}
 
-	if i.ownedSeriesService != nil {
+	// If ingest storage is enabled, then ownedSeriesService will wait for this ingesters partition to be in the ring
+	// (if it's already not there, then this ingesters partition lifecycler will add it), and do initial check right after.
+	if i.ownedSeriesService != nil && !i.cfg.IngestStorageConfig.Enabled {
 		// We need to perform the initial computation of owned series after the TSDBs are opened but before the ingester becomes
 		// ACTIVE in the ring and starts to accept requests. However, because the ingester still uses the Lifecycler (rather
 		// than BasicLifecycler) there is no deterministic way to delay the ACTIVE state until we finish the calculations.
@@ -534,8 +536,6 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		// calculate owned series before we start the lifecycler at all. Once we move the ingester to the BasicLifecycler and
 		// have better control over the ring states, we could perform the calculation while in JOINING state, and move to
 		// ACTIVE once we finish.
-		//
-		// TODO: When using partitions ring, we need to update all tenants after partition is registered into the ring. That is done by partitionLifecycler's starting method.
 
 		// Fetch and cache current ring state
 		_, err := i.ownedSeriesService.ringStrategy.checkRingForChanges()
