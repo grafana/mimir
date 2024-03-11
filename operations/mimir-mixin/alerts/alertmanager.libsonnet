@@ -81,8 +81,8 @@
         {
           alert: $.alertName('AlertmanagerInitialSyncFailed'),
           expr: |||
-            increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[1m]) > 0
-          |||,
+            increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[%ss]) > 0
+          ||| % $.alertRangeInterval(5),
           labels: {
             severity: 'critical',
           },
