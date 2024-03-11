@@ -40,7 +40,7 @@ func TestMarshall(t *testing.T) {
 				},
 			})
 		}
-		err := util.SerializeProtoResponse(recorder, &req, util.RawSnappy, nil)
+		err := util.SerializeProtoResponse(recorder, &req, util.RawSnappy)
 		require.NoError(t, err)
 	}
 

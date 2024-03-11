@@ -294,8 +294,10 @@ func tryBufferFromReader(reader io.Reader) (*bytes.Buffer, bool) {
 	return nil, false
 }
 
+var snappyEncoding = snappyCheckAndEncode
+
 // SerializeProtoResponse serializes a protobuf response into an HTTP response.
-func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compression CompressionType, snappyEncodingFn func([]byte, []byte) ([]byte, error)) error {
+func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compression CompressionType) error {
 	data, err := proto.Marshal(resp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -305,10 +307,7 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 	switch compression {
 	case NoCompression:
 	case RawSnappy:
-		if snappyEncodingFn == nil {
-			snappyEncodingFn = snappyCheckAndEncode
-		}
-		data, err = snappyEncodingFn(nil, data)
+		data, err = snappyEncoding(nil, data)
 		if err != nil {
 			err = errors.Wrap(err, "snappy encoding")
 			break
