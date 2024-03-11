@@ -70,8 +70,7 @@ func ReadConsistencyClientUnaryInterceptor(ctx context.Context, method string, r
 }
 
 func ReadConsistencyServerUnaryInterceptor(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	md, _ := metadata.FromIncomingContext(ctx)
-	consistencies := md.Get(consistencyLevelGrpcMdKey)
+	consistencies := metadata.ValueFromIncomingContext(ctx, consistencyLevelGrpcMdKey)
 	if len(consistencies) > 0 && IsValidReadConsistency(consistencies[0]) {
 		ctx = ContextWithReadConsistency(ctx, consistencies[0])
 	}
@@ -86,8 +85,7 @@ func ReadConsistencyClientStreamInterceptor(ctx context.Context, desc *grpc.Stre
 }
 
 func ReadConsistencyServerStreamInterceptor(srv interface{}, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	md, _ := metadata.FromIncomingContext(ss.Context())
-	consistencies := md.Get(consistencyLevelGrpcMdKey)
+	consistencies := metadata.ValueFromIncomingContext(ss.Context(), consistencyLevelGrpcMdKey)
 	if len(consistencies) > 0 && IsValidReadConsistency(consistencies[0]) {
 		ctx := ContextWithReadConsistency(ss.Context(), consistencies[0])
 		ss = ctxStream{
