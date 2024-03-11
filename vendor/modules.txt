@@ -331,7 +331,7 @@ github.com/failsafe-go/failsafe-go/policy
 # github.com/fatih/color v1.15.0
 ## explicit; go 1.17
 github.com/fatih/color
-# github.com/felixge/fgprof v0.9.3
+# github.com/felixge/fgprof v0.9.4
 ## explicit; go 1.14
 github.com/felixge/fgprof
 # github.com/felixge/httpsnoop v1.0.4
@@ -489,7 +489,7 @@ github.com/google/gopacket/layers
 github.com/google/gopacket/pcap
 github.com/google/gopacket/tcpassembly
 github.com/google/gopacket/tcpassembly/tcpreader
-# github.com/google/pprof v0.0.0-20240117000934-35fc243c5815
+# github.com/google/pprof v0.0.0-20240227163752-401108e1b7e7
 ## explicit; go 1.19
 github.com/google/pprof/profile
 # github.com/google/s2a-go v0.1.7
