@@ -659,10 +659,8 @@
     recording_rules_range_interval: '1m',
 
     // Used to calculate range interval in alerts.
-    // In seconds without the `s` at the end, i.e. `30`.
     // Needed to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
-    scrape_interval: 15,
-    base_alerts_range_interval_seconds: $._config.scrape_interval * 4,
+    base_alerts_range_interval_minutes: 1,
 
     // Used to inject rows into dashboards at specific places that support it.
     injectRows: {},

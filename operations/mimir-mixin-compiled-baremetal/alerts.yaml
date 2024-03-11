@@ -578,7 +578,7 @@ groups:
         Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to persist full state snaphots to remote storage.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerpersiststatefailing
     expr: |
-      rate(cortex_alertmanager_state_persist_failed_total[900s]) > 0
+      rate(cortex_alertmanager_state_persist_failed_total[15m]) > 0
     for: 1h
     labels:
       severity: critical
@@ -588,7 +588,7 @@ groups:
         Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} was unable to obtain some initial state when starting up.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerinitialsyncfailed
     expr: |
-      increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[60s]) > 0
+      increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[1m]) > 0
     labels:
       severity: critical
   - alert: MimirAlertmanagerAllocatingTooMuchMemory
