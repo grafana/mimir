@@ -1,4 +1,3 @@
-local scrape_interval = null;
 {
   grafanaDashboardFolder: 'Mimir',
   grafanaDashboardShards: 4,
