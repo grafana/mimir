@@ -4,6 +4,26 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
+
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+### Mimir Continuous Test
+
+### Query-tee
+
+### Documentation
+
+### Tools
+
+## 2.12.0-rc.0
+
+### Grafana Mimir
+
 * [CHANGE] Alertmanager: Deprecates the `v1` API. All `v1` API endpoints now respond with a JSON deprecation notice and a status code of `410`. All endpoints have a `v2` equivalent. The list of endpoints is: #7103
   * `<alertmanager-web.external-url>/api/v1/alerts`
   * `<alertmanager-web.external-url>/api/v1/receivers`
@@ -121,7 +141,6 @@
 * [BUGFIX] promql: Fix Range selectors with an @ modifier are wrongly scoped in range queries. #7475
 * [BUGFIX] Fix metadata API using wrong JSON field names. #7475
 * [BUGFIX] Ruler: fix native histogram recording rule result corruption. #7552
-* [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier: fix HTTP status code translations for remote read requests. Previously, remote-read had conflicting behaviours: when returning samples all internal errors were translated to HTTP 400; when returning chunks all internal errors were translated to HTTP 500. #7487
 
 ### Mixin
