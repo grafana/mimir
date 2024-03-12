@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [ENHANCEMENT] Store-gateway: Add `stage="wait_max_concurrent"` to `cortex_bucket_store_series_request_stage_duration_seconds` which records how long the query had to wait for its turn for `-blocks-storage.bucket-store.max-concurrent`.
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 
 ### Mixin

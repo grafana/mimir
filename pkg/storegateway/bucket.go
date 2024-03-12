@@ -612,13 +612,11 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 
 	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
-	span, spanCtx := opentracing.StartSpanFromContext(ctx, "store_query_gate_ismyturn")
-	err = s.queryGate.Start(spanCtx)
-	span.Finish()
+	done, err := s.limitConcurrentQueries(ctx, stats)
 	if err != nil {
-		return errors.Wrapf(err, "failed to wait for turn")
+		return err
 	}
-	defer s.queryGate.Done()
+	defer done()
 
 	var (
 		// If we are streaming the series labels and chunks separately, we don't need to fetch the postings
@@ -706,6 +704,21 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	}
 
 	return nil
+}
+
+func (s *BucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (done func(), err error) {
+	span, spanCtx := opentracing.StartSpanFromContext(ctx, "store_query_gate_ismyturn")
+	defer span.Finish()
+
+	waitStart := time.Now()
+	err = s.queryGate.Start(spanCtx)
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesIndexHeaderLoadDuration = time.Since(waitStart)
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to wait for turn")
+	}
+	return s.queryGate.Done, nil
 }
 
 // sendStreamingSeriesLabelsAndStats sends the labels of the streaming series.
@@ -1242,10 +1255,12 @@ func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesBatchLoadDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("load_index_header").Observe(stats.streamingSeriesIndexHeaderLoadDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("wait_max_concurrent").Observe(stats.streamingSeriesConcurrencyLimitWaitDuration.Seconds())
 
 	categorizedTime := stats.streamingSeriesExpandPostingsDuration +
 		stats.streamingSeriesBatchLoadDuration +
 		stats.streamingSeriesIndexHeaderLoadDuration +
+		stats.streamingSeriesConcurrencyLimitWaitDuration +
 		stats.streamingSeriesEncodeResponseDuration +
 		stats.streamingSeriesSendResponseDuration
 
