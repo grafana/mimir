@@ -521,7 +521,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 %(kube_statefulset_status_replicas_updated)s
               )
             ) and (
-              changes(%(kube_statefulset_status_replicas_updated)s[15m:1m]) // TODO DEAL WITH
+              changes(%(kube_statefulset_status_replicas_updated)s[%(range_interval)s])
                 ==
               0
             )
@@ -532,6 +532,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_update_revision'),
             kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas'),
             kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated'),
+            range_interval: $.alertRangeInterval(15) + ':' + $.alertRangeInterval(1),
           },
           'for': '30m',
           labels: {
@@ -552,7 +553,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 !=
               %(kube_deployment_status_replicas_updated)s
             ) and (
-              changes(%(kube_deployment_status_replicas_updated)s[15m:1m]) // TODO DEAL WITH
+              changes(%(kube_deployment_status_replicas_updated)s[%(range_interval)s])
                 ==
               0
             )
@@ -561,6 +562,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             aggregation_labels: $._config.alert_aggregation_labels,
             kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas'),
             kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated'),
+            range_interval: $.alertRangeInterval(15) + ':' + $.alertRangeInterval(1),
           },
           'for': '30m',
           labels: {
