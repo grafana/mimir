@@ -523,18 +523,6 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 			expectedMessage: fmt.Sprintf("wrapped: %s", newPerMetricMetadataLimitReachedError(10, family).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
-		"an errorWithStatus is returned as is": {
-			err:             newErrorWithStatus(originalErr, codes.Unimplemented),
-			expectedCode:    codes.Unimplemented,
-			expectedMessage: originalMsg,
-			expectedDetails: nil,
-		},
-		"an ingesterError wrapped into errorWithStatus is returned as is": {
-			err:             newErrorWithStatus(newUnavailableError(services.Failed), codes.Unimplemented),
-			expectedCode:    codes.Unimplemented,
-			expectedMessage: newUnavailableError(services.Failed).Error(),
-			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
-		},
 	}
 
 	for name, tc := range testCases {
@@ -699,14 +687,6 @@ func TestMapPushErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 				fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, family)),
 				http.StatusBadRequest,
 			),
-		},
-		"an errorWithStatus is returned as is": {
-			err:                 newErrorWithStatus(originalErr, codes.Unimplemented),
-			expectedTranslation: newErrorWithStatus(originalErr, codes.Unimplemented),
-		},
-		"an ingesterError wrapped into errorWithStatus is returned as is": {
-			err:                 newErrorWithStatus(newUnavailableError(services.Failed), codes.Unimplemented),
-			expectedTranslation: newErrorWithStatus(newUnavailableError(services.Failed), codes.Unimplemented),
 		},
 	}
 

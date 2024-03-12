@@ -568,12 +568,6 @@ func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 
 // mapPushErrorToErrorWithStatus maps the given error to the corresponding error of type errorWithStatus.
 func mapPushErrorToErrorWithStatus(err error) error {
-	var errStatus errorWithStatus
-	if errors.As(err, &errStatus) {
-		// If the error was already mapped (or wrapped) into appropriate errorWithStatus,
-		// return it as is.
-		return errStatus
-	}
 	var (
 		ingesterErr ingesterError
 		errCode     = codes.Internal
@@ -598,12 +592,6 @@ func mapPushErrorToErrorWithStatus(err error) error {
 // mapPushErrorToErrorWithHTTPOrGRPCStatus maps ingesterError objects to an appropriate
 // errorWithStatus, which may contain both HTTP and gRPC error codes.
 func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
-	var errStatus errorWithStatus
-	if errors.As(err, &errStatus) {
-		// If the error was already mapped (or wrapped) into appropriate errorWithStatus,
-		// return it as is.
-		return errStatus
-	}
 	var ingesterErr ingesterError
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {

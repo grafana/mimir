@@ -68,9 +68,6 @@ func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodN
 
 		err := ing.StartPushRequest(reqSize)
 		if err != nil {
-			if st, ok := grpcutil.ErrorToStatus(err); ok {
-				return ctx, st.Err()
-			}
 			return ctx, status.Error(codes.Unavailable, err.Error())
 		}
 
