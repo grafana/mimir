@@ -1,6 +1,6 @@
 # Changelog
 
-## main / unreleased
+## 2.12.0-rc.0
 
 ### Grafana Mimir
 
