@@ -332,6 +332,7 @@ mimir:
 
     memberlist:
       abort_if_cluster_join_fails: false
+      cluster_label: "{{ .Release.Name }}.{{ .Release.Namespace }}"
       compression_enabled: false
       join_members:
       - dns+{{ include "mimir.fullname" . }}-gossip-ring.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.memberlistBindPort" . }}
