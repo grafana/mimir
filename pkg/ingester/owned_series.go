@@ -39,7 +39,7 @@ const (
 
 // ownedSeriesRingStrategy wraps access to the ring, to allow owned series service to be ignorant to whether it uses ingester ring or partitions ring.
 type ownedSeriesRingStrategy interface {
-	// Do initial wait suitable for given ring. Called by ownedSeriesService from starting method.
+	// Do initial wait suitable for given ring. Called by ownedSeriesService from starting method, if enabled.
 	// Should return error if ownedSeriesService cannot proceed.
 	waitForRing(ctx context.Context) error
 
@@ -64,6 +64,8 @@ type ownedSeriesService struct {
 	logger       log.Logger
 	ringStrategy ownedSeriesRingStrategy
 
+	waitForRingAndCheckSeriesInStarting bool
+
 	getLocalSeriesLimit func(user string, minLocalLimit int) int
 	getTSDBUsers        func() []string
 	getTSDB             func(user string) *userTSDB
@@ -79,6 +81,7 @@ func newOwnedSeriesService(
 	getLocalSeriesLimit func(user string, minLocalLimit int) int,
 	getTSDBUsers func() []string,
 	getTSDB func(user string) *userTSDB,
+	waitForRingAndCheckSeriesInStarting bool,
 ) *ownedSeriesService {
 	oss := &ownedSeriesService{
 		logger:              logger,
@@ -91,6 +94,7 @@ func newOwnedSeriesService(
 			Help:    "How long does it take to check for owned series for all users.",
 			Buckets: prometheus.DefBuckets,
 		}),
+		waitForRingAndCheckSeriesInStarting: waitForRingAndCheckSeriesInStarting,
 	}
 
 	oss.Service = services.NewTimerService(interval, oss.starting, oss.checkOwnedSeries, nil)
@@ -98,12 +102,14 @@ func newOwnedSeriesService(
 }
 
 func (oss *ownedSeriesService) starting(ctx context.Context) error {
-	err := oss.ringStrategy.waitForRing(ctx)
-	if err != nil {
-		return fmt.Errorf("initial wait for ring: %v", err)
-	}
+	if oss.waitForRingAndCheckSeriesInStarting {
+		err := oss.ringStrategy.waitForRing(ctx)
+		if err != nil {
+			return fmt.Errorf("initial wait for ring: %v", err)
+		}
 
-	_ = oss.checkOwnedSeries(ctx)
+		_ = oss.checkOwnedSeries(ctx)
+	}
 	return nil
 }
 

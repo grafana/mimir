@@ -643,6 +643,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.ing.limiter.maxSeriesPerUser,
 				c.ing.getTSDBUsers,
 				c.ing.getTSDB,
+				false,
 			)
 
 			tc.testFunc(t, &c, tc.limits)
@@ -749,6 +750,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRin
 		c.ing.limiter.maxSeriesPerUser,
 		c.ing.getTSDBUsers,
 		c.ing.getTSDB,
+		true,
 	)
 }
 
