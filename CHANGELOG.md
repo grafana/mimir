@@ -14,6 +14,8 @@
 
 ### Mimir Continuous Test
 
+* [BUGFIX] Set `User-Agent` header for all requests sent from the testing client. #7607
+
 ### Query-tee
 
 ### Documentation
