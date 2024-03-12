@@ -382,7 +382,7 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 	defaultIngesterConfig := defaultIngesterTestConfig(t)
 
 	// Always disable gRPC Push API when testing ingest store.
-	ingesterCfg.EnablePushAPI = false
+	ingesterCfg.PushGrpcMethodEnabled = false
 
 	ingesterCfg.IngestStorageConfig.Enabled = true
 	ingesterCfg.IngestStorageConfig.KafkaConfig.Topic = "mimir"

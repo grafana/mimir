@@ -6748,9 +6748,9 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker_LimitInflightRequestsUsin
 	}
 }
 
-func TestIngester_PushAPIDisabled(t *testing.T) {
+func TestIngester_PushGrpcMethod_Disabled(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.EnablePushAPI = false
+	cfg.PushGrpcMethodEnabled = false
 
 	registry := prometheus.NewRegistry()
 

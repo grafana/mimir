@@ -453,7 +453,7 @@ func TestConfigValidation(t *testing.T) {
 			getTestConfig: func() *Config {
 				cfg := newDefaultConfig()
 				_ = cfg.Target.Set("ingester")
-				cfg.Ingester.EnablePushAPI = false
+				cfg.Ingester.PushGrpcMethodEnabled = false
 				cfg.IngestStorage.Enabled = false
 
 				return cfg
