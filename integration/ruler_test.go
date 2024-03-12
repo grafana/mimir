@@ -578,6 +578,12 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 			// Very low limit so that ruler hits it.
 			"-querier.max-fetched-chunks-per-query": "5",
 
+			// Do not involve the block storage as we don't upload blocks and
+			// it can happen that a query runs faster than trying to load the
+			// index, which results in context canceled, which would be cached
+			// in the index loader, failing all subsequent queries.
+			"-querier.query-store-after": "12h",
+
 			// Enable query stats for ruler to test metric for no fetched series
 			"-ruler.query-stats-enabled": "true",
 		},
@@ -589,8 +595,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
-	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler))
 
 	// Wait until both the distributor and ruler have updated the ring. The querier will also watch
 	// the store-gateway ring if blocks sharding is enabled.

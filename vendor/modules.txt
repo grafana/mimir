@@ -538,7 +538,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20240229214108-b073df3747b2
+# github.com/grafana/dskit v0.0.0-20240306142309-0e1c99b54ea7
 ## explicit; go 1.20
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -907,8 +907,8 @@ github.com/prometheus/exporter-toolkit/web
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v0.0.0-20240305114356-f1f7b4f2e5dc
-## explicit; go 1.20
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v0.0.0-20240306152319-eefee5e7407f
+## explicit; go 1.21
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
 github.com/prometheus/prometheus/discovery/refresh
@@ -1457,11 +1457,11 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.1 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 ## explicit
 gopkg.in/yaml.v3
-# k8s.io/apimachinery v0.28.6
-## explicit; go 1.20
+# k8s.io/apimachinery v0.29.2
+## explicit; go 1.21
 k8s.io/apimachinery/pkg/util/runtime
-# k8s.io/client-go v0.28.6
-## explicit; go 1.20
+# k8s.io/client-go v0.29.2
+## explicit; go 1.21
 k8s.io/client-go/tools/metrics
 k8s.io/client-go/util/workqueue
 # k8s.io/klog/v2 v2.120.1
@@ -1525,7 +1525,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/goyaml.v3
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240305114356-f1f7b4f2e5dc
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240306152319-eefee5e7407f
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
