@@ -6770,7 +6770,7 @@ func TestIngester_PushGrpcMethod_Disabled(t *testing.T) {
 		[]mimirpb.Sample{{TimestampMs: 1_000, Value: 1}},
 	)
 	_, err = i.Push(ctx, req)
-	require.ErrorIs(t, err, errPushAPIDisabled)
+	require.ErrorIs(t, err, errPushGrpcDisabled)
 }
 
 func TestIngester_instanceLimitsMetrics(t *testing.T) {

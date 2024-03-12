@@ -3490,7 +3490,7 @@ func (i *Ingester) checkAvailable() error {
 	return newUnavailableError(s)
 }
 
-// PushToStorage is a low-level implementation of Push() for block storage.
+// PushToStorage implements ingest.Pusher interface for ingestion via ingest-storage.
 func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
 	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
 	if err != nil {
@@ -3499,10 +3499,10 @@ func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest)
 	return nil
 }
 
-// Push implements client.IngesterServer
+// Push implements client.IngesterServer, which is registered into gRPC server.
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	if !i.cfg.PushGrpcMethodEnabled {
-		return nil, errPushAPIDisabled
+		return nil, errPushGrpcDisabled
 	}
 
 	err := i.PushToStorage(ctx, req)
