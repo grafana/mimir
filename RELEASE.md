@@ -83,9 +83,9 @@ If something is not clear, you can get back to this document to learn more about
     git push -u origin release-<version>
     ```
   - [ ] Remove "main / unreleased" section from the CHANGELOG
-  - [ ] If a new minor or major version is being released, adjust the settings in the `renovate.json` configuration on the `main` branch by adding the new version. 
-        This way we ensure that dependency updates maintain the new version, as well as the latest two minor versions. 
-        For instance, if versions 3.0 and 2.10 are configured in `renovate.json`, and version 3.1 is being released, 
+  - [ ] If a new minor or major version is being released, adjust the settings in the `renovate.json` configuration on the `main` branch by adding the new version.
+        This way we ensure that dependency updates maintain the new version, as well as the latest two minor versions.
+        For instance, if versions 3.0 and 2.10 are configured in `renovate.json`, and version 3.1 is being released,
         during the release process `renovate.json` should keep updated the following branches: `main`, `release-3.1`, `release-3.0` and `release-2.10`.
 - [ ] Publish the Mimir release candidate
   - [ ] Update VERSION in the release branch and update CHANGELOG with version and release date.
@@ -135,10 +135,10 @@ If something is not clear, you can get back to this document to learn more about
     ```bash
     ./tools/release/create-pr-to-merge-release-branch-to-main.sh
     ```
-  - [ ] If during the release process settings in the `renovate.json` have been modified in such a way that dependency updates maintain more than the latest two minor versions, 
+  - [ ] If during the release process settings in the `renovate.json` have been modified in such a way that dependency updates maintain more than the latest two minor versions,
         modify it again to ensure that only the latest two minor versions get updated.
-        For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json`, `renovate.json` should keep updated the following branches: 
-        `main`, `release-3.1` and `release-3.0`.  
+        For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json`, `renovate.json` should keep updated the following branches:
+        `main`, `release-3.1` and `release-3.0`.
   - [ ] Announce the release on socials
   - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
   - [ ] [Publish dashboards to grafana.com](https://github.com/grafana/mimir/blob/main/RELEASE.md#publish-a-stable-release)
