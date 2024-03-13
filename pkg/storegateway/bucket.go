@@ -713,7 +713,7 @@ func (s *BucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQue
 	waitStart := time.Now()
 	err = s.queryGate.Start(spanCtx)
 	stats.update(func(stats *queryStats) {
-		stats.streamingSeriesIndexHeaderLoadDuration = time.Since(waitStart)
+		stats.streamingSeriesConcurrencyLimitWaitDuration = time.Since(waitStart)
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to wait for turn")
