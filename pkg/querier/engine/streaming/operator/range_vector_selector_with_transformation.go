@@ -21,7 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/engine/streaming/util"
 )
 
-type MatrixSelectorWithTransformationOverRange struct {
+type RangeVectorSelectorWithTransformation struct {
 	Queryable     storage.Queryable
 	Start         time.Time
 	End           time.Time
@@ -32,7 +32,7 @@ type MatrixSelectorWithTransformationOverRange struct {
 	Pool          *Pool
 
 	querier storage.Querier
-	// TODO: create separate type for linked list of SeriesBatches, use here and in VectorSelector
+	// TODO: create separate type for linked list of SeriesBatches, use here and in InstantVectorSelector
 	currentSeriesBatch      *SeriesBatch
 	currentSeriesBatchIndex int
 	chunkIterator           chunkenc.Iterator
@@ -45,9 +45,9 @@ type MatrixSelectorWithTransformationOverRange struct {
 	rangeMilliseconds    int64
 }
 
-var _ Operator = &MatrixSelectorWithTransformationOverRange{}
+var _ Operator = &RangeVectorSelectorWithTransformation{}
 
-func (m *MatrixSelectorWithTransformationOverRange) Series(ctx context.Context) ([]SeriesMetadata, error) {
+func (m *RangeVectorSelectorWithTransformation) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	if m.currentSeriesBatch != nil {
 		panic("should not call Series() multiple times")
 	}
@@ -114,7 +114,7 @@ func dropMetricName(l labels.Labels, lb *labels.Builder) labels.Labels {
 	return lb.Labels()
 }
 
-func (m *MatrixSelectorWithTransformationOverRange) Next(ctx context.Context) (SeriesData, error) {
+func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (SeriesData, error) {
 	if m.currentSeriesBatch == nil || len(m.currentSeriesBatch.series) == 0 {
 		return SeriesData{}, EOS
 	}
@@ -195,7 +195,7 @@ func (m *MatrixSelectorWithTransformationOverRange) Next(ctx context.Context) (S
 }
 
 // TODO: move to RingBuffer type?
-func (m *MatrixSelectorWithTransformationOverRange) fillBuffer(rangeStart, rangeEnd int64) error {
+func (m *RangeVectorSelectorWithTransformation) fillBuffer(rangeStart, rangeEnd int64) error {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
 	for {
 		valueType := m.chunkIterator.Next()
@@ -223,7 +223,7 @@ func (m *MatrixSelectorWithTransformationOverRange) fillBuffer(rangeStart, range
 }
 
 // This is based on extrapolatedRate from promql/functions.go.
-func (m *MatrixSelectorWithTransformationOverRange) calculateRate(rangeStart, rangeEnd int64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
+func (m *RangeVectorSelectorWithTransformation) calculateRate(rangeStart, rangeEnd int64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
 	durationToStart := float64(firstPoint.T-rangeStart) / 1000
 	durationToEnd := float64(rangeEnd-lastPoint.T) / 1000
 
@@ -255,7 +255,7 @@ func (m *MatrixSelectorWithTransformationOverRange) calculateRate(rangeStart, ra
 	return delta * factor
 }
 
-func (m *MatrixSelectorWithTransformationOverRange) Close() {
+func (m *RangeVectorSelectorWithTransformation) Close() {
 	for m.currentSeriesBatch != nil {
 		b := m.currentSeriesBatch
 		m.currentSeriesBatch = m.currentSeriesBatch.next

@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
-type VectorSelector struct {
+type InstantVectorSelector struct {
 	Queryable     storage.Queryable
 	Start         time.Time
 	End           time.Time
@@ -29,7 +29,7 @@ type VectorSelector struct {
 	Pool          *Pool
 
 	querier storage.Querier
-	// TODO: create separate type for linked list of SeriesBatches, use here and in MatrixSelectorWithTransformationOverRange
+	// TODO: create separate type for linked list of SeriesBatches, use here and in RangeVectorSelectorWithTransformation
 	currentSeriesBatch      *SeriesBatch
 	currentSeriesBatchIndex int
 	chunkIterator           chunkenc.Iterator
@@ -41,9 +41,9 @@ type VectorSelector struct {
 	intervalMilliseconds int64
 }
 
-var _ Operator = &VectorSelector{}
+var _ Operator = &InstantVectorSelector{}
 
-func (v *VectorSelector) Series(ctx context.Context) ([]SeriesMetadata, error) {
+func (v *InstantVectorSelector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	if v.currentSeriesBatch != nil {
 		panic("should not call Series() multiple times")
 	}
@@ -100,7 +100,7 @@ func (v *VectorSelector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	return metadata, ss.Err()
 }
 
-func (v *VectorSelector) Next(ctx context.Context) (SeriesData, error) {
+func (v *InstantVectorSelector) Next(ctx context.Context) (SeriesData, error) {
 	if v.currentSeriesBatch == nil || len(v.currentSeriesBatch.series) == 0 {
 		return SeriesData{}, EOS
 	}
@@ -172,7 +172,7 @@ func (v *VectorSelector) Next(ctx context.Context) (SeriesData, error) {
 	return data, nil
 }
 
-func (v *VectorSelector) Close() {
+func (v *InstantVectorSelector) Close() {
 	for v.currentSeriesBatch != nil {
 		b := v.currentSeriesBatch
 		v.currentSeriesBatch = v.currentSeriesBatch.next

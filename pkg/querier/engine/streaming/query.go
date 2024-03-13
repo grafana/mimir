@@ -88,7 +88,7 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.Operator, error) {
 			return nil, NewNotSupportedError("vector selector with timestamp")
 		}
 
-		return &operator.VectorSelector{
+		return &operator.InstantVectorSelector{
 			Queryable:     q.queryable,
 			Start:         q.start,
 			End:           q.end,
@@ -151,7 +151,7 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.Operator, error) {
 			return nil, NewNotSupportedError("vector selector with timestamp")
 		}
 
-		return &operator.MatrixSelectorWithTransformationOverRange{
+		return &operator.RangeVectorSelectorWithTransformation{
 			Queryable:     q.queryable,
 			Start:         q.start,
 			End:           q.end,
