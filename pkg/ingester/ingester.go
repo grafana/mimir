@@ -462,11 +462,6 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.limiter = NewLimiter(limits, limiterStrategy)
 
 	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
-		waitForRingAndCheckSeriesInStartingState := false
-		if i.cfg.IngestStorageConfig.Enabled {
-			waitForRingAndCheckSeriesInStartingState = true
-		}
-
 		i.ownedSeriesService = newOwnedSeriesService(
 			i.cfg.OwnedSeriesUpdateInterval,
 			ownedSeriesStrategy,
@@ -474,8 +469,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			registerer,
 			i.limiter.maxSeriesPerUser,
 			i.getTSDBUsers,
-			i.getTSDB,
-			waitForRingAndCheckSeriesInStartingState)
+			i.getTSDB)
 	}
 
 	i.BasicService = services.NewBasicService(i.starting, i.updateLoop, i.stopping)
@@ -538,28 +532,15 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		return errors.Wrap(err, "opening existing TSDBs")
 	}
 
-	// If ingest storage is enabled, then ownedSeriesService will wait for this ingesters partition to be in the ring
-	// (if it's already not there, then this ingesters partition lifecycler will add it), and do initial check right after.
-	if i.ownedSeriesService != nil && !i.cfg.IngestStorageConfig.Enabled {
-		// We need to perform the initial computation of owned series after the TSDBs are opened but before the ingester becomes
-		// ACTIVE in the ring and starts to accept requests. However, because the ingester still uses the Lifecycler (rather
-		// than BasicLifecycler) there is no deterministic way to delay the ACTIVE state until we finish the calculations.
+	if i.ownedSeriesService != nil {
+		// Start owned series service asynchronously. We don't wait for ownedSeriesService to enter Running state here.
+		// This service will wait for entry in the ring, which is only created by lifecycler, and once the entry in the ring exists,
+		// ownedSeriesService will perform initial check of all tenants. While this check runs, we already allow read requests to proceed,
+		// but we block push requests (see checkAvailableForPushRequests).
 		//
-		// Since we don't actually need to be ACTIVE in the ring to calculate owned series (just present, with tokens) we instead
-		// calculate owned series before we start the lifecycler at all. Once we move the ingester to the BasicLifecycler and
-		// have better control over the ring states, we could perform the calculation while in JOINING state, and move to
-		// ACTIVE once we finish.
-
-		// Fetch and cache current ring state
-		_, err := i.ownedSeriesService.ringStrategy.checkRingForChanges()
-		switch {
-		case errors.Is(err, ring.ErrEmptyRing):
-			level.Warn(i.logger).Log("msg", "ingester ring is empty")
-		case err != nil:
-			return fmt.Errorf("can't read ring: %v", err)
-		default:
-			// We pass ringChanged=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
-			i.ownedSeriesService.updateAllTenants(ctx, true)
+		// We pass ingester's service context to ownedSeriesService, to make ownedSeriesService stop when ingester exits Running state.
+		if err := i.ownedSeriesService.StartAsync(ctx); err != nil {
+			return errors.Wrap(err, "failed to start owned series service")
 		}
 	}
 
@@ -622,6 +603,14 @@ func (i *Ingester) stoppingForFlusher(_ error) error {
 }
 
 func (i *Ingester) stopping(_ error) error {
+	if i.ownedSeriesService != nil {
+		err := services.StopAndAwaitTerminated(context.Background(), i.ownedSeriesService)
+		if err != nil {
+			// This service can't really fail, unless it never got out of Starting.
+			level.Warn(i.logger).Log("msg", "error encountered while stopping owned series service", "err", err)
+		}
+	}
+
 	if err := services.StopManagerAndAwaitStopped(context.Background(), i.subservices); err != nil {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
@@ -934,7 +923,7 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 //
 // The shouldFinish flag tells if the caller must call finish on this request. If not, there is already someone in the call stack who will do that.
 func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ context.Context, shouldFinish bool, err error) {
-	if err := i.checkAvailable(); err != nil {
+	if err := i.checkAvailableForPushRequests(); err != nil {
 		return nil, false, err
 	}
 
@@ -3537,6 +3526,21 @@ func (i *Ingester) checkAvailable() error {
 		return nil
 	}
 	return newUnavailableError(s)
+}
+
+// checkAvailableForPushRequests checks if ingester is available for push requests.
+func (i *Ingester) checkAvailableForPushRequests() error {
+	if err := i.checkAvailable(); err != nil {
+		return err
+	}
+
+	if i.cfg.UseIngesterOwnedSeriesForLimits {
+		// Owned series service will enter Running state only after it checks for owned series at least once.
+		if i.ownedSeriesService.State() != services.Running {
+			return newUnavailableMsgError(ingesterUnavailableForPushRequestsMsg)
+		}
+	}
+	return nil
 }
 
 // PushToStorage implements ingest.Pusher interface for ingestion via ingest-storage.
