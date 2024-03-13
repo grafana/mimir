@@ -349,7 +349,9 @@ func TestQuery(t *testing.T) {
 			// Why do we do this rather than require.Equal(t, standardResult, streamingResult)?
 			// It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
 			require.Equal(t, standardResult.Err, streamingResult.Err)
-			require.Equal(t, standardResult.Warnings, streamingResult.Warnings)
+
+			// Ignore warnings until they're supported by the streaming engine.
+			// require.Equal(t, standardResult.Warnings, streamingResult.Warnings)
 
 			if c.steps == 0 {
 				standardVector, err := standardResult.Vector()
