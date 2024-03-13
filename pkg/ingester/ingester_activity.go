@@ -35,11 +35,6 @@ func (i *ActivityTrackerWrapper) Push(ctx context.Context, request *mimirpb.Writ
 	return i.ing.Push(ctx, request)
 }
 
-func (i *ActivityTrackerWrapper) PushWithCleanup(ctx context.Context, r *mimirpb.WriteRequest, cleanUp func()) error {
-	// No tracking in PushWithCleanup
-	return i.ing.PushWithCleanup(ctx, r, cleanUp)
-}
-
 func (i *ActivityTrackerWrapper) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(server.Context(), "Ingester/QueryStream", request)
