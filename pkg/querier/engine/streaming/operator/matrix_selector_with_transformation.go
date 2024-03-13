@@ -143,7 +143,6 @@ func (m *MatrixSelectorWithTransformationOverRange) Next(ctx context.Context) (b
 		Floats: m.Pool.GetFPointSlice(numSteps),
 	}
 
-	// TODO: adjust time sought for offset
 	// TODO: test behaviour with resets, missing points, extrapolation, stale markers
 	// TODO: handle native histograms
 	for ts := m.startTimestamp; ts <= m.endTimestamp; ts += m.intervalMilliseconds {

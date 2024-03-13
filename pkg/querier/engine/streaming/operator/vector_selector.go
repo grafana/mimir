@@ -130,8 +130,6 @@ func (v *VectorSelector) Next(ctx context.Context) (bool, SeriesData, error) {
 	}
 
 	for ts := v.startTimestamp; ts <= v.endTimestamp; ts += v.intervalMilliseconds {
-		// TODO: adjust time sought for offset
-
 		var t int64
 		var val float64
 		var h *histogram.FloatHistogram

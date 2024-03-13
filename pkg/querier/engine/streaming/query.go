@@ -87,8 +87,6 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.Operator, error) {
 			return nil, NewNotSupportedError("vector selector with timestamp")
 		}
 
-		// TODO: handle @, offset
-		// (see getTimeRangesForSelector() in promql/engine.go)
 		return &operator.VectorSelector{
 			Queryable:     q.queryable,
 			Start:         q.start,
@@ -152,8 +150,6 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.Operator, error) {
 			return nil, NewNotSupportedError("vector selector with timestamp")
 		}
 
-		// TODO: handle @, offset
-		// (see getTimeRangesForSelector() in promql/engine.go)
 		return &operator.MatrixSelectorWithTransformationOverRange{
 			Queryable:     q.queryable,
 			Start:         q.start,
