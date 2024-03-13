@@ -1347,7 +1347,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		seriesPerBlock = 1
 	}
 
-	// Create 4 blocks. Each will have seriesPerBlock number of series that have samplesPerSeriesPerBlock samples.
+	// Create numOfBlocks blocks. Each will have seriesPerBlock number of series that have samplesPerSeriesPerBlock samples.
 	// Timestamp will be counted for each new series and new sample, so each series will have unique timestamp.
 	// This allows to pick time range that will correspond to number of series picked 1:1.
 	for bi := 0; bi < numOfBlocks; bi++ {
@@ -2951,11 +2951,14 @@ func runTestServerSeries(t test.TB, store *BucketStore, streamingBatchSize int, 
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
 				seriesSet, warnings, hints, _, err := srv.Series(context.Background(), c.Req)
-				require.NoError(t, err)
-				require.Equal(t, len(c.ExpectedWarnings), len(warnings), "%v", warnings)
-				require.Equal(t, len(c.ExpectedSeries), len(seriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)
-
+				if err != nil {
+					t.Fatal(err)
+				}
 				if !t.IsBenchmark() {
+					require.NoError(t, err)
+					require.Equal(t, len(c.ExpectedWarnings), len(warnings), "%v", warnings)
+					require.Equal(t, len(c.ExpectedSeries), len(seriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)
+
 					if len(c.ExpectedSeries) == 1 {
 						// For bucketStoreAPI chunks are not sorted within response. TODO: Investigate: Is this fine?
 						sort.Slice(seriesSet[0].Chunks, func(i, j int) bool {
