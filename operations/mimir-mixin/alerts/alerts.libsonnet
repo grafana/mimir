@@ -204,7 +204,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             (
               sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
-                increase(kube_pod_container_status_restarts_total{container=~"(%(ingester)s|%(mimir_write)s)"}[%(range_interval)s])
+                increase(kube_pod_container_status_restarts_total{container=~"(%(ingester)s|%(mimir_write)s)"}[30m])
               )
               >= 2
             )
@@ -215,7 +215,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ||| % $._config {
             ingester: $._config.container_names.ingester,
             mimir_write: $._config.container_names.mimir_write,
-            range_interval: $.alertRangeInterval(30),
           },
           labels: {
             // This alert is on a cause not symptom. A couple of ingesters restarts may be suspicious but
