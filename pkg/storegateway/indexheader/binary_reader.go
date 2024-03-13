@@ -14,6 +14,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/grafana/dskit/runutil"
@@ -76,53 +77,61 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 	}
 	tmpFilename := filename + ".tmp"
 
-	// Buffer for copying and encbuffers.
-	// This also will control the size of file writer buffer.
-	buf := make([]byte, 32*1024)
-	bw, err := newBinaryWriter(tmpFilename, buf)
-	if err != nil {
-		return errors.Wrap(err, "new binary index header writer")
-	}
-	defer runutil.CloseWithErrCapture(&err, bw, "close binary writer for %s", tmpFilename)
-
-	// We put the end of the last posting list as the beginning of the label indices table.
-	// As of now this value is also the actual end of the last posting list. In the future
-	// it may be some bytes after the actual end (e.g. in case Prometheus starts adding padding
-	// after the last posting list).
-	if err := bw.AddIndexMeta(indexVersion, ir.toc.LabelIndicesTable); err != nil {
-		return errors.Wrap(err, "add index meta")
-	}
-
-	if err := ir.CopySymbols(bw.SymbolsWriter(), buf); err != nil {
-		return err
-	}
-
-	if err := bw.f.Flush(); err != nil {
-		return errors.Wrap(err, "flush")
-	}
-
-	if err := ir.CopyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
-		return err
-	}
-
-	if err := bw.f.Flush(); err != nil {
-		return errors.Wrap(err, "flush")
-	}
-
-	if err := bw.WriteTOC(); err != nil {
-		return errors.Wrap(err, "write index header TOC")
-	}
-
-	if err := bw.f.Flush(); err != nil {
-		return errors.Wrap(err, "flush")
-	}
-
-	if err := bw.f.f.Sync(); err != nil {
-		return errors.Wrap(err, "sync")
+	shouldReturn, returnValue := writeAndClose(tmpFilename, indexVersion, ir)
+	if shouldReturn {
+		return returnValue
 	}
 
 	// Create index-header in atomic way, to avoid partial writes (e.g during restart or crash of store GW).
 	return os.Rename(tmpFilename, filename)
+}
+
+func writeAndClose(tmpFilename string, indexVersion int, ir *chunkedIndexReader) (bool, error) {
+	// Buffer for copying and encbuffers.
+	// This also will control the size of file writer buffer.
+	// We put the end of the last posting list as the beginning of the label indices table.
+	// As of now this value is also the actual end of the last posting list. In the future
+	// it may be some bytes after the actual end (e.g. in case Prometheus starts adding padding
+	// after the last posting list).
+	buf := make([]byte, 32*1024)
+	bw, err := newBinaryWriter(tmpFilename, buf)
+	if err != nil {
+		return true, errors.Wrap(err, "new binary index header writer")
+	}
+	defer runutil.CloseWithErrCapture(&err, bw, "close binary writer for %s", tmpFilename)
+
+	if err := bw.AddIndexMeta(indexVersion, ir.toc.LabelIndicesTable); err != nil {
+		return true, errors.Wrap(err, "add index meta")
+	}
+
+	if err := ir.CopySymbols(bw.SymbolsWriter(), buf); err != nil {
+		return true, err
+	}
+
+	if err := bw.f.Flush(); err != nil {
+		return true, errors.Wrap(err, "flush")
+	}
+
+	if err := ir.CopyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
+		return true, err
+	}
+
+	if err := bw.f.Flush(); err != nil {
+		return true, errors.Wrap(err, "flush")
+	}
+
+	if err := bw.WriteTOC(); err != nil {
+		return true, errors.Wrap(err, "write index header TOC")
+	}
+
+	if err := bw.f.Flush(); err != nil {
+		return true, errors.Wrap(err, "flush")
+	}
+
+	if err := bw.f.f.Sync(); err != nil {
+		return true, errors.Wrap(err, "sync")
+	}
+	return false, nil
 }
 
 type chunkedIndexReader struct {
@@ -134,7 +143,7 @@ type chunkedIndexReader struct {
 }
 
 func newChunkedIndexReader(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID) (*chunkedIndexReader, int, error) {
-	indexFilepath := filepath.Join(id.String(), block.IndexFilename)
+	indexFilepath := path.Join(id.String(), block.IndexFilename)
 	attrs, err := bkt.Attributes(ctx, indexFilepath)
 	if err != nil {
 		return nil, 0, errors.Wrapf(err, "get object attributes of %s", indexFilepath)
