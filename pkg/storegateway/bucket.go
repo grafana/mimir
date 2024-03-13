@@ -1187,6 +1187,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("encode").Observe(stats.streamingSeriesEncodeResponseDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("send").Observe(stats.streamingSeriesSendResponseDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("wait_max_concurrent").Observe(stats.streamingSeriesConcurrencyLimitWaitDuration.Seconds())
 
 	s.metrics.seriesDataFetched.WithLabelValues("chunks", "fetched").Observe(float64(stats.chunksFetched))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "fetched").Observe(float64(stats.chunksFetchedSizeSum))
@@ -1255,7 +1256,6 @@ func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesBatchLoadDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("load_index_header").Observe(stats.streamingSeriesIndexHeaderLoadDuration.Seconds())
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("wait_max_concurrent").Observe(stats.streamingSeriesConcurrencyLimitWaitDuration.Seconds())
 
 	categorizedTime := stats.streamingSeriesExpandPostingsDuration +
 		stats.streamingSeriesBatchLoadDuration +
