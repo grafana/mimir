@@ -18,7 +18,7 @@ import (
 )
 
 type Aggregation struct {
-	Inner    Operator
+	Inner    InstantVectorOperator
 	Start    time.Time
 	End      time.Time
 	Interval time.Duration
@@ -38,7 +38,7 @@ type group struct {
 	present []bool
 }
 
-var _ Operator = &Aggregation{}
+var _ InstantVectorOperator = &Aggregation{}
 
 // TODO: test case for grouping by multiple labels
 // TODO: add test for case where Inner returns no results
@@ -104,10 +104,10 @@ func (a *Aggregation) labelsForGroup(m labels.Labels, lb *labels.Builder) labels
 }
 
 // TODO: add test for case where series does not contain a point at every step
-func (a *Aggregation) Next(ctx context.Context) (SeriesData, error) {
+func (a *Aggregation) Next(ctx context.Context) (InstantVectorSeriesData, error) {
 	if len(a.remainingGroups) == 0 {
 		// No more groups left.
-		return SeriesData{}, EOS
+		return InstantVectorSeriesData{}, EOS
 	}
 
 	start := timestamp.FromTime(a.Start)
@@ -125,10 +125,10 @@ func (a *Aggregation) Next(ctx context.Context) (SeriesData, error) {
 
 		if err != nil {
 			if errors.Is(err, EOS) {
-				return SeriesData{}, fmt.Errorf("exhausted series before all groups were completed: %w", err)
+				return InstantVectorSeriesData{}, fmt.Errorf("exhausted series before all groups were completed: %w", err)
 			}
 
-			return SeriesData{}, err
+			return InstantVectorSeriesData{}, err
 		}
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
@@ -172,7 +172,7 @@ func (a *Aggregation) Next(ctx context.Context) (SeriesData, error) {
 
 	// TODO: return thisGroup to pool (zero-out slices)
 
-	return SeriesData{Floats: points}, nil
+	return InstantVectorSeriesData{Floats: points}, nil
 }
 
 func (a *Aggregation) Close() {

@@ -41,7 +41,7 @@ type InstantVectorSelector struct {
 	intervalMilliseconds int64
 }
 
-var _ Operator = &InstantVectorSelector{}
+var _ InstantVectorOperator = &InstantVectorSelector{}
 
 func (v *InstantVectorSelector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	if v.currentSeriesBatch != nil {
@@ -100,13 +100,13 @@ func (v *InstantVectorSelector) Series(ctx context.Context) ([]SeriesMetadata, e
 	return metadata, ss.Err()
 }
 
-func (v *InstantVectorSelector) Next(ctx context.Context) (SeriesData, error) {
+func (v *InstantVectorSelector) Next(ctx context.Context) (InstantVectorSeriesData, error) {
 	if v.currentSeriesBatch == nil || len(v.currentSeriesBatch.series) == 0 {
-		return SeriesData{}, EOS
+		return InstantVectorSeriesData{}, EOS
 	}
 
 	if ctx.Err() != nil {
-		return SeriesData{}, ctx.Err()
+		return InstantVectorSeriesData{}, ctx.Err()
 	}
 
 	if v.memoizedIterator == nil {
@@ -125,7 +125,7 @@ func (v *InstantVectorSelector) Next(ctx context.Context) (SeriesData, error) {
 	}
 
 	numSteps := stepCount(v.startTimestamp, v.endTimestamp, v.intervalMilliseconds)
-	data := SeriesData{
+	data := InstantVectorSeriesData{
 		Floats: v.Pool.GetFPointSlice(numSteps),
 	}
 
@@ -139,13 +139,13 @@ func (v *InstantVectorSelector) Next(ctx context.Context) (SeriesData, error) {
 		switch valueType {
 		case chunkenc.ValNone:
 			if v.memoizedIterator.Err() != nil {
-				return SeriesData{}, v.memoizedIterator.Err()
+				return InstantVectorSeriesData{}, v.memoizedIterator.Err()
 			}
 		case chunkenc.ValFloat:
 			t, val = v.memoizedIterator.At()
 		default:
 			// TODO: handle native histograms
-			return SeriesData{}, fmt.Errorf("unknown value type %s", valueType.String())
+			return InstantVectorSeriesData{}, fmt.Errorf("unknown value type %s", valueType.String())
 		}
 
 		if valueType == chunkenc.ValNone || t > ts {
@@ -166,7 +166,7 @@ func (v *InstantVectorSelector) Next(ctx context.Context) (SeriesData, error) {
 	}
 
 	if v.memoizedIterator.Err() != nil {
-		return SeriesData{}, v.memoizedIterator.Err()
+		return InstantVectorSeriesData{}, v.memoizedIterator.Err()
 	}
 
 	return data, nil

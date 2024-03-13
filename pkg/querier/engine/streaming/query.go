@@ -27,7 +27,7 @@ type Query struct {
 	opts      promql.QueryOpts
 	qs        string
 	statement parser.Statement
-	root      operator.Operator
+	root      operator.InstantVectorOperator
 	start     time.Time
 	end       time.Time
 	interval  time.Duration
@@ -66,7 +66,7 @@ func NewQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, sta
 	return q, nil
 }
 
-func (q *Query) convertToOperator(expr parser.Expr) (operator.Operator, error) {
+func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOperator, error) {
 	interval := q.interval
 
 	if q.IsInstant() {
@@ -81,11 +81,11 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.Operator, error) {
 		}
 
 		if e.OriginalOffset != 0 || e.Offset != 0 {
-			return nil, NewNotSupportedError("vector selector with offset")
+			return nil, NewNotSupportedError("instant vector selector with offset")
 		}
 
 		if e.Timestamp != nil {
-			return nil, NewNotSupportedError("vector selector with timestamp")
+			return nil, NewNotSupportedError("instant vector selector with timestamp")
 		}
 
 		return &operator.InstantVectorSelector{
@@ -144,11 +144,11 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.Operator, error) {
 		vectorSelector := matrixSelector.VectorSelector.(*parser.VectorSelector)
 
 		if vectorSelector.OriginalOffset != 0 || vectorSelector.Offset != 0 {
-			return nil, NewNotSupportedError("vector selector with offset")
+			return nil, NewNotSupportedError("range vector selector with offset")
 		}
 
 		if vectorSelector.Timestamp != nil {
-			return nil, NewNotSupportedError("vector selector with timestamp")
+			return nil, NewNotSupportedError("range vector selector with timestamp")
 		}
 
 		return &operator.RangeVectorSelectorWithTransformation{

@@ -45,7 +45,7 @@ type RangeVectorSelectorWithTransformation struct {
 	rangeMilliseconds    int64
 }
 
-var _ Operator = &RangeVectorSelectorWithTransformation{}
+var _ InstantVectorOperator = &RangeVectorSelectorWithTransformation{}
 
 func (m *RangeVectorSelectorWithTransformation) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	if m.currentSeriesBatch != nil {
@@ -114,13 +114,13 @@ func dropMetricName(l labels.Labels, lb *labels.Builder) labels.Labels {
 	return lb.Labels()
 }
 
-func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (SeriesData, error) {
+func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (InstantVectorSeriesData, error) {
 	if m.currentSeriesBatch == nil || len(m.currentSeriesBatch.series) == 0 {
-		return SeriesData{}, EOS
+		return InstantVectorSeriesData{}, EOS
 	}
 
 	if ctx.Err() != nil {
-		return SeriesData{}, ctx.Err()
+		return InstantVectorSeriesData{}, ctx.Err()
 	}
 
 	if m.buffer == nil {
@@ -139,7 +139,7 @@ func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (Serie
 	}
 
 	numSteps := stepCount(m.startTimestamp, m.endTimestamp, m.intervalMilliseconds)
-	data := SeriesData{
+	data := InstantVectorSeriesData{
 		Floats: m.Pool.GetFPointSlice(numSteps),
 	}
 
@@ -152,7 +152,7 @@ func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (Serie
 		m.buffer.DiscardPointsBefore(rangeStart)
 
 		if err := m.fillBuffer(rangeStart, rangeEnd); err != nil {
-			return SeriesData{}, err
+			return InstantVectorSeriesData{}, err
 		}
 
 		head, tail := m.buffer.Points()
