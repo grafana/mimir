@@ -23,6 +23,8 @@
 
 ### Tools
 
+* [ENHANCEMENT] ulidtime: add option to show random part of ULID, timestamp in milliseconds and header. #7615
+
 ## 2.12.0-rc.0
 
 ### Grafana Mimir
