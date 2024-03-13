@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/engine/streaming/util"
 )
 
-// TODO: support transformations other than 'rate'
 type MatrixSelectorWithTransformationOverRange struct {
 	Queryable     storage.Queryable
 	Start         time.Time

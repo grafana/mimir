@@ -12,7 +12,8 @@ import (
 type Operator interface {
 	// Series returns a list of all series that will be returned by this operator.
 	// The returned []SeriesMetadata can be modified by the caller or returned to a pool.
-	// TODO: either require all operators sort series, or state that any order is acceptable
+	// An operator may return series in any order, but the same order must be used by both Series and Next.
+	// Series should be called no more than once.
 	Series(ctx context.Context) ([]SeriesMetadata, error)
 
 	// Next returns the next series from this operator, or false otherwise.

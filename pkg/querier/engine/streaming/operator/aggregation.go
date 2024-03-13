@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 )
 
-// TODO: support aggregations other than 'sum'
 type Aggregation struct {
 	Inner    Operator
 	Start    time.Time
@@ -42,7 +41,6 @@ var _ Operator = &Aggregation{}
 
 // TODO: test case for grouping by multiple labels
 // TODO: add test for case where Inner returns no results
-// TODO: special case for aggregation to single series? (query without 'by' or 'without', eg. sum(metric{}))
 func (a *Aggregation) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	// Fetch the source series
 	innerSeries, err := a.Inner.Series(ctx)
