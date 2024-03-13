@@ -248,6 +248,8 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 			errCode = codes.FailedPrecondition
 		case mimirpb.CIRCUIT_BREAKER_OPEN:
 			errCode = codes.Unavailable
+		case mimirpb.METHOD_NOT_ALLOWED:
+			errCode = codes.Unimplemented
 		}
 	}
 	stat := status.New(errCode, pushErr.Error())
@@ -296,7 +298,11 @@ func wrapPartitionPushError(err error, partitionID int32) error {
 func isIngesterClientError(err error) bool {
 	var ingesterPushErr ingesterPushError
 	if errors.As(err, &ingesterPushErr) {
-		return ingesterPushErr.errorCause() == mimirpb.BAD_DATA
+		switch ingesterPushErr.errorCause() {
+		case mimirpb.BAD_DATA, mimirpb.METHOD_NOT_ALLOWED:
+			return true
+		}
+		return false
 	}
 
 	// This code is needed for backwards compatibility, since ingesters may still return errors with HTTP status

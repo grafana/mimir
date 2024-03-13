@@ -228,6 +228,8 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 			return http.StatusServiceUnavailable
 		case mimirpb.CIRCUIT_BREAKER_OPEN:
 			return http.StatusServiceUnavailable
+		case mimirpb.METHOD_NOT_ALLOWED:
+			return http.StatusMethodNotAllowed
 		}
 	}
 

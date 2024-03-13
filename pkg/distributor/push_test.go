@@ -1091,6 +1091,16 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
+		"an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 405": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID),
+			expectedHTTPStatus: http.StatusMethodNotAllowed,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 405": {
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID)},
+			expectedHTTPStatus: http.StatusMethodNotAllowed,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
 		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,

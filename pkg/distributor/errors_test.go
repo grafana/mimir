@@ -364,6 +364,18 @@ func TestToGRPCError(t *testing.T) {
 			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, circuitbreaker.ErrOpen),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.CIRCUIT_BREAKER_OPEN},
 		},
+		"an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into a Unimplemented error with METHOD_NOT_ALLOWED cause": {
+			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID),
+			expectedGRPCCode:     codes.Unimplemented,
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.METHOD_NOT_ALLOWED},
+		},
+		"a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into a Unimplemented error with METHOD_NOT_ALLOWED cause": {
+			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID)},
+			expectedGRPCCode:     codes.Unimplemented,
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.METHOD_NOT_ALLOWED},
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -486,7 +498,11 @@ func TestIsIngesterClientError(t *testing.T) {
 			err:             ingesterPushError{cause: mimirpb.BAD_DATA},
 			expectedOutcome: true,
 		},
-		"an ingesterPushError with error cause different from BAD_DATA is not a client error": {
+		"an ingesterPushError with error cause METHOD_NOT_ALLOWED is a client error": {
+			err:             ingesterPushError{cause: mimirpb.METHOD_NOT_ALLOWED},
+			expectedOutcome: true,
+		},
+		"an ingesterPushError with other error cause is not a client error": {
 			err:             ingesterPushError{cause: mimirpb.SERVICE_UNAVAILABLE},
 			expectedOutcome: false,
 		},
