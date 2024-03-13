@@ -136,7 +136,7 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
 	distributorQueryable := newDistributorQueryable(distributor, limits, queryMetrics, logger)
@@ -163,12 +163,17 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 	case standardPromQLEngine:
 		eng = promql.NewEngine(opts)
 	case streamingPromQLEngine:
-		eng = streaming.NewEngine(opts)
+		var err error
+
+		eng, err = streaming.NewEngine(opts)
+		if err != nil {
+			return nil, nil, nil, err
+		}
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.PromQLEngine))
 	}
 
-	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng
+	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, nil
 }
 
 // NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a Queryable.

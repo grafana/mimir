@@ -229,22 +229,27 @@ func BenchmarkQuery(b *testing.B) {
 	stor := teststorage.New(b)
 	defer stor.Close()
 	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 50000000,
-		Timeout:    100 * time.Second,
+		Logger:               nil,
+		Reg:                  nil,
+		MaxSamples:           50000000,
+		Timeout:              100 * time.Second,
+		EnableAtModifier:     true,
+		EnableNegativeOffset: true,
 	}
+
+	streamingEngine, err := NewEngine(opts)
+	require.NoError(b, err)
 
 	engines := map[string]promql.QueryEngine{
 		"standard":  promql.NewEngine(opts),
-		"streaming": NewEngine(opts),
+		"streaming": streamingEngine,
 	}
 
 	const interval = 10000 // 10s interval.
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
 
-	err := setupTestData(stor, interval, numIntervals)
+	err = setupTestData(stor, interval, numIntervals)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -289,20 +294,23 @@ func TestQuery(t *testing.T) {
 	stor := teststorage.New(t)
 	defer stor.Close()
 	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 50000000,
-		Timeout:    100 * time.Second,
+		Logger:               nil,
+		Reg:                  nil,
+		MaxSamples:           50000000,
+		Timeout:              100 * time.Second,
+		EnableAtModifier:     true,
+		EnableNegativeOffset: true,
 	}
 
 	standardEngine := promql.NewEngine(opts)
-	streamingEngine := NewEngine(opts)
+	streamingEngine, err := NewEngine(opts)
+	require.NoError(t, err)
 
 	const interval = 10000 // 10s interval.
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
 
-	err := setupTestData(stor, interval, numIntervals)
+	err = setupTestData(stor, interval, numIntervals)
 	require.NoError(t, err)
 	cases := testCases()
 
