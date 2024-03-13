@@ -12,7 +12,7 @@ When you open a PR as a draft, add a short description of what you’re still wo
 
 Before a piece of work is finished:
 
-- Organize it into one or more commits, and include a commit message for each that describes all of the changes that you made in that commit. It is more helpful to explain _why_ more than _what_, which are available via `git diff`.
+- Organize it into one or more commsits, and include a commit message for each that describe all of the changes that you made in that commit. It is more helpful to explain _why_ more than _what_, which are available via `git diff`.
 - Each commit should build towards the whole - don't leave in back-tracks and mistakes that you later corrected.
 - Have unit and/or [integration](./how-integration-tests-work.md) tests for new functionality or tests that would have caught the bug being fixed.
 - Include a [CHANGELOG](#changelog) message if users of Grafana Mimir need to hear about what you did.
