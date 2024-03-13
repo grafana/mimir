@@ -21,6 +21,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+
+	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 func TestOTLPHttpClient_WriteSeries(t *testing.T) {
@@ -203,6 +205,9 @@ func TestClient_QueryRange(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		receivedRequests = append(receivedRequests, request)
 
+		// Read requests must go through strong read consistency
+		require.Equal(t, api.ReadConsistencyStrong, request.Header.Get(api.ReadConsistencyHeader))
+
 		writer.WriteHeader(http.StatusOK)
 		_, err := writer.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
 		require.NoError(t, err)
@@ -247,6 +252,9 @@ func TestClient_Query(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		receivedRequests = append(receivedRequests, request)
+
+		// Read requests must go through strong read consistency
+		require.Equal(t, api.ReadConsistencyStrong, request.Header.Get(api.ReadConsistencyHeader))
 
 		writer.WriteHeader(http.StatusOK)
 		_, err := writer.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))

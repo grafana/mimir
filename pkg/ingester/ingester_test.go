@@ -4580,6 +4580,10 @@ func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config,
 }
 
 func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, ingestersRing ring.ReadRing, dataDir string, bucketDir string, registerer prometheus.Registerer) (*Ingester, error) {
+	return prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t, ingesterCfg, overrides, ingestersRing, nil, dataDir, bucketDir, registerer)
+}
+
+func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionRingWatcher, dataDir string, bucketDir string, registerer prometheus.Registerer) (*Ingester, error) {
 	// Create a data dir if none has been provided.
 	if dataDir == "" {
 		dataDir = t.TempDir()
@@ -4600,7 +4604,7 @@ func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Confi
 		ingestersRing = createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig())
 	}
 
-	ingester, err := New(ingesterCfg, overrides, ingestersRing, nil, nil, registerer, noDebugNoopLogger{})
+	ingester, err := New(ingesterCfg, overrides, ingestersRing, partitionsRing, nil, registerer, noDebugNoopLogger{}) // LOGGING: log.NewLogfmtLogger(os.Stderr)
 	if err != nil {
 		return nil, err
 	}

@@ -524,6 +524,9 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				60 * 60 * 6,  // 6h
 				60 * 60 * 12, // 12h
 			},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 		mmapChunksTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_mmap_chunks_total",
@@ -762,6 +765,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 	h.startWALReplayStatus(startFrom, endAt)
 
+	syms := labels.NewSymbolTable() // One table for the whole WAL.
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 	if err == nil && startFrom >= snapIdx {
 		sr, err := wlog.NewSegmentsReader(dir)
@@ -776,7 +780,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -809,7 +813,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks)
+		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks)
 		if err := sr.Close(); err != nil {
 			level.Warn(h.logger).Log("msg", "Error while closing the wal segments reader", "err", err)
 		}
@@ -837,7 +841,7 @@ func (h *Head) Init(minValidTime int64) error {
 			}
 
 			sr := wlog.NewSegmentBufReader(s)
-			err = h.loadWBL(wlog.NewReader(sr), multiRef, lastMmapRef)
+			err = h.loadWBL(wlog.NewReader(sr), syms, multiRef, lastMmapRef)
 			if err := sr.Close(); err != nil {
 				level.Warn(h.logger).Log("msg", "Error while closing the wbl segments reader", "err", err)
 			}

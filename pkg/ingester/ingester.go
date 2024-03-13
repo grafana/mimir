@@ -415,6 +415,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.compactionIdleTimeout)
 
 	var limiterStrategy limiterRingStrategy
+	var ownedSeriesStrategy ownedSeriesRingStrategy
 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
@@ -449,14 +450,16 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 
 		limiterStrategy = newPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
+		ownedSeriesStrategy = newOwnedSeriesPartitionRingStrategy(i.ingestPartitionID, partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
 	} else {
 		limiterStrategy = newIngesterRingLimiterStrategy(ingestersRing, cfg.IngesterRing.ReplicationFactor, cfg.IngesterRing.ZoneAwarenessEnabled, cfg.IngesterRing.InstanceZone, i.limits.IngestionTenantShardSize)
+		ownedSeriesStrategy = newOwnedSeriesIngesterRingStrategy(i.lifecycler.ID, ingestersRing, i.limits.IngestionTenantShardSize)
 	}
 
 	i.limiter = NewLimiter(limits, limiterStrategy)
 
 	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
-		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, i.lifecycler.ID, ingestersRing, log.With(i.logger, "component", "owned series"), registerer, i.limits.IngestionTenantShardSize, i.limiter.maxSeriesPerUser, i.getTSDBUsers, i.getTSDB)
+		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, ownedSeriesStrategy, log.With(i.logger, "component", "owned series"), registerer, i.limiter.maxSeriesPerUser, i.getTSDBUsers, i.getTSDB)
 	}
 
 	i.BasicService = services.NewBasicService(i.starting, i.updateLoop, i.stopping)
@@ -528,11 +531,11 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		// calculate owned series before we start the lifecycler at all. Once we move the ingester to the BasicLifecycler and
 		// have better control over the ring states, we could perform the calculation while in JOINING state, and move to
 		// ACTIVE once we finish.
-
-		oss := i.ownedSeriesService
+		//
+		// TODO: When using partitions ring, we need to update all tenants after partition is registered into the ring. That is done by partitionLifecycler's starting method.
 
 		// Fetch and cache current ring state
-		_, err := oss.checkRingForChanges()
+		_, err := i.ownedSeriesService.ringStrategy.checkRingForChanges()
 		switch {
 		case errors.Is(err, ring.ErrEmptyRing):
 			level.Warn(i.logger).Log("msg", "ingester ring is empty")
@@ -540,7 +543,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			return fmt.Errorf("can't read ring: %v", err)
 		default:
 			// We pass ringChanged=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
-			oss.updateAllTenants(ctx, true)
+			i.ownedSeriesService.updateAllTenants(ctx, true)
 		}
 	}
 
@@ -2400,6 +2403,10 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	if i.limiter != nil {
 		initialLocalLimit = i.limiter.maxSeriesPerUser(userID, 0)
 	}
+	ownedSeriedStateShardSize := 0
+	if i.ownedSeriesService != nil {
+		ownedSeriedStateShardSize = i.ownedSeriesService.ringStrategy.shardSizeForUser(userID)
+	}
 
 	userDB := &userTSDB{
 		userID:                  userID,
@@ -2414,7 +2421,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
 
 		ownedState: ownedSeriesState{
-			shardSize:        i.limits.IngestionTenantShardSize(userID), // initialize series shard size so that it's correct even before we update ownedSeries for the first time
+			shardSize:        ownedSeriedStateShardSize, // initialize series shard size so that it's correct even before we update ownedSeries for the first time
 			localSeriesLimit: initialLocalLimit,
 		},
 	}

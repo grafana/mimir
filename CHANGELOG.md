@@ -4,6 +4,28 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
+
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+### Mimir Continuous Test
+
+* [BUGFIX] Set `User-Agent` header for all requests sent from the testing client. #7607
+
+### Query-tee
+
+### Documentation
+
+### Tools
+
+## 2.12.0-rc.0
+
+### Grafana Mimir
+
 * [CHANGE] Alertmanager: Deprecates the `v1` API. All `v1` API endpoints now respond with a JSON deprecation notice and a status code of `410`. All endpoints have a `v2` equivalent. The list of endpoints is: #7103
   * `<alertmanager-web.external-url>/api/v1/alerts`
   * `<alertmanager-web.external-url>/api/v1/receivers`
@@ -24,7 +46,7 @@
   * `prometheus_sd_updates_total` renamed to `cortex_prometheus_sd_updates_total`
   * `prometheus_sd_refresh_failures_total` renamed to `cortex_prometheus_sd_refresh_failures_total`
   * `prometheus_sd_refresh_duration_seconds` renamed to `cortex_prometheus_sd_refresh_duration_seconds`
-* [CHANGE] Query-frontend: the default value for `-query-frontend.not-running-timeout` has been changed from 0 (disabled) to 2s. The configuration option has also been moved from "experimental" to "advanced". #7126
+* [CHANGE] Query-frontend: the default value for `-query-frontend.not-running-timeout` has been changed from 0 (disabled) to 2s. The configuration option has also been moved from "experimental" to "advanced". #7127
 * [CHANGE] Store-gateway: to reduce disk contention on HDDs the default value for `blocks-storage.bucket-store.tenant-sync-concurrency` has been changed from `10` to `1` and the default value for `blocks-storage.bucket-store.block-sync-concurrency` has been changed from `20` to `4`. #7136
 * [CHANGE] Store-gateway: Remove deprecated CLI flags `-blocks-storage.bucket-store.index-header-lazy-loading-enabled` and `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` and their corresponding YAML settings. Instead, use `-blocks-storage.bucket-store.index-header.lazy-loading-enabled` and `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout`. #7521
 * [CHANGE] Store-gateway: Mark experimental CLI flag `-blocks-storage.bucket-store.index-header.lazy-loading-concurrency` and its corresponding YAML settings as advanced. #7521
@@ -51,7 +73,7 @@
 * [CHANGE] Query-frontend: The deprecated YAML setting `frontend.cache_unaligned_requests` has been moved to `limits.cache_unaligned_requests`. #7519
 * [FEATURE] Introduce `-server.log-source-ips-full` option to log all IPs from `Forwarded`, `X-Real-IP`, `X-Forwarded-For` headers. #7250
 * [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
-* [FEATURE] Cardinality API: added a new `count_method` parameter which enables counting active label values. #7085
+* [FEATURE] Cardinality API: added a new `count_method` parameter which enables counting active label names. #7085
 * [FEATURE] Querier / query-frontend: added `-querier.promql-experimental-functions-enabled` CLI flag (and respective YAML config option) to enable experimental PromQL functions. The experimental functions introduced are: `mad_over_time()`, `sort_by_label()` and `sort_by_label_desc()`. #7057
 * [FEATURE] Alertmanager API: added `-alertmanager.grafana-alertmanager-compatibility-enabled` CLI flag (and respective YAML config option) to enable an experimental API endpoints that support the migration of the Grafana Alertmanager. #7057
 * [FEATURE] Alertmanager: Added `-alertmanager.utf8-strict-mode-enabled` to control support for any UTF-8 character as part of Alertmanager configuration/API matchers and labels. It's default value is set to `false`. #6898
@@ -89,6 +111,7 @@
 * [ENHANCEMENT] API: Use github.com/klauspost/compress for faster gzip and deflate compression of API responses. #7475
 * [ENHANCEMENT] Ingester: Limiting on owned series (`-ingester.use-ingester-owned-series-for-limits`) now prevents discards in cases where a tenant is sharded across all ingesters (or shuffle sharding is disabled) and the ingester count increases. #7411
 * [ENHANCEMENT] Block upload: include converted timestamps in the error message if block is from the future. #7538
+* [ENHANCEMENT] Query-frontend: Introduce `-query-frontend.active-series-write-timeout` to allow configuring the server-side write timeout for active series requests. #7553 #7569
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
 * [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
@@ -121,6 +144,8 @@
 * [BUGFIX] Ruler: fix regression that caused client errors to be tracked in `cortex_ruler_write_requests_failed_total` metric. #7472
 * [BUGFIX] promql: Fix Range selectors with an @ modifier are wrongly scoped in range queries. #7475
 * [BUGFIX] Fix metadata API using wrong JSON field names. #7475
+* [BUGFIX] Ruler: fix native histogram recording rule result corruption. #7552
+* [BUGFIX] Querier: fix HTTP status code translations for remote read requests. Previously, remote-read had conflicting behaviours: when returning samples all internal errors were translated to HTTP 400; when returning chunks all internal errors were translated to HTTP 500. #7487
 
 ### Mixin
 

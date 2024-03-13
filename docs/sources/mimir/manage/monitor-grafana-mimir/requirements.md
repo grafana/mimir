@@ -92,7 +92,7 @@ Metrics from node_exporter must all have an `instance` label on them that has th
 
 ## Log labels
 
-The **Slow queries** dashboard uses a Loki data source with the logs from Grafana Mimir to visualize slow queries. The query-frontend component logs slow queries based on how you configured the `-query-frontend.log-queries-longer-than` parameter.
+The **Slow queries** dashboard uses a Loki data source with the logs from Grafana Mimir to visualize slow queries. The query-frontend component logs query statistics when the `-query-frontend.query-stats-enabled` parameter is set to `true`.
 These logs need to have specific labels in order for the dashboard to work.
 
 | Label name  | Configurable? | Description                                                                                                                                                                |
