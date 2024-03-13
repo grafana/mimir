@@ -9,8 +9,9 @@
 
 /docs/                                                                      @jdbaldry @grafana/mimir-maintainers
 /docs/docs.mk                                                               @grafana/docs-tooling @grafana/mimir-maintainers
+/docs/internal/                                                             @grafana/mimir-maintainers
 /docs/make-docs                                                             @grafana/docs-tooling @grafana/mimir-maintainers
-/docs/proposals                                                             @grafana/mimir-maintainers
+/docs/proposals/                                                            @grafana/mimir-maintainers
 /docs/variables.mk                                                          @grafana/docs-tooling @grafana/mimir-maintainers
 
 # Alertmanager and ruler.
