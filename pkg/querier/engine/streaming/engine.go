@@ -43,10 +43,6 @@ type Engine struct {
 	lookbackDelta time.Duration
 }
 
-func (e *Engine) SetQueryLogger(l promql.QueryLogger) {
-	panic("implement me")
-}
-
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	// TODO: do we need to do anything more for instant queries?
 	return e.NewRangeQuery(ctx, q, opts, qs, ts, ts, 0)
