@@ -6,7 +6,7 @@ import (
 	"github.com/failsafe-go/failsafe-go/policy"
 )
 
-// circuitBreakerExecutor is a failsafe.Executor that handles failures according to a CircuitBreaker.
+// circuitBreakerExecutor is a policy.Executor that handles failures according to a CircuitBreaker.
 type circuitBreakerExecutor[R any] struct {
 	*policy.BaseExecutor[R]
 	*circuitBreaker[R]
@@ -27,6 +27,8 @@ func (cbe *circuitBreakerExecutor[R]) OnSuccess(exec policy.ExecutionInternal[R]
 }
 
 func (cbe *circuitBreakerExecutor[R]) OnFailure(exec policy.ExecutionInternal[R], result *common.PolicyResult[R]) *common.PolicyResult[R] {
+	// Wrap the result in the execution so it's available when computing a delay
+	exec = exec.CopyWithResult(result).(policy.ExecutionInternal[R])
 	cbe.BaseExecutor.OnFailure(exec, result)
 	cbe.mtx.Lock()
 	defer cbe.mtx.Unlock()
