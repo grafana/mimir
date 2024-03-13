@@ -1289,7 +1289,74 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 	}
 }
 
-func TestIngesterWaitsForPartitionToAppearInTheRingBeforeOwnedSeriesEntersRunningState(t *testing.T) {
+func TestOwnedSeriesWaitsForIngesterWithTokensBeforeEnteringRunningState(t *testing.T) {
+	ringKVStore, ringCloser := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, ringCloser.Close()) })
+
+	kvStore := &watchingKV{Client: ringKVStore}
+
+	rc := ring.Config{}
+	flagext.DefaultValues(&rc)
+
+	// Configure ring
+	rc.KVStore.Mock = kvStore
+	rc.HeartbeatTimeout = 1 * time.Minute
+	rc.ReplicationFactor = 1 // Number of zones must be equal to RF. We will only use 1 zone.
+	rc.ZoneAwarenessEnabled = true
+
+	rng := createAndStartRing(t, rc)
+
+	const instance = "ingester"
+
+	startCh := make(chan struct{})
+
+	const waitBeforeAddingInstance = 500 * time.Millisecond
+	const waitBeforeAddingTokens = 500 * time.Millisecond
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-startCh
+
+		// Add "bad" instance to the ring.
+		updateRingAndWaitForWatcherToReadUpdate(t, kvStore, func(desc *ring.Desc) {
+			desc.AddIngester("bad-instance", "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now())
+		})
+
+		// Sleep and add real instance.
+		time.Sleep(waitBeforeAddingInstance)
+
+		updateRingAndWaitForWatcherToReadUpdate(t, kvStore, func(desc *ring.Desc) {
+			desc.AddIngester(instance, "localhost:22222", "zone", []uint32{}, ring.PENDING, time.Now())
+		})
+
+		// Sleep and then add tokens too.
+		time.Sleep(waitBeforeAddingTokens)
+		updateRingAndWaitForWatcherToReadUpdate(t, kvStore, func(desc *ring.Desc) {
+			desc.AddIngester(instance, "localhost:22222", "zone", []uint32{100, 200}, ring.ACTIVE, time.Now())
+		})
+	}()
+
+	ringStrategy := newOwnedSeriesIngesterRingStrategy(instance, rng, nil)
+	oss := newOwnedSeriesService(1*time.Second, ringStrategy, log.NewNopLogger(), nil, nil, func() []string { return []string{} }, nil)
+
+	contextWithTimeout, cancel := context.WithTimeout(context.Background(), 10*(waitBeforeAddingInstance+waitBeforeAddingTokens))
+	t.Cleanup(cancel)
+
+	startTime := time.Now()
+	close(startCh)
+	// OwnedSeriesService will only become Running after it finds instance with tokens.
+	require.NoError(t, services.StartAndAwaitRunning(contextWithTimeout, oss))
+	elapsed := time.Since(startTime)
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), oss))
+
+	require.Greater(t, elapsed, waitBeforeAddingInstance+waitBeforeAddingTokens)
+	wg.Wait()
+}
+
+func TestOwnedSeriesWaitsForPartitionBeforeEnteringRunningState(t *testing.T) {
 	partitionsKVStore, partitionsKVStoreCloser := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, partitionsKVStoreCloser.Close()) })
 
@@ -1335,8 +1402,8 @@ func TestIngesterWaitsForPartitionToAppearInTheRingBeforeOwnedSeriesEntersRunnin
 	startTime := time.Now()
 	close(startCh)
 	require.NoError(t, services.StartAndAwaitRunning(contextWithTimeout, oss))
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), oss))
 	elapsed := time.Since(startTime)
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), oss))
 
 	require.Greater(t, elapsed, minWait)
 	wg.Wait()
