@@ -643,7 +643,6 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.ing.limiter.maxSeriesPerUser,
 				c.ing.getTSDBUsers,
 				c.ing.getTSDB,
-				false,
 			)
 
 			tc.testFunc(t, &c, tc.limits)
@@ -750,7 +749,6 @@ func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRin
 		c.ing.limiter.maxSeriesPerUser,
 		c.ing.getTSDBUsers,
 		c.ing.getTSDB,
-		true,
 	)
 }
 
@@ -1291,7 +1289,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 	}
 }
 
-func TestIngesterWaitsForPartitionToAppearInTheRingBeforeRunningOwnedSeries(t *testing.T) {
+func TestIngesterWaitsForPartitionToAppearInTheRingBeforeOwnedSeriesEntersRunningState(t *testing.T) {
 	partitionsKVStore, partitionsKVStoreCloser := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, partitionsKVStoreCloser.Close()) })
 
@@ -1329,16 +1327,17 @@ func TestIngesterWaitsForPartitionToAppearInTheRingBeforeRunningOwnedSeries(t *t
 	}()
 
 	partitionRingStrategy := newOwnedSeriesPartitionRingStrategy(partitionID, prw, nil)
+	oss := newOwnedSeriesService(1*time.Second, partitionRingStrategy, log.NewNopLogger(), nil, nil, func() []string { return []string{} }, nil)
 
 	contextWithTimeout, cancel := context.WithTimeout(context.Background(), 10*minWait)
 	t.Cleanup(cancel)
 
 	startTime := time.Now()
 	close(startCh)
-	err := partitionRingStrategy.waitForRing(contextWithTimeout)
+	require.NoError(t, services.StartAndAwaitRunning(contextWithTimeout, oss))
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), oss))
 	elapsed := time.Since(startTime)
 
-	require.NoError(t, err)
 	require.Greater(t, elapsed, minWait)
 	wg.Wait()
 }
