@@ -4,6 +4,7 @@ package operator
 
 import (
 	"context"
+	"errors"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -16,15 +17,17 @@ type Operator interface {
 	// Series should be called no more than once.
 	Series(ctx context.Context) ([]SeriesMetadata, error)
 
-	// Next returns the next series from this operator, or false otherwise.
+	// Next returns the next series from this operator, or EOS otherwise.
 	// Series must be called exactly once before calling Next.
 	// The returned SeriesData can be modified by the caller or returned to a pool.
-	Next(ctx context.Context) (bool, SeriesData, error)
+	Next(ctx context.Context) (SeriesData, error)
 
 	// Close frees all resources associated with this operator.
 	// Calling Series or Next after calling Close may result in unpredictable behaviour, corruption or crashes.
 	Close()
 }
+
+var EOS = errors.New("operator stream exhausted")
 
 type SeriesMetadata struct {
 	Labels labels.Labels

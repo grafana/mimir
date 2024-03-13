@@ -8,6 +8,7 @@ package operator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"time"
 
@@ -103,10 +104,10 @@ func (a *Aggregation) labelsForGroup(m labels.Labels, lb *labels.Builder) labels
 }
 
 // TODO: add test for case where series does not contain a point at every step
-func (a *Aggregation) Next(ctx context.Context) (bool, SeriesData, error) {
+func (a *Aggregation) Next(ctx context.Context) (SeriesData, error) {
 	if len(a.remainingGroups) == 0 {
 		// No more groups left.
-		return false, SeriesData{}, nil
+		return SeriesData{}, EOS
 	}
 
 	start := timestamp.FromTime(a.Start)
@@ -120,14 +121,14 @@ func (a *Aggregation) Next(ctx context.Context) (bool, SeriesData, error) {
 
 	// Iterate through inner series until the desired group is complete
 	for thisGroup.remainingSeriesCount > 0 {
-		ok, s, err := a.Inner.Next(ctx)
+		s, err := a.Inner.Next(ctx)
 
 		if err != nil {
-			return false, SeriesData{}, err
-		}
+			if errors.Is(err, EOS) {
+				return SeriesData{}, fmt.Errorf("exhausted series before all groups were completed: %w", err)
+			}
 
-		if !ok {
-			return false, SeriesData{}, errors.New("exhausted series before all groups were completed")
+			return SeriesData{}, err
 		}
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
@@ -171,7 +172,7 @@ func (a *Aggregation) Next(ctx context.Context) (bool, SeriesData, error) {
 
 	// TODO: return thisGroup to pool (zero-out slices)
 
-	return true, SeriesData{Floats: points}, nil
+	return SeriesData{Floats: points}, nil
 }
 
 func (a *Aggregation) Close() {

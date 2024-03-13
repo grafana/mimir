@@ -114,13 +114,13 @@ func dropMetricName(l labels.Labels, lb *labels.Builder) labels.Labels {
 	return lb.Labels()
 }
 
-func (m *MatrixSelectorWithTransformationOverRange) Next(ctx context.Context) (bool, SeriesData, error) {
+func (m *MatrixSelectorWithTransformationOverRange) Next(ctx context.Context) (SeriesData, error) {
 	if m.currentSeriesBatch == nil || len(m.currentSeriesBatch.series) == 0 {
-		return false, SeriesData{}, nil
+		return SeriesData{}, EOS
 	}
 
 	if ctx.Err() != nil {
-		return false, SeriesData{}, ctx.Err()
+		return SeriesData{}, ctx.Err()
 	}
 
 	if m.buffer == nil {
@@ -152,7 +152,7 @@ func (m *MatrixSelectorWithTransformationOverRange) Next(ctx context.Context) (b
 		m.buffer.DiscardPointsBefore(rangeStart)
 
 		if err := m.fillBuffer(rangeStart, rangeEnd); err != nil {
-			return false, SeriesData{}, err
+			return SeriesData{}, err
 		}
 
 		head, tail := m.buffer.Points()
@@ -191,7 +191,7 @@ func (m *MatrixSelectorWithTransformationOverRange) Next(ctx context.Context) (b
 		data.Floats = append(data.Floats, promql.FPoint{T: ts, F: val})
 	}
 
-	return true, data, nil
+	return data, nil
 }
 
 // TODO: move to RingBuffer type?

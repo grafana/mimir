@@ -100,13 +100,13 @@ func (v *VectorSelector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	return metadata, ss.Err()
 }
 
-func (v *VectorSelector) Next(ctx context.Context) (bool, SeriesData, error) {
+func (v *VectorSelector) Next(ctx context.Context) (SeriesData, error) {
 	if v.currentSeriesBatch == nil || len(v.currentSeriesBatch.series) == 0 {
-		return false, SeriesData{}, nil
+		return SeriesData{}, EOS
 	}
 
 	if ctx.Err() != nil {
-		return false, SeriesData{}, ctx.Err()
+		return SeriesData{}, ctx.Err()
 	}
 
 	if v.memoizedIterator == nil {
@@ -139,13 +139,13 @@ func (v *VectorSelector) Next(ctx context.Context) (bool, SeriesData, error) {
 		switch valueType {
 		case chunkenc.ValNone:
 			if v.memoizedIterator.Err() != nil {
-				return false, SeriesData{}, v.memoizedIterator.Err()
+				return SeriesData{}, v.memoizedIterator.Err()
 			}
 		case chunkenc.ValFloat:
 			t, val = v.memoizedIterator.At()
 		default:
 			// TODO: handle native histograms
-			return false, SeriesData{}, fmt.Errorf("unknown value type %s", valueType.String())
+			return SeriesData{}, fmt.Errorf("unknown value type %s", valueType.String())
 		}
 
 		if valueType == chunkenc.ValNone || t > ts {
@@ -166,10 +166,10 @@ func (v *VectorSelector) Next(ctx context.Context) (bool, SeriesData, error) {
 	}
 
 	if v.memoizedIterator.Err() != nil {
-		return false, SeriesData{}, v.memoizedIterator.Err()
+		return SeriesData{}, v.memoizedIterator.Err()
 	}
 
-	return true, data, nil
+	return data, nil
 }
 
 func (v *VectorSelector) Close() {

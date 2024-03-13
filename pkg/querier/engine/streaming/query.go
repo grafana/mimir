@@ -7,6 +7,7 @@ package streaming
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -200,13 +201,15 @@ func (q *Query) populateVector(ctx context.Context, series []operator.SeriesMeta
 	v := q.pool.GetVector(len(series))
 
 	for i, s := range series {
-		ok, d, err := q.root.Next(ctx)
+		d, err := q.root.Next(ctx)
 		if err != nil {
+			if errors.Is(err, operator.EOS) {
+				return nil, fmt.Errorf("expected %v series, but only received %v", len(series), i)
+			}
+
 			return nil, err
 		}
-		if !ok {
-			return nil, fmt.Errorf("expected %v series, but only received %v", len(series), i)
-		}
+
 		if len(d.Floats) != 1 {
 			defer q.pool.PutFPointSlice(d.Floats)
 			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v", s.Labels.String(), len(d.Floats))
@@ -229,12 +232,13 @@ func (q *Query) populateMatrix(ctx context.Context, series []operator.SeriesMeta
 	m := q.pool.GetMatrix(len(series))
 
 	for i, s := range series {
-		ok, d, err := q.root.Next(ctx)
+		d, err := q.root.Next(ctx)
 		if err != nil {
+			if errors.Is(err, operator.EOS) {
+				return nil, fmt.Errorf("expected %v series, but only received %v", len(series), i)
+			}
+
 			return nil, err
-		}
-		if !ok {
-			return nil, fmt.Errorf("expected %v series, but only received %v", len(series), i)
 		}
 
 		m = append(m, promql.Series{
