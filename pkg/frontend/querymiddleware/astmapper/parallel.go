@@ -14,12 +14,14 @@ import (
 )
 
 var summableAggregates = map[parser.ItemType]struct{}{
-	parser.GROUP: {},
-	parser.SUM:   {},
-	parser.MIN:   {},
-	parser.MAX:   {},
-	parser.COUNT: {},
-	parser.AVG:   {},
+	parser.GROUP:   {},
+	parser.SUM:     {},
+	parser.MIN:     {},
+	parser.MAX:     {},
+	parser.COUNT:   {},
+	parser.AVG:     {},
+	parser.TOPK:    {},
+	parser.BOTTOMK: {},
 }
 
 // NonParallelFuncs is the list of functions that shouldn't be parallelized.
@@ -64,6 +66,13 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 		_, ok := summableAggregates[e.Op]
 		if !ok {
 			return false
+		}
+
+		if e.Op == parser.TOPK || e.Op == parser.BOTTOMK {
+			// example: topk(scalar(metric), up)
+			if _, isNum := e.Param.(*parser.NumberLiteral); !isNum {
+				return false
+			}
 		}
 
 		// Ensure there are no nested aggregations

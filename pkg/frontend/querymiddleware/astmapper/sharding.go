@@ -293,6 +293,12 @@ func (summer *shardSummer) shardAggregate(expr *parser.AggregateExpr) (mapped pa
 			return nil, false, err
 		}
 		return mapped, true, nil
+	case parser.TOPK, parser.BOTTOMK:
+		mapped, err = summer.shardTopkBottomk(expr)
+		if err != nil {
+			return nil, false, err
+		}
+		return mapped, true, nil
 	}
 
 	// If the aggregation operation is not shardable, we have to return the input
@@ -417,6 +423,29 @@ func (summer *shardSummer) shardMinMax(expr *parser.AggregateExpr) (result parse
 	}, nil
 }
 
+// shardTopkBottomk attempts to shard the given TOPK/BOTTOMK aggregation expression.
+func (summer *shardSummer) shardTopkBottomk(expr *parser.AggregateExpr) (result parser.Expr, err error) {
+	// We expect the given aggregation is either a topk or bottomk.
+	if expr.Op != parser.TOPK && expr.Op != parser.BOTTOMK {
+		return nil, errors.Errorf("expected TOPK or BOTTOMK aggregation while got %s", expr.Op.String())
+	}
+
+	// The TOPK/BOTTOMK aggregation can be parallelized as the TOPK/BOTTOMK of per-shard TOPK/BOTTOMK.
+	// Create a TOPK/BOTTOMK sub-query for each shard and squash it into a CONCAT expression.
+	sharded, err := summer.shardAndSquashAggregateExpr(expr, expr.Op)
+	if err != nil {
+		return nil, err
+	}
+
+	return &parser.AggregateExpr{
+		Op:       expr.Op,
+		Expr:     sharded,
+		Param:    expr.Param,
+		Grouping: expr.Grouping,
+		Without:  expr.Without,
+	}, nil
+}
+
 // shardAvg attempts to shard the given AVG aggregation expression.
 func (summer *shardSummer) shardAvg(expr *parser.AggregateExpr) (result parser.Expr, err error) {
 	// The AVG aggregation can be parallelized as per-shard SUM() divided by per-shard COUNT().
@@ -458,6 +487,7 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 		children = append(children, &parser.AggregateExpr{
 			Op:       op,
 			Expr:     sharded,
+			Param:    expr.Param,
 			Grouping: expr.Grouping,
 			Without:  expr.Without,
 		})

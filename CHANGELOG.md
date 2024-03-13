@@ -3,7 +3,7 @@
 ## main / unreleased
 
 ### Grafana Mimir
-
+* [FEATURE] PromQL: support to sharding topk/bottomk. #7582
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 
 ### Mixin

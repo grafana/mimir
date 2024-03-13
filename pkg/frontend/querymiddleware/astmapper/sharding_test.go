@@ -518,6 +518,16 @@ func TestShardSummer(t *testing.T) {
 			out:                    `count(group without() (` + concatShards(3, `group without() ({namespace="foo",__query_shard__="x_of_y"})`) + `))`,
 			expectedShardedQueries: 3,
 		},
+		{
+			in:                     `topk(3, up)`,
+			out:                    `topk(3, ` + concatShards(3, `topk(3, up{__query_shard__="x_of_y"})`) + `)`,
+			expectedShardedQueries: 3,
+		},
+		{
+			in:                     `bottomk(4, up)`,
+			out:                    `bottomk(4, ` + concatShards(3, `bottomk(4, up{__query_shard__="x_of_y"})`) + `)`,
+			expectedShardedQueries: 3,
+		},
 	} {
 		tt := tt
 

@@ -452,11 +452,11 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		},
 		"topk()": {
 			query:                  `topk(2, metric_counter{const="fixed"})`,
-			expectedShardedQueries: 0,
+			expectedShardedQueries: 1,
 		},
 		"bottomk()": {
 			query:                  `bottomk(2, metric_counter{const="fixed"})`,
-			expectedShardedQueries: 0,
+			expectedShardedQueries: 1,
 		},
 		"vector()": {
 			query:                  `vector(1)`,
