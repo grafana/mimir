@@ -222,6 +222,8 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 }
 
 type mockIngesterReceiver struct {
+	lastRequestSize int64
+
 	startCalls  int
 	startBytes  int64
 	finishCalls int
@@ -229,15 +231,16 @@ type mockIngesterReceiver struct {
 	returnError error
 }
 
-func (i *mockIngesterReceiver) StartPushRequest(size int64) error {
+func (i *mockIngesterReceiver) StartPushRequest(ctx context.Context, size int64) (context.Context, error) {
+	i.lastRequestSize = size
 	i.startCalls++
 	i.startBytes += size
-	return i.returnError
+	return ctx, i.returnError
 }
 
-func (i *mockIngesterReceiver) FinishPushRequest(size int64) {
+func (i *mockIngesterReceiver) FinishPushRequest(_ context.Context) {
 	i.finishCalls++
-	i.finishBytes += size
+	i.finishBytes += i.lastRequestSize
 }
 
 type mockDistributorReceiver struct {

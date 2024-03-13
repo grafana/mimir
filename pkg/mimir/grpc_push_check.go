@@ -18,8 +18,8 @@ import (
 )
 
 type ingesterPushReceiver interface {
-	StartPushRequest(requestSize int64) error
-	FinishPushRequest(requestSize int64)
+	StartPushRequest(ctx context.Context, requestSize int64) (context.Context, error)
+	FinishPushRequest(ctx context.Context)
 }
 
 // Interface exposed by Distributor.
@@ -43,8 +43,7 @@ type grpcInflightMethodLimiter struct {
 type ctxKey int
 
 const (
-	pushTypeCtxKey                ctxKey = 1 // ingester or distributor push
-	ingesterPushRequestSizeCtxKey ctxKey = 2
+	pushTypeCtxKey ctxKey = 1 // ingester or distributor push
 
 	pushTypeIngester    = 1
 	pushTypeDistributor = 2
@@ -66,12 +65,11 @@ func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodN
 
 		reqSize := getMessageSize(md, grpcutil.MetadataMessageSize)
 
-		err := ing.StartPushRequest(reqSize)
+		ctx, err := ing.StartPushRequest(ctx, reqSize)
 		if err != nil {
 			return ctx, status.Error(codes.Unavailable, err.Error())
 		}
 
-		ctx = context.WithValue(ctx, ingesterPushRequestSizeCtxKey, reqSize)
 		return context.WithValue(ctx, pushTypeCtxKey, pushTypeIngester), nil
 	}
 
@@ -102,9 +100,7 @@ func (g *grpcInflightMethodLimiter) RPCCallFinished(ctx context.Context) {
 	if pt, ok := ctx.Value(pushTypeCtxKey).(int); ok {
 		switch pt {
 		case pushTypeIngester:
-			// Using two-outputs here to avoid panics, if value is not of int64 type. reqSize will be 0 in that case, which is fine.
-			reqSize, _ := ctx.Value(ingesterPushRequestSizeCtxKey).(int64)
-			g.getIngester().FinishPushRequest(reqSize)
+			g.getIngester().FinishPushRequest(ctx)
 
 		case pushTypeDistributor:
 			g.getDistributor().FinishPushRequest(ctx)

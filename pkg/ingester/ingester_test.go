@@ -6989,11 +6989,11 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 		`, requestSize)), "cortex_ingester_inflight_push_requests_bytes"))
 
 				// Starting push request fails
-				err = i.StartPushRequest(100)
+				_, err = i.StartPushRequest(ctx, 100)
 				require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
 
 				// Starting push request with unknown size fails
-				err = i.StartPushRequest(0)
+				_, err = i.StartPushRequest(ctx, 0)
 				require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
 
 				// Sending push request fails
@@ -10039,13 +10039,13 @@ func (c *mockContext) Value(key any) interface{} {
 }
 
 func pushWithSimulatedGRPCHandler(ctx context.Context, i *Ingester, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	err := i.StartPushRequest(int64(req.Size()))
+	ctx, err := i.StartPushRequest(ctx, int64(req.Size()))
 	if err != nil {
 		return nil, err
 	}
 
 	res, err := i.Push(ctx, req)
-	i.FinishPushRequest(int64(req.Size()))
+	i.FinishPushRequest(ctx)
 
 	return res, err
 }
