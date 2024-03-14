@@ -19,6 +19,8 @@
 ### Mixin
 
 * [ENHANCEMENT] Alerts: allow configuring alerts range interval via `_config.base_alerts_range_interval_minutes`. #7591
+* [ENHANCEMENT] Dashboards: allow switching between using classic of native histograms in dashboards. #7627
+  Overview dashboard, Status panel, `cortex_request_duration_seconds` metric.
 
 ### Jsonnet
 
