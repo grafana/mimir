@@ -6,7 +6,7 @@
 
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [FEATURE] Ruler: add the possibility to set alert_relabel_configs to relabel labels before sending to the alertmanager.
-* [FEATURE] Ruler: add the possibility to add exteranl label labels before sending to the alertmanager.
+* [FEATURE] Ruler: add the possibility to add external label labels before sending to the alertmanager.
 
 ### Mixin
 
