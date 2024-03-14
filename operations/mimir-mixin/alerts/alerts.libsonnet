@@ -561,7 +561,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             aggregation_labels: $._config.alert_aggregation_labels,
             kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas'),
             kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated'),
-            range_interval: $.alertRangeInterval(15) + ':' + $.alertRangeInterval(1),
+            range_interval: '15m:' + $.alertRangeInterval(1),
           },
           'for': '30m',
           labels: {
