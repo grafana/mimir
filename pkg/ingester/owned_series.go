@@ -296,7 +296,7 @@ func (ir *ownedSeriesIngesterRingStrategy) hasOwner() (bool, error) {
 		return false, err
 	}
 
-	return len(tokens) > 0, err
+	return len(tokens) > 0, nil
 }
 
 type ownedSeriesPartitionRingStrategy struct {
