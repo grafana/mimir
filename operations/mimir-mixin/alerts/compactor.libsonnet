@@ -114,8 +114,8 @@
           alert: $.alertName('CompactorSkippedUnhealthyBlocks'),
           'for': '1m',
           expr: |||
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total[5m]) > 0
-          |||,
+            increase(cortex_compactor_blocks_marked_for_no_compaction_total[%s]) > 0
+          ||| % $.alertRangeInterval(5),
           labels: {
             severity: 'warning',
           },
@@ -129,8 +129,8 @@
           alert: $.alertName('CompactorSkippedUnhealthyBlocks'),
           'for': '30m',
           expr: |||
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total[5m]) > 1
-          |||,
+            increase(cortex_compactor_blocks_marked_for_no_compaction_total[%s]) > 1
+          ||| % $.alertRangeInterval(5),
           labels: {
             severity: 'critical',
           },

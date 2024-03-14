@@ -9,6 +9,7 @@
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 
 ### Mixin
+* [ENHANCEMENT] Alerts: allow configuring alerts range interval via `_config.base_alerts_range_interval_minutes`. #7591
 
 ### Jsonnet
 
