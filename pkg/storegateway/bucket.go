@@ -17,7 +17,6 @@ import (
 	"sort"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -37,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
