@@ -38,18 +38,6 @@ var (
 	errShardCountTooLow = errors.New("shard count too low")
 
 	jsoniterMaxBufferSize = os.Getpagesize()
-	jsoniterBufferPool    = sync.Pool{
-		New: func() any {
-			buf := make([]byte, jsoniterMaxBufferSize)
-			return &buf
-		},
-	}
-
-	labelBuilderPool = sync.Pool{
-		New: func() any {
-			return labels.NewBuilder(labels.EmptyLabels())
-		},
-	}
 )
 
 var snappyWriterPool sync.Pool
@@ -272,7 +260,7 @@ func shardedSelector(shardCount, currentShard int, expr parser.Expr) (parser.Exp
 func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, responses []*http.Response, encoding string) *http.Response {
 	reader, writer := io.Pipe()
 
-	items := make(chan *labels.Builder, len(responses))
+	items := make(chan *shardActiveSeriesResponseDecoder, len(responses))
 
 	g := new(errgroup.Group)
 	for _, res := range responses {
@@ -281,61 +269,27 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 		}
 		r := res
 		g.Go(func() error {
-			defer func(body io.ReadCloser) {
-				// drain body reader
-				_, _ = io.Copy(io.Discard, body)
-				_ = body.Close()
-			}(r.Body)
+			reuseDecoder := true
 
-			bufPtr := jsoniterBufferPool.Get().(*[]byte)
-			defer jsoniterBufferPool.Put(bufPtr)
-
-			it := jsoniter.ConfigFastest.BorrowIterator(*bufPtr)
-			it.Reset(r.Body)
+			dec := borrowShardActiveSeriesResponseDecoder(ctx, r.Body)
 			defer func() {
-				jsoniter.ConfigFastest.ReturnIterator(it)
+				if !reuseDecoder {
+					return
+				}
+				dec.close()
+				reuseShardActiveSeriesResponseDecoder(dec)
 			}()
 
-			// Iterate over fields until we find data or error fields
-			foundDataField := false
-			for it.Error == nil {
-				field := it.ReadObject()
-				if field == "error" {
-					return fmt.Errorf("error in partial response: %s", it.ReadString())
-				}
-				if field == "data" {
-					foundDataField = true
-					break
-				}
-				// If the field is neither data nor error, we skip it.
-				it.ReadAny()
-			}
-			if !foundDataField {
-				return fmt.Errorf("expected data field at top level, found %s", it.CurrentBuffer())
-			}
-
-			if it.WhatIsNext() != jsoniter.ArrayValue {
-				err := errors.New("expected data field to contain an array")
+			if err := dec.decode(); err != nil {
 				return err
 			}
-
-			for it.ReadArray() {
-				if err := ctx.Err(); err != nil {
-					if cause := context.Cause(ctx); cause != nil {
-						return fmt.Errorf("aborted streaming because context was cancelled: %w", cause)
-					}
-					return ctx.Err()
-				}
-
-				item := labelBuilderPool.Get().(*labels.Builder)
-				it.ReadMapCB(func(iterator *jsoniter.Iterator, s string) bool {
-					item.Set(s, iterator.ReadString())
-					return true
-				})
-				items <- item
+			if !dec.hasDataValue() {
+				return nil
 			}
+			items <- dec
+			reuseDecoder = false
 
-			return it.Error
+			return nil
 		})
 	}
 
@@ -356,7 +310,7 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 	return resp
 }
 
-func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items <-chan *labels.Builder, encoding string) {
+func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items <-chan *shardActiveSeriesResponseDecoder, encoding string) {
 	defer w.Close()
 
 	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveSeries.writeMergedResponse")
@@ -391,33 +345,21 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 	stream.WriteObjectField("data")
 	stream.WriteArrayStart()
 	firstItem := true
-	for item := range items {
+	for dec := range items {
 		if firstItem {
 			firstItem = false
 		} else {
 			stream.WriteMore()
 		}
-		stream.WriteObjectStart()
-		firstField := true
-
-		item.Range(func(l labels.Label) {
-			if firstField {
-				firstField = false
-			} else {
-				stream.WriteMore()
-			}
-			stream.WriteObjectField(l.Name)
-			stream.WriteString(l.Value)
-		})
-		stream.WriteObjectEnd()
-
-		item.Reset(labels.EmptyLabels())
-		labelBuilderPool.Put(item)
+		// Write the value as is, since it's already a JSON array.
+		stream.WriteRaw(dec.dataValue())
 
 		// Flush the stream buffer if it's getting too large.
 		if stream.Buffered() > jsoniterMaxBufferSize {
 			_ = stream.Flush()
 		}
+		dec.close()
+		reuseShardActiveSeriesResponseDecoder(dec)
 	}
 	stream.WriteArrayEnd()
 
