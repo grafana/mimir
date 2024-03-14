@@ -206,9 +206,7 @@ func BenchmarkQuery(b *testing.B) {
 
 	metricSizes := []int{1, 10, 100, 2000}
 	err = setupTestData(db, metricSizes, interval, numIntervals)
-	if err != nil {
-		b.Fatal(err)
-	}
+	require.NoError(b, err)
 	cases := testCases(metricSizes)
 
 	for _, c := range cases {
@@ -232,11 +230,11 @@ func BenchmarkQuery(b *testing.B) {
 						}
 
 						if err != nil {
-							b.Fatal(err)
+							require.NoError(b, err)
 						}
 						res := qry.Exec(ctx)
 						if res.Err != nil {
-							b.Fatal(res.Err)
+							require.NoError(b, res.Err)
 						}
 						qry.Close()
 					}
