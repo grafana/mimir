@@ -139,7 +139,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				actualCount.Inc()
 
-				req, err := codec.DecodeRequest(r.Context(), r)
+				req, err := codec.DecodeMetricsQueryRequest(r.Context(), r)
 				require.NoError(t, err)
 
 				if req.GetStart() == dayOneStartTime.Unix()*1000 {
@@ -1543,7 +1543,7 @@ func newRoundTripper(next http.RoundTripper, codec Codec, logger log.Logger, mid
 }
 
 func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	request, err := q.codec.DecodeRequest(r.Context(), r)
+	request, err := q.codec.DecodeMetricsQueryRequest(r.Context(), r)
 	if err != nil {
 		return nil, err
 	}

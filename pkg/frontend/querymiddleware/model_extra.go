@@ -161,51 +161,8 @@ func (r *PrometheusInstantQueryRequest) AddSpanTags(sp opentracing.Span) {
 	sp.SetTag("time", timestamp.Time(r.GetTime()).String())
 }
 
-func (r *PrometheusLabelNamesQueryRequest) GetStep() int64 {
-	return 0
-}
-
-func (r *PrometheusLabelNamesQueryRequest) WithID(id int64) MetricsQueryRequest {
-	newRequest := *r
-	newRequest.Id = id
-	return &newRequest
-}
-
-func (r *PrometheusLabelNamesQueryRequest) WithStartEnd(start int64, end int64) MetricsQueryRequest {
-	newRequest := *r
-	newRequest.Start = start
-	newRequest.End = end
-	return &newRequest
-}
-
-func (r *PrometheusLabelNamesQueryRequest) WithQuery(s string) MetricsQueryRequest {
-	newRequest := *r
-	newRequest.Query = s
-	return &newRequest
-}
-
-func (r *PrometheusLabelNamesQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
-	newRequest := *r
-	if newRequest.Hints == nil {
-		newRequest.Hints = &Hints{TotalQueries: totalQueries}
-	} else {
-		*newRequest.Hints = *(r.Hints)
-		newRequest.Hints.TotalQueries = totalQueries
-	}
-	return &newRequest
-}
-
-func (r *PrometheusLabelNamesQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
-	newRequest := *r
-	if newRequest.Hints == nil {
-		newRequest.Hints = &Hints{
-			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
-		}
-	} else {
-		*newRequest.Hints = *(r.Hints)
-		newRequest.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
-	}
-	return &newRequest
+func (r *PrometheusLabelNamesQueryRequest) GetLabelMatchers() []*LabelMatchers {
+	return r.MatcherSets
 }
 
 // AddSpanTags writes query information about the current `PrometheusLabelNamesQueryRequest`

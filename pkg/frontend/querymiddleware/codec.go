@@ -63,17 +63,17 @@ const (
 	formatProtobuf = "protobuf"
 )
 
-// Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
+// Codec is used to encode/decode query requests and responses so they can be passed down to middlewares.
 type Codec interface {
 	Merger
-	// DecodeRequest decodes a MetricsQueryRequest from an http request.
-	DecodeRequest(context.Context, *http.Request) (MetricsQueryRequest, error)
+	// DecodeMetricsQueryRequest decodes a MetricsQueryRequest from an http request.
+	DecodeMetricsQueryRequest(context.Context, *http.Request) (MetricsQueryRequest, error)
 	// DecodeResponse decodes a Response from an http response.
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
 	DecodeResponse(context.Context, *http.Response, MetricsQueryRequest, log.Logger) (Response, error)
-	// EncodeRequest encodes a MetricsQueryRequest into an http request.
-	EncodeRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
+	// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
+	EncodeMetricsQueryRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
 	// EncodeResponse encodes a Response into an http response.
 	EncodeResponse(context.Context, *http.Request, Response) (*http.Response, error)
 }
@@ -84,9 +84,9 @@ type Merger interface {
 	MergeResponse(...Response) (Response, error)
 }
 
-// MetricsQueryRequest represents a query range request that can be process by middlewares.
+// MetricsQueryRequest represents an instant or query range request that can be process by middlewares.
 type MetricsQueryRequest interface {
-	// GetId returns the ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
+	// GetId returns the ID of the request used to correlate downstream requests and responses.
 	GetId() int64
 	// GetStart returns the start timestamp of the request in milliseconds.
 	GetStart() int64
@@ -111,6 +111,23 @@ type MetricsQueryRequest interface {
 	WithTotalQueriesHint(int32) MetricsQueryRequest
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
 	WithEstimatedSeriesCountHint(uint64) MetricsQueryRequest
+	proto.Message
+	// AddSpanTags writes information about this request to an OpenTracing span
+	AddSpanTags(opentracing.Span)
+}
+
+// LabelsQueryRequest represents a label names or values query request that can be process by middlewares.
+type LabelsQueryRequest interface {
+	// GetId returns the ID of the request used to correlate downstream requests and responses.
+	GetId() int64
+	// GetStart returns the start timestamp of the request in milliseconds.
+	GetStart() int64
+	// GetEnd returns the end timestamp of the request in milliseconds.
+	GetEnd() int64
+	// GetLabelMatchers returns the label matchers a.k.a series selectors for Prometheus label query requests
+	GetLabelMatchers() []*LabelMatchers
+	// GetOptions returns the options for the given request.
+	GetOptions() Options
 	proto.Message
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(opentracing.Span)
@@ -218,14 +235,12 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	}, nil
 }
 
-func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (MetricsQueryRequest, error) {
+func (c prometheusCodec) DecodeMetricsQueryRequest(_ context.Context, r *http.Request) (MetricsQueryRequest, error) {
 	switch {
 	case IsRangeQuery(r.URL.Path):
 		return c.decodeRangeQueryRequest(r)
 	case IsInstantQuery(r.URL.Path):
 		return c.decodeInstantQueryRequest(r)
-	case IsLabelNamesQuery(r.URL.Path):
-		return c.decodeLabelNamesQueryRequest(r)
 	default:
 		return nil, fmt.Errorf("prometheus codec doesn't support requests to %s", r.URL.Path)
 	}
@@ -259,7 +274,7 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQuer
 	return &result, nil
 }
 
-func (prometheusCodec) decodeLabelNamesQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
+func (prometheusCodec) decodeLabelNamesQueryRequest(r *http.Request) (LabelsQueryRequest, error) {
 	var result PrometheusLabelNamesQueryRequest
 	var err error
 	result.Start, result.End, err = DecodeLabelsQueryTimeParams(r)
@@ -285,8 +300,8 @@ func (prometheusCodec) decodeLabelNamesQueryRequest(r *http.Request) (MetricsQue
 		}
 		codecLabelMatcherSets[i] = &LabelMatchers{Matchers: codecMatcherSet}
 	}
+	result.MatcherSets = codecLabelMatcherSets
 
-	result.Query = r.FormValue("query")
 	result.Path = r.URL.Path
 	decodeOptions(r, &result.Options)
 	return &result, nil
@@ -394,7 +409,7 @@ func decodeCacheDisabledOption(r *http.Request) bool {
 	return false
 }
 
-func (c prometheusCodec) EncodeRequest(ctx context.Context, r MetricsQueryRequest) (*http.Request, error) {
+func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequest) (*http.Request, error) {
 	var u *url.URL
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
@@ -416,15 +431,6 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r MetricsQueryReques
 			}.Encode(),
 		}
 
-	case *PrometheusLabelNamesQueryRequest:
-		u = &url.URL{
-			Path: r.Path,
-			RawQuery: url.Values{
-				"start": []string{encodeTime(r.Start)},
-				"end":   []string{encodeTime(r.End)},
-				"query": []string{r.Query},
-			}.Encode(),
-		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", r)
 	}

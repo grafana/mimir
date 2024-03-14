@@ -54,7 +54,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 	}
 
 	tests := []struct {
-		// Request parameters
+		// MetricsQueryRequest parameters
 		name    string
 		request func() *http.Request
 
