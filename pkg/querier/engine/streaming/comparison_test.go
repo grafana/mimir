@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/util/teststorage/storage.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
@@ -17,7 +18,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
@@ -180,9 +181,8 @@ func testCases() []benchCase {
 }
 
 func BenchmarkQuery(b *testing.B) {
-	stor := teststorage.New(b)
-	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
-	defer stor.Close()
+	db := newTestDB(b)
+	db.DisableCompactions() // Don't want auto-compaction disrupting timings.
 	opts := promql.EngineOpts{
 		Logger:               nil,
 		Reg:                  nil,
@@ -204,7 +204,7 @@ func BenchmarkQuery(b *testing.B) {
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
 
-	err = setupTestData(stor, interval, numIntervals)
+	err = setupTestData(db, interval, numIntervals)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -225,9 +225,9 @@ func BenchmarkQuery(b *testing.B) {
 						interval := time.Second * 10
 
 						if c.steps == 0 {
-							qry, err = engine.NewInstantQuery(ctx, stor, nil, c.expr, start)
+							qry, err = engine.NewInstantQuery(ctx, db, nil, c.expr, start)
 						} else {
-							qry, err = engine.NewRangeQuery(ctx, stor, nil, c.expr, start, end, interval)
+							qry, err = engine.NewRangeQuery(ctx, db, nil, c.expr, start, end, interval)
 						}
 
 						if err != nil {
@@ -246,8 +246,7 @@ func BenchmarkQuery(b *testing.B) {
 }
 
 func TestQuery(t *testing.T) {
-	stor := teststorage.New(t)
-	defer stor.Close()
+	db := newTestDB(t)
 	opts := promql.EngineOpts{
 		Logger:               nil,
 		Reg:                  nil,
@@ -265,7 +264,7 @@ func TestQuery(t *testing.T) {
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
 
-	err = setupTestData(stor, interval, numIntervals)
+	err = setupTestData(db, interval, numIntervals)
 	require.NoError(t, err)
 	cases := testCases()
 
@@ -279,9 +278,9 @@ func TestQuery(t *testing.T) {
 		interval := time.Second * 10
 
 		if c.steps == 0 {
-			qry, err = engine.NewInstantQuery(ctx, stor, nil, c.expr, start)
+			qry, err = engine.NewInstantQuery(ctx, db, nil, c.expr, start)
 		} else {
-			qry, err = engine.NewRangeQuery(ctx, stor, nil, c.expr, start, end, interval)
+			qry, err = engine.NewRangeQuery(ctx, db, nil, c.expr, start, end, interval)
 		}
 
 		if errors.Is(err, ErrNotSupported) {
@@ -363,7 +362,7 @@ func TestQuery(t *testing.T) {
 	}
 }
 
-func setupTestData(stor *teststorage.TestStorage, interval, numIntervals int) error {
+func setupTestData(db *tsdb.DB, interval, numIntervals int) error {
 	metrics := make([]labels.Labels, 0, (3+10)+10*(3+10)+100*(3+10)+2000*(3+10))
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
 	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
@@ -401,7 +400,7 @@ func setupTestData(stor *teststorage.TestStorage, interval, numIntervals int) er
 	refs := make([]storage.SeriesRef, len(metrics))
 
 	for s := 0; s < numIntervals; s++ {
-		a := stor.Appender(context.Background())
+		a := db.Appender(context.Background())
 		ts := int64(s * interval)
 		for i, metric := range metrics {
 			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
@@ -412,6 +411,28 @@ func setupTestData(stor *teststorage.TestStorage, interval, numIntervals int) er
 		}
 	}
 
-	stor.DB.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
-	return stor.DB.Compact(context.Background())
+	db.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
+	return db.Compact(context.Background())
+}
+
+// This is based on https://github.com/prometheus/prometheus/blob/main/util/teststorage/storage.go, but with isolation disabled
+// to improve test setup performance and mirror Mimir's default configuration.
+func newTestDB(t testing.TB) *tsdb.DB {
+	dir := t.TempDir()
+
+	// Tests just load data for a series sequentially. Thus we need a long appendable window.
+	opts := tsdb.DefaultOptions()
+	opts.MinBlockDuration = int64(24 * time.Hour / time.Millisecond)
+	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
+	opts.RetentionDuration = 0
+	opts.EnableNativeHistograms = true
+	opts.IsolationDisabled = true
+	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())
+	require.NoError(t, err, "unexpected error while opening test storage")
+
+	t.Cleanup(func() {
+		require.NoError(t, db.Close(), "unexpected error while closing test storage")
+	})
+
+	return db
 }
