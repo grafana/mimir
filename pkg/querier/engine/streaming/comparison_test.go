@@ -38,10 +38,10 @@ func testCases() []benchCase {
 		{
 			expr: "rate(a_X[1m])",
 		},
-		//{
-		//	expr:  "rate(a_X[1m])",
-		//	steps: 10000,
-		//},
+		{
+			expr:  "rate(a_X[1m])",
+			steps: 10000,
+		},
 		//// Holt-Winters and long ranges.
 		//{
 		//	expr: "holt_winters(a_X[1d], 0.3, 0.3)",
@@ -107,6 +107,7 @@ func testCases() []benchCase {
 		},
 		//{
 		//	expr: "count_values('value', h_X)",
+		//  steps: 100,
 		//},
 		//{
 		//	expr: "topk(1, a_X)",
@@ -143,6 +144,10 @@ func testCases() []benchCase {
 		//	expr:  "count({__name__!=\"\",l=\"\"})",
 		//	steps: 1,
 		//},
+		//// Functions which have special handling inside eval()
+		//{
+		//	expr: "timestamp(a_X)",
+		//},
 	}
 
 	// X in an expr will be replaced by different metric sizes.
@@ -167,7 +172,6 @@ func testCases() []benchCase {
 		} else {
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 0})
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1})
-			tmp = append(tmp, benchCase{expr: c.expr, steps: 10})
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 100})
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1000})
 		}
@@ -177,6 +181,7 @@ func testCases() []benchCase {
 
 func BenchmarkQuery(b *testing.B) {
 	stor := teststorage.New(b)
+	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
 	defer stor.Close()
 	opts := promql.EngineOpts{
 		Logger:               nil,
@@ -406,5 +411,7 @@ func setupTestData(stor *teststorage.TestStorage, interval, numIntervals int) er
 			return err
 		}
 	}
-	return nil
+
+	stor.DB.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
+	return stor.DB.Compact(context.Background())
 }
