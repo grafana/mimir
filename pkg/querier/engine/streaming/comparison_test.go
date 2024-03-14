@@ -22,62 +22,12 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func setupTestData(stor *teststorage.TestStorage, interval, numIntervals int) error {
-	metrics := make([]labels.Labels, 0, (3+10)+10*(3+10)+100*(3+10)+2000*(3+10))
-	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
-	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
-	for j := 0; j < 10; j++ {
-		metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", strconv.Itoa(j)))
-	}
-	metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", "+Inf"))
-
-	for i := 0; i < 10; i++ {
-		metrics = append(metrics, labels.FromStrings("__name__", "a_ten", "l", strconv.Itoa(i)))
-		metrics = append(metrics, labels.FromStrings("__name__", "b_ten", "l", strconv.Itoa(i)))
-		for j := 0; j < 10; j++ {
-			metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
-		}
-		metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", "+Inf"))
-	}
-
-	for i := 0; i < 100; i++ {
-		metrics = append(metrics, labels.FromStrings("__name__", "a_hundred", "l", strconv.Itoa(i)))
-		metrics = append(metrics, labels.FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i)))
-		for j := 0; j < 10; j++ {
-			metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
-		}
-		metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", "+Inf"))
-	}
-
-	for i := 0; i < 2000; i++ {
-		metrics = append(metrics, labels.FromStrings("__name__", "a_two_thousand", "l", strconv.Itoa(i)))
-		metrics = append(metrics, labels.FromStrings("__name__", "b_two_thousand", "l", strconv.Itoa(i)))
-		for j := 0; j < 10; j++ {
-			metrics = append(metrics, labels.FromStrings("__name__", "h_two_thousand", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
-		}
-		metrics = append(metrics, labels.FromStrings("__name__", "h_two_thousand", "l", strconv.Itoa(i), "le", "+Inf"))
-	}
-	refs := make([]storage.SeriesRef, len(metrics))
-
-	for s := 0; s < numIntervals; s++ {
-		a := stor.Appender(context.Background())
-		ts := int64(s * interval)
-		for i, metric := range metrics {
-			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
-			refs[i] = ref
-		}
-		if err := a.Commit(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 type benchCase struct {
 	expr  string
 	steps int
 }
 
+// These test cases are taken from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
 func testCases() []benchCase {
 	cases := []benchCase{
 		// Plain retrieval.
@@ -406,4 +356,55 @@ func TestQuery(t *testing.T) {
 			streamingClose()
 		})
 	}
+}
+
+func setupTestData(stor *teststorage.TestStorage, interval, numIntervals int) error {
+	metrics := make([]labels.Labels, 0, (3+10)+10*(3+10)+100*(3+10)+2000*(3+10))
+	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
+	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
+	for j := 0; j < 10; j++ {
+		metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", strconv.Itoa(j)))
+	}
+	metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", "+Inf"))
+
+	for i := 0; i < 10; i++ {
+		metrics = append(metrics, labels.FromStrings("__name__", "a_ten", "l", strconv.Itoa(i)))
+		metrics = append(metrics, labels.FromStrings("__name__", "b_ten", "l", strconv.Itoa(i)))
+		for j := 0; j < 10; j++ {
+			metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
+		}
+		metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", "+Inf"))
+	}
+
+	for i := 0; i < 100; i++ {
+		metrics = append(metrics, labels.FromStrings("__name__", "a_hundred", "l", strconv.Itoa(i)))
+		metrics = append(metrics, labels.FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i)))
+		for j := 0; j < 10; j++ {
+			metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
+		}
+		metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", "+Inf"))
+	}
+
+	for i := 0; i < 2000; i++ {
+		metrics = append(metrics, labels.FromStrings("__name__", "a_two_thousand", "l", strconv.Itoa(i)))
+		metrics = append(metrics, labels.FromStrings("__name__", "b_two_thousand", "l", strconv.Itoa(i)))
+		for j := 0; j < 10; j++ {
+			metrics = append(metrics, labels.FromStrings("__name__", "h_two_thousand", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
+		}
+		metrics = append(metrics, labels.FromStrings("__name__", "h_two_thousand", "l", strconv.Itoa(i), "le", "+Inf"))
+	}
+	refs := make([]storage.SeriesRef, len(metrics))
+
+	for s := 0; s < numIntervals; s++ {
+		a := stor.Appender(context.Background())
+		ts := int64(s * interval)
+		for i, metric := range metrics {
+			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
+			refs[i] = ref
+		}
+		if err := a.Commit(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
