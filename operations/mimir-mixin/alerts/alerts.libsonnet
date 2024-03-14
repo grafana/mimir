@@ -531,7 +531,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_update_revision'),
             kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas'),
             kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated'),
-            range_interval: $.alertRangeInterval(15) + ':' + $.alertRangeInterval(1),
+            range_interval: '15m:' + $.alertRangeInterval(1),
           },
           'for': '30m',
           labels: {
