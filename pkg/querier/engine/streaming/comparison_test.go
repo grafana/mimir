@@ -29,7 +29,7 @@ type benchCase struct {
 }
 
 // These test cases are taken from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
-func testCases() []benchCase {
+func testCases(metricSizes []int) []benchCase {
 	cases := []benchCase{
 		// Plain retrieval.
 		{
@@ -157,10 +157,9 @@ func testCases() []benchCase {
 		if !strings.Contains(c.expr, "X") {
 			tmp = append(tmp, c)
 		} else {
-			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "one"), steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "ten"), steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "hundred"), steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "two_thousand"), steps: c.steps})
+			for _, count := range metricSizes {
+				tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", strconv.Itoa(count)), steps: c.steps})
+			}
 		}
 	}
 	cases = tmp
@@ -180,6 +179,7 @@ func testCases() []benchCase {
 	return tmp
 }
 
+// This is based on the benchmarks from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
 func BenchmarkQuery(b *testing.B) {
 	db := newTestDB(b)
 	db.DisableCompactions() // Don't want auto-compaction disrupting timings.
@@ -204,11 +204,12 @@ func BenchmarkQuery(b *testing.B) {
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
 
-	err = setupTestData(db, interval, numIntervals)
+	metricSizes := []int{1, 10, 100, 2000}
+	err = setupTestData(db, metricSizes, interval, numIntervals)
 	if err != nil {
 		b.Fatal(err)
 	}
-	cases := testCases()
+	cases := testCases(metricSizes)
 
 	for _, c := range cases {
 		b.Run(fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps), func(b *testing.B) {
@@ -264,9 +265,10 @@ func TestQuery(t *testing.T) {
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
 
-	err = setupTestData(db, interval, numIntervals)
+	metricSizes := []int{1, 10, 100}
+	err = setupTestData(db, metricSizes, interval, numIntervals)
 	require.NoError(t, err)
-	cases := testCases()
+	cases := testCases(metricSizes)
 
 	runQuery := func(t *testing.T, engine promql.QueryEngine, c benchCase) (*promql.Result, func()) {
 		ctx := context.Background()
@@ -362,41 +364,40 @@ func TestQuery(t *testing.T) {
 	}
 }
 
-func setupTestData(db *tsdb.DB, interval, numIntervals int) error {
-	metrics := make([]labels.Labels, 0, (3+10)+10*(3+10)+100*(3+10)+2000*(3+10))
-	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
-	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
-	for j := 0; j < 10; j++ {
-		metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", strconv.Itoa(j)))
-	}
-	metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", "+Inf"))
+func setupTestData(db *tsdb.DB, metricSizes []int, interval, numIntervals int) error {
+	totalMetrics := 0
 
-	for i := 0; i < 10; i++ {
-		metrics = append(metrics, labels.FromStrings("__name__", "a_ten", "l", strconv.Itoa(i)))
-		metrics = append(metrics, labels.FromStrings("__name__", "b_ten", "l", strconv.Itoa(i)))
-		for j := 0; j < 10; j++ {
-			metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
-		}
-		metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", "+Inf"))
+	for _, size := range metricSizes {
+		totalMetrics += 13 * size // 2 non-histogram metrics + 11 metrics for histogram buckets
 	}
 
-	for i := 0; i < 100; i++ {
-		metrics = append(metrics, labels.FromStrings("__name__", "a_hundred", "l", strconv.Itoa(i)))
-		metrics = append(metrics, labels.FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i)))
-		for j := 0; j < 10; j++ {
-			metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
+	metrics := make([]labels.Labels, 0, totalMetrics)
+
+	for _, size := range metricSizes {
+		aName := "a_" + strconv.Itoa(size)
+		bName := "b_" + strconv.Itoa(size)
+		histogramName := "h_" + strconv.Itoa(size)
+
+		if size == 1 {
+			// We don't want a "l" label on metrics with one series (some test cases rely on this label not being present).
+			metrics = append(metrics, labels.FromStrings("__name__", aName))
+			metrics = append(metrics, labels.FromStrings("__name__", bName))
+			for le := 0; le < 10; le++ {
+				metrics = append(metrics, labels.FromStrings("__name__", histogramName, "le", strconv.Itoa(le)))
+			}
+			metrics = append(metrics, labels.FromStrings("__name__", histogramName, "le", "+Inf"))
+		} else {
+			for i := 0; i < size; i++ {
+				metrics = append(metrics, labels.FromStrings("__name__", aName, "l", strconv.Itoa(i)))
+				metrics = append(metrics, labels.FromStrings("__name__", bName, "l", strconv.Itoa(i)))
+				for le := 0; le < 10; le++ {
+					metrics = append(metrics, labels.FromStrings("__name__", histogramName, "l", strconv.Itoa(i), "le", strconv.Itoa(le)))
+				}
+				metrics = append(metrics, labels.FromStrings("__name__", histogramName, "l", strconv.Itoa(i), "le", "+Inf"))
+			}
 		}
-		metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", "+Inf"))
 	}
 
-	for i := 0; i < 2000; i++ {
-		metrics = append(metrics, labels.FromStrings("__name__", "a_two_thousand", "l", strconv.Itoa(i)))
-		metrics = append(metrics, labels.FromStrings("__name__", "b_two_thousand", "l", strconv.Itoa(i)))
-		for j := 0; j < 10; j++ {
-			metrics = append(metrics, labels.FromStrings("__name__", "h_two_thousand", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
-		}
-		metrics = append(metrics, labels.FromStrings("__name__", "h_two_thousand", "l", strconv.Itoa(i), "le", "+Inf"))
-	}
 	refs := make([]storage.SeriesRef, len(metrics))
 
 	for s := 0; s < numIntervals; s++ {
