@@ -23,7 +23,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 	const tenantID = "test"
 	type args struct {
 		ctx context.Context
-		req Request
+		req MetricsQueryRequest
 	}
 	tests := []struct {
 		name                 string

@@ -605,7 +605,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		// First, register the internal querier handler with the external HTTP server
 		t.API.RegisterQueryAPI(internalQuerierRouter, t.BuildInfoHandler)
 
-		// Second, set the http.Handler that the frontend worker will use to process requests to point to
+		// Second, set the http.MetricsQueryHandler that the frontend worker will use to process requests to point to
 		// the external HTTP server. This will allow the querier to consolidate query metrics both external
 		// and internal using the default instrumentation when running as a standalone service.
 		internalQuerierRouter = t.Server.HTTPServer.Handler

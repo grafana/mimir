@@ -66,14 +66,14 @@ const (
 // Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
 type Codec interface {
 	Merger
-	// DecodeRequest decodes a Request from an http request.
-	DecodeRequest(context.Context, *http.Request) (Request, error)
+	// DecodeRequest decodes a MetricsQueryRequest from an http request.
+	DecodeRequest(context.Context, *http.Request) (MetricsQueryRequest, error)
 	// DecodeResponse decodes a Response from an http response.
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
-	DecodeResponse(context.Context, *http.Response, Request, log.Logger) (Response, error)
-	// EncodeRequest encodes a Request into an http request.
-	EncodeRequest(context.Context, Request) (*http.Request, error)
+	DecodeResponse(context.Context, *http.Response, MetricsQueryRequest, log.Logger) (Response, error)
+	// EncodeRequest encodes a MetricsQueryRequest into an http request.
+	EncodeRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
 	// EncodeResponse encodes a Response into an http response.
 	EncodeResponse(context.Context, *http.Request, Response) (*http.Response, error)
 }
@@ -84,8 +84,8 @@ type Merger interface {
 	MergeResponse(...Response) (Response, error)
 }
 
-// Request represents a query range request that can be process by middlewares.
-type Request interface {
+// MetricsQueryRequest represents a query range request that can be process by middlewares.
+type MetricsQueryRequest interface {
 	// GetId returns the ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
 	GetId() int64
 	// GetStart returns the start timestamp of the request in milliseconds.
@@ -102,15 +102,15 @@ type Request interface {
 	// These hints can be used to optimize the query execution.
 	GetHints() *Hints
 	// WithID clones the current request with the provided ID.
-	WithID(id int64) Request
+	WithID(id int64) MetricsQueryRequest
 	// WithStartEnd clone the current request with different start and end timestamp.
-	WithStartEnd(startTime int64, endTime int64) Request
+	WithStartEnd(startTime int64, endTime int64) MetricsQueryRequest
 	// WithQuery clone the current request with a different query.
-	WithQuery(string) Request
+	WithQuery(string) MetricsQueryRequest
 	// WithTotalQueriesHint adds the number of total queries to this request's Hints.
-	WithTotalQueriesHint(int32) Request
+	WithTotalQueriesHint(int32) MetricsQueryRequest
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
-	WithEstimatedSeriesCountHint(uint64) Request
+	WithEstimatedSeriesCountHint(uint64) MetricsQueryRequest
 	proto.Message
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(opentracing.Span)
@@ -218,7 +218,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	}, nil
 }
 
-func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Request, error) {
+func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (MetricsQueryRequest, error) {
 	switch {
 	case IsRangeQuery(r.URL.Path):
 		return c.decodeRangeQueryRequest(r)
@@ -231,7 +231,7 @@ func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Requ
 	}
 }
 
-func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error) {
+func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
 	var result PrometheusRangeQueryRequest
 	var err error
 	result.Start, result.End, result.Step, err = DecodeRangeQueryTimeParams(r)
@@ -245,7 +245,7 @@ func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error)
 	return &result, nil
 }
 
-func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, error) {
+func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
 	var result PrometheusInstantQueryRequest
 	var err error
 	result.Time, err = DecodeInstantQueryTimeParams(r, time.Now)
@@ -259,7 +259,7 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, er
 	return &result, nil
 }
 
-func (prometheusCodec) decodeLabelNamesQueryRequest(r *http.Request) (Request, error) {
+func (prometheusCodec) decodeLabelNamesQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
 	var result PrometheusLabelNamesQueryRequest
 	var err error
 	result.Start, result.End, err = DecodeLabelsQueryTimeParams(r)
@@ -394,7 +394,7 @@ func decodeCacheDisabledOption(r *http.Request) bool {
 	return false
 }
 
-func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Request, error) {
+func (c prometheusCodec) EncodeRequest(ctx context.Context, r MetricsQueryRequest) (*http.Request, error) {
 	var u *url.URL
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
@@ -473,7 +473,7 @@ func encodeOptions(req *http.Request, o Options) {
 	}
 }
 
-func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
+func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ MetricsQueryRequest, logger log.Logger) (Response, error) {
 	switch r.StatusCode {
 	case http.StatusServiceUnavailable:
 		return nil, apierror.New(apierror.TypeUnavailable, string(mustReadResponseBody(r)))

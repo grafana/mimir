@@ -52,7 +52,7 @@ func TestStepAlignMiddleware_SingleUser(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var result *PrometheusRangeQueryRequest
 
-			next := HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			next := MetricsQueryHandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 				result = req.(*PrometheusRangeQueryRequest)
 				return nil, nil
 			})
@@ -136,7 +136,7 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var result *PrometheusRangeQueryRequest
 
-			next := HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			next := MetricsQueryHandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 				result = req.(*PrometheusRangeQueryRequest)
 				return nil, nil
 			})
@@ -154,7 +154,7 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 
 func TestIsRequestStepAligned(t *testing.T) {
 	tests := map[string]struct {
-		req      Request
+		req      MetricsQueryRequest
 		expected bool
 	}{
 		"should return true if start and end are aligned to step": {
