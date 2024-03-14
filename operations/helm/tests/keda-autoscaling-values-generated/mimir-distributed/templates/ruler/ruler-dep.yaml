@@ -109,7 +109,7 @@ spec:
             app.kubernetes.io/component: ruler
       tolerations:
         []
-      terminationGracePeriodSeconds: 180
+      terminationGracePeriodSeconds: 600
       volumes:
         - name: config
           configMap:

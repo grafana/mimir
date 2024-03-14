@@ -671,6 +671,7 @@ spec:
           name: new-config-map
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -831,6 +832,7 @@ spec:
           name: new-config-map
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       volumes:
       - configMap:
           name: new-config-map

@@ -102,7 +102,7 @@ spec:
       
       tolerations:
         []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 30
       volumes:
         - name: config
           configMap:

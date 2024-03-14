@@ -72,7 +72,7 @@ spec:
             release: test-enterprise-legacy-label-values
       tolerations:
         []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
@@ -209,7 +209,7 @@ spec:
             release: test-enterprise-legacy-label-values
       tolerations:
         []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
@@ -346,7 +346,7 @@ spec:
             release: test-enterprise-legacy-label-values
       tolerations:
         []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:

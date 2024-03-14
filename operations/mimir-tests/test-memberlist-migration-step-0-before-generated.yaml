@@ -1039,6 +1039,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -1189,6 +1190,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       volumes:
       - configMap:
           name: overrides
