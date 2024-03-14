@@ -47,7 +47,7 @@
             > 0
           ||| % {
             aggregation_labels: $._config.alert_aggregation_labels,
-            range_interval: $.alertRangeInterval(5)
+            range_interval: $.alertRangeInterval(5),
           },
           labels: {
             severity: 'critical',
