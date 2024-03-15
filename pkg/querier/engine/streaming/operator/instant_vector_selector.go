@@ -26,7 +26,6 @@ type InstantVectorSelector struct {
 	Interval      time.Duration
 	LookbackDelta time.Duration
 	Matchers      []*labels.Matcher
-	Pool          *Pool
 
 	querier storage.Querier
 	// TODO: create separate type for linked list of SeriesBatches, use here and in RangeVectorSelectorWithTransformation
@@ -68,7 +67,7 @@ func (v *InstantVectorSelector) Series(ctx context.Context) ([]SeriesMetadata, e
 	}
 
 	ss := v.querier.Select(ctx, true, hints, v.Matchers...)
-	v.currentSeriesBatch = v.Pool.GetSeriesBatch()
+	v.currentSeriesBatch = GetSeriesBatch()
 	incompleteBatch := v.currentSeriesBatch
 	totalSeries := 0
 
@@ -78,7 +77,7 @@ func (v *InstantVectorSelector) Series(ctx context.Context) ([]SeriesMetadata, e
 		}
 
 		if len(incompleteBatch.series) == cap(incompleteBatch.series) {
-			nextBatch := v.Pool.GetSeriesBatch()
+			nextBatch := GetSeriesBatch()
 			incompleteBatch.next = nextBatch
 			incompleteBatch = nextBatch
 		}
@@ -87,7 +86,7 @@ func (v *InstantVectorSelector) Series(ctx context.Context) ([]SeriesMetadata, e
 		totalSeries++
 	}
 
-	metadata := v.Pool.GetSeriesMetadataSlice(totalSeries)
+	metadata := GetSeriesMetadataSlice(totalSeries)
 	batch := v.currentSeriesBatch
 	for batch != nil {
 		for _, s := range batch.series {
@@ -120,13 +119,13 @@ func (v *InstantVectorSelector) Next(ctx context.Context) (InstantVectorSeriesDa
 	if v.seriesIndexInCurrentBatch == len(v.currentSeriesBatch.series) {
 		b := v.currentSeriesBatch
 		v.currentSeriesBatch = v.currentSeriesBatch.next
-		v.Pool.PutSeriesBatch(b)
+		PutSeriesBatch(b)
 		v.seriesIndexInCurrentBatch = 0
 	}
 
 	numSteps := stepCount(v.startTimestamp, v.endTimestamp, v.intervalMilliseconds)
 	data := InstantVectorSeriesData{
-		Floats: v.Pool.GetFPointSlice(numSteps),
+		Floats: GetFPointSlice(numSteps),
 	}
 
 	for ts := v.startTimestamp; ts <= v.endTimestamp; ts += v.intervalMilliseconds {
@@ -176,7 +175,7 @@ func (v *InstantVectorSelector) Close() {
 	for v.currentSeriesBatch != nil {
 		b := v.currentSeriesBatch
 		v.currentSeriesBatch = v.currentSeriesBatch.next
-		v.Pool.PutSeriesBatch(b)
+		PutSeriesBatch(b)
 	}
 
 	if v.querier != nil {

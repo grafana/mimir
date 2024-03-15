@@ -20,14 +20,11 @@ import (
 	"github.com/grafana/mimir/pkg/querier/engine/streaming/operator"
 )
 
-var globalPool = operator.NewPool()
-
 type Query struct {
 	queryable storage.Queryable
 	opts      promql.QueryOpts
 	statement *parser.EvalStmt
 	root      operator.InstantVectorOperator
-	pool      *operator.Pool
 	engine    *Engine
 
 	result *promql.Result
@@ -46,7 +43,6 @@ func NewQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, sta
 	q := &Query{
 		queryable: queryable,
 		opts:      opts,
-		pool:      globalPool,
 		engine:    engine,
 		statement: &parser.EvalStmt{
 			Expr:          expr,
@@ -100,7 +96,6 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 			Interval:      interval,
 			LookbackDelta: lookbackDelta,
 			Matchers:      e.LabelMatchers,
-			Pool:          q.pool,
 		}, nil
 	case *parser.AggregateExpr:
 		if e.Op != parser.SUM {
@@ -129,7 +124,6 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 			End:      q.statement.End,
 			Interval: interval,
 			Grouping: e.Grouping,
-			Pool:     q.pool,
 		}, nil
 	case *parser.Call:
 		if e.Func.Name != "rate" {
@@ -176,7 +170,6 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 			Range:         matrixSelector.Range,
 			LookbackDelta: lookbackDelta,
 			Matchers:      vectorSelector.LabelMatchers,
-			Pool:          q.pool,
 		}, nil
 	default:
 		return nil, NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
@@ -192,7 +185,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	if err != nil {
 		return &promql.Result{Err: err}
 	}
-	defer q.pool.PutSeriesMetadataSlice(series)
+	defer operator.PutSeriesMetadataSlice(series)
 
 	if q.IsInstant() {
 		v, err := q.populateVector(ctx, series)
@@ -215,7 +208,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 
 func (q *Query) populateVector(ctx context.Context, series []operator.SeriesMetadata) (promql.Vector, error) {
 	ts := timeMilliseconds(q.statement.Start)
-	v := q.pool.GetVector(len(series))
+	v := operator.GetVector(len(series))
 
 	for i, s := range series {
 		d, err := q.root.Next(ctx)
@@ -228,7 +221,7 @@ func (q *Query) populateVector(ctx context.Context, series []operator.SeriesMeta
 		}
 
 		if len(d.Floats) != 1 {
-			defer q.pool.PutFPointSlice(d.Floats)
+			defer operator.PutFPointSlice(d.Floats)
 			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v", s.Labels.String(), len(d.Floats))
 		}
 
@@ -239,14 +232,14 @@ func (q *Query) populateVector(ctx context.Context, series []operator.SeriesMeta
 			F:      point.F,
 		})
 
-		q.pool.PutFPointSlice(d.Floats)
+		operator.PutFPointSlice(d.Floats)
 	}
 
 	return v, nil
 }
 
 func (q *Query) populateMatrix(ctx context.Context, series []operator.SeriesMetadata) (promql.Matrix, error) {
-	m := q.pool.GetMatrix(len(series))
+	m := operator.GetMatrix(len(series))
 
 	for i, s := range series {
 		d, err := q.root.Next(ctx)
@@ -278,13 +271,13 @@ func (q *Query) Close() {
 	switch v := q.result.Value.(type) {
 	case promql.Matrix:
 		for _, s := range v {
-			q.pool.PutFPointSlice(s.Floats)
+			operator.PutFPointSlice(s.Floats)
 			// TODO: histograms
 		}
 
-		q.pool.PutMatrix(v)
+		operator.PutMatrix(v)
 	case promql.Vector:
-		q.pool.PutVector(v)
+		operator.PutVector(v)
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
 	}

@@ -23,7 +23,6 @@ type Aggregation struct {
 	End      time.Time
 	Interval time.Duration
 	Grouping []string
-	Pool     *Pool
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*group // One entry per group, in the order we want to return them
@@ -49,7 +48,7 @@ func (a *Aggregation) Series(ctx context.Context) ([]SeriesMetadata, error) {
 		return nil, err
 	}
 
-	defer a.Pool.PutSeriesMetadataSlice(innerSeries)
+	defer PutSeriesMetadataSlice(innerSeries)
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.
@@ -80,7 +79,7 @@ func (a *Aggregation) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	}
 
 	// Sort the list of series we'll return, and maintain the order of the corresponding groups at the same time
-	seriesMetadata := a.Pool.GetSeriesMetadataSlice(len(groups))
+	seriesMetadata := GetSeriesMetadataSlice(len(groups))
 	a.remainingGroups = make([]*group, 0, len(groups)) // TODO: pool this?
 
 	for _, g := range groups {
@@ -136,8 +135,8 @@ func (a *Aggregation) Next(ctx context.Context) (InstantVectorSeriesData, error)
 
 		if thisSeriesGroup.sums == nil {
 			// First series for this group, populate it
-			thisSeriesGroup.sums = a.Pool.GetFloatSlice(steps)[:steps]
-			thisSeriesGroup.present = a.Pool.GetBoolSlice(steps)[:steps]
+			thisSeriesGroup.sums = GetFloatSlice(steps)[:steps]
+			thisSeriesGroup.present = GetBoolSlice(steps)[:steps]
 		}
 
 		for _, p := range s.Floats {
@@ -146,7 +145,7 @@ func (a *Aggregation) Next(ctx context.Context) (InstantVectorSeriesData, error)
 			thisSeriesGroup.present[idx] = true
 		}
 
-		a.Pool.PutFPointSlice(s.Floats)
+		PutFPointSlice(s.Floats)
 		thisSeriesGroup.remainingSeriesCount--
 	}
 
@@ -158,7 +157,7 @@ func (a *Aggregation) Next(ctx context.Context) (InstantVectorSeriesData, error)
 		}
 	}
 
-	points := a.Pool.GetFPointSlice(pointCount)
+	points := GetFPointSlice(pointCount)
 
 	for i, havePoint := range thisGroup.present {
 		if havePoint {
@@ -167,8 +166,8 @@ func (a *Aggregation) Next(ctx context.Context) (InstantVectorSeriesData, error)
 		}
 	}
 
-	a.Pool.PutFloatSlice(thisGroup.sums)
-	a.Pool.PutBoolSlice(thisGroup.present)
+	PutFloatSlice(thisGroup.sums)
+	PutBoolSlice(thisGroup.present)
 
 	// TODO: return thisGroup to pool (zero-out slices)
 
