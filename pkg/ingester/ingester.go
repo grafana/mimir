@@ -464,7 +464,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
 		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, ownedSeriesStrategy, log.With(i.logger, "component", "owned series"), registerer, i.limiter.maxSeriesPerUser, i.getTSDBUsers, i.getTSDB)
 
-		// We add owned service explicitly, because ingester doesn't start it using i.subservices.
+		// We add owned series service explicitly, because ingester doesn't start it using i.subservices.
 		i.subservicesWatcher.WatchService(i.ownedSeriesService)
 	}
 
