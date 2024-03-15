@@ -22,25 +22,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/version"
 )
 
-type Config struct {
-	ServerMetricsPort   int
-	LogLevel            log.Level
-	Client              continuoustest.ClientConfig
-	Manager             continuoustest.ManagerConfig
-	WriteReadSeriesTest continuoustest.WriteReadSeriesTestConfig
-}
-
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
-	cfg.LogLevel.RegisterFlags(f)
-	cfg.Client.RegisterFlags(f)
-	cfg.Manager.RegisterFlags(f)
-	cfg.WriteReadSeriesTest.RegisterFlags(f)
-}
-
 func main() {
 	// Parse CLI arguments.
-	cfg := &Config{}
+	cfg := &continuoustest.Config{}
 	cfg.RegisterFlags(flag.CommandLine)
 
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
