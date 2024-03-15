@@ -356,6 +356,8 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 		preferredResponseLatency      time.Duration
 		secondaryResponseLatency      time.Duration
 		expectLatencyExceedsThreshold bool
+		fastestBackend                string
+		slowestBackend                string
 	}{
 		"responses are below threshold": {
 			slowResponseThreshold:         100 * time.Millisecond,
@@ -368,6 +370,8 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 			preferredResponseLatency:      0 * time.Millisecond,
 			secondaryResponseLatency:      101 * time.Millisecond,
 			expectLatencyExceedsThreshold: true,
+			fastestBackend:                "preferred-backend",
+			slowestBackend:                "secondary-backend",
 		},
 		"responses are both above threshold, but lower than threshold between themselves": {
 			slowResponseThreshold:         100 * time.Millisecond,
@@ -380,6 +384,8 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 			preferredResponseLatency:      101 * time.Millisecond,
 			secondaryResponseLatency:      202 * time.Millisecond,
 			expectLatencyExceedsThreshold: true,
+			fastestBackend:                "preferred-backend",
+			slowestBackend:                "secondary-backend",
 		},
 		"secondary latency is faster than primary, and difference is below threshold": {
 			slowResponseThreshold:         100 * time.Millisecond,
@@ -392,6 +398,8 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 			preferredResponseLatency:      101 * time.Millisecond,
 			secondaryResponseLatency:      0 * time.Millisecond,
 			expectLatencyExceedsThreshold: true,
+			fastestBackend:                "secondary-backend",
+			slowestBackend:                "preferred-backend",
 		},
 	}
 
@@ -444,7 +452,11 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 			waitForResponseComparisonMetric(t, reg, ComparisonSuccess)
 
 			if scenario.expectLatencyExceedsThreshold {
-				requireLogMessage(t, logger.messages, "response time difference between backends exceeded threshold")
+				requireLogKeyValues(t, logger.messages, map[string]string{
+					"msg":             "response time difference between backends exceeded threshold",
+					"slowest_backend": scenario.slowestBackend,
+					"fastest_backend": scenario.fastestBackend,
+				})
 			} else {
 				requireNoLogMessages(t, logger.messages, "response time difference between backends exceeded threshold")
 			}
@@ -476,17 +488,23 @@ func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expect
 	}
 }
 
-func requireLogMessage(t *testing.T, messages []map[string]interface{}, expectedMessage string) {
-	sawMessage := false
-
+func requireLogKeyValues(t *testing.T, messages []map[string]interface{}, targetKeyValues map[string]string) {
+	allKeyValuesMatch := false
 	for _, m := range messages {
-		if m["msg"] == expectedMessage {
-			sawMessage = true
+		allKeyValuesMatch = true
+		for targetKey, targetValue := range targetKeyValues {
+			if value, exists := m[targetKey]; !exists || value != targetValue {
+				// Key does not exist or value does not match
+				allKeyValuesMatch = false
+				break
+			}
+		}
+		if allKeyValuesMatch {
 			break
 		}
 	}
 
-	require.True(t, sawMessage, "expected to find a '%s' message logged, but only these messages were logged: %v", expectedMessage, messages)
+	require.True(t, allKeyValuesMatch, "expected to find a message logged with specific key-values: %s, but only these messages were logged: %v", targetKeyValues, messages)
 }
 
 func requireNoLogMessages(t *testing.T, messages []map[string]interface{}, forbiddenMessages ...string) {
