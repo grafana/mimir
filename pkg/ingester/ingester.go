@@ -919,8 +919,8 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 // In the first case, returned errors can be inspected/logged by middleware. Ingester.PushWithCleanup will wrap the error in util_log.DoNotLogError wrapper.
 // In the second case, returned errors will not be logged, because request will not reach any middleware.
 //
-// The canFinish flag indicates if the caller is allowed to call finish on this request. If not, there is already someone in the call stuck, who will do that.
-func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ context.Context, canFinish bool, err error) {
+// The shouldFinish flag tells if the caller must call finish on this request. If not, there is already someone in the call stack who will do that.
+func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ context.Context, shouldFinish bool, err error) {
 	if err := i.checkAvailable(); err != nil {
 		return nil, false, err
 	}
@@ -956,20 +956,20 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ conte
 	if il != nil {
 		if il.MaxInflightPushRequests > 0 && inflight > il.MaxInflightPushRequests {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-			return nil, canFinish, errMaxInflightRequestsReached
+			return nil, false, errMaxInflightRequestsReached
 		}
 
 		if il.MaxInflightPushRequestsBytes > 0 {
 			if (rejectEqualInflightBytes && inflightBytes >= il.MaxInflightPushRequestsBytes) || inflightBytes > il.MaxInflightPushRequestsBytes {
 				i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
-				return nil, canFinish, errMaxInflightRequestsBytesReached
+				return nil, false, errMaxInflightRequestsBytesReached
 			}
 		}
 
 		if il.MaxIngestionRate > 0 {
 			if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 				i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
-				return nil, canFinish, errMaxIngestionRateReached
+				return nil, false, errMaxIngestionRateReached
 			}
 		}
 	}
@@ -991,15 +991,16 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// retain anything from `req` past the exit from this function.
 	defer cleanUp()
 
-	// Only start/finish request here, when the request comes not from grpc handlers (i.e. from ingest.Store).
-	// NOTE: when ingest storage's enabled, for a grpc request this will be a noop.
+	// Only start/finish request here when the request comes NOT from grpc handlers (i.e., from ingest.Store).
+	// NOTE: request coming from grpc handler may end up calling start multiple times during its lifetime (e.g., when migrating to ingest storage).
+	// startPushRequest handles this.
 	if i.cfg.IngestStorageConfig.Enabled || !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
 		reqSize := int64(req.Size())
-		_, canFinish, err := i.startPushRequest(ctx, reqSize)
+		_, shouldFinish, err := i.startPushRequest(ctx, reqSize)
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}
-		if canFinish {
+		if shouldFinish {
 			defer i.finishPushRequest(reqSize)
 		}
 	}
