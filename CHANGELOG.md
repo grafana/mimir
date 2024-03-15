@@ -6,7 +6,7 @@
 
 * [ENHANCEMENT] Store-gateway: merge series from different blocks concurrently. #7456
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
-* [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622 
+* [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622
 
 ### Mixin
 
