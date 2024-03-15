@@ -88,7 +88,7 @@ For more information about the kubelet metrics and cAdvisor metrics exported by 
 Metrics from kubelet, kube-state-metrics, and cAdvisor must all have a `cluster` label with the same value as in the
 Mimir metrics.
 
-Metrics from node_exporter must all have an `instance` label on them that has the same value as the `instance` label on Mimir metrics.
+Metrics from node_exporter and cAdvisor must all have an `instance` label on them that has the same value as the `instance` label on Mimir metrics.
 
 ## Log labels
 
