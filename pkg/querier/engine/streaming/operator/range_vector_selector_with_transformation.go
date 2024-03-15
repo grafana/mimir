@@ -22,13 +22,12 @@ import (
 )
 
 type RangeVectorSelectorWithTransformation struct {
-	Queryable     storage.Queryable
-	Start         time.Time
-	End           time.Time
-	Interval      time.Duration
-	Range         time.Duration
-	LookbackDelta time.Duration
-	Matchers      []*labels.Matcher
+	Queryable storage.Queryable
+	Start     time.Time
+	End       time.Time
+	Interval  time.Duration
+	Range     time.Duration
+	Matchers  []*labels.Matcher
 
 	querier storage.Querier
 	// TODO: create separate type for linked list of SeriesBatches, use here and in InstantVectorSelector

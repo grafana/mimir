@@ -141,11 +141,6 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 			return nil, NewNotSupportedError(fmt.Sprintf("unsupported rate argument type %T", e.Args[0]))
 		}
 
-		lookbackDelta := q.opts.LookbackDelta()
-		if lookbackDelta == 0 {
-			lookbackDelta = q.engine.lookbackDelta
-		}
-
 		vectorSelector := matrixSelector.VectorSelector.(*parser.VectorSelector)
 
 		if vectorSelector.OriginalOffset != 0 || vectorSelector.Offset != 0 {
@@ -163,13 +158,12 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 		}
 
 		return &operator.RangeVectorSelectorWithTransformation{
-			Queryable:     q.queryable,
-			Start:         q.statement.Start,
-			End:           q.statement.End,
-			Interval:      interval,
-			Range:         matrixSelector.Range,
-			LookbackDelta: lookbackDelta,
-			Matchers:      vectorSelector.LabelMatchers,
+			Queryable: q.queryable,
+			Start:     q.statement.Start,
+			End:       q.statement.End,
+			Interval:  interval,
+			Range:     matrixSelector.Range,
+			Matchers:  vectorSelector.LabelMatchers,
 		}, nil
 	default:
 		return nil, NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
