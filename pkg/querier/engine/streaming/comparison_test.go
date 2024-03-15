@@ -8,7 +8,6 @@ package streaming
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
@@ -40,6 +40,31 @@ func (c benchCase) Name() string {
 	}
 
 	return name
+}
+
+func (c benchCase) Run(t testing.TB, ctx context.Context, start, end time.Time, interval time.Duration, engine promql.QueryEngine, db *tsdb.DB) (*promql.Result, func()) {
+	var qry promql.Query
+	var err error
+
+	if c.steps == 0 {
+		qry, err = engine.NewInstantQuery(ctx, db, nil, c.expr, start)
+	} else {
+		qry, err = engine.NewRangeQuery(ctx, db, nil, c.expr, start, end, interval)
+	}
+
+	if err != nil {
+		require.NoError(t, err)
+		return nil, nil
+	}
+
+	res := qry.Exec(ctx)
+
+	if res.Err != nil {
+		require.NoError(t, res.Err)
+		return nil, nil
+	}
+
+	return res, qry.Close
 }
 
 // These test cases are taken from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
@@ -206,11 +231,12 @@ func BenchmarkQuery(b *testing.B) {
 		EnableNegativeOffset: true,
 	}
 
+	standardEngine := promql.NewEngine(opts)
 	streamingEngine, err := NewEngine(opts)
 	require.NoError(b, err)
 
 	engines := map[string]promql.QueryEngine{
-		"standard":  promql.NewEngine(opts),
+		"standard":  standardEngine,
 		"streaming": streamingEngine,
 	}
 
@@ -222,35 +248,31 @@ func BenchmarkQuery(b *testing.B) {
 	err = setupTestData(db, metricSizes, interval, numIntervals)
 	require.NoError(b, err)
 	cases := testCases(metricSizes)
+	ctx := context.Background()
 
 	for _, c := range cases {
+		start := time.Unix(int64((numIntervals-c.steps)*10), 0)
+		end := time.Unix(int64(numIntervals*10), 0)
+		interval := time.Second * 10
+
 		b.Run(c.Name(), func(b *testing.B) {
+			// Check both engines produce the same result before running the benchmark.
+			standardResult, standardClose := c.Run(b, ctx, start, end, interval, standardEngine, db)
+			streamingResult, streamingClose := c.Run(b, ctx, start, end, interval, streamingEngine, db)
+
+			requireEqualResults(b, standardResult, streamingResult)
+
+			standardClose()
+			streamingClose()
+
 			for name, engine := range engines {
 				b.Run(name, func(b *testing.B) {
-					ctx := context.Background()
-					b.ReportAllocs()
 					for i := 0; i < b.N; i++ {
-						var qry promql.Query
-						var err error
+						res, cleanup := c.Run(b, ctx, start, end, interval, engine, db)
 
-						start := time.Unix(int64((numIntervals-c.steps)*10), 0)
-						end := time.Unix(int64(numIntervals*10), 0)
-						interval := time.Second * 10
-
-						if c.steps == 0 {
-							qry, err = engine.NewInstantQuery(ctx, db, nil, c.expr, start)
-						} else {
-							qry, err = engine.NewRangeQuery(ctx, db, nil, c.expr, start, end, interval)
+						if res != nil {
+							cleanup()
 						}
-
-						if err != nil {
-							require.NoError(b, err)
-						}
-						res := qry.Exec(ctx)
-						if res.Err != nil {
-							require.NoError(b, res.Err)
-						}
-						qry.Close()
 					}
 				})
 			}
@@ -258,7 +280,7 @@ func BenchmarkQuery(b *testing.B) {
 	}
 }
 
-func TestQuery(t *testing.T) {
+func TestBenchmarkQueries(t *testing.T) {
 	db := newTestDB(t)
 	opts := promql.EngineOpts{
 		Logger:               nil,
@@ -277,101 +299,87 @@ func TestQuery(t *testing.T) {
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
 
-	metricSizes := []int{1, 10, 100}
+	metricSizes := []int{1, 10, 100} // Don't bother with 2000 series test here: these test cases take a while and they're most interesting as benchmarks, not correctness tests.
 	err = setupTestData(db, metricSizes, interval, numIntervals)
 	require.NoError(t, err)
 	cases := testCases(metricSizes)
 
-	runQuery := func(t *testing.T, engine promql.QueryEngine, c benchCase) (*promql.Result, func()) {
-		ctx := context.Background()
-		var qry promql.Query
-		var err error
-
-		start := time.Unix(int64((numIntervals-c.steps)*10), 0)
-		end := time.Unix(int64(numIntervals*10), 0)
-		interval := time.Second * 10
-
-		if c.steps == 0 {
-			qry, err = engine.NewInstantQuery(ctx, db, nil, c.expr, start)
-		} else {
-			qry, err = engine.NewRangeQuery(ctx, db, nil, c.expr, start, end, interval)
-		}
-
-		if errors.Is(err, ErrNotSupported) {
-			t.Skipf("skipping, query is not supported by streaming engine: %v", err)
-		}
-
-		require.NoError(t, err)
-		res := qry.Exec(ctx)
-		require.NoError(t, res.Err)
-
-		return res, qry.Close
-	}
-
 	for _, c := range cases {
 		t.Run(c.Name(), func(t *testing.T) {
-			standardResult, standardClose := runQuery(t, standardEngine, c)
-			streamingResult, streamingClose := runQuery(t, streamingEngine, c)
+			start := time.Unix(int64((numIntervals-c.steps)*10), 0)
+			end := time.Unix(int64(numIntervals*10), 0)
+			interval := time.Second * 10
+			ctx := context.Background()
 
-			// Why do we do this rather than require.Equal(t, standardResult, streamingResult)?
-			// It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
-			require.Equal(t, standardResult.Err, streamingResult.Err)
+			standardResult, standardClose := c.Run(t, ctx, start, end, interval, standardEngine, db)
+			streamingResult, streamingClose := c.Run(t, ctx, start, end, interval, streamingEngine, db)
 
-			// Ignore warnings until they're supported by the streaming engine.
-			// require.Equal(t, standardResult.Warnings, streamingResult.Warnings)
-
-			if c.steps == 0 {
-				standardVector, err := standardResult.Vector()
-				require.NoError(t, err)
-				streamingVector, err := streamingResult.Vector()
-				require.NoError(t, err)
-
-				// There's no guarantee that series from the standard engine are sorted.
-				slices.SortFunc(standardVector, func(a, b promql.Sample) int {
-					return labels.Compare(a.Metric, b.Metric)
-				})
-
-				require.Len(t, streamingVector, len(standardVector))
-
-				for i, standardSample := range standardVector {
-					streamingSample := streamingVector[i]
-
-					require.Equal(t, standardSample.Metric, streamingSample.Metric)
-					require.Equal(t, standardSample.T, streamingSample.T)
-					require.Equal(t, standardSample.H, streamingSample.H)
-					require.InEpsilon(t, standardSample.F, streamingSample.F, 1e-10)
-				}
-			} else {
-				standardMatrix, err := standardResult.Matrix()
-				require.NoError(t, err)
-				streamingMatrix, err := streamingResult.Matrix()
-				require.NoError(t, err)
-
-				// There's no guarantee that series from the standard engine are sorted.
-				slices.SortFunc(standardMatrix, func(a, b promql.Series) int {
-					return labels.Compare(a.Metric, b.Metric)
-				})
-
-				require.Len(t, streamingMatrix, len(standardMatrix))
-
-				for i, standardSeries := range standardMatrix {
-					streamingSeries := streamingMatrix[i]
-
-					require.Equal(t, standardSeries.Metric, streamingSeries.Metric)
-					require.Equal(t, standardSeries.Histograms, streamingSeries.Histograms)
-
-					for j, standardPoint := range standardSeries.Floats {
-						streamingPoint := streamingSeries.Floats[j]
-
-						require.Equal(t, standardPoint.T, streamingPoint.T)
-						require.InEpsilonf(t, standardPoint.F, streamingPoint.F, 1e-10, "expected series %v to have points %v, but streaming result is %v", standardSeries.Metric.String(), standardSeries.Floats, streamingSeries.Floats)
-					}
-				}
-			}
+			requireEqualResults(t, standardResult, streamingResult)
 
 			standardClose()
 			streamingClose()
 		})
+	}
+}
+
+// Why do we do this rather than require.Equal(t, expected, actual)?
+// It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
+func requireEqualResults(t testing.TB, expected, actual *promql.Result) {
+	require.Equal(t, expected.Err, actual.Err)
+
+	// Ignore warnings until they're supported by the streaming engine.
+	// require.Equal(t, expected.Warnings, actual.Warnings)
+
+	require.Equal(t, expected.Value.Type(), actual.Value.Type())
+
+	switch expected.Value.Type() {
+	case parser.ValueTypeVector:
+		expectedVector, err := expected.Vector()
+		require.NoError(t, err)
+		actualVector, err := actual.Vector()
+		require.NoError(t, err)
+
+		slices.SortFunc(expectedVector, func(a, b promql.Sample) int {
+			return labels.Compare(a.Metric, b.Metric)
+		})
+
+		require.Len(t, actualVector, len(expectedVector))
+
+		for i, expectedSample := range expectedVector {
+			actualSample := actualVector[i]
+
+			require.Equal(t, expectedSample.Metric, actualSample.Metric)
+			require.Equal(t, expectedSample.T, actualSample.T)
+			require.Equal(t, expectedSample.H, actualSample.H)
+			require.InEpsilon(t, expectedSample.F, actualSample.F, 1e-10)
+		}
+	case parser.ValueTypeMatrix:
+		expectedMatrix, err := expected.Matrix()
+		require.NoError(t, err)
+		actualMatrix, err := actual.Matrix()
+		require.NoError(t, err)
+
+		slices.SortFunc(expectedMatrix, func(a, b promql.Series) int {
+			return labels.Compare(a.Metric, b.Metric)
+		})
+
+		require.Len(t, actualMatrix, len(expectedMatrix))
+
+		for i, expectedSeries := range expectedMatrix {
+			actualSeries := actualMatrix[i]
+
+			require.Equal(t, expectedSeries.Metric, actualSeries.Metric)
+			require.Equal(t, expectedSeries.Histograms, actualSeries.Histograms)
+
+			for j, expectedPoint := range expectedSeries.Floats {
+				actualPoint := actualSeries.Floats[j]
+
+				require.Equal(t, expectedPoint.T, actualPoint.T)
+				require.InEpsilonf(t, expectedPoint.F, actualPoint.F, 1e-10, "expected series %v to have points %v, but result is %v", expectedSeries.Metric.String(), expectedSeries.Floats, actualSeries.Floats)
+			}
+		}
+	default:
+		require.Fail(t, "unexpected value type", "type: %v", expected.Value.Type())
 	}
 }
 
