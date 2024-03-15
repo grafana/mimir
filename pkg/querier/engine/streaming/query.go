@@ -25,12 +25,8 @@ var globalPool = operator.NewPool()
 type Query struct {
 	queryable storage.Queryable
 	opts      promql.QueryOpts
-	qs        string
-	statement parser.Statement
+	statement *parser.EvalStmt
 	root      operator.InstantVectorOperator
-	start     time.Time
-	end       time.Time
-	interval  time.Duration
 	pool      *operator.Pool
 	engine    *Engine
 
@@ -42,20 +38,23 @@ func NewQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, sta
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
-	q := &Query{
-		queryable: queryable,
-		opts:      opts,
-		qs:        qs,
-		start:     start,
-		end:       end,
-		interval:  interval,
-		pool:      globalPool,
-		engine:    engine,
-	}
-
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
+	}
+
+	q := &Query{
+		queryable: queryable,
+		opts:      opts,
+		pool:      globalPool,
+		engine:    engine,
+		statement: &parser.EvalStmt{
+			Expr:          expr,
+			Start:         start,
+			End:           end,
+			Interval:      interval,
+			LookbackDelta: opts.LookbackDelta(),
+		},
 	}
 
 	q.root, err = q.convertToOperator(expr)
@@ -67,7 +66,7 @@ func NewQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, sta
 }
 
 func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOperator, error) {
-	interval := q.interval
+	interval := q.statement.Interval
 
 	if q.IsInstant() {
 		interval = time.Millisecond
@@ -96,8 +95,8 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 
 		return &operator.InstantVectorSelector{
 			Queryable:     q.queryable,
-			Start:         q.start,
-			End:           q.end,
+			Start:         q.statement.Start,
+			End:           q.statement.End,
 			Interval:      interval,
 			LookbackDelta: lookbackDelta,
 			Matchers:      e.LabelMatchers,
@@ -126,8 +125,8 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 
 		return &operator.Aggregation{
 			Inner:    inner,
-			Start:    q.start,
-			End:      q.end,
+			Start:    q.statement.Start,
+			End:      q.statement.End,
 			Interval: interval,
 			Grouping: e.Grouping,
 			Pool:     q.pool,
@@ -171,8 +170,8 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 
 		return &operator.RangeVectorSelectorWithTransformation{
 			Queryable:     q.queryable,
-			Start:         q.start,
-			End:           q.end,
+			Start:         q.statement.Start,
+			End:           q.statement.End,
 			Interval:      interval,
 			Range:         matrixSelector.Range,
 			LookbackDelta: lookbackDelta,
@@ -185,7 +184,7 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 }
 
 func (q *Query) IsInstant() bool {
-	return q.start == q.end && q.interval == 0
+	return q.statement.Start == q.statement.End && q.statement.Interval == 0
 }
 
 func (q *Query) Exec(ctx context.Context) *promql.Result {
@@ -215,7 +214,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 }
 
 func (q *Query) populateVector(ctx context.Context, series []operator.SeriesMetadata) (promql.Vector, error) {
-	ts := timeMilliseconds(q.start)
+	ts := timeMilliseconds(q.statement.Start)
 	v := q.pool.GetVector(len(series))
 
 	for i, s := range series {
@@ -292,8 +291,7 @@ func (q *Query) Close() {
 }
 
 func (q *Query) Statement() parser.Statement {
-	//TODO implement me
-	panic("implement me")
+	return q.statement
 }
 
 func (q *Query) Stats() *stats.Statistics {
