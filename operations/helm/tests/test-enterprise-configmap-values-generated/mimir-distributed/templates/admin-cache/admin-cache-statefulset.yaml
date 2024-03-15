@@ -1,9 +1,9 @@
 ---
-# Source: mimir-distributed/templates/results-cache/results-cache-statefulset.yaml
+# Source: mimir-distributed/templates/admin-cache/admin-cache-statefulset.yaml
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-enterprise-configmap-values-mimir-results-cache
+  name: test-enterprise-configmap-values-mimir-admin-cache
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
@@ -19,10 +19,10 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-enterprise-configmap-values
-      app.kubernetes.io/component: results-cache
+      app.kubernetes.io/component: admin-cache
   updateStrategy:
     type: RollingUpdate
-  serviceName: test-enterprise-configmap-values-mimir-results-cache
+  serviceName: test-enterprise-configmap-values-mimir-admin-cache
 
   template:
     metadata:
@@ -30,7 +30,7 @@ spec:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-configmap-values
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: results-cache
+        app.kubernetes.io/component: admin-cache
       annotations:
         minio-secret-version: "42"
 
@@ -66,7 +66,7 @@ spec:
           args:
             - -m 10
             - --extended=modern,track_sizes
-            - -I 5m
+            - -I 1m
             - -c 16384
             - -v
             - -u 11211
