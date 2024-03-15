@@ -107,9 +107,12 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 		if e.Op != parser.SUM {
 			return nil, NewNotSupportedError(fmt.Sprintf("'%s' aggregation", e.Op))
 		}
+
 		if e.Param != nil {
+			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("unexpected parameter for %s aggregation: %s", e.Op, e.Param)
 		}
+
 		if e.Without {
 			return nil, NewNotSupportedError("grouping with 'without'")
 		}
@@ -133,12 +136,15 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 		if e.Func.Name != "rate" {
 			return nil, NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 		}
+
 		if len(e.Args) != 1 {
+			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly one argument for rate, got %v", len(e.Args))
 		}
 
 		matrixSelector, ok := e.Args[0].(*parser.MatrixSelector)
 		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, NewNotSupportedError(fmt.Sprintf("unsupported rate argument type %T", e.Args[0]))
 		}
 
