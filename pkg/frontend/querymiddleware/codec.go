@@ -68,12 +68,16 @@ type Codec interface {
 	Merger
 	// DecodeMetricsQueryRequest decodes a MetricsQueryRequest from an http request.
 	DecodeMetricsQueryRequest(context.Context, *http.Request) (MetricsQueryRequest, error)
+	// DecodeLabelsQueryRequest decodes a LabelsQueryRequest from an http request.
+	DecodeLabelsQueryRequest(context.Context, *http.Request) (LabelsQueryRequest, error)
 	// DecodeResponse decodes a Response from an http response.
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
 	DecodeResponse(context.Context, *http.Response, MetricsQueryRequest, log.Logger) (Response, error)
 	// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
 	EncodeMetricsQueryRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
+	// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
+	EncodeLabelsQueryRequest(context.Context, LabelsQueryRequest) (*http.Request, error)
 	// EncodeResponse encodes a Response into an http response.
 	EncodeResponse(context.Context, *http.Request, Response) (*http.Response, error)
 }
@@ -120,11 +124,22 @@ type MetricsQueryRequest interface {
 type LabelsQueryRequest interface {
 	// GetId returns the ID of the request used to correlate downstream requests and responses.
 	GetId() int64
-	// GetStart returns the start timestamp of the request in milliseconds.
+	// GetStart returns the start timestamp of the request in milliseconds
 	GetStart() int64
-	// GetEnd returns the end timestamp of the request in milliseconds.
+	// GetStartOrDefault returns the start timestamp of the request in milliseconds,
+	// or the Prometheus v1 API MinTime if no start timestamp was provided on the original request.
+	GetStartOrDefault() int64
+	// GetEnd returns the start timestamp of the request in milliseconds
 	GetEnd() int64
-	// GetLabelMatchers returns the label matchers a.k.a series selectors for Prometheus label query requests
+	// GetEndOrDefault returns the end timestamp of the request in milliseconds,
+	// or the Prometheus v1 API MaxTime if no end timestamp was provided on the original request.
+	GetEndOrDefault() int64
+	// GetLabelMatchersStrings returns the label matchers a.k.a series selectors for Prometheus label query requests,
+	// as retained in their original string format. This enables the request to be symmetrically decoded and encoded
+	// to and from the http request format without needing to undo the Prometheus parser converting between formats
+	// like `up{job="prometheus"}` and `{__name__="up, job="prometheus"}`, or other idiosyncrasies.
+	GetLabelMatchersStrings() []string
+	// GetLabelMatchers returns the parsed label matchers a.k.a series selectors for Prometheus label query requests
 	GetLabelMatchers() []*LabelMatchers
 	// GetOptions returns the options for the given request.
 	GetOptions() Options
@@ -274,10 +289,19 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQuer
 	return &result, nil
 }
 
+func (c prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Request) (LabelsQueryRequest, error) {
+	switch {
+	case IsLabelNamesQuery(r.URL.Path):
+		return c.decodeLabelNamesQueryRequest(r)
+	default:
+		return nil, fmt.Errorf("prometheus codec doesn't support requests to %s", r.URL.Path)
+	}
+}
+
 func (prometheusCodec) decodeLabelNamesQueryRequest(r *http.Request) (LabelsQueryRequest, error) {
 	var result PrometheusLabelNamesQueryRequest
 	var err error
-	result.Start, result.End, err = DecodeLabelsQueryTimeParams(r)
+	result.Start, result.End, err = DecodeLabelsQueryTimeParams(r, false)
 	if err != nil {
 		return nil, err
 	}
@@ -287,20 +311,22 @@ func (prometheusCodec) decodeLabelNamesQueryRequest(r *http.Request) (LabelsQuer
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	promLabelMatcherSets, err := parseRequestMatchersParam(urlQueryParams, "match[]")
-	if err != nil {
-		return nil, err
-	}
-
-	codecLabelMatcherSets := make([]*LabelMatchers, len(promLabelMatcherSets))
-	for i, promLabelMatcher := range promLabelMatcherSets {
-		codecMatcherSet, err := toCodecLabelMatcherSet(promLabelMatcher)
+	if urlQueryParams.Has("match[]") {
+		result.MatcherSetsStrings = urlQueryParams["match[]"]
+		promLabelMatcherSets, err := parseRequestMatchersParam(urlQueryParams, "match[]")
 		if err != nil {
 			return nil, err
 		}
-		codecLabelMatcherSets[i] = &LabelMatchers{Matchers: codecMatcherSet}
+		codecLabelMatcherSets := make([]*LabelMatchers, len(promLabelMatcherSets))
+		for i, promLabelMatcher := range promLabelMatcherSets {
+			codecMatcherSet, err := decodeLabelMatcherSets(promLabelMatcher)
+			if err != nil {
+				return nil, err
+			}
+			codecLabelMatcherSets[i] = &LabelMatchers{MatcherSet: codecMatcherSet}
+		}
+		result.MatcherSets = codecLabelMatcherSets
 	}
-	result.MatcherSets = codecLabelMatcherSets
 
 	result.Path = r.URL.Path
 	decodeOptions(r, &result.Options)
@@ -354,18 +380,34 @@ func DecodeInstantQueryTimeParams(r *http.Request, now func() time.Time) (int64,
 
 // DecodeLabelsQueryTimeParams encapsulates Prometheus label names query time param parsing,
 // emulating the logic in prometheus/prometheus/web/api/v1#API.labelNames and v1#API.labelValues.
-func DecodeLabelsQueryTimeParams(r *http.Request) (start, end int64, err error) {
-	start, err = util.ParseTimeParam(r, "start", v1.MinTime.UnixMilli())
-	if err != nil {
-		return 0, 0, decorateWithParamName(err, "start")
+func DecodeLabelsQueryTimeParams(r *http.Request, usePromDefaults bool) (start, end int64, err error) {
+	var defaultStart, defaultEnd int64
+	if usePromDefaults {
+		defaultStart = v1.MinTime.UnixMilli()
+		defaultEnd = v1.MaxTime.UnixMilli()
 	}
 
-	end, err = util.ParseTimeParam(r, "end", v1.MaxTime.UnixMilli())
-	if err != nil {
-		return 0, 0, decorateWithParamName(err, "end")
+	startVal := r.FormValue("start")
+	if startVal == "" {
+		start = defaultStart
+	} else {
+		start, err = util.ParseTime(startVal)
+		if err != nil {
+			return 0, 0, decorateWithParamName(err, "start")
+		}
 	}
 
-	if end < start {
+	endVal := r.FormValue("end")
+	if endVal == "" {
+		end = defaultEnd
+	} else {
+		end, err = util.ParseTime(endVal)
+		if err != nil {
+			return 0, 0, decorateWithParamName(err, "end")
+		}
+	}
+
+	if endVal != "" && end < start {
 		return 0, 0, errEndBeforeStart
 	}
 
@@ -459,6 +501,55 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 	}
 
 	return req.WithContext(ctx), nil
+}
+
+func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req LabelsQueryRequest) (*http.Request, error) {
+	var u *url.URL
+	switch req := req.(type) {
+	case *PrometheusLabelNamesQueryRequest:
+		urlValues := url.Values{}
+		if req.GetStart() != 0 {
+			urlValues["start"] = []string{encodeTime(req.Start)}
+		}
+		if req.GetEnd() != 0 {
+			urlValues["end"] = []string{encodeTime(req.End)}
+		}
+		if len(req.GetLabelMatchersStrings()) > 0 {
+			urlValues["match[]"] = req.GetLabelMatchersStrings()
+		}
+		u = &url.URL{
+			Path:     req.Path,
+			RawQuery: urlValues.Encode(),
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported request type %T", req)
+	}
+
+	r := &http.Request{
+		Method:     "GET",
+		RequestURI: u.String(), // This is what the httpgrpc code looks at.
+		URL:        u,
+		Body:       http.NoBody,
+		Header:     http.Header{},
+	}
+
+	encodeOptions(r, req.GetOptions())
+
+	switch c.preferredQueryResultResponseFormat {
+	case formatJSON:
+		r.Header.Set("Accept", jsonMimeType)
+	case formatProtobuf:
+		r.Header.Set("Accept", mimirpb.QueryResponseMimeType+","+jsonMimeType)
+	default:
+		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
+	}
+
+	if consistency, ok := api.ReadConsistencyFromContext(ctx); ok {
+		r.Header.Add(api.ReadConsistencyHeader, consistency)
+	}
+
+	return r.WithContext(ctx), nil
 }
 
 func encodeOptions(req *http.Request, o Options) {
@@ -750,8 +841,8 @@ func decorateWithParamName(err error, field string) error {
 	return apierror.Newf(apierror.TypeBadData, errTmpl, field, err)
 }
 
-func toCodecLabelMatcherSet(matcherSet []*labels.Matcher) ([]*LabelMatcher, error) {
-	result := make([]*LabelMatcher, 0, len(matcherSet))
+func decodeLabelMatcherSets(matcherSet []*labels.Matcher) ([]*LabelMatcher, error) {
+	decodedMatcherSets := make([]*LabelMatcher, 0, len(matcherSet))
 	for _, matcher := range matcherSet {
 		var mType MatchType
 		switch matcher.Type {
@@ -766,11 +857,11 @@ func toCodecLabelMatcherSet(matcherSet []*labels.Matcher) ([]*LabelMatcher, erro
 		default:
 			return nil, fmt.Errorf("invalid matcher type")
 		}
-		result = append(result, &LabelMatcher{
+		decodedMatcherSets = append(decodedMatcherSets, &LabelMatcher{
 			Type:  mType,
 			Name:  matcher.Name,
 			Value: matcher.Value,
 		})
 	}
-	return result, nil
+	return decodedMatcherSets, nil
 }

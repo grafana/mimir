@@ -18,6 +18,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -161,6 +162,24 @@ func (r *PrometheusInstantQueryRequest) AddSpanTags(sp opentracing.Span) {
 	sp.SetTag("time", timestamp.Time(r.GetTime()).String())
 }
 
+func (r *PrometheusLabelNamesQueryRequest) GetStartOrDefault() int64 {
+	if r.GetStart() == 0 {
+		return v1.MinTime.UnixMilli()
+	}
+	return r.GetStart()
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetEndOrDefault() int64 {
+	if r.GetEnd() == 0 {
+		return v1.MaxTime.UnixMilli()
+	}
+	return r.GetEnd()
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetLabelMatchersStrings() []string {
+	return r.MatcherSetsStrings
+}
+
 func (r *PrometheusLabelNamesQueryRequest) GetLabelMatchers() []*LabelMatchers {
 	return r.MatcherSets
 }
@@ -168,7 +187,7 @@ func (r *PrometheusLabelNamesQueryRequest) GetLabelMatchers() []*LabelMatchers {
 // AddSpanTags writes query information about the current `PrometheusLabelNamesQueryRequest`
 // to a span's tag ("attributes" in OpenTelemetry parlance).
 func (r *PrometheusLabelNamesQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("query", r.GetQuery())
+	//sp.SetTag("query", r.GetQuery())
 	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
 	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
 }
