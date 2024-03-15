@@ -84,7 +84,7 @@ testing:
 rollout_operator:
   enabled: false
 
-results-cache:
+admin-cache:
   enabled: true
   allocatedMemory: 10
   resources:
