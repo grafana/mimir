@@ -30,10 +30,10 @@ type InstantVectorSelector struct {
 
 	querier storage.Querier
 	// TODO: create separate type for linked list of SeriesBatches, use here and in RangeVectorSelectorWithTransformation
-	currentSeriesBatch      *SeriesBatch
-	currentSeriesBatchIndex int
-	chunkIterator           chunkenc.Iterator
-	memoizedIterator        *storage.MemoizedSeriesIterator
+	currentSeriesBatch        *SeriesBatch
+	seriesIndexInCurrentBatch int
+	chunkIterator             chunkenc.Iterator
+	memoizedIterator          *storage.MemoizedSeriesIterator
 
 	// TODO: is it cheaper to just recompute these every time we need them rather than holding them?
 	startTimestamp       int64
@@ -113,15 +113,15 @@ func (v *InstantVectorSelector) Next(ctx context.Context) (InstantVectorSeriesDa
 		v.memoizedIterator = storage.NewMemoizedEmptyIterator(durationMilliseconds(v.LookbackDelta))
 	}
 
-	v.chunkIterator = v.currentSeriesBatch.series[v.currentSeriesBatchIndex].Iterator(v.chunkIterator)
+	v.chunkIterator = v.currentSeriesBatch.series[v.seriesIndexInCurrentBatch].Iterator(v.chunkIterator)
 	v.memoizedIterator.Reset(v.chunkIterator)
-	v.currentSeriesBatchIndex++
+	v.seriesIndexInCurrentBatch++
 
-	if v.currentSeriesBatchIndex == len(v.currentSeriesBatch.series) {
+	if v.seriesIndexInCurrentBatch == len(v.currentSeriesBatch.series) {
 		b := v.currentSeriesBatch
 		v.currentSeriesBatch = v.currentSeriesBatch.next
 		v.Pool.PutSeriesBatch(b)
-		v.currentSeriesBatchIndex = 0
+		v.seriesIndexInCurrentBatch = 0
 	}
 
 	numSteps := stepCount(v.startTimestamp, v.endTimestamp, v.intervalMilliseconds)
