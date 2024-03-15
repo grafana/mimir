@@ -79,7 +79,7 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 		}
 		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, time, time, now), nil
 	case querymiddleware.IsLabelsQuery(httpRequest.URL.Path):
-		start, end, err := querymiddleware.DecodeLabelsQueryTimeParams(httpRequest)
+		start, end, err := querymiddleware.DecodeLabelsQueryTimeParams(httpRequest, false)
 		if err != nil {
 			return nil, err
 		}
