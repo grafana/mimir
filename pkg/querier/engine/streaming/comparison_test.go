@@ -28,6 +28,20 @@ type benchCase struct {
 	steps int
 }
 
+func (c benchCase) Name() string {
+	name := fmt.Sprintf("%s", c.expr)
+
+	if c.steps == 0 {
+		name += ", instant query"
+	} else if c.steps == 1 {
+		name += fmt.Sprintf(", range query with %d step", c.steps)
+	} else {
+		name += fmt.Sprintf(", range query with %d steps", c.steps)
+	}
+
+	return name
+}
+
 // These test cases are taken from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
 func testCases(metricSizes []int) []benchCase {
 	cases := []benchCase{
@@ -210,7 +224,7 @@ func BenchmarkQuery(b *testing.B) {
 	cases := testCases(metricSizes)
 
 	for _, c := range cases {
-		b.Run(fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps), func(b *testing.B) {
+		b.Run(c.Name(), func(b *testing.B) {
 			for name, engine := range engines {
 				b.Run(name, func(b *testing.B) {
 					ctx := context.Background()
@@ -295,8 +309,7 @@ func TestQuery(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		name := fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps)
-		t.Run(name, func(t *testing.T) {
+		t.Run(c.Name(), func(t *testing.T) {
 			standardResult, standardClose := runQuery(t, standardEngine, c)
 			streamingResult, streamingClose := runQuery(t, streamingEngine, c)
 
