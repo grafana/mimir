@@ -40,13 +40,14 @@
           expr: |||
             (
                 # Find KEDA scalers reporting errors.
-                label_replace(rate(keda_scaler_errors[5m]), "namespace", "$1", "exported_namespace", "(.*)")
+                label_replace(rate(keda_scaler_errors[%(range_interval)s]), "namespace", "$1", "exported_namespace", "(.*)")
                 # Match only Mimir namespaces.
                 * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
             )
             > 0
           ||| % {
             aggregation_labels: $._config.alert_aggregation_labels,
+            range_interval: $.alertRangeInterval(5),
           },
           labels: {
             severity: 'critical',

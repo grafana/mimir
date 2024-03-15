@@ -235,12 +235,12 @@ func TestNewTSDBIngestExemplarErr(t *testing.T) {
 }
 
 func TestTooBusyError(t *testing.T) {
-	require.Error(t, tooBusyError)
-	require.Equal(t, "the ingester is currently too busy to process queries, try again later", tooBusyError.Error())
-	checkIngesterError(t, tooBusyError, mimirpb.TOO_BUSY, false)
+	require.Error(t, errTooBusy)
+	require.Equal(t, "ingester is currently too busy to process queries, try again later", errTooBusy.Error())
+	checkIngesterError(t, errTooBusy, mimirpb.TOO_BUSY, false)
 
-	wrappedErr := wrapOrAnnotateWithUser(tooBusyError, userID)
-	require.ErrorIs(t, wrappedErr, tooBusyError)
+	wrappedErr := wrapOrAnnotateWithUser(errTooBusy, userID)
+	require.ErrorIs(t, wrappedErr, errTooBusy)
 	var anotherIngesterTooBusyErr ingesterTooBusyError
 	require.ErrorAs(t, wrappedErr, &anotherIngesterTooBusyErr)
 	checkIngesterError(t, wrappedErr, mimirpb.TOO_BUSY, false)
@@ -731,16 +731,16 @@ func TestMapReadErrorToErrorWithStatus(t *testing.T) {
 			expectedMessage: fmt.Sprintf("wrapped: %s", newUnavailableError(services.Stopping).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
 		},
-		"tooBusyError gets translated into an errorWithStatus ResourceExhausted error with details": {
-			err:             tooBusyError,
+		"errTooBusy gets translated into an errorWithStatus ResourceExhausted error with details": {
+			err:             errTooBusy,
 			expectedCode:    codes.ResourceExhausted,
-			expectedMessage: tooBusyErrorMsg,
+			expectedMessage: ingesterTooBusyMsg,
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY},
 		},
-		"a wrapped tooBusyError gets translated into an errorWithStatus ResourceExhausted error with details": {
-			err:             fmt.Errorf("wrapped: %w", tooBusyError),
+		"a wrapped errTooBusy gets translated into an errorWithStatus ResourceExhausted error with details": {
+			err:             fmt.Errorf("wrapped: %w", errTooBusy),
 			expectedCode:    codes.ResourceExhausted,
-			expectedMessage: fmt.Sprintf("wrapped: %s", tooBusyErrorMsg),
+			expectedMessage: fmt.Sprintf("wrapped: %s", ingesterTooBusyMsg),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY},
 		},
 	}
@@ -776,13 +776,13 @@ func TestMapReadErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 			err:                 fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
 			expectedTranslation: newErrorWithStatus(fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)), codes.Unavailable),
 		},
-		"tooBusyError gets translated into an errorWithHTTPStatus with status code 503": {
-			err:                 tooBusyError,
-			expectedTranslation: newErrorWithHTTPStatus(tooBusyError, http.StatusServiceUnavailable),
+		"errTooBusy gets translated into an errorWithHTTPStatus with status code 503": {
+			err:                 errTooBusy,
+			expectedTranslation: newErrorWithHTTPStatus(errTooBusy, http.StatusServiceUnavailable),
 		},
-		"a wrapped tooBusyError gets translated into an errorWithStatus with status code 503": {
-			err:                 fmt.Errorf("wrapped: %w", tooBusyError),
-			expectedTranslation: newErrorWithHTTPStatus(fmt.Errorf("wrapped: %w", tooBusyError), http.StatusServiceUnavailable),
+		"a wrapped errTooBusy gets translated into an errorWithStatus with status code 503": {
+			err:                 fmt.Errorf("wrapped: %w", errTooBusy),
+			expectedTranslation: newErrorWithHTTPStatus(fmt.Errorf("wrapped: %w", errTooBusy), http.StatusServiceUnavailable),
 		},
 	}
 	for name, tc := range testCases {

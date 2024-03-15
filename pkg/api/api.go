@@ -6,7 +6,6 @@
 package api
 
 import (
-	"context"
 	"flag"
 	"net/http"
 	"path"
@@ -32,7 +31,6 @@ import (
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
@@ -281,7 +279,6 @@ type Ingester interface {
 	ShutdownHandler(http.ResponseWriter, *http.Request)
 	PrepareShutdownHandler(http.ResponseWriter, *http.Request)
 	PreparePartitionDownscaleHandler(http.ResponseWriter, *http.Request)
-	PushWithCleanup(context.Context, *mimirpb.WriteRequest, func()) error
 	UserRegistryHandler(http.ResponseWriter, *http.Request)
 	TenantsHandler(http.ResponseWriter, *http.Request)
 	TenantTSDBHandler(http.ResponseWriter, *http.Request)

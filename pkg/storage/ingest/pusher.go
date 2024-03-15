@@ -19,7 +19,7 @@ import (
 )
 
 type Pusher interface {
-	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
+	PushToStorage(context.Context, *mimirpb.WriteRequest) error
 }
 
 type pusherConsumer struct {
@@ -88,7 +88,7 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 		processingStart := time.Now()
 
 		ctx := user.InjectOrgID(ctx, wr.tenantID)
-		_, err := c.p.Push(ctx, wr.WriteRequest)
+		err := c.p.PushToStorage(ctx, wr.WriteRequest)
 
 		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 		c.totalRequests.Inc()

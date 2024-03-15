@@ -28,11 +28,13 @@ import (
 
 const (
 	integerUnavailableMsgFormat = "ingester is unavailable (current state: %s)"
-	tooBusyErrorMsg             = "the ingester is currently too busy to process queries, try again later"
+	ingesterTooBusyMsg          = "ingester is currently too busy to process queries, try again later"
+	ingesterPushGrpcDisabledMsg = "ingester is configured with Push gRPC method disabled"
 )
 
 var (
-	tooBusyError = ingesterTooBusyError{}
+	errTooBusy          = ingesterTooBusyError{}
+	errPushGrpcDisabled = newErrorWithStatus(ingesterPushGrpcDisabledError{}, codes.Unimplemented)
 )
 
 // errorWithStatus is used for wrapping errors returned by ingester.
@@ -515,7 +517,7 @@ var _ ingesterError = tsdbUnavailableError{}
 type ingesterTooBusyError struct{}
 
 func (e ingesterTooBusyError) Error() string {
-	return tooBusyErrorMsg
+	return ingesterTooBusyMsg
 }
 
 func (e ingesterTooBusyError) errorCause() mimirpb.ErrorCause {
@@ -524,6 +526,19 @@ func (e ingesterTooBusyError) errorCause() mimirpb.ErrorCause {
 
 // Ensure that ingesterTooBusyError is an ingesterError.
 var _ ingesterError = ingesterTooBusyError{}
+
+type ingesterPushGrpcDisabledError struct{}
+
+func (e ingesterPushGrpcDisabledError) Error() string {
+	return ingesterPushGrpcDisabledMsg
+}
+
+func (e ingesterPushGrpcDisabledError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.METHOD_NOT_ALLOWED
+}
+
+// Ensure that ingesterPushGrpcDisabledError is an ingesterError.
+var _ ingesterError = ingesterPushGrpcDisabledError{}
 
 type ingesterErrSamplers struct {
 	sampleTimestampTooOld             *log.Sampler

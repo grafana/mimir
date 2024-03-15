@@ -2537,7 +2537,7 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2601,7 +2601,7 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2802,7 +2802,7 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2922,7 +2922,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -3414,7 +3414,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -3812,7 +3812,7 @@ func TestIngester_QueryStream(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -4271,7 +4271,7 @@ func TestIngester_QueryExemplars(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -5606,7 +5606,7 @@ func Test_Ingester_UserStats(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -6746,6 +6746,31 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker_LimitInflightRequestsUsin
 			assert.NoError(t, err)
 		})
 	}
+}
+
+func TestIngester_PushGrpcMethod_Disabled(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.PushGrpcMethodEnabled = false
+
+	registry := prometheus.NewRegistry()
+
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() any {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req := writeRequestSingleSeries(
+		labels.FromStrings(labels.MetricName, "foo", "l", "1"),
+		[]mimirpb.Sample{{TimestampMs: 1_000, Value: 1}},
+	)
+	_, err = i.Push(ctx, req)
+	require.ErrorIs(t, err, errPushGrpcDisabled)
 }
 
 func TestIngester_instanceLimitsMetrics(t *testing.T) {

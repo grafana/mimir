@@ -6293,9 +6293,10 @@ func newMockIngesterPusherAdapter(ingester *mockIngester) *mockIngesterPusherAda
 	}
 }
 
-// Push implements ingest.Pusher.
-func (c *mockIngesterPusherAdapter) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	return c.ingester.Push(ctx, req)
+// PushToStorage implements ingest.Pusher.
+func (c *mockIngesterPusherAdapter) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
+	_, err := c.ingester.Push(ctx, req)
+	return err
 }
 
 // noopIngester is a mocked ingester which does nothing.
