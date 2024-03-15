@@ -22,6 +22,8 @@
 
 ### Query-tee
 
+* [ENHANCEMENT] Log queries that take longer than `proxy.log-slow-query-response-threshold` when compared to other backends. #7346
+
 ### Documentation
 
 ### Tools
@@ -242,7 +244,6 @@
 
 * [BUGFIX] Fix issue where `Host` HTTP header was not being correctly changed for the proxy targets. #7386
 * [ENHANCEMENT] Allow using the value of X-Scope-OrgID for basic auth username in the forwarded request if URL username is set as `__REQUEST_HEADER_X_SCOPE_ORGID__`. #7452
-* [ENHANCEMENT] Log queries that take longer than `proxy.log-slow-query-response-threshold` when compared to other backends. #7346
 
 ### Documentation
 
