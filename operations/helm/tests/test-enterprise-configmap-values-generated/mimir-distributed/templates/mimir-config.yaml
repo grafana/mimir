@@ -22,11 +22,6 @@ data:
             store: memberlist
     admin_client:
       storage:
-        cache:
-          backend: memcached
-          memcached:
-            addresses: dns+test-enterprise-configmap-values-mimir-admin-cache.citestns.svc:11211
-            max_item_size: 1048576
         s3:
           access_key_id: ${MINIO_ROOT_USER}
           bucket_name: enterprise-metrics-admin
@@ -52,26 +47,6 @@ data:
     blocks_storage:
       backend: s3
       bucket_store:
-        chunks_cache:
-          backend: memcached
-          memcached:
-            addresses: dns+test-enterprise-configmap-values-mimir-chunks-cache.citestns.svc:11211
-            max_idle_connections: 150
-            max_item_size: 1048576
-            timeout: 450ms
-        index_cache:
-          backend: memcached
-          memcached:
-            addresses: dns+test-enterprise-configmap-values-mimir-index-cache.citestns.svc:11211
-            max_idle_connections: 150
-            max_item_size: 5242880
-            timeout: 450ms
-        metadata_cache:
-          backend: memcached
-          memcached:
-            addresses: dns+test-enterprise-configmap-values-mimir-metadata-cache.citestns.svc:11211
-            max_idle_connections: 150
-            max_item_size: 1048576
         sync_dir: /data/tsdb-sync
       s3:
         access_key_id: ${MINIO_ROOT_USER}
@@ -172,11 +147,6 @@ data:
       rule_path: /data
     ruler_storage:
       backend: s3
-      cache:
-        backend: memcached
-        memcached:
-          addresses: dns+test-enterprise-configmap-values-mimir-metadata-cache.citestns.svc:11211
-          max_item_size: 1048576
       s3:
         access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-ruler

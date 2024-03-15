@@ -64,7 +64,7 @@ spec:
             - containerPort: 11211
               name: client
           args:
-            - -m 512
+            - -m 10
             - --extended=modern,track_sizes
             - -I 5m
             - -c 16384
