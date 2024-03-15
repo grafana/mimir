@@ -10,6 +10,7 @@ import (
 )
 
 // TODO: are there generic versions of pool.Pool and sync.Pool that we can use, and then eliminate the helper functions?
+// TODO: do we need to nil-out slice elements as well, to avoid holding on to elements for too long?
 var (
 	// TODO: what is a reasonable upper limit here?
 	fPointSlicePool = pool.New(1, 100000, 10, func(size int) interface{} {
@@ -134,7 +135,6 @@ func PutBoolSlice(s []bool) {
 	}
 }
 
-// TODO: use vectorisation to make this faster
 func zeroFloatSlice(s []float64, size int) []float64 {
 	s = s[:size]
 
@@ -145,7 +145,6 @@ func zeroFloatSlice(s []float64, size int) []float64 {
 	return s[:0]
 }
 
-// TODO: use vectorisation to make this faster
 func zeroBoolSlice(s []bool, size int) []bool {
 	s = s[:size]
 
