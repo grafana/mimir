@@ -597,7 +597,7 @@ func (i *Ingester) stopping(_ error) error {
 	if i.ownedSeriesService != nil {
 		err := services.StopAndAwaitTerminated(context.Background(), i.ownedSeriesService)
 		if err != nil {
-			// This service can't really fail, unless it never got out of Starting.
+			// This service can't really fail.
 			level.Warn(i.logger).Log("msg", "error encountered while stopping owned series service", "err", err)
 		}
 	}
