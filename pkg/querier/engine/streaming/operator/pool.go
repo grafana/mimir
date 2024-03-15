@@ -12,26 +12,26 @@ import (
 // TODO: are there generic versions of pool.Pool and sync.Pool that we can use, and then eliminate the helper functions?
 var (
 	// TODO: what is a reasonable upper limit here?
-	fPointSlicePool *pool.Pool = pool.New(1, 100000, 10, func(size int) interface{} {
+	fPointSlicePool = pool.New(1, 100000, 10, func(size int) interface{} {
 		return make([]promql.FPoint, 0, size)
 	})
 
 	// TODO: what is a reasonable upper limit here?
-	matrixPool *pool.Pool = pool.New(1, 100000, 10, func(size int) interface{} {
+	matrixPool = pool.New(1, 100000, 10, func(size int) interface{} {
 		return make(promql.Matrix, 0, size)
 	})
 
 	// TODO: what is a reasonable upper limit here?
-	vectorPool *pool.Pool = pool.New(1, 100000, 10, func(size int) interface{} {
+	vectorPool = pool.New(1, 100000, 10, func(size int) interface{} {
 		return make(promql.Vector, 0, size)
 	})
 
 	// TODO: what is a reasonable upper limit here?
-	seriesMetadataSlicePool *pool.Pool = pool.New(1, 100000, 10, func(size int) interface{} {
+	seriesMetadataSlicePool = pool.New(1, 100000, 10, func(size int) interface{} {
 		return make([]SeriesMetadata, 0, size)
 	})
 
-	seriesBatchPool sync.Pool = sync.Pool{New: func() any {
+	seriesBatchPool = sync.Pool{New: func() any {
 		return &SeriesBatch{
 			series: make([]storage.Series, 0, 100), // TODO: what is a reasonable batch size?
 			next:   nil,
@@ -39,13 +39,13 @@ var (
 	}}
 
 	// TODO: what is a reasonable upper limit here?
-	floatSlicePool *pool.Pool = pool.New(1, 100000, 10, func(size int) interface{} {
+	floatSlicePool = pool.New(1, 100000, 10, func(size int) interface{} {
 		// Don't allocate a new slice now - we'll allocate one in GetFloatSlice if we need it, so we can differentiate between reused and new slices.
 		return nil
 	})
 
 	// TODO: what is a reasonable upper limit here?
-	boolSlicePool *pool.Pool = pool.New(1, 100000, 10, func(size int) interface{} {
+	boolSlicePool = pool.New(1, 100000, 10, func(size int) interface{} {
 		// Don't allocate a new slice now - we'll allocate one in GetBoolSlice if we need it, so we can differentiate between reused and new slices.
 		return nil
 	})
