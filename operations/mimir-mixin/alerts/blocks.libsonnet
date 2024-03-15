@@ -79,8 +79,8 @@
           alert: $.alertName('IngesterTSDBHeadCompactionFailed'),
           'for': '15m',
           expr: |||
-            rate(cortex_ingester_tsdb_compactions_failed_total[5m]) > 0
-          |||,
+            rate(cortex_ingester_tsdb_compactions_failed_total[%s]) > 0
+          ||| % $.alertRangeInterval(5),
           labels: {
             severity: 'critical',
           },
@@ -91,8 +91,8 @@
         {
           alert: $.alertName('IngesterTSDBHeadTruncationFailed'),
           expr: |||
-            rate(cortex_ingester_tsdb_head_truncations_failed_total[5m]) > 0
-          |||,
+            rate(cortex_ingester_tsdb_head_truncations_failed_total[%s]) > 0
+          ||| % $.alertRangeInterval(5),
           labels: {
             severity: 'critical',
           },
@@ -103,8 +103,8 @@
         {
           alert: $.alertName('IngesterTSDBCheckpointCreationFailed'),
           expr: |||
-            rate(cortex_ingester_tsdb_checkpoint_creations_failed_total[5m]) > 0
-          |||,
+            rate(cortex_ingester_tsdb_checkpoint_creations_failed_total[%s]) > 0
+          ||| % $.alertRangeInterval(5),
           labels: {
             severity: 'critical',
           },
@@ -115,8 +115,8 @@
         {
           alert: $.alertName('IngesterTSDBCheckpointDeletionFailed'),
           expr: |||
-            rate(cortex_ingester_tsdb_checkpoint_deletions_failed_total[5m]) > 0
-          |||,
+            rate(cortex_ingester_tsdb_checkpoint_deletions_failed_total[%s]) > 0
+          ||| % $.alertRangeInterval(5),
           labels: {
             severity: 'critical',
           },
@@ -127,8 +127,8 @@
         {
           alert: $.alertName('IngesterTSDBWALTruncationFailed'),
           expr: |||
-            rate(cortex_ingester_tsdb_wal_truncations_failed_total[5m]) > 0
-          |||,
+            rate(cortex_ingester_tsdb_wal_truncations_failed_total[%s]) > 0
+          ||| % $.alertRangeInterval(5),
           labels: {
             severity: 'warning',
           },
@@ -140,11 +140,13 @@
           alert: $.alertName('IngesterTSDBWALCorrupted'),
           expr: |||
             # alert when there are more than one corruptions
-            count by (%(alert_aggregation_labels)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
+            count by (%(alert_aggregation_labels)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[%(range_interval)s]) > 0) > 1
             and
             # and there is only one zone
             count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
-          ||| % $._config,
+          ||| % $._config {
+            range_interval: $.alertRangeInterval(5),
+          },
           labels: {
             severity: 'critical',
             deployment: 'single-zone',
@@ -157,11 +159,13 @@
           alert: $.alertName('IngesterTSDBWALCorrupted'),
           expr: |||
             # alert when there are more than one corruptions
-            count by (%(alert_aggregation_labels)s) (sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
+            count by (%(alert_aggregation_labels)s) (sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[%(range_interval)s]) > 0)) > 1
             and
             # and there are multiple zones
             count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
-          ||| % $._config,
+          ||| % $._config {
+            range_interval: $.alertRangeInterval(5),
+          },
           labels: {
             severity: 'critical',
             deployment: 'multi-zone',
@@ -174,8 +178,8 @@
           alert: $.alertName('IngesterTSDBWALWritesFailed'),
           'for': '3m',
           expr: |||
-            rate(cortex_ingester_tsdb_wal_writes_failed_total[1m]) > 0
-          |||,
+            rate(cortex_ingester_tsdb_wal_writes_failed_total[%s]) > 0
+          ||| % $.alertRangeInterval(1),
           labels: {
             severity: 'critical',
           },
