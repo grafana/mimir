@@ -122,8 +122,8 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 				delta := float64(5000)
 				require.Len(t, inner.Calls, 1)
 
-				assert.InDelta(t, util.TimeToMillis(testData.expectedStartTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetStart(), delta)
-				assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd(), delta)
+				assert.InDelta(t, util.TimeToMillis(testData.expectedStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart(), delta)
+				assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd(), delta)
 			}
 		})
 	}
@@ -283,8 +283,8 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 
 				// The time range of the request passed to the inner handler should have not been manipulated.
 				require.Len(t, inner.Calls, 1)
-				assert.Equal(t, util.TimeToMillis(testData.reqStartTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetStart())
-				assert.Equal(t, util.TimeToMillis(testData.reqEndTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd())
+				assert.Equal(t, util.TimeToMillis(testData.reqStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart())
+				assert.Equal(t, util.TimeToMillis(testData.reqEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd())
 			}
 		})
 	}
@@ -345,7 +345,7 @@ func TestLimitsMiddleware_CreationGracePeriod(t *testing.T) {
 			delta := float64(5000)
 			require.Len(t, inner.Calls, 1)
 
-			assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd(), delta)
+			assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd(), delta)
 		})
 	}
 }
@@ -570,7 +570,7 @@ type mockHandler struct {
 	mock.Mock
 }
 
-func (m *mockHandler) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+func (m *mockHandler) Do(ctx context.Context, req Request) (Response, error) {
 	args := m.Called(ctx, req)
 	return args.Get(0).(Response), args.Error(1)
 }
@@ -596,7 +596,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 	)
 
 	codec := newTestPrometheusCodec()
-	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
+	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
 		Path:  "/api/v1/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
@@ -606,8 +606,8 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 	require.Nil(t, err)
 
 	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
-		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
-			return MetricsQueryHandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
+		MiddlewareFunc(func(next Handler) Handler {
+			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				var wg sync.WaitGroup
 				for i := 0; i < maxQueryParallelism+20; i++ {
 					wg.Add(1)
@@ -640,7 +640,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 	)
 
 	codec := newTestPrometheusCodec()
-	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
+	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
 		Path:  "/api/v1/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
@@ -650,8 +650,8 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 	require.Nil(t, err)
 
 	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
-		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
-			return MetricsQueryHandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
+		MiddlewareFunc(func(next Handler) Handler {
+			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				// fire up work and we don't wait.
 				for i := 0; i < 10; i++ {
 					go func() {
@@ -681,7 +681,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	)
 
 	codec := newTestPrometheusCodec()
-	r, err := codec.EncodeMetricsQueryRequest(reqCtx, &PrometheusRangeQueryRequest{
+	r, err := codec.EncodeRequest(reqCtx, &PrometheusRangeQueryRequest{
 		Path:  "/api/v1/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
@@ -691,8 +691,8 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	require.Nil(t, err)
 
 	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
-		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
-			return MetricsQueryHandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
+		MiddlewareFunc(func(next Handler) Handler {
+			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				var wg sync.WaitGroup
 
 				// Fire up some work. Each sub-request will either be blocked in the sleep or in the queue
@@ -738,7 +738,7 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 	})
 
 	codec := newTestPrometheusCodec()
-	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
+	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
 		Path:  "/api/v1/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
@@ -750,8 +750,8 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 	for _, concurrentRequestCount := range []int{1, 10, 100} {
 		for _, subRequestCount := range []int{1, 2, 5, 10, 20, 50, 100} {
 			tripper := newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxParallelism},
-				MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
-					return MetricsQueryHandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
+				MiddlewareFunc(func(next Handler) Handler {
+					return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 						wg := sync.WaitGroup{}
 						for i := 0; i < subRequestCount; i++ {
 							wg.Add(1)

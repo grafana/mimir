@@ -34,23 +34,23 @@ const (
 	cacheErrorToleranceFraction = 0.1
 )
 
-// cardinalityEstimation is a MetricsQueryHandler that caches estimates for a query's
+// cardinalityEstimation is a Handler that caches estimates for a query's
 // cardinality based on similar queries seen previously.
 type cardinalityEstimation struct {
 	cache  cache.Cache
-	next   MetricsQueryHandler
+	next   Handler
 	logger log.Logger
 
 	estimationError prometheus.Histogram
 }
 
-func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, registerer prometheus.Registerer) MetricsQueryMiddleware {
+func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, registerer prometheus.Registerer) Middleware {
 	estimationError := promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_query_frontend_cardinality_estimation_difference",
 		Help:    "Difference between estimated and actual query cardinality",
 		Buckets: prometheus.ExponentialBuckets(100, 2, 10),
 	})
-	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+	return MiddlewareFunc(func(next Handler) Handler {
 		return &cardinalityEstimation{
 			cache:  cache,
 			next:   next,
@@ -63,7 +63,7 @@ func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, re
 
 // Do injects a cardinality estimate into the query hints (if available) and
 // caches the actual cardinality observed for this query.
-func (c *cardinalityEstimation) Do(ctx context.Context, request MetricsQueryRequest) (Response, error) {
+func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Response, error) {
 	spanLog := spanlogger.FromContext(ctx, c.logger)
 
 	tenants, err := tenant.TenantIDs(ctx)
@@ -162,7 +162,7 @@ func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {
 // with respect to both start time and range size. To avoid expiry of all
 // estimates at the bucket boundary, an offset is added based on the hash of the
 // query string.
-func generateCardinalityEstimationCacheKey(userID string, r MetricsQueryRequest, bucketSize time.Duration) string {
+func generateCardinalityEstimationCacheKey(userID string, r Request, bucketSize time.Duration) string {
 	hasher := fnv.New64a()
 	_, _ = hasher.Write([]byte(r.GetQuery()))
 

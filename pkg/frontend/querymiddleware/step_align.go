@@ -18,7 +18,7 @@ import (
 )
 
 type stepAlignMiddleware struct {
-	next    MetricsQueryHandler
+	next    Handler
 	limits  Limits
 	logger  log.Logger
 	aligned *prometheus.CounterVec
@@ -26,13 +26,13 @@ type stepAlignMiddleware struct {
 
 // newStepAlignMiddleware creates a middleware that aligns the start and end of request to the step to
 // improve the cacheability of the query results based on per-tenant configuration.
-func newStepAlignMiddleware(limits Limits, logger log.Logger, registerer prometheus.Registerer) MetricsQueryMiddleware {
+func newStepAlignMiddleware(limits Limits, logger log.Logger, registerer prometheus.Registerer) Middleware {
 	aligned := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_queries_step_aligned_total",
 		Help: "Number of queries whose start or end times have been adjusted to be step-aligned.",
 	}, []string{"user"})
 
-	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+	return MiddlewareFunc(func(next Handler) Handler {
 		return &stepAlignMiddleware{
 			next:    next,
 			limits:  limits,
@@ -42,7 +42,7 @@ func newStepAlignMiddleware(limits Limits, logger log.Logger, registerer prometh
 	})
 }
 
-func (s *stepAlignMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
+func (s *stepAlignMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	tenants, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return s.next.Do(ctx, r)
@@ -75,9 +75,9 @@ func (s *stepAlignMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Re
 	return s.next.Do(ctx, r)
 }
 
-// isRequestStepAligned returns whether the MetricsQueryRequest start and end timestamps are aligned
+// isRequestStepAligned returns whether the Request start and end timestamps are aligned
 // with the step.
-func isRequestStepAligned(req MetricsQueryRequest) bool {
+func isRequestStepAligned(req Request) bool {
 	if req.GetStep() == 0 {
 		return true
 	}

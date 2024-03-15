@@ -506,7 +506,7 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 
 				t.Run(testName, func(t *testing.T) {
 					t.Parallel()
-					reqs := []MetricsQueryRequest{
+					reqs := []Request{
 						&PrometheusInstantQueryRequest{
 							Path:  "/query",
 							Time:  util.TimeToMillis(end),

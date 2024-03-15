@@ -34,15 +34,15 @@ var (
 
 // shardedQueryable is an implementor of the Queryable interface.
 type shardedQueryable struct {
-	req             MetricsQueryRequest
-	handler         MetricsQueryHandler
+	req             Request
+	handler         Handler
 	responseHeaders *responseHeadersTracker
 }
 
 // newShardedQueryable makes a new shardedQueryable. We expect a new queryable is created for each
 // query, otherwise the response headers tracker doesn't work as expected, because it merges the
 // headers for all queries run through the queryable and never reset them.
-func newShardedQueryable(req MetricsQueryRequest, next MetricsQueryHandler) *shardedQueryable {
+func newShardedQueryable(req Request, next Handler) *shardedQueryable {
 	return &shardedQueryable{
 		req:             req,
 		handler:         next,
@@ -65,8 +65,8 @@ func (q *shardedQueryable) getResponseHeaders() []*PrometheusResponseHeader {
 // from the astmapper.EmbeddedQueriesMetricName metric label value and concurrently run embedded queries
 // through the downstream handler.
 type shardedQuerier struct {
-	req     MetricsQueryRequest
-	handler MetricsQueryHandler
+	req     Request
+	handler Handler
 
 	// Keep track of response headers received when running embedded queries.
 	responseHeaders *responseHeadersTracker

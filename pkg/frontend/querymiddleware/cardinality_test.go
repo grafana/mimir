@@ -29,7 +29,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 	tests := []struct {
 		name     string
 		userID   string
-		r        MetricsQueryRequest
+		r        Request
 		expected string
 	}{
 		{
@@ -132,8 +132,8 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		End:   parseTimeRFC3339(t, "2023-01-31T10:00:00Z").Unix() * 1000,
 		Query: "up",
 	}
-	addSeriesHandler := func(estimate, actual uint64) MetricsQueryHandlerFunc {
-		return func(ctx context.Context, request MetricsQueryRequest) (Response, error) {
+	addSeriesHandler := func(estimate, actual uint64) HandlerFunc {
+		return func(ctx context.Context, request Request) (Response, error) {
 			require.NotNil(t, request.GetHints())
 			request.GetHints().GetCardinalityEstimate()
 			require.Equal(t, request.GetHints().GetEstimatedSeriesCount(), estimate)
@@ -149,7 +149,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 	tests := []struct {
 		name              string
 		tenantID          string
-		downstreamHandler MetricsQueryHandlerFunc
+		downstreamHandler HandlerFunc
 		cacheContent      map[string][]byte
 		expectedLoads     int
 		expectedStores    int
@@ -158,7 +158,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		{
 			name:     "no tenantID",
 			tenantID: "",
-			downstreamHandler: func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
+			downstreamHandler: func(_ context.Context, _ Request) (Response, error) {
 				return &PrometheusResponse{}, nil
 			},
 			expectedLoads:  0,
@@ -168,7 +168,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		{
 			name:     "downstream error",
 			tenantID: "1",
-			downstreamHandler: func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
+			downstreamHandler: func(_ context.Context, _ Request) (Response, error) {
 				return nil, errors.New("test error")
 			},
 			expectedLoads:  1,
@@ -205,7 +205,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		{
 			name:     "with empty cache",
 			tenantID: "1",
-			downstreamHandler: func(ctx context.Context, request MetricsQueryRequest) (Response, error) {
+			downstreamHandler: func(ctx context.Context, request Request) (Response, error) {
 				queryStats := stats.FromContext(ctx)
 				queryStats.AddFetchedSeries(numSeries)
 				return &PrometheusResponse{}, nil
@@ -251,8 +251,8 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 		name          string
 		tenantA       string
 		tenantB       string
-		requestA      MetricsQueryRequest
-		requestB      MetricsQueryRequest
+		requestA      Request
+		requestB      Request
 		expectedEqual bool
 	}{
 		{

@@ -43,14 +43,14 @@ func newEmptyPrometheusResponse() *PrometheusResponse {
 }
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
-func (q *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
+func (q *PrometheusRangeQueryRequest) WithID(id int64) Request {
 	newRequest := *q
 	newRequest.Id = id
 	return &newRequest
 }
 
 // WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
-func (q *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) MetricsQueryRequest {
+func (q *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) Request {
 	newRequest := *q
 	newRequest.Start = start
 	newRequest.End = end
@@ -58,7 +58,7 @@ func (q *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) Metri
 }
 
 // WithQuery clones the current `PrometheusRangeQueryRequest` with a new query.
-func (q *PrometheusRangeQueryRequest) WithQuery(query string) MetricsQueryRequest {
+func (q *PrometheusRangeQueryRequest) WithQuery(query string) Request {
 	newRequest := *q
 	newRequest.Query = query
 	return &newRequest
@@ -66,7 +66,7 @@ func (q *PrometheusRangeQueryRequest) WithQuery(query string) MetricsQueryReques
 
 // WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
 // added Hint value for TotalQueries.
-func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
+func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) Request {
 	newRequest := *q
 	if newRequest.Hints == nil {
 		newRequest.Hints = &Hints{TotalQueries: totalQueries}
@@ -79,7 +79,7 @@ func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) M
 
 // WithEstimatedSeriesCountHint clones the current `PrometheusRangeQueryRequest`
 // with an added Hint value for EstimatedCardinality.
-func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
+func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) Request {
 	newRequest := *q
 	if newRequest.Hints == nil {
 		newRequest.Hints = &Hints{
@@ -113,25 +113,25 @@ func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 	return 0
 }
 
-func (r *PrometheusInstantQueryRequest) WithID(id int64) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithID(id int64) Request {
 	newRequest := *r
 	newRequest.Id = id
 	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, _ int64) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, _ int64) Request {
 	newRequest := *r
 	newRequest.Time = startTime
 	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) WithQuery(s string) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithQuery(s string) Request {
 	newRequest := *r
 	newRequest.Query = s
 	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) Request {
 	newRequest := *r
 	if newRequest.Hints == nil {
 		newRequest.Hints = &Hints{TotalQueries: totalQueries}
@@ -142,7 +142,7 @@ func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32)
 	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) Request {
 	newRequest := *r
 	if newRequest.Hints == nil {
 		newRequest.Hints = &Hints{
