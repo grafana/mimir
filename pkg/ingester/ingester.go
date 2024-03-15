@@ -3526,7 +3526,7 @@ func (i *Ingester) checkAvailableForPushRequests() error {
 	}
 
 	if i.cfg.UseIngesterOwnedSeriesForLimits {
-		// Owned series service will enter Running state only after it checks for owned series at least once.
+		// Owned series service will enter Running state after initial check (if ring was empty, it skips the check).
 		if i.ownedSeriesService.State() != services.Running {
 			return newUnavailableMsgError(ingesterUnavailableForPushRequestsMsg)
 		}
