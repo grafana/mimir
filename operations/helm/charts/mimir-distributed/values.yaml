@@ -3261,6 +3261,9 @@ admin-cache:
   # -- Maximum item memory for admin-cache (in MB).
   maxItemMemory: 1
 
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
+
   # -- Extra init containers for admin-cache pods
   initContainers: []
 
