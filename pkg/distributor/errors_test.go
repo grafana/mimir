@@ -477,7 +477,7 @@ func TestWrapIngesterPushError(t *testing.T) {
 	}
 }
 
-func TestIsClientError(t *testing.T) {
+func TestIsIngesterClientError(t *testing.T) {
 	testCases := map[string]struct {
 		err             error
 		expectedOutcome bool
@@ -521,7 +521,7 @@ func TestIsClientError(t *testing.T) {
 	}
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			require.Equal(t, testData.expectedOutcome, isClientError(testData.err))
+			require.Equal(t, testData.expectedOutcome, isIngesterClientError(testData.err))
 		})
 	}
 }

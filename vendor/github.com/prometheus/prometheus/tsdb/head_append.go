@@ -138,7 +138,7 @@ func (h *Head) Appender(_ context.Context) storage.Appender {
 
 	// The head cache might not have a starting point yet. The init appender
 	// picks up the first appended timestamp as the base.
-	if h.MinTime() == math.MaxInt64 {
+	if h.isUninitialized() {
 		return &initAppender{
 			head: h,
 		}
@@ -191,7 +191,7 @@ func (h *Head) appendableMinValidTime() int64 {
 // AppendableMinValidTime returns the minimum valid time for samples to be appended to the Head.
 // Returns false if Head hasn't been initialized yet and the minimum time isn't known yet.
 func (h *Head) AppendableMinValidTime() (int64, bool) {
-	if h.MinTime() == math.MaxInt64 {
+	if h.isUninitialized() {
 		return 0, false
 	}
 
@@ -235,6 +235,9 @@ func (h *Head) getExemplarBuffer() []exemplarWithSeriesRef {
 func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
 	if b == nil {
 		return
+	}
+	for i := range b { // Zero out to avoid retaining label data.
+		b[i].exemplar.Labels = labels.EmptyLabels()
 	}
 
 	h.exemplarsPool.Put(b[:0])
@@ -285,6 +288,9 @@ func (h *Head) getSeriesBuffer() []*memSeries {
 }
 
 func (h *Head) putSeriesBuffer(b []*memSeries) {
+	for i := range b { // Zero out to avoid retaining data.
+		b[i] = nil
+	}
 	h.seriesPool.Put(b[:0])
 }
 
@@ -842,11 +848,18 @@ func (a *headAppender) Commit() (err error) {
 	defer a.head.iso.closeAppend(a.appendID)
 
 	var (
-		samplesAppended = len(a.samples)
-		oooAccepted     int   // number of samples out of order but accepted: with ooo enabled and within time window
-		oooRejected     int   // number of samples rejected due to: out of order but OOO support disabled.
-		tooOldRejected  int   // number of samples rejected due to: that are out of order but too old (OOO support enabled, but outside time window)
-		oobRejected     int   // number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled)
+		floatsAppended     = len(a.samples)
+		histogramsAppended = len(a.histograms) + len(a.floatHistograms)
+		// number of samples out of order but accepted: with ooo enabled and within time window
+		floatOOOAccepted int
+		// number of samples rejected due to: out of order but OOO support disabled.
+		floatOOORejected int
+		histoOOORejected int
+		// number of samples rejected due to: that are out of order but too old (OOO support enabled, but outside time window)
+		floatTooOldRejected int
+		// number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled)
+		floatOOBRejected int
+
 		inOrderMint     int64 = math.MaxInt64
 		inOrderMaxt     int64 = math.MinInt64
 		ooomint         int64 = math.MaxInt64
@@ -909,16 +922,16 @@ func (a *headAppender) Commit() (err error) {
 		case err == nil:
 			// Do nothing.
 		case errors.Is(err, storage.ErrOutOfOrderSample):
-			samplesAppended--
-			oooRejected++
+			floatsAppended--
+			floatOOORejected++
 		case errors.Is(err, storage.ErrOutOfBounds):
-			samplesAppended--
-			oobRejected++
+			floatsAppended--
+			floatOOBRejected++
 		case errors.Is(err, storage.ErrTooOldSample):
-			samplesAppended--
-			tooOldRejected++
+			floatsAppended--
+			floatTooOldRejected++
 		default:
-			samplesAppended--
+			floatsAppended--
 		}
 
 		var ok, chunkCreated bool
@@ -956,13 +969,13 @@ func (a *headAppender) Commit() (err error) {
 				if s.T > ooomaxt {
 					ooomaxt = s.T
 				}
-				oooAccepted++
+				floatOOOAccepted++
 			} else {
 				// Sample is an exact duplicate of the last sample.
 				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
 				// not with samples in already flushed OOO chunks.
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
-				samplesAppended--
+				floatsAppended--
 			}
 		default:
 			ok, chunkCreated = series.append(s.T, s.V, a.appendID, appendChunkOpts)
@@ -975,7 +988,7 @@ func (a *headAppender) Commit() (err error) {
 				}
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
-				samplesAppended--
+				floatsAppended--
 			}
 		}
 
@@ -989,8 +1002,6 @@ func (a *headAppender) Commit() (err error) {
 		series.Unlock()
 	}
 
-	histogramsTotal := len(a.histograms)
-	histoOOORejected := 0
 	for i, s := range a.histograms {
 		series = a.histogramSeries[i]
 		series.Lock()
@@ -1007,7 +1018,7 @@ func (a *headAppender) Commit() (err error) {
 				inOrderMaxt = s.T
 			}
 		} else {
-			histogramsTotal--
+			histogramsAppended--
 			histoOOORejected++
 		}
 		if chunkCreated {
@@ -1016,7 +1027,6 @@ func (a *headAppender) Commit() (err error) {
 		}
 	}
 
-	histogramsTotal += len(a.floatHistograms)
 	for i, s := range a.floatHistograms {
 		series = a.floatHistogramSeries[i]
 		series.Lock()
@@ -1033,7 +1043,7 @@ func (a *headAppender) Commit() (err error) {
 				inOrderMaxt = s.T
 			}
 		} else {
-			histogramsTotal--
+			histogramsAppended--
 			histoOOORejected++
 		}
 		if chunkCreated {
@@ -1049,13 +1059,13 @@ func (a *headAppender) Commit() (err error) {
 		series.Unlock()
 	}
 
-	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(oooRejected))
+	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(floatOOORejected))
 	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(histoOOORejected))
-	a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(oobRejected))
-	a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(tooOldRejected))
-	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(samplesAppended))
-	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(histogramsTotal))
-	a.head.metrics.outOfOrderSamplesAppended.Add(float64(oooAccepted))
+	a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(floatOOBRejected))
+	a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(floatTooOldRejected))
+	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(floatsAppended))
+	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(histogramsAppended))
+	a.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(floatOOOAccepted))
 	a.head.updateMinMaxTime(inOrderMint, inOrderMaxt)
 	a.head.updateMinOOOMaxOOOTime(ooomint, ooomaxt)
 

@@ -45,8 +45,13 @@ KEDA, as we use it, never changes the number of replicas of Mimir Deployments or
 
 However, if KEDA is not running successfully, there are consequences for Mimir autoscaling too:
 
-- `keda-operator` is down (not critical): changes to `ScaledObject` CRD will not be reflected to the HPA until the operator will get back online. HPA functionality is not affected.
-- `keda-operator-metrics-apiserver` is down (critical): HPA is not able to fetch updated metrics and it will stop scaling the deployment until metrics will be back. The deployment (e.g. queriers) will keep working but, in case of any surge of traffic, HPA will not be able to detect it (because of a lack of metrics) and so will not scale up.
+- `keda-operator` is down (critical): as the operator is the single point of truth, it will not request the metrics when `keda-operator-metrics-apiserver` requests them. Changes to `ScaledObject` CRD will not be reflected to the HPA until the operator is back online. The deployment (e.g. queriers) will keep working but, if there is a surge of traffic, HPA will not be able to detect it due to a lack of metrics and so will not scale up.
+- `keda-operator-metrics-apiserver` is down (critical): HPA is not able to fetch updated metrics and it will stop scaling the deployment until metrics will be back. The deployment (e.g. queriers) will keep working but, if there is a surge of traffic, HPA will not be able to detect it due to a lack of metrics and so will not scale up.
+- `keda-admission-webhooks` is down (not critical): CRD validation will not be executed. Based on KEDA's configuration, this can block changes on CRDs until the service is restored. HPA functionality is not affected.
+
+{{< admonition type="note" >}}
+Use a [high availability](https://keda.sh/docs/latest/operate/cluster/#high-availability) KEDA configuration if autoscaling is critical for your use case.
+{{< /admonition >}}
 
 The [alert `MimirAutoscalerNotActive`]({{< relref "../../manage/monitor-grafana-mimir" >}}) fires if HPA is unable to scale the deployment for any reason (e.g. unable to scrape metrics from KEDA metrics API server).
 

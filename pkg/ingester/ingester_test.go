@@ -1808,7 +1808,7 @@ func TestIngester_Push(t *testing.T) {
 			limits.MaxGlobalMetadataPerMetric = testData.maxMetadataPerMetric
 			limits.NativeHistogramsIngestionEnabled = testData.nativeHistograms
 
-			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, "", registry)
+			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", registry)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -1942,7 +1942,7 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 	// Create a mocked ingester
 	cfg := defaultIngesterTestConfig(t)
 
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -2049,7 +2049,7 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.ActiveSeriesMetrics.IdleTimeout = 100 * time.Millisecond
 
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
 	currentTime := time.Now()
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -2117,7 +2117,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 	// Create a mocked ingester
 	cfg := defaultIngesterTestConfig(b)
 
-	ingester, err := prepareIngesterWithBlocksStorage(b, cfg, registry)
+	ingester, err := prepareIngesterWithBlocksStorage(b, cfg, nil, registry)
 	require.NoError(b, err)
 	require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
 	defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
@@ -2420,7 +2420,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 						return instanceLimits
 					}
 
-					ingester, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, "", registry)
+					ingester, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, nil, "", registry)
 					require.NoError(b, err)
 					require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
 					defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
@@ -2481,7 +2481,7 @@ func Test_Ingester_LabelNames(t *testing.T) {
 	registry := prometheus.NewRegistry()
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -2537,7 +2537,7 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2563,7 +2563,7 @@ func Test_Ingester_LabelValues(t *testing.T) {
 	registry := prometheus.NewRegistry()
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -2601,7 +2601,7 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2693,7 +2693,7 @@ func Test_Ingester_Query(t *testing.T) {
 	}
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -2802,7 +2802,7 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2922,7 +2922,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2962,7 +2962,7 @@ func TestIngester_QueryStream_QuerySharding(t *testing.T) {
 	)
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -3064,7 +3064,7 @@ func TestIngester_QueryStream_QueryShardingShouldGuaranteeSeriesShardingConsiste
 	}
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	t.Cleanup(func() {
@@ -3140,7 +3140,7 @@ func TestIngester_QueryStream_QueryShardingShouldGuaranteeSeriesShardingConsiste
 
 func TestIngester_QueryStream_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	for _, streamingEnabled := range []bool{true, false} {
-		i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+		i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 		defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -3169,7 +3169,7 @@ func TestIngester_QueryStream_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 }
 
 func TestIngester_LabelValues_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -3189,7 +3189,7 @@ func TestIngester_LabelValues_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 }
 
 func TestIngester_LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -3218,7 +3218,7 @@ func TestIngester_Push_ShouldNotCreateTSDBIngesterServiceIsNotInRunningState(t *
 			// the ingester service will stay in Stopping state for longer.
 			cfg.IngesterRing.FinalSleep = 5 * time.Second
 
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 			require.NoError(t, err)
 
 			// Start the ingester and then stop it.
@@ -3367,7 +3367,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 	registry := prometheus.NewRegistry()
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -3414,7 +3414,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -3487,7 +3487,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 	const maxBatchSize = 1000
 
 	// Create ingester.
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	t.Cleanup(func() {
@@ -3540,7 +3540,7 @@ func TestIngester_QueryStream(t *testing.T) {
 
 	registry := prometheus.NewRegistry()
 
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -3812,7 +3812,7 @@ func TestIngester_QueryStream(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -3822,7 +3822,7 @@ func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.StreamChunksWhenUsingBlocks = false
 
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -3911,7 +3911,7 @@ func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
 func setupQueryingManySamplesAsChunksTest(ctx context.Context, t *testing.T, cfg Config) client.HealthAndIngesterClient {
 	const sampleCount = 1_000_000
 
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	t.Cleanup(func() {
@@ -4095,7 +4095,7 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	ctx := user.InjectOrgID(context.Background(), userID)
 
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	t.Cleanup(func() {
@@ -4248,7 +4248,7 @@ func TestIngester_QueryExemplars(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	ctx := user.InjectOrgID(context.Background(), userID)
 	registry := prometheus.NewRegistry()
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	t.Cleanup(func() {
@@ -4271,7 +4271,7 @@ func TestIngester_QueryExemplars(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -4322,7 +4322,7 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 	}
 
 	// Create ingester.
-	i, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, "", nil)
+	i, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, nil, "", nil)
 	require.NoError(b, err)
 	require.NoError(b, services.StartAndAwaitRunning(context.Background(), i))
 	b.Cleanup(func() {
@@ -4429,7 +4429,7 @@ func requireActiveIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, re
 }
 
 func getStartedIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) *Ingester {
-	ingester, err := prepareIngesterWithBlocksStorage(t, ingesterCfg, registerer)
+	ingester, err := prepareIngesterWithBlocksStorage(t, ingesterCfg, nil, registerer)
 	require.NoError(t, err)
 	ctx := context.Background()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
@@ -4551,7 +4551,7 @@ func prepareHealthyIngester(b testing.TB) *Ingester {
 	limits.MaxGlobalSeriesPerUser = 0
 
 	// Create ingester.
-	i, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, "", nil)
+	i, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, nil, "", nil)
 	require.NoError(b, err)
 	require.NoError(b, services.StartAndAwaitRunning(context.Background(), i))
 	b.Cleanup(func() {
@@ -4565,21 +4565,25 @@ func prepareHealthyIngester(b testing.TB) *Ingester {
 	return i
 }
 
-func prepareIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) (*Ingester, error) {
+func prepareIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, ingestersRing ring.ReadRing, registerer prometheus.Registerer) (*Ingester, error) {
 	limitsCfg := defaultLimitsTestConfig()
 	limitsCfg.NativeHistogramsIngestionEnabled = true
-	return prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, "", registerer)
+	return prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, ingestersRing, "", registerer)
 }
 
-func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config, limits validation.Limits, dataDir string, registerer prometheus.Registerer) (*Ingester, error) {
+func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config, limits validation.Limits, ingestersRing ring.ReadRing, dataDir string, registerer prometheus.Registerer) (*Ingester, error) {
 	overrides, err := validation.NewOverrides(limits, nil)
 	if err != nil {
 		return nil, err
 	}
-	return prepareIngesterWithBlockStorageAndOverrides(t, ingesterCfg, overrides, dataDir, "", registerer)
+	return prepareIngesterWithBlockStorageAndOverrides(t, ingesterCfg, overrides, ingestersRing, dataDir, "", registerer)
 }
 
-func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, dataDir string, bucketDir string, registerer prometheus.Registerer) (*Ingester, error) {
+func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, ingestersRing ring.ReadRing, dataDir string, bucketDir string, registerer prometheus.Registerer) (*Ingester, error) {
+	return prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t, ingesterCfg, overrides, ingestersRing, nil, dataDir, bucketDir, registerer)
+}
+
+func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionRingWatcher, dataDir string, bucketDir string, registerer prometheus.Registerer) (*Ingester, error) {
 	// Create a data dir if none has been provided.
 	if dataDir == "" {
 		dataDir = t.TempDir()
@@ -4596,20 +4600,28 @@ func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Confi
 	// Disable TSDB head compaction jitter to have predictable tests.
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
+	if ingestersRing == nil {
+		ingestersRing = createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig())
+	}
+
+	ingester, err := New(ingesterCfg, overrides, ingestersRing, partitionsRing, nil, registerer, noDebugNoopLogger{}) // LOGGING: log.NewLogfmtLogger(os.Stderr)
+	if err != nil {
+		return nil, err
+	}
+
+	return ingester, nil
+}
+
+func createAndStartRing(t testing.TB, ringConfig ring.Config) *ring.Ring {
 	// Start the ingester ring
-	rng, err := ring.New(ingesterCfg.IngesterRing.ToRingConfig(), "ingester", IngesterRingKey, log.NewNopLogger(), nil)
+	rng, err := ring.New(ringConfig, "ingester", IngesterRingKey, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), rng))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), rng))
 	})
 
-	ingester, err := New(ingesterCfg, overrides, rng, nil, nil, registerer, noDebugNoopLogger{})
-	if err != nil {
-		return nil, err
-	}
-
-	return ingester, nil
+	return rng
 }
 
 // Logger which does nothing and implements the DebugEnabled interface used by SpanLogger.
@@ -4798,7 +4810,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			// setup the tsdbs dir
 			testData.setup(t, tempDir)
 
-			ingester, err := New(ingesterCfg, overrides, nil, nil, nil, nil, log.NewNopLogger())
+			ingester, err := New(ingesterCfg, overrides, createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			startErr := services.StartAndAwaitRunning(context.Background(), ingester)
@@ -4829,7 +4841,7 @@ func TestIngester_shipBlocks(t *testing.T) {
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
 	defer services.StopAndAwaitTerminated(ctx, i) //nolint:errcheck
@@ -4866,7 +4878,7 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 
 	// Use in-memory bucket.
@@ -4914,7 +4926,7 @@ func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testin
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 
 	// Use in-memory bucket.
@@ -4960,7 +4972,7 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = time.Nanosecond
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
@@ -5002,7 +5014,7 @@ func TestIngester_closingAndOpeningTsdbConcurrently(t *testing.T) {
 	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 0 // Will not run the loop, but will allow us to close any TSDB fast.
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
@@ -5055,7 +5067,7 @@ func TestIngester_idleCloseEmptyTSDB(t *testing.T) {
 	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 0 // Will not run the loop, but will allow us to close any TSDB fast.
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
@@ -5101,7 +5113,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -5444,7 +5456,7 @@ func TestIngester_flushing(t *testing.T) {
 
 			// Create ingester
 			reg := prometheus.NewPedanticRegistry()
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 			require.NoError(t, err)
 
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -5470,7 +5482,7 @@ func TestIngester_ForFlush(t *testing.T) {
 
 	// Create ingester
 	reg := prometheus.NewPedanticRegistry()
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -5543,7 +5555,7 @@ func Test_Ingester_UserStats(t *testing.T) {
 	registry := prometheus.NewRegistry()
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -5594,7 +5606,7 @@ func Test_Ingester_UserStats(t *testing.T) {
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, tooBusyErrorMsg, stat.Message())
+		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -5614,7 +5626,7 @@ func Test_Ingester_AllUserStats(t *testing.T) {
 	}
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -5672,7 +5684,7 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 	r := prometheus.NewRegistry()
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, r)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, r)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -5753,7 +5765,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	r := prometheus.NewRegistry()
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, r)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, r)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -5938,7 +5950,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 	ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
 	ingesterCfg.BlocksStorageConfig.TSDB.Retention = 2 * 24 * time.Hour // Make sure that no newly created blocks are deleted.
 
-	ingester, err := New(ingesterCfg, overrides, nil, nil, nil, nil, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, overrides, createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
 
@@ -5958,7 +5970,7 @@ func TestIngester_CloseTSDBsOnShutdown(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -5991,7 +6003,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 
 	// Create ingester
 	reg := prometheus.NewPedanticRegistry()
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -6104,7 +6116,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 
 	// Create ingester
 	reg := prometheus.NewPedanticRegistry()
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -6185,7 +6197,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 
 	// Create ingester
 	reg := prometheus.NewPedanticRegistry()
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -6242,7 +6254,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 
 func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -6279,7 +6291,7 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 
 func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 	registry := prometheus.NewRegistry()
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, registry)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -6457,7 +6469,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 						return &testData.limits
 					}
 
-					i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+					i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 					require.NoError(t, err)
 					require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 					defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -6626,7 +6638,7 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker_LimitInflightRequestsUsin
 			}
 
 			registry := prometheus.NewRegistry()
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
+			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -6736,6 +6748,31 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker_LimitInflightRequestsUsin
 	}
 }
 
+func TestIngester_PushGrpcMethod_Disabled(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.PushGrpcMethodEnabled = false
+
+	registry := prometheus.NewRegistry()
+
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() any {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req := writeRequestSingleSeries(
+		labels.FromStrings(labels.MetricName, "foo", "l", "1"),
+		[]mimirpb.Sample{{TimestampMs: 1_000, Value: 1}},
+	)
+	_, err = i.Push(ctx, req)
+	require.ErrorIs(t, err, errPushGrpcDisabled)
+}
+
 func TestIngester_instanceLimitsMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
@@ -6752,7 +6789,7 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 		return &l
 	}
 
-	_, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	_, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 	require.NoError(t, err)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -6790,7 +6827,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 			cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
 
 			reg := prometheus.NewPedanticRegistry()
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -6892,7 +6929,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -7165,7 +7202,7 @@ func TestIngesterPurgeMetadata(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.MetadataRetainPeriod = 20 * time.Millisecond
 
-	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", nil)
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -7193,7 +7230,7 @@ func TestIngesterMetadataMetrics(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.MetadataRetainPeriod = 20 * time.Millisecond
 
-	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", reg)
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, "", reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -7246,7 +7283,7 @@ func TestIngesterMetadataMetrics(t *testing.T) {
 }
 
 func TestIngesterSendsOnlySeriesWithData(t *testing.T) {
-	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), defaultLimitsTestConfig(), "", nil)
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), defaultLimitsTestConfig(), nil, "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -7295,7 +7332,7 @@ func (s *stream) Send(response *client.QueryStreamResponse) error {
 
 // Test that blank labels are removed by the ingester
 func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
-	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), defaultLimitsTestConfig(), "", nil)
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), defaultLimitsTestConfig(), nil, "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -7347,7 +7384,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
+		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 
@@ -7450,7 +7487,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
+		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 
@@ -7933,7 +7970,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			overrides, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 			require.NoError(t, err)
 
-			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, "", "", registry)
+			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, nil, "", "", registry)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -8463,7 +8500,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, "", "", registry)
+			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, nil, "", "", registry)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -8521,7 +8558,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		<-time.After(1500 * time.Millisecond)
 	}
 
-	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", "", nil)
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -8662,7 +8699,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 	require.NoError(t, err)
 
-	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", "", nil)
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -8753,7 +8790,7 @@ func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
 	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 	require.NoError(t, err)
 
-	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", "", nil)
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -8834,7 +8871,7 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 			tmpDir := t.TempDir()
 			bucketDir := t.TempDir()
 
-			i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, tmpDir, bucketDir, nil)
+			i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, tmpDir, bucketDir, nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -8960,7 +8997,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
 		cfg.StreamChunksWhenUsingBlocks = streamChunks
-		ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", "", registry)
+		ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", registry)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 
@@ -9418,7 +9455,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 			limits.NativeHistogramsIngestionEnabled = testData.nativeHistograms
 
-			i, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, "", registry)
+			i, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, nil, "", registry)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -9522,7 +9559,7 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	ingesterCfg := defaultIngesterTestConfig(t)
 	ingesterCfg.IngesterRing.ReplicationFactor = 1
 	ingesterCfg.ErrorSampleRate = int64(errorSampleRate)
-	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, dataDir, registry)
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, nil, dataDir, registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -9626,7 +9663,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	ingesterCfg := defaultIngesterTestConfig(t)
 	ingesterCfg.IngesterRing.ReplicationFactor = 1
 	ingesterCfg.ErrorSampleRate = int64(errorSampleRate)
-	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, dataDir, registry)
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, nil, dataDir, registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -9785,7 +9822,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create ingester
-	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", "", nil)
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
@@ -9914,7 +9951,7 @@ type failingIngester struct {
 }
 
 func newFailingIngester(t *testing.T, cfg Config, kvStore kv.Client, failingCause error) *failingIngester {
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, prometheus.NewRegistry())
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, prometheus.NewRegistry())
 	require.NoError(t, err)
 	fI := &failingIngester{Ingester: i, failingCause: failingCause}
 	if kvStore != nil {

@@ -13,7 +13,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcutil"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -94,8 +93,9 @@ func (a *PusherAppender) Commit() error {
 	_, err := a.pusher.Push(user.InjectOrgID(a.ctx, a.userID), req)
 
 	if err != nil {
-		// Don't report errors that ended with 4xx HTTP status code (series limits, duplicate samples, out of order, etc.)
-		if resp, ok := httpgrpc.HTTPResponseFromError(err); !ok || resp.Code/100 != 4 {
+		// Don't report client errors, which are the same ones that would be reported with 4xx HTTP status code
+		// (e.g. series limits, duplicate samples, out of order, etc.)
+		if !mimirpb.IsClientError(err) {
 			a.failedWrites.Inc()
 		}
 	}
@@ -152,15 +152,18 @@ type RulesLimits interface {
 	RulerSyncRulesOnChangesEnabled(userID string) bool
 }
 
-func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter) rules.QueryFunc {
+func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter, remoteQuerier bool) rules.QueryFunc {
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 		queries.Inc()
 		result, err := qf(ctx, qs, t)
+		if err == nil {
+			return result, nil
+		}
 
 		// We only care about errors returned by underlying Queryable. Errors returned by PromQL engine are "user-errors",
 		// and not interesting here.
 		qerr := QueryableError{}
-		if err != nil && errors.As(err, &qerr) {
+		if errors.As(err, &qerr) {
 			origErr := qerr.Unwrap()
 
 			// Not all errors returned by Queryable are interesting, only those that would result in 500 status code.
@@ -178,7 +181,7 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 
 			// Return unwrapped error.
 			return result, origErr
-		} else if err != nil {
+		} else if remoteQuerier {
 			// When remote querier enabled, consider anything an error except those with 4xx status code.
 			st, ok := grpcutil.ErrorToStatus(err)
 			if !(ok && st.Code()/100 == 4) {
@@ -307,7 +310,7 @@ func DefaultTenantManagerFactory(
 
 		// Wrap the query function with our custom logic.
 		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, logger)
-		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, totalQueries, failedQueries)
+		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, totalQueries, failedQueries, cfg.QueryFrontend.Address != "")
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, logger)
 
 		// Wrap the queryable with our custom logic.

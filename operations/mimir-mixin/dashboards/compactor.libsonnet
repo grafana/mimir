@@ -245,6 +245,13 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           |||
             Estimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),
             and compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.
+
+            Metric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if
+            there were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more
+            jobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job
+            covering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.
+
+            In other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.
           |||
         ),
       )

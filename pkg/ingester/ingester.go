@@ -206,6 +206,8 @@ type Config struct {
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
 	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
 
+	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
+
 	// This config is dynamically injected because defined outside the ingester config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
 }
@@ -230,6 +232,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
+	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 
 	// The ingester.return-only-grpc-errors flag has been deprecated.
 	// According to the migration plan (https://github.com/grafana/mimir/issues/6008#issuecomment-1854320098)
@@ -401,10 +404,6 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.subservicesWatcher = services.NewFailureWatcher()
 	i.subservicesWatcher.WatchService(i.lifecycler)
 
-	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
-		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, i.lifecycler.ID, ingestersRing, log.With(i.logger, "component", "owned series"), registerer, i.limits.IngestionTenantShardSize, i.getTSDBUsers, i.getTSDB)
-	}
-
 	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {
 		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(cfg.ReadPathCPUUtilizationLimit,
 			cfg.ReadPathMemoryUtilizationLimit, cfg.LogUtilizationBasedLimiterCPUSamples,
@@ -419,6 +418,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.compactionIdleTimeout)
 
 	var limiterStrategy limiterRingStrategy
+	var ownedSeriesStrategy ownedSeriesRingStrategy
 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
@@ -453,11 +453,18 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 
 		limiterStrategy = newPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
+		ownedSeriesStrategy = newOwnedSeriesPartitionRingStrategy(i.ingestPartitionID, partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
 	} else {
 		limiterStrategy = newIngesterRingLimiterStrategy(ingestersRing, cfg.IngesterRing.ReplicationFactor, cfg.IngesterRing.ZoneAwarenessEnabled, cfg.IngesterRing.InstanceZone, i.limits.IngestionTenantShardSize)
+		ownedSeriesStrategy = newOwnedSeriesIngesterRingStrategy(i.lifecycler.ID, ingestersRing, i.limits.IngestionTenantShardSize)
 	}
 
 	i.limiter = NewLimiter(limits, limiterStrategy)
+
+	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
+		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, ownedSeriesStrategy, log.With(i.logger, "component", "owned series"), registerer, i.limiter.maxSeriesPerUser, i.getTSDBUsers, i.getTSDB)
+	}
+
 	i.BasicService = services.NewBasicService(i.starting, i.updateLoop, i.stopping)
 	return i, nil
 }
@@ -527,11 +534,11 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		// calculate owned series before we start the lifecycler at all. Once we move the ingester to the BasicLifecycler and
 		// have better control over the ring states, we could perform the calculation while in JOINING state, and move to
 		// ACTIVE once we finish.
-
-		oss := i.ownedSeriesService
+		//
+		// TODO: When using partitions ring, we need to update all tenants after partition is registered into the ring. That is done by partitionLifecycler's starting method.
 
 		// Fetch and cache current ring state
-		_, err := oss.checkRingForChanges()
+		_, err := i.ownedSeriesService.ringStrategy.checkRingForChanges()
 		switch {
 		case errors.Is(err, ring.ErrEmptyRing):
 			level.Warn(i.logger).Log("msg", "ingester ring is empty")
@@ -539,7 +546,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			return fmt.Errorf("can't read ring: %v", err)
 		default:
 			// We pass ringChanged=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
-			oss.updateAllTenants(ctx, true)
+			i.ownedSeriesService.updateAllTenants(ctx, true)
 		}
 	}
 
@@ -849,17 +856,17 @@ func (i *Ingester) updateMetrics() {
 			continue
 		}
 
-		localLimitShards := i.limiter.getShardSize(userID)
+		minLocalSeriesLimit := 0
 		if i.cfg.UseIngesterOwnedSeriesForLimits || i.cfg.UpdateIngesterOwnedSeries {
-			ownedSeries, shards := db.ownedSeriesAndShards()
-			i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(ownedSeries))
+			os := db.ownedSeriesState()
+			i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(os.ownedSeriesCount))
 
 			if i.cfg.UseIngesterOwnedSeriesForLimits {
-				localLimitShards = shards
+				minLocalSeriesLimit = os.localSeriesLimit
 			}
 		}
 
-		localLimit := i.limiter.maxSeriesPerUser(userID, localLimitShards)
+		localLimit := i.limiter.maxSeriesPerUser(userID, minLocalSeriesLimit)
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
 	}
 }
@@ -2394,6 +2401,16 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
 	matchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 
+	// flusher doesn't actually start the ingester services
+	initialLocalLimit := 0
+	if i.limiter != nil {
+		initialLocalLimit = i.limiter.maxSeriesPerUser(userID, 0)
+	}
+	ownedSeriedStateShardSize := 0
+	if i.ownedSeriesService != nil {
+		ownedSeriedStateShardSize = i.ownedSeriesService.ringStrategy.shardSizeForUser(userID)
+	}
+
 	userDB := &userTSDB{
 		userID:                  userID,
 		activeSeries:            activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout),
@@ -2405,7 +2422,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		instanceErrors:          i.metrics.rejected,
 		blockMinRetention:       i.cfg.BlocksStorageConfig.TSDB.Retention,
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
-		ownedSeriesShardSize:    i.limits.IngestionTenantShardSize(userID), // initialize series shard size so that it's correct even before we update ownedSeries for the first time (during WAL replay).
+
+		ownedState: ownedSeriesState{
+			shardSize:        ownedSeriedStateShardSize, // initialize series shard size so that it's correct even before we update ownedSeries for the first time
+			localSeriesLimit: initialLocalLimit,
+		},
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
@@ -3469,14 +3490,26 @@ func (i *Ingester) checkAvailable() error {
 	return newUnavailableError(s)
 }
 
-// Push implements client.IngesterServer
-func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+// PushToStorage implements ingest.Pusher interface for ingestion via ingest-storage.
+func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
 	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
-	if err == nil {
-		return &mimirpb.WriteResponse{}, nil
+	if err != nil {
+		return i.mapPushErrorToErrorWithStatus(err)
 	}
-	handledErr := i.mapPushErrorToErrorWithStatus(err)
-	return nil, handledErr
+	return nil
+}
+
+// Push implements client.IngesterServer, which is registered into gRPC server.
+func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+	if !i.cfg.PushGrpcMethodEnabled {
+		return nil, errPushGrpcDisabled
+	}
+
+	err := i.PushToStorage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &mimirpb.WriteResponse{}, err
 }
 
 func (i *Ingester) mapPushErrorToErrorWithStatus(err error) error {
@@ -3706,7 +3739,7 @@ func (i *Ingester) checkReadOverloaded() error {
 	}
 
 	i.metrics.utilizationLimitedRequests.WithLabelValues(reason).Inc()
-	return tooBusyError
+	return errTooBusy
 }
 
 type utilizationBasedLimiter interface {

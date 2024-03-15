@@ -10,7 +10,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
-	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -20,7 +19,7 @@ import (
 )
 
 type Pusher interface {
-	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
+	PushToStorage(context.Context, *mimirpb.WriteRequest) error
 }
 
 type pusherConsumer struct {
@@ -89,12 +88,12 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 		processingStart := time.Now()
 
 		ctx := user.InjectOrgID(ctx, wr.tenantID)
-		_, err := c.p.Push(ctx, wr.WriteRequest)
+		err := c.p.PushToStorage(ctx, wr.WriteRequest)
 
 		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 		c.totalRequests.Inc()
 		if err != nil {
-			if !isClientIngesterError(err) {
+			if !mimirpb.IsClientError(err) {
 				c.serverErrRequests.Inc()
 				return fmt.Errorf("consuming record at index %d for tenant %s: %w", recordIdx, wr.tenantID, err)
 			}
@@ -103,23 +102,6 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 		}
 	}
 	return nil
-}
-
-func isClientIngesterError(err error) bool {
-	stat, ok := grpcutil.ErrorToStatus(err)
-	if !ok {
-		// This should not be reached but in case it is, fall back to assuming it's our fault.
-		return false
-	}
-
-	if details := stat.Details(); len(details) > 0 {
-		if errDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
-			// This is usually the case.
-			return errDetails.Cause == mimirpb.BAD_DATA
-		}
-	}
-	// This should not be reached but in case it is, fall back to assuming it's our fault.
-	return false
 }
 
 func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []record, recC chan<- parsedRecord) {

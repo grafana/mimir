@@ -17,9 +17,9 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-type pusherFunc func(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
+type pusherFunc func(context.Context, *mimirpb.WriteRequest) error
 
-func (p pusherFunc) Push(ctx context.Context, request *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+func (p pusherFunc) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
 	return p(ctx, request)
 }
 
@@ -41,11 +41,10 @@ func TestPusherConsumer(t *testing.T) {
 	}
 
 	type response struct {
-		*mimirpb.WriteResponse
 		err error
 	}
 
-	okResponse := response{WriteResponse: &mimirpb.WriteResponse{}}
+	okResponse := response{nil}
 
 	testCases := map[string]struct {
 		records     []record
@@ -162,7 +161,7 @@ func TestPusherConsumer(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			receivedReqs := 0
-			pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+			pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
 				defer func() { receivedReqs++ }()
 				require.GreaterOrEqualf(t, len(tc.expectedWRs), receivedReqs+1, "received more requests (%d) than expected (%d)", receivedReqs+1, len(tc.expectedWRs))
 
@@ -175,7 +174,7 @@ func TestPusherConsumer(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tenantID, actualTenantID)
 
-				return tc.responses[receivedReqs].WriteResponse, tc.responses[receivedReqs].err
+				return tc.responses[receivedReqs].err
 			})
 			c := newPusherConsumer(pusher, prometheus.NewPedanticRegistry(), log.NewNopLogger())
 			err := c.consume(context.Background(), tc.records)

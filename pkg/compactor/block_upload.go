@@ -480,8 +480,9 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, bl
 	// validate that times are in the past
 	now := time.Now()
 	if meta.MinTime > now.UnixMilli() || meta.MaxTime > now.UnixMilli() {
-		return fmt.Sprintf("block time(s) greater than the present: minTime=%d, maxTime=%d",
-			meta.MinTime, meta.MaxTime)
+		return fmt.Sprintf("block time(s) greater than the present: minTime=%d (%s), maxTime=%d (%s)",
+			meta.MinTime, formatTime(time.UnixMilli(meta.MinTime)),
+			meta.MaxTime, formatTime(time.UnixMilli(meta.MaxTime)))
 	}
 
 	// Mark block source

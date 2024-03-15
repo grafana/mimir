@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -65,7 +66,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			// Create the ingester.
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
-			ingester, kafkaCluster := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+			ingester, kafkaCluster, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
 
 			// Mock the Kafka cluster to fail the Fetch operation until we unblock it later in the test.
 			// If read consistency is "eventual" then these failures shouldn't affect queries, but if it's set
@@ -153,7 +154,7 @@ func TestIngester_PrepareShutdownHandler_IngestStorageSupport(t *testing.T) {
 
 	// Start ingester.
 	cfg := defaultIngesterTestConfig(t)
-	ingester, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -218,7 +219,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 
 	setup := func(t *testing.T, cfg Config) (*Ingester, *ring.PartitionRingWatcher) {
 		// Start ingester.
-		ingester, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
+		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 		t.Cleanup(func() {
@@ -347,7 +348,7 @@ func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) 
 	require.NoError(t, err)
 
 	cfg := defaultIngesterTestConfig(t)
-	ingester, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
+	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
 
 	// Create the shutdown marker.
 	require.NoError(t, os.MkdirAll(cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm))
@@ -376,21 +377,26 @@ func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) 
 	assert.Empty(t, watcher.PartitionRing().PartitionOwnerIDs(ingester.ingestPartitionID))
 }
 
-func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, overrides *validation.Overrides, reg prometheus.Registerer) (*Ingester, *kfake.Cluster) {
-	var (
-		dataDir   = t.TempDir()
-		bucketDir = t.TempDir()
-	)
+// Returned ingester and ring watcher are NOT started.
+func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, overrides *validation.Overrides, reg prometheus.Registerer) (*Ingester, *kfake.Cluster, *ring.PartitionRingWatcher) {
+	defaultIngesterConfig := defaultIngesterTestConfig(t)
+
+	// Always disable gRPC Push API when testing ingest store.
+	ingesterCfg.PushGrpcMethodEnabled = false
 
 	ingesterCfg.IngestStorageConfig.Enabled = true
 	ingesterCfg.IngestStorageConfig.KafkaConfig.Topic = "mimir"
 	ingesterCfg.IngestStorageConfig.KafkaConfig.LastProducedOffsetPollInterval = 100 * time.Millisecond
 
 	// Create the partition ring store.
-	kv, closer := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	kv := ingesterCfg.IngesterPartitionRing.kvMock
+	if kv == nil {
+		var closer io.Closer
+		kv, closer = consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+		ingesterCfg.IngesterPartitionRing.kvMock = kv
+	}
 
-	ingesterCfg.IngesterPartitionRing.kvMock = kv
 	ingesterCfg.IngesterPartitionRing.MinOwnersDuration = 0
 	ingesterCfg.IngesterPartitionRing.lifecyclerPollingInterval = 10 * time.Millisecond
 
@@ -398,19 +404,23 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 	kafkaCluster, kafkaAddr := testkafka.CreateCluster(t, 10, ingesterCfg.IngestStorageConfig.KafkaConfig.Topic)
 	ingesterCfg.IngestStorageConfig.KafkaConfig.Address = kafkaAddr
 
-	// The ingest storage requires the ingester ID to have a well known format.
-	ingesterCfg.IngesterRing.InstanceID = "ingester-zone-a-0"
+	if ingesterCfg.IngesterRing.InstanceID == "" || ingesterCfg.IngesterRing.InstanceID == defaultIngesterConfig.IngesterRing.InstanceID {
+		// The ingest storage requires the ingester ID to have a well known format.
+		ingesterCfg.IngesterRing.InstanceID = "ingester-zone-a-0"
+	}
 
-	ingesterCfg.BlocksStorageConfig.TSDB.Dir = dataDir
+	if ingesterCfg.BlocksStorageConfig.TSDB.Dir == "" || ingesterCfg.BlocksStorageConfig.TSDB.Dir == defaultIngesterConfig.BlocksStorageConfig.TSDB.Dir { // Overwrite default values to temp dir.
+		ingesterCfg.BlocksStorageConfig.TSDB.Dir = t.TempDir()
+	}
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "filesystem"
-	ingesterCfg.BlocksStorageConfig.Bucket.Filesystem.Directory = bucketDir
+	ingesterCfg.BlocksStorageConfig.Bucket.Filesystem.Directory = t.TempDir()
 
 	// Disable TSDB head compaction jitter to have predictable tests.
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
-	prw := ring.NewPartitionRingWatcher("ingester", "partition-ring", kv, log.NewNopLogger(), nil)
+	prw := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, kv, log.NewNopLogger(), nil)
 	ingester, err := New(*ingesterCfg, overrides, nil, prw, nil, reg, util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 
-	return ingester, kafkaCluster
+	return ingester, kafkaCluster, prw
 }

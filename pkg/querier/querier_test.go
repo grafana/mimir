@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -395,6 +396,83 @@ func TestBatchMergeChunks(t *testing.T) {
 	require.ElementsMatch(t, m[0].Histograms, m[1].Histograms)
 }
 
+func BenchmarkQueryExecute(b *testing.B) {
+	var (
+		logger    = log.NewNopLogger()
+		queryStep = time.Second
+	)
+
+	var cfg Config
+	flagext.DefaultValues(&cfg)
+
+	limits := defaultLimitsConfig()
+	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(b, err)
+
+	scenarios := []struct {
+		numChunks          int
+		numSamplesPerChunk int
+		duplicationFactor  int
+	}{
+		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1},
+		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3},
+		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 1},
+		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 3},
+		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 1},
+		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 3},
+	}
+
+	for _, scenario := range scenarios {
+		for _, encoding := range []chunk.Encoding{
+			chunk.PrometheusXorChunk,
+			chunk.PrometheusHistogramChunk,
+			chunk.PrometheusFloatHistogramChunk,
+		} {
+			name := fmt.Sprintf("chunks: %d samples per chunk: %d duplication factor: %d encoding: %s", scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, encoding)
+			queryStart := time.Now().Add(-time.Second * time.Duration(scenario.numChunks*scenario.numSamplesPerChunk))
+			queryEnd := time.Now()
+			chunks := createChunks(b, scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, queryStart, queryStep, encoding)
+			// Mock distributor to return chunks that need merging.
+			distributor := &mockDistributor{}
+			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+				client.CombinedQueryStreamResponse{
+					Chunkseries: []client.TimeSeriesChunk{
+						{
+							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
+							Chunks: chunks,
+						},
+					},
+				},
+				nil)
+
+			engine := promql.NewEngine(promql.EngineOpts{
+				Logger:     logger,
+				MaxSamples: 1e6,
+				Timeout:    1 * time.Minute,
+			})
+
+			queryable, _, _ := New(cfg, overrides, distributor, nil, nil, logger, nil)
+			ctx := user.InjectOrgID(context.Background(), "user-1")
+
+			b.Run(name, func(b *testing.B) {
+				b.ReportAllocs()
+
+				for i := 0; i < b.N; i++ {
+					query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
+					require.NoError(b, err)
+
+					r := query.Exec(ctx)
+					m, err := r.Matrix()
+					require.NoError(b, err)
+
+					require.Equal(b, 1, m.Len())
+				}
+			})
+		}
+	}
+}
+
 func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int, valueType func(model.Time) chunkenc.ValueType) (storage.Queryable, model.Time) {
 	dir := t.TempDir()
 
@@ -448,6 +526,22 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	})
 
 	return queryable, ts
+}
+
+func createChunks(b require.TestingT, numChunks, numSamplesPerChunk, duplicationFactor int, queryStart time.Time, step time.Duration, enc chunk.Encoding) []client.Chunk {
+	result := make([]chunk.Chunk, 0, numChunks)
+
+	for d := 0; d < duplicationFactor; d++ {
+		for c := 0; c < numChunks; c++ {
+			minTime := queryStart.Add(step * time.Duration(c*numSamplesPerChunk))
+			maxTime := minTime.Add(step * time.Duration(numSamplesPerChunk))
+			result = append(result, mkChunk(b, model.TimeFromUnixNano(minTime.UnixNano()), model.TimeFromUnixNano(maxTime.UnixNano()), step, enc))
+		}
+	}
+
+	chunks, err := client.ToChunks(result)
+	require.NoError(b, err)
+	return chunks
 }
 
 func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {

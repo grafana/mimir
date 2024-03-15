@@ -22,7 +22,7 @@ services:
   prometheus:
     profiles:
       - prometheus
-    image: prom/prometheus:v2.50.0
+    image: prom/prometheus:v2.50.1
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus
@@ -44,7 +44,7 @@ services:
   grafana-agent:
     profiles:
       - grafana-agent-static
-    image: grafana/agent:v0.39.2
+    image: grafana/agent:v0.40.2
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-metrics.wal-directory=/tmp", "-server.http.address=127.0.0.1:9091"]
     volumes:
       - ./config:/etc/agent-config
@@ -54,7 +54,7 @@ services:
   grafana-agent-flow:
     profiles:
       - grafana-agent-flow
-    image: grafana/agent:v0.39.2
+    image: grafana/agent:v0.40.2
     environment:
       - AGENT_MODE=flow
     command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "/etc/agent/config.river"]

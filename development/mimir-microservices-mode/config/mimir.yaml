@@ -48,7 +48,6 @@ blocks_storage:
 
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier
-    index_header_lazy_loading_enabled: true
     sync_interval: 1m
 
     index_cache:

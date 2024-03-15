@@ -49,7 +49,6 @@ func (pw *otlpHTTPWriter) sendWriteRequest(ctx context.Context, req *prompb.Writ
 	httpReq.Header.Add("Content-Encoding", "gzip")
 	httpReq.Header.Add("Accept-Encoding", "gzip")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", "mimir-continuous-test")
 
 	httpResp, err := pw.httpClient.Do(httpReq)
 	if err != nil {

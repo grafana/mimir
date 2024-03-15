@@ -54,7 +54,6 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -371,7 +370,7 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 	t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
 
 	// Expose a web page to view the partitions ring state.
-	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher))
+	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
 
 	return t.IngesterPartitionRingWatcher, nil
 }
@@ -384,14 +383,6 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 
 	loader := runtimeConfigLoader{validate: t.Cfg.ValidateLimits}
 	t.Cfg.RuntimeConfig.Loader = loader.load
-
-	// DeprecatedCacheUnalignedRequests is moving from a global config that can in the frontend yaml to a limit config
-	// We need to preserve the option in the frontend yaml for two releases
-	// If the frontend config is configured by the user, the default limit is overwritten
-	// TODO: Remove in Mimir 2.12.0
-	if t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests != querymiddleware.DefaultDeprecatedCacheUnalignedRequests {
-		t.Cfg.LimitsConfig.ResultsCacheForUnalignedQueryEnabled = t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests
-	}
 
 	// DeprecatedAlignQueriesWithStep is moving from a global config that can in the frontend yaml to a limit config
 	// We need to preserve the option in the frontend yaml for two releases
@@ -955,16 +946,6 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
-
-	// TODO: Remove in Mimir 2.12.
-	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled != indexheader.DefaultIndexHeaderLazyLoadingEnabled {
-		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingEnabled = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled
-	}
-	// TODO: Remove in Mimir 2.12.
-	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout != indexheader.DefaultIndexHeaderLazyLoadingIdleTimeout {
-		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingIdleTimeout = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout
-	}
-
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer, t.ActivityTracker)
 	if err != nil {
 		return nil, err

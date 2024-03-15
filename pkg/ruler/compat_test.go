@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -33,6 +34,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -221,20 +223,27 @@ func TestPusherErrors(t *testing.T) {
 			expectedWrites:   1,
 			expectedFailures: 0,
 		},
-
-		"400 error": {
+		"a 400 HTTPgRPC error is not reported as failure": {
 			returnedError:    httpgrpc.Errorf(http.StatusBadRequest, "test error"),
 			expectedWrites:   1,
-			expectedFailures: 0, // 400 errors not reported as failures.
+			expectedFailures: 0,
 		},
-
-		"500 error": {
+		"a 500 HTTPgRPC error is reported as failure": {
 			returnedError:    httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
 			expectedWrites:   1,
-			expectedFailures: 1, // 500 errors are failures
+			expectedFailures: 1,
 		},
-
-		"unknown error": {
+		"a BAD_DATA push error is not reported as failure": {
+			returnedError:    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.BAD_DATA).Err(),
+			expectedWrites:   1,
+			expectedFailures: 0,
+		},
+		"a TSDB_UNAVAILABLE push error is reported as failure": {
+			returnedError:    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.TSDB_UNAVAILABLE).Err(),
+			expectedWrites:   1,
+			expectedFailures: 1,
+		},
+		"an unknown error is reported as failure": {
 			returnedError:    errors.New("test error"),
 			expectedWrites:   1,
 			expectedFailures: 1, // unknown errors are not 400, so they are reported.
@@ -265,7 +274,8 @@ func TestPusherErrors(t *testing.T) {
 }
 
 func TestMetricsQueryFuncErrors(t *testing.T) {
-	for name, tc := range map[string]struct {
+	// Cases handled the same on remote and local
+	commonCases := map[string]struct {
 		returnedError         error
 		expectedError         error
 		expectedQueries       int
@@ -275,35 +285,12 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			expectedQueries:       1,
 			expectedFailedQueries: 0,
 		},
-
-		"httpgrpc 400 error": {
-			returnedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
-			expectedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
-			expectedQueries:       1,
-			expectedFailedQueries: 0, // 400 errors not reported as failures.
-		},
-
-		"httpgrpc 500 error": {
-			returnedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
-			expectedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
-			expectedQueries:       1,
-			expectedFailedQueries: 1, // 500 errors are failures
-		},
-
-		"unknown but non-queryable error": {
-			returnedError:         errors.New("test error"),
-			expectedError:         errors.New("test error"),
-			expectedQueries:       1,
-			expectedFailedQueries: 1, // Any other error should always be reported.
-		},
-
 		"promql.ErrStorage": {
 			returnedError:         WrapQueryableErrors(promql.ErrStorage{Err: errors.New("test error")}),
 			expectedError:         promql.ErrStorage{Err: errors.New("test error")},
 			expectedQueries:       1,
 			expectedFailedQueries: 1,
 		},
-
 		"promql.ErrQueryCanceled": {
 			returnedError:         WrapQueryableErrors(promql.ErrQueryCanceled("test error")),
 			expectedError:         promql.ErrQueryCanceled("test error"),
@@ -324,14 +311,65 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			expectedQueries:       1,
 			expectedFailedQueries: 0, // Not interesting.
 		},
-
 		"unknown error": {
 			returnedError:         WrapQueryableErrors(errors.New("test error")),
 			expectedError:         errors.New("test error"),
 			expectedQueries:       1,
 			expectedFailedQueries: 1, // unknown errors are not 400, so they are reported.
 		},
-	} {
+	}
+	type testCase struct {
+		returnedError         error
+		expectedError         error
+		expectedQueries       int
+		expectedFailedQueries int
+		remoteQuerier         bool
+	}
+	// Add special cases to test first.
+	allCases := map[string]testCase{
+		"httpgrpc 400 error": {
+			returnedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
+			expectedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
+			expectedQueries:       1,
+			expectedFailedQueries: 0, // 400 errors not reported as failures.
+			remoteQuerier:         true,
+		},
+
+		"httpgrpc 500 error": {
+			returnedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
+			expectedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
+			expectedQueries:       1,
+			expectedFailedQueries: 1, // 500 errors are failures
+			remoteQuerier:         true,
+		},
+
+		"unknown but non-queryable error from remote": {
+			returnedError:         errors.New("test error"),
+			expectedError:         errors.New("test error"),
+			expectedQueries:       1,
+			expectedFailedQueries: 1, // Any other error should always be reported.
+			remoteQuerier:         true,
+		},
+		"unknown but non-queryable error from local": {
+			returnedError:         errors.New("test error"),
+			expectedError:         errors.New("test error"),
+			expectedQueries:       1,
+			expectedFailedQueries: 0, // Assume that simple local errors are coming from user errors.
+		},
+	}
+	// Add the common cases for both remote and local.
+	for _, rc := range []bool{true, false} {
+		for name, tc := range commonCases {
+			allCases[fmt.Sprintf("%s remote=%v", name, rc)] = testCase{
+				returnedError:         tc.returnedError,
+				expectedError:         tc.expectedError,
+				expectedQueries:       tc.expectedQueries,
+				expectedFailedQueries: tc.expectedFailedQueries,
+				remoteQuerier:         rc,
+			}
+		}
+	}
+	for name, tc := range allCases {
 		t.Run(name, func(t *testing.T) {
 			queries := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
@@ -339,7 +377,7 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
 				return promql.Vector{}, tc.returnedError
 			}
-			qf := MetricsQueryFunc(mockFunc, queries, failures)
+			qf := MetricsQueryFunc(mockFunc, queries, failures, tc.remoteQuerier)
 
 			_, err := qf(context.Background(), "test", time.Now())
 			require.Equal(t, tc.expectedError, err)
@@ -717,4 +755,12 @@ func (m *mockQueryable) Querier(_, _ int64) (storage.Querier, error) {
 		close(m.called)
 	}
 	return storage.NoopQuerier(), nil
+}
+
+func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.Status {
+	s, err := status.New(code, "").WithDetails(&mimirpb.ErrorDetails{Cause: cause})
+	if err != nil {
+		panic(err)
+	}
+	return s
 }

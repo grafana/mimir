@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r278-9840bef
+  tag: r281-93e069f
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -1875,7 +1875,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.23-alpine
+    tag: 1.6.24-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -2921,6 +2921,8 @@ gateway:
       httpSnippet: ""
       # -- Allows to set a custom resolver
       resolver: null
+      # -- Configures whether or not NGINX bind IPv6
+      enableIPv6: true
       # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating.
       file: |
         worker_processes  5;  ## Default: 1
@@ -2976,7 +2978,9 @@ gateway:
           proxy_read_timeout 300;
           server {
             listen {{ include "mimir.serverHttpListenPort" . }};
+            {{- if .Values.gateway.nginx.config.enableIPv6 }}
             listen [::]:{{ include "mimir.serverHttpListenPort" . }};
+            {{- end }}
 
             {{- if .Values.gateway.nginx.basicAuth.enabled }}
             auth_basic           "Mimir";
@@ -3259,6 +3263,8 @@ metaMonitoring:
           namespace: kube-system
           labelSelectors:
             app.kubernetes.io/name: kube-state-metrics
+          service:
+            port: http-metrics
 
       # -- The scrape interval for all ServiceMonitors.
       scrapeInterval: 60s
@@ -3328,7 +3334,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r278-0bd7f973
+    tag: r281-99ff9f91
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3829,7 +3835,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r278-9840bef
+    tag: r281-93e069f
     pullPolicy: IfNotPresent
   tenantId: ""
   extraArgs: {}
@@ -3849,7 +3855,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r278-9840bef
+    tag: r281-93e069f
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

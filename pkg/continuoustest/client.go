@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
@@ -153,6 +154,8 @@ func (c *Client) QueryRange(ctx context.Context, query string, start, end time.T
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
 	defer cancel()
 
+	ctx = querierapi.ContextWithReadConsistency(ctx, querierapi.ReadConsistencyStrong)
+
 	value, _, err := c.readClient.QueryRange(ctx, query, v1.Range{
 		Start: start,
 		End:   end,
@@ -179,6 +182,8 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time, options 
 	ctx = contextWithRequestOptions(ctx, options...)
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
 	defer cancel()
+
+	ctx = querierapi.ContextWithReadConsistency(ctx, querierapi.ReadConsistencyStrong)
 
 	value, _, err := c.readClient.Query(ctx, query, ts)
 	if err != nil {
@@ -269,5 +274,12 @@ func (rt *clientRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 	} else {
 		req.Header.Set("X-Scope-OrgID", rt.tenantID)
 	}
+
+	req.Header.Set("User-Agent", "mimir-continuous-test")
+
+	if lvl, ok := querierapi.ReadConsistencyFromContext(req.Context()); ok {
+		req.Header.Add(querierapi.ReadConsistencyHeader, lvl)
+	}
+
 	return rt.rt.RoundTrip(req)
 }

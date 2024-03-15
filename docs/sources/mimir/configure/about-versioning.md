@@ -107,6 +107,10 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
   - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
+  - Count owned series and use them to enforce series limits:
+    - `-ingester.track-ingester-owned-series`
+    - `-ingester.use-ingester-owned-series-for-limits`
+    - `-ingester.owned-series-update-interval`
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`
@@ -132,6 +136,7 @@ The following features are currently experimental:
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Max number of tenants that may be queried at once (`-tenant-federation.max-tenants`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
+  - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -180,6 +185,8 @@ The following features or configuration parameters are currently deprecated and 
 
 The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.14**:
 
+- Distributor
+  - the metric `cortex_distributor_sample_delay_seconds`
 - Ingester
   - `-ingester.return-only-grpc-errors`
 - Ingester client
