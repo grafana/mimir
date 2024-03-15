@@ -193,7 +193,7 @@ func TestLoader_GetIndex_ShouldNotCacheContextCanceled(t *testing.T) {
 	cancel()
 	for i := 0; i < 10; i++ {
 		_, err := loader.GetIndex(canceledCtx, "user-1")
-		require.ErrorIs(t, err, context.Canceled)
+		assert.ErrorIs(t, err, context.Canceled)
 	}
 
 	// Ensure metrics have been updated accordingly.
@@ -212,6 +212,28 @@ func TestLoader_GetIndex_ShouldNotCacheContextCanceled(t *testing.T) {
 		"cortex_bucket_index_load_failures_total",
 		"cortex_bucket_index_loaded",
 	))
+
+	// Getting it once again with a working context should trigger a load.
+	_, err := loader.GetIndex(ctx, "user-1")
+	assert.NoError(t, err)
+
+	// Ensure metrics have been updated accordingly.
+	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP cortex_bucket_index_load_failures_total Total number of bucket index loading failures.
+		# TYPE cortex_bucket_index_load_failures_total counter
+		cortex_bucket_index_load_failures_total 10
+		# HELP cortex_bucket_index_loaded Number of bucket indexes currently loaded in-memory.
+		# TYPE cortex_bucket_index_loaded gauge
+		cortex_bucket_index_loaded 1
+		# HELP cortex_bucket_index_loads_total Total number of bucket index loading attempts.
+		# TYPE cortex_bucket_index_loads_total counter
+		cortex_bucket_index_loads_total 11
+	`),
+		"cortex_bucket_index_loads_total",
+		"cortex_bucket_index_load_failures_total",
+		"cortex_bucket_index_loaded",
+	))
+
 }
 
 func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousLoadSuccess(t *testing.T) {
