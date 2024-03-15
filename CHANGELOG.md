@@ -12,11 +12,14 @@
 * [BUGFIX] querier: Don't cache context.Canceled errors for bucket index. #7620
 
 ### Mixin
+
 * [ENHANCEMENT] Alerts: allow configuring alerts range interval via `_config.base_alerts_range_interval_minutes`. #7591
 
 ### Jsonnet
 
 ### Mimirtool
+
+* [BUGFIX] Fix panic in `loadgen` subcommand. #7629
 
 ### Mimir Continuous Test
 
