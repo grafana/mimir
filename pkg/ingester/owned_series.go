@@ -5,13 +5,13 @@ package ingester
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
@@ -38,9 +38,6 @@ const (
 
 // ownedSeriesRingStrategy wraps access to the ring, to allow owned series service to be ignorant to whether it uses ingester ring or partitions ring.
 type ownedSeriesRingStrategy interface {
-	// Returns true if ring contains "this" ingester or partition.
-	hasOwner() (bool, error)
-
 	// checkRingForChanges reads current ring, stores it, and returns bool indicating whether ring has changed since last call
 	// of this method in such a way that new recomputation of token ranges is needed.
 	checkRingForChanges() (bool, error)
@@ -67,6 +64,9 @@ type ownedSeriesService struct {
 	getTSDB             func(user string) *userTSDB
 
 	ownedSeriesCheckDuration prometheus.Histogram
+
+	interval                  time.Duration
+	initialRingCheckSucceeded bool
 }
 
 func newOwnedSeriesService(
@@ -84,6 +84,7 @@ func newOwnedSeriesService(
 		getLocalSeriesLimit: getLocalSeriesLimit,
 		getTSDBUsers:        getTSDBUsers,
 		getTSDB:             getTSDB,
+		interval:            interval,
 		ownedSeriesCheckDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingester_owned_series_check_duration_seconds",
 			Help:    "How long does it take to check for owned series for all users.",
@@ -91,52 +92,66 @@ func newOwnedSeriesService(
 		}),
 	}
 
-	oss.Service = services.NewTimerService(interval, oss.starting, oss.checkOwnedSeries, nil)
+	oss.Service = services.NewTimerService(interval, oss.starting, oss.running, nil)
 	return oss
 }
 
+// This method should run as fast as possible and avoid blocking on external conditions
+// (e.g. whether lifecycler added instance to the ring or not),
+// because Ingester writes are not allowed until it finishes.
 func (oss *ownedSeriesService) starting(ctx context.Context) error {
-	// Wait until ingester or partition is available in the ring, and update all tenants for the very first time.
-	cfg := backoff.Config{
-		MinBackoff: 100 * time.Millisecond,
-		MaxBackoff: 100 * time.Millisecond,
-		MaxRetries: 0,
-	}
-
-	b := backoff.New(ctx, cfg)
-	for b.Ongoing() {
-		ok, err := oss.ringStrategy.hasOwner()
-		if ok {
-			break
+	// Fetch and cache current state of the ring.
+	_, err := oss.ringStrategy.checkRingForChanges()
+	if err != nil {
+		if errors.Is(err, ring.ErrEmptyRing) {
+			level.Warn(oss.logger).Log("msg", "skipped initial owned series computation, ring is empty")
+			oss.initialRingCheckSucceeded = false
+			// Service will continue in this case.
+		} else {
+			return fmt.Errorf("can't read ring: %v", err)
 		}
+	} else {
+		oss.initialRingCheckSucceeded = true
 
-		if err != nil {
-			k, v := oss.ringStrategy.ownerKeyAndValue()
-			level.Error(oss.logger).Log("msg", "can't check ring for owner", k, v)
-		}
-		b.Wait()
+		// Check all tenants, regardless of whether instance exists in the ring or not.
+		// This runs after TSDBs are open, all tenants should have "new user" reason set.
+		_ = oss.updateAllTenants(ctx, true)
 	}
-
-	if err := b.Err(); err != nil {
-		return err
-	}
-
-	// Update all tenants. This runs after TSDBs are open, all tenants should have "new user" reason set.
-	_ = oss.checkOwnedSeries(ctx)
 	return nil
 }
 
-// This function runs periodically. It checks if ring has changed, and updates number of owned series for any
+// Running function of owned series service. It regularly checks if ring has changed, and updates number of owned series for any
 // user that requires it (due to ring change, compaction, shard size change, ...).
-func (oss *ownedSeriesService) checkOwnedSeries(ctx context.Context) error {
-	ringChanged, err := oss.ringStrategy.checkRingForChanges()
-	if err != nil {
-		level.Error(oss.logger).Log("msg", "can't check ring for updates", "err", err)
-		return nil // If we returned error, service would stop.
+func (oss *ownedSeriesService) running(ctx context.Context) error {
+	tickerInterval := oss.interval
+	if !oss.initialRingCheckSucceeded {
+		tickerInterval = tickerInterval / 10
 	}
 
-	oss.updateAllTenants(ctx, ringChanged)
-	return nil
+	t := time.NewTicker(tickerInterval)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-t.C:
+			ringChanged, err := oss.ringStrategy.checkRingForChanges()
+			if err != nil {
+				level.Error(oss.logger).Log("msg", "can't check ring for updates", "err", err)
+				continue
+			}
+
+			// Ring check succeeded. If we still use short interval for ticker, reset it to regular interval.
+			if tickerInterval != oss.interval {
+				tickerInterval = oss.interval
+				t.Reset(tickerInterval)
+			}
+
+			oss.updateAllTenants(ctx, ringChanged)
+
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }
 
 // updateAllTenants iterates over all open TSDBs and updates owned series for all users that need it, either
@@ -286,19 +301,6 @@ func (ir *ownedSeriesIngesterRingStrategy) tokenRangesForUser(userID string, sha
 	return ranges, err
 }
 
-// Returns true once ingester exists in the ring, and has tokens.
-func (ir *ownedSeriesIngesterRingStrategy) hasOwner() (bool, error) {
-	tokens, err := ir.ingestersRing.GetTokenRangesForInstance(ir.instanceID)
-	if errors.Is(err, ring.ErrInstanceNotFound) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-
-	return len(tokens) > 0, nil
-}
-
 type ownedSeriesPartitionRingStrategy struct {
 	partitionID          int32
 	partitionRingWatcher *ring.PartitionRingWatcher
@@ -319,6 +321,10 @@ func newOwnedSeriesPartitionRingStrategy(partitionID int32, partitionRing *ring.
 func (pr *ownedSeriesPartitionRingStrategy) checkRingForChanges() (bool, error) {
 	// When using partitions ring, we consider ring to be changed if active partitions have changed.
 	r := pr.partitionRingWatcher.PartitionRing()
+	if r.PartitionsCount() == 0 {
+		return false, ring.ErrEmptyRing
+	}
+
 	activePartitions := r.ActivePartitionIDs()
 	ringChanged := !slices.Equal(pr.previousActivePartitions, activePartitions)
 	pr.previousActivePartitions = activePartitions
@@ -346,12 +352,4 @@ func (pr *ownedSeriesPartitionRingStrategy) tokenRangesForUser(userID string, sh
 
 func (pr *ownedSeriesPartitionRingStrategy) ownerKeyAndValue() (string, string) {
 	return "partition", strconv.Itoa(int(pr.partitionID))
-}
-
-// Returns true once partition exists in the ring (partitions ALWAYS have tokens).
-func (pr *ownedSeriesPartitionRingStrategy) hasOwner() (bool, error) {
-	r := pr.partitionRingWatcher.PartitionRing()
-	allPartitions := r.PartitionIDs()
-	_, found := slices.BinarySearch(allPartitions, pr.partitionID)
-	return found, nil
 }
