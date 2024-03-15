@@ -6821,83 +6821,114 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		t.Run(fmt.Sprintf("gRPC limit enabled: %t", grpcLimitEnabled), func(t *testing.T) {
 			limits := InstanceLimits{MaxInflightPushRequests: 1}
 
-			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
 			cfg.LimitInflightRequestsUsingGrpcMethodLimiter = grpcLimitEnabled
 			cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
 
+			// Create a mocked ingester
 			reg := prometheus.NewPedanticRegistry()
 			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 			require.NoError(t, err)
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-			// Wait until the ingester is healthy
-			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-				return i.lifecycler.HealthyInstancesCount()
-			})
+			testIngesterInflightPushRequests(t, i, reg, grpcLimitEnabled)
+		})
+	}
 
-			ctx := user.InjectOrgID(context.Background(), "test")
+	t.Run("gRPC limit enabled with ingest storage enabled", func(t *testing.T) {
+		limits := InstanceLimits{MaxInflightPushRequests: 1}
 
-			startCh := make(chan struct{})
+		overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+		require.NoError(t, err)
 
-			const targetRequestDuration = time.Second
+		cfg := defaultIngesterTestConfig(t)
+		cfg.LimitInflightRequestsUsingGrpcMethodLimiter = true
+		cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
 
-			g, ctx := errgroup.WithContext(ctx)
-			g.Go(func() error {
-				req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
+		reg := prometheus.NewPedanticRegistry()
+		i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
 
-				// Signal that we're going to do the real push now.
-				close(startCh)
+		// Re-enable push gRPC method to simulate migration period, when ingester can receive requests from gRPC
+		i.cfg.PushGrpcMethodEnabled = true
 
-				var err error
+		testIngesterInflightPushRequests(t, i, reg, cfg.LimitInflightRequestsUsingGrpcMethodLimiter)
+	})
+}
 
-				if grpcLimitEnabled {
-					_, err = pushWithSimulatedGRPCHandler(ctx, i, req)
-				} else {
-					_, err = i.Push(ctx, req)
-				}
+func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.Gatherer, grpcLimitEnabled bool) {
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+	})
 
-				return err
-			})
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
 
-			g.Go(func() error {
-				req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
+	ctx := user.InjectOrgID(context.Background(), "test")
 
-				select {
-				case <-ctx.Done():
-				// failed to setup
-				case <-startCh:
-					// we can start the test.
-				}
+	startCh := make(chan struct{})
 
-				test.Poll(t, targetRequestDuration/3, int64(1), func() interface{} {
-					return i.inflightPushRequests.Load()
-				})
+	const targetRequestDuration = time.Second
 
-				if grpcLimitEnabled {
-					_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
-					require.ErrorIs(t, err, errMaxInflightRequestsReached)
-				} else {
-					_, err := i.Push(ctx, req)
-					require.ErrorIs(t, err, errMaxInflightRequestsReached)
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
 
-					var optional middleware.OptionalLogging
-					require.ErrorAs(t, err, &optional)
-					require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
+		// Signal that we're going to do the real push now.
+		close(startCh)
 
-					s, ok := grpcutil.ErrorToStatus(err)
-					require.True(t, ok, "expected to be able to convert to gRPC status")
-					require.Equal(t, codes.Unavailable, s.Code())
-				}
+		var err error
 
-				return nil
-			})
+		if grpcLimitEnabled {
+			_, err = pushWithSimulatedGRPCHandler(ctx, i, req)
+		} else {
+			_, err = i.Push(ctx, req)
+		}
 
-			require.NoError(t, g.Wait())
+		return err
+	})
 
-			// Ensure the rejected request has been tracked in a metric.
-			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+	g.Go(func() error {
+		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
+
+		select {
+		case <-ctx.Done():
+		// failed to setup
+		case <-startCh:
+			// we can start the test.
+		}
+
+		test.Poll(t, targetRequestDuration/3, int64(1), func() interface{} {
+			return i.inflightPushRequests.Load()
+		})
+
+		if grpcLimitEnabled {
+			_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
+			require.ErrorIs(t, err, errMaxInflightRequestsReached)
+		} else {
+			_, err := i.Push(ctx, req)
+			require.ErrorIs(t, err, errMaxInflightRequestsReached)
+
+			var optional middleware.OptionalLogging
+			require.ErrorAs(t, err, &optional)
+			require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
+
+			s, ok := grpcutil.ErrorToStatus(err)
+			require.True(t, ok, "expected to be able to convert to gRPC status")
+			require.Equal(t, codes.Unavailable, s.Code())
+		}
+
+		return nil
+	})
+
+	require.NoError(t, g.Wait())
+
+	// Ensure the rejected request has been tracked in a metric.
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingester_inflight_push_requests Current number of inflight push requests in ingester.
+		# TYPE cortex_ingester_inflight_push_requests gauge
+		cortex_ingester_inflight_push_requests 0
 		# HELP cortex_ingester_instance_rejected_requests_total Requests rejected for hitting per-instance limits
 		# TYPE cortex_ingester_instance_rejected_requests_total counter
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 1
@@ -6905,9 +6936,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
-	`), "cortex_ingester_instance_rejected_requests_total"))
-		})
-	}
+	`), "cortex_ingester_instance_rejected_requests_total", "cortex_ingester_inflight_push_requests"))
 }
 
 func TestIngester_inflightPushRequestsBytes(t *testing.T) {
@@ -6989,11 +7018,11 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 		`, requestSize)), "cortex_ingester_inflight_push_requests_bytes"))
 
 				// Starting push request fails
-				err = i.StartPushRequest(100)
+				_, err = i.StartPushRequest(ctx, 100)
 				require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
 
 				// Starting push request with unknown size fails
-				err = i.StartPushRequest(0)
+				_, err = i.StartPushRequest(ctx, 0)
 				require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
 
 				// Sending push request fails
@@ -10039,13 +10068,11 @@ func (c *mockContext) Value(key any) interface{} {
 }
 
 func pushWithSimulatedGRPCHandler(ctx context.Context, i *Ingester, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	err := i.StartPushRequest(int64(req.Size()))
+	ctx, err := i.StartPushRequest(ctx, int64(req.Size()))
 	if err != nil {
 		return nil, err
 	}
+	defer i.FinishPushRequest(ctx)
 
-	res, err := i.Push(ctx, req)
-	i.FinishPushRequest(int64(req.Size()))
-
-	return res, err
+	return i.Push(ctx, req)
 }

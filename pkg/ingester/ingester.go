@@ -891,33 +891,64 @@ type pushStats struct {
 	perMetricSeriesLimitCount int
 }
 
+type ctxKey int
+
+var pushReqCtxKey ctxKey = 1
+
+type pushRequestState struct {
+	requestSize int64
+}
+
 // StartPushRequest checks if ingester can start push request, and increments relevant counters.
-// If new push request cannot be started, errors converible to gRPC status code are returned, and metrics are updated.
-//
-// This method can be called in two ways: 1. Ingester.PushWithCleanup, or 2. from gRPC server's method limiter.
+// If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are updated.
+func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context.Context, error) {
+	ctx, _, err := i.startPushRequest(ctx, reqSize)
+	return ctx, err
+}
+
+func (i *Ingester) FinishPushRequest(ctx context.Context) {
+	st, ok := ctx.Value(pushReqCtxKey).(*pushRequestState)
+	if !ok {
+		return
+	}
+	i.finishPushRequest(st.requestSize)
+}
+
+// This method can be called in two ways: 1. Ingester.PushWithCleanup, or 2. Ingester.StartPushRequest via gRPC server's method limiter.
 //
 // In the first case, returned errors can be inspected/logged by middleware. Ingester.PushWithCleanup will wrap the error in util_log.DoNotLogError wrapper.
-//
 // In the second case, returned errors will not be logged, because request will not reach any middleware.
-func (i *Ingester) StartPushRequest(requestSize int64) error {
+//
+// The shouldFinish flag tells if the caller must call finish on this request. If not, there is already someone in the call stack who will do that.
+func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ context.Context, shouldFinish bool, err error) {
 	if err := i.checkAvailable(); err != nil {
-		return err
+		return nil, false, err
 	}
+
+	if _, ok := ctx.Value(pushReqCtxKey).(*pushRequestState); ok {
+		// If state is already in context, this means we already passed through StartPushRequest for this request.
+		return ctx, false, nil
+	}
+	st := &pushRequestState{
+		requestSize: reqSize,
+	}
+	ctx = context.WithValue(ctx, pushReqCtxKey, st)
 
 	inflight := i.inflightPushRequests.Inc()
 	inflightBytes := int64(0)
 	rejectEqualInflightBytes := false
-	if requestSize > 0 {
-		inflightBytes = i.inflightPushRequestsBytes.Add(requestSize)
+	if reqSize > 0 {
+		inflightBytes = i.inflightPushRequestsBytes.Add(reqSize)
 	} else {
 		inflightBytes = i.inflightPushRequestsBytes.Load()
 		rejectEqualInflightBytes = true // if inflightBytes == limit, reject new request
 	}
 
 	finishRequestInDefer := true
+
 	defer func() {
 		if finishRequestInDefer {
-			i.FinishPushRequest(requestSize)
+			i.finishPushRequest(reqSize)
 		}
 	}()
 
@@ -925,32 +956,32 @@ func (i *Ingester) StartPushRequest(requestSize int64) error {
 	if il != nil {
 		if il.MaxInflightPushRequests > 0 && inflight > il.MaxInflightPushRequests {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-			return errMaxInflightRequestsReached
+			return nil, false, errMaxInflightRequestsReached
 		}
 
 		if il.MaxInflightPushRequestsBytes > 0 {
 			if (rejectEqualInflightBytes && inflightBytes >= il.MaxInflightPushRequestsBytes) || inflightBytes > il.MaxInflightPushRequestsBytes {
 				i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
-				return errMaxInflightRequestsBytesReached
+				return nil, false, errMaxInflightRequestsBytesReached
 			}
 		}
 
 		if il.MaxIngestionRate > 0 {
 			if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 				i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
-				return errMaxIngestionRateReached
+				return nil, false, errMaxIngestionRateReached
 			}
 		}
 	}
 
 	finishRequestInDefer = false
-	return nil
+	return ctx, true, nil
 }
 
-func (i *Ingester) FinishPushRequest(requestSize int64) {
+func (i *Ingester) finishPushRequest(reqSize int64) {
 	i.inflightPushRequests.Dec()
-	if requestSize > 0 {
-		i.inflightPushRequestsBytes.Sub(requestSize)
+	if reqSize > 0 {
+		i.inflightPushRequestsBytes.Sub(reqSize)
 	}
 }
 
@@ -960,13 +991,18 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// retain anything from `req` past the exit from this function.
 	defer cleanUp()
 
-	// If we're using grpc handlers, we don't need to start/finish request here.
-	if !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
+	// Only start/finish request here when the request comes NOT from grpc handlers (i.e., from ingest.Store).
+	// NOTE: request coming from grpc handler may end up calling start multiple times during its lifetime (e.g., when migrating to ingest storage).
+	// startPushRequest handles this.
+	if i.cfg.IngestStorageConfig.Enabled || !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
 		reqSize := int64(req.Size())
-		if err := i.StartPushRequest(reqSize); err != nil {
+		_, shouldFinish, err := i.startPushRequest(ctx, reqSize)
+		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}
-		defer i.FinishPushRequest(reqSize)
+		if shouldFinish {
+			defer i.finishPushRequest(reqSize)
+		}
 	}
 
 	userID, err := tenant.TenantID(ctx)
