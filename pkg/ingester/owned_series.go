@@ -92,7 +92,7 @@ func newOwnedSeriesService(
 		}),
 	}
 
-	oss.Service = services.NewTimerService(interval, oss.starting, oss.running, nil)
+	oss.Service = services.NewBasicService(oss.starting, oss.running, nil)
 	return oss
 }
 
