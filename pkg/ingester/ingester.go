@@ -572,10 +572,6 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
-	if i.ownedSeriesService != nil {
-		servs = append(servs, i.ownedSeriesService)
-	}
-
 	if i.ingestReader != nil {
 		servs = append(servs, i.ingestReader)
 	}
