@@ -286,9 +286,9 @@ func (t *Mimir) initServer() (services.Service, error) {
 	// t.Ingester or t.Distributor will be available. There's no race condition here, because gRPC server (service returned by this method, ie. initServer)
 	// is started only after t.Ingester and t.Distributor are set in initIngester or initDistributorService.
 
-	var ingFn func() ingesterPushReceiver
+	var ingFn func() pushReceiver
 	if t.Cfg.Ingester.LimitInflightRequestsUsingGrpcMethodLimiter {
-		ingFn = func() ingesterPushReceiver {
+		ingFn = func() pushReceiver {
 			// Return explicit nil, if there's no ingester. We don't want to return typed-nil as interface value.
 			if t.Ingester == nil {
 				return nil
@@ -297,9 +297,9 @@ func (t *Mimir) initServer() (services.Service, error) {
 		}
 	}
 
-	var distFn func() distributorPushReceiver
+	var distFn func() pushReceiver
 	if t.Cfg.Distributor.LimitInflightRequestsUsingGrpcMethodLimiter {
-		distFn = func() distributorPushReceiver {
+		distFn = func() pushReceiver {
 			// Return explicit nil, if there's no distributor. We don't want to return typed-nil as interface value.
 			if t.Distributor == nil {
 				return nil

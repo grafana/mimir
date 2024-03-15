@@ -17,27 +17,21 @@ import (
 	"github.com/grafana/mimir/pkg/api"
 )
 
-type ingesterPushReceiver interface {
+type pushReceiver interface {
 	StartPushRequest(ctx context.Context, requestSize int64) (context.Context, error)
-	FinishPushRequest(ctx context.Context)
-}
-
-// Interface exposed by Distributor.
-type distributorPushReceiver interface {
-	StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error)
 	FinishPushRequest(ctx context.Context)
 }
 
 // getPushReceiver function must be constant -- return same value on each call.
 // if getIngester or getDistributor functions are nil, those specific checks are not used.
-func newGrpcInflightMethodLimiter(getIngester func() ingesterPushReceiver, getDistributor func() distributorPushReceiver) *grpcInflightMethodLimiter {
+func newGrpcInflightMethodLimiter(getIngester, getDistributor func() pushReceiver) *grpcInflightMethodLimiter {
 	return &grpcInflightMethodLimiter{getIngester: getIngester, getDistributor: getDistributor}
 }
 
 // grpcInflightMethodLimiter implements gRPC TapHandle and gRPC stats.Handler.
 type grpcInflightMethodLimiter struct {
-	getIngester    func() ingesterPushReceiver
-	getDistributor func() distributorPushReceiver
+	getIngester    func() pushReceiver
+	getDistributor func() pushReceiver
 }
 
 type ctxKey int
@@ -63,9 +57,7 @@ func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodN
 			return ctx, errNoIngester
 		}
 
-		reqSize := getMessageSize(md, grpcutil.MetadataMessageSize)
-
-		ctx, err := ing.StartPushRequest(ctx, reqSize)
+		ctx, err := ing.StartPushRequest(ctx, getMessageSize(md, grpcutil.MetadataMessageSize))
 		if err != nil {
 			return ctx, status.Error(codes.Unavailable, err.Error())
 		}
