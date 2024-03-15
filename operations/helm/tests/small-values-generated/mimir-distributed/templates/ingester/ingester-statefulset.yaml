@@ -60,10 +60,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -87,8 +83,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: small-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
       terminationGracePeriodSeconds: 240
       volumes:
         - name: config
@@ -214,10 +208,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -241,8 +231,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: small-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
       terminationGracePeriodSeconds: 240
       volumes:
         - name: config
@@ -368,10 +356,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -395,8 +379,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: small-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
       terminationGracePeriodSeconds: 240
       volumes:
         - name: config

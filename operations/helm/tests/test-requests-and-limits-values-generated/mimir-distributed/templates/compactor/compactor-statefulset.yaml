@@ -52,12 +52,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -67,8 +61,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-requests-and-limits-values
             app.kubernetes.io/component: compactor
-      tolerations:
-        []
       terminationGracePeriodSeconds: 240
       volumes:
         - name: config

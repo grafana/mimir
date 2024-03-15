@@ -658,6 +658,10 @@
     // Set to four times the scrape interval to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
     recording_rules_range_interval: '1m',
 
+    // Used to calculate range interval in alerts with default range selector under 10 minutes.
+    // Needed to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
+    base_alerts_range_interval_minutes: 1,
+
     // Used to inject rows into dashboards at specific places that support it.
     injectRows: {},
 

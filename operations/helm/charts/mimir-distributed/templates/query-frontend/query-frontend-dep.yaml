@@ -33,8 +33,10 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "query-frontend") | nindent 8 }}
+      {{- with .Values.query_frontend.initContainers }}
       initContainers:
-        {{- toYaml .Values.query_frontend.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -111,13 +113,19 @@ spec:
 {{- if .Values.query_frontend.extraContainers }}
 {{ toYaml .Values.query_frontend.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.query_frontend.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.query_frontend.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.query_frontend.affinity }}
       affinity:
-        {{- toYaml .Values.query_frontend.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "query-frontend") | nindent 6 }}
+      {{- with .Values.query_frontend.tolerations }}
       tolerations:
-        {{- toYaml .Values.query_frontend.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.query_frontend.terminationGracePeriodSeconds }}
       volumes:
         - name: config

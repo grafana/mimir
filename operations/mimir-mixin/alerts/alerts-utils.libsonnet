@@ -54,4 +54,6 @@
       for group in groups
     ],
 
+  alertRangeInterval(multiple)::
+    ($._config.base_alerts_range_interval_minutes * multiple) + 'm',
 }
