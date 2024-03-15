@@ -10,6 +10,7 @@
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 * [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
 * [BUGFIX] querier: Don't cache context.Canceled errors for bucket index. #7620
+* [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622
 
 ### Mixin
 
