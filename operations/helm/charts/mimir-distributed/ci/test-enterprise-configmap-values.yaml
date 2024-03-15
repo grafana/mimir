@@ -86,6 +86,30 @@ rollout_operator:
 
 admin-cache:
   enabled: true
-  allocatedMemory: 10
+  replicas: 1
+  resources:
+    <<: *ci_resources
+
+chunks-cache:
+  enabled: true
+  replicas: 1
+  resources:
+    <<: *ci_resources
+
+index-cache:
+  enabled: true
+  replicas: 1
+  resources:
+    <<: *ci_resources
+
+metadata-cache:
+  enabled: true
+  replicas: 1
+  resources:
+    <<: *ci_resources
+
+results-cache:
+  enabled: true
+  replicas: 1
   resources:
     <<: *ci_resources
