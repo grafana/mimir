@@ -29,7 +29,7 @@ type benchCase struct {
 }
 
 func (c benchCase) Name() string {
-	name := fmt.Sprintf("%s", c.expr)
+	name := c.expr
 
 	if c.steps == 0 {
 		name += ", instant query"
@@ -42,7 +42,7 @@ func (c benchCase) Name() string {
 	return name
 }
 
-func (c benchCase) Run(t testing.TB, ctx context.Context, start, end time.Time, interval time.Duration, engine promql.QueryEngine, db *tsdb.DB) (*promql.Result, func()) {
+func (c benchCase) Run(ctx context.Context, t testing.TB, start, end time.Time, interval time.Duration, engine promql.QueryEngine, db *tsdb.DB) (*promql.Result, func()) {
 	var qry promql.Query
 	var err error
 
@@ -250,8 +250,8 @@ func BenchmarkQuery(b *testing.B) {
 
 		b.Run(c.Name(), func(b *testing.B) {
 			// Check both engines produce the same result before running the benchmark.
-			standardResult, standardClose := c.Run(b, ctx, start, end, interval, standardEngine, db)
-			streamingResult, streamingClose := c.Run(b, ctx, start, end, interval, streamingEngine, db)
+			standardResult, standardClose := c.Run(ctx, b, start, end, interval, standardEngine, db)
+			streamingResult, streamingClose := c.Run(ctx, b, start, end, interval, streamingEngine, db)
 
 			requireEqualResults(b, standardResult, streamingResult)
 
@@ -261,7 +261,7 @@ func BenchmarkQuery(b *testing.B) {
 			for name, engine := range engines {
 				b.Run(name, func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
-						res, cleanup := c.Run(b, ctx, start, end, interval, engine, db)
+						res, cleanup := c.Run(ctx, b, start, end, interval, engine, db)
 
 						if res != nil {
 							cleanup()
@@ -297,8 +297,8 @@ func TestBenchmarkQueries(t *testing.T) {
 			interval := time.Second * 10
 			ctx := context.Background()
 
-			standardResult, standardClose := c.Run(t, ctx, start, end, interval, standardEngine, db)
-			streamingResult, streamingClose := c.Run(t, ctx, start, end, interval, streamingEngine, db)
+			standardResult, standardClose := c.Run(ctx, t, start, end, interval, standardEngine, db)
+			streamingResult, streamingClose := c.Run(ctx, t, start, end, interval, streamingEngine, db)
 
 			requireEqualResults(t, standardResult, streamingResult)
 
