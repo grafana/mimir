@@ -222,14 +222,7 @@ func testCases(metricSizes []int) []benchCase {
 func BenchmarkQuery(b *testing.B) {
 	db := newTestDB(b)
 	db.DisableCompactions() // Don't want auto-compaction disrupting timings.
-	opts := promql.EngineOpts{
-		Logger:               nil,
-		Reg:                  nil,
-		MaxSamples:           50000000,
-		Timeout:              100 * time.Second,
-		EnableAtModifier:     true,
-		EnableNegativeOffset: true,
-	}
+	opts := newTestEngineOpts()
 
 	standardEngine := promql.NewEngine(opts)
 	streamingEngine, err := NewEngine(opts)
@@ -282,14 +275,7 @@ func BenchmarkQuery(b *testing.B) {
 
 func TestBenchmarkQueries(t *testing.T) {
 	db := newTestDB(t)
-	opts := promql.EngineOpts{
-		Logger:               nil,
-		Reg:                  nil,
-		MaxSamples:           50000000,
-		Timeout:              100 * time.Second,
-		EnableAtModifier:     true,
-		EnableNegativeOffset: true,
-	}
+	opts := newTestEngineOpts()
 
 	standardEngine := promql.NewEngine(opts)
 	streamingEngine, err := NewEngine(opts)

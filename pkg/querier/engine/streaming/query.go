@@ -81,11 +81,17 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 		}
 
 		if e.OriginalOffset != 0 || e.Offset != 0 {
-			return nil, NewNotSupportedError("instant vector selector with offset")
+			return nil, NewNotSupportedError("instant vector selector with 'offset'")
 		}
 
 		if e.Timestamp != nil {
-			return nil, NewNotSupportedError("instant vector selector with timestamp")
+			return nil, NewNotSupportedError("instant vector selector with '@' modifier")
+		}
+
+		if e.StartOrEnd == parser.START {
+			return nil, NewNotSupportedError("instant vector selector with '@ start()'")
+		} else if e.StartOrEnd == parser.END {
+			return nil, NewNotSupportedError("instant vector selector with '@ end()'")
 		}
 
 		return &operator.InstantVectorSelector{
@@ -99,13 +105,13 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 		}, nil
 	case *parser.AggregateExpr:
 		if e.Op != parser.SUM {
-			return nil, NewNotSupportedError(fmt.Sprintf("unsupported aggregation operator %s", e.Op))
+			return nil, NewNotSupportedError(fmt.Sprintf("'%s' aggregation", e.Op))
 		}
 		if e.Param != nil {
 			return nil, fmt.Errorf("unexpected parameter for %s aggregation: %s", e.Op, e.Param)
 		}
 		if e.Without {
-			return nil, NewNotSupportedError("grouping with 'without' not supported")
+			return nil, NewNotSupportedError("grouping with 'without'")
 		}
 
 		slices.Sort(e.Grouping)
@@ -125,7 +131,7 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 		}, nil
 	case *parser.Call:
 		if e.Func.Name != "rate" {
-			return nil, NewNotSupportedError(fmt.Sprintf("unsupported function %s", e.Func.Name))
+			return nil, NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 		}
 		if len(e.Args) != 1 {
 			return nil, fmt.Errorf("expected exactly one argument for rate, got %v", len(e.Args))
@@ -144,11 +150,17 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 		vectorSelector := matrixSelector.VectorSelector.(*parser.VectorSelector)
 
 		if vectorSelector.OriginalOffset != 0 || vectorSelector.Offset != 0 {
-			return nil, NewNotSupportedError("range vector selector with offset")
+			return nil, NewNotSupportedError("range vector selector with 'offset'")
 		}
 
 		if vectorSelector.Timestamp != nil {
-			return nil, NewNotSupportedError("range vector selector with timestamp")
+			return nil, NewNotSupportedError("range vector selector with '@' modifier")
+		}
+
+		if vectorSelector.StartOrEnd == parser.START {
+			return nil, NewNotSupportedError("range vector selector with '@ start()'")
+		} else if vectorSelector.StartOrEnd == parser.END {
+			return nil, NewNotSupportedError("range vector selector with '@ end()'")
 		}
 
 		return &operator.RangeVectorSelectorWithTransformation{
