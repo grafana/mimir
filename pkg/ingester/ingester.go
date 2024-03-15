@@ -530,9 +530,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	if i.ownedSeriesService != nil {
 		// Start owned series service asynchronously. We don't wait for ownedSeriesService to enter Running state here.
-		// This service will wait for entry in the ring, which is only created by lifecycler, and once the entry in the ring exists,
-		// ownedSeriesService will perform initial check of all tenants. While this check runs, we already allow read requests to proceed,
-		// but we block push requests (see checkAvailableForPushRequests).
+		// This service will perform initial check if ring is not empty, and switch to Running state right after.
+		// While this initial check runs, we already allow read requests to proceed, but we block push requests (see checkAvailableForPushRequests).
 		//
 		// We pass ingester's service context to ownedSeriesService, to make ownedSeriesService stop when ingester exits Running state.
 		if err := i.ownedSeriesService.StartAsync(ctx); err != nil {
