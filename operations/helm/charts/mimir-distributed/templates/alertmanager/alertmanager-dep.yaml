@@ -33,8 +33,10 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
+      {{- with .Values.alertmanager.initContainers }}
       initContainers:
-        {{- toYaml .Values.alertmanager.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -110,13 +112,19 @@ spec:
 {{- if .Values.alertmanager.extraContainers }}
 {{ toYaml .Values.alertmanager.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.alertmanager.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.alertmanager.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.alertmanager.affinity }}
       affinity:
-        {{- toYaml .Values.alertmanager.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "alertmanager") | nindent 6 }}
+      {{- with .Values.alertmanager.tolerations }}
       tolerations:
-        {{- toYaml .Values.alertmanager.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.alertmanager.terminationGracePeriodSeconds }}
       volumes:
         - name: config

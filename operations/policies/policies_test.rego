@@ -35,6 +35,42 @@ test_namespace_forbidden_on_psp if {
 	contains(reason, "Resource has a namespace, but shouldn't")
 }
 
+test_empty_node_selector_not_allowed if {
+	deny[reason] with input as [object.union(
+		passing_deployment,
+		{"contents": {"spec": {"template": {"spec": {"nodeSelector": {}}}}}},
+	)]
+
+	contains(reason, "Resource has empty nodeSelector, but shouldn't")
+}
+
+test_empty_affinity_not_allowed if {
+	deny[reason] with input as [object.union(
+		passing_deployment,
+		{"contents": {"spec": {"template": {"spec": {"affinity": {}}}}}},
+	)]
+
+	contains(reason, "Resource has empty affinity, but shouldn't")
+}
+
+test_empty_init_containers_not_allowed if {
+	deny[reason] with input as [object.union(
+		passing_deployment,
+		{"contents": {"spec": {"template": {"spec": {"initContainers": []}}}}},
+	)]
+
+	contains(reason, "Resource has empty initContainers, but shouldn't")
+}
+
+test_empty_tolerations_not_allowed if {
+	deny[reason] with input as [object.union(
+		passing_deployment,
+		{"contents": {"spec": {"template": {"spec": {"tolerations": []}}}}},
+	)]
+
+	contains(reason, "Resource has empty tolerations, but shouldn't")
+}
+
 passing_psp := {"contents": {
 	"kind": "PodSecurityPolicy",
 	"metadata": {"name": "resource"},

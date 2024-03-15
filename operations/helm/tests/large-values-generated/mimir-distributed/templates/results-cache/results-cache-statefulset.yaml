@@ -42,15 +42,7 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       
-      tolerations:
-        []
       terminationGracePeriodSeconds: 60
       containers:
         - name: memcached
