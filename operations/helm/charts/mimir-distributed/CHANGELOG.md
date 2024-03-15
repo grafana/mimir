@@ -28,6 +28,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 5.2.3
+
+* [BUGFIX] admin-cache: set max connections to fix failure to start #7632
+
 ## 5.2.2
 
 * [BUGFix] Updated GEM image to v2.11.2. #7555
