@@ -117,6 +117,7 @@ func TestLabelsQueryRequest(t *testing.T) {
 		name                      string
 		url                       string
 		expectedStruct            LabelsQueryRequest
+		expectedGetLabelName      string
 		expectedGetStartOrDefault int64
 		expectedGetEndOrDefault   int64
 		expectedErr               error
@@ -125,11 +126,12 @@ func TestLabelsQueryRequest(t *testing.T) {
 			name: "label names with start and end timestamps, no matchers",
 			url:  "/api/v1/labels?end=1708588800&start=1708502400",
 			expectedStruct: &PrometheusLabelNamesQueryRequest{
-				Path:        "/api/v1/labels",
-				Start:       1708502400 * 1e3,
-				End:         1708588800 * 1e3,
-				MatcherSets: nil,
+				Path:             "/api/v1/labels",
+				Start:            1708502400 * 1e3,
+				End:              1708588800 * 1e3,
+				LabelMatcherSets: nil,
 			},
+			expectedGetLabelName:      "",
 			expectedGetStartOrDefault: 1708502400 * 1e3,
 			expectedGetEndOrDefault:   1708588800 * 1e3,
 		},
@@ -137,11 +139,12 @@ func TestLabelsQueryRequest(t *testing.T) {
 			name: "label names with start timestamp, no end timestamp, no matchers",
 			url:  "/api/v1/labels?start=1708502400",
 			expectedStruct: &PrometheusLabelNamesQueryRequest{
-				Path:        "/api/v1/labels",
-				Start:       1708502400 * 1e3,
-				End:         0,
-				MatcherSets: nil,
+				Path:             "/api/v1/labels",
+				Start:            1708502400 * 1e3,
+				End:              0,
+				LabelMatcherSets: nil,
 			},
+			expectedGetLabelName:      "",
 			expectedGetStartOrDefault: 1708502400 * 1e3,
 			expectedGetEndOrDefault:   v1API.MaxTime.UnixMilli(),
 		},
@@ -149,11 +152,12 @@ func TestLabelsQueryRequest(t *testing.T) {
 			name: "label names with end timestamp, no start timestamp, no matchers",
 			url:  "/api/v1/labels?end=1708588800",
 			expectedStruct: &PrometheusLabelNamesQueryRequest{
-				Path:        "/api/v1/labels",
-				Start:       0,
-				End:         1708588800 * 1e3,
-				MatcherSets: nil,
+				Path:             "/api/v1/labels",
+				Start:            0,
+				End:              1708588800 * 1e3,
+				LabelMatcherSets: nil,
 			},
+			expectedGetLabelName:      "",
 			expectedGetStartOrDefault: v1API.MinTime.UnixMilli(),
 			expectedGetEndOrDefault:   1708588800 * 1e3,
 		},
@@ -163,38 +167,12 @@ func TestLabelsQueryRequest(t *testing.T) {
 				Path:  "/api/v1/labels",
 				Start: 1708502400 * 1e3,
 				End:   1708588800 * 1e3,
-				MatcherSetsStrings: []string{
+				LabelMatcherSets: []string{
 					"go_goroutines{container=~\"quer.*\"}",
 					"go_goroutines{container!=\"query-scheduler\"}",
 				},
-				MatcherSets: []*LabelMatchers{
-					{
-						MatcherSet: []*LabelMatcher{
-							{
-								Type:  0,
-								Name:  "__name__",
-								Value: "go_goroutines",
-							}, {
-								Type:  2,
-								Name:  "container",
-								Value: "quer.*",
-							},
-						},
-					}, {
-						MatcherSet: []*LabelMatcher{
-							{
-								Type:  0,
-								Name:  "__name__",
-								Value: "go_goroutines",
-							}, {
-								Type:  1,
-								Name:  "container",
-								Value: "query-scheduler",
-							},
-						},
-					},
-				},
 			},
+			expectedGetLabelName:      "",
 			expectedGetStartOrDefault: 1708502400 * 1e3,
 			expectedGetEndOrDefault:   1708588800 * 1e3,
 		},
@@ -212,6 +190,8 @@ func TestLabelsQueryRequest(t *testing.T) {
 				return
 			}
 			require.EqualValues(t, testCase.expectedStruct, req)
+			require.EqualValues(t, testCase.expectedGetStartOrDefault, req.GetStartOrDefault())
+			require.EqualValues(t, testCase.expectedGetEndOrDefault, req.GetEndOrDefault())
 
 			rdash, err := codec.EncodeLabelsQueryRequest(context.Background(), req)
 			require.NoError(t, err)

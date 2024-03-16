@@ -162,6 +162,10 @@ func (r *PrometheusInstantQueryRequest) AddSpanTags(sp opentracing.Span) {
 	sp.SetTag("time", timestamp.Time(r.GetTime()).String())
 }
 
+func (r *PrometheusLabelNamesQueryRequest) GetLabelName() string {
+	return ""
+}
+
 func (r *PrometheusLabelNamesQueryRequest) GetStartOrDefault() int64 {
 	if r.GetStart() == 0 {
 		return v1.MinTime.UnixMilli()
@@ -176,17 +180,31 @@ func (r *PrometheusLabelNamesQueryRequest) GetEndOrDefault() int64 {
 	return r.GetEnd()
 }
 
-func (r *PrometheusLabelNamesQueryRequest) GetLabelMatchersStrings() []string {
-	return r.MatcherSetsStrings
+func (r *PrometheusLabelValuesQueryRequest) GetStartOrDefault() int64 {
+	if r.GetStart() == 0 {
+		return v1.MinTime.UnixMilli()
+	}
+	return r.GetStart()
 }
 
-func (r *PrometheusLabelNamesQueryRequest) GetLabelMatchers() []*LabelMatchers {
-	return r.MatcherSets
+func (r *PrometheusLabelValuesQueryRequest) GetEndOrDefault() int64 {
+	if r.GetEnd() == 0 {
+		return v1.MaxTime.UnixMilli()
+	}
+	return r.GetEnd()
 }
 
 // AddSpanTags writes query information about the current `PrometheusLabelNamesQueryRequest`
 // to a span's tag ("attributes" in OpenTelemetry parlance).
 func (r *PrometheusLabelNamesQueryRequest) AddSpanTags(sp opentracing.Span) {
+	//sp.SetTag("query", r.GetQuery())
+	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
+	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+}
+
+// AddSpanTags writes query information about the current `PrometheusLabelNamesQueryRequest`
+// to a span's tag ("attributes" in OpenTelemetry parlance).
+func (r *PrometheusLabelValuesQueryRequest) AddSpanTags(sp opentracing.Span) {
 	//sp.SetTag("query", r.GetQuery())
 	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
 	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())

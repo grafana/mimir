@@ -72,18 +72,32 @@ message PrometheusLabelNamesQueryRequest {
   int64 start = 2;
   int64 end = 3;
 
-  repeated string matcherSetsStrings = 4;
-
-  // matcherSets is a repeated field here in order to enable the representation
+  // labelMatcherSets is a repeated field here in order to enable the representation
   // of labels queries which have not yet been split; the prometheus querier code
   // will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
   // into separate queries, one for each matcher set
-  repeated LabelMatchers matcherSets = 5;
+  repeated string labelMatcherSets = 4;
+
+  // ID of the request used to correlate downstream requests and responses.
+  int64 id = 5;
+}
+
+message PrometheusLabelValuesQueryRequest {
+  string path = 1;
+
+  string labelName = 2;
+
+  int64 start = 3;
+  int64 end = 4;
+
+  // labelMatcherSets is a repeated field here in order to enable the representation
+  // of labels queries which have not yet been split; the prometheus querier code
+  // will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
+  // into separate queries, one for each matcher set
+  repeated string labelMatcherSets = 5;
 
   // ID of the request used to correlate downstream requests and responses.
   int64 id = 6;
-
-  Options options = 7 [(gogoproto.nullable) = false]; // why are these not nullable?
 }
 
 message PrometheusResponseHeader {
