@@ -194,6 +194,7 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 	//
 	// - The block upload is completed: this is the normal case. meta.json file still exists in the
 	//   object storage and it's expected to match the locally cached one (because it's immutable by design).
+	//
 	// - The block has been marked for deletion: the deletion hasn't started yet, so the full block (including
 	//   the meta.json file) is still in the object storage. This case is not different than the previous one.
 	//
@@ -247,6 +248,12 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 	if m.Version != TSDBVersion1 {
 		return nil, errors.Errorf("unexpected meta file: %s version: %d", metaFile, m.Version)
 	}
+
+	attrs, err := GetAttributes(ctx, m, f.bkt)
+	if err != nil {
+		return nil, err
+	}
+	m.LastModified = &attrs.LastModified
 
 	// Best effort cache in local dir.
 	if f.cacheDir != "" {
@@ -417,7 +424,7 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, par
 }
 
 // FetchWithoutMarkedForDeletion returns all block metas as well as partial blocks (blocks without or with corrupted meta file) from the bucket.
-// This function excludes all blocks for deletion (no deletion delay applied).
+// This function excludes all blocks marked for deletion (no deletion delay applied).
 // It's caller responsibility to not change the returned metadata files. Maps can be modified.
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
