@@ -501,9 +501,8 @@ func TestIngesterQuerying(t *testing.T) {
 					defer s.Close()
 
 					baseFlags := map[string]string{
-						"-distributor.ingestion-tenant-shard-size":        "0",
-						"-ingester.ring.heartbeat-period":                 "1s",
-						"-querier.prefer-streaming-chunks-from-ingesters": strconv.FormatBool(streamingEnabled),
+						"-distributor.ingestion-tenant-shard-size": "0",
+						"-ingester.ring.heartbeat-period":          "1s",
 					}
 
 					flags := mergeFlags(
@@ -596,12 +595,10 @@ func TestIngesterQueryingWithRequestMinimization(t *testing.T) {
 			defer s.Close()
 
 			baseFlags := map[string]string{
-				"-distributor.ingestion-tenant-shard-size":        "0",
-				"-ingester.ring.heartbeat-period":                 "1s",
-				"-ingester.ring.zone-awareness-enabled":           "true",
-				"-ingester.ring.replication-factor":               "3",
-				"-querier.minimize-ingester-requests":             "true",
-				"-querier.prefer-streaming-chunks-from-ingesters": strconv.FormatBool(streamingEnabled),
+				"-distributor.ingestion-tenant-shard-size": "0",
+				"-ingester.ring.heartbeat-period":          "1s",
+				"-ingester.ring.zone-awareness-enabled":    "true",
+				"-ingester.ring.replication-factor":        "3",
 			}
 
 			flags := mergeFlags(

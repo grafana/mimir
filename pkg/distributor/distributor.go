@@ -193,9 +193,7 @@ type Config struct {
 
 	// This config is dynamically injected because it is defined in the querier config.
 	ShuffleShardingLookbackPeriod              time.Duration `yaml:"-"`
-	PreferStreamingChunksFromIngesters         bool          `yaml:"-"`
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
-	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
 	PreferAvailabilityZone                     string        `yaml:"-"`
 
@@ -1525,7 +1523,7 @@ func (d *Distributor) queryQuorumConfigForReplicationSets(ctx context.Context, r
 	}
 
 	return ring.DoUntilQuorumConfig{
-		MinimizeRequests: d.cfg.MinimizeIngesterRequests,
+		MinimizeRequests: true,
 		HedgingDelay:     d.cfg.MinimiseIngesterRequestsHedgingDelay,
 		ZoneSorter:       zoneSorter,
 		Logger:           spanlogger.FromContext(ctx, d.log),

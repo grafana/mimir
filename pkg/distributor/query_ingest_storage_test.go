@@ -37,14 +37,13 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 		ingesterDataByZone map[string][]*mimirpb.WriteRequest
 
 		preferZone               string
-		minimizeIngesterRequests bool
 		shuffleShardSize         int
 		matchers                 []*labels.Matcher
 		expectedResponse         model.Matrix
 		expectedQueriedIngesters int
 		expectedErr              error
 	}{
-		"should query 1 ingester per partition if all ingesters are healthy, ingesters are replicated across 3 zones and requests minimization is enabled": {
+		"should query 1 ingester per partition if all ingesters are healthy, ingesters are replicated across 3 zones": {
 			ingesterStateByZone: map[string]ingesterZoneState{
 				"zone-a": {numIngesters: 5, happyIngesters: 5},
 				"zone-b": {numIngesters: 5, happyIngesters: 5},
@@ -74,12 +73,11 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
 			expectedQueriedIngesters: 5, // Requests minimization is enabled.
 		},
-		"should query all ingesters if all ingesters are healthy, ingesters are replicated across 3 zones and requests minimization is disabled": {
+		"should query all ingesters if all ingesters are healthy, ingesters are replicated across 3 zones": {
 			ingesterStateByZone: map[string]ingesterZoneState{
 				"zone-a": {numIngesters: 5, happyIngesters: 5},
 				"zone-b": {numIngesters: 5, happyIngesters: 5},
@@ -109,12 +107,11 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: false,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
 			expectedQueriedIngesters: 15, // Requests minimization is disabled.
 		},
-		"should query 1 ingester per partition if all ingesters are healthy, ingesters are replicated across 2 zones and requests minimization is enabled": {
+		"should query 1 ingester per partition if all ingesters are healthy, ingesters are replicated across 2 zones": {
 			ingesterStateByZone: map[string]ingesterZoneState{
 				"zone-a": {numIngesters: 5, happyIngesters: 5},
 				"zone-b": {numIngesters: 5, happyIngesters: 5},
@@ -136,7 +133,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
 			expectedQueriedIngesters: 5,
@@ -163,7 +159,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{mustEqualMatcher("not", "found")},
 			expectedResponse:         expectedResponse(0, 0, false),
 			expectedQueriedIngesters: 5,
@@ -188,7 +183,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
 			expectedQueriedIngesters: 5 /* zone-a */ + 2, /* the two failed fall back to zone-b */
@@ -213,7 +207,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
 			expectedQueriedIngesters: 5, /* zone-a. zone-b isn't queried because of minimization */
@@ -236,7 +229,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 0, false),
 			expectedQueriedIngesters: 5 /* zone-a */ + 2, /* the two failed fall back to zone-b */
@@ -264,7 +256,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
 			expectedQueriedIngesters: 5 /* zone-a */ + 1, /* fall back one failed request to zone-b */
@@ -292,7 +283,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 			},
 			shuffleShardSize:         2, // shuffle-sharding chooses partitions 1 and 2 for this tenant
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo1", "foo2"),
 			expectedQueriedIngesters: 2, /* zone-a only with shuffle-shard of 2 */
@@ -320,7 +310,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 			},
 			shuffleShardSize:         2, // shuffle-sharding chooses partitions 1 and 2 for this tenant
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo1", "foo2"),
 			expectedQueriedIngesters: 2, /* zone-a only with shuffle-shard of 2 */
@@ -347,7 +336,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
 			expectedQueriedIngesters: 4 /* zone-a ingesters (excluding LEAVING one) */ + 1, /* zone-b ingester as a fallback for the LEAVING one */
@@ -374,7 +362,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
 			expectedQueriedIngesters: 4 /* zone-a ingesters (excluding JOINING one) */ + 1, /* zone-b ingester as a fallback for the LEAVING one */
@@ -400,10 +387,9 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
-			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
-			expectedErr:              ring.ErrTooManyUnhealthyInstances,
+			preferZone:  "zone-a",
+			matchers:    []*labels.Matcher{selectAllSeriesMatcher},
+			expectedErr: ring.ErrTooManyUnhealthyInstances,
 		},
 		"should fail if all the ingesters owning a partition are in JOINING state": {
 			ingesterStateByZone: map[string]ingesterZoneState{
@@ -426,10 +412,9 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
-			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
-			expectedErr:              ring.ErrTooManyUnhealthyInstances,
+			preferZone:  "zone-a",
+			matchers:    []*labels.Matcher{selectAllSeriesMatcher},
+			expectedErr: ring.ErrTooManyUnhealthyInstances,
 		},
 		"should succeed if there are ingesters in LEAVING state in both zones, but they own different partitions": {
 			ingesterStateByZone: map[string]ingesterZoneState{
@@ -453,7 +438,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
 			expectedQueriedIngesters: 2 /* zone-a ingesters (excluding LEAVING one) */ + 3, /* zone-b ingesters as fallback for the LEAVING ones */
@@ -480,7 +464,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			preferZone:               "zone-a",
-			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
 			expectedQueriedIngesters: 2 /* zone-a ingesters (excluding JOINING one) */ + 3, /* zone-b ingesters as fallback for the JOINING ones */
@@ -507,7 +490,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				limits:               limits,
 				configure: func(config *Config) {
 					config.PreferAvailabilityZone = testData.preferZone
-					config.MinimizeIngesterRequests = testData.minimizeIngesterRequests
 				},
 			}
 

@@ -85,10 +85,7 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			return err
 		}
 
-		if d.cfg.PreferStreamingChunksFromIngesters {
-			req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
-		}
-
+		req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 		if err != nil {
 			return err

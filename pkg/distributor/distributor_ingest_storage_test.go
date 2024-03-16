@@ -516,42 +516,33 @@ func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
+			// Create distributor
+			distributors, _, _, _ := prepare(t, prepConfig{
+				numDistributors:      1,
+				ingesterStateByZone:  testData.ingesterStateByZone,
+				ingesterDataByZone:   testData.ingesterDataByZone,
+				ingestStorageEnabled: true,
+				configure: func(config *Config) {
+					config.PreferAvailabilityZone = preferredZone
+				},
+				limits: func() *validation.Limits {
+					limits := prepareDefaultLimits()
+					limits.IngestionPartitionsTenantShardSize = testData.shardSize
+					return limits
+				}(),
+			})
 
-				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
-					t.Parallel()
+			// Fetch user stats.
+			ctx := user.InjectOrgID(context.Background(), "test")
+			res, err := distributors[0].UserStats(ctx, cardinality.InMemoryMethod)
 
-					// Create distributor
-					distributors, _, _, _ := prepare(t, prepConfig{
-						numDistributors:      1,
-						ingesterStateByZone:  testData.ingesterStateByZone,
-						ingesterDataByZone:   testData.ingesterDataByZone,
-						ingestStorageEnabled: true,
-						configure: func(config *Config) {
-							config.PreferAvailabilityZone = preferredZone
-							config.MinimizeIngesterRequests = minimizeIngesterRequests
-						},
-						limits: func() *validation.Limits {
-							limits := prepareDefaultLimits()
-							limits.IngestionPartitionsTenantShardSize = testData.shardSize
-							return limits
-						}(),
-					})
-
-					// Fetch user stats.
-					ctx := user.InjectOrgID(context.Background(), "test")
-					res, err := distributors[0].UserStats(ctx, cardinality.InMemoryMethod)
-
-					if testData.expectedErr != nil {
-						require.ErrorIs(t, err, testData.expectedErr)
-						return
-					}
-
-					require.NoError(t, err)
-					assert.Equal(t, testData.expectedSeries, res.NumSeries)
-				})
+			if testData.expectedErr != nil {
+				require.ErrorIs(t, err, testData.expectedErr)
+				return
 			}
+
+			require.NoError(t, err)
+			assert.Equal(t, testData.expectedSeries, res.NumSeries)
 		})
 	}
 }
@@ -818,42 +809,33 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
+			// Create distributor
+			distributors, _, _, _ := prepare(t, prepConfig{
+				numDistributors:      1,
+				ingesterStateByZone:  testData.ingesterStateByZone,
+				ingesterDataByZone:   testData.ingesterDataByZone,
+				ingestStorageEnabled: true,
+				configure: func(config *Config) {
+					config.PreferAvailabilityZone = preferredZone
+				},
+				limits: func() *validation.Limits {
+					limits := prepareDefaultLimits()
+					limits.IngestionPartitionsTenantShardSize = testData.shardSize
+					return limits
+				}(),
+			})
 
-				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
-					t.Parallel()
+			// Fetch label values cardinality.
+			ctx := user.InjectOrgID(context.Background(), "test")
+			_, res, err := distributors[0].LabelValuesCardinality(ctx, reqLabelNames, nil, cardinality.InMemoryMethod)
 
-					// Create distributor
-					distributors, _, _, _ := prepare(t, prepConfig{
-						numDistributors:      1,
-						ingesterStateByZone:  testData.ingesterStateByZone,
-						ingesterDataByZone:   testData.ingesterDataByZone,
-						ingestStorageEnabled: true,
-						configure: func(config *Config) {
-							config.PreferAvailabilityZone = preferredZone
-							config.MinimizeIngesterRequests = minimizeIngesterRequests
-						},
-						limits: func() *validation.Limits {
-							limits := prepareDefaultLimits()
-							limits.IngestionPartitionsTenantShardSize = testData.shardSize
-							return limits
-						}(),
-					})
-
-					// Fetch label values cardinality.
-					ctx := user.InjectOrgID(context.Background(), "test")
-					_, res, err := distributors[0].LabelValuesCardinality(ctx, reqLabelNames, nil, cardinality.InMemoryMethod)
-
-					if testData.expectedErr != nil {
-						require.ErrorIs(t, err, testData.expectedErr)
-						return
-					}
-
-					require.NoError(t, err)
-					assert.ElementsMatch(t, expectedRes, res.Items)
-				})
+			if testData.expectedErr != nil {
+				require.ErrorIs(t, err, testData.expectedErr)
+				return
 			}
+
+			require.NoError(t, err)
+			assert.ElementsMatch(t, expectedRes, res.Items)
 		})
 	}
 }
@@ -1111,46 +1093,37 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistencyWithIngestStorage(t 
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
+			// Create distributor.
+			distributors, _, _, _ := prepare(t, prepConfig{
+				ingesterStateByZone:  testData.ingesterStateByZone,
+				ingesterDataByZone:   testData.ingesterDataByZone,
+				numDistributors:      1,
+				ingestStorageEnabled: true,
+				configure: func(config *Config) {
+					config.PreferAvailabilityZone = preferredZone
+				},
+				limits: func() *validation.Limits {
+					limits := prepareDefaultLimits()
+					limits.IngestionPartitionsTenantShardSize = testData.shardSize
+					return limits
+				}(),
+			})
 
-				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
-					t.Parallel()
+			ctx := user.InjectOrgID(context.Background(), "test")
+			qStats, ctx := stats.ContextWithEmptyStats(ctx)
 
-					// Create distributor.
-					distributors, _, _, _ := prepare(t, prepConfig{
-						ingesterStateByZone:  testData.ingesterStateByZone,
-						ingesterDataByZone:   testData.ingesterDataByZone,
-						numDistributors:      1,
-						ingestStorageEnabled: true,
-						configure: func(config *Config) {
-							config.MinimizeIngesterRequests = minimizeIngesterRequests
-							config.PreferAvailabilityZone = preferredZone
-						},
-						limits: func() *validation.Limits {
-							limits := prepareDefaultLimits()
-							limits.IngestionPartitionsTenantShardSize = testData.shardSize
-							return limits
-						}(),
-					})
-
-					ctx := user.InjectOrgID(context.Background(), "test")
-					qStats, ctx := stats.ContextWithEmptyStats(ctx)
-
-					// Query active series.
-					series, err := distributors[0].ActiveSeries(ctx, reqMatchers)
-					if testData.expectedErr != nil {
-						require.ErrorIs(t, err, testData.expectedErr)
-						return
-					}
-
-					require.NoError(t, err)
-					assert.Equal(t, testData.expectedSeriesCount, len(series))
-
-					// Check that query stats are set correctly.
-					assert.Equal(t, testData.expectedSeriesCount, int(qStats.GetFetchedSeriesCount()))
-				})
+			// Query active series.
+			series, err := distributors[0].ActiveSeries(ctx, reqMatchers)
+			if testData.expectedErr != nil {
+				require.ErrorIs(t, err, testData.expectedErr)
+				return
 			}
+
+			require.NoError(t, err)
+			assert.Equal(t, testData.expectedSeriesCount, len(series))
+
+			// Check that query stats are set correctly.
+			assert.Equal(t, testData.expectedSeriesCount, int(qStats.GetFetchedSeriesCount()))
 		})
 	}
 }

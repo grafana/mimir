@@ -2345,19 +2345,15 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 
 	// Programmatically build different scenarios under which run the tests.
 	type scenario struct {
-		ingestStorageEnabled     bool
-		minimizeIngesterRequests bool
+		ingestStorageEnabled bool
 	}
 
 	scenarios := map[string]scenario{}
-	for _, minimizeIngesterRequests := range []bool{false, true} {
-		for _, ingestStorageEnabled := range []bool{false, true} {
-			name := fmt.Sprintf("minimize ingester requests: %t, ingest storage enabled: %t", minimizeIngesterRequests, ingestStorageEnabled)
+	for _, ingestStorageEnabled := range []bool{false, true} {
+		name := fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled)
 
-			scenarios[name] = scenario{
-				ingestStorageEnabled:     ingestStorageEnabled,
-				minimizeIngesterRequests: minimizeIngesterRequests,
-			}
+		scenarios[name] = scenario{
+			ingestStorageEnabled: ingestStorageEnabled,
 		}
 	}
 
@@ -2378,9 +2374,6 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 						happyIngesters:       numIngesters,
 						numDistributors:      1,
 						ingestStorageEnabled: scenarioData.ingestStorageEnabled,
-						configure: func(config *Config) {
-							config.MinimizeIngesterRequests = scenarioData.minimizeIngesterRequests
-						},
 						limits: func() *validation.Limits {
 							limits := prepareDefaultLimits()
 							limits.ActiveSeriesResultsMaxSizeBytes = responseSizeLimitBytes
@@ -2781,40 +2774,29 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistency(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
+			// Create distributor.
+			distributors, _, _, _ := prepare(t, prepConfig{
+				ingesterStateByZone: testData.ingesterStateByZone,
+				ingesterDataByZone:  testData.ingesterDataByZone,
+				numDistributors:     1,
+				shuffleShardSize:    testData.shardSize,
+			})
 
-				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
-					t.Parallel()
+			ctx := user.InjectOrgID(context.Background(), "test")
+			qStats, ctx := stats.ContextWithEmptyStats(ctx)
 
-					// Create distributor.
-					distributors, _, _, _ := prepare(t, prepConfig{
-						ingesterStateByZone: testData.ingesterStateByZone,
-						ingesterDataByZone:  testData.ingesterDataByZone,
-						numDistributors:     1,
-						shuffleShardSize:    testData.shardSize,
-						configure: func(config *Config) {
-							config.MinimizeIngesterRequests = minimizeIngesterRequests
-						},
-					})
-
-					ctx := user.InjectOrgID(context.Background(), "test")
-					qStats, ctx := stats.ContextWithEmptyStats(ctx)
-
-					// Query active series.
-					series, err := distributors[0].ActiveSeries(ctx, reqMatchers)
-					if testData.expectedErr != nil {
-						require.ErrorIs(t, err, testData.expectedErr)
-						return
-					}
-
-					require.NoError(t, err)
-					assert.Equal(t, testData.expectedSeriesCount, len(series))
-
-					// Check that query stats are set correctly.
-					assert.Equal(t, testData.expectedSeriesCount, int(qStats.GetFetchedSeriesCount()))
-				})
+			// Query active series.
+			series, err := distributors[0].ActiveSeries(ctx, reqMatchers)
+			if testData.expectedErr != nil {
+				require.ErrorIs(t, err, testData.expectedErr)
+				return
 			}
+
+			require.NoError(t, err)
+			assert.Equal(t, testData.expectedSeriesCount, len(series))
+
+			// Check that query stats are set correctly.
+			assert.Equal(t, testData.expectedSeriesCount, int(qStats.GetFetchedSeriesCount()))
 		})
 	}
 }
@@ -3736,37 +3718,26 @@ func TestDistributor_UserStats(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
+			// Create distributor
+			distributors, _, _, _ := prepare(t, prepConfig{
+				numDistributors:     1,
+				replicationFactor:   3,
+				ingesterStateByZone: testData.ingesterStateByZone,
+				ingesterDataByZone:  testData.ingesterDataByZone,
+				shuffleShardSize:    testData.shardSize,
+			})
 
-				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
-					t.Parallel()
+			// Fetch user stats.
+			ctx := user.InjectOrgID(context.Background(), "test")
+			res, err := distributors[0].UserStats(ctx, cardinality.InMemoryMethod)
 
-					// Create distributor
-					distributors, _, _, _ := prepare(t, prepConfig{
-						numDistributors:     1,
-						replicationFactor:   3,
-						ingesterStateByZone: testData.ingesterStateByZone,
-						ingesterDataByZone:  testData.ingesterDataByZone,
-						shuffleShardSize:    testData.shardSize,
-						configure: func(config *Config) {
-							config.MinimizeIngesterRequests = minimizeIngesterRequests
-						},
-					})
-
-					// Fetch user stats.
-					ctx := user.InjectOrgID(context.Background(), "test")
-					res, err := distributors[0].UserStats(ctx, cardinality.InMemoryMethod)
-
-					if testData.expectedErr != nil {
-						require.ErrorIs(t, err, testData.expectedErr)
-						return
-					}
-
-					require.NoError(t, err)
-					assert.Equal(t, int(testData.expectedSeries), int(res.NumSeries))
-				})
+			if testData.expectedErr != nil {
+				require.ErrorIs(t, err, testData.expectedErr)
+				return
 			}
+
+			require.NoError(t, err)
+			assert.Equal(t, int(testData.expectedSeries), int(res.NumSeries))
 		})
 	}
 }
@@ -3857,51 +3828,40 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
+			// Create distributor
+			ds, ingesters, _, _ := prepare(t, prepConfig{
+				numIngesters:      numIngesters,
+				happyIngesters:    testData.happyIngesters,
+				numDistributors:   1,
+				replicationFactor: replicationFactor,
+				ingesterZones:     testData.ingesterZones,
+			})
 
-				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
-					t.Parallel()
+			// Push fixtures
+			ctx := user.InjectOrgID(context.Background(), "label-values-cardinality")
 
-					// Create distributor
-					ds, ingesters, _, _ := prepare(t, prepConfig{
-						numIngesters:      numIngesters,
-						happyIngesters:    testData.happyIngesters,
-						numDistributors:   1,
-						replicationFactor: replicationFactor,
-						ingesterZones:     testData.ingesterZones,
-						configure: func(config *Config) {
-							config.MinimizeIngesterRequests = minimizeIngesterRequests
-						},
-					})
-
-					// Push fixtures
-					ctx := user.InjectOrgID(context.Background(), "label-values-cardinality")
-
-					for _, series := range fixtures {
-						req := mockWriteRequest(series.labels, series.value, series.timestamp)
-						_, err := ds[0].Push(ctx, req)
-						require.NoError(t, err)
-					}
-
-					// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
-					// the final ingester may not have received series yet.
-					// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
-					test.Poll(t, time.Second, testData.expectedResult, func() interface{} {
-						seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers, cardinality.InMemoryMethod)
-						require.NoError(t, err)
-						assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal)
-						// Make sure the resultant label names are sorted
-						sort.Slice(cardinalityMap.Items, func(l, r int) bool {
-							return cardinalityMap.Items[l].LabelName < cardinalityMap.Items[r].LabelName
-						})
-						return cardinalityMap
-					})
-
-					// Make sure enough ingesters were queried
-					assert.GreaterOrEqual(t, countMockIngestersCalled(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
-				})
+			for _, series := range fixtures {
+				req := mockWriteRequest(series.labels, series.value, series.timestamp)
+				_, err := ds[0].Push(ctx, req)
+				require.NoError(t, err)
 			}
+
+			// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
+			// the final ingester may not have received series yet.
+			// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
+			test.Poll(t, time.Second, testData.expectedResult, func() interface{} {
+				seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers, cardinality.InMemoryMethod)
+				require.NoError(t, err)
+				assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal)
+				// Make sure the resultant label names are sorted
+				sort.Slice(cardinalityMap.Items, func(l, r int) bool {
+					return cardinalityMap.Items[l].LabelName < cardinalityMap.Items[r].LabelName
+				})
+				return cardinalityMap
+			})
+
+			// Make sure enough ingesters were queried
+			assert.GreaterOrEqual(t, countMockIngestersCalled(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
 		})
 	}
 }
@@ -4170,36 +4130,25 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
+			// Create distributor.
+			distributors, _, _, _ := prepare(t, prepConfig{
+				ingesterStateByZone: testData.ingesterStateByZone,
+				ingesterDataByZone:  testData.ingesterDataByZone,
+				numDistributors:     1,
+				shuffleShardSize:    testData.shardSize,
+			})
 
-				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
-					t.Parallel()
+			// Fetch label values cardinality.
+			ctx := user.InjectOrgID(context.Background(), "test")
+			_, res, err := distributors[0].LabelValuesCardinality(ctx, reqLabelNames, nil, cardinality.InMemoryMethod)
 
-					// Create distributor.
-					distributors, _, _, _ := prepare(t, prepConfig{
-						ingesterStateByZone: testData.ingesterStateByZone,
-						ingesterDataByZone:  testData.ingesterDataByZone,
-						numDistributors:     1,
-						shuffleShardSize:    testData.shardSize,
-						configure: func(config *Config) {
-							config.MinimizeIngesterRequests = minimizeIngesterRequests
-						},
-					})
-
-					// Fetch label values cardinality.
-					ctx := user.InjectOrgID(context.Background(), "test")
-					_, res, err := distributors[0].LabelValuesCardinality(ctx, reqLabelNames, nil, cardinality.InMemoryMethod)
-
-					if testData.expectedErr != nil {
-						require.ErrorIs(t, err, testData.expectedErr)
-						return
-					}
-
-					require.NoError(t, err)
-					assert.ElementsMatch(t, expectedRes, res.Items)
-				})
+			if testData.expectedErr != nil {
+				require.ErrorIs(t, err, testData.expectedErr)
+				return
 			}
+
+			require.NoError(t, err)
+			assert.ElementsMatch(t, expectedRes, res.Items)
 		})
 	}
 }
