@@ -45,7 +45,6 @@ spec:
         - name: nginx
           image: docker.io/nginxinc/nginx-unprivileged:1.25-alpine
           imagePullPolicy: IfNotPresent
-          args:
           volumeMounts:
             - name: nginx-config
               mountPath: /etc/nginx/nginx.conf
@@ -74,8 +73,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname

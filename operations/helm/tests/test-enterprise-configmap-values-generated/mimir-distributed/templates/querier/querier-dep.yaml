@@ -61,7 +61,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-              subPath: 
             - name: active-queries
               mountPath: /active-query-tracker
           ports:

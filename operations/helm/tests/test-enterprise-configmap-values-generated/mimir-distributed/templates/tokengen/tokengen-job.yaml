@@ -52,7 +52,6 @@ spec:
               mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
-          env:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret

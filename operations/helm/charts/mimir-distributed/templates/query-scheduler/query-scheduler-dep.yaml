@@ -83,6 +83,8 @@ spec:
             {{- toYaml .Values.query_scheduler.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.query_scheduler.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.query_scheduler }}
+          {{- if or .Values.global.extraEnv .Values.query_scheduler.env $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -90,11 +92,12 @@ spec:
             {{- with .Values.query_scheduler.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.query_scheduler }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.query_scheduler.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -102,6 +105,7 @@ spec:
             {{- with .Values.query_scheduler.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 {{- if .Values.query_scheduler.extraContainers }}
 {{ toYaml .Values.query_scheduler.extraContainers | indent 8}}
 {{- end }}

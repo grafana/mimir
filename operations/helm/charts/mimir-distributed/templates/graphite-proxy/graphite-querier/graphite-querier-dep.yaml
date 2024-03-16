@@ -66,7 +66,9 @@ spec:
               mountPath: /license
             - name: storage
               mountPath: "/data"
+              {{- if .Values.graphite.querier.persistence.subPath }}
               subPath: {{ .Values.graphite.querier.persistence.subPath }}
+              {{- end }}
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -84,6 +86,8 @@ spec:
             {{- toYaml .Values.graphite.querier.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.graphite.querier.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.graphite.querier }}
+          {{- if or .Values.global.extraEnv .Values.graphite.querier.env $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
@@ -91,11 +95,12 @@ spec:
             {{- with .Values.graphite.querier.env }}
               {{ toYaml . | nindent 12 }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.graphite.querier }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.admin_api.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -103,6 +108,7 @@ spec:
             {{- with .Values.admin_api.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
       {{- with .Values.graphite.querier.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

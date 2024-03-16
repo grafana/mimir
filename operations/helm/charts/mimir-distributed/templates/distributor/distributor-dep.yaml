@@ -83,7 +83,9 @@ spec:
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
               mountPath: "/data"
+              {{- if .Values.distributor.persistence.subPath }}
               subPath: {{ .Values.distributor.persistence.subPath }}
+              {{- end }}
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -104,6 +106,9 @@ spec:
             {{- toYaml .Values.distributor.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.distributor.containerSecurityContext | nindent 12 }}
+          {{- $cpu_request := dig "requests" "cpu" nil .Values.distributor.resources }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.distributor }}
+          {{- if or .Values.global.extraEnv .Values.distributor.env $cpu_request $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -111,17 +116,17 @@ spec:
             {{- with .Values.distributor.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- $cpu_request := dig "requests" "cpu" nil .Values.distributor.resources }}
             {{- if $cpu_request }}
             {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
             - name: "GOMAXPROCS"
               value: {{ max $cpu_request_doubled 8 | toString | toYaml }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.distributor }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.distributor.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -129,6 +134,7 @@ spec:
             {{- with .Values.distributor.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 {{- if .Values.distributor.extraContainers }}
 {{ toYaml .Values.distributor.extraContainers | indent 8}}
 {{- end }}

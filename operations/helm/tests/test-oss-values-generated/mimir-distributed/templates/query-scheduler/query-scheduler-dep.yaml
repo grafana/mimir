@@ -80,7 +80,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret

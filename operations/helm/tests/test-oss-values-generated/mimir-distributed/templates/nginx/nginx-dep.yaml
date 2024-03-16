@@ -52,7 +52,6 @@ spec:
             - name: http-metric
               containerPort: 8080
               protocol: TCP
-          env:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
