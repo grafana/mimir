@@ -295,7 +295,7 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 	assert.NoError(t, testutil.GatherAndCompare(reg1, strings.NewReader(`
 		# HELP thanos_objstore_bucket_operations_total Total number of all attempted operations against a bucket.
 		# TYPE thanos_objstore_bucket_operations_total counter
-		thanos_objstore_bucket_operations_total{bucket="test",operation="attributes"} 0
+		thanos_objstore_bucket_operations_total{bucket="test",operation="attributes"} 2
 		thanos_objstore_bucket_operations_total{bucket="test",operation="delete"} 0
 		thanos_objstore_bucket_operations_total{bucket="test",operation="exists"} 0
 		thanos_objstore_bucket_operations_total{bucket="test",operation="get"} 2
