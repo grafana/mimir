@@ -11,7 +11,7 @@
 * [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
 * [BUGFIX] querier: Don't cache context.Canceled errors for bucket index. #7620
 * [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622
-* [BUGFIX] Ingester: when receiving multiple exemplars for a native histogram in mimir via remote write, only report an error if all are older than the latest exemplar as this could be a partial update. #7640
+* [BUGFIX] Ingester: when receiving multiple exemplars for a native histogram via remote write, only report an error if all are older than the latest exemplar as this could be a partial update. #7640
 
 ### Mixin
 
