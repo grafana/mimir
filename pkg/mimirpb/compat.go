@@ -88,6 +88,13 @@ func (req *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []
 	return req
 }
 
+func (req *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteRequest {
+	for _, e := range exemplars {
+		req.Timeseries[i].Exemplars = append(req.Timeseries[i].Exemplars, *e)
+	}
+	return req
+}
+
 // FromLabelAdaptersToMetric converts []LabelAdapter to a model.Metric.
 // Don't do this on any performance sensitive paths.
 func FromLabelAdaptersToMetric(ls []LabelAdapter) model.Metric {
