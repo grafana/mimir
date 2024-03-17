@@ -158,7 +158,6 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
 				"-query-frontend.query-stats-enabled":                          "true",
 				"-query-frontend.parallelize-shardable-queries":                strconv.FormatBool(testCfg.queryShardingEnabled),
-				"-querier.prefer-streaming-chunks-from-ingesters":              strconv.FormatBool(streamingEnabled),
 				"-querier.prefer-streaming-chunks-from-store-gateways":         strconv.FormatBool(streamingEnabled),
 			})
 
@@ -865,7 +864,6 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 				"-blocks-storage.bucket-store.sync-interval":           "1s",
 				"-blocks-storage.tsdb.retention-period":                ((blockRangePeriod * 2) - 1).String(),
 				"-querier.max-fetched-series-per-query":                "3",
-				"-querier.prefer-streaming-chunks-from-ingesters":      strconv.FormatBool(streamingEnabled),
 				"-querier.prefer-streaming-chunks-from-store-gateways": strconv.FormatBool(streamingEnabled),
 			})
 
