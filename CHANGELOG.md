@@ -28,6 +28,8 @@
 
 ### Query-tee
 
+* [ENHANCEMENT] Log queries that take longer than `proxy.log-slow-query-response-threshold` when compared to other backends. #7346
+
 ### Documentation
 
 ### Tools
