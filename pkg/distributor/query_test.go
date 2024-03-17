@@ -297,7 +297,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 			queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 			queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 			require.NoError(t, err)
-			assert.Len(t, queryRes.Chunkseries, initialSeries)
+			assert.Len(t, queryRes.StreamingSeries, initialSeries)
 
 			firstRequestIngesterQueryCount := countCalls(ingesters, "QueryStream")
 
