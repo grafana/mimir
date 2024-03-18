@@ -171,13 +171,12 @@ func makeTestFullState(content string) alertspb.FullStateDesc {
 	}
 }
 
-func makeTestGrafanaAlertConfig(t *testing.T, user, cfg, hash string, id, createdAtTimestamp int64, isDefault bool) alertspb.GrafanaAlertConfigDesc {
+func makeTestGrafanaAlertConfig(t *testing.T, user, cfg, hash string, createdAtTimestamp int64, isDefault bool) alertspb.GrafanaAlertConfigDesc {
 	t.Helper()
 
 	return alertspb.GrafanaAlertConfigDesc{
 		User:               user,
 		RawConfig:          cfg,
-		Id:                 id,
 		Hash:               hash,
 		CreatedAtTimestamp: createdAtTimestamp,
 		Default:            isDefault,
@@ -318,8 +317,8 @@ func TestBucketAlertStore_GetSetDeleteGrafanaAlertConfig(t *testing.T) {
 
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
-	cfg1 := makeTestGrafanaAlertConfig(t, "user-1", "config one", "3edf15da6a1e11c454e7285d9443071a", 1, now, false)
-	cfg2 := makeTestGrafanaAlertConfig(t, "user-2", "config two", "b7aed2b102aa09fe21f324392ace74eb", 2, now, false)
+	cfg1 := makeTestGrafanaAlertConfig(t, "user-1", "config one", "3edf15da6a1e11c454e7285d9443071a", now, false)
+	cfg2 := makeTestGrafanaAlertConfig(t, "user-2", "config two", "b7aed2b102aa09fe21f324392ace74eb", now, false)
 
 	// The storage is empty.
 	{
