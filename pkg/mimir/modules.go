@@ -749,9 +749,13 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		frontendSvc = frontendV2
 	}
 
-	// Wrap roundtripper into Tripperware and then wrap this with the roundtripper that checks that the frontend is ready to receive requests.
+	// Wrap roundtripper into Tripperware and then wrap this with the roundtripper that checks
+	// that the frontend is ready to receive requests when running v1 or v2 of the query-frontend,
+	// i.e. not using the "downstream-url" feature.
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
-	roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendSvc, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
+	if frontendSvc != nil {
+		roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendSvc, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
+	}
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
