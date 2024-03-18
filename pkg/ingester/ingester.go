@@ -529,12 +529,14 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 
 	if i.ownedSeriesService != nil {
-		// Start owned series service asynchronously. We don't wait for ownedSeriesService to enter Running state here.
-		// This service will perform initial check if ring is not empty, and switch to Running state right after.
-		// While this initial check runs, we already allow read requests to proceed, but we block push requests (see checkAvailableForPushRequests).
+		// Start owned series service asynchronously, and before starting lifecyclers. We wait for ownedSeriesService
+		// to enter Running state here, that is ownedSeriesService computes owned series if ring is not empty.
+		// If ring is empty, ownedSeriesService doesn't do anything.
+		// If ring is not empty, but instance is not in the ring yet, ownedSeriesService will compute 0 owned series.
 		//
-		// We pass ingester's service context to ownedSeriesService, to make ownedSeriesService stop when ingester exits Running state.
-		if err := i.ownedSeriesService.StartAsync(ctx); err != nil {
+		// We pass ingester's service context to ownedSeriesService, to make ownedSeriesService stop when ingester's
+		// context is done (i.e. when ingester fails in Starting state, or when ingester exits Running state).
+		if err := services.StartAndAwaitRunning(ctx, i.ownedSeriesService); err != nil {
 			return errors.Wrap(err, "failed to start owned series service")
 		}
 	}
@@ -914,7 +916,7 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 //
 // The shouldFinish flag tells if the caller must call finish on this request. If not, there is already someone in the call stack who will do that.
 func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ context.Context, shouldFinish bool, err error) {
-	if err := i.checkAvailableForPushRequests(); err != nil {
+	if err := i.checkAvailable(); err != nil {
 		return nil, false, err
 	}
 
@@ -3517,21 +3519,6 @@ func (i *Ingester) checkAvailable() error {
 		return nil
 	}
 	return newUnavailableError(s)
-}
-
-// checkAvailableForPushRequests checks if ingester is available for push requests.
-func (i *Ingester) checkAvailableForPushRequests() error {
-	if err := i.checkAvailable(); err != nil {
-		return err
-	}
-
-	if i.cfg.UseIngesterOwnedSeriesForLimits {
-		// Owned series service will enter Running state after initial check (if ring was empty, it skips the check).
-		if i.ownedSeriesService.State() != services.Running {
-			return newUnavailableMsgError(ingesterUnavailableForPushRequestsMsg)
-		}
-	}
-	return nil
 }
 
 // PushToStorage implements ingest.Pusher interface for ingestion via ingest-storage.

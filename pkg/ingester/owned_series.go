@@ -125,7 +125,7 @@ func (oss *ownedSeriesService) starting(ctx context.Context) error {
 func (oss *ownedSeriesService) running(ctx context.Context) error {
 	tickerInterval := oss.interval
 	if !oss.initialRingCheckSucceeded {
-		tickerInterval = tickerInterval / 10
+		tickerInterval = 100 * time.Millisecond
 	}
 
 	t := time.NewTicker(tickerInterval)

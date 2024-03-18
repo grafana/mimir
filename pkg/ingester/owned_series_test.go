@@ -1333,7 +1333,7 @@ func TestOwnedSeriesStartsQuicklyWithEmptyIngesterRing(t *testing.T) {
 	})
 }
 
-func TestOwnedSeriesWaitsForPartitionBeforeEnteringRunningState(t *testing.T) {
+func TestOwnedSeriesStartsQuicklyWithEmptyPartitionsRing(t *testing.T) {
 	partitionsKVStore, partitionsKVStoreCloser := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, partitionsKVStoreCloser.Close()) })
 
