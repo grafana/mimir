@@ -1196,7 +1196,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			var m model.Matrix
 			if len(resp.Chunkseries) == 0 {
-				m, err = client.TimeSeriesChunksToMatrix(0, 10, nil)
+				m, err = client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
 			} else {
 				m, err = client.TimeSeriesChunksToMatrix(0, 10, resp.Chunkseries)
 			}
@@ -4835,6 +4835,8 @@ type prepConfig struct {
 	ingestStorageEnabled    bool
 	ingestStoragePartitions int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
 	ingestStorageKafka      *kfake.Cluster
+
+	sendNonStreamingResponse bool
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -4973,6 +4975,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
 			circuitBreakerOpen:            cfg.circuitBreakerOpen,
+			sendNonStreamingResponse:      cfg.sendNonStreamingResponse,
 		}
 
 		// Init the partition reader if the ingest storage is enabled.
@@ -5563,6 +5566,7 @@ type mockIngester struct {
 	tokens                        []uint32
 	id                            int
 	circuitBreakerOpen            bool
+	sendNonStreamingResponse      bool
 
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
@@ -5801,7 +5805,16 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			}
 		}
 
-		if req.StreamingChunksBatchSize > 0 {
+		if i.sendNonStreamingResponse {
+			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
+				Chunkseries: []client.TimeSeriesChunk{
+					{
+						Labels: ts.Labels,
+						Chunks: wireChunks,
+					},
+				},
+			})
+		} else {
 			streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
 				StreamingSeries: []client.QueryStreamSeries{
 					{
@@ -5819,28 +5832,19 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 					},
 				},
 			})
-		} else {
-			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
-				Chunkseries: []client.TimeSeriesChunk{
-					{
-						Labels: ts.Labels,
-						Chunks: wireChunks,
-					},
-				},
-			})
 		}
 	}
 
 	var results []*client.QueryStreamResponse
 
-	if req.StreamingChunksBatchSize > 0 {
+	if i.sendNonStreamingResponse {
+		results = nonStreamingResponses
+	} else {
 		endOfLabelsMessage := &client.QueryStreamResponse{
 			IsEndOfSeriesStream: true,
 		}
 		results = append(streamingLabelResponses, endOfLabelsMessage)
 		results = append(results, streamingChunkResponses...)
-	} else {
-		results = nonStreamingResponses
 	}
 
 	return &stream{

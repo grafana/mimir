@@ -8,6 +8,7 @@ package client
 import (
 	"bytes"
 	"errors"
+	"fmt"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -60,6 +61,31 @@ func StreamsToMatrix(from, through model.Time, responses []*QueryStreamResponse)
 				return nil, err
 			}
 			result = append(result, series)
+		}
+	}
+	return result, nil
+}
+
+// StreamingSeriesToMatrix converts slice of []client.TimeSeriesChunk to a model.Matrix.
+func StreamingSeriesToMatrix(from, through model.Time, sSeries []StreamingSeries) (model.Matrix, error) {
+	if sSeries == nil {
+		return nil, nil
+	}
+
+	result := model.Matrix{}
+	streamingSeries := []labels.Labels{}
+	for _, series := range sSeries {
+		streamingSeries = append(streamingSeries, series.Labels)
+		for sourceIdx, source := range series.Sources {
+			chunks, err := source.StreamReader.GetChunks(source.SeriesIndex)
+			if err != nil {
+				return nil, fmt.Errorf("GetChunks() from stream reader for series %d from source %d: %w", source.SeriesIndex, sourceIdx, err)
+			}
+			stream, err := seriesChunksToMatrix(from, through, series.Labels, chunks)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, stream)
 		}
 	}
 	return result, nil
