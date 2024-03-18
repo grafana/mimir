@@ -88,6 +88,9 @@ func (req *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []
 	return req
 }
 
+// AddExemplarsAt appends exemplars to the timeseries at index i.
+// This is needed as the Add*Series functions only allow for a single exemplar
+// to be added per time series for simplicity.
 func (req *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteRequest {
 	for _, e := range exemplars {
 		req.Timeseries[i].Exemplars = append(req.Timeseries[i].Exemplars, *e)
