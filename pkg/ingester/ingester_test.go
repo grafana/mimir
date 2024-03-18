@@ -892,15 +892,16 @@ func TestIngester_Push(t *testing.T) {
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
-						},
+						// These are intentionally out of order to test the sorting.
 						{
 							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
 							TimestampMs: 2000,
 							Value:       2000,
+						},
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
 						},
 					},
 				),
