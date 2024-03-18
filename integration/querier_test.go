@@ -61,7 +61,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 			tenantShardSize:   1,
 			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
 		},
-		"shard size 1, ingester gRPC streaming enabled, memcached index cache, query sharding enabled": {
+		"shard size 1, memcached index cache, query sharding enabled": {
 			tenantShardSize:      1,
 			indexCacheBackend:    tsdb.IndexCacheBackendMemcached,
 			queryShardingEnabled: true,
@@ -851,7 +851,7 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 	const blockRangePeriod = 5 * time.Second
 
 	for _, streamingEnabled := range []bool{true, false} {
-		t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
+		t.Run(fmt.Sprintf("store-gateway streaming enabled: %v", streamingEnabled), func(t *testing.T) {
 			s, err := e2e.NewScenario(networkName)
 			require.NoError(t, err)
 			defer s.Close()
