@@ -37,7 +37,6 @@ const (
 )
 
 type UserGrafanaConfig struct {
-	ID                        int64  `json:"id"`
 	GrafanaAlertmanagerConfig string `json:"configuration"`
 	Hash                      string `json:"configuration_hash"`
 	CreatedAt                 int64  `json:"created"`
@@ -268,7 +267,6 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 	util.WriteJSONResponse(w, successResult{
 		Status: statusSuccess,
 		Data: &UserGrafanaConfig{
-			ID:                        cfg.Id,
 			GrafanaAlertmanagerConfig: cfg.RawConfig,
 			Hash:                      cfg.Hash,
 			CreatedAt:                 cfg.CreatedAtTimestamp,
@@ -304,7 +302,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	cfgDesc := alertspb.ToGrafanaProto(cfg.GrafanaAlertmanagerConfig, userID, cfg.Hash, cfg.ID, cfg.CreatedAt, cfg.Default)
+	cfgDesc := alertspb.ToGrafanaProto(cfg.GrafanaAlertmanagerConfig, userID, cfg.Hash, cfg.CreatedAt, cfg.Default)
 	err = am.store.SetGrafanaAlertConfig(r.Context(), cfgDesc)
 	if err != nil {
 		level.Error(logger).Log("msg", errStoringGrafanaConfig, "err", err.Error())
