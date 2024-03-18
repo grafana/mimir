@@ -529,6 +529,10 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 
 	if i.ownedSeriesService != nil {
+		// We need to perform the initial computation of owned series after the TSDBs are opened but before the ingester becomes
+		// ACTIVE in the ring and starts to accept requests. However, because the ingester still uses the Lifecycler (rather
+		// than BasicLifecycler) there is no deterministic way to delay the ACTIVE state until we finish the calculations.
+		//
 		// Start owned series service asynchronously, and before starting lifecyclers. We wait for ownedSeriesService
 		// to enter Running state here, that is ownedSeriesService computes owned series if ring is not empty.
 		// If ring is empty, ownedSeriesService doesn't do anything.
