@@ -49,10 +49,6 @@ func (gc *UserGrafanaConfig) Validate() error {
 		return errors.New("no Grafana Alertmanager config specified")
 	}
 
-	if gc.ID == 0 {
-		return errors.New("ID must be non-zero")
-	}
-
 	if gc.Hash == "" {
 		return errors.New("no hash specified")
 	}
