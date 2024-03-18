@@ -98,7 +98,7 @@ func newOwnedSeriesService(
 
 // This method should run as fast as possible and avoid blocking on external conditions
 // (e.g. whether lifecycler added instance to the ring or not),
-// because Ingester writes are not allowed until ownedSeriesService switches to Running state.
+// because it is started before lifecyclers.
 func (oss *ownedSeriesService) starting(ctx context.Context) error {
 	// Fetch and cache current state of the ring.
 	_, err := oss.ringStrategy.checkRingForChanges()
