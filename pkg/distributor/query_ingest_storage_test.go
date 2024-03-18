@@ -489,8 +489,9 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 
 	for testName, testData := range tests {
 		testData := testData
-		for _, sendStreamingResponse := range []bool{true, false} {
-			t.Run(fmt.Sprintf("%s, streaming response enabled: %v", testName, sendStreamingResponse), func(t *testing.T) {
+		for _, disableStreamingResponse := range []bool{false, true} {
+			disableStreamingResponse := disableStreamingResponse
+			t.Run(fmt.Sprintf("%s, streaming response disabled: %v", testName, disableStreamingResponse), func(t *testing.T) {
 				t.Parallel()
 
 				limits := prepareDefaultLimits()
@@ -505,7 +506,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					queryDelay:               250 * time.Millisecond, // Give some time to start the calls to all ingesters before failures are received.
 					replicationFactor:        1,                      // Ingest storage is not expected to use it.
 					limits:                   limits,
-					sendNonStreamingResponse: !sendStreamingResponse,
+					disableStreamingResponse: disableStreamingResponse,
 					configure: func(config *Config) {
 						config.PreferAvailabilityZone = testData.preferZone
 						config.MinimizeIngesterRequests = testData.minimizeIngesterRequests
@@ -546,7 +547,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				// Because we return immediately on failures, it might take some time for all ingester calls to register.
 				test.Poll(t, 4*cfg.queryDelay, testData.expectedQueriedIngesters, func() any { return countMockIngestersCalls(ingesters, "QueryStream") })
 
-				if !sendStreamingResponse {
+				if disableStreamingResponse {
 					// We expected the number of non-deduplicated chunks to be equal to the number of queried series
 					// given we expect 1 chunk per series.
 					assert.Equal(t, float64(testData.expectedResponse.Len()), testutil.ToFloat64(queryMetrics.IngesterChunksTotal)-testutil.ToFloat64(queryMetrics.IngesterChunksDeduplicated))

@@ -4836,7 +4836,7 @@ type prepConfig struct {
 	ingestStoragePartitions int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
 	ingestStorageKafka      *kfake.Cluster
 
-	sendNonStreamingResponse bool
+	disableStreamingResponse bool
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -4975,7 +4975,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
 			circuitBreakerOpen:            cfg.circuitBreakerOpen,
-			sendNonStreamingResponse:      cfg.sendNonStreamingResponse,
+			disableStreamingResponse:      cfg.disableStreamingResponse,
 		}
 
 		// Init the partition reader if the ingest storage is enabled.
@@ -5566,7 +5566,7 @@ type mockIngester struct {
 	tokens                        []uint32
 	id                            int
 	circuitBreakerOpen            bool
-	sendNonStreamingResponse      bool
+	disableStreamingResponse      bool
 
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
@@ -5805,7 +5805,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			}
 		}
 
-		if i.sendNonStreamingResponse {
+		if i.disableStreamingResponse {
 			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
 				Chunkseries: []client.TimeSeriesChunk{
 					{
@@ -5837,7 +5837,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 
 	var results []*client.QueryStreamResponse
 
-	if i.sendNonStreamingResponse {
+	if i.disableStreamingResponse {
 		results = nonStreamingResponses
 	} else {
 		endOfLabelsMessage := &client.QueryStreamResponse{

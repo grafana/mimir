@@ -263,9 +263,9 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReached(t *testing.T) {
 	const maxSeriesLimit = 10
 
-	for _, sendStreamingResponse := range []bool{true, false} {
+	for _, disableStreamingResponse := range []bool{true, false} {
 		for _, minimizeIngesterRequests := range []bool{true, false} {
-			t.Run(fmt.Sprintf("streaming response enabled: %v, request minimization enabled: %v", sendStreamingResponse, minimizeIngesterRequests), func(t *testing.T) {
+			t.Run(fmt.Sprintf("streaming response disabled: %v, request minimization enabled: %v", disableStreamingResponse, minimizeIngesterRequests), func(t *testing.T) {
 				userCtx := user.InjectOrgID(context.Background(), "user")
 				limits := prepareDefaultLimits()
 
@@ -275,7 +275,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 					happyIngesters:           3,
 					numDistributors:          1,
 					limits:                   limits,
-					sendNonStreamingResponse: !sendStreamingResponse,
+					disableStreamingResponse: disableStreamingResponse,
 					configure: func(config *Config) {
 						config.MinimizeIngesterRequests = minimizeIngesterRequests
 					},
@@ -299,7 +299,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 				queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 				queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 				require.NoError(t, err)
-				if sendStreamingResponse {
+				if disableStreamingResponse {
 					assert.Len(t, queryRes.Chunkseries, initialSeries)
 				} else {
 					assert.Len(t, queryRes.StreamingSeries, initialSeries)
@@ -351,7 +351,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 		numDistributors:          1,
 		limits:                   limits,
 		replicationFactor:        1,
-		sendNonStreamingResponse: true,
+		disableStreamingResponse: true,
 	})
 
 	allSeriesMatchers := []*labels.Matcher{

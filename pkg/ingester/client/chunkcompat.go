@@ -73,9 +73,7 @@ func StreamingSeriesToMatrix(from, through model.Time, sSeries []StreamingSeries
 	}
 
 	result := model.Matrix{}
-	streamingSeries := []labels.Labels{}
 	for _, series := range sSeries {
-		streamingSeries = append(streamingSeries, series.Labels)
 		for sourceIdx, source := range series.Sources {
 			chunks, err := source.StreamReader.GetChunks(source.SeriesIndex)
 			if err != nil {
