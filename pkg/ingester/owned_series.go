@@ -125,7 +125,7 @@ func (oss *ownedSeriesService) starting(ctx context.Context) error {
 func (oss *ownedSeriesService) running(ctx context.Context) error {
 	tickerInterval := oss.interval
 	if !oss.initialRingCheckSucceeded {
-		tickerInterval = 100 * time.Millisecond
+		tickerInterval = 100 * time.Millisecond // Use short interval until we find non-empty ring.
 	}
 
 	t := time.NewTicker(tickerInterval)
