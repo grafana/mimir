@@ -405,10 +405,10 @@ func newMultitenantCompactor(
 	c.bucketCompactorMetrics = NewBucketCompactorMetrics(c.blocksMarkedForDeletion, registerer)
 
 	if len(compactorCfg.EnabledTenants) > 0 {
-		level.Info(c.logger).Log("msg", "compactor using enabled users", "enabled", strings.Join(compactorCfg.EnabledTenants, ", "))
+		level.Info(c.logger).Log("msg", "compactor using enabled users", "enabled", compactorCfg.EnabledTenants)
 	}
 	if len(compactorCfg.DisabledTenants) > 0 {
-		level.Info(c.logger).Log("msg", "compactor using disabled users", "disabled", strings.Join(compactorCfg.DisabledTenants, ", "))
+		level.Info(c.logger).Log("msg", "compactor using disabled users", "disabled", compactorCfg.DisabledTenants)
 	}
 
 	c.jobsOrder = GetJobsOrderFunction(compactorCfg.CompactionJobsOrder)

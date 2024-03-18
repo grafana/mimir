@@ -22,6 +22,7 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
@@ -59,6 +60,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 		replicationFactor int
 		limits            ShardingLimits
 		setupRing         func(*ring.Desc)
+		allowedTenants    *util.AllowedTenants
 		prevLoadedBlocks  map[string]map[ulid.ULID]struct{}
 		expectedUsers     []usersExpectation
 		expectedBlocks    []blocksExpectation
@@ -349,6 +351,40 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				{instanceID: "instance-2", instanceAddr: "127.0.0.2", blocks: []ulid.ULID{block2, block4}},
 			},
 		},
+		"RF = 2, SS = 2, user explicitly disabled": {
+			replicationFactor: 2,
+			limits:            &shardingLimitsMock{storeGatewayTenantShardSize: 2},
+			allowedTenants:    util.NewAllowedTenants(nil, []string{userID}),
+			setupRing: func(r *ring.Desc) {
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt)
+			},
+			expectedUsers: []usersExpectation{
+				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string(nil)},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: []string(nil)},
+			},
+			expectedBlocks: []blocksExpectation{
+				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{}},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", blocks: []ulid.ULID{}},
+			},
+		},
+		"RF = 2, SS = 2, different user explicitly enabled": {
+			replicationFactor: 2,
+			limits:            &shardingLimitsMock{storeGatewayTenantShardSize: 2},
+			allowedTenants:    util.NewAllowedTenants([]string{"different-user"}, nil),
+			setupRing: func(r *ring.Desc) {
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt)
+			},
+			expectedUsers: []usersExpectation{
+				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string(nil)},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", users: []string(nil)},
+			},
+			expectedBlocks: []blocksExpectation{
+				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{}},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", blocks: []ulid.ULID{}},
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -385,7 +421,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 
 			// Assert on filter users.
 			for _, expected := range testData.expectedUsers {
-				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, testData.limits, log.NewNopLogger())
+				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, testData.allowedTenants, testData.limits, log.NewNopLogger())
 				actualUsers, err := filter.FilterUsers(ctx, []string{userID})
 				assert.Equal(t, expected.err, err)
 				assert.Equal(t, expected.users, actualUsers)
@@ -393,7 +429,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 
 			// Assert on filter blocks.
 			for _, expected := range testData.expectedBlocks {
-				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, testData.limits, log.NewNopLogger())
+				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, testData.allowedTenants, testData.limits, log.NewNopLogger())
 				synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{}, []string{"state"})
 				synced.WithLabelValues(shardExcludedMeta).Set(0)
 

@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [CHANGE] Querier: the CLI flag `-querier.minimize-ingester-requests` has been moved from "experimental" to "advanced". #7638
+* [FEATURE] Store-gateway: Allow specific tenants to be enabled or disabled via `-store-gateway.enabled-tenants` or `-store-gateway.disabled-tenants` CLI flags or their corresponding YAML settings. #7653
 * [ENHANCEMENT] Store-gateway: merge series from different blocks concurrently. #7456
 * [ENHANCEMENT] Store-gateway: Add `stage="wait_max_concurrent"` to `cortex_bucket_store_series_request_stage_duration_seconds` which records how long the query had to wait for its turn for `-blocks-storage.bucket-store.max-concurrent`. #7609
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
