@@ -27,10 +27,9 @@ import (
 )
 
 const (
-	integerUnavailableMsgFormat           = "ingester is unavailable (current state: %s)"
-	ingesterTooBusyMsg                    = "ingester is currently too busy to process queries, try again later"
-	ingesterPushGrpcDisabledMsg           = "ingester is configured with Push gRPC method disabled"
-	ingesterUnavailableForPushRequestsMsg = "ingester is unavailable for push requests"
+	integerUnavailableMsgFormat = "ingester is unavailable (current state: %s)"
+	ingesterTooBusyMsg          = "ingester is currently too busy to process queries, try again later"
+	ingesterPushGrpcDisabledMsg = "ingester is configured with Push gRPC method disabled"
 )
 
 var (
@@ -458,11 +457,11 @@ var _ softError = perMetricMetadataLimitReachedError{}
 
 // unavailableError is an ingesterError indicating that the ingester is unavailable.
 type unavailableError struct {
-	message string
+	state services.State
 }
 
 func (e unavailableError) Error() string {
-	return e.message
+	return fmt.Sprintf(integerUnavailableMsgFormat, e.state.String())
 }
 
 func (e unavailableError) errorCause() mimirpb.ErrorCause {
@@ -473,11 +472,7 @@ func (e unavailableError) errorCause() mimirpb.ErrorCause {
 var _ ingesterError = unavailableError{}
 
 func newUnavailableError(state services.State) unavailableError {
-	return unavailableError{message: fmt.Sprintf(integerUnavailableMsgFormat, state.String())}
-}
-
-func newUnavailableMsgError(msg string) unavailableError {
-	return unavailableError{message: msg}
+	return unavailableError{state: state}
 }
 
 type instanceLimitReachedError struct {
