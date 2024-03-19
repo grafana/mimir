@@ -4836,6 +4836,10 @@ type prepConfig struct {
 	ingestStoragePartitions int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
 	ingestStorageKafka      *kfake.Cluster
 
+	// We need this setting to simulate a response from ingesters that didn't support responding
+	// with a stream of chunks, and were responding with chunk series instead. This is needed to
+	// ensure backwards compatibility, i.e., that queriers can still correctly handle both types
+	// or responses.
 	disableStreamingResponse bool
 }
 
@@ -5805,7 +5809,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			}
 		}
 
-		if i.disableStreamingResponse {
+		if i.disableStreamingResponse || req.StreamingChunksBatchSize == 0 {
 			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
 				Chunkseries: []client.TimeSeriesChunk{
 					{

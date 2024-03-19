@@ -12,7 +12,6 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -489,71 +488,62 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 
 	for testName, testData := range tests {
 		testData := testData
-		for _, disableStreamingResponse := range []bool{false, true} {
-			disableStreamingResponse := disableStreamingResponse
-			t.Run(fmt.Sprintf("%s, streaming response disabled: %v", testName, disableStreamingResponse), func(t *testing.T) {
-				t.Parallel()
 
-				limits := prepareDefaultLimits()
-				limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 
-				cfg := prepConfig{
-					numDistributors:          1,
-					ingestStorageEnabled:     true,
-					ingesterStateByZone:      testData.ingesterStateByZone,
-					ingesterDataByZone:       testData.ingesterDataByZone,
-					ingesterDataTenantID:     tenantID,
-					queryDelay:               250 * time.Millisecond, // Give some time to start the calls to all ingesters before failures are received.
-					replicationFactor:        1,                      // Ingest storage is not expected to use it.
-					limits:                   limits,
-					disableStreamingResponse: disableStreamingResponse,
-					configure: func(config *Config) {
-						config.PreferAvailabilityZone = testData.preferZone
-						config.MinimizeIngesterRequests = testData.minimizeIngesterRequests
-					},
+			limits := prepareDefaultLimits()
+			limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+
+			cfg := prepConfig{
+				numDistributors:      1,
+				ingestStorageEnabled: true,
+				ingesterStateByZone:  testData.ingesterStateByZone,
+				ingesterDataByZone:   testData.ingesterDataByZone,
+				ingesterDataTenantID: tenantID,
+				queryDelay:           250 * time.Millisecond, // Give some time to start the calls to all ingesters before failures are received.
+				replicationFactor:    1,                      // Ingest storage is not expected to use it.
+				limits:               limits,
+				configure: func(config *Config) {
+					config.PreferAvailabilityZone = testData.preferZone
+					config.MinimizeIngesterRequests = testData.minimizeIngesterRequests
+				},
+			}
+
+			distributors, ingesters, distributorRegistries, _ := prepare(t, cfg)
+			require.Len(t, distributors, 1)
+			require.Len(t, distributorRegistries, 1)
+
+			// Query ingesters.
+			queryMetrics := stats.NewQueryMetrics(distributorRegistries[0])
+			resp, err := distributors[0].QueryStream(ctx, queryMetrics, 0, 10, testData.matchers...)
+
+			if testData.expectedErr == nil {
+				require.NoError(t, err)
+			} else {
+				assert.ErrorIs(t, err, testData.expectedErr)
+
+				// Assert that downstream gRPC statuses are passed back upstream.
+				_, expectedIsGRPC := grpcutil.ErrorToStatus(testData.expectedErr)
+				if expectedIsGRPC {
+					_, actualIsGRPC := grpcutil.ErrorToStatus(err)
+					assert.True(t, actualIsGRPC, fmt.Sprintf("expected error to be a status error, but got: %T", err))
 				}
+			}
 
-				distributors, ingesters, distributorRegistries, _ := prepare(t, cfg)
-				require.Len(t, distributors, 1)
-				require.Len(t, distributorRegistries, 1)
+			var responseMatrix model.Matrix
+			if len(resp.Chunkseries) == 0 {
+				responseMatrix, err = ingester_client.StreamingSeriesToMatrix(0, 5, resp.StreamingSeries)
+			} else {
+				responseMatrix, err = ingester_client.TimeSeriesChunksToMatrix(0, 5, resp.Chunkseries)
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, testData.expectedResponse.String(), responseMatrix.String())
 
-				// Query ingesters.
-				queryMetrics := stats.NewQueryMetrics(distributorRegistries[0])
-				resp, err := distributors[0].QueryStream(ctx, queryMetrics, 0, 10, testData.matchers...)
-
-				if testData.expectedErr == nil {
-					require.NoError(t, err)
-				} else {
-					assert.ErrorIs(t, err, testData.expectedErr)
-
-					// Assert that downstream gRPC statuses are passed back upstream.
-					_, expectedIsGRPC := grpcutil.ErrorToStatus(testData.expectedErr)
-					if expectedIsGRPC {
-						_, actualIsGRPC := grpcutil.ErrorToStatus(err)
-						assert.True(t, actualIsGRPC, fmt.Sprintf("expected error to be a status error, but got: %T", err))
-					}
-				}
-
-				var responseMatrix model.Matrix
-				if len(resp.Chunkseries) == 0 {
-					responseMatrix, err = ingester_client.StreamingSeriesToMatrix(0, 5, resp.StreamingSeries)
-				} else {
-					responseMatrix, err = ingester_client.TimeSeriesChunksToMatrix(0, 5, resp.Chunkseries)
-				}
-				assert.NoError(t, err)
-				assert.Equal(t, testData.expectedResponse.String(), responseMatrix.String())
-
-				// Check how many ingesters have been queried.
-				// Because we return immediately on failures, it might take some time for all ingester calls to register.
-				test.Poll(t, 4*cfg.queryDelay, testData.expectedQueriedIngesters, func() any { return countMockIngestersCalls(ingesters, "QueryStream") })
-
-				if disableStreamingResponse {
-					// We expected the number of non-deduplicated chunks to be equal to the number of queried series
-					// given we expect 1 chunk per series.
-					assert.Equal(t, float64(testData.expectedResponse.Len()), testutil.ToFloat64(queryMetrics.IngesterChunksTotal)-testutil.ToFloat64(queryMetrics.IngesterChunksDeduplicated))
-				}
-			})
-		}
+			// Check how many ingesters have been queried.
+			// Because we return immediately on failures, it might take some time for all ingester calls to register.
+			test.Poll(t, 4*cfg.queryDelay, testData.expectedQueriedIngesters, func() any { return countMockIngestersCalls(ingesters, "QueryStream") })
+		})
 	}
 }
 
