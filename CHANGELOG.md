@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.12.0-rc.1
+
+### Grafana Mimir
+
+* [BUGFIX] Query-frontend: Fix memory leak on every request. #7654
+
 ## 2.12.0-rc.0
 
 ### Grafana Mimir
