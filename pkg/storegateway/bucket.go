@@ -1074,7 +1074,7 @@ func (s *BucketStore) streamingSeriesForBlocks(
 
 // streamingChunksSetForBlocks is used when streaming feature is enabled.
 // It returns an iterator to go over the chunks for the series returned in the streamingSeriesForBlocks call.
-// It is recommended to pass the reusePostings and reusePendingMatches returned by the streamingSeriesForBlocks call.
+// It is recommended to pass the reusedPostingsAndMatchers returned by the streamingSeriesForBlocks call.
 func (s *BucketStore) streamingChunksSetForBlocks(
 	ctx context.Context,
 	req *storepb.SeriesRequest,
