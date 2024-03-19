@@ -2415,6 +2415,11 @@ func (s *sliceSeriesChunkRefsSetIterator) Err() error {
 	return nil
 }
 
+func (s *sliceSeriesChunkRefsSetIterator) Reset() {
+	s.current = -1
+	s.err = nil
+}
+
 type staticLimiter struct {
 	limit   int
 	msg     string

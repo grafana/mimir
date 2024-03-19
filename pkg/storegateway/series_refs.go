@@ -280,12 +280,18 @@ func (c flattenedSeriesChunkRefsIterator) Err() error {
 	return c.from.Err()
 }
 
+func (c flattenedSeriesChunkRefsIterator) Reset() {
+	//TODO(zenador): needed?
+	c.from.Reset()
+}
+
 type emptySeriesChunkRefsSetIterator struct {
 }
 
 func (emptySeriesChunkRefsSetIterator) Next() bool             { return false }
 func (emptySeriesChunkRefsSetIterator) At() seriesChunkRefsSet { return seriesChunkRefsSet{} }
 func (emptySeriesChunkRefsSetIterator) Err() error             { return nil }
+func (emptySeriesChunkRefsSetIterator) Reset()                 {}
 
 func mergedSeriesChunkRefsSetIterators(mergedBatchSize int, all ...iterator[seriesChunkRefsSet]) iterator[seriesChunkRefsSet] {
 	switch len(all) {
@@ -373,6 +379,11 @@ func (s *mergedSeriesChunkRefsSet) Next() bool {
 
 	s.current = next
 	return true
+}
+
+func (s *mergedSeriesChunkRefsSet) Reset() {
+	s.a.Reset()
+	s.b.Reset()
 }
 
 func (s *mergedSeriesChunkRefsSet) ensureCursors(curr1, curr2 *seriesChunkRefsIterator, set1, set2 iterator[seriesChunkRefsSet]) error {
@@ -612,6 +623,10 @@ func (s *deduplicatingSeriesChunkRefsSetIterator) Next() bool {
 	return true
 }
 
+func (s *deduplicatingSeriesChunkRefsSetIterator) Reset() {
+	s.from.Reset()
+}
+
 type limitingSeriesChunkRefsSetIterator struct {
 	from          iterator[seriesChunkRefsSet]
 	chunksLimiter ChunksLimiter
@@ -665,6 +680,10 @@ func (l *limitingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 
 func (l *limitingSeriesChunkRefsSetIterator) Err() error {
 	return l.err
+}
+
+func (l *limitingSeriesChunkRefsSetIterator) Reset() {
+	l.from.Reset()
 }
 
 type loadingSeriesChunkRefsSetIterator struct {
@@ -1272,6 +1291,10 @@ func (m *filteringSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 
 func (m *filteringSeriesChunkRefsSetIterator) Err() error {
 	return m.from.Err()
+}
+
+func (m *filteringSeriesChunkRefsSetIterator) Reset() {
+	m.from.Reset()
 }
 
 // cachedSeriesForPostingsID contains enough information to be able to tell whether a cache entry

@@ -60,6 +60,7 @@ type iterator[V any] interface {
 	Next() bool
 	At() V
 	Err() error
+	Reset()
 }
 
 // seriesChunksSet holds a set of series, each with its own chunks.
@@ -287,6 +288,10 @@ func (p *preloadingSetIterator[Set]) Err() error {
 	return p.err
 }
 
+func (p *preloadingSetIterator[Set]) Reset() {
+	p.from.Reset()
+}
+
 func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, preloadedSetsCount int, iterator iterator[Set], stats *safeQueryStats) iterator[Set] {
 	// Track the time spent loading batches (including preloading).
 	numBatches := 0
@@ -433,6 +438,10 @@ func (c *loadingSeriesChunksSetIterator) Err() error {
 	return c.err
 }
 
+func (c *loadingSeriesChunksSetIterator) Reset() {
+	c.from.Reset()
+}
+
 func (c *loadingSeriesChunksSetIterator) recordReturnedChunks(series []seriesChunks) {
 	returnedChunks, returnedChunksBytes := chunkStats(series)
 
@@ -497,4 +506,8 @@ func (m *nextDurationMeasuringIterator[Set]) At() Set {
 
 func (m *nextDurationMeasuringIterator[Set]) Err() error {
 	return m.from.Err()
+}
+
+func (m *nextDurationMeasuringIterator[Set]) Reset() {
+	m.from.Reset()
 }

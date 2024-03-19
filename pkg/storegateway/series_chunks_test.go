@@ -884,6 +884,12 @@ func (s *sliceSeriesChunksSetIterator) Err() error {
 	return nil
 }
 
+func (s *sliceSeriesChunksSetIterator) Reset() {
+	s.current = -1
+	s.err = nil
+	s.errAt = 0
+}
+
 // delayedIterator implements iterator and introduces an artificial delay before returning from Next() and At().
 type delayedIterator[S any] struct {
 	wrapped iterator[S]
@@ -909,6 +915,10 @@ func (s *delayedIterator[S]) At() S {
 
 func (s *delayedIterator[S]) Err() error {
 	return s.wrapped.Err()
+}
+
+func (s *delayedIterator[S]) Reset() {
+	s.wrapped.Reset()
 }
 
 func generateAggrChunk(num int) []storepb.AggrChunk {
