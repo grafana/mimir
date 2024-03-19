@@ -3,10 +3,8 @@
 package querymiddleware
 
 import (
-	"context"
 	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -14,7 +12,9 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/prometheus/client_golang/prometheus"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -39,10 +39,15 @@ func (c *cardinalityQueryTTL) ttl(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForCardinalityQuery(userID)
 }
 
-func (DefaultCacheKeyGenerator) LabelValuesCardinality(_ context.Context, path string, values url.Values) (*GenericQueryCacheKey, error) {
+func (DefaultCacheKeyGenerator) LabelValuesCardinality(r *http.Request) (*GenericQueryCacheKey, error) {
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
 	switch {
-	case strings.HasSuffix(path, cardinalityLabelNamesPathSuffix):
-		parsed, err := cardinality.DecodeLabelNamesRequestFromValues(values)
+	case strings.HasSuffix(r.URL.Path, cardinalityLabelNamesPathSuffix):
+		parsed, err := cardinality.DecodeLabelNamesRequestFromValues(reqValues)
 		if err != nil {
 			return nil, err
 		}
@@ -51,8 +56,8 @@ func (DefaultCacheKeyGenerator) LabelValuesCardinality(_ context.Context, path s
 			CacheKey:       parsed.String(),
 			CacheKeyPrefix: cardinalityLabelNamesQueryCachePrefix,
 		}, nil
-	case strings.HasSuffix(path, cardinalityLabelValuesPathSuffix):
-		parsed, err := cardinality.DecodeLabelValuesRequestFromValues(values)
+	case strings.HasSuffix(r.URL.Path, cardinalityLabelValuesPathSuffix):
+		parsed, err := cardinality.DecodeLabelValuesRequestFromValues(reqValues)
 		if err != nil {
 			return nil, err
 		}
@@ -61,8 +66,8 @@ func (DefaultCacheKeyGenerator) LabelValuesCardinality(_ context.Context, path s
 			CacheKey:       parsed.String(),
 			CacheKeyPrefix: cardinalityLabelValuesQueryCachePrefix,
 		}, nil
-	case strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix):
-		parsed, err := cardinality.DecodeActiveSeriesRequestFromValues(values)
+	case strings.HasSuffix(r.URL.Path, cardinalityActiveSeriesPathSuffix):
+		parsed, err := cardinality.DecodeActiveSeriesRequestFromValues(reqValues)
 		if err != nil {
 			return nil, err
 		}

@@ -375,7 +375,12 @@ func DecodeLabelsQueryTimeParams(r *http.Request, usePromDefaults bool) (start, 
 		defaultEnd = v1.MaxTime.UnixMilli()
 	}
 
-	startVal := r.FormValue("start")
+	urlQueryParams, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
+		return 0, 0, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	startVal := urlQueryParams.Get("start")
 	if startVal == "" {
 		start = defaultStart
 	} else {
@@ -385,7 +390,7 @@ func DecodeLabelsQueryTimeParams(r *http.Request, usePromDefaults bool) (start, 
 		}
 	}
 
-	endVal := r.FormValue("end")
+	endVal := urlQueryParams.Get("end")
 	if endVal == "" {
 		end = defaultEnd
 	} else {

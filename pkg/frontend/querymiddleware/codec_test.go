@@ -13,6 +13,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -178,24 +179,40 @@ func TestLabelsQueryRequest(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			r, err := http.NewRequest("GET", testCase.url, nil)
-			require.NoError(t, err)
+			for _, reqMethod := range []string{http.MethodGet, http.MethodPost} {
 
-			ctx := user.InjectOrgID(context.Background(), "1")
-			r = r.WithContext(ctx)
+				var r *http.Request
+				var err error
 
-			req, err := codec.DecodeLabelsQueryRequest(ctx, r)
-			if err != nil || testCase.expectedErr != nil {
-				require.EqualValues(t, testCase.expectedErr, err)
-				return
+				switch reqMethod {
+				case http.MethodGet:
+					r, err = http.NewRequest(reqMethod, testCase.url, nil)
+					require.NoError(t, err)
+				case http.MethodPost:
+					parsedURL, _ := url.Parse(testCase.url)
+					r, err = http.NewRequest(reqMethod, parsedURL.Path, strings.NewReader(parsedURL.RawQuery))
+					require.NoError(t, err)
+					r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				default:
+					t.Fatalf("unsupported HTTP method %q", reqMethod)
+				}
+
+				ctx := user.InjectOrgID(context.Background(), "1")
+				r = r.WithContext(ctx)
+
+				reqDecoded, err := codec.DecodeLabelsQueryRequest(ctx, r)
+				if err != nil || testCase.expectedErr != nil {
+					require.EqualValues(t, testCase.expectedErr, err)
+					return
+				}
+				require.EqualValues(t, testCase.expectedStruct, reqDecoded)
+				require.EqualValues(t, testCase.expectedGetStartOrDefault, reqDecoded.GetStartOrDefault())
+				require.EqualValues(t, testCase.expectedGetEndOrDefault, reqDecoded.GetEndOrDefault())
+
+				reqEncoded, err := codec.EncodeLabelsQueryRequest(context.Background(), reqDecoded)
+				require.NoError(t, err)
+				require.EqualValues(t, testCase.url, reqEncoded.RequestURI)
 			}
-			require.EqualValues(t, testCase.expectedStruct, req)
-			require.EqualValues(t, testCase.expectedGetStartOrDefault, req.GetStartOrDefault())
-			require.EqualValues(t, testCase.expectedGetEndOrDefault, req.GetEndOrDefault())
-
-			rdash, err := codec.EncodeLabelsQueryRequest(context.Background(), req)
-			require.NoError(t, err)
-			require.EqualValues(t, testCase.url, rdash.RequestURI)
 		})
 	}
 }

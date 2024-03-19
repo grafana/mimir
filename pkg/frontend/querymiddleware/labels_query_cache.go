@@ -3,7 +3,6 @@
 package querymiddleware
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -29,7 +28,14 @@ const (
 	stringParamSeparator = rune(0)
 )
 
-func newLabelsQueryCacheRoundTripper(cache cache.Cache, generator CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
+func newLabelsQueryCacheRoundTripper(
+	cache cache.Cache,
+	generator CacheKeyGenerator,
+	limits Limits,
+	next http.RoundTripper,
+	logger log.Logger,
+	reg prometheus.Registerer,
+) http.RoundTripper {
 	ttl := &labelsQueryTTL{
 		limits: limits,
 	}
@@ -45,42 +51,34 @@ func (c *labelsQueryTTL) ttl(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForLabelsQuery(userID)
 }
 
-func (DefaultCacheKeyGenerator) LabelValues(_ context.Context, path string, values url.Values) (*GenericQueryCacheKey, error) {
-	var (
-		cacheKeyPrefix string
-		labelName      string
+func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCacheKey, error) {
+	labelValuesReq, err := g.codec.DecodeLabelsQueryRequest(r.Context(), r)
+	if err != nil {
+		return nil, err
+	}
+
+	var cacheKeyPrefix string
+	switch labelValuesReq.(type) {
+	case *PrometheusLabelNamesQueryRequest:
+		cacheKeyPrefix = labelNamesQueryCachePrefix
+	case *PrometheusLabelValuesQueryRequest:
+		cacheKeyPrefix = labelValuesQueryCachePrefix
+	}
+
+	labelMatcherSets, err := parseRequestMatchersParam(
+		map[string][]string{"match[]": labelValuesReq.GetLabelMatcherSets()},
+		"match[]",
 	)
 
-	// Detect the request type
-	switch {
-	case strings.HasSuffix(path, labelNamesPathSuffix):
-		cacheKeyPrefix = labelNamesQueryCachePrefix
-	case labelValuesPathSuffix.MatchString(path):
-		cacheKeyPrefix = labelValuesQueryCachePrefix
-		labelName = labelValuesPathSuffix.FindStringSubmatch(path)[1]
-	default:
-		return nil, errors.New("unknown labels API endpoint")
-	}
-
-	// Both the label names and label values API endpoints support the same exact parameters (with the same defaults),
-	// so in this function there's no distinction between the two.
-	startTime, err := parseRequestTimeParam(values, "start", v1.MinTime.UnixMilli())
-	if err != nil {
-		return nil, err
-	}
-
-	endTime, err := parseRequestTimeParam(values, "end", v1.MaxTime.UnixMilli())
-	if err != nil {
-		return nil, err
-	}
-
-	matcherSets, err := parseRequestMatchersParam(values, "match[]")
-	if err != nil {
-		return nil, err
-	}
+	cacheKey := generateLabelsQueryRequestCacheKey(
+		labelValuesReq.GetStartOrDefault(),
+		labelValuesReq.GetEndOrDefault(),
+		labelValuesReq.GetLabelName(),
+		labelMatcherSets,
+	)
 
 	return &GenericQueryCacheKey{
-		CacheKey:       generateLabelsQueryRequestCacheKey(startTime, endTime, labelName, matcherSets),
+		CacheKey:       cacheKey,
 		CacheKeyPrefix: cacheKeyPrefix,
 	}, nil
 }
