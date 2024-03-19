@@ -69,6 +69,9 @@ func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCac
 		map[string][]string{"match[]": labelValuesReq.GetLabelMatcherSets()},
 		"match[]",
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	cacheKey := generateLabelsQueryRequestCacheKey(
 		labelValuesReq.GetStartOrDefault(),
@@ -119,24 +122,6 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 	b.WriteString(util.MultiMatchersStringer(matcherSets).String())
 
 	return b.String()
-}
-
-func parseRequestTimeParam(values url.Values, paramName string, defaultValue int64) (int64, error) {
-	var value string
-	if len(values[paramName]) > 0 {
-		value = values[paramName][0]
-	}
-
-	if value == "" {
-		return defaultValue, nil
-	}
-
-	parsed, err := util.ParseTime(value)
-	if err != nil {
-		return 0, errors.Wrapf(err, "invalid '%s' parameter", paramName)
-	}
-
-	return parsed, nil
 }
 
 func parseRequestMatchersParam(values url.Values, paramName string) ([][]*labels.Matcher, error) {
