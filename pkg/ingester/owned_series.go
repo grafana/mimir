@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"time"
@@ -63,6 +64,9 @@ type ownedSeriesService struct {
 	getTSDB             func(user string) *userTSDB
 
 	ownedSeriesCheckDuration prometheus.Histogram
+
+	interval                  time.Duration
+	initialRingCheckSucceeded bool
 }
 
 func newOwnedSeriesService(
@@ -80,6 +84,7 @@ func newOwnedSeriesService(
 		getLocalSeriesLimit: getLocalSeriesLimit,
 		getTSDBUsers:        getTSDBUsers,
 		getTSDB:             getTSDB,
+		interval:            interval,
 		ownedSeriesCheckDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingester_owned_series_check_duration_seconds",
 			Help:    "How long does it take to check for owned series for all users.",
@@ -87,21 +92,66 @@ func newOwnedSeriesService(
 		}),
 	}
 
-	oss.Service = services.NewTimerService(interval, nil, oss.onPeriodicCheck, nil)
+	oss.Service = services.NewBasicService(oss.starting, oss.running, nil)
 	return oss
 }
 
-// This function runs periodically. It checks if ring has changed, and updates number of owned series for any
-// user that requires it (due to ring change, compaction, shard size change, ...).
-func (oss *ownedSeriesService) onPeriodicCheck(ctx context.Context) error {
-	ringChanged, err := oss.ringStrategy.checkRingForChanges()
+// This method should run as fast as possible and avoid blocking on external conditions
+// (e.g. whether lifecycler added instance to the ring or not),
+// because it is started before lifecyclers.
+func (oss *ownedSeriesService) starting(ctx context.Context) error {
+	// Fetch and cache current state of the ring.
+	_, err := oss.ringStrategy.checkRingForChanges()
 	if err != nil {
-		level.Error(oss.logger).Log("msg", "can't check ring for updates", "err", err)
-		return nil // If we returned error, service would stop.
+		if errors.Is(err, ring.ErrEmptyRing) {
+			level.Warn(oss.logger).Log("msg", "skipped initial owned series computation, ring is empty")
+			oss.initialRingCheckSucceeded = false
+			// Service will continue in this case.
+		} else {
+			return fmt.Errorf("can't read ring: %v", err)
+		}
+	} else {
+		oss.initialRingCheckSucceeded = true
+
+		// Check all tenants, regardless of whether instance exists in the ring or not.
+		// This runs after TSDBs are open, all tenants should have "new user" reason set.
+		_ = oss.updateAllTenants(ctx, true)
+	}
+	return nil
+}
+
+// Running function of owned series service. It regularly checks if ring has changed, and updates number of owned series for any
+// user that requires it (due to ring change, compaction, shard size change, ...).
+func (oss *ownedSeriesService) running(ctx context.Context) error {
+	tickerInterval := oss.interval
+	if !oss.initialRingCheckSucceeded {
+		tickerInterval = 100 * time.Millisecond // Use short interval until we find non-empty ring.
 	}
 
-	oss.updateAllTenants(ctx, ringChanged)
-	return nil
+	t := time.NewTicker(tickerInterval)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-t.C:
+			ringChanged, err := oss.ringStrategy.checkRingForChanges()
+			if err != nil {
+				level.Error(oss.logger).Log("msg", "can't check ring for updates", "err", err)
+				continue
+			}
+
+			// Ring check succeeded. If we still use short interval for ticker, reset it to regular interval.
+			if tickerInterval != oss.interval {
+				tickerInterval = oss.interval
+				t.Reset(tickerInterval)
+			}
+
+			oss.updateAllTenants(ctx, ringChanged)
+
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }
 
 // updateAllTenants iterates over all open TSDBs and updates owned series for all users that need it, either
@@ -271,6 +321,10 @@ func newOwnedSeriesPartitionRingStrategy(partitionID int32, partitionRing *ring.
 func (pr *ownedSeriesPartitionRingStrategy) checkRingForChanges() (bool, error) {
 	// When using partitions ring, we consider ring to be changed if active partitions have changed.
 	r := pr.partitionRingWatcher.PartitionRing()
+	if r.PartitionsCount() == 0 {
+		return false, ring.ErrEmptyRing
+	}
+
 	activePartitions := r.ActivePartitionIDs()
 	ringChanged := !slices.Equal(pr.previousActivePartitions, activePartitions)
 	pr.previousActivePartitions = activePartitions

@@ -238,6 +238,11 @@ func TestPusherErrors(t *testing.T) {
 			expectedWrites:   1,
 			expectedFailures: 0,
 		},
+		"a METHOD_NOT_ALLOWED push error is reported as failure": {
+			returnedError:    mustStatusWithDetails(codes.Unimplemented, mimirpb.METHOD_NOT_ALLOWED).Err(),
+			expectedWrites:   1,
+			expectedFailures: 1,
+		},
 		"a TSDB_UNAVAILABLE push error is reported as failure": {
 			returnedError:    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.TSDB_UNAVAILABLE).Err(),
 			expectedWrites:   1,

@@ -464,6 +464,9 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 
 	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
 		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, ownedSeriesStrategy, log.With(i.logger, "component", "owned series"), registerer, i.limiter.maxSeriesPerUser, i.getTSDBUsers, i.getTSDB)
+
+		// We add owned series service explicitly, because ingester doesn't start it using i.subservices.
+		i.subservicesWatcher.WatchService(i.ownedSeriesService)
 	}
 
 	i.BasicService = services.NewBasicService(i.starting, i.updateLoop, i.stopping)
@@ -531,23 +534,15 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		// ACTIVE in the ring and starts to accept requests. However, because the ingester still uses the Lifecycler (rather
 		// than BasicLifecycler) there is no deterministic way to delay the ACTIVE state until we finish the calculations.
 		//
-		// Since we don't actually need to be ACTIVE in the ring to calculate owned series (just present, with tokens) we instead
-		// calculate owned series before we start the lifecycler at all. Once we move the ingester to the BasicLifecycler and
-		// have better control over the ring states, we could perform the calculation while in JOINING state, and move to
-		// ACTIVE once we finish.
+		// Start owned series service before starting lifecyclers. We wait for ownedSeriesService
+		// to enter Running state here, that is ownedSeriesService computes owned series if ring is not empty.
+		// If ring is empty, ownedSeriesService doesn't do anything.
+		// If ring is not empty, but instance is not in the ring yet, ownedSeriesService will compute 0 owned series.
 		//
-		// TODO: When using partitions ring, we need to update all tenants after partition is registered into the ring. That is done by partitionLifecycler's starting method.
-
-		// Fetch and cache current ring state
-		_, err := i.ownedSeriesService.ringStrategy.checkRingForChanges()
-		switch {
-		case errors.Is(err, ring.ErrEmptyRing):
-			level.Warn(i.logger).Log("msg", "ingester ring is empty")
-		case err != nil:
-			return fmt.Errorf("can't read ring: %v", err)
-		default:
-			// We pass ringChanged=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
-			i.ownedSeriesService.updateAllTenants(ctx, true)
+		// We pass ingester's service context to ownedSeriesService, to make ownedSeriesService stop when ingester's
+		// context is done (i.e. when ingester fails in Starting state, or when ingester exits Running state).
+		if err := services.StartAndAwaitRunning(ctx, i.ownedSeriesService); err != nil {
+			return errors.Wrap(err, "failed to start owned series service")
 		}
 	}
 
@@ -583,10 +578,6 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
-	if i.ownedSeriesService != nil {
-		servs = append(servs, i.ownedSeriesService)
-	}
-
 	if i.ingestReader != nil {
 		servs = append(servs, i.ingestReader)
 	}
@@ -610,6 +601,14 @@ func (i *Ingester) stoppingForFlusher(_ error) error {
 }
 
 func (i *Ingester) stopping(_ error) error {
+	if i.ownedSeriesService != nil {
+		err := services.StopAndAwaitTerminated(context.Background(), i.ownedSeriesService)
+		if err != nil {
+			// This service can't really fail.
+			level.Warn(i.logger).Log("msg", "error encountered while stopping owned series service", "err", err)
+		}
+	}
+
 	if err := services.StopManagerAndAwaitStopped(context.Background(), i.subservices); err != nil {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}

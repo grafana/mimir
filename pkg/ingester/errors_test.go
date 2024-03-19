@@ -413,6 +413,18 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 			expectedMessage: fmt.Sprintf("wrapped: %s", newUnavailableError(services.Stopping).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
 		},
+		"an ingesterPushGrpcDisabledError gets translated into an errorWithStatus Unimplemented error with details": {
+			err:             ingesterPushGrpcDisabledError{},
+			expectedCode:    codes.Unimplemented,
+			expectedMessage: ingesterPushGrpcDisabledMsg,
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.METHOD_NOT_ALLOWED},
+		},
+		"a wrapped ingesterPushGrpcDisabledError gets translated into an errorWithStatus Unimplemented error": {
+			err:             fmt.Errorf("wrapped: %w", ingesterPushGrpcDisabledError{}),
+			expectedCode:    codes.Unimplemented,
+			expectedMessage: fmt.Sprintf("wrapped: %s", ingesterPushGrpcDisabledMsg),
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.METHOD_NOT_ALLOWED},
+		},
 		"an instanceLimitReachedError gets translated into a non-loggable errorWithStatus Unavailable error with details": {
 			err:              newInstanceLimitReachedError("instance limit reached"),
 			expectedCode:     codes.Unavailable,
@@ -686,6 +698,20 @@ func TestMapPushErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 			expectedTranslation: newErrorWithHTTPStatus(
 				fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, family)),
 				http.StatusBadRequest,
+			),
+		},
+		"an ingesterPushGrpcDisabledError gets translated into an errorWithStatus Unimplemented error": {
+			err: ingesterPushGrpcDisabledError{},
+			expectedTranslation: newErrorWithStatus(
+				ingesterPushGrpcDisabledError{},
+				codes.Unimplemented,
+			),
+		},
+		"a wrapped ingesterPushGrpcDisabledError gets translated into an errorWithStatus Unimplemented error": {
+			err: fmt.Errorf("wrapped: %w", ingesterPushGrpcDisabledError{}),
+			expectedTranslation: newErrorWithStatus(
+				fmt.Errorf("wrapped: %w", ingesterPushGrpcDisabledError{}),
+				codes.Unimplemented,
 			),
 		},
 	}
