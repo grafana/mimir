@@ -164,8 +164,9 @@ local filename = 'mimir-writes.json';
       )
     )
     .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
-    .addRow(
-      $.row('Ingester')
+    .addRowIf(
+      $._config.show_grpc_ingestion_panels,
+      ($.row('Ingester'))
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
         $.panelDescription(
@@ -204,6 +205,141 @@ local filename = 'mimir-writes.json';
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="/cortex.Ingester/Push"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
         )
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      ($.row('Ingester (ingest storage – processing)'))
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.panelDescription(
+          'Fetched records / sec',
+          |||
+            The rate of fetched records (each record is a write requests) and failed reads from Kafka.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'sum (rate (cortex_ingest_storage_reader_fetch_records_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_read_errors_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'Fetched records',
+            'Read errors',
+          ],
+        ) + $.aliasColors({
+          'Read errors': '#FF0000',
+        }),
+      )
+      .addPanel(
+        $.timeseriesPanel('Processing Latency') +
+        $.panelDescription(
+          'Processing Latency',
+          |||
+            Time used to process a single record (write request). This time is spent by appending data to per-tenant TSDB.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.ingester)],
+            |||
+              sum(rate(cortex_ingest_storage_reader_processing_time_seconds_sum{%s}[$__rate_interval]))
+              /
+              sum(rate(cortex_ingest_storage_reader_processing_time_seconds_count{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            '99th percentile',
+            '99.9th percentile',
+            '50th percentile',
+            'average',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
+      )
+      .addPanel(
+        $.timeseriesPanel('Records per fetch') +
+        $.panelDescription(
+          'Records per fetch',
+          |||
+            Number of fetched records per fetch operation.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            |||
+              sum(rate(cortex_ingest_storage_reader_records_per_fetch_sum{%s}[$__rate_interval]))
+              /
+              sum(rate(cortex_ingest_storage_reader_records_per_fetch_count{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum by(le) (rate(cortex_ingest_storage_reader_records_per_fetch_bucket{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'Average',
+            '99th percentile',
+          ],
+        ),
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      ($.row('Ingester (ingest storage latency)'))
+      .addPanel(
+        $.timeseriesPanel('End-to-end latency') +
+        $.panelDescription(
+          'End-to-end latency',
+          |||
+            Time between writing request to Kafka by distributor and reading the record by ingester.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            '99th percentile',
+            '99.9th percentile',
+            '50th percentile',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
+      )
+      .addPanel(
+        $.timeseriesPanel('Strong consistency – Wait latency') +
+        $.panelDescription(
+          'Strong consistency – Wait latency',
+          |||
+            How long does request wait to guarantee strong consistency.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'max(max_over_time(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s,quantile="0.99"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            |||
+              sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_sum{%s}[$__rate_interval]))
+              /
+              sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_count{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            '99th percentile',
+            'Average',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
       )
     )
     .addRowIf(

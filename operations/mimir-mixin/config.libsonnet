@@ -675,5 +675,11 @@
     // Disabled by default, because when -ingester.limit-inflight-requests-using-grpc-method-limiter and -distributor.limit-inflight-requests-using-grpc-method-limiter is
     // not used (default), then rejected requests are already counted as failures.
     show_rejected_requests_on_writes_dashboard: false,
+
+    // Show panels that use queries for gRPC-based ingestion (distributor -> ingester)
+    show_grpc_ingestion_panels: true,
+
+    // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
+    show_ingest_storage_panels: false,
   },
 }
