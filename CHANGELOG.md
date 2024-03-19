@@ -13,6 +13,7 @@
 * [BUGFIX] querier: Don't cache context.Canceled errors for bucket index. #7620
 * [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622
 * [BUGFIX] Query-frontend: Don't panic when using the `-query-frontend.downstream-url` flag. #7651
+* [BUGFIX] Query-frontend: Fix memory leak on every request. #7654
 
 ### Mixin
 
