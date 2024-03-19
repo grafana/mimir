@@ -682,8 +682,9 @@ type loadingSeriesChunkRefsSetIterator struct {
 
 	chunkMetasBuffer []chunks.Meta
 
-	err        error
-	currentSet seriesChunkRefsSet
+	err             error
+	currentSet      seriesChunkRefsSet
+	resetToFirstSet bool
 }
 
 func openBlockSeriesChunkRefsSetsIterator(
@@ -853,6 +854,18 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	}
 	if !s.postingsSetIterator.Next() {
 		return false
+	}
+
+	if s.resetToFirstSet {
+		// The first set is already loaded as s.currentSet, so nothing more to do.
+		s.resetToFirstSet = false
+
+		if s.currentSet.len() == 0 {
+			// If the first batch of postings had series, but they've all been filtered out, then we are done.
+			return false
+		}
+
+		return true
 	}
 
 	defer func(startTime time.Time) {
@@ -1101,6 +1114,24 @@ func (s *loadingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 
 func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 	return s.err
+}
+
+func (s *loadingSeriesChunkRefsSetIterator) Reset() {
+	if s.err != nil {
+		return
+	}
+
+	if s.postingsSetIterator.IsFirstAndOnlyBatch() {
+		s.resetToFirstSet = true
+	} else {
+		s.currentSet = seriesChunkRefsSet{}
+	}
+
+	s.postingsSetIterator.Reset()
+
+	// TODO: handle change in strategy
+	// - When loading first and only batch, and we know we'll want chunks later for streaming: always load chunk refs
+	// - Otherwise, when resetting, set flag to load chunk refs
 }
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
@@ -1402,4 +1433,13 @@ func (s *postingsSetsIterator) Next() bool {
 
 func (s *postingsSetsIterator) At() []storage.SeriesRef {
 	return s.currentBatch
+}
+
+func (s *postingsSetsIterator) Reset() {
+	s.currentBatch = nil
+	s.nextBatchPostingsOffset = 0
+}
+
+func (s *postingsSetsIterator) IsFirstAndOnlyBatch() bool {
+	return len(s.postings) > 0 && s.nextBatchPostingsOffset <= s.batchSize && s.nextBatchPostingsOffset >= len(s.postings)
 }
