@@ -218,9 +218,11 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Make sure to close the response body to release resources associated with this request.
 	defer func() {
-		err = resp.Body.Close()
-		if err != nil {
-			level.Warn(f.log).Log("msg", "failed to close response body", "err", err)
+		if resp.Body != nil {
+			err = resp.Body.Close()
+			if err != nil {
+				level.Warn(f.log).Log("msg", "failed to close response body", "err", err)
+			}
 		}
 	}()
 
