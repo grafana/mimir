@@ -206,6 +206,8 @@ type Config struct {
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
 	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
 
+	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
+
 	// This config is dynamically injected because defined outside the ingester config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
 }
@@ -230,6 +232,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
+	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 
 	// The ingester.return-only-grpc-errors flag has been deprecated.
 	// According to the migration plan (https://github.com/grafana/mimir/issues/6008#issuecomment-1854320098)
@@ -460,6 +463,9 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 
 	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
 		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, ownedSeriesStrategy, log.With(i.logger, "component", "owned series"), registerer, i.limiter.maxSeriesPerUser, i.getTSDBUsers, i.getTSDB)
+
+		// We add owned series service explicitly, because ingester doesn't start it using i.subservices.
+		i.subservicesWatcher.WatchService(i.ownedSeriesService)
 	}
 
 	i.BasicService = services.NewBasicService(i.starting, i.updateLoop, i.stopping)
@@ -527,23 +533,15 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		// ACTIVE in the ring and starts to accept requests. However, because the ingester still uses the Lifecycler (rather
 		// than BasicLifecycler) there is no deterministic way to delay the ACTIVE state until we finish the calculations.
 		//
-		// Since we don't actually need to be ACTIVE in the ring to calculate owned series (just present, with tokens) we instead
-		// calculate owned series before we start the lifecycler at all. Once we move the ingester to the BasicLifecycler and
-		// have better control over the ring states, we could perform the calculation while in JOINING state, and move to
-		// ACTIVE once we finish.
+		// Start owned series service before starting lifecyclers. We wait for ownedSeriesService
+		// to enter Running state here, that is ownedSeriesService computes owned series if ring is not empty.
+		// If ring is empty, ownedSeriesService doesn't do anything.
+		// If ring is not empty, but instance is not in the ring yet, ownedSeriesService will compute 0 owned series.
 		//
-		// TODO: When using partitions ring, we need to update all tenants after partition is registered into the ring. That is done by partitionLifecycler's starting method.
-
-		// Fetch and cache current ring state
-		_, err := i.ownedSeriesService.ringStrategy.checkRingForChanges()
-		switch {
-		case errors.Is(err, ring.ErrEmptyRing):
-			level.Warn(i.logger).Log("msg", "ingester ring is empty")
-		case err != nil:
-			return fmt.Errorf("can't read ring: %v", err)
-		default:
-			// We pass ringChanged=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
-			i.ownedSeriesService.updateAllTenants(ctx, true)
+		// We pass ingester's service context to ownedSeriesService, to make ownedSeriesService stop when ingester's
+		// context is done (i.e. when ingester fails in Starting state, or when ingester exits Running state).
+		if err := services.StartAndAwaitRunning(ctx, i.ownedSeriesService); err != nil {
+			return errors.Wrap(err, "failed to start owned series service")
 		}
 	}
 
@@ -579,10 +577,6 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
-	if i.ownedSeriesService != nil {
-		servs = append(servs, i.ownedSeriesService)
-	}
-
 	if i.ingestReader != nil {
 		servs = append(servs, i.ingestReader)
 	}
@@ -606,6 +600,14 @@ func (i *Ingester) stoppingForFlusher(_ error) error {
 }
 
 func (i *Ingester) stopping(_ error) error {
+	if i.ownedSeriesService != nil {
+		err := services.StopAndAwaitTerminated(context.Background(), i.ownedSeriesService)
+		if err != nil {
+			// This service can't really fail.
+			level.Warn(i.logger).Log("msg", "error encountered while stopping owned series service", "err", err)
+		}
+	}
+
 	if err := services.StopManagerAndAwaitStopped(context.Background(), i.subservices); err != nil {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
@@ -888,33 +890,64 @@ type pushStats struct {
 	perMetricSeriesLimitCount int
 }
 
+type ctxKey int
+
+var pushReqCtxKey ctxKey = 1
+
+type pushRequestState struct {
+	requestSize int64
+}
+
 // StartPushRequest checks if ingester can start push request, and increments relevant counters.
-// If new push request cannot be started, errors converible to gRPC status code are returned, and metrics are updated.
-//
-// This method can be called in two ways: 1. Ingester.PushWithCleanup, or 2. from gRPC server's method limiter.
+// If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are updated.
+func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context.Context, error) {
+	ctx, _, err := i.startPushRequest(ctx, reqSize)
+	return ctx, err
+}
+
+func (i *Ingester) FinishPushRequest(ctx context.Context) {
+	st, ok := ctx.Value(pushReqCtxKey).(*pushRequestState)
+	if !ok {
+		return
+	}
+	i.finishPushRequest(st.requestSize)
+}
+
+// This method can be called in two ways: 1. Ingester.PushWithCleanup, or 2. Ingester.StartPushRequest via gRPC server's method limiter.
 //
 // In the first case, returned errors can be inspected/logged by middleware. Ingester.PushWithCleanup will wrap the error in util_log.DoNotLogError wrapper.
-//
 // In the second case, returned errors will not be logged, because request will not reach any middleware.
-func (i *Ingester) StartPushRequest(requestSize int64) error {
+//
+// The shouldFinish flag tells if the caller must call finish on this request. If not, there is already someone in the call stack who will do that.
+func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ context.Context, shouldFinish bool, err error) {
 	if err := i.checkAvailable(); err != nil {
-		return err
+		return nil, false, err
 	}
+
+	if _, ok := ctx.Value(pushReqCtxKey).(*pushRequestState); ok {
+		// If state is already in context, this means we already passed through StartPushRequest for this request.
+		return ctx, false, nil
+	}
+	st := &pushRequestState{
+		requestSize: reqSize,
+	}
+	ctx = context.WithValue(ctx, pushReqCtxKey, st)
 
 	inflight := i.inflightPushRequests.Inc()
 	inflightBytes := int64(0)
 	rejectEqualInflightBytes := false
-	if requestSize > 0 {
-		inflightBytes = i.inflightPushRequestsBytes.Add(requestSize)
+	if reqSize > 0 {
+		inflightBytes = i.inflightPushRequestsBytes.Add(reqSize)
 	} else {
 		inflightBytes = i.inflightPushRequestsBytes.Load()
 		rejectEqualInflightBytes = true // if inflightBytes == limit, reject new request
 	}
 
 	finishRequestInDefer := true
+
 	defer func() {
 		if finishRequestInDefer {
-			i.FinishPushRequest(requestSize)
+			i.finishPushRequest(reqSize)
 		}
 	}()
 
@@ -922,32 +955,32 @@ func (i *Ingester) StartPushRequest(requestSize int64) error {
 	if il != nil {
 		if il.MaxInflightPushRequests > 0 && inflight > il.MaxInflightPushRequests {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-			return errMaxInflightRequestsReached
+			return nil, false, errMaxInflightRequestsReached
 		}
 
 		if il.MaxInflightPushRequestsBytes > 0 {
 			if (rejectEqualInflightBytes && inflightBytes >= il.MaxInflightPushRequestsBytes) || inflightBytes > il.MaxInflightPushRequestsBytes {
 				i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
-				return errMaxInflightRequestsBytesReached
+				return nil, false, errMaxInflightRequestsBytesReached
 			}
 		}
 
 		if il.MaxIngestionRate > 0 {
 			if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 				i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
-				return errMaxIngestionRateReached
+				return nil, false, errMaxIngestionRateReached
 			}
 		}
 	}
 
 	finishRequestInDefer = false
-	return nil
+	return ctx, true, nil
 }
 
-func (i *Ingester) FinishPushRequest(requestSize int64) {
+func (i *Ingester) finishPushRequest(reqSize int64) {
 	i.inflightPushRequests.Dec()
-	if requestSize > 0 {
-		i.inflightPushRequestsBytes.Sub(requestSize)
+	if reqSize > 0 {
+		i.inflightPushRequestsBytes.Sub(reqSize)
 	}
 }
 
@@ -957,13 +990,18 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// retain anything from `req` past the exit from this function.
 	defer cleanUp()
 
-	// If we're using grpc handlers, we don't need to start/finish request here.
-	if !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
+	// Only start/finish request here when the request comes NOT from grpc handlers (i.e., from ingest.Store).
+	// NOTE: request coming from grpc handler may end up calling start multiple times during its lifetime (e.g., when migrating to ingest storage).
+	// startPushRequest handles this.
+	if i.cfg.IngestStorageConfig.Enabled || !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
 		reqSize := int64(req.Size())
-		if err := i.StartPushRequest(reqSize); err != nil {
+		_, shouldFinish, err := i.startPushRequest(ctx, reqSize)
+		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}
-		defer i.FinishPushRequest(reqSize)
+		if shouldFinish {
+			defer i.finishPushRequest(reqSize)
+		}
 	}
 
 	userID, err := tenant.TenantID(ctx)
@@ -3487,14 +3525,26 @@ func (i *Ingester) checkAvailable() error {
 	return newUnavailableError(s)
 }
 
-// Push implements client.IngesterServer
-func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+// PushToStorage implements ingest.Pusher interface for ingestion via ingest-storage.
+func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
 	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
-	if err == nil {
-		return &mimirpb.WriteResponse{}, nil
+	if err != nil {
+		return i.mapPushErrorToErrorWithStatus(err)
 	}
-	handledErr := i.mapPushErrorToErrorWithStatus(err)
-	return nil, handledErr
+	return nil
+}
+
+// Push implements client.IngesterServer, which is registered into gRPC server.
+func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+	if !i.cfg.PushGrpcMethodEnabled {
+		return nil, errPushGrpcDisabled
+	}
+
+	err := i.PushToStorage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &mimirpb.WriteResponse{}, err
 }
 
 func (i *Ingester) mapPushErrorToErrorWithStatus(err error) error {
@@ -3724,7 +3774,7 @@ func (i *Ingester) checkReadOverloaded() error {
 	}
 
 	i.metrics.utilizationLimitedRequests.WithLabelValues(reason).Inc()
-	return tooBusyError
+	return errTooBusy
 }
 
 type utilizationBasedLimiter interface {

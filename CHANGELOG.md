@@ -4,15 +4,27 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Querier: the CLI flag `-querier.minimize-ingester-requests` has been moved from "experimental" to "advanced". #7638
+* [ENHANCEMENT] Store-gateway: merge series from different blocks concurrently. #7456
+* [ENHANCEMENT] Store-gateway: Add `stage="wait_max_concurrent"` to `cortex_bucket_store_series_request_stage_duration_seconds` which records how long the query had to wait for its turn for `-blocks-storage.bucket-store.max-concurrent`. #7609
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [FEATURE] Ruler: add the possibility to set alert_relabel_configs to relabel labels before sending to the alertmanager.
 * [FEATURE] Ruler: add the possibility to add external label labels before sending to the alertmanager.
+* [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
+* [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
+* [BUGFIX] querier: Don't cache context.Canceled errors for bucket index. #7620
+* [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622
+* [BUGFIX] Query-frontend: Don't panic when using the `-query-frontend.downstream-url` flag. #7651
 
 ### Mixin
+
+* [ENHANCEMENT] Alerts: allow configuring alerts range interval via `_config.base_alerts_range_interval_minutes`. #7591
 
 ### Jsonnet
 
 ### Mimirtool
+
+* [BUGFIX] Fix panic in `loadgen` subcommand. #7629
 
 ### Mimir Continuous Test
 
@@ -20,9 +32,13 @@
 
 ### Query-tee
 
+* [ENHANCEMENT] Log queries that take longer than `proxy.log-slow-query-response-threshold` when compared to other backends. #7346
+
 ### Documentation
 
 ### Tools
+
+* [ENHANCEMENT] ulidtime: add option to show random part of ULID, timestamp in milliseconds and header. #7615
 
 ## 2.12.0-rc.0
 

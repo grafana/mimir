@@ -41,7 +41,6 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
       containers:
         - name: admin-api
           imagePullPolicy: IfNotPresent
@@ -90,10 +89,6 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -103,8 +98,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: openshift-values
             app.kubernetes.io/component: admin-api
-      tolerations:
-        []
       terminationGracePeriodSeconds: 60
       volumes:
         - name: config

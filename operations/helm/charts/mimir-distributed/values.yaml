@@ -767,7 +767,7 @@ distributor:
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
-  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
+  # from the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
   # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
@@ -1162,7 +1162,7 @@ ruler:
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
-  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
+  # from the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
   # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
@@ -1268,7 +1268,7 @@ querier:
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
-  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
+  # from the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
   # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
@@ -1375,7 +1375,7 @@ query_frontend:
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
-  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
+  # from the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
   # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
@@ -3464,6 +3464,9 @@ admin-cache:
 
   # -- Maximum item memory for admin-cache (in MB).
   maxItemMemory: 1
+
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
 
   # -- Extra init containers for admin-cache pods
   initContainers: []

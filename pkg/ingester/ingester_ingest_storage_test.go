@@ -381,6 +381,9 @@ func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) 
 func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, overrides *validation.Overrides, reg prometheus.Registerer) (*Ingester, *kfake.Cluster, *ring.PartitionRingWatcher) {
 	defaultIngesterConfig := defaultIngesterTestConfig(t)
 
+	// Always disable gRPC Push API when testing ingest store.
+	ingesterCfg.PushGrpcMethodEnabled = false
+
 	ingesterCfg.IngestStorageConfig.Enabled = true
 	ingesterCfg.IngestStorageConfig.KafkaConfig.Topic = "mimir"
 	ingesterCfg.IngestStorageConfig.KafkaConfig.LastProducedOffsetPollInterval = 100 * time.Millisecond

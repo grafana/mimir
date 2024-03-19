@@ -615,10 +615,10 @@ check-doc-validator: ## Check documentation using doc-validator tool
 
 .PHONY: reference-help
 reference-help: ## Generates the reference help documentation.
-reference-help: cmd/mimir/mimir
+reference-help: cmd/mimir/mimir tools/config-inspector/config-inspector
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
-	@(go run ./tools/config-inspector || true) > cmd/mimir/config-descriptor.json
+	@(./tools/config-inspector/config-inspector || true) > cmd/mimir/config-descriptor.json
 
 clean-white-noise: ## Clean the white noise in the markdown files.
 	@find . -path ./.pkg -prune -o -path ./.cache -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \

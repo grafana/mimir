@@ -43,8 +43,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: overrides-exporter
           imagePullPolicy: IfNotPresent
@@ -93,13 +91,7 @@ spec:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
-      nodeSelector:
-        {}
-      affinity:
-        {}
       
-      tolerations:
-        []
       terminationGracePeriodSeconds: 60
       volumes:
         - name: config
