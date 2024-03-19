@@ -1693,7 +1693,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 
 			strategy := defaultStrategy
 			if testCase.skipChunks {
-				strategy = noChunkRefs
+				// strategy = noChunkRefs
 			}
 			iterator, err := openBlockSeriesChunkRefsSetsIterator(
 				ctx,
@@ -1805,7 +1805,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 					testCase.matchers,
 					nil,
 					cachedSeriesHasher{hashCache},
-					noChunkRefs, // skip chunks since we are testing labels filtering
+					// noChunkRefs, // skip chunks since we are testing labels filtering
+					0, // remove noChunkRefs strategy
 					block.meta.MinTime,
 					block.meta.MaxTime,
 					newSafeQueryStats(),
@@ -2196,7 +2197,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						testCase.matchers,
 						testCase.shard,
 						seriesHasher,
-						noChunkRefs,
+						0, // remove noChunkRefs strategy
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						statsColdCache,
@@ -2226,7 +2227,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						testCase.matchers,
 						testCase.shard,
 						seriesHasher,
-						noChunkRefs,
+						0, // remove noChunkRefs strategy
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						statsWarnCache,
