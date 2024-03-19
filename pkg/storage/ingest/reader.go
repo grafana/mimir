@@ -207,7 +207,7 @@ func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Conte
 		// If it took less than the max desired lag to replay the partition
 		// then we can stop here, otherwise we'll have to redo it.
 		if currLag := time.Since(lastProducedOffsetFetchedAt); currLag <= maxLag {
-			level.Info(r.logger).Log("msg", "partition reader consumed partition and current lag is less than configured max consumer lag", "current_lag", currLag, "max_lag", maxLag)
+			level.Info(r.logger).Log("msg", "partition reader consumed partition and current lag is less than configured max consumer lag", "last_consumed_offset", r.consumedOffsetWatcher.LastConsumedOffset(), "current_lag", currLag, "max_lag", maxLag)
 			return nil
 		}
 	}
