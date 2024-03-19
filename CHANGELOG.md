@@ -14,6 +14,7 @@
 * [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622
 * [BUGFIX] Query-frontend: Don't panic when using the `-query-frontend.downstream-url` flag. #7651
 * [BUGFIX] Query-frontend: Fix memory leak on every request. #7654
+* [BUGFIX] Ingester: when receiving multiple exemplars for a native histogram via remote write, sort them and only report an error if all are older than the latest exemplar as this could be a partial update. #7640
 
 ### Mixin
 
