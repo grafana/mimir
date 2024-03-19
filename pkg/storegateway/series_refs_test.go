@@ -1709,7 +1709,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				minT,
 				maxT,
 				newSafeQueryStats(),
-				nil,
 				log.NewNopLogger(),
 			)
 			require.NoError(t, err)
@@ -1810,7 +1809,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 					block.meta.MinTime,
 					block.meta.MaxTime,
 					newSafeQueryStats(),
-					nil,
 					log.NewNopLogger(),
 				)
 				require.NoError(t, err)
@@ -1874,7 +1872,6 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 							block.meta.MinTime,
 							block.meta.MaxTime,
 							newSafeQueryStats(),
-							nil,
 							log.NewNopLogger(),
 						)
 						require.NoError(b, err)
@@ -2203,7 +2200,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						statsColdCache,
-						nil,
 						log.NewNopLogger(),
 					)
 
@@ -2234,7 +2230,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						statsWarnCache,
-						nil,
 						log.NewNopLogger(),
 					)
 					require.NoError(t, err)
@@ -2323,46 +2318,6 @@ func TestPostingsSetsIterator(t *testing.T) {
 				assert.False(t, iterator.IsFirstAndOnlyBatch())
 			}
 		})
-	}
-}
-
-func TestReusedPostingsAndMatchers(t *testing.T) {
-	postingsList := [][]storage.SeriesRef{
-		nil,
-		{},
-		{1, 2, 3},
-	}
-	matchersList := [][]*labels.Matcher{
-		nil,
-		{},
-		{labels.MustNewMatcher(labels.MatchEqual, "a", "b")},
-	}
-
-	for _, firstPostings := range postingsList {
-		for _, firstMatchers := range matchersList {
-			for _, secondPostings := range postingsList {
-				for _, secondMatchers := range matchersList {
-					r := reusedPostingsAndMatchers{}
-					require.False(t, r.isSet())
-
-					verify := func() {
-						r.set(firstPostings, firstMatchers)
-						require.True(t, r.isSet())
-						if firstPostings == nil {
-							require.Equal(t, []storage.SeriesRef{}, r.ps)
-						} else {
-							require.Equal(t, firstPostings, r.ps)
-						}
-						require.Equal(t, firstMatchers, r.matchers)
-					}
-					verify()
-
-					// This should not overwrite the first set.
-					r.set(secondPostings, secondMatchers)
-					verify()
-				}
-			}
-		}
 	}
 }
 

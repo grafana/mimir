@@ -559,6 +559,10 @@ func (s *seriesChunkRefsSeriesSet) Err() error {
 	return s.from.Err()
 }
 
+// func (s *seriesChunkRefsSeriesSet) Reset() {
+// 	s.from.Reset()
+// }
+
 // deduplicatingSeriesChunkRefsSetIterator merges together consecutive series in the underlying iterator.
 type deduplicatingSeriesChunkRefsSetIterator struct {
 	batchSize int
@@ -720,7 +724,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 	strategy seriesIteratorStrategy,
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	stats *safeQueryStats,
-	reuse *reusedPostingsAndMatchers, // If this is not nil, these posting and matchers are used as it is without fetching new ones.
 	logger log.Logger,
 ) (iterator[seriesChunkRefsSet], error) {
 	if batchSize <= 0 {
@@ -732,19 +735,11 @@ func openBlockSeriesChunkRefsSetsIterator(
 		pendingMatchers []*labels.Matcher
 		fetchPostings   = true
 	)
-	if reuse != nil {
-		fetchPostings = !reuse.isSet()
-		ps = reuse.ps
-		pendingMatchers = reuse.matchers
-	}
 	if fetchPostings {
 		var err error
 		ps, pendingMatchers, err = indexr.ExpandedPostings(ctx, matchers, stats)
 		if err != nil {
 			return nil, errors.Wrap(err, "expanded matching postings")
-		}
-		if reuse != nil {
-			reuse.set(ps, pendingMatchers)
 		}
 	}
 
@@ -769,31 +764,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 	}
 
 	return it, nil
-}
-
-// reusedPostings is used to share the postings and matches across function calls for re-use
-// in case of streaming series. We have it as a separate struct so that we can give a safe way
-// to use it by making a copy where required. You can use it to put items only once.
-type reusedPostingsAndMatchers struct {
-	ps       []storage.SeriesRef
-	matchers []*labels.Matcher
-	filled   bool
-}
-
-func (p *reusedPostingsAndMatchers) set(ps []storage.SeriesRef, matchers []*labels.Matcher) {
-	if p.filled {
-		// We already have something here.
-		return
-	}
-	// Postings list can be modified later, so we make a copy here.
-	p.ps = make([]storage.SeriesRef, len(ps))
-	copy(p.ps, ps)
-	p.matchers = matchers
-	p.filled = true
-}
-
-func (p *reusedPostingsAndMatchers) isSet() bool {
-	return p.filled
 }
 
 // seriesIteratorStrategy defines the strategy to use when loading the series and their chunk refs.
@@ -1148,6 +1118,8 @@ func (s *loadingSeriesChunkRefsSetIterator) Reset() {
 	}
 
 	s.postingsSetIterator.Reset()
+
+	s.strategy = defaultStrategy
 
 	// TODO: handle change in strategy
 	// - When loading first and only batch, and we know we'll want chunks later for streaming: always load chunk refs

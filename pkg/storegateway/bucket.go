@@ -618,8 +618,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	var (
 		// If we are streaming the series labels and chunks separately, we don't need to fetch the postings
 		// twice. So we use these slices to re-use them. Each reuse[i] corresponds to a single block.
-		reuse    []*reusedPostingsAndMatchers
-		resHints = &hintspb.SeriesResponseHints{}
+		reuseIterator iterator[seriesChunkRefsSet]
+		resHints      = &hintspb.SeriesResponseHints{}
 	)
 	for _, b := range blocks {
 		resHints.AddQueriedBlock(b.meta.ULID)
@@ -643,7 +643,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 			seriesLimiter   = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 		)
 
-		seriesSet, reuse, err = s.streamingSeriesForBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+		seriesSet, reuseIterator, err = s.streamingSeriesForBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 		if err != nil {
 			return err
 		}
@@ -672,7 +672,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	start := time.Now()
 	if req.StreamingChunksBatchSize > 0 {
 		var seriesChunkIt iterator[seriesChunksSet]
-		seriesChunkIt, err = s.streamingChunksSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reuse)
+		seriesChunkIt, err = s.streamingChunksSetForBlocks(ctx, readers, stats, reuseIterator)
 		if err != nil {
 			return err
 		}
@@ -1029,7 +1029,7 @@ func (s *BucketStore) nonStreamingSeriesSetForBlocks(
 	if req.SkipChunks {
 		strategy = noChunkRefs
 	}
-	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, nil, strategy)
+	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, strategy)
 	if err != nil {
 		return nil, err
 	}
@@ -1046,7 +1046,7 @@ func (s *BucketStore) nonStreamingSeriesSetForBlocks(
 
 // streamingSeriesForBlocks is used when streaming feature is enabled.
 // It returns a series set that only contains the series labels without any chunks information.
-// The returned postings (series ref) and matches should be re-used when getting chunks to save on computation.
+// The iterator should be re-used when getting chunks to save on computation.
 func (s *BucketStore) streamingSeriesForBlocks(
 	ctx context.Context,
 	req *storepb.SeriesRequest,
@@ -1057,41 +1057,25 @@ func (s *BucketStore) streamingSeriesForBlocks(
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	stats *safeQueryStats,
-) (storepb.SeriesSet, []*reusedPostingsAndMatchers, error) {
-	var (
-		reuse    = make([]*reusedPostingsAndMatchers, len(blocks))
-		strategy = noChunkRefs | overlapMintMaxt
-	)
-	for i := range reuse {
-		reuse[i] = &reusedPostingsAndMatchers{}
-	}
-	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reuse, strategy)
+) (storepb.SeriesSet, iterator[seriesChunkRefsSet], error) {
+	var strategy = noChunkRefs | overlapMintMaxt
+	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, strategy)
 	if err != nil {
 		return nil, nil, err
 	}
-	return newSeriesSetWithoutChunks(ctx, it, stats), reuse, nil
+	return newSeriesSetWithoutChunks(ctx, it, stats), it, nil
 }
 
 // streamingChunksSetForBlocks is used when streaming feature is enabled.
 // It returns an iterator to go over the chunks for the series returned in the streamingSeriesForBlocks call.
-// It is recommended to pass the reusedPostingsAndMatchers returned by the streamingSeriesForBlocks call.
+// It is recommended to pass the iterator returned by the streamingSeriesForBlocks call for reuse.
 func (s *BucketStore) streamingChunksSetForBlocks(
 	ctx context.Context,
-	req *storepb.SeriesRequest,
-	blocks []*bucketBlock,
-	indexReaders map[ulid.ULID]*bucketIndexReader,
 	chunkReaders *bucketChunkReaders,
-	shardSelector *sharding.ShardSelector,
-	matchers []*labels.Matcher,
-	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
-	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	stats *safeQueryStats,
-	reuse []*reusedPostingsAndMatchers, // Should come from streamingSeriesForBlocks.
+	it iterator[seriesChunkRefsSet], // Should come from streamingSeriesForBlocks.
 ) (iterator[seriesChunksSet], error) {
-	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reuse, defaultStrategy)
-	if err != nil {
-		return nil, err
-	}
+	it.Reset()
 	scsi := newChunksPreloadingIterator(ctx, s.logger, s.userID, *chunkReaders, it, s.maxSeriesPerBatch, stats)
 	return scsi, nil
 }
@@ -1106,7 +1090,6 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	stats *safeQueryStats,
-	reuse []*reusedPostingsAndMatchers, // Used if not empty. If not empty, len(reuse) must be len(blocks).
 	strategy seriesIteratorStrategy,
 ) (iterator[seriesChunkRefsSet], error) {
 	var (
@@ -1116,9 +1099,8 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 		begin                    = time.Now()
 		blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 	)
-	for i, b := range blocks {
+	for _, b := range blocks {
 		b := b
-		i := i
 
 		// Keep track of queried blocks.
 		indexr := indexReaders[b.meta.ULID]
@@ -1128,10 +1110,6 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 		var blockSeriesHashCache *hashcache.BlockSeriesHashCache
 		if shardSelector != nil {
 			blockSeriesHashCache = s.seriesHashCache.GetBlockCache(b.meta.ULID.String())
-		}
-		var r *reusedPostingsAndMatchers
-		if len(reuse) > 0 {
-			r = reuse[i]
 		}
 		g.Go(func() error {
 			part, err := openBlockSeriesChunkRefsSetsIterator(
@@ -1147,7 +1125,6 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 				strategy,
 				req.MinTime, req.MaxTime,
 				stats,
-				r,
 				s.logger,
 			)
 			if err != nil {
@@ -1452,7 +1429,6 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 		noChunkRefs,
 		minTime, maxTime,
 		stats,
-		nil,
 		logger,
 	)
 	if err != nil {
