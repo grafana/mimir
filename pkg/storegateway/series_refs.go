@@ -131,6 +131,7 @@ func (b seriesChunkRefsSet) len() int {
 //
 // This function is not idempotent. Calling it twice would introduce subtle bugs.
 func (b seriesChunkRefsSet) release() {
+	// TODO: how do we ensure that this isn't called on a set that will be reused?
 	if b.series == nil || !b.releasable {
 		return
 	}
