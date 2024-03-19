@@ -467,7 +467,6 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isAnyModuleEnabled(Distributor, Write, All)
 
-	t.Cfg.Distributor.PreferStreamingChunksFromIngesters = t.Cfg.Querier.PreferStreamingChunksFromIngesters
 	t.Cfg.Distributor.StreamingChunksPerIngesterSeriesBufferSize = t.Cfg.Querier.StreamingChunksPerIngesterSeriesBufferSize
 	t.Cfg.Distributor.MinimizeIngesterRequests = t.Cfg.Querier.MinimizeIngesterRequests
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay

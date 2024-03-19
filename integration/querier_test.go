@@ -61,7 +61,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 			tenantShardSize:   1,
 			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
 		},
-		"shard size 1, ingester gRPC streaming enabled, memcached index cache, query sharding enabled": {
+		"shard size 1, memcached index cache, query sharding enabled": {
 			tenantShardSize:      1,
 			indexCacheBackend:    tsdb.IndexCacheBackendMemcached,
 			queryShardingEnabled: true,
@@ -158,7 +158,6 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
 				"-query-frontend.query-stats-enabled":                          "true",
 				"-query-frontend.parallelize-shardable-queries":                strconv.FormatBool(testCfg.queryShardingEnabled),
-				"-querier.prefer-streaming-chunks-from-ingesters":              strconv.FormatBool(streamingEnabled),
 				"-querier.prefer-streaming-chunks-from-store-gateways":         strconv.FormatBool(streamingEnabled),
 			})
 
@@ -852,7 +851,7 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 	const blockRangePeriod = 5 * time.Second
 
 	for _, streamingEnabled := range []bool{true, false} {
-		t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
+		t.Run(fmt.Sprintf("store-gateway streaming enabled: %v", streamingEnabled), func(t *testing.T) {
 			s, err := e2e.NewScenario(networkName)
 			require.NoError(t, err)
 			defer s.Close()
@@ -865,7 +864,6 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 				"-blocks-storage.bucket-store.sync-interval":           "1s",
 				"-blocks-storage.tsdb.retention-period":                ((blockRangePeriod * 2) - 1).String(),
 				"-querier.max-fetched-series-per-query":                "3",
-				"-querier.prefer-streaming-chunks-from-ingesters":      strconv.FormatBool(streamingEnabled),
 				"-querier.prefer-streaming-chunks-from-store-gateways": strconv.FormatBool(streamingEnabled),
 			})
 
