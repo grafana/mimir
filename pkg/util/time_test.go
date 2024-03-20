@@ -229,7 +229,7 @@ func TestVariableTicker(t *testing.T) {
 		assert.InDelta(t, ticks[2].Sub(startTime).Seconds(), 5*time.Second.Seconds(), float64(tolerance))
 	})
 
-	t.Run("should not close the channel on Close()", func(t *testing.T) {
+	t.Run("should not close the channel on stop function called", func(t *testing.T) {
 		t.Parallel()
 
 		for _, durations := range [][]time.Duration{{time.Second}, {time.Second, 2 * time.Second}} {
@@ -239,6 +239,31 @@ func TestVariableTicker(t *testing.T) {
 				t.Parallel()
 
 				stop, tickerChan := NewVariableTicker(durations...)
+				stop()
+
+				select {
+				case <-tickerChan:
+					t.Error("should not close the channel and not send any further tick")
+				case <-time.After(2 * time.Second):
+					// All good.
+				}
+			})
+		}
+	})
+
+	t.Run("stop function should be idempotent", func(t *testing.T) {
+		t.Parallel()
+
+		for _, durations := range [][]time.Duration{{time.Second}, {time.Second, 2 * time.Second}} {
+			durations := durations
+
+			t.Run(fmt.Sprintf("durations: %v", durations), func(t *testing.T) {
+				t.Parallel()
+
+				stop, tickerChan := NewVariableTicker(durations...)
+
+				// Call stop() twice.
+				stop()
 				stop()
 
 				select {

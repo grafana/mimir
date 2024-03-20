@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/grafana/dskit/httpgrpc"
@@ -156,9 +157,12 @@ func NewVariableTicker(durations ...time.Duration) (func(), <-chan time.Time) {
 		}
 	}()
 
+	stopOnce := sync.Once{}
 	stop := func() {
-		ticker.Stop()
-		close(stopped)
+		stopOnce.Do(func() {
+			ticker.Stop()
+			close(stopped)
+		})
 	}
 
 	return stop, ticks
