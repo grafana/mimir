@@ -27,15 +27,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
     query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
 
     gateway: {
+      // deprecated, will be removed
+      writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}' % variables,
+      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
+
       local p = self,
       writeRequestsPerSecondMetric: 'cortex_request_duration_seconds',
       writeRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"' % variables,
-      // deprecated, will be removed
-      writeRequestsPerSecond: '%s{%s}' % [p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector],
       readRequestsPerSecondMetric: 'cortex_request_duration_seconds',
       readRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
-      // deprecated, will be removed
-      readRequestsPerSecond: '%s{%s}' % [p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector],
 
       // Write failures rate as percentage of total requests.
       writeFailuresRate:: {
@@ -85,11 +85,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     distributor: {
+      // deprecated, will be removed
+      writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}' % variables,
+
       local p = self,
       writeRequestsPerSecondMetric: 'cortex_request_duration_seconds',
       writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"' % variables,
-      // deprecated, will be removed
-      writeRequestsPerSecond: '%s{%s}' % [p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector],
       samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
 
@@ -118,11 +119,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     query_frontend: {
+      // deprecated, will be removed
+      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
+
       local p = self,
       readRequestsPerSecondMetric: 'cortex_request_duration_seconds',
       readRequestsPerSecondSelector: '%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
-      // deprecated, will be removed
-      readRequestsPerSecond: '%s{%s}' % [p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector],
       instantQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query"}[$__rate_interval]))' % variables,
       rangeQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query_range"}[$__rate_interval]))' % variables,
       labelNamesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_labels"}[$__rate_interval]))' % variables,
