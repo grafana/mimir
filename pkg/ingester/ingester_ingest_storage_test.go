@@ -60,7 +60,7 @@ func TestIngester_Start(t *testing.T) {
 		// Create the ingester.
 		overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 		require.NoError(t, err)
-		ingester, kafkaCluster, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+		ingester, kafkaCluster := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
 
 		// Mock the Kafka cluster to fail the Fetch operation until we unblock it later in the test.
 		kafkaCluster.ControlKey(int16(kmsg.Fetch), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
@@ -149,7 +149,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			// Create the ingester.
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
-			ingester, kafkaCluster, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+			ingester, kafkaCluster := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
 
 			// Mock the Kafka cluster to fail the Fetch operation until we unblock it later in the test.
 			// If read consistency is "eventual" then these failures shouldn't affect queries, but if it's set
@@ -237,7 +237,7 @@ func TestIngester_PrepareShutdownHandler_IngestStorageSupport(t *testing.T) {
 
 	// Start ingester.
 	cfg := defaultIngesterTestConfig(t)
-	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+	ingester, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -295,7 +295,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 
 	setup := func(t *testing.T, cfg Config) *Ingester {
 		// Start ingester.
-		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
+		ingester, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 		t.Cleanup(func() {
@@ -417,7 +417,7 @@ func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) 
 	require.NoError(t, err)
 
 	cfg := defaultIngesterTestConfig(t)
-	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
+	ingester, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
 
 	// Create the shutdown marker.
 	require.NoError(t, os.MkdirAll(cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm))
@@ -439,8 +439,8 @@ func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) 
 	assert.Empty(t, ingester.ingestPartitionWatcher.PartitionRing().PartitionOwnerIDs(ingester.ingestPartitionID))
 }
 
-// Returned ingester and ring watcher are NOT started.
-func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, overrides *validation.Overrides, reg prometheus.Registerer) (*Ingester, *kfake.Cluster, *ring.PartitionRingWatcher) {
+// Returned ingester is NOT started.
+func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, overrides *validation.Overrides, reg prometheus.Registerer) (*Ingester, *kfake.Cluster) {
 	var (
 		ctx                   = context.Background()
 		defaultIngesterConfig = defaultIngesterTestConfig(t)
@@ -483,6 +483,8 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 	// Disable TSDB head compaction jitter to have predictable tests.
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
+	// Create and start the partition ring watcher. Since it's a dependency which is passed
+	// to ingester New() function, the watcher is expected to be started beforehand.
 	prw := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, kv, log.NewNopLogger(), nil)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, prw))
 	t.Cleanup(func() {
@@ -492,5 +494,5 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 	ingester, err := New(*ingesterCfg, overrides, nil, prw, nil, reg, util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 
-	return ingester, kafkaCluster, prw
+	return ingester, kafkaCluster
 }

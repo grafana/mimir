@@ -598,8 +598,10 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		return errors.Wrap(err, "failed to start lifecycler")
 	}
 
-	// let's start the rest of subservices via manager
-	servs := []services.Service(nil)
+	// Finally we start all services that should run after the ingester ring lifecycler.
+	// We add an idle service because all other services are conditional but we need to
+	// guarantee there's at least 1 service to run otherwise the service manager fails to start.
+	servs := []services.Service{services.NewIdleService(nil, nil)}
 
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		shippingService := services.NewBasicService(nil, i.shipBlocksLoop, nil)
