@@ -40,8 +40,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: overrides-exporter
           imagePullPolicy: IfNotPresent
@@ -90,13 +88,7 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
       
-      tolerations:
-        []
       terminationGracePeriodSeconds: 60
       volumes:
         - name: config

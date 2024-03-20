@@ -1,6 +1,6 @@
 apiVersion: v2
-version: 5.3.0-weekly.277
-appVersion: r277
+version: 5.3.0-weekly.281
+appVersion: r281
 description: "Grafana Mimir"
 home: https://grafana.com/docs/helm-charts/mimir-distributed/latest/
 icon: https://grafana.com/static/img/logos/logo-mimir.svg
@@ -14,11 +14,11 @@ dependencies:
     condition: minio.enabled
   - name: grafana-agent-operator
     alias: grafana-agent-operator
-    version: 0.3.15
+    version: 0.3.18
     repository: https://grafana.github.io/helm-charts
     condition: metaMonitoring.grafanaAgent.installOperator
   - name: rollout-operator
     alias: rollout_operator
     repository: https://grafana.github.io/helm-charts
-    version: 0.13.0
+    version: 0.14.0
     condition: rollout_operator.enabled

@@ -1260,7 +1260,10 @@ func newNotifyMetrics(r prometheus.Registerer) *notifyMetrics {
 // Copied from github.com/alertmanager/notify/util.go
 // possibleFailureReasonCategory is a list of possible failure reason.
 var possibleFailureReasonCategory = []string{notify.DefaultReason.String(), notify.ClientErrorReason.String(), notify.ServerErrorReason.String()}
-var possibleSuppressedReason = []string{notify.SuppressedReasonSilence, notify.SuppressedReasonInhibition, notify.SuppressedReasonMuteTimeInterval, notify.SuppressedReasonActiveTimeInterval}
+
+// Copied from https://github.com/prometheus/alertmanager/blob/release-0.27/notify/notify.go
+// Should use consts from notify package when they are public again.
+var possibleSuppressedReason = []string{"silence", "inhibition", "mute_time_interval", "active_time_interval"} // notify.SuppressedReasonSilence, notify.SuppressedReasonInhibition, notify.SuppressedReasonMuteTimeInterval, notify.SuppressedReasonActiveTimeInterval
 
 type markerMetrics struct {
 	alerts *prometheus.GaugeVec

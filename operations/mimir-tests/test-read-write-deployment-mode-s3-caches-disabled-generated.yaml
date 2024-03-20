@@ -482,7 +482,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.10.1
+        image: grafana/rollout-operator:v0.13.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -547,8 +547,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -717,8 +715,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -887,8 +883,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket

@@ -29,8 +29,10 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "continuous-test") | nindent 8 }}
+      {{- with .Values.continuous_test.initContainers }}
       initContainers:
-        {{- toYaml .Values.continuous_test.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -95,13 +97,19 @@ spec:
         {{- with .Values.continuous_test.extraContainers }}
         {{ toYaml . | nindent 8 }}
         {{- end }}
+      {{- with .Values.continuous_test.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.continuous_test.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.continuous_test.affinity }}
       affinity:
-        {{- toYaml .Values.continuous_test.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "continuous-test") | nindent 6 }}
+      {{- with .Values.continuous_test.tolerations }}
       tolerations:
-        {{- toYaml .Values.continuous_test.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.continuous_test.terminationGracePeriodSeconds }}
       volumes:
         {{- if .Values.continuous_test.extraVolumes }}

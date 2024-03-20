@@ -154,20 +154,7 @@ func (l *PartitionInstanceLifecycler) GetPartitionState(ctx context.Context) (Pa
 func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, toState PartitionState) error {
 	return l.runOnLifecyclerLoop(func() error {
 		err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
-			partition, exists := ring.Partitions[l.cfg.PartitionID]
-			if !exists {
-				return false, ErrPartitionDoesNotExist
-			}
-
-			if partition.State == toState {
-				return false, nil
-			}
-
-			if !isPartitionStateChangeAllowed(partition.State, toState) {
-				return false, errors.Wrapf(ErrPartitionStateChangeNotAllowed, "change partition state from %s to %s", partition.State.CleanName(), toState.CleanName())
-			}
-
-			return ring.UpdatePartitionState(l.cfg.PartitionID, toState, time.Now()), nil
+			return changePartitionState(ring, l.cfg.PartitionID, toState)
 		})
 
 		if err != nil {

@@ -61,7 +61,8 @@ func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStrea
 }
 
 // Close cleans up all resources associated with this SeriesChunksStreamReader.
-// This method should only be called if StartBuffering is not called.
+// This method should only be directly called if StartBuffering is not called,
+// otherwise StartBuffering will call it once done.
 func (s *SeriesChunksStreamReader) Close() {
 	if err := util.CloseAndExhaust[*QueryStreamResponse](s.client); err != nil {
 		level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)

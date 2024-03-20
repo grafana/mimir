@@ -3,6 +3,8 @@ package ring
 import (
 	"fmt"
 	"time"
+
+	"golang.org/x/exp/slices"
 )
 
 type PartitionRingReader interface {
@@ -48,6 +50,7 @@ func (r *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]
 
 	now := time.Now()
 	result := make([]ReplicationSet, 0, len(partitionsRingDesc.Partitions))
+	zonesBuffer := make([]string, 0, 3) // Pre-allocate buffer assuming 3 zones.
 
 	for partitionID := range partitionsRingDesc.Partitions {
 		ownerIDs := partitionsRing.PartitionOwnerIDs(partitionID)
@@ -72,10 +75,21 @@ func (r *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]
 			return nil, fmt.Errorf("partition %d: %w", partitionID, ErrTooManyUnhealthyInstances)
 		}
 
+		// Count the number of unique zones among instances.
+		zonesBuffer = uniqueZonesFromInstances(instances, zonesBuffer[:0])
+		uniqueZones := len(zonesBuffer)
+
 		result = append(result, ReplicationSet{
-			Instances:            instances,
-			MaxUnavailableZones:  len(instances) - 1, // We need response from at least 1 owner.
-			ZoneAwarenessEnabled: true,               // Partitions has no concept of zone, but we enable it in order to support ring's requests minimization feature.
+			Instances: instances,
+
+			// Partitions has no concept of zone, but we enable it in order to support ring's requests
+			// minimization feature.
+			ZoneAwarenessEnabled: true,
+
+			// We need response from at least 1 owner. The assumption is that we have 1 owner per zone
+			// but it's not guaranteed (depends on how the application was deployed). The safest thing
+			// we can do here is to just request a successful response from at least 1 zone.
+			MaxUnavailableZones: uniqueZones - 1,
 		})
 	}
 	return result, nil
@@ -121,4 +135,16 @@ func newStaticPartitionRingReader(ring *PartitionRing) staticPartitionRingReader
 
 func (m staticPartitionRingReader) PartitionRing() *PartitionRing {
 	return m.ring
+}
+
+// uniqueZonesFromInstances returns the unique list of zones among the input instances. The input buf MUST have
+// zero length, but could be capacity in order to avoid memory allocations.
+func uniqueZonesFromInstances(instances []InstanceDesc, buf []string) []string {
+	for _, instance := range instances {
+		if !slices.Contains(buf, instance.Zone) {
+			buf = append(buf, instance.Zone)
+		}
+	}
+
+	return buf
 }

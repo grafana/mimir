@@ -48,7 +48,6 @@ blocks_storage:
 
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier
-    index_header_lazy_loading_enabled: true
     sync_interval: 1m
 
     index_cache:
@@ -149,6 +148,8 @@ frontend:
     compression: snappy
 
 frontend_worker:
+  response_streaming_enabled: true
+
   # Uncomment when using "dns" service discovery mode for query-scheduler.
   # scheduler_address: "query-scheduler:9011"
 

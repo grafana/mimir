@@ -384,7 +384,7 @@ type headMetrics struct {
 	chunksRemoved             prometheus.Counter
 	gcDuration                prometheus.Summary
 	samplesAppended           *prometheus.CounterVec
-	outOfOrderSamplesAppended prometheus.Counter
+	outOfOrderSamplesAppended *prometheus.CounterVec
 	outOfBoundSamples         *prometheus.CounterVec
 	outOfOrderSamples         *prometheus.CounterVec
 	tooOldSamples             *prometheus.CounterVec
@@ -464,10 +464,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_head_samples_appended_total",
 			Help: "Total number of appended samples.",
 		}, []string{"type"}),
-		outOfOrderSamplesAppended: prometheus.NewCounter(prometheus.CounterOpts{
+		outOfOrderSamplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_out_of_order_samples_appended_total",
 			Help: "Total number of appended out of order samples.",
-		}),
+		}, []string{"type"}),
 		outOfBoundSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_out_of_bound_samples_total",
 			Help: "Total number of out of bound samples ingestion failed attempts with out of order support disabled.",
@@ -524,6 +524,9 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				60 * 60 * 6,  // 6h
 				60 * 60 * 12, // 12h
 			},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 		mmapChunksTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_mmap_chunks_total",
@@ -762,6 +765,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 	h.startWALReplayStatus(startFrom, endAt)
 
+	syms := labels.NewSymbolTable() // One table for the whole WAL.
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 	if err == nil && startFrom >= snapIdx {
 		sr, err := wlog.NewSegmentsReader(dir)
@@ -776,7 +780,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -809,7 +813,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks)
+		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks)
 		if err := sr.Close(); err != nil {
 			level.Warn(h.logger).Log("msg", "Error while closing the wal segments reader", "err", err)
 		}
@@ -837,7 +841,7 @@ func (h *Head) Init(minValidTime int64) error {
 			}
 
 			sr := wlog.NewSegmentBufReader(s)
-			err = h.loadWBL(wlog.NewReader(sr), multiRef, lastMmapRef)
+			err = h.loadWBL(wlog.NewReader(sr), syms, multiRef, lastMmapRef)
 			if err := sr.Close(); err != nil {
 				level.Warn(h.logger).Log("msg", "Error while closing the wbl segments reader", "err", err)
 			}
@@ -1115,11 +1119,11 @@ func (h *Head) SetMinValidTime(minValidTime int64) {
 
 // Truncate removes old data before mint from the head and WAL.
 func (h *Head) Truncate(mint int64) (err error) {
-	initialize := h.MinTime() == math.MaxInt64
+	uninitialized := h.isUninitialized()
 	if err := h.truncateMemory(mint); err != nil {
 		return err
 	}
-	if initialize {
+	if uninitialized {
 		return nil
 	}
 	return h.truncateWAL(mint)
@@ -1141,9 +1145,9 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 		}
 	}()
 
-	initialize := h.MinTime() == math.MaxInt64
+	uninitialized := h.isUninitialized()
 
-	if h.MinTime() >= mint && !initialize {
+	if h.MinTime() >= mint && !uninitialized {
 		return nil
 	}
 
@@ -1154,7 +1158,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	defer h.memTruncationInProcess.Store(false)
 
 	// We wait for pending queries to end that overlap with this truncation.
-	if !initialize {
+	if !uninitialized {
 		h.WaitForPendingReadersInTimeRange(h.MinTime(), mint)
 	}
 
@@ -1168,7 +1172,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 
 	// This was an initial call to Truncate after loading blocks on startup.
 	// We haven't read back the WAL yet, so do not attempt to truncate it.
-	if initialize {
+	if uninitialized {
 		return nil
 	}
 
@@ -1656,15 +1660,25 @@ func (h *Head) MaxOOOTime() int64 {
 	return h.maxOOOTime.Load()
 }
 
+// isUninitialized returns true if the head does not yet have a MinTime or MaxTime set, false otherwise.
+func (h *Head) isUninitialized() bool {
+	return h.MinTime() == math.MaxInt64 || h.MaxTime() == math.MinInt64
+}
+
 // compactable returns whether the head has a compactable range.
 // When the TimelyCompaction option is enabled, the head is compactable when the min block end is .5 times the chunk range in the past.
 // Else the head has a compactable range when the head time range is 1.5 times the chunk range.
 // The 0.5 acts as a buffer of the appendable window.
 func (h *Head) compactable() bool {
+	if h.isUninitialized() {
+		return false
+	}
+
 	if h.opts.TimelyCompaction {
 		minBlockEnd := rangeForTimestamp(h.MinTime(), h.chunkRange.Load())
 		return minBlockEnd < h.appendableMinValidTime()
 	}
+
 	return h.MaxTime()-h.MinTime() > h.chunkRange.Load()/2*3
 }
 

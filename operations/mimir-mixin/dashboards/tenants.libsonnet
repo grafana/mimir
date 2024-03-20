@@ -11,13 +11,13 @@ local filename = 'mimir-tenants.json';
     limit_name: limit_name,
   },
 
-  local limit_style = {
-    alias: 'limit',
-    fill: 0,
-    dashes: true,
-  },
+  local limitStyle = $.overrideFieldByName('limit', [
+    $.overrideProperty('custom.fillOpacity', 0),
+    $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+  ]),
 
   [filename]:
+    assert std.md5(filename) == '35fa247ce651ba189debf33d7ae41611' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Tenants') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addActiveUserSelectorTemplates()
@@ -35,10 +35,10 @@ local filename = 'mimir-tenants.json';
     )
 
     .addRow(
-      $.row('Active series and native histograms')
+      $.row('Tenant series counts')
       .addPanel(
         local title = 'All series';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             |||
@@ -68,6 +68,17 @@ local filename = 'mimir-tenants.json';
               group_by_cluster: $._config.group_by_cluster,
             },
             |||
+              sum(
+                cortex_ingester_owned_series{%(ingester)s, user="$user"}
+                / on(%(group_by_cluster)s) group_left
+                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+              )
+            ||| % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+              distributor: $.jobMatcher($._config.job_names.distributor),
+              group_by_cluster: $._config.group_by_cluster,
+            },
+            |||
               sum by (name) (
                 cortex_ingester_active_series_custom_tracker{%(ingester)s, user="$user"}
                 / on(%(group_by_cluster)s) group_left
@@ -83,22 +94,171 @@ local filename = 'mimir-tenants.json';
             'in-memory',
             'limit',
             'active',
+            'owned',
             'active ({{ name }})',
           ],
         ) +
-        { seriesOverrides: [limit_style] } +
+        { fieldConfig+: { overrides+: [limitStyle] } } +
         $.panelDescription(
           title,
           |||
-            Number of active and in-memory series per user, and active series matching custom trackers (in parenthesis).
+            Number of active, in-memory, and owned series per user, and active series matching custom trackers (in parenthesis).
             Note that these counts include all series regardless of the type of data (counter, gauge, native histogram, etc.).
             Note that active series matching custom trackers are included in the total active series count.
           |||
         ),
       )
       .addPanel(
+        local title = 'In-memory series per ingester';
+        $.timeseriesPanel(title) +
+        $.queryPanel(
+          [
+            |||
+              min by (job) (cortex_ingester_local_limits{%(ingester)s, limit="max_global_series_per_user", user="$user"})
+            ||| % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+            },
+            |||
+              cortex_ingester_memory_series_created_total{%(ingester)s, user="$user"}
+              - cortex_ingester_memory_series_removed_total{%(ingester)s, user="$user"}
+            ||| % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+            },
+          ],
+          [
+            'local limit ({{job}})',
+            '{{pod}}',
+          ],
+        ) +
+        {
+          fieldConfig+: {
+            defaults+: { custom+: { fillOpacity: 0 } },
+            overrides+: [
+              $.overrideField('byRegexp', '/local limit .+/', [
+                $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+                $.overrideProperty('color', { mode: 'fixed', fixedColor: 'yellow' }),
+              ]),
+            ],
+          },
+          options+: {
+            tooltip+: {
+              mode: 'multi',
+              sort: 'desc',
+            },
+            legend+: { showLegend: false },
+          },
+        } +
+        $.panelDescription(
+          title,
+          |||
+            Local tenant series limit and number of in-memory series per ingester.
+            Because series can be unevenly distributed across ingesters, ingesters may hit the local limit at different times.
+            Note that in-memory series may exceed the local limit if limiting based on owned series is enabled.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Owned series per ingester';
+        $.timeseriesPanel(title) +
+        $.queryPanel(
+          [
+            |||
+              min by (job) (cortex_ingester_local_limits{%(ingester)s, limit="max_global_series_per_user", user="$user"})
+            ||| % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+            },
+            |||
+              cortex_ingester_owned_series{%(ingester)s, user="$user"}
+            ||| % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+            },
+          ],
+          [
+            'local limit ({{job}})',
+            '{{pod}}',
+          ],
+        ) +
+        {
+          fieldConfig+: {
+            defaults+: { custom+: { fillOpacity: 0 } },
+            overrides+: [
+              $.overrideField('byRegexp', '/local limit .+/', [
+                $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+                $.overrideProperty('color', { mode: 'fixed', fixedColor: 'yellow' }),
+              ]),
+            ],
+          },
+          options+: {
+            tooltip+: {
+              mode: 'multi',
+              sort: 'desc',
+            },
+            legend+: { showLegend: false },
+          },
+        } +
+        $.panelDescription(
+          title,
+          |||
+            Local tenant series limit and number of owned series per ingester.
+            Because series can be unevenly distributed across ingesters, ingesters may hit the local limit at different times.
+            Owned series are the subset of an ingester's in-memory series that currently map to it in the ring
+          |||
+        ),
+      )
+    )
+
+    .addRow(
+      $.row('Exemplars and native histograms')
+      .addPanel(
+        local title = 'Series with exemplars';
+        $.timeseriesPanel(title) +
+        $.queryPanel(
+          |||
+            sum(
+              cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{%(ingester)s, user="$user"}
+              / on(%(group_by_cluster)s) group_left
+              max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+            )
+          ||| % {
+            ingester: $.jobMatcher($._config.job_names.ingester),
+            distributor: $.jobMatcher($._config.job_names.distributor),
+            group_by_cluster: $._config.group_by_cluster,
+          },
+          'series',
+        ) +
+        { options+: { legend+: { showLegend: false } } } +
+        $.panelDescription(
+          title,
+          |||
+            Number of series with exemplars currently in storage.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Oldest exemplar age';
+        $.timeseriesPanel(title) +
+        $.queryPanel(
+          'time() - min(cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{%(ingester)s, user="$user"} > 0)'
+          % { ingester: $.jobMatcher($._config.job_names.ingester) },
+          'age',
+        ) +
+        {
+          fieldConfig+: { defaults+: { unit: 's' } },
+          options+: { legend+: { showLegend: false } },
+        } +
+        $.panelDescription(
+          title,
+          |||
+            The age of the oldest exemplar stored in circular storage.
+            Useful to check for what time range the current exemplar buffer limit allows.
+            This usually means the max age for all exemplars for a typical setup.
+            This is not true though if one of the series timestamp is in future compared to rest series.
+          |||
+        ),
+      )
+      .addPanel(
         local title = 'Native histogram series';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             |||
@@ -129,7 +289,7 @@ local filename = 'mimir-tenants.json';
             'active ({{ name }})',
           ],
         ) +
-        { seriesOverrides: [limit_style] } +
+        { fieldConfig+: { overrides+: [limitStyle] } } +
         $.panelDescription(
           title,
           |||
@@ -140,7 +300,7 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Total number of buckets used by native histogram series';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             |||
@@ -171,77 +331,11 @@ local filename = 'mimir-tenants.json';
             'buckets ({{ name }})',
           ],
         ) +
-        { seriesOverrides: [limit_style] } +
+        { fieldConfig+: { overrides+: [limitStyle] } } +
         $.panelDescription(
           title,
           |||
             Total number of buckets in active native histogram series per user, and total active native histogram buckets matching custom trackers (in parenthesis).
-          |||
-        ),
-      )
-    )
-
-    .addRow(
-      $.row('Samples and exemplars')
-      .addPanel(
-        local title = 'Series with exemplars';
-        $.panel(title) +
-        $.queryPanel(
-          |||
-            sum(
-              cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{%(ingester)s, user="$user"}
-              / on(%(group_by_cluster)s) group_left
-              max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-            )
-          ||| % {
-            ingester: $.jobMatcher($._config.job_names.ingester),
-            distributor: $.jobMatcher($._config.job_names.distributor),
-            group_by_cluster: $._config.group_by_cluster,
-          },
-          'series',
-        ) +
-        {
-          legend: { show: false },
-        } +
-        $.panelDescription(
-          title,
-          |||
-            Number of series with exemplars currently in storage.
-          |||
-        ),
-      )
-      .addPanel(
-        local title = 'Newest seen sample age';
-        $.panel(title) +
-        $.queryPanel(
-          'time() - max(cortex_distributor_latest_seen_sample_timestamp_seconds{%(distributor)s, user="$user"} > 0)'
-          % { distributor: $.jobMatcher($._config.job_names.distributor) },
-          'age',
-        ) +
-        { legend: { show: false }, yaxes: $.yaxes('s') } +
-        $.panelDescription(
-          title,
-          |||
-            The age of the newest received sample seen in the distributors.
-          |||
-        ),
-      )
-      .addPanel(
-        local title = 'Oldest exemplar age';
-        $.panel(title) +
-        $.queryPanel(
-          'time() - min(cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{%(ingester)s, user="$user"} > 0)'
-          % { ingester: $.jobMatcher($._config.job_names.ingester) },
-          'age',
-        ) +
-        { legend: { show: false }, yaxes: $.yaxes('s') } +
-        $.panelDescription(
-          title,
-          |||
-            The age of the oldest exemplar stored in circular storage.
-            Useful to check for what time range the current exemplar buffer limit allows.
-            This usually means the max age for all exemplars for a typical setup.
-            This is not true though if one of the series timestamp is in future compared to rest series.
           |||
         ),
       ),
@@ -251,13 +345,13 @@ local filename = 'mimir-tenants.json';
       $.row('Distributor ingestion requests')
       .addPanel(
         local title = 'Distributor requests incoming rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_distributor_requests_in_total{%(job)s, user="$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.distributor) },
           'rate',
         ) +
-        { legend: { show: false } } +
+        { options+: { legend+: { showLegend: false } } } +
         $.panelDescription(
           title,
           |||
@@ -267,7 +361,7 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Distributor requests received (accepted) rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             'sum(rate(cortex_distributor_received_requests_total{%(job)s, user="$user"}[$__rate_interval]))'
@@ -279,7 +373,7 @@ local filename = 'mimir-tenants.json';
             'limit',
           ],
         ) +
-        { seriesOverrides: [limit_style] } +
+        { fieldConfig+: { overrides+: [limitStyle] } } +
         $.panelDescription(
           title,
           |||
@@ -288,8 +382,27 @@ local filename = 'mimir-tenants.json';
         ),
       )
       .addPanel(
+        local title = 'Newest seen sample age';
+        $.timeseriesPanel(title) +
+        $.queryPanel(
+          'time() - max(cortex_distributor_latest_seen_sample_timestamp_seconds{%(distributor)s, user="$user"} > 0)'
+          % { distributor: $.jobMatcher($._config.job_names.distributor) },
+          'age',
+        ) +
+        {
+          fieldConfig+: { defaults+: { unit: 's' } },
+          options+: { legend+: { showLegend: false } },
+        } +
+        $.panelDescription(
+          title,
+          |||
+            The age of the newest received sample seen in the distributors.
+          |||
+        ),
+      )
+      .addPanel(
         local title = 'Distributor discarded requests rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             'sum by (reason) (rate(cortex_discarded_requests_total{%(job)s, user="$user"}[$__rate_interval]))'
@@ -312,13 +425,13 @@ local filename = 'mimir-tenants.json';
       $.row('Samples ingestion funnel')
       .addPanel(
         local title = 'Distributor samples incoming rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_distributor_samples_in_total{%(job)s, user="$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.distributor) },
           'rate',
         ) +
-        { legend: { show: false } } +
+        { options+: { legend+: { showLegend: false } } } +
         $.panelDescription(
           title,
           |||
@@ -328,7 +441,7 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Distributor samples received (accepted) rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             'sum(rate(cortex_distributor_received_samples_total{%(job)s, user="$user"}[$__rate_interval]))'
@@ -340,7 +453,7 @@ local filename = 'mimir-tenants.json';
             'limit',
           ],
         ) +
-        { seriesOverrides: [limit_style] } +
+        { fieldConfig+: { overrides+: [limitStyle] } } +
         $.panelDescription(
           title,
           |||
@@ -350,7 +463,7 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Distributor deduplicated/non-HA';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             'sum(rate(cortex_distributor_deduped_samples_total{%(job)s, user="$user"}[$__rate_interval]))'
@@ -372,7 +485,7 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Distributor and ingester discarded samples rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             'sum by (reason) (rate(cortex_discarded_samples_total{%(job)s, user="$user"}[$__rate_interval]))'
@@ -398,13 +511,13 @@ local filename = 'mimir-tenants.json';
       $.row('Exemplars ingestion funnel')
       .addPanel(
         local title = 'Distributor exemplars incoming rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_distributor_exemplars_in_total{%(job)s, user="$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.distributor) },
           'rate',
         ) +
-        { legend: { show: false } } +
+        { options+: { legend+: { showLegend: false } } } +
         $.panelDescription(
           title,
           |||
@@ -414,13 +527,13 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Distributor exemplars received (accepted) rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_distributor_received_exemplars_total{%(job)s, user="$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_users: $._config.group_prefix_users },
           'rate',
         ) +
-        { legend: { show: false } } +
+        { options+: { legend+: { showLegend: false } } } +
         $.panelDescription(
           title,
           |||
@@ -432,7 +545,7 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Distributor discarded exemplars rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum by (reason) (rate(cortex_discarded_exemplars_total{%(job)s, user="$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.distributor) },
@@ -447,7 +560,7 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Ingester appended exemplars rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           |||
             sum(
@@ -462,7 +575,7 @@ local filename = 'mimir-tenants.json';
           },
           'rate',
         ) +
-        { legend: { show: false } } +
+        { options+: { legend+: { showLegend: false } } } +
         $.panelDescription(
           title,
           |||
@@ -477,13 +590,13 @@ local filename = 'mimir-tenants.json';
       ($.row("Ingesters' storage") + { collapse: true })
       .addPanel(
         local title = 'Symbol table size for loaded blocks';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum by (job) (cortex_ingester_tsdb_symbol_table_size_bytes{%(ingester)s, user="$user"})'
           % { ingester: $.jobMatcher($._config.job_names.ingester) },
           '{{ job }}',
         ) +
-        { yaxes: $.yaxes('bytes') } +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } } +
         $.panelDescription(
           title,
           |||
@@ -493,13 +606,13 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Space used by local blocks';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum by (job) (cortex_ingester_tsdb_storage_blocks_bytes{%(ingester)s, user="$user"})'
           % { ingester: $.jobMatcher($._config.job_names.ingester) },
           '{{ job }}',
         ) +
-        { yaxes: $.yaxes('bytes') } +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } } +
         $.panelDescription(
           title,
           |||
@@ -513,7 +626,7 @@ local filename = 'mimir-tenants.json';
       $.row('Rules')
       .addPanel(
         local title = 'Number of groups';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             'count(sum by (rule_group) (cortex_prometheus_rule_group_rules{%(job)s, user="$user"}))'
@@ -525,7 +638,7 @@ local filename = 'mimir-tenants.json';
             'limit',
           ]
         ) +
-        { seriesOverrides: [limit_style] } +
+        { fieldConfig+: { overrides+: [limitStyle] } } +
         $.panelDescription(
           title,
           |||
@@ -535,13 +648,13 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Number of rules';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(cortex_prometheus_rule_group_rules{%(job)s, user="$user"})'
           % { job: $.jobMatcher($._config.job_names.ruler) },
           'rules',
         ) +
-        { legend: { show: false } } +
+        { options+: { legend+: { showLegend: false } } } +
         $.panelDescription(
           title,
           |||
@@ -551,22 +664,31 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Total evaluations rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_prometheus_rule_evaluations_total{%(job)s, user="$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.ruler) },
           'rate',
         ) +
-        { legend: { show: false } },
+        { options+: { legend+: { showLegend: false } } },
       )
       .addPanel(
         local title = 'Failed evaluations rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%(job)s, user="$user"}[$__rate_interval])) > 0'
           % { job: $.jobMatcher($._config.job_names.ruler) },
           '{{ rule_group }}',
-        ) + { stack: true },
+        ) +
+        {
+          fieldConfig+: {
+            defaults+: {
+              custom+: {
+                stacking+: { mode: 'normal' },
+              },
+            },
+          },
+        },
       )
     )
 
@@ -600,30 +722,30 @@ local filename = 'mimir-tenants.json';
       $.row('Notifications')
       .addPanel(
         local title = 'Sent notifications rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_prometheus_notifications_sent_total{%(job)s, user="$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.ruler) },
           'rate',
         ) +
-        { legend: { show: false } },
+        { options+: { legend+: { showLegend: false } } },
       )
       .addPanel(
         local title = 'Failed notifications rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.failurePanel(
           'sum(rate(cortex_prometheus_notifications_errors_total{%(job)s, user="$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.ruler) },
           'rate',
         ) +
-        { legend: { show: false } },
+        { options+: { legend+: { showLegend: false } } },
       )
     )
 
     .addRow(
       $.row('Alertmanager')
       .addPanel(
-        $.panel('Alerts') +
+        $.timeseriesPanel('Alerts') +
         $.queryPanel(
           [
             'sum by (user) (cortex_alertmanager_alerts{%(job)s, user="$user"})' % { job: $.jobMatcher($._config.job_names.alertmanager) },
@@ -633,7 +755,7 @@ local filename = 'mimir-tenants.json';
         )
       )
       .addPanel(
-        $.panel('NPS') +
+        $.timeseriesPanel('NPS') +
         $.successFailurePanel(
           |||
             (
@@ -650,7 +772,7 @@ local filename = 'mimir-tenants.json';
         )
       )
       .addPanel(
-        $.panel('NPS by integration') +
+        $.timeseriesPanel('NPS by integration') +
         $.queryPanel(
           [
             |||
@@ -676,7 +798,7 @@ local filename = 'mimir-tenants.json';
       $.row('Read Path - Queries (User)')
       .addPanel(
         local title = 'Rate of Read Requests - query-frontend';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_query_frontend_queries_total{%(job)s, user="$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.query_frontend) },
@@ -685,7 +807,7 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Number of Queries Queued - query-scheduler';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             'sum(cortex_query_scheduler_queue_length{%(job)s, user="$user"})'
@@ -701,7 +823,7 @@ local filename = 'mimir-tenants.json';
       $.row('Read Path - Queries (Ruler)')
       .addPanel(
         local title = 'Rate of Read Requests - ruler-query-frontend';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_query_frontend_queries_total{%(job)s, user="$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.ruler_query_frontend) },
@@ -710,7 +832,7 @@ local filename = 'mimir-tenants.json';
       )
       .addPanel(
         local title = 'Number of Queries Queued - ruler-query-scheduler';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             'sum(cortex_query_scheduler_queue_length{%(job)s, user="$user"})'
@@ -721,5 +843,61 @@ local filename = 'mimir-tenants.json';
           ],
         )
       )
+    )
+
+    .addRow(
+      ($.row('Compactions') + { collapse: true })
+      .addPanel(
+        $.timeseriesPanel('Estimated Compaction Jobs') +
+        $.queryPanel(
+          |||
+            sum by (type) (cortex_bucket_index_estimated_compaction_jobs{%s, user="$user"})
+            and ignoring(type)
+            (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)
+          ||| % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)],
+          '{{ job }}',
+        ) + {
+          fieldConfig+: {
+            defaults+: {
+              custom+: {
+                fillOpacity: 50,
+                stacking+: { mode: 'normal' },
+              },
+            },
+          },
+          options+: {
+            tooltip+: {
+              mode: 'multi',
+            },
+          },
+        } +
+        $.panelDescription(
+          'Estimated Compaction Jobs',
+          |||
+            Estimated number of compaction jobs for selected user, based on latest version of bucket index. When user sends data, ingesters upload new user blocks every 2 hours
+            (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.), and compactors should process all of the blocks within 2h interval.
+            If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction for this user works correctly.
+
+            Depending on the configuration, there are two types of jobs: `split` jobs and `merge` jobs. Split jobs will only show up when user is configured with positive number of `compactor_split_and_merge_shards`.
+            Values for split and merge jobs are stacked.
+          |||
+        )
+      )
+
+      .addPanel(
+        $.timeseriesPanel('Blocks') +
+        $.queryPanel(
+          |||
+            max by (user) (cortex_bucket_blocks_count{%s, user="$user"})
+          ||| % [$.jobMatcher($._config.job_names.compactor)],
+          '{{ job }}',
+        ) +
+        $.panelDescription(
+          'Number of blocks',
+          |||
+            Number of blocks stored in long-term storage for this user.
+          |||
+        )
+      ),
     ),
 }

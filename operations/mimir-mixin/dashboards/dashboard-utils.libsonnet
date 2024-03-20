@@ -1,9 +1,6 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'grafana-builder/grafana.libsonnet') {
-  local resourceRequestStyle = { alias: 'request', color: '#FFC000', fill: 0, dashes: true, dashLength: 5 },
-  local resourceLimitStyle = { alias: 'limit', color: '#E02F44', fill: 0, dashes: true, dashLength: 5 },
-
   local resourceRequestColor = '#FFC000',
   local resourceLimitColor = '#E02F44',
   local successColor = '#7EB26D',
@@ -12,6 +9,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   // Colors palette picked from Grafana UI, excluding red-ish colors which we want to keep reserved for errors / failures.
   local nonErrorColorsPalette = ['#429D48', '#F1C731', '#2A66CF', '#9E44C1', '#FFAB57', '#C79424', '#84D586', '#A1C4FC', '#C788DE'],
+
+  local resourceRequestStyle = $.overrideFieldByName('request', [
+    $.overrideProperty('color', { mode: 'fixed', fixedColor: resourceRequestColor }),
+    $.overrideProperty('custom.fillOpacity', 0),
+    $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+  ]),
+  local resourceLimitStyle = $.overrideFieldByName('limit', [
+    $.overrideProperty('color', { mode: 'fixed', fixedColor: resourceLimitColor }),
+    $.overrideProperty('custom.fillOpacity', 0),
+    $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+  ]),
 
   local sortAscending = 1,
 
@@ -175,9 +183,40 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  timeseriesPanel(title)::
+    super.timeseriesPanel(title) + {
+      fieldConfig+: {
+        defaults+: {
+          unit: 'short',
+          min: 0,
+        },
+      },
+    },
+
   qpsPanel(selector, statusLabelName='status_code')::
     super.qpsPanel(selector, statusLabelName) +
-    { yaxes: $.yaxes('reqps') },
+    $.aliasColors({
+      '1xx': warningColor,
+      '2xx': successColor,
+      '3xx': '#6ED0E0',
+      '4xx': '#EF843C',
+      '5xx': errorColor,
+      OK: successColor,
+      success: successColor,
+      'error': errorColor,
+      cancel: '#A9A9A9',
+    }) + {
+      fieldConfig+: {
+        defaults+: { unit: 'reqps' },
+      },
+    },
+
+  latencyPanel(metricName, selector, multiplier='1e3')::
+    super.latencyPanel(metricName, selector, multiplier) + {
+      fieldConfig+: {
+        defaults+: { unit: 'ms' },
+      },
+    },
 
   // hiddenLegendQueryPanel adds on to 'timeseriesPanel', not the deprecated 'panel'.
   // It is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and
@@ -199,6 +238,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
       fieldConfig+: {
         defaults+: {
+          unit: 's',
           custom+: {
             fillOpacity: 0,
           },
@@ -216,44 +256,41 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // Creates a panel like queryPanel() but if the legend contains only 1 entry,
   // than it configures the series alias color to the one used to display failures.
   failurePanel(queries, legends, legendLink=null)::
-    $.queryPanel(queries, legends, legendLink) + {
-      // Set the failure color only if there's just 1 legend and it doesn't contain any placeholder.
-      aliasColors: if (std.type(legends) == 'string' && std.length(std.findSubstr('{', legends[0])) == 0) then {
+    $.queryPanel(queries, legends, legendLink) +
+    // Set the failure color only if there's just 1 legend and it doesn't contain any placeholder.
+    $.aliasColors(
+      if (std.type(legends) == 'string' && std.length(std.findSubstr('{', legends[0])) == 0) then {
         [legends]: errorColor,
-      } else {},
-    },
+      } else {}
+    ),
 
   successFailurePanel(successMetric, failureMetric)::
     $.queryPanel([successMetric, failureMetric], ['successful', 'failed']) +
-    {
-      aliasColors: {
-        successful: successColor,
-        failed: errorColor,
-      },
-    },
+    $.aliasColors({
+      successful: successColor,
+      failed: errorColor,
+    }),
 
   // successFailureCustomPanel is like successFailurePanel() but allows to customize the legends
   // and have additional queries. The success and failure queries MUST be the first and second
   // queries respectively.
   successFailureCustomPanel(queries, legends)::
-    $.queryPanel(queries, legends) + {
-      aliasColors: {
-        [legends[0]]: successColor,
-        [legends[1]]: errorColor,
-      },
-    },
+    $.queryPanel(queries, legends) +
+    $.aliasColors({
+      [legends[0]]: successColor,
+      [legends[1]]: errorColor,
+    }),
 
   // Displays started, completed and failed rate.
   startedCompletedFailedPanel(title, startedMetric, completedMetric, failedMetric)::
-    $.panel(title) +
+    $.timeseriesPanel(title) +
     $.queryPanel([startedMetric, completedMetric, failedMetric], ['started', 'completed', 'failed']) +
-    $.stack + {
-      aliasColors: {
-        started: '#34CCEB',
-        completed: successColor,
-        failed: errorColor,
-      },
-    },
+    $.stack +
+    $.aliasColors({
+      started: '#34CCEB',
+      completed: successColor,
+      failed: errorColor,
+    }),
 
   resourceUtilizationAndLimitLegend(resourceName)::
     if $._config.deployment_type == 'kubernetes'
@@ -293,15 +330,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerCPUUsagePanel(instanceName, containerName)::
-    $.panel('CPU') +
+    $.timeseriesPanel('CPU') +
     $.queryPanel($.resourceUtilizationAndLimitQueries('cpu', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
     {
-      seriesOverrides: [
-        resourceRequestStyle,
-        resourceLimitStyle,
-      ],
-      tooltip: { sort: 2 },  // Sort descending.
-      fill: 0,
+      fieldConfig+: {
+        overrides+: [
+          resourceRequestStyle,
+          resourceLimitStyle,
+        ],
+        defaults+: {
+          unit: 'short',
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
+      options+: {
+        tooltip: {
+          mode: 'multi',
+          sort: 'desc',
+        },
+      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -311,16 +360,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerMemoryWorkingSetPanel(instanceName, containerName)::
-    $.panel('Memory (workingset)') +
+    $.timeseriesPanel('Memory (workingset)') +
     $.queryPanel($.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
     {
-      seriesOverrides: [
-        resourceRequestStyle,
-        resourceLimitStyle,
-      ],
-      yaxes: $.yaxes('bytes'),
-      tooltip: { sort: 2 },  // Sort descending.
-      fill: 0,
+      fieldConfig+: {
+        overrides+: [
+          resourceRequestStyle,
+          resourceLimitStyle,
+        ],
+        defaults+: {
+          unit: 'bytes',
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
+      options+: {
+        tooltip: {
+          mode: 'multi',
+          sort: 'desc',
+        },
+      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -330,16 +390,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerMemoryRSSPanel(instanceName, containerName)::
-    $.panel('Memory (RSS)') +
+    $.timeseriesPanel('Memory (RSS)') +
     $.queryPanel($.resourceUtilizationAndLimitQueries('memory_rss', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
     {
-      seriesOverrides: [
-        resourceRequestStyle,
-        resourceLimitStyle,
-      ],
-      yaxes: $.yaxes('bytes'),
-      tooltip: { sort: 2 },  // Sort descending.
-      fill: 0,
+      fieldConfig+: {
+        overrides+: [
+          resourceRequestStyle,
+          resourceLimitStyle,
+        ],
+        defaults+: {
+          unit: 'bytes',
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
+      options+: {
+        tooltip: {
+          mode: 'multi',
+          sort: 'desc',
+        },
+      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -349,12 +420,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerGoHeapInUsePanel(instanceName, containerName)::
-    $.panel('Memory (go heap inuse)') +
+    $.timeseriesPanel('Memory (go heap inuse)') +
     $.queryPanel($.resourceUtilizationQuery('memory_go_heap', instanceName, containerName), '{{%s}}' % $._config.per_instance_label) +
     {
-      yaxes: $.yaxes('bytes'),
-      tooltip: { sort: 2 },  // Sort descending.
-      fill: 0,
+      fieldConfig+: {
+        defaults+: {
+          unit: 'bytes',
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
+      options+: {
+        tooltip: {
+          mode: 'multi',
+          sort: 'desc',
+        },
+      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -362,7 +444,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.containerGoHeapInUsePanel($._config.instance_names[componentName], $._config.container_names[componentName]),
 
   containerNetworkBytesPanel(title, metric, instanceName)::
-    $.panel(title) +
+    $.timeseriesPanel(title) +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type][metric] % {
         namespaceMatcher: $.namespaceMatcher(),
@@ -371,7 +453,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       }, '{{%s}}' % $._config.per_instance_label
     ) +
     $.stack +
-    { yaxes: $.yaxes('Bps') },
+    { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerNetworkReceiveBytesPanelByComponent(componentName)::
@@ -384,7 +466,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerDiskWritesPanel(instanceName, containerName)::
-    $.panel('Disk writes') +
+    $.timeseriesPanel('Disk writes') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_writes % {
         namespace: $.namespaceMatcher(),
@@ -396,7 +478,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
-    { yaxes: $.yaxes('Bps') },
+    { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerDiskWritesPanelByComponent(componentName)::
@@ -405,7 +487,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerDiskReadsPanel(instanceName, containerName)::
-    $.panel('Disk reads') +
+    $.timeseriesPanel('Disk reads') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_reads % {
         namespace: $.namespaceMatcher(),
@@ -417,7 +499,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
-    { yaxes: $.yaxes('Bps') },
+    { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerDiskReadsPanelByComponent(componentName)::
@@ -427,8 +509,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // the provided containerName should be a regexp from $._config.container_names.
   containerDiskSpaceUtilizationPanel(instanceName, containerName)::
     local label = if $._config.deployment_type == 'kubernetes' then '{{persistentvolumeclaim}}' else '{{instance}}';
-
-    $.panel('Disk space utilization') +
+    $.timeseriesPanel('Disk space utilization') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
         namespaceMatcher: $.namespaceMatcher(),
@@ -439,8 +520,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       }, label
     ) +
     {
-      yaxes: $.yaxes('percentunit'),
-      fill: 0,
+      fieldConfig+: {
+        defaults+: { unit: 'percentunit' },
+        custom+: {
+          fillOpacity: 0,
+        },
+      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -466,31 +551,45 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addPanel($.containerNetworkReceiveBytesPanelByComponent(componentName))
     .addPanel($.containerNetworkTransmitBytesPanelByComponent(componentName))
     .addPanel(
-      $.panel('Inflight requests (per pod)') +
+      $.timeseriesPanel('Inflight requests (per pod)') +
       $.queryPanel([
         'avg(cortex_inflight_requests{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"})' % vars,
         'max(cortex_inflight_requests{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"})' % vars,
       ], ['avg', 'highest']) +
-      { fill: 0 }
+      {
+        fieldConfig+: {
+          defaults+: { unit: 'short' },
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
     )
     .addPanel(
-      $.panel('TCP connections (per pod)') +
+      $.timeseriesPanel('TCP connections (per pod)') +
       $.queryPanel([
         'avg(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
         'max(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
         'min(cortex_tcp_connections_limit{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"})' % vars,
       ], ['avg', 'highest', 'limit']) +
-      { fill: 0 }
+      {
+        fieldConfig+: {
+          defaults+: { unit: 'short' },
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
     ),
 
   kvStoreRow(title, jobName, kvName)::
     super.row(title)
     .addPanel(
-      $.panel('Requests / sec') +
+      $.timeseriesPanel('Requests / sec') +
       $.qpsPanel('cortex_kv_request_duration_seconds_count{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     )
     .addPanel(
-      $.panel('Latency') +
+      $.timeseriesPanel('Latency') +
       $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     ),
 
@@ -500,7 +599,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.row('%s - autoscaling' % [componentTitle])
     .addPanel(
       local title = 'Replicas';
-      $.panel(title) +
+      $.timeseriesPanel(title) +
       $.queryPanel(
         [
           |||
@@ -558,27 +657,26 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ||| % [component]
       ) +
       {
-        seriesOverrides+: [
-          {
-            alias: '/Max .+/',
-            dashes: true,
-            fill: 0,
-          },
-          {
-            alias: '/Current .+/',
-            fill: 0,
-          },
-          {
-            alias: '/Min .+/',
-            dashes: true,
-            fill: 0,
-          },
-        ],
+        fieldConfig+: {
+          overrides: [
+            $.overrideField('byRegexp', '/Max .+/', [
+              $.overrideProperty('custom.fillOpacity', 0),
+              $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+            ]),
+            $.overrideField('byRegexp', '/Current .+/', [
+              $.overrideProperty('custom.fillOpacity', 0),
+            ]),
+            $.overrideField('byRegexp', '/Min .+/', [
+              $.overrideProperty('custom.fillOpacity', 0),
+              $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+            ]),
+          ],
+        },
       },
     )
     .addPanel(
       local title = 'Scaling metric (CPU): Desired replicas';
-      $.panel(title) +
+      $.timeseriesPanel(title) +
       $.queryPanel(
         [
           |||
@@ -617,7 +715,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       local title = 'Scaling metric (memory): Desired replicas';
-      $.panel(title) +
+      $.timeseriesPanel(title) +
       $.queryPanel(
         [
           |||
@@ -656,7 +754,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       local title = 'Autoscaler failures rate';
-      $.panel(title) +
+      $.timeseriesPanel(title) +
       $.queryPanel(
         $.filterKedaScalerErrorsByHPA($._config.autoscaling[field].hpa_name),
         '{{scaler}} failures'
@@ -804,10 +902,31 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  // Enables stacking of timeseries on top of each.
+  // It overrites the "stack" mixin from jsonnet-lib/grafana-builder, to make it compatible with timeseriesPanel.
+  stack:: {
+    fieldConfig+: {
+      defaults+: {
+        custom+: {
+          lineWidth: 0,
+          fillOpacity: 100,
+          stacking+: {
+            mode: 'normal',
+          },
+        },
+      },
+    },
+  },
+
   // Switches a panel from lines (default) to bars.
   bars:: {
-    bars: true,
-    lines: false,
+    fieldConfig+: {
+      defaults+: {
+        custom+: {
+          drawStyle: 'bars',
+        },
+      },
+    },
   },
 
   textPanel(title, content, options={}):: {
@@ -886,10 +1005,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
   getObjectStoreRows(title, component):: [
     super.row(title)
     .addPanel(
-      $.panel('Operations / sec') +
+      $.timeseriesPanel('Operations / sec') +
       $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
       $.stack +
-      { yaxes: $.yaxes('reqps') },
+      { fieldConfig+: { defaults+: { unit: 'reqps' } } }
     )
     .addPanel(
       $.timeseriesPanel('Error rate') +
@@ -897,28 +1016,28 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { fieldConfig: { defaults: { noValue: '0', unit: 'percentunit', min: 0, max: 1 } } }
     )
     .addPanel(
-      $.panel('Latency of op: Attributes') +
+      $.timeseriesPanel('Latency of op: Attributes') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="attributes"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Latency of op: Exists') +
+      $.timeseriesPanel('Latency of op: Exists') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="exists"}' % [$.namespaceMatcher(), component]),
     ),
     $.row('')
     .addPanel(
-      $.panel('Latency of op: Get') +
+      $.timeseriesPanel('Latency of op: Get') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Latency of op: GetRange') +
+      $.timeseriesPanel('Latency of op: GetRange') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get_range"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Latency of op: Upload') +
+      $.timeseriesPanel('Latency of op: Upload') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="upload"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Latency of op: Delete') +
+      $.timeseriesPanel('Latency of op: Delete') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="delete"}' % [$.namespaceMatcher(), component]),
     ),
   ],
@@ -931,7 +1050,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     };
     super.row(title)
     .addPanel(
-      $.panel('Requests / sec') +
+      $.timeseriesPanel('Requests / sec') +
       $.queryPanel(
         |||
           sum by(operation) (
@@ -952,10 +1071,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         '{{operation}}'
       ) +
       $.stack +
-      { yaxes: $.yaxes('ops') }
+      { fieldConfig+: { defaults+: { unit: 'ops' } } }
     )
     .addPanel(
-      $.panel('Latency (getmulti)') +
+      $.timeseriesPanel('Latency (getmulti)') +
       $.backwardsCompatibleLatencyPanel(
         'thanos_memcached_operation_duration_seconds',
         'thanos_cache_operation_duration_seconds',
@@ -970,7 +1089,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addPanel(
-      $.panel('Hit ratio') +
+      $.timeseriesPanel('Hit ratio') +
       $.queryPanel(
         |||
           sum(
@@ -1005,7 +1124,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ||| % config,
         'items'
       ) +
-      { yaxes: $.yaxes('percentunit') }
+      { fieldConfig+: { defaults+: { unit: 'percentunit' } } }
     ),
 
   latencyPanelLabelBreakout(
@@ -1049,16 +1168,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
     local targets = if includeAverage then percentileTargets + averageTargets else percentileTargets;
 
     {
-      nullPointMode: 'null as zero',
       targets: targets,
-      yaxes: $.yaxes('ms'),
+      fieldConfig+: {
+        defaults+: { unit: 'ms', noValue: 0 },
+      },
     },
 
   // Copy/paste of latencyPanel from grafana-builder so that we can migrate between two different
   // names for the same metric. When enough time has passed and we no longer care about the old
   // metric name, this method can be removed and replaced with $.latencyPanel
   backwardsCompatibleLatencyPanel(oldMetricName, newMetricName, selector, multiplier='1e3'):: {
-    nullPointMode: 'null as zero',
     targets: [
       {
         expr: |||
@@ -1120,8 +1239,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
         refId: 'C',
       },
     ],
-    yaxes: $.yaxes('ms'),
+    fieldConfig+: {
+      defaults+: { unit: 'ms', noValue: 0 },
+    },
   },
+
+  latencyRecordingRulePanel(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[])::
+    utils.latencyRecordingRulePanel(metric, selectors, extra_selectors, multiplier, sum_by) + {
+      // Hide yaxes from JSON Model; it's not supported by timeseriesPanel.
+      yaxes:: super.yaxes,
+      fieldConfig+: {
+        defaults+: {
+          unit: 'ms',
+          min: 0,
+        },
+      },
+    },
 
   filterNodeDiskContainer(containerName)::
     |||
@@ -1211,13 +1344,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
   },
 
   // Panel query override functions
-  overrideFieldByName(fieldName, overrideProperties):: {
+  overrideField(matcherId, options, overrideProperties):: {
     matcher: {
-      id: 'byName',
-      options: fieldName,
+      id: matcherId,
+      options: options,
     },
     properties: overrideProperties,
   },
+
+  overrideFieldByName(fieldName, overrideProperties)::
+    $.overrideField('byName', fieldName, overrideProperties),
 
   overrideProperty(id, value):: { id: id, value: value },
 
@@ -1271,6 +1407,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.queryPanel(queries, legends) +
     {
       datasource: '${loki_datasource}',
-      yaxes: $.yaxes(unit),
+      fieldConfig+: { defaults+: { unit: unit } },
     },
+
+  // Backwards compatible helper functions
+
+  aliasColors(colors):: {
+    // aliasColors was the configuration in (deprecated) graph panel; we hide it from JSON model.
+    aliasColors:: super.aliasColors,
+    fieldConfig+: {
+      overrides+: [
+        $.overrideFieldByName(name, [
+          $.overrideProperty('color', { mode: 'fixed', fixedColor: colors[name] }),
+        ])
+        for name in std.objectFields(colors)
+      ],
+    },
+  },
 }

@@ -1196,7 +1196,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			var m model.Matrix
 			if len(resp.Chunkseries) == 0 {
-				m, err = client.TimeSeriesChunksToMatrix(0, 10, nil)
+				m, err = client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
 			} else {
 				m, err = client.TimeSeriesChunksToMatrix(0, 10, resp.Chunkseries)
 			}
@@ -4835,6 +4835,12 @@ type prepConfig struct {
 	ingestStorageEnabled    bool
 	ingestStoragePartitions int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
 	ingestStorageKafka      *kfake.Cluster
+
+	// We need this setting to simulate a response from ingesters that didn't support responding
+	// with a stream of chunks, and were responding with chunk series instead. This is needed to
+	// ensure backwards compatibility, i.e., that queriers can still correctly handle both types
+	// or responses.
+	disableStreamingResponse bool
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -4973,6 +4979,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
 			circuitBreakerOpen:            cfg.circuitBreakerOpen,
+			disableStreamingResponse:      cfg.disableStreamingResponse,
 		}
 
 		// Init the partition reader if the ingest storage is enabled.
@@ -5563,6 +5570,7 @@ type mockIngester struct {
 	tokens                        []uint32
 	id                            int
 	circuitBreakerOpen            bool
+	disableStreamingResponse      bool
 
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
@@ -5599,9 +5607,6 @@ func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
 }
 
 func (i *mockIngester) Check(context.Context, *grpc_health_v1.HealthCheckRequest, ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
-	i.Lock()
-	defer i.Unlock()
-
 	i.trackCall("Check")
 
 	return &grpc_health_v1.HealthCheckResponse{}, nil
@@ -5612,12 +5617,12 @@ func (i *mockIngester) Close() error {
 }
 
 func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	i.trackCall("Push")
+
 	time.Sleep(i.pushDelay)
 
 	i.Lock()
 	defer i.Unlock()
-
-	i.trackCall("Push")
 
 	if !i.happy {
 		return nil, errFail
@@ -5690,16 +5695,18 @@ func makeWireChunk(c chunk.EncodedChunk) client.Chunk {
 }
 
 func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest, _ ...grpc.CallOption) (client.Ingester_QueryStreamClient, error) {
+	i.trackCall("QueryStream")
+
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
 	}
 
-	time.Sleep(i.queryDelay)
+	if err := i.enforceQueryDelay(ctx); err != nil {
+		return nil, err
+	}
 
 	i.Lock()
 	defer i.Unlock()
-
-	i.trackCall("QueryStream")
 
 	if !i.happy {
 		return nil, errFail
@@ -5802,7 +5809,16 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			}
 		}
 
-		if req.StreamingChunksBatchSize > 0 {
+		if i.disableStreamingResponse || req.StreamingChunksBatchSize == 0 {
+			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
+				Chunkseries: []client.TimeSeriesChunk{
+					{
+						Labels: ts.Labels,
+						Chunks: wireChunks,
+					},
+				},
+			})
+		} else {
 			streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
 				StreamingSeries: []client.QueryStreamSeries{
 					{
@@ -5820,44 +5836,36 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 					},
 				},
 			})
-		} else {
-			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
-				Chunkseries: []client.TimeSeriesChunk{
-					{
-						Labels: ts.Labels,
-						Chunks: wireChunks,
-					},
-				},
-			})
 		}
 	}
 
 	var results []*client.QueryStreamResponse
 
-	if req.StreamingChunksBatchSize > 0 {
+	if i.disableStreamingResponse {
+		results = nonStreamingResponses
+	} else {
 		endOfLabelsMessage := &client.QueryStreamResponse{
 			IsEndOfSeriesStream: true,
 		}
 		results = append(streamingLabelResponses, endOfLabelsMessage)
 		results = append(results, streamingChunkResponses...)
-	} else {
-		results = nonStreamingResponses
 	}
 
 	return &stream{
+		ctx:     ctx,
 		results: results,
 	}, nil
 }
 
 func (i *mockIngester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest, _ ...grpc.CallOption) (*client.ExemplarQueryResponse, error) {
+	i.trackCall("QueryExemplars")
+
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
 	}
 
 	i.Lock()
 	defer i.Unlock()
-
-	i.trackCall("QueryExemplars")
 
 	if !i.happy {
 		return nil, errFail
@@ -5922,14 +5930,14 @@ func (i *mockIngester) QueryExemplars(ctx context.Context, req *client.ExemplarQ
 }
 
 func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest, _ ...grpc.CallOption) (*client.MetricsForLabelMatchersResponse, error) {
+	i.trackCall("MetricsForLabelMatchers")
+
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
 	}
 
 	i.Lock()
 	defer i.Unlock()
-
-	i.trackCall("MetricsForLabelMatchers")
 
 	if !i.happy {
 		return nil, errFail
@@ -5952,14 +5960,14 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 }
 
 func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesRequest, _ ...grpc.CallOption) (*client.LabelValuesResponse, error) {
+	i.trackCall("LabelValues")
+
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
 	}
 
 	i.Lock()
 	defer i.Unlock()
-
-	i.trackCall("LabelValues")
 
 	if !i.happy {
 		return nil, errFail
@@ -6003,14 +6011,14 @@ func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesR
 }
 
 func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesRequest, _ ...grpc.CallOption) (*client.LabelNamesResponse, error) {
+	i.trackCall("LabelNames")
+
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
 	}
 
 	i.Lock()
 	defer i.Unlock()
-
-	i.trackCall("LabelNames")
 
 	if !i.happy {
 		return nil, errFail
@@ -6035,14 +6043,14 @@ func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesReq
 }
 
 func (i *mockIngester) MetricsMetadata(ctx context.Context, _ *client.MetricsMetadataRequest, _ ...grpc.CallOption) (*client.MetricsMetadataResponse, error) {
+	i.trackCall("MetricsMetadata")
+
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
 	}
 
 	i.Lock()
 	defer i.Unlock()
-
-	i.trackCall("MetricsMetadata")
 
 	if !i.happy {
 		return nil, errFail
@@ -6110,14 +6118,14 @@ func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesRespo
 }
 
 func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.LabelValuesCardinalityRequest, _ ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
+	i.trackCall("LabelValuesCardinality")
+
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
 	}
 
 	i.Lock()
 	defer i.Unlock()
-
-	i.trackCall("LabelValuesCardinality")
 
 	if !i.happy {
 		return nil, errFail
@@ -6184,14 +6192,14 @@ func (s *labelValuesCardinalityStream) Recv() (*client.LabelValuesCardinalityRes
 }
 
 func (i *mockIngester) ActiveSeries(ctx context.Context, req *client.ActiveSeriesRequest, _ ...grpc.CallOption) (client.Ingester_ActiveSeriesClient, error) {
+	i.trackCall("ActiveSeries")
+
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
 	}
 
 	i.Lock()
 	defer i.Unlock()
-
-	i.trackCall("ActiveSeries")
 
 	if !i.happy {
 		return nil, errFail
@@ -6242,6 +6250,9 @@ func (s *activeSeriesStream) CloseSend() error {
 }
 
 func (i *mockIngester) trackCall(name string) {
+	i.Lock()
+	defer i.Unlock()
+
 	if i.calls == nil {
 		i.calls = map[string]int{}
 	}
@@ -6270,6 +6281,16 @@ func (i *mockIngester) enforceReadConsistency(ctx context.Context) error {
 	return i.partitionReader.WaitReadConsistency(ctx)
 }
 
+func (i *mockIngester) enforceQueryDelay(ctx context.Context) error {
+	select {
+	case <-time.After(i.queryDelay):
+		return nil
+
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 type mockIngesterPusherAdapter struct {
 	ingester *mockIngester
 }
@@ -6280,9 +6301,10 @@ func newMockIngesterPusherAdapter(ingester *mockIngester) *mockIngesterPusherAda
 	}
 }
 
-// Push implements ingest.Pusher.
-func (c *mockIngesterPusherAdapter) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	return c.ingester.Push(ctx, req)
+// PushToStorage implements ingest.Pusher.
+func (c *mockIngesterPusherAdapter) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
+	_, err := c.ingester.Push(ctx, req)
+	return err
 }
 
 // noopIngester is a mocked ingester which does nothing.
@@ -6301,6 +6323,10 @@ func (i *noopIngester) Push(context.Context, *mimirpb.WriteRequest, ...grpc.Call
 
 type stream struct {
 	grpc.ClientStream
+
+	// The mocked gRPC client's context.
+	ctx context.Context
+
 	i       int
 	results []*client.QueryStreamResponse
 }
@@ -6310,6 +6336,12 @@ func (*stream) CloseSend() error {
 }
 
 func (s *stream) Recv() (*client.QueryStreamResponse, error) {
+	// Check whether the context has been canceled, so that we can test the case the context
+	// gets cancelled while reading messages from gRPC client.
+	if s.ctx.Err() != nil {
+		return nil, s.ctx.Err()
+	}
+
 	if s.i >= len(s.results) {
 		return nil, io.EOF
 	}
@@ -6319,7 +6351,7 @@ func (s *stream) Recv() (*client.QueryStreamResponse, error) {
 }
 
 func (s *stream) Context() context.Context {
-	return context.Background()
+	return s.ctx
 }
 
 func (i *mockIngester) AllUserStats(context.Context, *client.UserStatsRequest, ...grpc.CallOption) (*client.UsersStatsResponse, error) {
@@ -6327,14 +6359,14 @@ func (i *mockIngester) AllUserStats(context.Context, *client.UserStatsRequest, .
 }
 
 func (i *mockIngester) UserStats(ctx context.Context, _ *client.UserStatsRequest, _ ...grpc.CallOption) (*client.UserStatsResponse, error) {
+	i.trackCall("UserStats")
+
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
 	}
 
 	i.Lock()
 	defer i.Unlock()
-
-	i.trackCall("UserStats")
 
 	if !i.happy {
 		return nil, errFail

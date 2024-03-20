@@ -1212,7 +1212,7 @@ The `querier` block configures the querier.
 # CLI flag: -querier.query-store-after
 [query_store_after: <duration> | default = 12h]
 
-# (advanced) Maximum duration into the future you can query. 0 to disable.
+# (deprecated) Maximum duration into the future you can query. 0 to disable.
 # CLI flag: -querier.max-query-into-future
 [max_query_into_future: <duration> | default = 10m]
 
@@ -1291,12 +1291,6 @@ store_gateway_client:
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
-# (experimental) Request ingesters stream chunks. Ingesters will only respond
-# with a stream of chunks if the target ingester supports this, and this
-# preference will be ignored by ingesters that do not support this.
-# CLI flag: -querier.prefer-streaming-chunks-from-ingesters
-[prefer_streaming_chunks_from_ingesters: <boolean> | default = true]
-
 # (experimental) Request store-gateways stream chunks. Store-gateways will only
 # respond with a stream of chunks if the target store-gateway supports this, and
 # this preference will be ignored by store-gateways that do not support this.
@@ -1313,7 +1307,7 @@ store_gateway_client:
 # CLI flag: -querier.streaming-chunks-per-store-gateway-buffer-size
 [streaming_chunks_per_store_gateway_series_buffer_size: <int> | default = 256]
 
-# (experimental) If true, when querying ingesters, only the minimum required
+# (advanced) If true, when querying ingesters, only the minimum required
 # ingesters required to reach quorum will be queried initially, with other
 # ingesters queried only if needed due to failures from the initial set of
 # ingesters. Enabling this option reduces resource consumption for the happy
@@ -1384,6 +1378,11 @@ The `frontend` block configures the query-frontend.
 # with some statistics is logged for every query.
 # CLI flag: -query-frontend.query-stats-enabled
 [query_stats_enabled: <boolean> | default = true]
+
+# (experimental) Timeout for writing active series responses. 0 means the value
+# from `-server.http-write-timeout` is used.
+# CLI flag: -query-frontend.active-series-write-timeout
+[active_series_write_timeout: <duration> | default = 5m]
 
 # (advanced) Maximum number of outstanding requests per tenant per frontend;
 # requests beyond this error with HTTP 429.
@@ -2554,6 +2553,12 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # query-scheduler.
 # The CLI flags prefix for this block configuration is: querier.scheduler-client
 [query_scheduler_grpc_client_config: <grpc_client>]
+
+# (experimental) Enables streaming of responses from querier to query-frontend
+# for response types that support it (currently only `active_series` responses
+# do).
+# CLI flag: -querier.response-streaming-enabled
+[response_streaming_enabled: <boolean> | default = false]
 ```
 
 ### etcd
@@ -3675,17 +3680,6 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.series-hash-cache-max-size-bytes
   [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
 
-  # (deprecated) If enabled, store-gateway will lazy load an index-header only
-  # once required by a query.
-  # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-enabled
-  [index_header_lazy_loading_enabled: <boolean> | default = true]
-
-  # (deprecated) If index-header lazy loading is enabled and this setting is >
-  # 0, the store-gateway will offload unused index-headers after 'idle timeout'
-  # inactivity.
-  # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout
-  [index_header_lazy_loading_idle_timeout: <duration> | default = 1h]
-
   # (advanced) Max size - in bytes - of a gap for which the partitioner
   # aggregates together two bucket GET object requests.
   # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes
@@ -3719,16 +3713,10 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout
     [lazy_loading_idle_timeout: <duration> | default = 1h]
 
-    # (experimental) Maximum number of concurrent index header loads across all
+    # (advanced) Maximum number of concurrent index header loads across all
     # tenants. If set to 0, concurrency is unlimited.
     # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency
     [lazy_loading_concurrency: <int> | default = 4]
-
-    # (experimental) If enabled, store-gateway will persist a sparse version of
-    # the index-header to disk on construction and load sparse index-headers
-    # from disk instead of the whole index-header.
-    # CLI flag: -blocks-storage.bucket-store.index-header.sparse-persistence-enabled
-    [sparse_persistence_enabled: <boolean> | default = true]
 
     # (advanced) If true, verify the checksum of index headers upon loading them
     # (either on startup or lazily when lazy loading is enabled). Setting to

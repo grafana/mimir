@@ -58,42 +58,62 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### All series\nNumber of active and in-memory series per user, and active series matching custom trackers (in parenthesis).\nNote that these counts include all series regardless of the type of data (counter, gauge, native histogram, etc.).\nNote that active series matching custom trackers are included in the total active series count.\n\n",
-                  "fill": 1,
-                  "id": 2,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "description": "### All series\nNumber of active, in-memory, and owned series per user, and active series matching custom trackers (in parenthesis).\nNote that these counts include all series regardless of the type of data (counter, gauge, native histogram, etc.).\nNote that active series matching custom trackers are included in the total active series count.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 2,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [
-                     {
-                        "alias": "limit",
-                        "dashes": true,
-                        "fill": 0
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
                      }
-                  ],
-                  "spaceLength": 10,
+                  },
                   "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(\n  (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n    - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
@@ -114,85 +134,342 @@
                         "legendLink": null
                      },
                      {
+                        "expr": "sum(\n  cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                        "format": "time_series",
+                        "legendFormat": "owned",
+                        "legendLink": null
+                     },
+                     {
                         "expr": "sum by (name) (\n  cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n) > 0\n",
                         "format": "time_series",
                         "legendFormat": "active ({{ name }})",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "All series",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Native histogram series\nNumber of active native histogram series per user, and active native histogram series matching custom trackers (in parenthesis).\nNote that active series matching custom trackers are included in the total active series count.\n\n",
-                  "fill": 1,
-                  "id": 3,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "description": "### In-memory series per ingester\nLocal tenant series limit and number of in-memory series per ingester.\nBecause series can be unevenly distributed across ingesters, ingesters may hit the local limit at different times.\nNote that in-memory series may exceed the local limit if limiting based on owned series is enabled.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 0,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/local limit .+/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              },
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "yellow",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 3,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "desc"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
                      {
-                        "alias": "limit",
-                        "dashes": true,
-                        "fill": 0
+                        "expr": "min by (job) (cortex_ingester_local_limits{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", limit=\"max_global_series_per_user\", user=\"$user\"})\n",
+                        "format": "time_series",
+                        "legendFormat": "local limit ({{job}})",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n- cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n",
+                        "format": "time_series",
+                        "legendFormat": "{{pod}}",
+                        "legendLink": null
                      }
                   ],
-                  "spaceLength": 10,
+                  "title": "In-memory series per ingester",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Owned series per ingester\nLocal tenant series limit and number of owned series per ingester.\nBecause series can be unevenly distributed across ingesters, ingesters may hit the local limit at different times.\nOwned series are the subset of an ingester's in-memory series that currently map to it in the ring\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 0,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/local limit .+/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              },
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "yellow",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 4,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "desc"
+                     }
+                  },
                   "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "min by (job) (cortex_ingester_local_limits{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", limit=\"max_global_series_per_user\", user=\"$user\"})\n",
+                        "format": "time_series",
+                        "legendFormat": "local limit ({{job}})",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n",
+                        "format": "time_series",
+                        "legendFormat": "{{pod}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Owned series per ingester",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Tenant series counts",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "description": "### Series with exemplars\nNumber of series with exemplars currently in storage.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 5,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "sum(\n  cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                        "format": "time_series",
+                        "legendFormat": "series",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Series with exemplars",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Oldest exemplar age\nThe age of the oldest exemplar stored in circular storage.\nUseful to check for what time range the current exemplar buffer limit allows.\nThis usually means the max age for all exemplars for a typical setup.\nThis is not true though if one of the series timestamp is in future compared to rest series.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 6,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "time() - min(cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} > 0)",
+                        "format": "time_series",
+                        "legendFormat": "age",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Oldest exemplar age",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Native histogram series\nNumber of active native histogram series per user, and active native histogram series matching custom trackers (in parenthesis).\nNote that active series matching custom trackers are included in the total active series count.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 7,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum(\n  cortex_ingester_active_native_histogram_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
@@ -207,79 +484,66 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Native histogram series",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Total number of buckets used by native histogram series\nTotal number of buckets in active native histogram series per user, and total active native histogram buckets matching custom trackers (in parenthesis).\n\n",
-                  "fill": 1,
-                  "id": 4,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 8,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [
-                     {
-                        "alias": "limit",
-                        "dashes": true,
-                        "fill": 0
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
                      }
-                  ],
-                  "spaceLength": 10,
-                  "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
+                  },
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum(\n  cortex_ingester_active_native_histogram_buckets{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
@@ -294,48 +558,15 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Total number of buckets used by native histogram series",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Active series and native histograms",
+            "title": "Exemplars and native histograms",
             "titleSize": "h6"
          },
          {
@@ -343,249 +574,43 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "$datasource",
-                  "description": "### Series with exemplars\nNumber of series with exemplars currently in storage.\n\n",
-                  "fill": 1,
-                  "id": 5,
-                  "legend": {
-                     "show": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
-                  "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
-                  "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
-                  "targets": [
-                     {
-                        "expr": "sum(\n  cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
-                        "format": "time_series",
-                        "legendFormat": "series",
-                        "legendLink": null
-                     }
-                  ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
-                  "title": "Series with exemplars",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
-               },
-               {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "$datasource",
-                  "description": "### Newest seen sample age\nThe age of the newest received sample seen in the distributors.\n\n",
-                  "fill": 1,
-                  "id": 6,
-                  "legend": {
-                     "show": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
-                  "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
-                  "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
-                  "targets": [
-                     {
-                        "expr": "time() - max(cortex_distributor_latest_seen_sample_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} > 0)",
-                        "format": "time_series",
-                        "legendFormat": "age",
-                        "legendLink": null
-                     }
-                  ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
-                  "title": "Newest seen sample age",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "s",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
-               },
-               {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "$datasource",
-                  "description": "### Oldest exemplar age\nThe age of the oldest exemplar stored in circular storage.\nUseful to check for what time range the current exemplar buffer limit allows.\nThis usually means the max age for all exemplars for a typical setup.\nThis is not true though if one of the series timestamp is in future compared to rest series.\n\n",
-                  "fill": 1,
-                  "id": 7,
-                  "legend": {
-                     "show": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
-                  "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
-                  "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
-                  "targets": [
-                     {
-                        "expr": "time() - min(cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} > 0)",
-                        "format": "time_series",
-                        "legendFormat": "age",
-                        "legendLink": null
-                     }
-                  ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
-                  "title": "Oldest exemplar age",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "s",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Samples and exemplars",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Distributor requests incoming rate\nThe rate of requests that have come in to the distributor, including rejected requests.\n\n",
-                  "fill": 1,
-                  "id": 8,
-                  "legend": {
-                     "show": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 9,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
-                  "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_distributor_requests_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -594,79 +619,66 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Distributor requests incoming rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Distributor requests received (accepted) rate\nThe rate of received requests, excluding rejected requests.\n\n",
-                  "fill": 1,
-                  "id": 9,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 10,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [
-                     {
-                        "alias": "limit",
-                        "dashes": true,
-                        "fill": 0
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
                      }
-                  ],
-                  "spaceLength": 10,
-                  "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
+                  },
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_distributor_received_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -681,73 +693,96 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Distributor requests received (accepted) rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
+                  "datasource": "$datasource",
+                  "description": "### Newest seen sample age\nThe age of the newest received sample seen in the distributors.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 11,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "time() - max(cortex_distributor_latest_seen_sample_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} > 0)",
+                        "format": "time_series",
+                        "legendFormat": "age",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Newest seen sample age",
+                  "type": "timeseries"
+               },
+               {
                   "datasource": "$datasource",
                   "description": "### Distributor discarded requests rate\nThe rate of each request's discarding reason.\n\n",
-                  "fill": 1,
-                  "id": 10,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 12,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
-                  "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by (reason) (rate(cortex_discarded_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -756,41 +791,8 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Distributor discarded requests rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
@@ -805,30 +807,43 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Distributor samples incoming rate\nThe rate of samples that have come in to the distributor, including rejected or deduped exemplars.\n\n",
-                  "fill": 1,
-                  "id": 11,
-                  "legend": {
-                     "show": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 13,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 3,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_distributor_samples_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -837,79 +852,66 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Distributor samples incoming rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Distributor samples received (accepted) rate\nThe rate of received samples, excluding rejected and deduped samples.\n\n",
-                  "fill": 1,
-                  "id": 12,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 14,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [
-                     {
-                        "alias": "limit",
-                        "dashes": true,
-                        "fill": 0
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
                      }
-                  ],
-                  "spaceLength": 10,
+                  },
                   "span": 3,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -924,73 +926,47 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Distributor samples received (accepted) rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Distributor deduplicated/non-HA\nThe rate of deduplicated samples and the rate of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.\n\n",
-                  "fill": 1,
-                  "id": 13,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 15,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 3,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_distributor_deduped_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -1005,73 +981,47 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Distributor deduplicated/non-HA",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Distributor and ingester discarded samples rate\nThe rate of each sample's discarding reason.\n\n",
-                  "fill": 1,
-                  "id": 14,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 16,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 3,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum by (reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -1086,41 +1036,8 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Distributor and ingester discarded samples rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
@@ -1135,30 +1052,43 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Distributor exemplars incoming rate\nThe rate of exemplars that have come in to the distributor, including rejected or deduped exemplars.\n\n",
-                  "fill": 1,
-                  "id": 15,
-                  "legend": {
-                     "show": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 17,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 3,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_distributor_exemplars_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -1167,67 +1097,47 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Distributor exemplars incoming rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Distributor exemplars received (accepted) rate\nThe rate of received exemplars, excluding rejected and deduped exemplars.\nThis number can be sensibly lower than incoming rate because we dedupe the HA sent exemplars, and then reject based on time.\nSee discarded rate for reasons why exemplars are being discarded.\n\n",
-                  "fill": 1,
-                  "id": 16,
-                  "legend": {
-                     "show": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 18,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 3,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -1236,73 +1146,47 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Distributor exemplars received (accepted) rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Distributor discarded exemplars rate\nThe rate of each exmplars' discarding reason.\n\n",
-                  "fill": 1,
-                  "id": 17,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 19,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 3,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum by (reason) (rate(cortex_discarded_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -1311,67 +1195,47 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Distributor discarded exemplars rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Ingester appended exemplars rate\nTotal number of exemplars appended in the ingesters.\nThis can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.\n\n",
-                  "fill": 1,
-                  "id": 18,
-                  "legend": {
-                     "show": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 20,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 3,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(\n  rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval])\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
@@ -1380,41 +1244,8 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Ingester appended exemplars rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
@@ -1429,36 +1260,43 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Symbol table size for loaded blocks\nSize of symbol table in memory for loaded blocks, averaged by ingester.\n\n",
-                  "fill": 1,
-                  "id": 19,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 21,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 6,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum by (job) (cortex_ingester_tsdb_symbol_table_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})",
@@ -1467,73 +1305,47 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Symbol table size for loaded blocks",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "bytes",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Space used by local blocks\nThe number of bytes that are currently used for local storage by all blocks.\n\n",
-                  "fill": 1,
-                  "id": 20,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 22,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 6,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum by (job) (cortex_ingester_tsdb_storage_blocks_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})",
@@ -1542,41 +1354,8 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Space used by local blocks",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "bytes",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
@@ -1591,42 +1370,62 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Number of groups\nTotal number of rule groups for a tenant.\n\n",
-                  "fill": 1,
-                  "id": 21,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 23,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [
-                     {
-                        "alias": "limit",
-                        "dashes": true,
-                        "fill": 0
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
                      }
-                  ],
-                  "spaceLength": 10,
+                  },
                   "span": 3,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "count(sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}))",
@@ -1641,67 +1440,47 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Number of groups",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Number of rules\nTotal number of rules for a tenant.\n\n",
-                  "fill": 1,
-                  "id": 22,
-                  "legend": {
-                     "show": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 24,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 3,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"})",
@@ -1710,66 +1489,46 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Number of rules",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 23,
-                  "legend": {
-                     "show": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 25,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 3,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -1778,72 +1537,46 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Total evaluations rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 24,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "normal"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 26,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 3,
-                  "stack": true,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval])) > 0",
@@ -1852,41 +1585,8 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Failed evaluations rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
@@ -1907,7 +1607,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 25,
+                  "id": 27,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2021,7 +1721,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 26,
+                  "id": 28,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2141,29 +1841,42 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 27,
-                  "legend": {
-                     "show": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 29,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 6,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -2172,68 +1885,62 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Sent notifications rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": {
-                     "rate": "#E24D42"
-                  },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 28,
-                  "legend": {
-                     "show": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "rate"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 30,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 6,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -2242,41 +1949,8 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Failed notifications rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
@@ -2291,35 +1965,42 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 29,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 31,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum by (user) (cortex_alertmanager_alerts{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\", user=\"$user\"})",
@@ -2334,75 +2015,77 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Alerts",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": {
-                     "failed": "#E24D42",
-                     "successful": "#7EB26D"
-                  },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 30,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "failed"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "successful"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 32,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "(\nsum(rate(cortex_alertmanager_notifications_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval]))\n-\non() (sum(rate(cortex_alertmanager_notifications_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval])) or on () vector(0))\n) > 0\n",
@@ -2417,72 +2100,46 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "NPS",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 31,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 33,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "(\nsum(rate(cortex_alertmanager_notifications_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval])) by(integration)\n-\n(sum(rate(cortex_alertmanager_notifications_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval])) by(integration) or\n (sum(rate(cortex_alertmanager_notifications_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval])) by(integration) * 0)\n)) > 0\n",
@@ -2497,41 +2154,8 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "NPS by integration",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
@@ -2546,35 +2170,42 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 32,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 34,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 6,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -2583,72 +2214,46 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Rate of Read Requests - query-frontend",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 33,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 35,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 6,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\", user=\"$user\"})",
@@ -2657,41 +2262,8 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Number of Queries Queued - query-scheduler",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
@@ -2706,35 +2278,42 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 34,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 36,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 6,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -2743,72 +2322,46 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Rate of Read Requests - ruler-query-frontend",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 35,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 37,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 6,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\", user=\"$user\"})",
@@ -2817,41 +2370,8 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Number of Queries Queued - ruler-query-scheduler",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
@@ -2859,6 +2379,116 @@
             "repeatRowId": null,
             "showTitle": true,
             "title": "Read Path - Queries (Ruler)",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "description": "### Estimated Compaction Jobs\nEstimated number of compaction jobs for selected user, based on latest version of bucket index. When user sends data, ingesters upload new user blocks every 2 hours\n(shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.), and compactors should process all of the blocks within 2h interval.\nIf this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction for this user works correctly.\n\nDepending on the configuration, there are two types of jobs: `split` jobs and `merge` jobs. Split jobs will only show up when user is configured with positive number of `compactor_split_and_merge_shards`.\nValues for split and merge jobs are stacked.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 50,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "normal"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 38,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "sum by (type) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\", user=\"$user\"})\nand ignoring(type)\n(sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) == 0)\n",
+                        "format": "time_series",
+                        "legendFormat": "{{ job }}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Estimated Compaction Jobs",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Number of blocks\nNumber of blocks stored in long-term storage for this user.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 39,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "max by (user) (cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\", user=\"$user\"})\n",
+                        "format": "time_series",
+                        "legendFormat": "{{ job }}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Blocks",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Compactions",
             "titleSize": "h6"
          }
       ],

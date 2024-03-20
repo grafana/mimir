@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
@@ -157,7 +158,7 @@ func TestFlattenedSeriesChunkRefs(t *testing.T) {
 	c := generateSeriesChunksRanges(ulid.MustNew(1, nil), 6)
 
 	testCases := map[string]struct {
-		input    seriesChunkRefsSetIterator
+		input    iterator[seriesChunkRefsSet]
 		expected []seriesChunkRefs
 	}{
 		"should iterate on no sets": {
@@ -246,7 +247,7 @@ func TestMergedSeriesChunkRefsSet(t *testing.T) {
 
 	testCases := map[string]struct {
 		batchSize    int
-		set1, set2   seriesChunkRefsSetIterator
+		set1, set2   iterator[seriesChunkRefsSet]
 		expectedSets []seriesChunkRefsSet
 		expectedErr  string
 	}{
@@ -613,7 +614,7 @@ func TestMergedSeriesChunkRefsSet_Concurrency(t *testing.T) {
 		)
 
 		// Create the iterators.
-		iterators := make([]seriesChunkRefsSetIterator, 0, numIterators)
+		iterators := make([]iterator[seriesChunkRefsSet], 0, numIterators)
 		for iteratorIdx := 0; iteratorIdx < numIterators; iteratorIdx++ {
 			// Create the sets for this iterator.
 			sets := make([]seriesChunkRefsSet, 0, numSetsPerIterator)
@@ -662,6 +663,22 @@ func TestMergedSeriesChunkRefsSet_Concurrency(t *testing.T) {
 }
 
 func BenchmarkMergedSeriesChunkRefsSetIterators(b *testing.B) {
+	for numIterators := 1; numIterators <= 64; numIterators *= 2 {
+		b.Run(fmt.Sprintf("number of iterators = %d", numIterators), func(b *testing.B) {
+			for _, withDuplicatedSeries := range []bool{true, false} {
+				b.Run(fmt.Sprintf("with duplicates = %v", withDuplicatedSeries), func(b *testing.B) {
+					for _, withIO := range []bool{false, true} {
+						b.Run(fmt.Sprintf("with IO = %v", withIO), func(b *testing.B) {
+							benchmarkMergedSeriesChunkRefsSetIterators(b, numIterators, withDuplicatedSeries, withIO)
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
+func benchmarkMergedSeriesChunkRefsSetIterators(b *testing.B, numIterators int, withDuplicatedSeries, withIO bool) {
 	const (
 		numSetsPerIterator = 10
 		numSeriesPerSet    = 10
@@ -683,60 +700,66 @@ func BenchmarkMergedSeriesChunkRefsSetIterators(b *testing.B) {
 		return sets
 	}
 
-	for _, withDuplicatedSeries := range []bool{true, false} {
-		for numIterators := 1; numIterators <= 64; numIterators *= 2 {
-			// Create empty iterators that we can reuse in each benchmark run.
-			iterators := make([]seriesChunkRefsSetIterator, 0, numIterators)
-			for i := 0; i < numIterators; i++ {
-				iterators = append(iterators, newSliceSeriesChunkRefsSetIterator(nil))
-			}
+	// Create empty iterators that we can reuse in each benchmark run.
+	iterators := make([]iterator[seriesChunkRefsSet], 0, numIterators)
+	for i := 0; i < numIterators; i++ {
+		iterators = append(iterators, newSliceSeriesChunkRefsSetIterator(nil))
+	}
 
-			// Create the sets for each underlying iterator. These sets cannot be released because
-			// will be used in multiple benchmark runs.
-			perIteratorSets := make([][]seriesChunkRefsSet, 0, numIterators)
-			for iteratorIdx := 0; iteratorIdx < numIterators; iteratorIdx++ {
-				if withDuplicatedSeries {
-					perIteratorSets = append(perIteratorSets, createUnreleasableSets(0))
-				} else {
-					perIteratorSets = append(perIteratorSets, createUnreleasableSets(iteratorIdx))
-				}
-			}
+	batch := make([]iterator[seriesChunkRefsSet], len(iterators))
+	for i := 0; i < numIterators; i++ {
+		if withIO {
+			// The delay represents an IO operation, that happens inside real set iterations.
+			batch[i] = newDelayedIterator(10*time.Microsecond, iterators[i])
+		} else {
+			batch[i] = iterators[i]
+		}
+	}
 
-			b.Run(fmt.Sprintf("with duplicated series = %t number of iterators = %d", withDuplicatedSeries, numIterators), func(b *testing.B) {
-				for n := 0; n < b.N; n++ {
-					// Reset iterators.
-					for i := 0; i < numIterators; i++ {
-						iterators[i].(*sliceSeriesChunkRefsSetIterator).reset(perIteratorSets[i])
-					}
+	// Create the sets for each underlying iterator. These sets cannot be released because
+	// will be used in multiple benchmark runs.
+	perIteratorSets := make([][]seriesChunkRefsSet, 0, numIterators)
+	for iteratorIdx := 0; iteratorIdx < numIterators; iteratorIdx++ {
+		if withDuplicatedSeries {
+			perIteratorSets = append(perIteratorSets, createUnreleasableSets(0))
+		} else {
+			perIteratorSets = append(perIteratorSets, createUnreleasableSets(iteratorIdx))
+		}
+	}
 
-					// Merge the iterators and run through them.
-					it := mergedSeriesChunkRefsSetIterators(mergedBatchSize, iterators...)
+	b.ResetTimer()
 
-					actualSeries := 0
-					for it.Next() {
-						set := it.At()
-						actualSeries += len(set.series)
+	for n := 0; n < b.N; n++ {
+		// Reset batch's underlying iterators.
+		for i := 0; i < numIterators; i++ {
+			iterators[i].(*sliceSeriesChunkRefsSetIterator).reset(perIteratorSets[i])
+		}
 
-						set.release()
-					}
+		// Merge the iterators and run through them.
+		it := mergedSeriesChunkRefsSetIterators(mergedBatchSize, batch...)
 
-					if err := it.Err(); err != nil {
-						b.Fatal(it.Err())
-					}
+		actualSeries := 0
+		for it.Next() {
+			set := it.At()
+			actualSeries += len(set.series)
 
-					// Ensure each benchmark run go through the same data set.
-					var expectedSeries int
-					if withDuplicatedSeries {
-						expectedSeries = numSetsPerIterator * numSeriesPerSet
-					} else {
-						expectedSeries = numIterators * numSetsPerIterator * numSeriesPerSet
-					}
+			set.release()
+		}
 
-					if actualSeries != expectedSeries {
-						b.Fatalf("benchmark iterated through an unexpected number of series (expected: %d got: %d)", expectedSeries, actualSeries)
-					}
-				}
-			})
+		if err := it.Err(); err != nil {
+			b.Fatal(it.Err())
+		}
+
+		// Ensure each benchmark run go through the same data set.
+		var expectedSeries int
+		if withDuplicatedSeries {
+			expectedSeries = numSetsPerIterator * numSeriesPerSet
+		} else {
+			expectedSeries = numIterators * numSetsPerIterator * numSeriesPerSet
+		}
+
+		if actualSeries != expectedSeries {
+			b.Fatalf("benchmark iterated through an unexpected number of series (expected: %d got: %d)", expectedSeries, actualSeries)
 		}
 	}
 }
@@ -746,7 +769,7 @@ func TestSeriesSetWithoutChunks(t *testing.T) {
 	c := generateSeriesChunksRanges(ulid.MustNew(1, nil), 6)
 
 	testCases := map[string]struct {
-		input              seriesChunkRefsSetIterator
+		input              iterator[seriesChunkRefsSet]
 		expectedSeries     []labels.Labels
 		expectedBatchCount int
 	}{
@@ -2405,7 +2428,7 @@ func generateSeriesChunksRanges(blockID ulid.ULID, numRefs int) []seriesChunkRef
 	return refs
 }
 
-func readAllSeriesChunkRefsSet(it seriesChunkRefsSetIterator) []seriesChunkRefsSet {
+func readAllSeriesChunkRefsSet(it iterator[seriesChunkRefsSet]) []seriesChunkRefsSet {
 	var out []seriesChunkRefsSet
 	for it.Next() {
 		out = append(out, it.At())
@@ -2413,7 +2436,7 @@ func readAllSeriesChunkRefsSet(it seriesChunkRefsSetIterator) []seriesChunkRefsS
 	return out
 }
 
-func readAllSeriesChunkRefs(it seriesChunkRefsIterator) []seriesChunkRefs {
+func readAllSeriesChunkRefs(it iterator[seriesChunkRefs]) []seriesChunkRefs {
 	var out []seriesChunkRefs
 	for it.Next() {
 		out = append(out, it.At())

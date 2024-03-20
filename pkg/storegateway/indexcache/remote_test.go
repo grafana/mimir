@@ -112,7 +112,7 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StorePostings(p.userID, p.block, p.label, p.value)
+				c.StorePostings(p.userID, p.block, p.label, p.value, time.Hour)
 			}
 
 			// Fetch postings from cached and assert on it.
@@ -175,7 +175,7 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 
 			// Store the postings expected before running the benchmark.
 			for i := 0; i < numHits; i++ {
-				c.StorePostings(userID, blockID, fetchLabels[i], []byte{1})
+				c.StorePostings(userID, blockID, fetchLabels[i], []byte{1}, time.Hour)
 			}
 
 			b.ResetTimer()
@@ -279,7 +279,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			// Store the series expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreSeriesForRef(p.userID, p.block, p.id, p.value)
+				c.StoreSeriesForRef(p.userID, p.block, p.id, p.value, time.Hour)
 			}
 
 			// Fetch series from cached and assert on it.

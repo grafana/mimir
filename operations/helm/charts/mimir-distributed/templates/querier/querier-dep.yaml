@@ -32,8 +32,10 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "querier") | nindent 8 }}
+      {{- with .Values.querier.initContainers }}
       initContainers:
-        {{- toYaml .Values.querier.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -126,13 +128,19 @@ spec:
 {{- if .Values.querier.extraContainers }}
 {{ toYaml .Values.querier.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.querier.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.querier.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.querier.affinity}}
       affinity:
-        {{- toYaml .Values.querier.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "querier") | nindent 6 }}
+      {{- with .Values.querier.tolerations }}
       tolerations:
-        {{- toYaml .Values.querier.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.querier.terminationGracePeriodSeconds }}
       volumes:
         - name: config

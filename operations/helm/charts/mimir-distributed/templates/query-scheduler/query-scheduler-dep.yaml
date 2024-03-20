@@ -28,8 +28,10 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "query-scheduler") | nindent 8 }}
+      {{- with .Values.query_scheduler.initContainers }}
       initContainers:
-        {{- toYaml .Values.query_scheduler.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -103,13 +105,19 @@ spec:
 {{- if .Values.query_scheduler.extraContainers }}
 {{ toYaml .Values.query_scheduler.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.query_scheduler.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.query_scheduler.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.query_scheduler.affinity }}
       affinity:
-        {{- toYaml .Values.query_scheduler.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "query-scheduler") | nindent 6 }}
+      {{- with .Values.query_scheduler.tolerations }}
       tolerations:
-        {{- toYaml .Values.query_scheduler.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.query_scheduler.terminationGracePeriodSeconds }}
       volumes:
         - name: config

@@ -1699,7 +1699,7 @@
           "fieldDefaultValue": 600000000000,
           "fieldFlag": "querier.max-query-into-future",
           "fieldType": "duration",
-          "fieldCategory": "advanced"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "block",
@@ -1812,17 +1812,6 @@
         },
         {
           "kind": "field",
-          "name": "prefer_streaming_chunks_from_ingesters",
-          "required": false,
-          "desc": "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "querier.prefer-streaming-chunks-from-ingesters",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "prefer_streaming_chunks_from_store_gateways",
           "required": false,
           "desc": "Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.",
@@ -1863,7 +1852,7 @@
           "fieldDefaultValue": true,
           "fieldFlag": "querier.minimize-ingester-requests",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -4622,6 +4611,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "response_streaming_enabled",
+          "required": false,
+          "desc": "Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.response-streaming-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -4675,6 +4675,17 @@
           "fieldFlag": "query-frontend.query-stats-enabled",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "active_series_write_timeout",
+          "required": false,
+          "desc": "Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used.",
+          "fieldValue": null,
+          "fieldDefaultValue": 300000000000,
+          "fieldFlag": "query-frontend.active-series-write-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -8283,28 +8294,6 @@
             },
             {
               "kind": "field",
-              "name": "index_header_lazy_loading_enabled",
-              "required": false,
-              "desc": "If enabled, store-gateway will lazy load an index-header only once required by a query.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "deprecated"
-            },
-            {
-              "kind": "field",
-              "name": "index_header_lazy_loading_idle_timeout",
-              "required": false,
-              "desc": "If index-header lazy loading is enabled and this setting is \u003e 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.",
-              "fieldValue": null,
-              "fieldDefaultValue": 3600000000000,
-              "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout",
-              "fieldType": "duration",
-              "fieldCategory": "deprecated"
-            },
-            {
-              "kind": "field",
               "name": "partitioner_max_gap_bytes",
               "required": false,
               "desc": "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.",
@@ -8384,18 +8373,7 @@
                   "fieldDefaultValue": 4,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-concurrency",
                   "fieldType": "int",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "sparse_persistence_enabled",
-                  "required": false,
-                  "desc": "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": true,
-                  "fieldFlag": "blocks-storage.bucket-store.index-header.sparse-persistence-enabled",
-                  "fieldType": "boolean",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",

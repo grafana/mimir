@@ -38,15 +38,19 @@ type PartitionRing struct {
 
 	// shuffleShardCache is used to cache subrings generated with shuffle sharding.
 	shuffleShardCache *partitionRingShuffleShardCache
+
+	// activePartitionsCount is a saved count of active partitions to avoid recomputing it.
+	activePartitionsCount int
 }
 
 func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
 	return &PartitionRing{
-		desc:              desc,
-		ringTokens:        desc.tokens(),
-		partitionByToken:  desc.partitionByToken(),
-		ownersByPartition: desc.ownersByPartition(),
-		shuffleShardCache: newPartitionRingShuffleShardCache(),
+		desc:                  desc,
+		ringTokens:            desc.tokens(),
+		partitionByToken:      desc.partitionByToken(),
+		ownersByPartition:     desc.ownersByPartition(),
+		activePartitionsCount: desc.activePartitionsCount(),
+		shuffleShardCache:     newPartitionRingShuffleShardCache(),
 	}
 }
 
@@ -85,6 +89,18 @@ func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, error) {
 	}
 
 	return 0, ErrNoActivePartitionFound
+}
+
+// ShuffleShardSize returns number of partitions that would be in the result of ShuffleShard call with the same size.
+func (r *PartitionRing) ShuffleShardSize(size int) int {
+	if size <= 0 || size > r.activePartitionsCount {
+		return r.activePartitionsCount
+	}
+
+	if size < r.activePartitionsCount {
+		return size
+	}
+	return r.activePartitionsCount
 }
 
 // ShuffleShard returns a subring for the provided identifier (eg. a tenant ID)
@@ -249,13 +265,7 @@ func (r *PartitionRing) PartitionsCount() int {
 
 // ActivePartitionsCount returns the number of active partitions in the ring.
 func (r *PartitionRing) ActivePartitionsCount() int {
-	count := 0
-	for _, partition := range r.desc.Partitions {
-		if partition.IsActive() {
-			count++
-		}
-	}
-	return count
+	return r.activePartitionsCount
 }
 
 // Partitions returns the partitions in the ring.
@@ -270,7 +280,7 @@ func (r *PartitionRing) Partitions() []PartitionDesc {
 	return res
 }
 
-// PartitionIDs returns a list of all partition IDs in the ring.
+// PartitionIDs returns a sorted list of all partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
 func (r *PartitionRing) PartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
@@ -283,7 +293,7 @@ func (r *PartitionRing) PartitionIDs() []int32 {
 	return ids
 }
 
-// PendingPartitionIDs returns a list of all PENDING partition IDs in the ring.
+// PendingPartitionIDs returns a sorted list of all PENDING partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
 func (r *PartitionRing) PendingPartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
@@ -298,7 +308,7 @@ func (r *PartitionRing) PendingPartitionIDs() []int32 {
 	return ids
 }
 
-// ActivePartitionIDs returns a list of all ACTIVE partition IDs in the ring.
+// ActivePartitionIDs returns a sorted list of all ACTIVE partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
 func (r *PartitionRing) ActivePartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
@@ -313,7 +323,7 @@ func (r *PartitionRing) ActivePartitionIDs() []int32 {
 	return ids
 }
 
-// InactivePartitionIDs returns a list of all INACTIVE partition IDs in the ring.
+// InactivePartitionIDs returns a sorted list of all INACTIVE partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
 func (r *PartitionRing) InactivePartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))

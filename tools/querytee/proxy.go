@@ -34,6 +34,7 @@ type ProxyConfig struct {
 	PreferredBackend               string
 	BackendReadTimeout             time.Duration
 	CompareResponses               bool
+	LogSlowQueryResponseThreshold  time.Duration
 	ValueComparisonTolerance       float64
 	UseRelativeError               bool
 	PassThroughNonRegisteredRoutes bool
@@ -46,11 +47,17 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.ServerHTTPServicePort, "server.http-service-port", 80, "The HTTP port where the query-tee service listens for HTTP requests.")
 	f.StringVar(&cfg.ServerGRPCServiceAddress, "server.grpc-service-address", "", "Bind address for server where query-tee service listens for HTTP over gRPC requests.")
 	f.IntVar(&cfg.ServerGRPCServicePort, "server.grpc-service-port", 9095, "The GRPC port where the query-tee service listens for HTTP over gRPC messages.")
-	f.StringVar(&cfg.BackendEndpoints, "backend.endpoints", "", "Comma separated list of backend endpoints to query.")
+	f.StringVar(&cfg.BackendEndpoints, "backend.endpoints", "",
+		"Comma-separated list of backend endpoints to query. If the client request contains basic auth, it will be forwarded to the backend. "+
+			"Basic auth is also accepted as part of the endpoint URL and takes precedence over the basic auth in the client request. "+
+			"If the endpoint URL doesn't contain basic auth password, then the basic auth password from the client request is used. "+
+			"If the endpoint basic auth username is __REQUEST_HEADER_X_SCOPE_ORGID__, then the value of the X-Scope-OrgID header will be used as the username.",
+	)
 	f.BoolVar(&cfg.BackendSkipTLSVerify, "backend.skip-tls-verify", false, "Skip TLS verification on backend targets.")
 	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend when selecting the response to send back to the client. If no preferred backend is configured then the query-tee will send back to the client the first successful response received without waiting for other backends.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 150*time.Second, "The timeout when reading the response from a backend.")
 	f.BoolVar(&cfg.CompareResponses, "proxy.compare-responses", false, "Compare responses between preferred and secondary endpoints for supported routes.")
+	f.DurationVar(&cfg.LogSlowQueryResponseThreshold, "proxy.log-slow-query-response-threshold", 10*time.Second, "The minimum difference in response time between slowest and fastest back-end over which to log the query. 0 to disable.")
 	f.Float64Var(&cfg.ValueComparisonTolerance, "proxy.value-comparison-tolerance", 0.000001, "The tolerance to apply when comparing floating point values in the responses. 0 to disable tolerance and require exact match (not recommended).")
 	f.BoolVar(&cfg.UseRelativeError, "proxy.compare-use-relative-error", false, "Use relative error tolerance when comparing floating point values.")
 	f.DurationVar(&cfg.SkipRecentSamples, "proxy.compare-skip-recent-samples", 2*time.Minute, "The window from now to skip comparing samples. 0 to disable.")
@@ -204,7 +211,7 @@ func (p *Proxy) Start() error {
 		if p.cfg.CompareResponses {
 			comparator = route.ResponseComparator
 		}
-		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route.RouteName, p.metrics, p.logger, comparator))
+		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route.RouteName, p.metrics, p.logger, comparator, p.cfg.LogSlowQueryResponseThreshold))
 	}
 
 	if p.cfg.PassThroughNonRegisteredRoutes {

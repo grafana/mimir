@@ -54,7 +54,6 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -287,9 +286,9 @@ func (t *Mimir) initServer() (services.Service, error) {
 	// t.Ingester or t.Distributor will be available. There's no race condition here, because gRPC server (service returned by this method, ie. initServer)
 	// is started only after t.Ingester and t.Distributor are set in initIngester or initDistributorService.
 
-	var ingFn func() ingesterPushReceiver
+	var ingFn func() pushReceiver
 	if t.Cfg.Ingester.LimitInflightRequestsUsingGrpcMethodLimiter {
-		ingFn = func() ingesterPushReceiver {
+		ingFn = func() pushReceiver {
 			// Return explicit nil, if there's no ingester. We don't want to return typed-nil as interface value.
 			if t.Ingester == nil {
 				return nil
@@ -298,9 +297,9 @@ func (t *Mimir) initServer() (services.Service, error) {
 		}
 	}
 
-	var distFn func() distributorPushReceiver
+	var distFn func() pushReceiver
 	if t.Cfg.Distributor.LimitInflightRequestsUsingGrpcMethodLimiter {
-		distFn = func() distributorPushReceiver {
+		distFn = func() pushReceiver {
 			// Return explicit nil, if there's no distributor. We don't want to return typed-nil as interface value.
 			if t.Distributor == nil {
 				return nil
@@ -371,7 +370,7 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 	t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
 
 	// Expose a web page to view the partitions ring state.
-	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher))
+	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
 
 	return t.IngesterPartitionRingWatcher, nil
 }
@@ -384,14 +383,6 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 
 	loader := runtimeConfigLoader{validate: t.Cfg.ValidateLimits}
 	t.Cfg.RuntimeConfig.Loader = loader.load
-
-	// DeprecatedCacheUnalignedRequests is moving from a global config that can in the frontend yaml to a limit config
-	// We need to preserve the option in the frontend yaml for two releases
-	// If the frontend config is configured by the user, the default limit is overwritten
-	// TODO: Remove in Mimir 2.12.0
-	if t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests != querymiddleware.DefaultDeprecatedCacheUnalignedRequests {
-		t.Cfg.LimitsConfig.ResultsCacheForUnalignedQueryEnabled = t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests
-	}
 
 	// DeprecatedAlignQueriesWithStep is moving from a global config that can in the frontend yaml to a limit config
 	// We need to preserve the option in the frontend yaml for two releases
@@ -476,7 +467,6 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isAnyModuleEnabled(Distributor, Write, All)
 
-	t.Cfg.Distributor.PreferStreamingChunksFromIngesters = t.Cfg.Querier.PreferStreamingChunksFromIngesters
 	t.Cfg.Distributor.StreamingChunksPerIngesterSeriesBufferSize = t.Cfg.Querier.StreamingChunksPerIngesterSeriesBufferSize
 	t.Cfg.Distributor.MinimizeIngesterRequests = t.Cfg.Querier.MinimizeIngesterRequests
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
@@ -673,7 +663,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -758,9 +748,13 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		frontendSvc = frontendV2
 	}
 
-	// Wrap roundtripper into Tripperware and then wrap this with the roundtripper that checks that the frontend is ready to receive requests.
+	// Wrap roundtripper into Tripperware and then wrap this with the roundtripper that checks
+	// that the frontend is ready to receive requests when running v1 or v2 of the query-frontend,
+	// i.e. not using the "downstream-url" feature.
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
-	roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendSvc, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
+	if frontendSvc != nil {
+		roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendSvc, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
+	}
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
@@ -955,16 +949,6 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
-
-	// TODO: Remove in Mimir 2.12.
-	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled != indexheader.DefaultIndexHeaderLazyLoadingEnabled {
-		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingEnabled = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled
-	}
-	// TODO: Remove in Mimir 2.12.
-	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout != indexheader.DefaultIndexHeaderLazyLoadingIdleTimeout {
-		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingIdleTimeout = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout
-	}
-
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer, t.ActivityTracker)
 	if err != nil {
 		return nil, err

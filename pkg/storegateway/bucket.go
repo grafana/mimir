@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -127,12 +128,12 @@ type BucketStore struct {
 
 type noopCache struct{}
 
-func (noopCache) StorePostings(string, ulid.ULID, labels.Label, []byte) {}
+func (noopCache) StorePostings(string, ulid.ULID, labels.Label, []byte, time.Duration) {}
 func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) indexcache.BytesResult {
 	return &indexcache.MapIterator[labels.Label]{Keys: keys}
 }
 
-func (noopCache) StoreSeriesForRef(string, ulid.ULID, storage.SeriesRef, []byte) {}
+func (noopCache) StoreSeriesForRef(string, ulid.ULID, storage.SeriesRef, []byte, time.Duration) {}
 func (noopCache) FetchMultiSeriesForRefs(_ context.Context, _ string, _ ulid.ULID, ids []storage.SeriesRef) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
 	return map[storage.SeriesRef][]byte{}, ids
 }
@@ -576,11 +577,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		reqBlockMatchers []*labels.Matcher
 	)
 	defer s.recordSeriesCallResult(stats)
-	defer func(requestStart time.Time) {
-		stats.update(func(stats *queryStats) {
-			stats.streamingSeriesAmbientTime += time.Since(requestStart)
-		})
-	}(time.Now())
+	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	if req.Hints != nil {
 		reqHints := &hintspb.SeriesRequestHints{}
@@ -612,13 +609,11 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 
 	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
-	span, spanCtx := opentracing.StartSpanFromContext(ctx, "store_query_gate_ismyturn")
-	err = s.queryGate.Start(spanCtx)
-	span.Finish()
+	done, err := s.limitConcurrentQueries(ctx, stats)
 	if err != nil {
-		return errors.Wrapf(err, "failed to wait for turn")
+		return err
 	}
-	defer s.queryGate.Done()
+	defer done()
 
 	var (
 		// If we are streaming the series labels and chunks separately, we don't need to fetch the postings
@@ -628,6 +623,12 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	)
 	for _, b := range blocks {
 		resHints.AddQueriedBlock(b.meta.ULID)
+
+		if b.meta.Compaction.Level == 1 && b.meta.Thanos.Source == block.ReceiveSource && !b.queried.Load() {
+			level.Debug(s.logger).Log("msg", "queried non-compacted block", "blockId", b.meta.ULID, "ooo", b.meta.Compaction.FromOutOfOrder())
+		}
+
+		b.queried.Store(true)
 	}
 	if err := s.sendHints(srv, resHints); err != nil {
 		return err
@@ -670,7 +671,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 
 	start := time.Now()
 	if req.StreamingChunksBatchSize > 0 {
-		var seriesChunkIt seriesChunksSetIterator
+		var seriesChunkIt iterator[seriesChunksSet]
 		seriesChunkIt, err = s.streamingChunksSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reuse)
 		if err != nil {
 			return err
@@ -706,6 +707,27 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	}
 
 	return nil
+}
+
+func (s *BucketStore) recordRequestAmbientTime(stats *safeQueryStats, requestStart time.Time) {
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesAmbientTime += time.Since(requestStart)
+	})
+}
+
+func (s *BucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (done func(), err error) {
+	span, spanCtx := opentracing.StartSpanFromContext(ctx, "store_query_gate_ismyturn")
+	defer span.Finish()
+
+	waitStart := time.Now()
+	err = s.queryGate.Start(spanCtx)
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesConcurrencyLimitWaitDuration = time.Since(waitStart)
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to wait for turn")
+	}
+	return s.queryGate.Done, nil
 }
 
 // sendStreamingSeriesLabelsAndStats sends the labels of the streaming series.
@@ -771,7 +793,7 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 func (s *BucketStore) sendStreamingChunks(
 	req *storepb.SeriesRequest,
 	srv storegatewaypb.StoreGateway_SeriesServer,
-	it seriesChunksSetIterator,
+	it iterator[seriesChunksSet],
 	stats *safeQueryStats,
 	totalSeriesCount int,
 ) error {
@@ -1065,7 +1087,7 @@ func (s *BucketStore) streamingChunksSetForBlocks(
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	stats *safeQueryStats,
 	reuse []*reusedPostingsAndMatchers, // Should come from streamingSeriesForBlocks.
-) (seriesChunksSetIterator, error) {
+) (iterator[seriesChunksSet], error) {
 	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reuse, defaultStrategy)
 	if err != nil {
 		return nil, err
@@ -1086,10 +1108,10 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 	stats *safeQueryStats,
 	reuse []*reusedPostingsAndMatchers, // Used if not empty. If not empty, len(reuse) must be len(blocks).
 	strategy seriesIteratorStrategy,
-) (seriesChunkRefsSetIterator, error) {
+) (iterator[seriesChunkRefsSet], error) {
 	var (
 		mtx                      = sync.Mutex{}
-		batches                  = make([]seriesChunkRefsSetIterator, 0, len(blocks))
+		batches                  = make([]iterator[seriesChunkRefsSet], 0, len(blocks))
 		g, _                     = errgroup.WithContext(ctx)
 		begin                    = time.Now()
 		blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
@@ -1174,6 +1196,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("encode").Observe(stats.streamingSeriesEncodeResponseDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("send").Observe(stats.streamingSeriesSendResponseDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("wait_max_concurrent").Observe(stats.streamingSeriesConcurrencyLimitWaitDuration.Seconds())
 
 	s.metrics.seriesDataFetched.WithLabelValues("chunks", "fetched").Observe(float64(stats.chunksFetched))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "fetched").Observe(float64(stats.chunksFetchedSizeSum))
@@ -1246,6 +1269,7 @@ func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
 	categorizedTime := stats.streamingSeriesExpandPostingsDuration +
 		stats.streamingSeriesBatchLoadDuration +
 		stats.streamingSeriesIndexHeaderLoadDuration +
+		stats.streamingSeriesConcurrencyLimitWaitDuration +
 		stats.streamingSeriesEncodeResponseDuration +
 		stats.streamingSeriesSendResponseDuration
 
@@ -1311,6 +1335,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	)
 
 	defer s.recordLabelNamesCallResult(stats)
+	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	var reqBlockMatchers []*labels.Matcher
 	if req.Hints != nil {
@@ -1503,6 +1528,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 	stats := newSafeQueryStats()
 	defer s.recordLabelValuesCallResult(stats)
+	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	resHints := &hintspb.LabelValuesResponseHints{}
 
@@ -1633,7 +1659,7 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 }
 
 func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch int, pendingMatchers []*labels.Matcher, indexr *bucketIndexReader, b *bucketBlock, matchersPostings []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
-	var iterator seriesChunkRefsSetIterator
+	var iterator iterator[seriesChunkRefsSet]
 	iterator = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
 		newPostingsSetsIterator(matchersPostings, seriesPerBatch),
@@ -1845,6 +1871,9 @@ type bucketBlock struct {
 	blockLabels labels.Labels
 
 	expandedPostingsPromises sync.Map
+
+	// Indicates whether the block was queried.
+	queried atomic.Bool
 }
 
 func newBucketBlock(
