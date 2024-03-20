@@ -66,9 +66,16 @@ func TestIngester_Start(t *testing.T) {
 		// Configure the ingester to frequently run its internal services.
 		cfg.UpdateIngesterOwnedSeries = true
 		cfg.OwnedSeriesUpdateInterval = 100 * time.Millisecond
-		cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 100 * time.Millisecond
 		cfg.ActiveSeriesMetrics.UpdatePeriod = 100 * time.Millisecond
 		cfg.limitMetricsUpdatePeriod = 100 * time.Millisecond
+
+		// Configure the TSDB Head compaction interval to be greater than the high frequency
+		// expected while starting up.
+		const headCompactionIntervalWhileStarting = 100 * time.Millisecond
+		const headCompactionIntervalWhileRunning = time.Minute
+		cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = headCompactionIntervalWhileRunning
+		cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting = headCompactionIntervalWhileStarting
+		cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
 		// Create the ingester.
 		overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
@@ -169,6 +176,15 @@ func TestIngester_Start(t *testing.T) {
 			`, userID, userID)), "cortex_ingester_active_series", "cortex_ingester_owned_series")
 		})
 
+		// We expect the ingester run TSDB Head compaction at higher frequency while catching up.
+		firstInterval, standardInterval := ingester.compactionServiceInterval()
+		assert.Equal(t, headCompactionIntervalWhileStarting, firstInterval)
+		assert.Equal(t, headCompactionIntervalWhileStarting, standardInterval)
+
+		assert.Eventually(t, func() bool {
+			return testutil.ToFloat64(ingester.metrics.compactionsTriggered) > 0
+		}, 5*time.Second, 10*time.Millisecond)
+
 		// Since the ingester it still replaying the partition we expect it to be in starting state.
 		assert.Equal(t, services.Starting, ingester.State())
 		assert.Empty(t, watcher.PartitionRing().PartitionOwnerIDs(partitionID))
@@ -193,88 +209,6 @@ func TestIngester_Start(t *testing.T) {
 				watcher.PartitionRing().PartitionOwnerIDs(partitionID),
 				[]string{ingester.cfg.IngesterRing.InstanceID})
 		}, time.Second, 10*time.Millisecond)
-	})
-
-	t.Run("should run TSDB Head compaction at higher frequency while starting up", func(t *testing.T) {
-		var (
-			ctx                = context.Background()
-			cfg                = defaultIngesterTestConfig(t)
-			reg                = prometheus.NewRegistry()
-			fetchRequestsCount = atomic.NewInt64(0)
-			fetchShouldFail    = atomic.NewBool(true)
-			series1            = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1")),
-				Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
-			}}
-		)
-
-		// Configure the TSDB Head compaction interval to be greater than the high frequency
-		// expected while starting up.
-		const expectedHeadCompactionIntervalWhileStarting = 30 * time.Second
-		const expectedHeadCompactionIntervalWhileRunning = time.Minute
-		cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = expectedHeadCompactionIntervalWhileRunning
-		cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
-
-		// Create the ingester.
-		overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-		require.NoError(t, err)
-		ingester, kafkaCluster, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
-
-		// Mock the Kafka cluster to fail Fetch requests until we unblock them. This way we can control
-		// for how long the ingester is in the starting state.
-		kafkaCluster.ControlKey(int16(kmsg.Fetch), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
-			kafkaCluster.KeepControl()
-			fetchRequestsCount.Inc()
-
-			if fetchShouldFail.Load() {
-				return nil, errors.New("mocked error"), true
-			}
-
-			return nil, nil, false
-		})
-
-		// Create a Kafka writer and then write a series.
-		writer := ingest.NewWriter(cfg.IngestStorageConfig.KafkaConfig, log.NewNopLogger(), nil)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, writer))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
-		})
-
-		partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
-		require.NoError(t, err)
-		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}, Source: mimirpb.API}))
-
-		// Start the ingester.
-		require.NoError(t, ingester.StartAsync(ctx))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-		})
-
-		// Wait until the Kafka cluster received the 1st Fetch request.
-		test.Poll(t, 5*time.Second, true, func() interface{} {
-			return fetchRequestsCount.Load() > 0
-		})
-
-		// At this point we expect the ingester is stuck in starting state while catching up
-		// replaying the partition. The catchup will not succeed until we unblock Fetch requests.
-		assert.Equal(t, services.Starting, ingester.State())
-
-		firstInterval, standardInterval := ingester.compactionServiceInterval()
-		assert.Equal(t, expectedHeadCompactionIntervalWhileStarting, firstInterval)
-		assert.Equal(t, expectedHeadCompactionIntervalWhileStarting, standardInterval)
-
-		// Unblock Fetch requests.
-		fetchShouldFail.Store(false)
-
-		// We expect the ingester to catch up, and then switch to Running state.
-		test.Poll(t, 5*time.Second, services.Running, func() interface{} {
-			return ingester.State()
-		})
-		assert.Equal(t, services.Running, ingester.lifecycler.State())
-
-		firstInterval, standardInterval = ingester.compactionServiceInterval()
-		assert.Equal(t, expectedHeadCompactionIntervalWhileRunning, firstInterval)
-		assert.Equal(t, expectedHeadCompactionIntervalWhileRunning, standardInterval)
 	})
 }
 

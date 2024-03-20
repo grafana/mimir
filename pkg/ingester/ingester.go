@@ -2965,7 +2965,11 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// effectively spreading the compactions over the configured interval.
 	firstInterval, standardInterval := i.compactionServiceInterval()
 	stopTicker, tickerChan := util.NewVariableTicker(firstInterval, standardInterval)
-	defer stopTicker()
+	defer func() {
+		// We call stopTicker() from an anonymous function because the stopTicker()
+		// reference may change during the lifetime of compactionServiceRunning().
+		stopTicker()
+	}()
 
 	for ctx.Err() == nil {
 		select {
@@ -3005,7 +3009,7 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 	if i.State() == services.Starting {
 		// Trigger TSDB Head compaction frequently when starting up, because we may replay data from the partition
 		// if ingest storage is enabled.
-		standardInterval = min(30*time.Second, i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
+		standardInterval = min(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting, i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
 	} else {
 		standardInterval = i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
 	}
