@@ -13,12 +13,12 @@
 * [BUGFIX] querier: Don't cache context.Canceled errors for bucket index. #7620
 * [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622
 * [BUGFIX] Query-frontend: Don't panic when using the `-query-frontend.downstream-url` flag. #7651
-* [BUGFIX] Query-frontend: Fix memory leak on every request. #7654
 * [BUGFIX] Ingester: when receiving multiple exemplars for a native histogram via remote write, sort them and only report an error if all are older than the latest exemplar as this could be a partial update. #7640
 
 ### Mixin
 
 * [ENHANCEMENT] Alerts: allow configuring alerts range interval via `_config.base_alerts_range_interval_minutes`. #7591
+* [ENHANCEMENT] Dashboards: Add panels for monitoring distributor and ingester when using ingest-storage. These panels are disabled by default, but can be enabled using `show_ingest_storage_panels: true` config option. Similarly existing panels used when distributors and ingesters use gRPC for forwarding requests can be disabled by setting `show_grpc_ingestion_panels: false`. #7670
 
 ### Jsonnet
 
@@ -39,6 +39,13 @@
 ### Tools
 
 * [ENHANCEMENT] ulidtime: add option to show random part of ULID, timestamp in milliseconds and header. #7615
+
+## 2.12.0-rc.1
+
+### Grafana Mimir
+
+* [CHANGE] Querier: the CLI flag `-querier.minimize-ingester-requests` has been moved from "experimental" to "advanced". #7638
+* [BUGFIX] Query-frontend: Fix memory leak on every request. #7654
 
 ## 2.12.0-rc.0
 
