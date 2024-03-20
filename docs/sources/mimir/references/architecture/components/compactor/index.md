@@ -144,3 +144,13 @@ Refer to the [compactor]({{< relref "../../../../configure/configuration-paramet
 block section and the [limits]({{< relref "../../../../configure/configuration-parameters#limits" >}}) block section for details of compaction-related configuration.
 
 The [alertmanager]({{< relref "../alertmanager" >}}) and [ruler]({{< relref "../ruler" >}}) components can also use object storage to store their configurations and rules uploaded by users. In that case a separate bucket should be created to store alertmanager configurations and rules: using the same bucket between ruler/alertmanager and blocks will cause issues with the compactor.
+
+## Compactor implementation in Kubernetes
+
+While the compactor is a stateless RPC service, we recommend hosting the compactor in a Kubernetes StatefulSet. The reason for this is each compactor pod uses a local disk as scratch space to store:
+
+* block files downloaded from object storage used as input to compaction
+* new block files produced by the compactor to be uploaded to object storage
+
+We don't want to compete with the OS for the root filesystem, so we use an additional disk volume. Kubernetes allows a pod to mount a volume with a PersistentVolumeClaim. If compactor was implemented with a vanilla Kubernetes Deployment, each pod
+would attempt to mount the same volume. By using a StatefulSet, each pod gets its own volume.
