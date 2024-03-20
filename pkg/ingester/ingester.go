@@ -571,7 +571,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 
 	// Start the following services before starting the ingest storage reader, in order to have them
-	// running while replacying the partition (if ingest storage is enabled).
+	// running while replaying the partition (if ingest storage is enabled).
 	if err := services.StartAndAwaitRunning(ctx, i.compactionService); err != nil {
 		return errors.Wrap(err, "failed to start TSDB Head compaction service")
 	}
@@ -586,7 +586,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	// When ingest storage is enabled, we have to make sure that reader catches up replaying the partition
 	// BEFORE the ingester ring lifecycler is started, because once the ingester ring lifecycler will start
-	// it will switch the ingester state to ACTIVE.
+	// it will switch the ingester state in the ring to ACTIVE.
 	if i.ingestReader != nil {
 		if err := services.StartAndAwaitRunning(ctx, i.ingestReader); err != nil {
 			return errors.Wrap(err, "failed to start partition reader")

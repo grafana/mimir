@@ -78,7 +78,7 @@ func TestIngester_Start(t *testing.T) {
 		// Mock the Kafka cluster to:
 		// - Count the Fetch requests.
 		// - Mock the ListOffsets response, returning the offset expected once the ingester can be
-		//   considered having successfully catched up.
+		//   considered having successfully caught up.
 		kafkaCluster.ControlKey(int16(kmsg.Fetch), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			kafkaCluster.KeepControl()
 			fetchRequestsCount.Inc()
