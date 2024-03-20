@@ -42,6 +42,11 @@ func (m *IngesterServerMock) LabelValues(ctx context.Context, r *LabelValuesRequ
 	return args.Get(0).(*LabelValuesResponse), args.Error(1)
 }
 
+func (m *IngesterServerMock) LabelValuesStream(r *LabelValuesRequest, stream Ingester_LabelValuesStreamServer) error {
+	args := m.Called(r, stream)
+	return args.Error(1)
+}
+
 func (m *IngesterServerMock) LabelNames(ctx context.Context, r *LabelNamesRequest) (*LabelNamesResponse, error) {
 	args := m.Called(ctx, r)
 	return args.Get(0).(*LabelNamesResponse), args.Error(1)

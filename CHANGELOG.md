@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [CHANGE] Querier: the CLI flag `-querier.minimize-ingester-requests` has been moved from "experimental" to "advanced". #7638
+* [FEATURE] Add support for streaming label values from ingesters to queriers. #5568
 * [ENHANCEMENT] Store-gateway: merge series from different blocks concurrently. #7456
 * [ENHANCEMENT] Store-gateway: Add `stage="wait_max_concurrent"` to `cortex_bucket_store_series_request_stage_duration_seconds` which records how long the query had to wait for its turn for `-blocks-storage.bucket-store.max-concurrent`. #7609
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567

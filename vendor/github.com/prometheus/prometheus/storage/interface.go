@@ -126,6 +126,10 @@ func (q *MockQuerier) LabelValues(context.Context, string, ...*labels.Matcher) (
 	return nil, nil, nil
 }
 
+func (q *MockQuerier) LabelValuesStream(context.Context, string, ...*labels.Matcher) LabelValues {
+	return EmptyLabelValues()
+}
+
 func (q *MockQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
@@ -162,6 +166,12 @@ type LabelQuerier interface {
 	// If matchers are specified the returned result set is reduced
 	// to label values of metrics matching the matchers.
 	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
+
+	// LabelValuesStream returns an iterator over all potential values for a label name.
+	// It is not safe to use the strings beyond the lifetime of the querier.
+	// If matchers are specified the returned result set is reduced
+	// to label values of metrics matching the matchers.
+	LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) LabelValues
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
 	// If matchers are specified the returned result set is reduced

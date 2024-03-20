@@ -208,13 +208,17 @@ type postingPtr struct {
 // bigEndianPostings implements the Postings interface over a byte stream of
 // big endian numbers.
 type bigEndianPostings struct {
+	i    int
 	list []byte
 	cur  storage.SeriesRef
 }
 
 // TODO(bwplotka): Expose those inside Prometheus.
 func newBigEndianPostings(list []byte) *bigEndianPostings {
-	return &bigEndianPostings{list: list}
+	return &bigEndianPostings{
+		list: list,
+		i:    -4,
+	}
 }
 
 func (it *bigEndianPostings) At() storage.SeriesRef {
@@ -222,12 +226,14 @@ func (it *bigEndianPostings) At() storage.SeriesRef {
 }
 
 func (it *bigEndianPostings) Next() bool {
-	if len(it.list) >= 4 {
-		it.cur = storage.SeriesRef(binary.BigEndian.Uint32(it.list))
-		it.list = it.list[4:]
-		return true
+	i := it.i + 4
+	if i+4 > len(it.list) {
+		return false
 	}
-	return false
+
+	it.i = i
+	it.cur = storage.SeriesRef(binary.BigEndian.Uint32(it.list[i:]))
+	return true
 }
 
 func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
@@ -235,18 +241,24 @@ func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
 		return true
 	}
 
-	num := len(it.list) / 4
+	start := it.i
+	if start < 0 {
+		start = 0
+	}
+
+	l := it.list[start:]
+	num := len(l) / 4
 	// Do binary search between current position and end.
 	i := sort.Search(num, func(i int) bool {
-		return binary.BigEndian.Uint32(it.list[i*4:]) >= uint32(x)
+		return binary.BigEndian.Uint32(l[i*4:]) >= uint32(x)
 	})
 	if i < num {
 		j := i * 4
-		it.cur = storage.SeriesRef(binary.BigEndian.Uint32(it.list[j:]))
-		it.list = it.list[j+4:]
+		it.cur = storage.SeriesRef(binary.BigEndian.Uint32(l[j:]))
+		it.i = start + j
 		return true
 	}
-	it.list = nil
+
 	return false
 }
 
@@ -254,9 +266,15 @@ func (it *bigEndianPostings) Err() error {
 	return nil
 }
 
+func (it *bigEndianPostings) Reset() {
+	it.i = -1
+	it.cur = 0
+}
+
 // Returns number of remaining postings values.
 func (it *bigEndianPostings) length() int {
-	return len(it.list) / 4
+	i := max(it.i, 0)
+	return (len(it.list) - i) / 4
 }
 
 // filterPostingsByCachedShardHash filters the input postings by the provided shard. It filters only

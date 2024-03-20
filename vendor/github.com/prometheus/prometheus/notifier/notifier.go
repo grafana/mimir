@@ -350,7 +350,7 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	alerts = relabelAlerts(n.opts.RelabelConfigs, n.opts.ExternalLabels, alerts)
+	alerts = n.relabelAlerts(alerts)
 	if len(alerts) == 0 {
 		return
 	}
@@ -378,19 +378,20 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.setMore()
 }
 
-func relabelAlerts(relabelConfigs []*relabel.Config, externalLabels labels.Labels, alerts []*Alert) []*Alert {
+// Attach external labels and process relabelling rules.
+func (n *Manager) relabelAlerts(alerts []*Alert) []*Alert {
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	var relabeledAlerts []*Alert
 
 	for _, a := range alerts {
 		lb.Reset(a.Labels)
-		externalLabels.Range(func(l labels.Label) {
+		n.opts.ExternalLabels.Range(func(l labels.Label) {
 			if a.Labels.Get(l.Name) == "" {
 				lb.Set(l.Name, l.Value)
 			}
 		})
 
-		keep := relabel.ProcessBuilder(lb, relabelConfigs...)
+		keep := relabel.ProcessBuilder(lb, n.opts.RelabelConfigs...)
 		if !keep {
 			continue
 		}
@@ -472,27 +473,17 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 	)
 	for _, ams := range amSets {
 		var (
-			payload  []byte
-			err      error
-			amAlerts = alerts
+			payload []byte
+			err     error
 		)
 
 		ams.mtx.RLock()
-
-		if len(ams.cfg.AlertRelabelConfigs) > 0 {
-			amAlerts = relabelAlerts(ams.cfg.AlertRelabelConfigs, labels.Labels{}, alerts)
-			if len(amAlerts) == 0 {
-				continue
-			}
-			// We can't use the cached values from previous iteration.
-			v1Payload, v2Payload = nil, nil
-		}
 
 		switch ams.cfg.APIVersion {
 		case config.AlertmanagerAPIVersionV1:
 			{
 				if v1Payload == nil {
-					v1Payload, err = json.Marshal(amAlerts)
+					v1Payload, err = json.Marshal(alerts)
 					if err != nil {
 						level.Error(n.logger).Log("msg", "Encoding alerts for Alertmanager API v1 failed", "err", err)
 						ams.mtx.RUnlock()
@@ -505,7 +496,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 		case config.AlertmanagerAPIVersionV2:
 			{
 				if v2Payload == nil {
-					openAPIAlerts := alertsToOpenAPIAlerts(amAlerts)
+					openAPIAlerts := alertsToOpenAPIAlerts(alerts)
 
 					v2Payload, err = json.Marshal(openAPIAlerts)
 					if err != nil {
@@ -528,29 +519,24 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 			}
 		}
 
-		if len(ams.cfg.AlertRelabelConfigs) > 0 {
-			// We can't use the cached values on the next iteration.
-			v1Payload, v2Payload = nil, nil
-		}
-
 		for _, am := range ams.ams {
 			wg.Add(1)
 
 			ctx, cancel := context.WithTimeout(n.ctx, time.Duration(ams.cfg.Timeout))
 			defer cancel()
 
-			go func(ctx context.Context, client *http.Client, url string, payload []byte, count int) {
+			go func(client *http.Client, url string) {
 				if err := n.sendOne(ctx, client, url, payload); err != nil {
-					level.Error(n.logger).Log("alertmanager", url, "count", count, "msg", "Error sending alert", "err", err)
+					level.Error(n.logger).Log("alertmanager", url, "count", len(alerts), "msg", "Error sending alert", "err", err)
 					n.metrics.errors.WithLabelValues(url).Inc()
 				} else {
 					numSuccess.Inc()
 				}
 				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
-				n.metrics.sent.WithLabelValues(url).Add(float64(len(amAlerts)))
+				n.metrics.sent.WithLabelValues(url).Add(float64(len(alerts)))
 
 				wg.Done()
-			}(ctx, ams.client, am.url().String(), payload, len(amAlerts))
+			}(ams.client, am.url().String())
 		}
 
 		ams.mtx.RUnlock()

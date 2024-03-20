@@ -92,6 +92,17 @@ func (q *readConsistencyQuerier) LabelValues(ctx context.Context, name string, m
 	return q.next.LabelValues(ctx, name, matchers...)
 }
 
+// LabelValuesStream implements storage.Querier.
+func (q *readConsistencyQuerier) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	// Enforce strong read consistency if it's querying the ALERTS_FOR_STATE metric, otherwise
+	// fallback to the default.
+	if isQueryingAlertsForStateMetric(name, matchers...) {
+		ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+	}
+
+	return q.next.LabelValuesStream(ctx, name, matchers...)
+}
+
 // LabelNames implements storage.Querier.
 func (q *readConsistencyQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ctx = forceStrongReadConsistencyIfQueryingAlertsForStateMetric(ctx, matchers, q.logger)

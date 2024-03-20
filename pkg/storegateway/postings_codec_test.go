@@ -81,7 +81,7 @@ func TestDiffVarintCodec(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				t.Log("postings entries:", p.len())
 				t.Log("original size (4*entries):", 4*p.len(), "bytes")
-				p.reset() // We reuse postings between runs, so we need to reset iterator.
+				p.Reset() // We reuse postings between runs, so we need to reset iterator.
 
 				data, err := codec.codingFunction(p, p.len())
 				assert.NoError(t, err)
@@ -92,7 +92,7 @@ func TestDiffVarintCodec(t *testing.T) {
 				decodedPostings, err := codec.decodingFunction(data)
 				assert.NoError(t, err)
 
-				p.reset()
+				p.Reset()
 				comparePostings(t, p, decodedPostings)
 			})
 		}
@@ -196,7 +196,7 @@ func TestDiffVarintMatchersCodec(t *testing.T) {
 						t.Logf("request matchers: %s, pending matchers: %s", indexcache.CanonicalLabelMatchersKey(requestMatchers), indexcache.CanonicalLabelMatchersKey(pendingMatchers))
 						t.Log("postings entries:", p.len())
 						t.Log("original size (4*entries):", 4*p.len(), "bytes")
-						p.reset() // We reuse postings between runs, so we need to reset iterator.
+						p.Reset() // We reuse postings between runs, so we need to reset iterator.
 
 						data, err := diffVarintSnappyWithMatchersEncode(p, p.len(), indexcache.CanonicalLabelMatchersKey(requestMatchers), pendingMatchers)
 						assert.NoError(t, err)
@@ -210,7 +210,7 @@ func TestDiffVarintMatchersCodec(t *testing.T) {
 						assert.Equal(t, decodedReqMatchers, indexcache.CanonicalLabelMatchersKey(requestMatchers))
 						assertMatchers(t, decodedPendingMatchers, pendingMatchers)
 
-						p.reset()
+						p.Reset()
 						comparePostings(t, p, decodedPostings)
 					})
 				}
@@ -319,7 +319,7 @@ func (p *uint64Postings) Err() error {
 	return nil
 }
 
-func (p *uint64Postings) reset() {
+func (p *uint64Postings) Reset() {
 	p.ix = -1
 }
 

@@ -169,8 +169,8 @@ func (t *Target) offset(interval time.Duration, offsetSeed uint64) time.Duration
 }
 
 // Labels returns a copy of the set of all public labels of the target.
-func (t *Target) Labels(b *labels.ScratchBuilder) labels.Labels {
-	b.Reset()
+func (t *Target) Labels() labels.Labels {
+	b := labels.NewScratchBuilder(t.labels.Len())
 	t.labels.Range(func(l labels.Label) {
 		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
 			b.Add(l.Name, l.Value)

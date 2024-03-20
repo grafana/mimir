@@ -2215,6 +2215,10 @@ func (m *querierMock) LabelValues(context.Context, string, ...*labels.Matcher) (
 	return nil, nil, nil
 }
 
+func (m *querierMock) LabelValuesStream(context.Context, string, ...*labels.Matcher) storage.LabelValues {
+	return storage.EmptyLabelValues()
+}
+
 func (m *querierMock) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }

@@ -19,8 +19,10 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"slices"
 	"sync"
+	"unicode/utf8"
+
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -28,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/loser"
 )
 
 type mergeGenericQuerier struct {
@@ -218,6 +221,72 @@ func mergeStrings(a, b []string) []string {
 	res = append(res, a...)
 	res = append(res, b...)
 	return res
+}
+
+// LabelValuesStream implements LabelQuerier.
+func (q *mergeGenericQuerier) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) LabelValues {
+	if len(q.queriers) == 0 {
+		return EmptyLabelValues()
+	}
+	if len(q.queriers) == 1 {
+		return q.queriers[0].LabelValuesStream(ctx, name, matchers...)
+	}
+
+	its := make([]LabelValues, 0, len(q.queriers))
+	for _, sq := range q.queriers {
+		its = append(its, sq.LabelValuesStream(ctx, name, matchers...))
+	}
+
+	lt := loser.New(its, string(utf8.MaxRune))
+	return &mergedLabelValues{
+		lt:  lt,
+		lvs: its,
+	}
+}
+
+// mergedLabelValues is a label values iterator merging a collection of sub-iterators.
+type mergedLabelValues struct {
+	lt  *loser.Tree[string, LabelValues]
+	lvs []LabelValues
+	cur string
+}
+
+func (m *mergedLabelValues) Next() bool {
+	for m.lt.Next() {
+		// Remove duplicate entries
+		at := m.lt.At()
+		if at != m.cur {
+			m.cur = at
+			return true
+		}
+	}
+
+	return false
+}
+
+func (m *mergedLabelValues) At() string {
+	return m.cur
+}
+
+func (m *mergedLabelValues) Err() error {
+	for _, lv := range m.lvs {
+		if err := lv.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *mergedLabelValues) Warnings() annotations.Annotations {
+	var warnings annotations.Annotations
+	for _, lv := range m.lvs {
+		warnings = warnings.Merge(lv.Warnings())
+	}
+	return warnings
+}
+
+func (m *mergedLabelValues) Close() error {
+	return nil
 }
 
 // LabelNames returns all the unique label names present in all queriers in sorted order.
