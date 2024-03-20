@@ -14,6 +14,8 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 const (
@@ -206,6 +208,8 @@ func TestUnixSecondsJSON(t *testing.T) {
 }
 
 func TestVariableTicker(t *testing.T) {
+	test.VerifyNoLeak(t)
+
 	t.Run("should tick at configured durations", func(t *testing.T) {
 		t.Parallel()
 
