@@ -1,8 +1,12 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-writes.json';
+local successColor = '#7EB26D';
+local clientErrorColor = '#EF843C';
+local errorColor = '#E24D42';
 
 (import 'dashboard-utils.libsonnet') +
 (import 'dashboard-queries.libsonnet') {
+
   [filename]:
     assert std.md5(filename) == '8280707b8f16e7b87b840fc1cc92d4c5' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Writes') + { uid: std.md5(filename) })
@@ -237,13 +241,13 @@ local filename = 'mimir-writes.json';
     )
     .addRowIf(
       $._config.show_ingest_storage_panels,
-      ($.row('Ingester (ingest storage: fetching and processing records)'))
+      ($.row('Ingester (ingest storage)'))
       .addPanel(
-        $.timeseriesPanel('Responses / sec') +
+        $.timeseriesPanel('Kafka fetches / sec') +
         $.panelDescription(
-          'Responses / sec',
+          'Kafka fetches / sec',
           |||
-            Rate of responses from Kafka brokers. Client can return multiple responses ("fetches") at once. Some of the responses may be failures.
+            Rate of fetches received from Kafka brokers. A fetch can contain multiple records (a write request received on the write path is mapped into a single record).
           |||
         ) +
         $.queryPanel(
@@ -258,59 +262,57 @@ local filename = 'mimir-writes.json';
             'sum (rate (cortex_ingest_storage_reader_read_errors_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
-            'fetches',
+            'successful',
             'failed',
             'read errors',
           ],
-        ) + $.aliasColors({ failed: '#FF0000', 'read errors': '#FF0000' }) + $.stack,
+        ) + $.aliasColors({ failed: errorColor, 'read errors': errorColor }) + $.stack,
       )
       .addPanel(
-        $.timeseriesPanel('Records per fetch') +
+        $.timeseriesPanel('Kafka records / sec') +
         $.panelDescription(
-          'Records per fetch',
+          'Kafka records / sec',
           |||
-            Number of fetched records per fetch operation.
+            Rate of processed records from Kafka. Failed records are categorized as "client" errors (e.g. per-tenant limits) or server errors.
           |||
         ) +
         $.queryPanel(
           [
             |||
-              sum(rate(cortex_ingest_storage_reader_records_per_fetch_sum{%s}[$__rate_interval]))
-              /
-              sum(rate(cortex_ingest_storage_reader_records_per_fetch_count{%s}[$__rate_interval]))
+              sum(rate(cortex_ingest_storage_reader_records_total{%s}[$__rate_interval]))
+              -
+              sum(rate(cortex_ingest_storage_reader_records_failed_total{%s}[$__rate_interval]))
             ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(0.99, sum by(le) (rate(cortex_ingest_storage_reader_records_per_fetch_bucket{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_records_failed_total{%s, cause="client"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_records_failed_total{%s, cause="server"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
-            'Average',
-            '99th percentile',
+            'successful',
+            'failed (client)',
+            'failed (server)',
           ],
-        ),
+        ) + $.aliasColors({ successful: successColor, 'failed (client)': clientErrorColor, 'failed (server)': errorColor }) + $.stack,
       )
       .addPanel(
-        $.timeseriesPanel('Processing Latency') +
+        $.timeseriesPanel('Kafka record processing latency') +
         $.panelDescription(
-          'Processing Latency',
+          'Kafka record processing latency',
           |||
             Time used to process a single record (write request). This time is spent by appending data to per-tenant TSDB.
           |||
         ) +
         $.queryPanel(
           [
+            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.ingester)],
             'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.ingester)],
             'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.ingester)],
-            |||
-              sum(rate(cortex_ingest_storage_reader_processing_time_seconds_sum{%s}[$__rate_interval]))
-              /
-              sum(rate(cortex_ingest_storage_reader_processing_time_seconds_count{%s}[$__rate_interval]))
-            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="1.0"})' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
+            '50th percentile',
             '99th percentile',
             '99.9th percentile',
-            '50th percentile',
-            'average',
+            '100th percentile',
           ],
         ) + {
           fieldConfig+: {
@@ -319,11 +321,11 @@ local filename = 'mimir-writes.json';
         },
       )
       .addPanel(
-        $.timeseriesPanel('End-to-end latency') +
+        $.timeseriesPanel('Kafka record end-to-end latency') +
         $.panelDescription(
-          'End-to-end latency',
+          'Kafka record end-to-end latency',
           |||
-            Time between writing request to Kafka by distributor and reading the record by ingester.
+            Time between writing request by distributor to Kafka and reading the record by ingester.
           |||
         ) +
         $.queryPanel(
