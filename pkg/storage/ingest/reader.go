@@ -176,9 +176,9 @@ func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Conte
 
 	for boff.Ongoing() {
 		// Send a direct request to the Kafka backend to fetch the last produced offset.
-		// We intentionally don't use FetchLastProducedOffset() to not introduce further
+		// We intentionally don't use WaitNextFetchLastProducedOffset() to not introduce further
 		// latency.
-		lastProducedOffset, err := r.offsetReader.RequestLastProducedOffset(ctx)
+		lastProducedOffset, err := r.offsetReader.FetchLastProducedOffset(ctx)
 		if err != nil {
 			level.Warn(r.logger).Log("msg", "partition reader failed to fetch last produced offset", "err", err)
 			boff.Wait()
@@ -446,7 +446,7 @@ func (r *PartitionReader) WaitReadConsistency(ctx context.Context) (returnErr er
 	}
 
 	// Get the last produced offset.
-	lastProducedOffset, err := r.offsetReader.FetchLastProducedOffset(ctx)
+	lastProducedOffset, err := r.offsetReader.WaitNextFetchLastProducedOffset(ctx)
 	if err != nil {
 		return err
 	}
