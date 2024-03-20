@@ -1,8 +1,5 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-writes.json';
-local successColor = '#7EB26D';
-local clientErrorColor = '#EF843C';
-local errorColor = '#E24D42';
 
 (import 'dashboard-utils.libsonnet') +
 (import 'dashboard-queries.libsonnet') {
@@ -266,7 +263,7 @@ local errorColor = '#E24D42';
             'failed',
             'read errors',
           ],
-        ) + $.aliasColors({ failed: errorColor, 'read errors': errorColor }) + $.stack,
+        ) + $.aliasColors({ failed: $._colors.failed, 'read errors': $._colors.failed }) + $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Kafka records / sec') +
@@ -291,7 +288,7 @@ local errorColor = '#E24D42';
             'failed (client)',
             'failed (server)',
           ],
-        ) + $.aliasColors({ successful: successColor, 'failed (client)': clientErrorColor, 'failed (server)': errorColor }) + $.stack,
+        ) + $.aliasColors({ successful: $._colors.success, 'failed (client)': $._colors.clientError, 'failed (server)': $._colors.failed }) + $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Kafka record processing latency') +

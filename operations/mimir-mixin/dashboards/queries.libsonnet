@@ -197,7 +197,7 @@ local filename = 'mimir-queries.json';
           fieldConfig+: {
             defaults+: { unit: 'reqps' },
           },
-        } + $.aliasColors({ failed: '#FF0000' }) + $.stack,
+        } + $.aliasColors({ failed: $._colors.failed }) + $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Requests with strong consistency ratio') +
@@ -210,14 +210,25 @@ local filename = 'mimir-queries.json';
         $.queryPanel(
           [
             |||
-              sum(rate(cortex_ingest_storage_strong_consistency_requests_total{%s}[$__rate_interval]))
+              (
+                sum(rate(cortex_ingest_storage_strong_consistency_requests_total{%s}[$__rate_interval]))
+                -
+                sum(rate(cortex_ingest_storage_strong_consistency_failures_total{%s}[$__rate_interval]))
+              )
+              /
+              sum(rate(cortex_request_duration_seconds_count{%s,route=~"%s"}[$__rate_interval]))
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester), $._config.ingester_read_path_routes_regex],
+            |||
+              sum(rate(cortex_ingest_storage_strong_consistency_failures_total{%s}[$__rate_interval]))
               /
               sum(rate(cortex_request_duration_seconds_count{%s,route=~"%s"}[$__rate_interval]))
             ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester), $._config.ingester_read_path_routes_regex],
           ],
-          ['requests with strong consistency ratio'],
+          ['successful', 'failed'],
         )
+        + $.aliasColors({ failed: $._colors.failed, successful: $._colors.success })
         + { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } }
+        + $.stack
       )
       .addPanel(
         $.timeseriesPanel('Strong consistency – wait latency') +
@@ -277,7 +288,7 @@ local filename = 'mimir-queries.json';
           fieldConfig+: {
             defaults+: { unit: 'reqps' },
           },
-        } + $.aliasColors({ failed: '#FF0000' }) + $.stack,
+        } + $.aliasColors({ failed: $._colors.failed }) + $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Last produced offset latency') +
