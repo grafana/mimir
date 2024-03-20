@@ -3319,6 +3319,16 @@ const (
 
 // Blocks version of Flush handler. It force-compacts blocks, and triggers shipping.
 func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
+	// Don't allow callers to flush TSDB while we're in the middle of starting or shutting down.
+	if ingesterState := i.State(); ingesterState != services.Running {
+		err := newUnavailableError(ingesterState)
+		level.Warn(i.logger).Log("msg", "flushing TSDB blocks is not allowed", "err", err)
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
 	err := r.ParseForm()
 	if err != nil {
 		level.Warn(i.logger).Log("msg", "failed to parse HTTP request in flush handler", "err", err)

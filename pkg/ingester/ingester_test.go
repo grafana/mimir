@@ -15,6 +15,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -5856,6 +5857,26 @@ func TestIngester_flushing(t *testing.T) {
 				require.Equal(t, 26*time.Hour.Milliseconds(), blocks[1].Meta().MaxTime)
 
 				require.Equal(t, 50*time.Hour.Milliseconds()+1, blocks[2].Meta().MaxTime) // Block maxt is exclusive.
+			},
+		},
+
+		"should not allow to flush blocks with flush API endpoint if ingester is not in Running state": {
+			setupIngester: func(cfg *Config) {
+				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
+			},
+
+			action: func(t *testing.T, i *Ingester, reg *prometheus.Registry) {
+				// Stop the ingester.
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
+
+				rec := httptest.NewRecorder()
+				i.FlushHandler(rec, httptest.NewRequest("POST", "/ingester/flush?wait=true", nil))
+
+				assert.Equal(t, http.StatusServiceUnavailable, rec.Result().StatusCode)
+
+				body, err := io.ReadAll(rec.Result().Body)
+				require.NoError(t, err)
+				assert.Equal(t, newUnavailableError(services.Terminated).Error(), string(body))
 			},
 		},
 	} {
