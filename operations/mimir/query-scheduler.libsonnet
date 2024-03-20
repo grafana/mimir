@@ -3,6 +3,7 @@
 {
   local container = $.core.v1.container,
   local deployment = $.apps.v1.deployment,
+  local service = $.core.v1.service,
 
   query_scheduler_args+::
     $._config.commonConfig +
@@ -58,7 +59,8 @@
 
   // Headless to make sure resolution gets IP address of target pods, and not service IP.
   newQuerySchedulerDiscoveryService(name, deployment)::
-    $.newMimirDiscoveryService(discoveryServiceName(name), deployment),
+    $.newMimirDiscoveryService(discoveryServiceName(name), deployment) +
+    if $._config.service_monitor_enabled then service.mixin.metadata.withLabelsMixin({ 'prometheus.io/service-monitor': 'false' }) else {},
 
   query_scheduler_discovery_service: if !$._config.is_microservices_deployment_mode || !$._config.query_scheduler_enabled then {} else
     self.newQuerySchedulerDiscoveryService('query-scheduler', $.query_scheduler_deployment),
@@ -95,4 +97,7 @@
 
   query_frontend_args+:: if !$._config.query_scheduler_enabled then {} else
     self.queryFrontendUseQuerySchedulerArgs('query-scheduler'),
+
+  query_scheduler_service_monitor: if !($._config.is_microservices_deployment_mode && $._config.query_scheduler_enabled && $._config.service_monitor_enabled) then null else
+    $.newMimirServiceMonitor('query-scheduler', 'query-scheduler-http-metrics'),
 }
