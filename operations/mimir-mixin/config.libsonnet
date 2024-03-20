@@ -649,7 +649,8 @@
       'debug_pprof',
     ],
 
-    ingester_read_path_routes_regex: '/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata',
+    // All query methods from IngesterServer interface. Basically everything except Push.
+    ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
 
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',
