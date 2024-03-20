@@ -2985,7 +2985,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 				// Stop the previous ticker before creating a new one.
 				stopTicker()
 
-				firstInterval, standardInterval = newFirstInterval, newStandardInterval
+				standardInterval = newStandardInterval
 				stopTicker, tickerChan = util.NewVariableTicker(newFirstInterval, newStandardInterval)
 			}
 
