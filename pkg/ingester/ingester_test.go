@@ -7259,7 +7259,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
 
 		reg := prometheus.NewPedanticRegistry()
-		i, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+		i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
 
 		// Re-enable push gRPC method to simulate migration period, when ingester can receive requests from gRPC
 		i.cfg.PushGrpcMethodEnabled = true

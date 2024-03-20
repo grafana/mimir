@@ -225,7 +225,7 @@ func TestVariableTicker(t *testing.T) {
 		assert.InDelta(t, ticks[2].Sub(startTime).Seconds(), 5*time.Second.Seconds(), float64(tolerance))
 	})
 
-	t.Run("should close the channel on Close()", func(t *testing.T) {
+	t.Run("should not close the channel on Close()", func(t *testing.T) {
 		t.Parallel()
 
 		for _, durations := range [][]time.Duration{{time.Second}, {time.Second, 2 * time.Second}} {

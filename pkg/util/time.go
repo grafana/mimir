@@ -127,6 +127,11 @@ func NewVariableTicker(durations ...time.Duration) (func(), <-chan time.Time) {
 	ticker := time.NewTicker(durations[0])
 	durations = durations[1:]
 
+	// If there was only 1 duration we can simply return the built-in ticker.
+	if len(durations) == 0 {
+		return ticker.Stop, ticker.C
+	}
+
 	// Create a channel over which our ticks will be sent.
 	ticks := make(chan time.Time, 1)
 

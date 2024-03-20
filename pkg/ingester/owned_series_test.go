@@ -718,9 +718,9 @@ func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRin
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.partitionsRing))
 	}
 
-	ing, _ := createTestIngesterWithIngestStorage(t, &c.cfg, c.overrides, nil)
+	ing, _, prw := createTestIngesterWithIngestStorage(t, &c.cfg, c.overrides, nil)
 	c.ing = ing
-	c.partitionsRing = ing.ingestPartitionWatcher
+	c.partitionsRing = prw
 
 	// Ingester is not started yet.
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c.ing))
@@ -730,7 +730,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRin
 
 	// Make sure that partition is now registered in the ring, and is active. This takes at least 1 sec.
 	test.Poll(t, 2*time.Second, true, func() interface{} {
-		p := c.partitionsRing.PartitionRing().ActivePartitionIDs()
+		p := prw.PartitionRing().ActivePartitionIDs()
 		return slices.Contains(p, c.partitionID)
 	})
 
