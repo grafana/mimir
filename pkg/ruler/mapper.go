@@ -138,7 +138,7 @@ func (m *mapper) MapRules(user string, ruleConfigs map[string][]rulefmt.RuleGrou
 	return anyUpdated, filenames, nil
 }
 
-func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename string, logger log.Logger) (bool, error) {
+func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename string, logger log.Logger /* contextual logger with userID */) (bool, error) {
 	sort.Slice(groups, func(i, j int) bool {
 		return groups[i].Name > groups[j].Name
 	})
