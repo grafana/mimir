@@ -14,8 +14,9 @@ import (
 
 // Config configures a the alertmanager storage backend.
 type Config struct {
-	bucket.Config `yaml:",inline"`
-	Local         local.StoreConfig `yaml:"local"`
+	bucket.Config        `yaml:",inline"`
+	Local                local.StoreConfig `yaml:"local"`
+	ManageConfigsLocally bool              `yaml:"manage_configs_locally"`
 }
 
 // RegisterFlags registers the backend storage config.
