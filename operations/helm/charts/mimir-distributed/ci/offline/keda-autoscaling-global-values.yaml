@@ -6,7 +6,6 @@ kedaAutoscaling:
   pollingInterval: 20
   customHeaders:
     X-Scope-OrgID: tenant
-  preserveReplicas: true
 
 distributor:
   replicas: 5
