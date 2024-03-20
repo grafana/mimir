@@ -231,9 +231,9 @@ local filename = 'mimir-queries.json';
         + $.stack
       )
       .addPanel(
-        $.timeseriesPanel('Strong consistency – wait latency') +
+        $.timeseriesPanel('Strong consistency queries — wait latency') +
         $.panelDescription(
-          'Strong consistency – Wait latency',
+          'Strong consistency queries — wait latency',
           |||
             How long does the request wait to guarantee strong consistency.
           |||

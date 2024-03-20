@@ -245,6 +245,7 @@ local filename = 'mimir-writes.json';
           'Kafka fetches / sec',
           |||
             Rate of fetches received from Kafka brokers. A fetch can contain multiple records (a write request received on the write path is mapped into a single record).
+            Read errors are any errors reported on connection to Kafka brokers, and are separate from "failed" fetches.
           |||
         ) +
         $.queryPanel(
@@ -263,7 +264,7 @@ local filename = 'mimir-writes.json';
             'failed',
             'read errors',
           ],
-        ) + $.aliasColors({ failed: $._colors.failed, 'read errors': $._colors.failed }) + $.stack,
+        ) + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed, 'read errors': $._colors.failed }) + $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Kafka records / sec') +
