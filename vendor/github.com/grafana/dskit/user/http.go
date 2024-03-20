@@ -6,6 +6,7 @@ package user
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 )
 
@@ -25,6 +26,9 @@ const (
 // the org ID and a context with the org ID embedded.
 func ExtractOrgIDFromHTTPRequest(r *http.Request) (string, context.Context, error) {
 	orgID := r.Header.Get(OrgIDHeaderName)
+
+	fmt.Println("ExtractOrgIDFromHTTPRequest() orgID:", orgID)
+
 	if orgID == "" {
 		return "", r.Context(), ErrNoOrgID
 	}

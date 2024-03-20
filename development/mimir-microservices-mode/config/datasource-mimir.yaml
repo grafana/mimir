@@ -8,7 +8,7 @@ datasources:
   url: http://nginx:8080/prometheus
   isDefault: true
   jsonData:
-    httpHeaderName1: "X-Scope-OrgID-bad"
+    httpHeaderName1: "X-Scope-OrgID"
     prometheusType: Mimir
     exemplarTraceIdDestinations:
     - name: traceID
