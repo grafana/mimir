@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -48,30 +49,56 @@ func TestIngester_Start(t *testing.T) {
 			cfg                = defaultIngesterTestConfig(t)
 			reg                = prometheus.NewRegistry()
 			fetchRequestsCount = atomic.NewInt64(0)
-			fetchShouldFail    = atomic.NewBool(true)
-			series1            = mimirpb.PreallocTimeseries{
-				TimeSeries: &mimirpb.TimeSeries{
-					Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "test")),
-					Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
-				},
-			}
+			series1            = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1")),
+				Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
+			}}
+			series2 = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2")),
+				Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
+			}}
 		)
+
+		const expectedSeriesToReplay = 2
+
+		// Configure the ingester to frequently run its internal services.
+		cfg.UpdateIngesterOwnedSeries = true
+		cfg.OwnedSeriesUpdateInterval = 100 * time.Millisecond
+		cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 100 * time.Millisecond
+		cfg.ActiveSeriesMetrics.UpdatePeriod = 100 * time.Millisecond
+		cfg.limitMetricsUpdatePeriod = 100 * time.Millisecond
 
 		// Create the ingester.
 		overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 		require.NoError(t, err)
 		ingester, kafkaCluster := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
 
-		// Mock the Kafka cluster to fail the Fetch operation until we unblock it later in the test.
+		// Mock the Kafka cluster to:
+		// - Count the Fetch requests.
+		// - Mock the ListOffsets response, returning the offset expected once the ingester can be
+		//   considered having successfully catched up.
 		kafkaCluster.ControlKey(int16(kmsg.Fetch), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			kafkaCluster.KeepControl()
 			fetchRequestsCount.Inc()
 
-			if fetchShouldFail.Load() {
-				return nil, errors.New("mocked error"), true
-			}
-
 			return nil, nil, false
+		})
+
+		kafkaCluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			kafkaCluster.KeepControl()
+
+			req := kreq.(*kmsg.ListOffsetsRequest)
+			res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+			res.Topics = []kmsg.ListOffsetsResponseTopic{{
+				Topic: cfg.IngestStorageConfig.KafkaConfig.Topic,
+				Partitions: []kmsg.ListOffsetsResponseTopicPartition{{
+					Partition: ingester.ingestPartitionID,
+					ErrorCode: 0,
+					Offset:    expectedSeriesToReplay,
+				}},
+			}}
+
+			return res, nil, true
 		})
 
 		// Create a Kafka writer and then write a series.
@@ -85,31 +112,74 @@ func TestIngester_Start(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}, Source: mimirpb.API}))
 
+		// Add the ingester in LEAVING state in the ring, in order to simulate an ingester restart.
+		// This will make the owned series tracker to correctly work at ingester startup.
+		require.NoError(t, cfg.IngesterRing.KVStore.Mock.CAS(context.Background(), IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			desc := ring.GetOrCreateRingDesc(in)
+			desc.AddIngester(
+				cfg.IngesterRing.InstanceID,
+				cfg.IngesterRing.InstanceAddr,
+				cfg.IngesterRing.InstanceZone,
+				cfg.IngesterRing.customTokenGenerator().GenerateTokens(512, nil),
+				ring.LEAVING,
+				time.Now())
+
+			return desc, true, nil
+		}))
+
 		// Start the ingester.
 		require.NoError(t, ingester.StartAsync(ctx))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
 		})
 
-		// Wait until the Kafka cluster received few Fetch requests.
+		// Wait until the Kafka cluster received the 1st Fetch request.
 		test.Poll(t, 5*time.Second, true, func() interface{} {
-			return fetchRequestsCount.Load() > 2
+			return fetchRequestsCount.Load() > 0
 		})
 
-		// Since the mocked Kafka cluster is configured to fail any Fetch we expect the ingester hasn't
-		// catched up yet, and it's still in Starting state.
+		// At this point we expect the ingester is stuck in starting state while catching up
+		// replaying the partition. The catchup will not succeed until we'll write the next
+		// series to Kafka because we've mocked the Kafka to return a "last produced offset"
+		// in the future.
+
+		// We expect the following internal services to be already running at this point.
+		assert.Equal(t, services.Running, ingester.compactionService.State())
+		assert.Equal(t, services.Running, ingester.ownedSeriesService.State())
+		assert.Equal(t, services.Running, ingester.metricsUpdaterService.State())
+		assert.Equal(t, services.Running, ingester.metadataPurgerService.State())
+
+		// We expect the TSDB Head compaction to run while replaying from Kafka.
+		assert.Eventually(t, func() bool {
+			return testutil.ToFloat64(ingester.metrics.compactionsTriggered) > 0
+		}, time.Second, 10*time.Millisecond)
+
+		// We expect metrics to be updated.
+		test.Poll(t, time.Second, nil, func() interface{} {
+			return testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="%s"} 1
+
+				# HELP cortex_ingester_owned_series Number of currently owned series per user.
+				# TYPE cortex_ingester_owned_series gauge
+				cortex_ingester_owned_series{user="%s"} 1
+			`, userID, userID)), "cortex_ingester_active_series", "cortex_ingester_owned_series")
+		})
+
+		// Since the ingester it still replaying the partition we expect it to be in starting state.
 		assert.Equal(t, services.Starting, ingester.State())
 		assert.Empty(t, ingester.ingestPartitionWatcher.PartitionRing().PartitionOwnerIDs(partitionID))
 		assert.Equal(t, services.New, ingester.lifecycler.State())
 
-		// Unblock the Fetch requests. Now they will succeed.
-		fetchShouldFail.Store(false)
+		// Write one more request to Kafka. This will cause the ingester to consume up until the
+		// "last produced offset" returned by the mocked Kafka, and so consider the catch up complete.
+		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series2}, Source: mimirpb.API}))
 
 		// We expect the ingester to catch up, and then switch to Running state.
 		test.Poll(t, 5*time.Second, services.Running, func() interface{} {
 			return ingester.State()
 		})
-
 		assert.Equal(t, services.Running, ingester.lifecycler.State())
 
 		assert.Eventually(t, func() bool {

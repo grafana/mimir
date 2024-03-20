@@ -123,8 +123,6 @@ func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Conte
 // RequestLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if the
 // partition is empty. This function issues a single request, but the Kafka client used under the
 // hood may retry a failed request until the retry timeout is hit.
-//
-// This function may be directly called from outside the partitionOffsetReader.
 func (p *partitionOffsetReader) RequestLastProducedOffset(ctx context.Context) (_ int64, returnErr error) {
 	startTime := time.Now()
 

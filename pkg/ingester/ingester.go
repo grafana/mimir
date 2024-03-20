@@ -211,6 +211,9 @@ type Config struct {
 
 	// This config is dynamically injected because defined outside the ingester config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
+
+	// This config can be overridden in tests.
+	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -240,6 +243,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	// the default behaviour of Mimir should be as this flag were set to true.
 	// TODO: Remove in Mimir 2.14.0
 	f.BoolVar(&cfg.DeprecatedReturnOnlyGRPCErrors, deprecatedReturnOnlyGRPCErrorsFlag, true, "When enabled only gRPC errors will be returned by the ingester.")
+
+	// Hardcoded config (can only be overridden in tests).
+	cfg.limitMetricsUpdatePeriod = time.Second * 15
 }
 
 func (cfg *Config) Validate(logger log.Logger) error {
@@ -704,7 +710,6 @@ func (i *Ingester) running(ctx context.Context) error {
 }
 
 // metricsUpdaterServiceRunning is the running function for the internal metrics updater service.
-// TODO unit test: must be safe to run while ingester is starting and other services haven't started
 func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	// Launch a dedicated goroutine for inflightRequestsTicker
 	// to ensure it operates independently, unaffected by delays from other logics in this function.
@@ -738,16 +743,8 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	usageStatsUpdateTicker := time.NewTicker(usageStatsUpdateInterval)
 	defer usageStatsUpdateTicker.Stop()
 
-	metricsUpdateTicker := time.NewTicker(time.Second * 15)
-	defer metricsUpdateTicker.Stop()
-
-	// Update metrics as soon as service is started, so we get some initial metrics without
-	// waiting for the 1st tick.
-	i.updateMetrics()
-	i.updateUsageStats()
-	if i.cfg.ActiveSeriesMetrics.Enabled {
-		i.updateActiveSeries(time.Now())
-	}
+	limitMetricsUpdateTicker := time.NewTicker(i.cfg.limitMetricsUpdatePeriod)
+	defer limitMetricsUpdateTicker.Stop()
 
 	for {
 		select {
@@ -764,8 +761,8 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 			i.updateActiveSeries(time.Now())
 		case <-usageStatsUpdateTicker.C:
 			i.updateUsageStats()
-		case <-metricsUpdateTicker.C:
-			i.updateMetrics()
+		case <-limitMetricsUpdateTicker.C:
+			i.updateLimitMetrics()
 		case <-ctx.Done():
 			return nil
 		}
@@ -918,7 +915,7 @@ func (i *Ingester) applyTSDBSettings() {
 	}
 }
 
-func (i *Ingester) updateMetrics() {
+func (i *Ingester) updateLimitMetrics() {
 	for _, userID := range i.getTSDBUsers() {
 		db := i.getTSDB(userID)
 		if db == nil {
@@ -3795,7 +3792,6 @@ func (i *Ingester) getUsersWithMetadata() []string {
 	return userIDs
 }
 
-// TODO unit test: must be safe to run while ingester is starting and other services haven't started
 func (i *Ingester) purgeUserMetricsMetadata() {
 	deadline := time.Now().Add(-i.cfg.MetadataRetainPeriod)
 
