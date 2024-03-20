@@ -2967,34 +2967,26 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// helps to have different ingesters running the compaction at a different time,
 	// effectively spreading the compactions over the configured interval.
 	firstInterval, standardInterval := i.compactionServiceInterval()
-	tickerInterval := firstInterval
-
-	ticker := time.NewTicker(tickerInterval)
-	defer ticker.Stop()
+	stopTicker, tickerChan := util.NewVariableTicker(firstInterval, standardInterval)
+	defer stopTicker()
 
 	for ctx.Err() == nil {
 		select {
-		case <-ticker.C:
+		case <-tickerChan:
 			// The forcedCompactionMaxTime has no meaning because force=false.
 			i.compactBlocks(ctx, false, 0, nil)
 
 			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
 			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
 
-			// Run it at a regular (configured) interval after the first compaction.
-			// TODO unit test (we could create a ticker which supports a custom first interval)
+			// Check if the desired interval has changed. We only compare the standard interval
+			// before the first interval may be random due to jittering.
 			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(); standardInterval != newStandardInterval {
-				// The desired interval has changed. We re-initialise the ticker with the new first interval.
-				firstInterval = newFirstInterval
-				standardInterval = newStandardInterval
+				// Stop the previous ticker before creating a new one.
+				stopTicker()
 
-				tickerInterval = firstInterval
-				ticker.Reset(tickerInterval)
-			} else if tickerInterval != standardInterval {
-				// The current ticker interval is different than the standard one (so it was the first interval).
-				// We can switch to the standard one.
-				ticker.Reset(standardInterval)
-				tickerInterval = standardInterval
+				firstInterval, standardInterval = newFirstInterval, newStandardInterval
+				stopTicker, tickerChan = util.NewVariableTicker(newFirstInterval, newStandardInterval)
 			}
 
 		case req := <-i.forceCompactTrigger:
@@ -3010,7 +3002,8 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 }
 
 // compactionServiceInterval returns how frequently the TSDB Head should be checked for compaction.
-// The returned value may change over time.
+// The returned standardInterval is guaranteed to have no jittering applied.
+// The returned intervals may change over time, depending on the ingester service state.
 func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval time.Duration) {
 	if i.State() == services.Starting {
 		// Trigger TSDB Head compaction frequently when starting up, because we may replay data from the partition
@@ -3641,7 +3634,6 @@ func (i *Ingester) checkAvailableForRead() error {
 
 // checkAvailableForPush checks whether the ingester is available for push requests,
 // and if it is not the case returns an unavailableError error.
-// TODO unit test
 func (i *Ingester) checkAvailableForPush() error {
 	ingesterState := i.State()
 

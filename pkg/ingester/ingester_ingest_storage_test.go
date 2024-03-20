@@ -43,6 +43,8 @@ import (
 )
 
 func TestIngester_Start(t *testing.T) {
+	util_test.VerifyNoLeak(t)
+
 	t.Run("should replay the partition at startup and then join the ingesters and partitions ring", func(t *testing.T) {
 		var (
 			ctx                = context.Background()

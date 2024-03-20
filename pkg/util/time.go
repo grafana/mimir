@@ -113,6 +113,52 @@ func NewDisableableTicker(interval time.Duration) (func(), <-chan time.Time) {
 	return func() { tick.Stop() }, tick.C
 }
 
+// NewVariableTicker wrap time.Ticker to Reset() the ticker with the next duration (picked from
+// input durations) after each tick. The last configured duration is the one that will be preserved
+// once previous ones have been applied.
+//
+// Returns a function for stopping the ticker, and the ticker channel.
+func NewVariableTicker(durations ...time.Duration) (func(), <-chan time.Time) {
+	if len(durations) == 0 {
+		panic("at least 1 duration required")
+	}
+
+	// Init the ticker with the 1st duration.
+	ticker := time.NewTicker(durations[0])
+	durations = durations[1:]
+
+	// Create a channel over which our ticks will be sent.
+	ticks := make(chan time.Time, 1)
+
+	// Create a channel used to signal once this ticker is stopped.
+	stopped := make(chan struct{})
+
+	go func() {
+		for {
+			select {
+			case ts := <-ticker.C:
+				if len(durations) > 0 {
+					ticker.Reset(durations[0])
+					durations = durations[1:]
+				}
+
+				ticks <- ts
+
+			case <-stopped:
+				// Interrupt the loop once stopped.
+				return
+			}
+		}
+	}()
+
+	stop := func() {
+		ticker.Stop()
+		close(stopped)
+	}
+
+	return stop, ticks
+}
+
 // UnixSeconds is Unix timestamp with seconds precision.
 type UnixSeconds int64
 
