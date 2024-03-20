@@ -16,7 +16,6 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -47,23 +46,21 @@ type ShardingLimits interface {
 // ShuffleShardingStrategy is a shuffle sharding strategy, based on the hash ring formed by store-gateways,
 // where each tenant blocks are sharded across a subset of store-gateway instances.
 type ShuffleShardingStrategy struct {
-	r              *ring.Ring
-	instanceID     string
-	instanceAddr   string
-	allowedTenants *util.AllowedTenants
-	limits         ShardingLimits
-	logger         log.Logger
+	r            *ring.Ring
+	instanceID   string
+	instanceAddr string
+	limits       ShardingLimits
+	logger       log.Logger
 }
 
 // NewShuffleShardingStrategy makes a new ShuffleShardingStrategy.
-func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, allowedTenants *util.AllowedTenants, limits ShardingLimits, logger log.Logger) *ShuffleShardingStrategy {
+func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, limits ShardingLimits, logger log.Logger) *ShuffleShardingStrategy {
 	return &ShuffleShardingStrategy{
-		r:              r,
-		instanceID:     instanceID,
-		instanceAddr:   instanceAddr,
-		allowedTenants: allowedTenants,
-		limits:         limits,
-		logger:         logger,
+		r:            r,
+		instanceID:   instanceID,
+		instanceAddr: instanceAddr,
+		limits:       limits,
+		logger:       logger,
 	}
 }
 
@@ -81,14 +78,9 @@ func (s *ShuffleShardingStrategy) FilterUsers(_ context.Context, userIDs []strin
 	var filteredIDs []string
 
 	for _, userID := range userIDs {
-		// If this user has been explicitly disabled or _other_ users have been explicitly
-		// enabled and this user isn't, don't include this user in the filtered list of users.
-		if !s.allowedTenants.IsAllowed(userID) {
-			continue
-		}
+		subRing := GetShuffleShardingSubring(s.r, userID, s.limits)
 
 		// Include the user only if it belongs to this store-gateway shard.
-		subRing := GetShuffleShardingSubring(s.r, userID, s.limits)
 		if subRing.HasInstance(s.instanceID) {
 			filteredIDs = append(filteredIDs, userID)
 		}
@@ -113,21 +105,6 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 				synced.WithLabelValues(shardExcludedMeta).Inc()
 				delete(metas, blockID)
 			}
-		}
-
-		return nil
-	}
-
-	// If this user has been explicitly disabled or _other_ users have been explicitly
-	// enabled and this user isn't, don't sync any blocks for this particular user. This
-	// should not happen in practice since the user would have been filtered before this
-	// method is called but, we check just in case.
-	if !s.allowedTenants.IsAllowed(userID) {
-		level.Warn(s.logger).Log("msg", "user is disabled by configuration but block sync is still being attempted", "user", userID)
-
-		for blockID := range metas {
-			synced.WithLabelValues(shardExcludedMeta).Inc()
-			delete(metas, blockID)
 		}
 
 		return nil
