@@ -254,12 +254,15 @@ local filename = 'mimir-writes.json';
               sum (rate (cortex_ingest_storage_reader_fetch_errors_total{%s}[$__rate_interval]))
             ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
             'sum (rate (cortex_ingest_storage_reader_fetch_errors_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            // cortex_ingest_storage_reader_read_errors_total metric is reported by Kafka client.
+            'sum (rate (cortex_ingest_storage_reader_read_errors_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
             'fetches',
             'failed',
+            'read errors',
           ],
-        ) + $.aliasColors({ failed: '#FF0000' }) + $.stack,
+        ) + $.aliasColors({ failed: '#FF0000', 'read errors': '#FF0000' }) + $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Records per fetch') +
