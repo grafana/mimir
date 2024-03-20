@@ -3329,7 +3329,7 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 		level.Warn(i.logger).Log("msg", "flushing TSDB blocks is not allowed", "err", err)
 
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte(err.Error()))
+		_, _ = w.Write([]byte(err.Error()))
 		return
 	}
 
