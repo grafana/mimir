@@ -171,11 +171,11 @@ local filename = 'mimir-queries.json';
       $._config.show_ingest_storage_panels,
       ($.row('Ingester (ingest storage: strong consistency)'))
       .addPanel(
-        $.timeseriesPanel('Requests with strong consistency') +
+        $.timeseriesPanel('Requests with strong read consistency / sec') +
         $.panelDescription(
-          'Requests with strong consistency',
+          'Requests with strong read consistency / sec',
           |||
-            Shows rate of requests with strong consistency, and rate of failed requests with strong consistency.
+            Shows rate of requests with strong read consistency, and rate of failed requests with strong read consistency.
           |||
         ) +
         $.queryPanel(
@@ -190,21 +190,21 @@ local filename = 'mimir-queries.json';
             ||| % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
-            'requests',
+            'successful',
             'failed',
           ],
         ) + {
           fieldConfig+: {
             defaults+: { unit: 'reqps' },
           },
-        } + $.aliasColors({ failed: $._colors.failed }) + $.stack,
+        } + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed }) + $.stack,
       )
       .addPanel(
-        $.timeseriesPanel('Requests with strong consistency ratio') +
+        $.timeseriesPanel('Requests with strong read consistency ratio') +
         $.panelDescription(
-          'Requests with strong consistency ratio',
+          'Requests with strong read consistency ratio',
           |||
-            Ratio between requests with strong consistency and all read requests on ingesters.
+            Ratio between requests with strong read consistency and all read requests on ingesters.
           |||
         ) +
         $.queryPanel(
@@ -231,11 +231,11 @@ local filename = 'mimir-queries.json';
         + $.stack
       )
       .addPanel(
-        $.timeseriesPanel('Strong consistency queries — wait latency') +
+        $.timeseriesPanel('Strong read consistency queries — wait latency') +
         $.panelDescription(
-          'Strong consistency queries — wait latency',
+          'Strong read consistency queries — wait latency',
           |||
-            How long does the request wait to guarantee strong consistency.
+            How long does the request wait to guarantee strong read consistency.
           |||
         ) +
         $.queryPanel(
@@ -281,14 +281,14 @@ local filename = 'mimir-queries.json';
             ||| % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
-            'requests',
+            'successful',
             'failed',
           ],
         ) + {
           fieldConfig+: {
             defaults+: { unit: 'reqps' },
           },
-        } + $.aliasColors({ failed: $._colors.failed }) + $.stack,
+        } + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed }) + $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Last produced offset latency') +
