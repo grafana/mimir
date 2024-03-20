@@ -3011,7 +3011,6 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 
 // compactionServiceInterval returns how frequently the TSDB Head should be checked for compaction.
 // The returned value may change over time.
-// TODO unit test
 func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval time.Duration) {
 	if i.State() == services.Starting {
 		// Trigger TSDB Head compaction frequently when starting up, because we may replay data from the partition
