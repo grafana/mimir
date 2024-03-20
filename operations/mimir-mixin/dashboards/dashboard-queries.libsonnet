@@ -40,45 +40,45 @@ local utils = import 'mixin-utils/utils.libsonnet';
       // Write failures rate as percentage of total requests.
       writeFailuresRate:: {
         local template = |||
-        (
-            # gRPC errors are not tracked as 5xx but "error".
-            sum(%(countFailQuery)s)
-            or
-            # Handle the case no failure has been tracked yet.
-            vector(0)
-        )
-        /
-        sum(%(countQuery)s)
-      |||,
-          classic: template % {
-            countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"').classic,
-            countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).classic,
-          },
-          native: template % {
-            countFailQuery: utils.nativeHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"').native,
-            countQuery: utils.nativeHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).native,
-          },
+          (
+              # gRPC errors are not tracked as 5xx but "error".
+              sum(%(countFailQuery)s)
+              or
+              # Handle the case no failure has been tracked yet.
+              vector(0)
+          )
+          /
+          sum(%(countQuery)s)
+        |||,
+        classic: template % {
+          countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector + ',status_code=~"5.*|error"').classic,
+          countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).classic,
+        },
+        native: template % {
+          countFailQuery: utils.nativeHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector + ',status_code=~"5.*|error"').native,
+          countQuery: utils.nativeHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).native,
+        },
       },
 
       // Read failures rate as percentage of total requests.
       readFailuresRate:: {
         local template = |||
-        (
-            # gRPC errors are not tracked as 5xx but "error".
-            sum(%(countFailQuery)s)
-            or
-            # Handle the case no failure has been tracked yet.
-            vector(0)
-        )
-        /
-        sum(%(countQuery)s)
-      |||,
+          (
+              # gRPC errors are not tracked as 5xx but "error".
+              sum(%(countFailQuery)s)
+              or
+              # Handle the case no failure has been tracked yet.
+              vector(0)
+          )
+          /
+          sum(%(countQuery)s)
+        |||,
         classic: template % {
-          countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector+',status_code=~"5.*|error"').classic,
+          countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector + ',status_code=~"5.*|error"').classic,
           countQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector).classic,
         },
         native: template % {
-          countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector+',status_code=~"5.*|error"').native,
+          countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector + ',status_code=~"5.*|error"').native,
           countQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector).native,
         },
       },
@@ -96,22 +96,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
       // Write failures rate as percentage of total requests.
       writeFailuresRate:: {
         local template = |||
-        (
-            # gRPC errors are not tracked as 5xx but "error".
-            sum(%(countFailQuery)s)
-            or
-            # Handle the case no failure has been tracked yet.
-            vector(0)
-        )
-        /
-        sum(%(countQuery)s)
-      |||,
+          (
+              # gRPC errors are not tracked as 5xx but "error".
+              sum(%(countFailQuery)s)
+              or
+              # Handle the case no failure has been tracked yet.
+              vector(0)
+          )
+          /
+          sum(%(countQuery)s)
+        |||,
         classic: template % {
-          countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"').classic,
+          countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector + ',status_code=~"5.*|error"').classic,
           countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).classic,
         },
         native: template % {
-          countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"').native,
+          countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector + ',status_code=~"5.*|error"').native,
           countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).native,
         },
       },
@@ -139,21 +139,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
       // Read failures rate as percentage of total requests.
       readFailuresRate:: {
         local template = |||
-        (
-            sum(%(countFailQuery)s)
-            or
-            # Handle the case no failure has been tracked yet.
-            vector(0)
-        )
-        /
-        sum(%(countQuery)s)
-      |||,
+          (
+              sum(%(countFailQuery)s)
+              or
+              # Handle the case no failure has been tracked yet.
+              vector(0)
+          )
+          /
+          sum(%(countQuery)s)
+        |||,
         classic: template % {
-          countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector+',status_code=~"5.*|error"').classic,
+          countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector + ',status_code=~"5.*|error"').classic,
           countQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector).classic,
         },
         native: template % {
-          countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector+',status_code=~"5.*|error"').native,
+          countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector + ',status_code=~"5.*|error"').native,
           countQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector).native,
         },
       },
