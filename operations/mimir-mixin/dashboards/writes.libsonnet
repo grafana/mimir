@@ -209,27 +209,52 @@ local filename = 'mimir-writes.json';
     )
     .addRowIf(
       $._config.show_ingest_storage_panels,
-      ($.row('Ingester (ingest storage: processing)'))
+      ($.row('Ingester (ingest storage: fetching and processing records)'))
       .addPanel(
-        $.timeseriesPanel('Requests / sec') +
+        $.timeseriesPanel('Responses / sec') +
         $.panelDescription(
-          'Fetched records / sec',
+          'Responses / sec',
           |||
-            The rate of fetched records (each record is a write requests) and failed reads from Kafka.
+            Rate of responses from Kafka brokers. Client can return multiple responses ("fetches") at once. Some of the responses may be failures.
           |||
         ) +
         $.queryPanel(
           [
-            'sum (rate (cortex_ingest_storage_reader_fetch_records_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-            'sum (rate (cortex_ingest_storage_reader_read_errors_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            |||
+              sum (rate (cortex_ingest_storage_reader_fetches_total{%s}[$__rate_interval]))
+              -
+              sum (rate (cortex_ingest_storage_reader_fetch_errors_total{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_fetch_errors_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
-            'Fetched records',
-            'Read errors',
+            'fetches',
+            'failed',
           ],
-        ) + $.aliasColors({
-          'Read errors': '#FF0000',
-        }),
+        ) + $.aliasColors({ failed: '#FF0000' }) + $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Records per fetch') +
+        $.panelDescription(
+          'Records per fetch',
+          |||
+            Number of fetched records per fetch operation.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            |||
+              sum(rate(cortex_ingest_storage_reader_records_per_fetch_sum{%s}[$__rate_interval]))
+              /
+              sum(rate(cortex_ingest_storage_reader_records_per_fetch_count{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum by(le) (rate(cortex_ingest_storage_reader_records_per_fetch_bucket{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'Average',
+            '99th percentile',
+          ],
+        ),
       )
       .addPanel(
         $.timeseriesPanel('Processing Latency') +
@@ -261,29 +286,6 @@ local filename = 'mimir-writes.json';
             defaults+: { unit: 's' },
           },
         },
-      )
-      .addPanel(
-        $.timeseriesPanel('Records per fetch') +
-        $.panelDescription(
-          'Records per fetch',
-          |||
-            Number of fetched records per fetch operation.
-          |||
-        ) +
-        $.queryPanel(
-          [
-            |||
-              sum(rate(cortex_ingest_storage_reader_records_per_fetch_sum{%s}[$__rate_interval]))
-              /
-              sum(rate(cortex_ingest_storage_reader_records_per_fetch_count{%s}[$__rate_interval]))
-            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(0.99, sum by(le) (rate(cortex_ingest_storage_reader_records_per_fetch_bucket{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-          ],
-          [
-            'Average',
-            '99th percentile',
-          ],
-        ),
       )
       .addPanel(
         $.timeseriesPanel('End-to-end latency') +
@@ -341,7 +343,7 @@ local filename = 'mimir-writes.json';
           fieldConfig+: {
             defaults+: { unit: 'reqps' },
           },
-        } + $.stack,
+        } + $.aliasColors({ failed: '#FF0000' }) + $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Strong consistency – wait latency') +
@@ -401,7 +403,7 @@ local filename = 'mimir-writes.json';
           fieldConfig+: {
             defaults+: { unit: 'reqps' },
           },
-        } + $.stack,
+        } + $.aliasColors({ failed: '#FF0000' }) + $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Last produced offset – latency') +
