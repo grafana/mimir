@@ -130,8 +130,8 @@ For more information, refer to [Configure metrics storage retention]({{< relref 
 
 Each compactor uses a storage device mounted at `-compactor.data-dir` to temporarily store:
 
-* files downloaded from object storage used as input to compaction
-* block files produced by the compactor to be uploaded to object storage
+- files downloaded from object storage used as input to compaction
+- block files produced by the compactor to be uploaded to object storage
 
 {{% admonition type="note" %}}
 We recommend using a volume other than the root volume to avoid I/O contention with the operating system. Common volume types include a local SSD or a cloud provider's block storage service. Either of these can be mounted with a Kubernetes `PersistentVolumeClaim`. While the compactor is a stateless service, we run compactors in a Kubernetes `StatefulSet` so that each pod gets a dedicated volume.
