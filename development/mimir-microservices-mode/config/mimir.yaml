@@ -1,4 +1,4 @@
-multitenancy_enabled: false
+multitenancy_enabled: true
 
 distributor:
   pool:
