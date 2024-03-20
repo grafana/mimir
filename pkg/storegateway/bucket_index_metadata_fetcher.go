@@ -93,6 +93,7 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 
 		return nil, nil, errors.Wrapf(err, "read bucket index")
 	}
+	f.metrics.Synced.WithLabelValues(noBucketIndex).Set(0)
 
 	// Build block metas out of the index.
 	metas = make(map[ulid.ULID]*block.Meta, len(idx.Blocks))
