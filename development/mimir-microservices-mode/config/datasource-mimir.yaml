@@ -8,10 +8,13 @@ datasources:
   url: http://nginx:8080/prometheus
   isDefault: true
   jsonData:
+    httpHeaderName1: "X-Scope-OrgID-bad"
     prometheusType: Mimir
     exemplarTraceIdDestinations:
     - name: traceID
       datasourceUid: jaeger
+  secureJsonData:
+    httpHeaderValue1: "test"
 - name: Jaeger
   type: jaeger
   access: proxy

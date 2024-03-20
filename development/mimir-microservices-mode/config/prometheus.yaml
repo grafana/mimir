@@ -46,7 +46,7 @@ remote_write:
     send_native_histograms: true
     send_exemplars: true
     headers:
-      X-Scope-OrgId: test
+      X-Scope-OrgID: test
 
 rule_files:
   - '/etc/mixin/mimir-alerts.yaml'

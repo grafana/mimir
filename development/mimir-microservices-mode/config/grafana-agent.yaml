@@ -49,4 +49,4 @@ prometheus:
       remote_write:
         - url: http://distributor-1:8000/api/v1/push
           headers:
-            - X-Scope-OrgId: test
+            - X-Scope-OrgID: test
