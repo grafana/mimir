@@ -162,6 +162,34 @@ local filename = 'mimir-writes.json';
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor), $.queries.write_http_routes_regex], ''
         )
       )
+      .addPanelIf(
+        $._config.show_ingest_storage_panels,
+        $.timeseriesPanel('ingest storage: WriteSync latency') +
+        $.panelDescription(
+          'WriteSync latency',
+          |||
+            Latency of WriteSync operation used to store data into Kafka.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.distributor)],
+            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.distributor)],
+            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.distributor)],
+            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="1.0"})' % [$.jobMatcher($._config.job_names.distributor)],
+          ],
+          [
+            '50th percentile',
+            '99th percentile',
+            '99.9th percentile',
+            '100th percentile',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
+      )
     )
     .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
     .addRowIf(
