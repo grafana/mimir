@@ -252,7 +252,9 @@
   // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
   // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the CPU utilization
   // of containers there are running at any given time, without suffering the PromQL lookback period.
-
+  //
+  // The second section of the query ensures that it only returns a result if all expected samples were
+  // present for the CPU metric over the last 15 minutes.
   local cpuHPAQuery = |||
     max_over_time(
       sum(
@@ -261,6 +263,14 @@
         max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
       )[15m:]
     ) * 1000
+    and
+    count (
+      count_over_time(
+        present_over_time(
+          container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"}[1m]
+        )[15m:1m]
+      ) >= 15
+    )
   |||,
 
   // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across
@@ -268,8 +278,11 @@
   // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
   // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
   // of containers there are running at any given time, without suffering the PromQL lookback period.
-  // If a pod is terminated because it OOMs, we still want to scale up -- add the memory resource request of OOMing
-  //  pods to the memory metric calculation.
+  //
+  // The second section of the query adds pods that were terminated due to an OOM in the memory calculation.
+  //
+  // The third section of the query ensures that it only returns a result if all expected samples were
+  // present for the memory metric over the last 15 minutes.
   local memoryHPAQuery = |||
     max_over_time(
       sum(
@@ -288,6 +301,14 @@
       and
       max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"})
       or vector(0)
+    )
+    and
+    count (
+      count_over_time(
+        present_over_time(
+          container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"}[1m]
+        )[15m:1m]
+      ) >= 15
     )
   |||,
 
@@ -321,6 +342,7 @@
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization)),
+          ignore_null_values: false,
         },
         {
           metric_name: '%s%s_memory_hpa_%s' %
@@ -333,6 +355,7 @@
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
+          ignore_null_values: false,
         },
       ],
     },
