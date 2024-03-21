@@ -11,7 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
-	"net/url"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -193,23 +193,24 @@ type CacheKeyGenerator interface {
 	// LabelValues can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
 	// LabelValues should return a nil *GenericQueryCacheKey when it returns an error and
 	// should always return non-nil *GenericQueryCacheKey when the returned error is nil.
-	LabelValues(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
+	LabelValues(r *http.Request) (*GenericQueryCacheKey, error)
 
 	// LabelValuesCardinality should return a cache key for a label values cardinality request. The cache key does not need to contain the tenant ID.
 	// LabelValuesCardinality can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
 	// LabelValuesCardinality should return a nil *GenericQueryCacheKey when it returns an error and
 	// should always return non-nil *GenericQueryCacheKey when the returned error is nil.
-	LabelValuesCardinality(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
+	LabelValuesCardinality(r *http.Request) (*GenericQueryCacheKey, error)
 }
 
 type DefaultCacheKeyGenerator struct {
-	// Interval is a constant split interval when determining cache keys for QueryRequest.
+	codec Codec
+	// Interval is a constant split Interval when determining cache keys for QueryRequest.
 	Interval time.Duration
 }
 
-// QueryRequest generates a cache key based on the userID, Request and interval.
-func (t DefaultCacheKeyGenerator) QueryRequest(_ context.Context, userID string, r Request) string {
-	startInterval := r.GetStart() / t.Interval.Milliseconds()
+// QueryRequest generates a cache key based on the userID, Request and Interval.
+func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, userID string, r Request) string {
+	startInterval := r.GetStart() / g.Interval.Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 
 	// Use original format for step-aligned request, so that we can use existing cached results for such requests.
