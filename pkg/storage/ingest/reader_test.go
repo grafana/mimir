@@ -18,12 +18,21 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
+
+func TestKafkaStartOffset(t *testing.T) {
+	t.Run("should match Kafka client start offset", func(t *testing.T) {
+		expected := kgo.NewOffset().AtStart().EpochOffset().Offset
+		assert.Equal(t, expected, kafkaStartOffset)
+	})
+}
 
 func TestPartitionReader(t *testing.T) {
 	const (
@@ -485,6 +494,141 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		test.Poll(t, 5*time.Second, services.Failed, func() interface{} {
 			return reader.State()
 		})
+	})
+}
+
+func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	var (
+		ctx = context.Background()
+	)
+
+	createKafkaClusterWithoutCustomConsumerGroupSupport := func(t *testing.T, numPartitions int32) (*kfake.Cluster, string) {
+		cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(numPartitions, topicName))
+		require.NoError(t, err)
+		t.Cleanup(cluster.Close)
+
+		addrs := cluster.ListenAddrs()
+		require.Len(t, addrs, 1)
+
+		return cluster, addrs[0]
+	}
+
+	t.Run("should return special value to consume partition from the start if Kafka returns GroupIDNotFound", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = createKafkaClusterWithoutCustomConsumerGroupSupport(t, partitionID+1)
+			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		)
+
+		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			req := request.(*kmsg.OffsetFetchRequest)
+			res := req.ResponseKind().(*kmsg.OffsetFetchResponse)
+			res.Default()
+			res.Groups = []kmsg.OffsetFetchResponseGroup{
+				{
+					Group:     reader.consumerGroup,
+					ErrorCode: kerr.GroupIDNotFound.Code,
+				},
+			}
+
+			return res, nil, true
+		})
+
+		offset, err := reader.fetchLastCommittedOffset(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, kafkaStartOffset, offset)
+	})
+
+	t.Run("should return special value to consume partition from the start if Kafka returns no offsets for the requested partition", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = createKafkaClusterWithoutCustomConsumerGroupSupport(t, partitionID+1)
+			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		)
+
+		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			req := request.(*kmsg.OffsetFetchRequest)
+			res := req.ResponseKind().(*kmsg.OffsetFetchResponse)
+			res.Default()
+			res.Groups = []kmsg.OffsetFetchResponseGroup{
+				{
+					Group: reader.consumerGroup,
+					Topics: []kmsg.OffsetFetchResponseGroupTopic{
+						{
+							Topic: topicName,
+							Partitions: []kmsg.OffsetFetchResponseGroupTopicPartition{
+								{
+									Partition: partitionID + 1, // Another partition.
+									Offset:    456,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			return res, nil, true
+		})
+
+		offset, err := reader.fetchLastCommittedOffset(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, kafkaStartOffset, offset)
+	})
+
+	t.Run("should return the committed offset to Kafka", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = createKafkaClusterWithoutCustomConsumerGroupSupport(t, partitionID+1)
+			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		)
+
+		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			req := request.(*kmsg.OffsetFetchRequest)
+			res := req.ResponseKind().(*kmsg.OffsetFetchResponse)
+			res.Default()
+			res.Groups = []kmsg.OffsetFetchResponseGroup{
+				{
+					Group: reader.consumerGroup,
+					Topics: []kmsg.OffsetFetchResponseGroupTopic{
+						{
+							Topic: topicName,
+							Partitions: []kmsg.OffsetFetchResponseGroupTopicPartition{
+								{
+									Partition: partitionID, // Our partition.
+									Offset:    123,
+								}, {
+									Partition: partitionID + 1, // Another partition.
+									Offset:    456,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			return res, nil, true
+		})
+
+		offset, err := reader.fetchLastCommittedOffset(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(123), offset)
 	})
 }
 

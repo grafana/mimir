@@ -96,7 +96,16 @@ func TestIngester_Start(t *testing.T) {
 		kafkaCluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			kafkaCluster.KeepControl()
 
+			// Mock only requests for the partition "end" offset (identified by special timestamp -1).
 			req := kreq.(*kmsg.ListOffsetsRequest)
+			for _, topic := range req.Topics {
+				for _, partition := range topic.Partitions {
+					if partition.Timestamp != -1 {
+						return nil, nil, false
+					}
+				}
+			}
+
 			res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
 			res.Topics = []kmsg.ListOffsetsResponseTopic{{
 				Topic: cfg.IngestStorageConfig.KafkaConfig.Topic,

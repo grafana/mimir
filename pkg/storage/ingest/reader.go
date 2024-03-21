@@ -24,6 +24,11 @@ import (
 	"go.uber.org/atomic"
 )
 
+const (
+	// kafkaStartOffset is a special offset value that means the beginning of the partition.
+	kafkaStartOffset = int64(-2)
+)
+
 type record struct {
 	tenantID string
 	content  []byte
@@ -93,8 +98,14 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	r.consumedOffsetWatcher.Notify(startFromOffset - 1)
 	level.Info(r.logger).Log("msg", "resuming consumption from offset", "offset", startFromOffset, "consumer_group", r.consumerGroup)
+
+	// Initialise the last consumed offset only if we've got a real offset from the consumer group.
+	// If we got a special offset (e.g. kafkaStartOffset) we want to keep the last consumed offset uninitialized,
+	// and it will be updated as soon as we consume the first record.
+	if startFromOffset >= 0 {
+		r.consumedOffsetWatcher.Notify(startFromOffset - 1)
+	}
 
 	r.client, err = r.newKafkaReader(kgo.NewOffset().At(startFromOffset))
 	if err != nil {
@@ -394,28 +405,40 @@ func (r *PartitionReader) fetchLastCommittedOffsetWithRetries(ctx context.Contex
 	return offset, err
 }
 
+// fetchLastCommittedOffset returns the last consumed offset which has been committed by the PartitionReader
+// to the consumer group. If there is no offset committed, this function returns kafkaStartOffset constant,
+// which is a special value used to signal that partition should be consumed from the start.
 func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, error) {
-	const endOffset = -1 // -1 is a special value for kafka that means "the last offset"
-
 	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
 	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
 	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
-	cl, err := kgo.NewClient(kgo.SeedBrokers(r.kafkaCfg.Address))
+	cl, err := kgo.NewClient(commonKafkaClientOptions(r.kafkaCfg, r.metrics.kprom, r.logger)...)
 	if err != nil {
-		return endOffset, errors.Wrap(err, "unable to create admin client")
+		return 0, errors.Wrap(err, "unable to create admin client")
 	}
 	adm := kadm.NewClient(cl)
 	defer adm.Close()
 
 	offsets, err := adm.FetchOffsets(ctx, r.consumerGroup)
-	if errors.Is(err, kerr.UnknownTopicOrPartition) {
-		// In case we are booting up for the first time ever against this topic.
-		return endOffset, nil
+	if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
+		// Make sure we replay any data already written to the partition in case the consumer
+		// is booting up for the first time ever.
+		return kafkaStartOffset, nil
 	}
 	if err != nil {
-		return endOffset, errors.Wrap(err, "unable to fetch group offsets")
+		return 0, errors.Wrap(err, "unable to fetch group offsets")
 	}
-	offset, _ := offsets.Lookup(r.kafkaCfg.Topic, r.partitionID)
+
+	offset, exists := offsets.Lookup(r.kafkaCfg.Topic, r.partitionID)
+	if !exists {
+		// Make sure we replay any data already written to the partition in case the consumer
+		// is booting up for the first time ever.
+		return kafkaStartOffset, nil
+	}
+	if offset.Err != nil {
+		return 0, offset.Err
+	}
+
 	return offset.At, nil
 }
 
