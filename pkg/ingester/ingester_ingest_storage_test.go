@@ -45,7 +45,7 @@ import (
 func TestIngester_Start(t *testing.T) {
 	util_test.VerifyNoLeak(t)
 
-	t.Run("should replay the partition at startup and then join the ingesters and partitions ring", func(t *testing.T) {
+	t.Run("should replay the partition at startup (after a restart) and then join the ingesters and partitions ring", func(t *testing.T) {
 		var (
 			ctx                = context.Background()
 			cfg                = defaultIngesterTestConfig(t)
@@ -136,6 +136,20 @@ func TestIngester_Start(t *testing.T) {
 			return desc, true, nil
 		}))
 
+		// Add the partition and owner in the ring, in order to simulate an ingester restart.
+		require.NoError(t, cfg.IngesterPartitionRing.kvMock.CAS(context.Background(), PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
+			if err != nil {
+				return nil, false, err
+			}
+
+			desc := ring.GetOrCreatePartitionRingDesc(in)
+			desc.AddPartition(partitionID, ring.PartitionActive, time.Now())
+			desc.AddOrUpdateOwner(cfg.IngesterRing.InstanceID, ring.OwnerDeleted, partitionID, time.Now())
+
+			return desc, true, nil
+		}))
+
 		// Start the ingester.
 		require.NoError(t, ingester.StartAsync(ctx))
 		t.Cleanup(func() {
@@ -187,7 +201,6 @@ func TestIngester_Start(t *testing.T) {
 
 		// Since the ingester it still replaying the partition we expect it to be in starting state.
 		assert.Equal(t, services.Starting, ingester.State())
-		assert.Empty(t, watcher.PartitionRing().PartitionOwnerIDs(partitionID))
 		assert.Equal(t, services.New, ingester.lifecycler.State())
 
 		// Write one more request to Kafka. This will cause the ingester to consume up until the

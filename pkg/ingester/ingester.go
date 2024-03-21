@@ -493,7 +493,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	}, nil)
 	i.subservicesWatcher.WatchService(i.metadataPurgerService)
 
-	i.BasicService = services.NewBasicService(i.starting, i.running, i.stopping)
+	i.BasicService = services.NewBasicService(i.starting, i.ingesterRunning, i.stopping)
 	return i, nil
 }
 
@@ -602,9 +602,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 
 	// Finally we start all services that should run after the ingester ring lifecycler.
-	// We add an idle service because all other services are conditional but we need to
-	// guarantee there's at least 1 service to run otherwise the service manager fails to start.
-	servs := []services.Service{services.NewIdleService(nil, nil)}
+	var servs []services.Service
 
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		shippingService := services.NewBasicService(nil, i.shipBlocksLoop, nil)
@@ -626,6 +624,12 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	if i.ingestPartitionLifecycler != nil {
 		servs = append(servs, i.ingestPartitionLifecycler)
+	}
+
+	// Since subservices are conditional, We add an idle service if there are no subservices to
+	// guarantee there's at least 1 service to run otherwise the service manager fails to start.
+	if len(servs) == 0 {
+		servs = append(servs, services.NewIdleService(nil, nil))
 	}
 
 	i.subservices, err = services.NewManager(servs...)
@@ -690,7 +694,7 @@ func (i *Ingester) stopping(_ error) error {
 	return nil
 }
 
-func (i *Ingester) running(ctx context.Context) error {
+func (i *Ingester) ingesterRunning(ctx context.Context) error {
 	tsdbUpdateTicker := time.NewTicker(i.cfg.TSDBConfigUpdatePeriod)
 	defer tsdbUpdateTicker.Stop()
 

@@ -10423,7 +10423,7 @@ func newFailingIngester(t *testing.T, cfg Config, kvStore kv.Client, failingCaus
 	if kvStore != nil {
 		fI.kvStore = kvStore
 	}
-	fI.BasicService = services.NewBasicService(fI.starting, fI.running, fI.stopping)
+	fI.BasicService = services.NewBasicService(fI.starting, fI.ingesterRunning, fI.stopping)
 	return fI
 }
 
