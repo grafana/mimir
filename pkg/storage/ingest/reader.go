@@ -94,7 +94,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		return err
 	}
 	r.consumedOffsetWatcher.Notify(startFromOffset - 1)
-	level.Info(r.logger).Log("msg", "resuming consumption from offset", "offset", startFromOffset)
+	level.Info(r.logger).Log("msg", "resuming consumption from offset", "offset", startFromOffset, "consumer_group", r.consumerGroup)
 
 	r.client, err = r.newKafkaReader(kgo.NewOffset().At(startFromOffset))
 	if err != nil {
@@ -515,8 +515,10 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) {
 	toCommit.AddOffset(r.kafkaCfg.Topic, r.partitionID, offset+1, -1)
 
 	committed, err := r.admClient.CommitOffsets(ctx, r.consumerGroup, toCommit)
-	if err != nil || !committed.Ok() {
-		level.Error(r.logger).Log("msg", "encountered error while committing offsets", "err", err, "commit_err", committed.Error(), "offset", offset)
+	if err != nil {
+		level.Error(r.logger).Log("msg", "encountered error while committing offsets", "err", err, "offset", offset)
+	} else if !committed.Ok() {
+		level.Error(r.logger).Log("msg", "encountered error while committing offsets", "err", committed.Error(), "offset", offset)
 	} else {
 		committedOffset, _ := committed.Lookup(r.kafkaCfg.Topic, r.partitionID)
 		level.Debug(r.logger).Log("msg", "committed offset", "offset", committedOffset.Offset.At)
