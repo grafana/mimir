@@ -200,12 +200,23 @@ local filename = 'mimir-overview.json';
         {
           targets: [
             {
-              expr: $.queries.query_frontend.overviewRoutesPerSecond,
+              expr: utils.showClassicHistogramQuery(utils.nativeClassicSumBy(utils.nativeClassicHistogramCountRate($.queries.query_frontend.overviewRoutesPerSecondMetric, $.queries.query_frontend.overviewRoutesPerSecondSelector), ['route'])),
               format: 'time_series',
               legendLink: null,
             },
             {
-              expr: $.queries.query_frontend.nonOverviewRoutesPerSecond,
+              expr: utils.showNativeHistogramQuery(utils.nativeClassicSumBy(utils.nativeClassicHistogramCountRate($.queries.query_frontend.overviewRoutesPerSecondMetric, $.queries.query_frontend.overviewRoutesPerSecondSelector), ['route'])),
+              format: 'time_series',
+              legendLink: null,
+            },
+            {
+              expr: utils.showClassicHistogramQuery(utils.nativeClassicSumBy(utils.nativeClassicHistogramCountRate($.queries.query_frontend.overviewRoutesPerSecondMetric, $.queries.query_frontend.nonOverviewRoutesPerSecondSelector))),
+              format: 'time_series',
+              legendFormat: 'other',
+              legendLink: null,
+            },
+            {
+              expr: utils.showNativeHistogramQuery(utils.nativeClassicSumBy(utils.nativeClassicHistogramCountRate($.queries.query_frontend.overviewRoutesPerSecondMetric, $.queries.query_frontend.nonOverviewRoutesPerSecondSelector))),
               format: 'time_series',
               legendFormat: 'other',
               legendLink: null,
