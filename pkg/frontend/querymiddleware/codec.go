@@ -121,6 +121,7 @@ type Request interface {
 
 // LabelsQueryRequest represents a label names or values query request that can be process by middlewares.
 type LabelsQueryRequest interface {
+	proto.Message
 	// GetLabelName returns the label name param from a Label Values request `/api/v1/label/<label_name>/values`
 	// or an empty string for a Label Names request `/api/v1/labels`
 	GetLabelName() string
@@ -139,7 +140,6 @@ type LabelsQueryRequest interface {
 	// to and from the http request format without needing to undo the Prometheus parser converting between formats
 	// like `up{job="prometheus"}` and `{__name__="up, job="prometheus"}`, or other idiosyncrasies.
 	GetLabelMatcherSets() []string
-	proto.Message
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(opentracing.Span)
 }
@@ -260,7 +260,12 @@ func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Requ
 func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error) {
 	var result PrometheusRangeQueryRequest
 	var err error
-	result.Start, result.End, result.Step, err = DecodeRangeQueryTimeParams(r)
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	result.Start, result.End, result.Step, err = DecodeRangeQueryTimeParams(&reqValues)
 	if err != nil {
 		return nil, err
 	}
@@ -274,12 +279,17 @@ func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error)
 func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, error) {
 	var result PrometheusInstantQueryRequest
 	var err error
-	result.Time, err = DecodeInstantQueryTimeParams(r, time.Now)
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	result.Time, err = DecodeInstantQueryTimeParams(&reqValues, time.Now)
 	if err != nil {
 		return nil, decorateWithParamName(err, "time")
 	}
 
-	result.Query = r.FormValue("query")
+	result.Query = reqValues.Get("query")
 	result.Path = r.URL.Path
 	decodeOptions(r, &result.Options)
 	return &result, nil
@@ -289,16 +299,17 @@ func (prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Reque
 	if !IsLabelsQuery(r.URL.Path) {
 		return nil, fmt.Errorf("unknown labels query API endpoint %s", r.URL.Path)
 	}
-	start, end, err := DecodeLabelsQueryTimeParams(r, false)
+
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+	start, end, err := DecodeLabelsQueryTimeParams(&reqValues, false)
 	if err != nil {
 		return nil, err
 	}
 
-	urlQueryParams, err := util.ParseRequestFormWithoutConsumingBody(r)
-	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
-	}
-	labelMatcherSets := urlQueryParams["match[]"]
+	labelMatcherSets := reqValues["match[]"]
 
 	if IsLabelNamesQuery(r.URL.Path) {
 		return &PrometheusLabelNamesQueryRequest{
@@ -320,13 +331,13 @@ func (prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Reque
 
 // DecodeRangeQueryTimeParams encapsulates Prometheus instant query time param parsing,
 // emulating the logic in prometheus/prometheus/web/api/v1#API.query_range.
-func DecodeRangeQueryTimeParams(r *http.Request) (start, end, step int64, err error) {
-	start, err = util.ParseTime(r.FormValue("start"))
+func DecodeRangeQueryTimeParams(reqValues *url.Values) (start, end, step int64, err error) {
+	start, err = util.ParseTime(reqValues.Get("start"))
 	if err != nil {
 		return 0, 0, 0, decorateWithParamName(err, "start")
 	}
 
-	end, err = util.ParseTime(r.FormValue("end"))
+	end, err = util.ParseTime(reqValues.Get("end"))
 	if err != nil {
 		return 0, 0, 0, decorateWithParamName(err, "end")
 	}
@@ -335,7 +346,7 @@ func DecodeRangeQueryTimeParams(r *http.Request) (start, end, step int64, err er
 		return 0, 0, 0, errEndBeforeStart
 	}
 
-	step, err = parseDurationMs(r.FormValue("step"))
+	step, err = parseDurationMs(reqValues.Get("step"))
 	if err != nil {
 		return 0, 0, 0, decorateWithParamName(err, "step")
 	}
@@ -355,32 +366,37 @@ func DecodeRangeQueryTimeParams(r *http.Request) (start, end, step int64, err er
 
 // DecodeInstantQueryTimeParams encapsulates Prometheus instant query time param parsing,
 // emulating the logic in prometheus/prometheus/web/api/v1#API.query.
-func DecodeInstantQueryTimeParams(r *http.Request, now func() time.Time) (int64, error) {
-	time, err := util.ParseTimeParam(r, "time", now().UnixMilli())
-	if err != nil {
-		return 0, decorateWithParamName(err, "time")
+func DecodeInstantQueryTimeParams(reqValues *url.Values, defaultNow func() time.Time) (time int64, err error) {
+	timeVal := reqValues.Get("time")
+	if timeVal == "" {
+		time = defaultNow().UnixMilli()
+	} else {
+		time, err = util.ParseTime(timeVal)
+		if err != nil {
+			return 0, decorateWithParamName(err, "time")
+		}
 	}
-	return time, nil
+
+	return time, err
 }
 
-// DecodeLabelsQueryTimeParams encapsulates Prometheus label names query time param parsing,
+// DecodeLabelsQueryTimeParams encapsulates Prometheus label names and label values query time param parsing,
 // emulating the logic in prometheus/prometheus/web/api/v1#API.labelNames and v1#API.labelValues.
 //
 // Setting `usePromDefaults` true will set missing timestamp params to the Prometheus default
 // min and max query timestamps; false will default to 0 for missing timestamp params.
-func DecodeLabelsQueryTimeParams(r *http.Request, usePromDefaults bool) (start, end int64, err error) {
+func DecodeLabelsQueryTimeParams(reqValues *url.Values, usePromDefaults bool) (start, end int64, err error) {
 	var defaultStart, defaultEnd int64
 	if usePromDefaults {
 		defaultStart = v1.MinTime.UnixMilli()
 		defaultEnd = v1.MaxTime.UnixMilli()
 	}
 
-	urlQueryParams, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return 0, 0, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	startVal := urlQueryParams.Get("start")
+	startVal := reqValues.Get("start")
 	if startVal == "" {
 		start = defaultStart
 	} else {
@@ -390,7 +406,7 @@ func DecodeLabelsQueryTimeParams(r *http.Request, usePromDefaults bool) (start, 
 		}
 	}
 
-	endVal := urlQueryParams.Get("end")
+	endVal := reqValues.Get("end")
 	if endVal == "" {
 		end = defaultEnd
 	} else {
@@ -404,7 +420,7 @@ func DecodeLabelsQueryTimeParams(r *http.Request, usePromDefaults bool) (start, 
 		return 0, 0, errEndBeforeStart
 	}
 
-	return start, end, nil
+	return start, end, err
 }
 
 func decodeOptions(r *http.Request, opts *Options) {
@@ -512,6 +528,23 @@ func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req Label
 		}
 		u = &url.URL{
 			Path:     req.Path,
+			RawQuery: urlValues.Encode(),
+		}
+	case *PrometheusLabelValuesQueryRequest:
+		// repeated from PrometheusLabelNamesQueryRequest case; Go type cast switch
+		// does not support accessing struct members on a typeA|typeB switch
+		urlValues := url.Values{}
+		if req.GetStart() != 0 {
+			urlValues["start"] = []string{encodeTime(req.Start)}
+		}
+		if req.GetEnd() != 0 {
+			urlValues["end"] = []string{encodeTime(req.End)}
+		}
+		if len(req.GetLabelMatcherSets()) > 0 {
+			urlValues["match[]"] = req.GetLabelMatcherSets()
+		}
+		u = &url.URL{
+			Path:     req.Path, // path still contains label name
 			RawQuery: urlValues.Encode(),
 		}
 

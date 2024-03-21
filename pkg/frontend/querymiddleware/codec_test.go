@@ -124,7 +124,7 @@ func TestLabelsQueryRequest(t *testing.T) {
 		expectedErr               error
 	}{
 		{
-			name: "label names with start and end timestamps, no matchers",
+			name: "label names with start and end timestamps, no matcher sets",
 			url:  "/api/v1/labels?end=1708588800&start=1708502400",
 			expectedStruct: &PrometheusLabelNamesQueryRequest{
 				Path:             "/api/v1/labels",
@@ -137,7 +137,21 @@ func TestLabelsQueryRequest(t *testing.T) {
 			expectedGetEndOrDefault:   1708588800 * 1e3,
 		},
 		{
-			name: "label names with start timestamp, no end timestamp, no matchers",
+			name: "label values with start and end timestamps, no matcher sets",
+			url:  "/api/v1/label/job/values?end=1708588800&start=1708502400",
+			expectedStruct: &PrometheusLabelValuesQueryRequest{
+				Path:             "/api/v1/label/job/values",
+				LabelName:        "job",
+				Start:            1708502400 * 1e3,
+				End:              1708588800 * 1e3,
+				LabelMatcherSets: nil,
+			},
+			expectedGetLabelName:      "",
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+		{
+			name: "label names with start timestamp, no end timestamp, no matcher sets",
 			url:  "/api/v1/labels?start=1708502400",
 			expectedStruct: &PrometheusLabelNamesQueryRequest{
 				Path:             "/api/v1/labels",
@@ -150,7 +164,21 @@ func TestLabelsQueryRequest(t *testing.T) {
 			expectedGetEndOrDefault:   v1API.MaxTime.UnixMilli(),
 		},
 		{
-			name: "label names with end timestamp, no start timestamp, no matchers",
+			name: "label values with start timestamp, no end timestamp, no matcher sets",
+			url:  "/api/v1/label/job/values?start=1708502400",
+			expectedStruct: &PrometheusLabelValuesQueryRequest{
+				Path:             "/api/v1/label/job/values",
+				LabelName:        "job",
+				Start:            1708502400 * 1e3,
+				End:              0,
+				LabelMatcherSets: nil,
+			},
+			expectedGetLabelName:      "job",
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   v1API.MaxTime.UnixMilli(),
+		},
+		{
+			name: "label names with end timestamp, no start timestamp, no matcher sets",
 			url:  "/api/v1/labels?end=1708588800",
 			expectedStruct: &PrometheusLabelNamesQueryRequest{
 				Path:             "/api/v1/labels",
@@ -163,7 +191,22 @@ func TestLabelsQueryRequest(t *testing.T) {
 			expectedGetEndOrDefault:   1708588800 * 1e3,
 		},
 		{
-			url: "/api/v1/labels?end=1708588800&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			name: "label values with end timestamp, no start timestamp, no matcher sets",
+			url:  "/api/v1/label/job/values?end=1708588800",
+			expectedStruct: &PrometheusLabelValuesQueryRequest{
+				Path:             "/api/v1/label/job/values",
+				LabelName:        "job",
+				Start:            0,
+				End:              1708588800 * 1e3,
+				LabelMatcherSets: nil,
+			},
+			expectedGetLabelName:      "job",
+			expectedGetStartOrDefault: v1API.MinTime.UnixMilli(),
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+		{
+			name: "label names with start timestamp, no end timestamp, multiple matcher sets",
+			url:  "/api/v1/labels?end=1708588800&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
 			expectedStruct: &PrometheusLabelNamesQueryRequest{
 				Path:  "/api/v1/labels",
 				Start: 1708502400 * 1e3,
@@ -174,6 +217,23 @@ func TestLabelsQueryRequest(t *testing.T) {
 				},
 			},
 			expectedGetLabelName:      "",
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+		{
+			name: "label values with start timestamp, no end timestamp, multiple matcher sets",
+			url:  "/api/v1/label/job/values?end=1708588800&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			expectedStruct: &PrometheusLabelValuesQueryRequest{
+				Path:      "/api/v1/label/job/values",
+				LabelName: "job",
+				Start:     1708502400 * 1e3,
+				End:       1708588800 * 1e3,
+				LabelMatcherSets: []string{
+					"go_goroutines{container=~\"quer.*\"}",
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+			},
+			expectedGetLabelName:      "job",
 			expectedGetStartOrDefault: 1708502400 * 1e3,
 			expectedGetEndOrDefault:   1708588800 * 1e3,
 		},
