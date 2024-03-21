@@ -97,6 +97,9 @@ func (a *PusherAppender) Commit() error {
 		// (e.g. series limits, duplicate samples, out of order, etc.)
 		if !mimirpb.IsClientError(err) {
 			a.failedWrites.Inc()
+		} else {
+			// Do not return client errors as they are expected when a series is exposed from a different rule.
+			err = nil
 		}
 	}
 

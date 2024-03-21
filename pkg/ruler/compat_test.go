@@ -270,7 +270,12 @@ func TestPusherErrors(t *testing.T) {
 			_, err = a.Append(0, lbls, int64(model.Now()), 123456)
 			require.NoError(t, err)
 
-			require.Equal(t, tc.returnedError, a.Commit())
+			err = a.Commit()
+			if tc.expectedFailures == 0 {
+				require.Equal(t, nil, err)
+			} else {
+				require.Equal(t, tc.returnedError, err)
+			}
 
 			require.Equal(t, tc.expectedWrites, int(testutil.ToFloat64(writes)))
 			require.Equal(t, tc.expectedFailures, int(testutil.ToFloat64(failures)))
