@@ -10172,6 +10172,18 @@ data:
                          {
                             "alias": "\"active series\" queries",
                             "color": "#C788DE"
+                         },
+                         {
+                            "alias": "\"label name cardinality\" queries",
+                            "color": "#3F6833"
+                         },
+                         {
+                            "alias": "\"label value cardinality\" queries",
+                            "color": "#447EBC"
+                         },
+                         {
+                            "alias": "other",
+                            "color": "#967302"
                          }
                       ],
                       "span": 3,
