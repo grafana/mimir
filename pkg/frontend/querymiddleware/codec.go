@@ -95,6 +95,8 @@ type Request interface {
 	GetStep() int64
 	// GetQuery returns the query of the request.
 	GetQuery() string
+	// GetLookbackDelta
+	GetLookbackDelta() time.Duration
 	// GetOptions returns the options for the given request.
 	GetOptions() Options
 	// GetHints returns hints that could be optionally attached to the request to pass down the stack.
@@ -102,6 +104,8 @@ type Request interface {
 	GetHints() *Hints
 	// WithID clones the current request with the provided ID.
 	WithID(id int64) Request
+	// WithLookbackDelta
+	WithLookbackDelta(lookbackDelta time.Duration) Request
 	// WithStartEnd clone the current request with different start and end timestamp.
 	WithStartEnd(startTime int64, endTime int64) Request
 	// WithQuery clone the current request with a different query.
@@ -365,18 +369,20 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 		u = &url.URL{
 			Path: r.Path,
 			RawQuery: url.Values{
-				"start": []string{encodeTime(r.Start)},
-				"end":   []string{encodeTime(r.End)},
-				"step":  []string{encodeDurationMs(r.Step)},
-				"query": []string{r.Query},
+				"start":          []string{encodeTime(r.Start)},
+				"end":            []string{encodeTime(r.End)},
+				"step":           []string{encodeDurationMs(r.Step)},
+				"query":          []string{r.Query},
+				"lookback_delta": []string{r.GetLookbackDelta().String()},
 			}.Encode(),
 		}
 	case *PrometheusInstantQueryRequest:
 		u = &url.URL{
 			Path: r.Path,
 			RawQuery: url.Values{
-				"time":  []string{encodeTime(r.Time)},
-				"query": []string{r.Query},
+				"time":           []string{encodeTime(r.Time)},
+				"query":          []string{r.Query},
+				"lookback_delta": []string{r.GetLookbackDelta().String()},
 			}.Encode(),
 		}
 	default:
