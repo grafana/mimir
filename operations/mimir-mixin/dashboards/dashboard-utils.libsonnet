@@ -1346,6 +1346,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ), legends)),
   },
 
+  overridesNonErrorColorsPalette(overrides):: std.mapWithIndex(function(idx, override) (
+    // Do not define an override if we exausted the colors in the palette.
+    // Grafana will automatically choose another color.
+    if idx >= std.length(nonErrorColorsPalette) then override else
+      {
+        matcher: override.matcher,
+        properties: override.properties + [
+          {
+            id: 'color',
+            value: {
+              fixedColor: nonErrorColorsPalette[idx],
+              mode: 'fixed',
+            },
+          },
+        ],
+      }
+  ), overrides),
+
   // Panel query override functions
   overrideField(matcherId, options, overrideProperties):: {
     matcher: {
