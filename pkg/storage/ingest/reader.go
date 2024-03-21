@@ -405,6 +405,9 @@ func (r *PartitionReader) fetchLastCommittedOffsetWithRetries(ctx context.Contex
 	return offset, err
 }
 
+// fetchLastCommittedOffset returns the last consumed offset which has been committed by the PartitionReader
+// to the consumer group. If there is no offset committed, this function returns kafkaStartOffset constant,
+// which is a special value used to signal that partition should be consumed from the start.
 func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, error) {
 	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
 	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
