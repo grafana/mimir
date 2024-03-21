@@ -60,7 +60,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Make the port used in ServiceMonitor for kube-state-metrics configurable. #7507
 * [ENHANCEMENT] Dashboards: allow switching between using classic of native histograms in dashboards. #7627
   * Overview dashboard, Status panel, `cortex_request_duration_seconds` metric.
-
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
 * [BUGFIX] Recording rules: drop rules for metrics removed in 2.0: `cortex_memcache_request_duration_seconds` and `cortex_cache_request_duration_seconds`. #7514
 * [BUGFIX] Store-gateway: setting "resources.requests.memory" with a quantity that used power-of-ten SI suffix, caused an error. #7506
