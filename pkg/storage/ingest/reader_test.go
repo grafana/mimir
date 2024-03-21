@@ -531,7 +531,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
 		t.Log("produced 2 records")
 
-		// Run the test twice with the same Kafka cluster.
+		// Run the test twice with the same Kafka cluster to show that second time it consumes all records again.
 		for run := 1; run <= 2; run++ {
 			t.Run(fmt.Sprintf("Run %d", run), func(t *testing.T) {
 				// Reset the test.
@@ -607,7 +607,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			return nil, nil, false
 		})
 
-		// Run the test twice with the same Kafka cluster.
+		// Run the test twice with the same Kafka cluster to show that second time it consumes only new records.
 		for run := 1; run <= 2; run++ {
 			t.Run(fmt.Sprintf("Run %d", run), func(t *testing.T) {
 				// Reset the test.

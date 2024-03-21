@@ -433,7 +433,7 @@ func (r *PartitionReader) fetchLastCommittedOffsetWithRetries(ctx context.Contex
 
 // fetchLastCommittedOffset returns the last consumed offset which has been committed by the PartitionReader
 // to the consumer group.
-func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, bool, error) {
+func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (offset int64, exists bool, _ error) {
 	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
 	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
 	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
@@ -452,15 +452,15 @@ func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, 
 		return 0, false, errors.Wrap(err, "unable to fetch group offsets")
 	}
 
-	offset, exists := offsets.Lookup(r.kafkaCfg.Topic, r.partitionID)
+	offsetRes, exists := offsets.Lookup(r.kafkaCfg.Topic, r.partitionID)
 	if !exists {
 		return 0, false, nil
 	}
-	if offset.Err != nil {
-		return 0, false, offset.Err
+	if offsetRes.Err != nil {
+		return 0, false, offsetRes.Err
 	}
 
-	return offset.At, true, nil
+	return offsetRes.At, true, nil
 }
 
 // WaitReadConsistency waits until all data produced up until now has been consumed by the reader.
