@@ -29,6 +29,8 @@ Usage of ./cmd/mimir/mimir:
     	Path at which alertmanager configurations are stored.
   -alertmanager-storage.s3.access-key-id string
     	S3 access key ID
+  -alertmanager-storage.s3.bucket-lookup-type value
+    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -alertmanager-storage.s3.bucket-name string
     	S3 bucket name
   -alertmanager-storage.s3.endpoint string
@@ -667,6 +669,8 @@ Usage of ./cmd/mimir/mimir:
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -blocks-storage.s3.access-key-id string
     	S3 access key ID
+  -blocks-storage.s3.bucket-lookup-type value
+    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -blocks-storage.s3.bucket-name string
     	S3 bucket name
   -blocks-storage.s3.endpoint string
@@ -835,6 +839,8 @@ Usage of ./cmd/mimir/mimir:
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -common.storage.s3.access-key-id string
     	S3 access key ID
+  -common.storage.s3.bucket-lookup-type value
+    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -common.storage.s3.bucket-name string
     	S3 bucket name
   -common.storage.s3.endpoint string
@@ -2251,6 +2257,8 @@ Usage of ./cmd/mimir/mimir:
     	Directory to scan for rules
   -ruler-storage.s3.access-key-id string
     	S3 access key ID
+  -ruler-storage.s3.bucket-lookup-type value
+    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -ruler-storage.s3.bucket-name string
     	S3 bucket name
   -ruler-storage.s3.endpoint string
