@@ -25,7 +25,6 @@
   * Overview dashboard, Status panel, `cortex_request_duration_seconds` metric.
 * [BUGFIX] Dashobards: Fix regular expression for matching read-path gRPC ingester methods to include querying of exemplars, label-related queries, or active series queries. #7676
 
-
 ### Jsonnet
 
 ### Mimirtool
