@@ -108,10 +108,10 @@ func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Conte
 	p.nextResultPromise = newResultPromise[int64]()
 	p.nextResultPromiseMx.Unlock()
 
-	// We call getLastProducedOffset() even if there are no goroutines waiting on the result in order to get
+	// We call FetchLastProducedOffset() even if there are no goroutines waiting on the result in order to get
 	// a constant load on the Kafka backend. In other words, the load produced on Kafka by this component is
 	// constant, regardless the number of received queries with strong consistency enabled.
-	offset, err := p.getLastProducedOffset(ctx)
+	offset, err := p.FetchLastProducedOffset(ctx)
 	if err != nil {
 		level.Warn(p.logger).Log("msg", "failed to fetch the last produced offset", "err", err)
 	}
@@ -120,10 +120,10 @@ func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Conte
 	promise.notify(offset, err)
 }
 
-// getLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if the
+// FetchLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if the
 // partition is empty. This function issues a single request, but the Kafka client used under the
 // hood may retry a failed request until the retry timeout is hit.
-func (p *partitionOffsetReader) getLastProducedOffset(ctx context.Context) (_ int64, returnErr error) {
+func (p *partitionOffsetReader) FetchLastProducedOffset(ctx context.Context) (_ int64, returnErr error) {
 	startTime := time.Now()
 
 	p.lastProducedOffsetRequestsTotal.Inc()
@@ -191,12 +191,12 @@ func (p *partitionOffsetReader) getLastProducedOffset(ctx context.Context) (_ in
 	return listRes.Topics[0].Partitions[0].Offset - 1, nil
 }
 
-// FetchLastProducedOffset returns the result of the *next* "last produced offset" request
+// WaitNextFetchLastProducedOffset returns the result of the *next* "last produced offset" request
 // that will be issued.
 //
 // The "last produced offset" is the offset of the last message written to the partition (starting from 0), or -1 if no
 // message has been written yet.
-func (p *partitionOffsetReader) FetchLastProducedOffset(ctx context.Context) (int64, error) {
+func (p *partitionOffsetReader) WaitNextFetchLastProducedOffset(ctx context.Context) (int64, error) {
 	// Get the promise for the result of the next request that will be issued.
 	p.nextResultPromiseMx.RLock()
 	promise := p.nextResultPromise

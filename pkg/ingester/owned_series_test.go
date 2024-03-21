@@ -722,12 +722,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRin
 	c.ing = ing
 	c.partitionsRing = prw
 
-	// Ingester and partitions ring watcher are not started yet.
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c.partitionsRing))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.partitionsRing))
-	})
-
+	// Ingester is not started yet.
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c.ing))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.ing))
