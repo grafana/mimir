@@ -11,7 +11,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   },
 
   // Colors palette picked from Grafana UI, excluding red-ish colors which we want to keep reserved for errors / failures.
-  local nonErrorColorsPalette = ['#429D48', '#F1C731', '#2A66CF', '#9E44C1', '#FFAB57', '#C79424', '#84D586', '#A1C4FC', '#C788DE'],
+  local nonErrorColorsPalette = ['#429D48', '#F1C731', '#2A66CF', '#9E44C1', '#FFAB57', '#C79424', '#84D586', '#A1C4FC', '#C788DE', '#3F6833', '#447EBC', '#967302', '#5794F2'],
 
   local resourceRequestStyle = $.overrideFieldByName('request', [
     $.overrideProperty('color', { mode: 'fixed', fixedColor: $._colors.resourceRequest }),
