@@ -311,6 +311,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			// Run the request through the middleware.
 			s := newShardActiveSeriesMiddleware(
 				upstream,
+				true,
 				mockLimits{maxShardedQueries: tenantMaxShardCount, totalShards: tenantShardCount},
 				log.NewNopLogger(),
 			)
@@ -372,6 +373,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
 
 	s := newShardActiveSeriesMiddleware(
 		upstream,
+		true,
 		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
 		log.NewNopLogger(),
 	)
@@ -423,7 +425,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
 }
 
 func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
-	s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+	s := newShardActiveSeriesMiddleware(nil, true, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(fmt.Errorf("test ran to completion"))
 
@@ -512,7 +514,7 @@ func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string
 				benchResponses[i] = responses
 			}
 
-			s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+			s := newShardActiveSeriesMiddleware(nil, true, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 
 			b.ResetTimer()
 			b.ReportAllocs()
