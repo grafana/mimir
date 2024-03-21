@@ -1291,12 +1291,6 @@ store_gateway_client:
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
-# (experimental) Request ingesters stream chunks. Ingesters will only respond
-# with a stream of chunks if the target ingester supports this, and this
-# preference will be ignored by ingesters that do not support this.
-# CLI flag: -querier.prefer-streaming-chunks-from-ingesters
-[prefer_streaming_chunks_from_ingesters: <boolean> | default = true]
-
 # (experimental) Request store-gateways stream chunks. Store-gateways will only
 # respond with a stream of chunks if the target store-gateway supports this, and
 # this preference will be ignored by store-gateways that do not support this.
@@ -4262,6 +4256,19 @@ sharding_ring:
   # Unregister from the ring upon clean shutdown.
   # CLI flag: -store-gateway.sharding-ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
+
+# (advanced) Comma separated list of tenants that can be loaded by the
+# store-gateway. If specified, only blocks for these tenants will be loaded by
+# the store-gateway, otherwise all tenants can be loaded. Subject to sharding.
+# CLI flag: -store-gateway.enabled-tenants
+[enabled_tenants: <string> | default = ""]
+
+# (advanced) Comma separated list of tenants that cannot be loaded by the
+# store-gateway. If specified, and the store-gateway would normally load a given
+# tenant for (via -store-gateway.enabled-tenants or sharding), it will be
+# ignored instead.
+# CLI flag: -store-gateway.disabled-tenants
+[disabled_tenants: <string> | default = ""]
 ```
 
 ### memcached

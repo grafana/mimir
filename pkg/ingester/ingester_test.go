@@ -104,6 +104,7 @@ func TestIngester_Push(t *testing.T) {
 		expectedIngested          model.Matrix
 		expectedMetadataIngested  []*mimirpb.MetricMetadata
 		expectedExemplarsIngested []mimirpb.TimeSeries
+		expectedExemplarsDropped  []mimirpb.TimeSeries
 		expectedMetrics           string
 		additionalMetrics         []string
 		disableActiveSeries       bool
@@ -266,7 +267,7 @@ func TestIngester_Push(t *testing.T) {
 			`,
 			nativeHistograms: true,
 		},
-		"should succeed on new float series with exemplars": {
+		"should succeed on new float series with an exemplar": {
 			maxExemplars: 2,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
@@ -359,7 +360,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.009
 			`,
 		},
-		"should succeed on new float series and exemplars": {
+		"should succeed on new float series and an exemplar": {
 			maxExemplars: 2,
 			reqs: []*mimirpb.WriteRequest{
 				{
@@ -461,7 +462,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.009
 			`,
 		},
-		"should succeed on existing float series with exemplars": {
+		"should succeed on existing float series with an exemplar": {
 			maxExemplars: 2,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
@@ -561,7 +562,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
 		},
-		"should succeed on new histogram series with exemplars": {
+		"should succeed on new histogram series with an exemplar": {
 			maxExemplars:     2,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -659,7 +660,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.009
 			`,
 		},
-		"should succeed on new histogram series and exemplars": {
+		"should succeed on new histogram series and an exemplar": {
 			maxExemplars:     2,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -770,7 +771,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.009
 			`,
 		},
-		"should succeed on existing histogram series with exemplars": {
+		"should succeed on existing histogram series with an exemplar": {
 			maxExemplars:     2,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -854,6 +855,416 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
 				cortex_ingester_tsdb_exemplar_exemplars_in_storage 1
+
+				# HELP cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage Number of TSDB series with exemplars currently in storage.
+				# TYPE cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage gauge
+				cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds The timestamp of the oldest exemplar stored in circular storage. Useful to check for what time range the current exemplar buffer limit allows. This usually means the last timestamp for all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.
+				# TYPE cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds gauge
+				cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
+				# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
+				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
+
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+			`,
+		},
+		"should succeed on existing histogram series with multiple exemplars": {
+			maxExemplars:     2,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+					nil,
+				),
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
+					nil,
+				).AddExemplarsAt(0, // Add exemplars to the first series.
+					[]*mimirpb.Exemplar{
+						// These are intentionally out of order to test the sorting.
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
+						},
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
+						},
+					},
+				),
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
+					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: 9},
+					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: 10}},
+				},
+			},
+			expectedExemplarsIngested: []mimirpb.TimeSeries{
+				{
+					Labels: metricLabelAdapters,
+					Exemplars: []mimirpb.Exemplar{
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
+						},
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
+						},
+					},
+				},
+			},
+			expectedMetadataIngested: nil,
+			additionalMetrics: []string{
+				"cortex_ingester_tsdb_exemplar_exemplars_appended_total",
+				"cortex_ingester_tsdb_exemplar_exemplars_in_storage",
+				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
+				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
+				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
+				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
+				cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="test"} 2
+
+				# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
+				# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
+				cortex_ingester_tsdb_exemplar_exemplars_in_storage 2
+
+				# HELP cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage Number of TSDB series with exemplars currently in storage.
+				# TYPE cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage gauge
+				cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds The timestamp of the oldest exemplar stored in circular storage. Useful to check for what time range the current exemplar buffer limit allows. This usually means the last timestamp for all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.
+				# TYPE cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds gauge
+				cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
+				# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
+				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
+
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+			`,
+		},
+		"should succeed on existing histogram series with partial updated exemplars": {
+			maxExemplars:     2,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+					nil,
+				).AddExemplarsAt(0, // Add exemplars to the first series.
+					[]*mimirpb.Exemplar{
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
+						},
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
+						},
+					},
+				),
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
+					nil,
+				).AddExemplarsAt(0, // Add exemplars to the first series.
+					[]*mimirpb.Exemplar{
+						{
+							// This will never be ingested/appeneded as it is out of order.
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+							TimestampMs: 1500,
+							Value:       1500,
+						},
+						{
+							// This is appended as duplicate.
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
+						},
+						{
+							// This is appended as new exemplar and pushes out the oldest exemplar.
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "789"}},
+							TimestampMs: 3000,
+							Value:       3000,
+						},
+					},
+				),
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
+					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: 9},
+					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: 10}},
+				},
+			},
+			expectedExemplarsIngested: []mimirpb.TimeSeries{
+				{
+					Labels: metricLabelAdapters,
+					Exemplars: []mimirpb.Exemplar{
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
+						},
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "789"}},
+							TimestampMs: 3000,
+							Value:       3000,
+						},
+					},
+				},
+			},
+			expectedExemplarsDropped: []mimirpb.TimeSeries{
+				{
+					Labels: metricLabelAdapters,
+					Exemplars: []mimirpb.Exemplar{
+						{
+							// This examplar is dropped due to the max exemplar limit.
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
+						},
+						{
+							// This example is ignored as equal to the previous one.
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
+						},
+					},
+				},
+			},
+			expectedMetadataIngested: nil,
+			additionalMetrics: []string{
+				"cortex_ingester_tsdb_exemplar_exemplars_appended_total",
+				"cortex_ingester_tsdb_exemplar_exemplars_in_storage",
+				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
+				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
+				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
+				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
+				cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="test"} 3
+
+				# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
+				# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
+				cortex_ingester_tsdb_exemplar_exemplars_in_storage 2
+
+				# HELP cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage Number of TSDB series with exemplars currently in storage.
+				# TYPE cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage gauge
+				cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds The timestamp of the oldest exemplar stored in circular storage. Useful to check for what time range the current exemplar buffer limit allows. This usually means the last timestamp for all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.
+				# TYPE cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds gauge
+				cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="test"} 2
+
+				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
+				# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
+				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
+
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+			`,
+		},
+		"should soft fail on existing histogram series if all exemplars are out of order": {
+			maxExemplars:     2,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+					nil,
+				).AddExemplarsAt(0, // Add exemplars to the first series.
+					[]*mimirpb.Exemplar{
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
+						},
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
+						},
+					},
+				),
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
+					nil,
+				).AddExemplarsAt(0, // Add exemplars to the first series.
+					[]*mimirpb.Exemplar{
+						{
+							// This will never be ingested/appeneded as it is out of order.
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
+						},
+						{
+							// This will never be ingested/appeneded as it is out of order.
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+							TimestampMs: 1500,
+							Value:       1500,
+						},
+					},
+				),
+			},
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newTSDBIngestExemplarErr(storage.ErrOutOfOrderExemplar, model.Time(1500), []mimirpb.LabelAdapter{metricLabelAdapters[0]}, []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}}), userID), codes.FailedPrecondition),
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
+					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: 9},
+					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: 10}},
+				},
+			},
+			expectedExemplarsIngested: []mimirpb.TimeSeries{
+				{
+					Labels: metricLabelAdapters,
+					Exemplars: []mimirpb.Exemplar{
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
+						},
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
+						},
+					},
+				},
+			},
+			expectedMetadataIngested: nil,
+			additionalMetrics: []string{
+				"cortex_ingester_tsdb_exemplar_exemplars_appended_total",
+				"cortex_ingester_tsdb_exemplar_exemplars_in_storage",
+				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
+				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
+				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
+				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
+				cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="test"} 2
+
+				# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
+				# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
+				cortex_ingester_tsdb_exemplar_exemplars_in_storage 2
 
 				# HELP cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage Number of TSDB series with exemplars currently in storage.
 				# TYPE cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage gauge
@@ -1904,6 +2315,9 @@ func TestIngester_Push(t *testing.T) {
 				expectedHistogramsCount += len(stream.Histograms)
 			}
 			for _, series := range testData.expectedExemplarsIngested {
+				expectedExemplarsCount += len(series.Exemplars)
+			}
+			for _, series := range testData.expectedExemplarsDropped {
 				expectedExemplarsCount += len(series.Exemplars)
 			}
 

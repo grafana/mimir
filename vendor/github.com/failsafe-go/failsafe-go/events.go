@@ -27,10 +27,10 @@ type ExecutionDoneEvent[R any] struct {
 	Error error
 }
 
-func newExecutionDoneEvent[R any](er *common.PolicyResult[R], stats ExecutionStats) ExecutionDoneEvent[R] {
+func newExecutionDoneEvent[R any](stats ExecutionStats, er *common.PolicyResult[R]) ExecutionDoneEvent[R] {
 	return ExecutionDoneEvent[R]{
+		ExecutionStats: stats,
 		Result:         er.Result,
 		Error:          er.Error,
-		ExecutionStats: stats,
 	}
 }

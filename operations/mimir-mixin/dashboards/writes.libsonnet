@@ -3,6 +3,7 @@ local filename = 'mimir-writes.json';
 
 (import 'dashboard-utils.libsonnet') +
 (import 'dashboard-queries.libsonnet') {
+
   [filename]:
     assert std.md5(filename) == '8280707b8f16e7b87b840fc1cc92d4c5' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Writes') + { uid: std.md5(filename) })
@@ -162,10 +163,39 @@ local filename = 'mimir-writes.json';
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor), $.queries.write_http_routes_regex], ''
         )
       )
+      .addPanelIf(
+        $._config.show_ingest_storage_panels,
+        $.timeseriesPanel('Sync write to Kafka latency (ingest storage)') +
+        $.panelDescription(
+          'Sync write to Kafka latency (ingest storage)',
+          |||
+            Latency of synchronous write operation used to store data into Kafka.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.distributor)],
+            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.distributor)],
+            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.distributor)],
+            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="1.0"})' % [$.jobMatcher($._config.job_names.distributor)],
+          ],
+          [
+            '50th percentile',
+            '99th percentile',
+            '99.9th percentile',
+            '100th percentile',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
+      )
     )
     .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
-    .addRow(
-      $.row('Ingester')
+    .addRowIf(
+      $._config.show_grpc_ingestion_panels,
+      ($.row('Ingester'))
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
         $.panelDescription(
@@ -204,6 +234,116 @@ local filename = 'mimir-writes.json';
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="/cortex.Ingester/Push"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
         )
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      ($.row('Ingester (ingest storage)'))
+      .addPanel(
+        $.timeseriesPanel('Kafka fetches / sec') +
+        $.panelDescription(
+          'Kafka fetches / sec',
+          |||
+            Rate of fetches received from Kafka brokers. A fetch can contain multiple records (a write request received on the write path is mapped into a single record).
+            Read errors are any errors reported on connection to Kafka brokers, and are separate from "failed" fetches.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            |||
+              sum (rate (cortex_ingest_storage_reader_fetches_total{%s}[$__rate_interval]))
+              -
+              sum (rate (cortex_ingest_storage_reader_fetch_errors_total{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_fetch_errors_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            // cortex_ingest_storage_reader_read_errors_total metric is reported by Kafka client.
+            'sum (rate (cortex_ingest_storage_reader_read_errors_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'successful',
+            'failed',
+            'read errors',
+          ],
+        ) + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed, 'read errors': $._colors.failed }) + $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Kafka records / sec') +
+        $.panelDescription(
+          'Kafka records / sec',
+          |||
+            Rate of processed records from Kafka. Failed records are categorized as "client" errors (e.g. per-tenant limits) or server errors.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            |||
+              sum(rate(cortex_ingest_storage_reader_records_total{%s}[$__rate_interval]))
+              -
+              sum(rate(cortex_ingest_storage_reader_records_failed_total{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_records_failed_total{%s, cause="client"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_records_failed_total{%s, cause="server"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'successful',
+            'failed (client)',
+            'failed (server)',
+          ],
+        ) + $.aliasColors({ successful: $._colors.success, 'failed (client)': $._colors.clientError, 'failed (server)': $._colors.failed }) + $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Kafka record processing latency') +
+        $.panelDescription(
+          'Kafka record processing latency',
+          |||
+            Time used to process a single record (write request). This time is spent by appending data to per-tenant TSDB.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="1.0"})' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            '50th percentile',
+            '99th percentile',
+            '99.9th percentile',
+            '100th percentile',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
+      )
+      .addPanel(
+        $.timeseriesPanel('Kafka record end-to-end latency') +
+        $.panelDescription(
+          'Kafka record end-to-end latency',
+          |||
+            Time between writing request by distributor to Kafka and reading the record by ingester.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="1.0"})' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            '50th percentile',
+            '99th percentile',
+            '99.9th percentile',
+            '100th percentile',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
       )
     )
     .addRowIf(
