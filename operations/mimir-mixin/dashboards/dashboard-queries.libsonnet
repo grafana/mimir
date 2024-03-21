@@ -120,8 +120,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         }
         for r in overviewRoutes
       ],
-      overviewRoutesPerSecond: 'sum by (route) (rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"%(overviewRoutesRegex)s"}[$__rate_interval]))' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
-      nonOverviewRoutesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~"%(overviewRoutesRegex)s"}[$__rate_interval]))' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
+      overviewRoutesPerSecondMetric: 'cortex_request_duration_seconds',
+      overviewRoutesPerSecondSelector: '%(queryFrontendMatcher)s,route=~"%(overviewRoutesRegex)s"' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
+      nonOverviewRoutesPerSecondSelector: '%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~"%(overviewRoutesRegex)s"' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
 
       local queryPerSecond(name) = 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)%(route)s"}[$__rate_interval]))' %
                                    (variables { route: std.filter(function(r) r.name == name, overviewRoutes)[0].routeLabel }),
