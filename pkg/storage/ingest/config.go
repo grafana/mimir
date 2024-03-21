@@ -5,12 +5,24 @@ package ingest
 import (
 	"errors"
 	"flag"
+	"fmt"
+	"slices"
+	"strings"
 	"time"
 )
 
+const (
+	consumeFromLastOffset = "last-offset"
+	consumeFromStart      = "start"
+	consumeFromEnd        = "end"
+)
+
 var (
-	ErrMissingKafkaAddress = errors.New("the Kafka address has not been configured")
-	ErrMissingKafkaTopic   = errors.New("the Kafka topic has not been configured")
+	ErrMissingKafkaAddress    = errors.New("the Kafka address has not been configured")
+	ErrMissingKafkaTopic      = errors.New("the Kafka topic has not been configured")
+	ErrInvalidConsumePosition = errors.New("the configured consume position is invalid")
+
+	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd}
 )
 
 type Config struct {
@@ -48,7 +60,9 @@ type KafkaConfig struct {
 
 	LastProducedOffsetPollInterval time.Duration `yaml:"last_produced_offset_poll_interval"`
 	LastProducedOffsetRetryTimeout time.Duration `yaml:"last_produced_offset_retry_timeout"`
-	MaxConsumerLagAtStartup        time.Duration `yaml:"max_consumer_lag_at_startup"`
+
+	ConsumeFromPositionAtStartup string        `yaml:"consume_from_position_at_startup"`
+	MaxConsumerLagAtStartup      time.Duration `yaml:"max_consumer_lag_at_startup"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -64,6 +78,8 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.DurationVar(&cfg.LastProducedOffsetPollInterval, prefix+".last-produced-offset-poll-interval", time.Second, "How frequently to poll the last produced offset, used to enforce strong read consistency.")
 	f.DurationVar(&cfg.LastProducedOffsetRetryTimeout, prefix+".last-produced-offset-retry-timeout", 10*time.Second, "How long to retry a failed request to get the last produced offset.")
+
+	f.StringVar(&cfg.ConsumeFromPositionAtStartup, prefix+".consume-from-position-at-startup", consumeFromLastOffset, fmt.Sprintf("From which position to start consuming the partition at startup. Supported options: %s.", strings.Join(consumeFromPositionOptions, ", ")))
 	f.DurationVar(&cfg.MaxConsumerLagAtStartup, prefix+".max-consumer-lag-at-startup", 15*time.Second, "The maximum tolerated lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set 0 to disable waiting for maximum consumer lag being honored at startup.")
 }
 
@@ -73,6 +89,9 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 	if cfg.Topic == "" {
 		return ErrMissingKafkaTopic
+	}
+	if !slices.Contains(consumeFromPositionOptions, cfg.ConsumeFromPositionAtStartup) {
+		return ErrInvalidConsumePosition
 	}
 
 	return nil

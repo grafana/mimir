@@ -27,6 +27,9 @@ import (
 const (
 	// kafkaStartOffset is a special offset value that means the beginning of the partition.
 	kafkaStartOffset = int64(-2)
+
+	// kafkaEndOffset is a special offset value that means the end of the partition.
+	kafkaEndOffset = int64(-1)
 )
 
 type record struct {
@@ -94,20 +97,39 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		}
 	}()
 
-	startFromOffset, err := r.fetchLastCommittedOffsetWithRetries(ctx)
-	if err != nil {
-		return err
+	var startOffset int64
+	var err error
+
+	// Find the offset from which we should start consuming.
+	switch r.kafkaCfg.ConsumeFromPositionAtStartup {
+	case consumeFromStart:
+		startOffset = kafkaStartOffset
+		level.Info(r.logger).Log("msg", "starting consumption from partition start", "consumer_group", r.consumerGroup)
+
+	case consumeFromEnd:
+		startOffset = kafkaEndOffset
+		level.Warn(r.logger).Log("msg", "starting consumption from partition end (may cause data loss)", "consumer_group", r.consumerGroup)
+
+	default:
+		if offset, exists, err := r.fetchLastCommittedOffsetWithRetries(ctx); err != nil {
+			return err
+		} else if exists {
+			level.Info(r.logger).Log("msg", "starting consumption from last committed offset", "offset", offset, "consumer_group", r.consumerGroup)
+			startOffset = offset
+		} else {
+			level.Info(r.logger).Log("msg", "starting consumption from start because no committed offset has been found", "consumer_group", r.consumerGroup)
+			startOffset = kafkaStartOffset
+		}
 	}
-	level.Info(r.logger).Log("msg", "resuming consumption from offset", "offset", startFromOffset, "consumer_group", r.consumerGroup)
 
 	// Initialise the last consumed offset only if we've got a real offset from the consumer group.
 	// If we got a special offset (e.g. kafkaStartOffset) we want to keep the last consumed offset uninitialized,
 	// and it will be updated as soon as we consume the first record.
-	if startFromOffset >= 0 {
-		r.consumedOffsetWatcher.Notify(startFromOffset - 1)
+	if startOffset >= 0 {
+		r.consumedOffsetWatcher.Notify(startOffset - 1)
 	}
 
-	r.client, err = r.newKafkaReader(kgo.NewOffset().At(startFromOffset))
+	r.client, err = r.newKafkaReader(kgo.NewOffset().At(startOffset))
 	if err != nil {
 		return errors.Wrap(err, "creating kafka reader client")
 	}
@@ -126,8 +148,12 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 
 	// Enforce the max consumer lag (if enabled).
 	if maxLag := r.kafkaCfg.MaxConsumerLagAtStartup; maxLag > 0 {
-		if err := r.processNextFetchesUntilMaxLagHonored(ctx, maxLag); err != nil {
-			return err
+		if startOffset != kafkaEndOffset {
+			if err := r.processNextFetchesUntilMaxLagHonored(ctx, maxLag); err != nil {
+				return err
+			}
+		} else {
+			level.Info(r.logger).Log("msg", "partition reader is skipping to consume partition until max consumer lag is honored because it's going to consume the partition from the end")
 		}
 	}
 
@@ -378,7 +404,7 @@ func (r *PartitionReader) newKafkaReader(at kgo.Offset) (*kgo.Client, error) {
 	return client, nil
 }
 
-func (r *PartitionReader) fetchLastCommittedOffsetWithRetries(ctx context.Context) (offset int64, err error) {
+func (r *PartitionReader) fetchLastCommittedOffsetWithRetries(ctx context.Context) (offset int64, exists bool, err error) {
 	var (
 		retry = backoff.New(ctx, backoff.Config{
 			MinBackoff: 100 * time.Millisecond,
@@ -388,9 +414,9 @@ func (r *PartitionReader) fetchLastCommittedOffsetWithRetries(ctx context.Contex
 	)
 
 	for retry.Ongoing() {
-		offset, err = r.fetchLastCommittedOffset(ctx)
+		offset, exists, err = r.fetchLastCommittedOffset(ctx)
 		if err == nil {
-			return offset, nil
+			return offset, exists, nil
 		}
 
 		level.Warn(r.logger).Log("msg", "failed to fetch last committed offset", "err", err)
@@ -402,44 +428,39 @@ func (r *PartitionReader) fetchLastCommittedOffsetWithRetries(ctx context.Contex
 		err = retry.Err()
 	}
 
-	return offset, err
+	return 0, false, err
 }
 
 // fetchLastCommittedOffset returns the last consumed offset which has been committed by the PartitionReader
-// to the consumer group. If there is no offset committed, this function returns kafkaStartOffset constant,
-// which is a special value used to signal that partition should be consumed from the start.
-func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, error) {
+// to the consumer group.
+func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, bool, error) {
 	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
 	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
 	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
 	cl, err := kgo.NewClient(commonKafkaClientOptions(r.kafkaCfg, r.metrics.kprom, r.logger)...)
 	if err != nil {
-		return 0, errors.Wrap(err, "unable to create admin client")
+		return 0, false, errors.Wrap(err, "unable to create admin client")
 	}
 	adm := kadm.NewClient(cl)
 	defer adm.Close()
 
 	offsets, err := adm.FetchOffsets(ctx, r.consumerGroup)
 	if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
-		// Make sure we replay any data already written to the partition in case the consumer
-		// is booting up for the first time ever.
-		return kafkaStartOffset, nil
+		return 0, false, nil
 	}
 	if err != nil {
-		return 0, errors.Wrap(err, "unable to fetch group offsets")
+		return 0, false, errors.Wrap(err, "unable to fetch group offsets")
 	}
 
 	offset, exists := offsets.Lookup(r.kafkaCfg.Topic, r.partitionID)
 	if !exists {
-		// Make sure we replay any data already written to the partition in case the consumer
-		// is booting up for the first time ever.
-		return kafkaStartOffset, nil
+		return 0, false, nil
 	}
 	if offset.Err != nil {
-		return 0, offset.Err
+		return 0, false, offset.Err
 	}
 
-	return offset.At, nil
+	return offset.At, true, nil
 }
 
 // WaitReadConsistency waits until all data produced up until now has been consumed by the reader.
