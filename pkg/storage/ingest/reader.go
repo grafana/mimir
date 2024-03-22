@@ -546,6 +546,7 @@ func newPartitionCommitter(kafkaCfg KafkaConfig, admClient *kadm.Client, partiti
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
+			Buckets:                         prometheus.DefBuckets,
 		}),
 		lastCommittedOffset: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name:        "cortex_ingest_storage_reader_last_committed_offset",
