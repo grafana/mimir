@@ -39,19 +39,19 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 	backendOther2 := NewProxyBackend("backend-3", backendURL3, time.Second, false, false)
 
 	tests := map[string]struct {
-		backends  []*ProxyBackend
+		backends  []ProxyBackendInterface
 		responses []*backendResponse
-		expected  *ProxyBackend
+		expected  ProxyBackendInterface
 	}{
 		"the preferred backend is the 1st response received": {
-			backends: []*ProxyBackend{backendPref, backendOther1},
+			backends: []ProxyBackendInterface{backendPref, backendOther1},
 			responses: []*backendResponse{
 				{backend: backendPref, status: 200},
 			},
 			expected: backendPref,
 		},
 		"the preferred backend is the last response received": {
-			backends: []*ProxyBackend{backendPref, backendOther1},
+			backends: []ProxyBackendInterface{backendPref, backendOther1},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 200},
 				{backend: backendPref, status: 200},
@@ -59,7 +59,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			expected: backendPref,
 		},
 		"the preferred backend is the last response received but it's not successful": {
-			backends: []*ProxyBackend{backendPref, backendOther1},
+			backends: []ProxyBackendInterface{backendPref, backendOther1},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 200},
 				{backend: backendPref, status: 500},
@@ -67,7 +67,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			expected: backendOther1,
 		},
 		"the preferred backend is the 2nd response received but only the last one is successful": {
-			backends: []*ProxyBackend{backendPref, backendOther1, backendOther2},
+			backends: []ProxyBackendInterface{backendPref, backendOther1, backendOther2},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 500},
 				{backend: backendPref, status: 500},
@@ -76,14 +76,14 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			expected: backendOther2,
 		},
 		"there's no preferred backend configured and the 1st response is successful": {
-			backends: []*ProxyBackend{backendOther1, backendOther2},
+			backends: []ProxyBackendInterface{backendOther1, backendOther2},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 200},
 			},
 			expected: backendOther1,
 		},
 		"there's no preferred backend configured and the last response is successful": {
-			backends: []*ProxyBackend{backendOther1, backendOther2},
+			backends: []ProxyBackendInterface{backendOther1, backendOther2},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 500},
 				{backend: backendOther2, status: 200},
@@ -91,7 +91,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			expected: backendOther2,
 		},
 		"no received response is successful": {
-			backends: []*ProxyBackend{backendPref, backendOther1},
+			backends: []ProxyBackendInterface{backendPref, backendOther1},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 500},
 				{backend: backendPref, status: 500},
@@ -144,7 +144,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 	backendURL2, err := url.Parse(backend2.URL)
 	require.NoError(t, err)
 
-	backends := []*ProxyBackend{
+	backends := []ProxyBackendInterface{
 		NewProxyBackend("backend-1", backendURL1, time.Second, true, false),
 		NewProxyBackend("backend-2", backendURL2, time.Second, false, false),
 	}
@@ -310,7 +310,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			secondaryBackendURL, err := url.Parse(secondaryBackend.URL)
 			require.NoError(t, err)
 
-			backends := []*ProxyBackend{
+			backends := []ProxyBackendInterface{
 				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true, false),
 				NewProxyBackend("secondary-backend", secondaryBackendURL, time.Second, false, false),
 			}
@@ -361,77 +361,59 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 	}{
 		"responses are below threshold": {
 			slowResponseThreshold:         100 * time.Millisecond,
-			preferredResponseLatency:      0 * time.Millisecond,
-			secondaryResponseLatency:      0 * time.Millisecond,
+			preferredResponseLatency:      1 * time.Millisecond,
+			secondaryResponseLatency:      1 * time.Millisecond,
 			expectLatencyExceedsThreshold: false,
 		},
 		"one response above threshold": {
-			slowResponseThreshold:         100 * time.Millisecond,
-			preferredResponseLatency:      0 * time.Millisecond,
-			secondaryResponseLatency:      101 * time.Millisecond,
+			slowResponseThreshold:         50 * time.Millisecond,
+			preferredResponseLatency:      1 * time.Millisecond,
+			secondaryResponseLatency:      70 * time.Millisecond,
 			expectLatencyExceedsThreshold: true,
 			fastestBackend:                "preferred-backend",
 			slowestBackend:                "secondary-backend",
 		},
 		"responses are both above threshold, but lower than threshold between themselves": {
-			slowResponseThreshold:         100 * time.Millisecond,
-			preferredResponseLatency:      101 * time.Millisecond,
-			secondaryResponseLatency:      150 * time.Millisecond,
+			slowResponseThreshold:         50 * time.Millisecond,
+			preferredResponseLatency:      51 * time.Millisecond,
+			secondaryResponseLatency:      62 * time.Millisecond,
 			expectLatencyExceedsThreshold: false,
 		},
 		"responses are both above threshold, and above threshold between themselves": {
-			slowResponseThreshold:         100 * time.Millisecond,
-			preferredResponseLatency:      101 * time.Millisecond,
-			secondaryResponseLatency:      202 * time.Millisecond,
+			slowResponseThreshold:         10 * time.Millisecond,
+			preferredResponseLatency:      11 * time.Millisecond,
+			secondaryResponseLatency:      52 * time.Millisecond,
 			expectLatencyExceedsThreshold: true,
 			fastestBackend:                "preferred-backend",
 			slowestBackend:                "secondary-backend",
 		},
 		"secondary latency is faster than primary, and difference is below threshold": {
-			slowResponseThreshold:         100 * time.Millisecond,
-			preferredResponseLatency:      50 * time.Millisecond,
-			secondaryResponseLatency:      0 * time.Millisecond,
+			slowResponseThreshold:         50 * time.Millisecond,
+			preferredResponseLatency:      10 * time.Millisecond,
+			secondaryResponseLatency:      1 * time.Millisecond,
 			expectLatencyExceedsThreshold: false,
 		},
 		"secondary latency is faster than primary, and difference is above threshold": {
-			slowResponseThreshold:         100 * time.Millisecond,
-			preferredResponseLatency:      101 * time.Millisecond,
-			secondaryResponseLatency:      0 * time.Millisecond,
+			slowResponseThreshold:         50 * time.Millisecond,
+			preferredResponseLatency:      71 * time.Millisecond,
+			secondaryResponseLatency:      1 * time.Millisecond,
 			expectLatencyExceedsThreshold: true,
 			fastestBackend:                "secondary-backend",
 			slowestBackend:                "preferred-backend",
+		},
+		"slowest response threshold is disabled (0)": {
+			slowResponseThreshold:         0 * time.Millisecond,
+			preferredResponseLatency:      200 * time.Millisecond,
+			secondaryResponseLatency:      100 * time.Millisecond,
+			expectLatencyExceedsThreshold: false,
 		},
 	}
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			preferredBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(200)
-				time.Sleep(scenario.preferredResponseLatency)
-				_, err := w.Write([]byte("preferred response"))
-				require.NoError(t, err)
-			}))
-
-			defer preferredBackend.Close()
-			preferredBackendURL, err := url.Parse(preferredBackend.URL)
-			require.NoError(t, err)
-
-			secondaryBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(200)
-				time.Sleep(scenario.secondaryResponseLatency)
-				_, err := w.Write([]byte("preferred response"))
-				require.NoError(t, err)
-			}))
-
-			defer secondaryBackend.Close()
-			secondaryBackendURL, err := url.Parse(secondaryBackend.URL)
-			require.NoError(t, err)
-
-			backends := []*ProxyBackend{
-				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true, false),
-				NewProxyBackend("secondary-backend", secondaryBackendURL, time.Second, false, false),
+			backends := []ProxyBackendInterface{
+				newMockProxyBackend("preferred-backend", time.Second, true, scenario.preferredResponseLatency),
+				newMockProxyBackend("secondary-backend", time.Second, false, scenario.secondaryResponseLatency),
 			}
 
 			logger := newMockLogger()
@@ -648,4 +630,42 @@ func (m *mockLogger) Log(keyvals ...interface{}) error {
 	m.messages = append(m.messages, message)
 
 	return nil
+}
+
+type mockProxyBackend struct {
+	name                string
+	timeout             time.Duration
+	preferred           bool
+	fakeResponseLatency time.Duration
+}
+
+func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fakeResponseLatency time.Duration) ProxyBackendInterface {
+	return &mockProxyBackend{
+		name:                name,
+		timeout:             timeout,
+		preferred:           preferred,
+		fakeResponseLatency: fakeResponseLatency,
+	}
+}
+
+func (b *mockProxyBackend) Name() string {
+	return b.name
+}
+
+func (b *mockProxyBackend) Endpoint() *url.URL {
+	return nil
+}
+
+func (b *mockProxyBackend) Preferred() bool {
+	return b.preferred
+}
+
+func (b *mockProxyBackend) ForwardRequest(_ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
+	resp := &http.Response{
+		StatusCode: 200,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(bytes.NewBufferString(`{}`)),
+	}
+	resp.Header.Set("Content-Type", "application/json")
+	return time.Duration(b.fakeResponseLatency), 200, []byte("{}"), resp, nil
 }
