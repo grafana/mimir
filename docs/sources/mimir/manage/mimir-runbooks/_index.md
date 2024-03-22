@@ -1314,12 +1314,12 @@ In this context, any reference to Kafka means a Kafka protocol-compatible backen
 
 ### MimirIngesterLastConsumedOffsetCommitFailed
 
-This alert is fired when an ingester is failing to commit the last consumed offset to the Kafka backend.
+This alert fires when an ingester is failing to commit the last consumed offset to the Kafka backend.
 
 How it **works**:
 
 - The ingester ingests data (metrics, exemplars, ...) from Kafka and periodically commits the last consumed offset back to Kafka.
-- At startup, an ingester reads the last consumed offset committed to Kafka and resume the consumption from there.
+- At startup, an ingester reads the last consumed offset committed to Kafka and resumes the consumption from there.
 - If the ingester fails to commit the last consumed offset to Kafka, the ingester keeps working correctly from the consumption perspective (assuming there's no other on-going issue in the cluster) but in case of a restart the ingester will resume the consumption from the last successfully committed offset. If the last offset was successfully committed several minutes ago, the ingester will re-ingest data which has already been ingested, potentially causing OOO errors, wasting resources and taking longer to startup.
 
 How to **investigate**:
