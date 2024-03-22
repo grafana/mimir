@@ -434,6 +434,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+			fetchRequestsCount   = atomic.NewInt64(0)
 			fetchShouldFail      = atomic.NewBool(true)
 			consumedRecordsMx    sync.Mutex
 			consumedRecords      []string
@@ -452,6 +453,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		cluster.ControlKey(int16(kmsg.Fetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 
+			fetchRequestsCount.Inc()
 			if fetchShouldFail.Load() {
 				return nil, errors.New("mocked error"), true
 			}
@@ -480,13 +482,19 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		// Make Fetch working.
 		fetchShouldFail.Store(false)
 
+		// Wait until Fetch request has been issued at least once, in order to avoid any race condition
+		// (the problem is that we may produce the next record before the client fetched the partition end position).
+		require.Eventually(t, func() bool {
+			return fetchRequestsCount.Load() > 0
+		}, 5*time.Second, 10*time.Millisecond)
+
 		// Produce one more record.
 		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-3"))
 		t.Log("produced 1 record after starting the reader")
 
 		// Since the reader has been configured with position=end we expect to consume only
 		// the record produced after reader has been started.
-		test.Poll(t, time.Second, []string{"record-3"}, func() interface{} {
+		test.Poll(t, 5*time.Second, []string{"record-3"}, func() interface{} {
 			consumedRecordsMx.Lock()
 			defer consumedRecordsMx.Unlock()
 			return slices.Clone(consumedRecords)
