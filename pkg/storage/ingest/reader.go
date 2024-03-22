@@ -580,7 +580,6 @@ func (r *partitionCommitter) stop(error) error {
 }
 
 type readerMetrics struct {
-	receiveDelay              *prometheus.HistogramVec
 	receiveDelayWhenStarting  prometheus.Observer
 	receiveDelayWhenRunning   prometheus.Observer
 	recordsPerFetch           prometheus.Histogram
@@ -593,16 +592,19 @@ type readerMetrics struct {
 }
 
 func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetrics {
-	m := readerMetrics{
-		receiveDelay: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                            "cortex_ingest_storage_reader_receive_delay_seconds",
-			Help:                            "Delay between producing a record and receiving it in the consumer.",
-			NativeHistogramZeroThreshold:    math.Pow(2, -10), // Values below this will be considered to be 0. Equals to 0.0009765625, or about 1ms.
-			NativeHistogramBucketFactor:     1.2,              // We use higher factor (scheme=2) to have wider spread of buckets.
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-			Buckets:                         prometheus.ExponentialBuckets(0.125, 2, 18), // Buckets between 125ms and 9h.
-		}, []string{"phase"}),
+	receiveDelay := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                            "cortex_ingest_storage_reader_receive_delay_seconds",
+		Help:                            "Delay between producing a record and receiving it in the consumer.",
+		NativeHistogramZeroThreshold:    math.Pow(2, -10), // Values below this will be considered to be 0. Equals to 0.0009765625, or about 1ms.
+		NativeHistogramBucketFactor:     1.2,              // We use higher factor (scheme=2) to have wider spread of buckets.
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+		Buckets:                         prometheus.ExponentialBuckets(0.125, 2, 18), // Buckets between 125ms and 9h.
+	}, []string{"phase"})
+
+	return readerMetrics{
+		receiveDelayWhenStarting: receiveDelay.WithLabelValues("starting"),
+		receiveDelayWhenRunning:  receiveDelay.WithLabelValues("running"),
 		recordsPerFetch: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingest_storage_reader_records_per_fetch",
 			Help:    "The number of records received by the consumer in a single fetch operation.",
@@ -637,9 +639,4 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 			// Do not export the client ID, because we use it to specify options to the backend.
 			kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes)),
 	}
-
-	m.receiveDelayWhenStarting = m.receiveDelay.WithLabelValues("starting")
-	m.receiveDelayWhenRunning = m.receiveDelay.WithLabelValues("running")
-
-	return m
 }
