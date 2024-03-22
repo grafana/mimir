@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
@@ -45,8 +44,7 @@ const (
 type Meta struct {
 	tsdb.BlockMeta
 
-	Thanos       ThanosMeta `json:"thanos"`
-	LastModified *time.Time `json:"-"`
+	Thanos ThanosMeta `json:"thanos"`
 }
 
 func (m *Meta) String() string {

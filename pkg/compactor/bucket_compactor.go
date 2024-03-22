@@ -434,8 +434,11 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// into the next planning cycle.
 	// Eventually the block we just uploaded should get synced into the job again (including sync-delay).
 	for _, meta := range toCompact {
-		if meta.LastModified != nil {
-			c.metrics.blockCompactionDelay.WithLabelValues(strconv.Itoa(meta.Compaction.Level)).Observe(compactionBegin.Sub(*meta.LastModified).Seconds())
+		attrs, err := block.GetAttributes(ctx, meta, c.bkt)
+		if err != nil {
+			level.Warn(jobLogger).Log("err", err)
+		} else {
+			c.metrics.blockCompactionDelay.WithLabelValues(strconv.Itoa(meta.Compaction.Level)).Observe(compactionBegin.Sub(attrs.LastModified).Minutes())
 		}
 
 		if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
@@ -677,9 +680,9 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Help: "Total number of group compaction attempts that resulted in new block(s).",
 		}),
 		blockCompactionDelay: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                            "cortex_compactor_block_compaction_delay_seconds",
-			Help:                            "Delay between a block being created and successfully compacting it in seconds.",
-			Buckets:                         []float64{1.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1200.0, 2400.0, 3600.0, 7200.0},
+			Name:                            "cortex_compactor_block_compaction_delay_minutes",
+			Help:                            "Delay between a block being created and successfully compacting it in minutes.",
+			Buckets:                         []float64{1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 180.0, 240.0, 300.0, 600.0, 1200.0},
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
@@ -927,7 +930,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		}
 
 		// Skip jobs for which the wait period hasn't been honored yet.
-		jobs = c.filterJobsByWaitPeriod(jobs)
+		jobs = c.filterJobsByWaitPeriod(ctx, jobs)
 
 		// Sort jobs based on the configured ordering algorithm.
 		jobs = c.sortJobs(jobs)
@@ -1013,9 +1016,9 @@ func (c *BucketCompactor) filterOwnJobs(jobs []*Job) ([]*Job, error) {
 }
 
 // filterJobsByWaitPeriod filters out jobs for which the configured wait period hasn't been honored yet.
-func (c *BucketCompactor) filterJobsByWaitPeriod(jobs []*Job) []*Job {
+func (c *BucketCompactor) filterJobsByWaitPeriod(ctx context.Context, jobs []*Job) []*Job {
 	for i := 0; i < len(jobs); {
-		if elapsed, notElapsedBlock, err := jobWaitPeriodElapsed(jobs[i], c.waitPeriod); err != nil {
+		if elapsed, notElapsedBlock, err := jobWaitPeriodElapsed(ctx, jobs[i], c.waitPeriod, c.bkt); err != nil {
 			level.Warn(c.logger).Log("msg", "not enforcing compaction wait period because the check if compaction job contains recently uploaded blocks has failed", "groupKey", jobs[i].Key(), "err", err)
 
 			// Keep the job.

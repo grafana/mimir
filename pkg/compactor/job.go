@@ -3,6 +3,7 @@
 package compactor
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
@@ -153,7 +155,7 @@ func (job *Job) String() string {
 // elapsed for the input job. If the wait period has not elapsed, then this function
 // also returns the Meta of the first source block encountered for which the wait
 // period has not elapsed yet.
-func jobWaitPeriodElapsed(job *Job, waitPeriod time.Duration) (bool, *block.Meta, error) {
+func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, userBucket objstore.Bucket) (bool, *block.Meta, error) {
 	if waitPeriod <= 0 {
 		return true, nil, nil
 	}
@@ -171,7 +173,12 @@ func jobWaitPeriodElapsed(job *Job, waitPeriod time.Duration) (bool, *block.Meta
 			continue
 		}
 
-		if meta.LastModified.After(threshold) {
+		attrs, err := block.GetAttributes(ctx, meta, userBucket)
+		if err != nil {
+			return false, meta, err
+		}
+
+		if attrs.LastModified.After(threshold) {
 			return false, meta, nil
 		}
 	}
