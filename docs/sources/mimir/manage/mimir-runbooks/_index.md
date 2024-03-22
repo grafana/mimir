@@ -1312,7 +1312,7 @@ How to **investigate** and **fix** it:
 This section contains runbooks for alerts related to experimental Mimir ingest storage.
 In this context, any reference to Kafka means a Kafka protocol-compatible backend.
 
-### IngesterLastConsumedOffsetCommitFailed
+### MimirIngesterLastConsumedOffsetCommitFailed
 
 This alert is fired when an ingester is failing to commit the last consumed offset to the Kafka backend.
 
