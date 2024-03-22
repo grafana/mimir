@@ -21,6 +21,12 @@ import (
 type RangeVectorSelectorWithTransformation struct {
 	Selector *Selector
 
+	startTimestamp       int64
+	endTimestamp         int64
+	intervalMilliseconds int64
+	rangeMilliseconds    int64
+	numSteps             int
+
 	chunkIterator chunkenc.Iterator
 	buffer        *util.RingBuffer
 }
@@ -28,6 +34,13 @@ type RangeVectorSelectorWithTransformation struct {
 var _ InstantVectorOperator = &RangeVectorSelectorWithTransformation{}
 
 func (m *RangeVectorSelectorWithTransformation) Series(ctx context.Context) ([]SeriesMetadata, error) {
+	// Compute values we need on every call to Next() once, here.
+	m.startTimestamp = timestamp.FromTime(m.Selector.Start)
+	m.endTimestamp = timestamp.FromTime(m.Selector.End)
+	m.intervalMilliseconds = durationMilliseconds(m.Selector.Interval)
+	m.rangeMilliseconds = durationMilliseconds(m.Selector.Range)
+	m.numSteps = stepCount(m.startTimestamp, m.endTimestamp, m.intervalMilliseconds)
+
 	metadata, err := m.Selector.Series(ctx)
 	if err != nil {
 		return nil, err
@@ -64,21 +77,14 @@ func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (Insta
 
 	m.buffer.Reset()
 
-	// TODO: should we compute these once upfront in Series() or in Selector?
-	startTimestamp := timestamp.FromTime(m.Selector.Start)
-	endTimestamp := timestamp.FromTime(m.Selector.End)
-	intervalMilliseconds := durationMilliseconds(m.Selector.Interval)
-	rangeMilliseconds := durationMilliseconds(m.Selector.Range)
-	numSteps := stepCount(startTimestamp, endTimestamp, intervalMilliseconds)
-
 	data := InstantVectorSeriesData{
-		Floats: GetFPointSlice(numSteps), // TODO: only allocate this if we have any floats
+		Floats: GetFPointSlice(m.numSteps), // TODO: only allocate this if we have any floats
 	}
 
 	// TODO: test behaviour with resets, missing points, extrapolation, stale markers
 	// TODO: handle native histograms
-	for ts := startTimestamp; ts <= endTimestamp; ts += intervalMilliseconds {
-		rangeStart := ts - rangeMilliseconds
+	for ts := m.startTimestamp; ts <= m.endTimestamp; ts += m.intervalMilliseconds {
+		rangeStart := ts - m.rangeMilliseconds
 		rangeEnd := ts
 
 		m.buffer.DiscardPointsBefore(rangeStart)

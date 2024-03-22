@@ -8,8 +8,6 @@ package operator
 import (
 	"context"
 	"fmt"
-	"time"
-
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -21,6 +19,11 @@ import (
 type InstantVectorSelector struct {
 	Selector *Selector
 
+	startTimestamp       int64
+	endTimestamp         int64
+	intervalMilliseconds int64
+	numSteps             int
+
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
 }
@@ -28,6 +31,12 @@ type InstantVectorSelector struct {
 var _ InstantVectorOperator = &InstantVectorSelector{}
 
 func (v *InstantVectorSelector) Series(ctx context.Context) ([]SeriesMetadata, error) {
+	// Compute values we need on every call to Next() once, here.
+	v.startTimestamp = timestamp.FromTime(v.Selector.Start)
+	v.endTimestamp = timestamp.FromTime(v.Selector.End)
+	v.intervalMilliseconds = durationMilliseconds(v.Selector.Interval)
+	v.numSteps = stepCount(v.startTimestamp, v.endTimestamp, v.intervalMilliseconds)
+
 	return v.Selector.Series(ctx)
 }
 
@@ -48,17 +57,11 @@ func (v *InstantVectorSelector) Next(ctx context.Context) (InstantVectorSeriesDa
 
 	v.memoizedIterator.Reset(v.chunkIterator)
 
-	// TODO: should we compute these once upfront in Series() or in Selector?
-	startTimestamp := timestamp.FromTime(v.Selector.Start)
-	endTimestamp := timestamp.FromTime(v.Selector.End)
-	intervalMilliseconds := durationMilliseconds(v.Selector.Interval)
-	numSteps := stepCount(startTimestamp, endTimestamp, intervalMilliseconds)
-
 	data := InstantVectorSeriesData{
-		Floats: GetFPointSlice(numSteps), // TODO: only allocate this if we have any floats
+		Floats: GetFPointSlice(v.numSteps), // TODO: only allocate this if we have any floats
 	}
 
-	for ts := startTimestamp; ts <= endTimestamp; ts += intervalMilliseconds {
+	for ts := v.startTimestamp; ts <= v.endTimestamp; ts += v.intervalMilliseconds {
 		var t int64
 		var val float64
 		var h *histogram.FloatHistogram
@@ -105,12 +108,4 @@ func (v *InstantVectorSelector) Close() {
 	if v.Selector != nil {
 		v.Selector.Close()
 	}
-}
-
-func stepCount(start, end, interval int64) int {
-	return int((end-start)/interval) + 1
-}
-
-func durationMilliseconds(d time.Duration) int64 {
-	return int64(d / (time.Millisecond / time.Nanosecond))
 }
