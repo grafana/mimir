@@ -12,15 +12,27 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
+
+func TestKafkaStartOffset(t *testing.T) {
+	t.Run("should match Kafka client start offset", func(t *testing.T) {
+		expected := kgo.NewOffset().AtStart().EpochOffset().Offset
+		assert.Equal(t, expected, kafkaStartOffset)
+	})
+}
 
 func TestPartitionReader(t *testing.T) {
 	const (
@@ -36,7 +48,7 @@ func TestPartitionReader(t *testing.T) {
 	content := []byte("special content")
 	consumer := newTestConsumer(2)
 
-	startReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
+	createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
 
 	writeClient := newKafkaProduceClient(t, clusterAddr)
 
@@ -48,7 +60,7 @@ func TestPartitionReader(t *testing.T) {
 	assert.Equal(t, [][]byte{content, content}, records)
 }
 
-func TestReader_ConsumerError(t *testing.T) {
+func TestPartitionReader_ConsumerError(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 1
@@ -71,7 +83,7 @@ func TestReader_ConsumerError(t *testing.T) {
 		assert.Equal(t, "1", string(records[0].content))
 		return errors.New("consumer error")
 	})
-	startReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
+	createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
 
 	// Write to Kafka.
 	writeClient := newKafkaProduceClient(t, clusterAddr)
@@ -105,7 +117,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, 1, topicName)
 
 		// Configure the reader to poll the "last produced offset" frequently.
-		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer,
+		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer,
 			withLastProducedOffsetPollInterval(100*time.Millisecond),
 			withRegistry(reg))
 
@@ -241,6 +253,385 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 	})
 }
 
+func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	ctx := context.Background()
+
+	t.Run("should immediately switch to Running state if partition is empty", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			_, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+			consumer       = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+		)
+
+		// Create and start the reader. We expect the reader to start even if partition is empty.
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+	})
+
+	t.Run("should immediately switch to Running state if configured max lag is 0", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+		)
+
+		// Mock Kafka to fail the Fetch request.
+		cluster.ControlKey(int16(kmsg.Fetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			return nil, errors.New("mocked error"), true
+		})
+
+		// Produce some records.
+		writeClient := newKafkaProduceClient(t, clusterAddr)
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+		t.Log("produced 2 records")
+
+		// Create and start the reader. We expect the reader to start even if Fetch is failing.
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+	})
+
+	t.Run("should wait until max lag is honored", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+			fetchRequestsCount   = atomic.NewInt64(0)
+			fetchShouldFail      = atomic.NewBool(true)
+			consumedRecordsCount = atomic.NewInt64(0)
+		)
+
+		consumer := consumerFunc(func(ctx context.Context, records []record) error {
+			consumedRecordsCount.Add(int64(len(records)))
+			return nil
+		})
+
+		cluster.ControlKey(int16(kmsg.Fetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			fetchRequestsCount.Inc()
+
+			if fetchShouldFail.Load() {
+				return nil, errors.New("mocked error"), true
+			}
+
+			return nil, nil, false
+		})
+
+		// Produce some records.
+		writeClient := newKafkaProduceClient(t, clusterAddr)
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+		t.Log("produced 2 records")
+
+		// Create and start the reader.
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		require.NoError(t, reader.StartAsync(ctx))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		})
+
+		// Wait until the Kafka cluster received few Fetch requests.
+		test.Poll(t, 5*time.Second, true, func() interface{} {
+			return fetchRequestsCount.Load() > 2
+		})
+
+		// Since the mocked Kafka cluster is configured to fail any Fetch we expect the reader hasn't
+		// catched up yet, and it's still in Starting state.
+		assert.Equal(t, services.Starting, reader.State())
+		assert.Equal(t, int64(0), consumedRecordsCount.Load())
+
+		// Unblock the Fetch requests. Now they will succeed.
+		fetchShouldFail.Store(false)
+
+		// We expect the reader to catch up, and then switch to Running state.
+		test.Poll(t, 5*time.Second, services.Running, func() interface{} {
+			return reader.State()
+		})
+
+		assert.Equal(t, int64(2), consumedRecordsCount.Load())
+	})
+
+	t.Run("should wait until max lag is honored and retry if a failure occurs when fetching last produced offset", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr     = testkafka.CreateCluster(t, partitionID+1, topicName)
+			listOffsetsRequestsCount = atomic.NewInt64(0)
+			listOffsetsShouldFail    = atomic.NewBool(true)
+			consumedRecordsCount     = atomic.NewInt64(0)
+		)
+
+		consumer := consumerFunc(func(ctx context.Context, records []record) error {
+			consumedRecordsCount.Add(int64(len(records)))
+			return nil
+		})
+
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			listOffsetsRequestsCount.Inc()
+
+			if listOffsetsShouldFail.Load() {
+				return nil, errors.New("mocked error"), true
+			}
+
+			return nil, nil, false
+		})
+
+		// Produce some records.
+		writeClient := newKafkaProduceClient(t, clusterAddr)
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+		t.Log("produced 2 records")
+
+		// Create and start the reader.
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		require.NoError(t, reader.StartAsync(ctx))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		})
+
+		// Wait until the Kafka cluster received few ListOffsets requests.
+		test.Poll(t, 5*time.Second, true, func() interface{} {
+			return listOffsetsRequestsCount.Load() > 2
+		})
+
+		// Since the mocked Kafka cluster is configured to fail any ListOffsets request we expect the reader hasn't
+		// catched up yet, and it's still in Starting state.
+		assert.Equal(t, services.Starting, reader.State())
+		assert.Equal(t, int64(0), consumedRecordsCount.Load())
+
+		// Unblock the ListOffsets requests. Now they will succeed.
+		listOffsetsShouldFail.Store(false)
+
+		// We expect the reader to catch up, and then switch to Running state.
+		test.Poll(t, 5*time.Second, services.Running, func() interface{} {
+			return reader.State()
+		})
+
+		assert.Equal(t, int64(2), consumedRecordsCount.Load())
+	})
+
+	t.Run("should not wait indefinitely if context is cancelled while fetching last produced offset", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr     = testkafka.CreateCluster(t, partitionID+1, topicName)
+			consumer                 = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			listOffsetsRequestsCount = atomic.NewInt64(0)
+		)
+
+		// Mock Kafka to always fail the ListOffsets request.
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			listOffsetsRequestsCount.Inc()
+			return nil, errors.New("mocked error"), true
+		})
+
+		// Create and start the reader.
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+
+		readerCtx, cancelReaderCtx := context.WithCancel(ctx)
+		require.NoError(t, reader.StartAsync(readerCtx))
+
+		// Wait until the Kafka cluster received at least 1 ListOffsets request.
+		test.Poll(t, 5*time.Second, true, func() interface{} {
+			return listOffsetsRequestsCount.Load() > 0
+		})
+
+		// Cancelling the context should cause the service to switch to a terminal state.
+		assert.Equal(t, services.Starting, reader.State())
+		cancelReaderCtx()
+
+		test.Poll(t, 5*time.Second, services.Failed, func() interface{} {
+			return reader.State()
+		})
+	})
+
+	t.Run("should not wait indefinitely if context is cancelled while fetching records", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			fetchRequestsCount   = atomic.NewInt64(0)
+		)
+
+		// Mock Kafka to always fail the Fetch request.
+		cluster.ControlKey(int16(kmsg.Fetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			fetchRequestsCount.Inc()
+			return nil, errors.New("mocked error"), true
+		})
+
+		// Produce some records.
+		writeClient := newKafkaProduceClient(t, clusterAddr)
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+		t.Log("produced 2 records")
+
+		// Create and start the reader.
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+
+		readerCtx, cancelReaderCtx := context.WithCancel(ctx)
+		require.NoError(t, reader.StartAsync(readerCtx))
+
+		// Wait until the Kafka cluster received at least 1 Fetch request.
+		test.Poll(t, 5*time.Second, true, func() interface{} {
+			return fetchRequestsCount.Load() > 0
+		})
+
+		// Cancelling the context should cause the service to switch to a terminal state.
+		assert.Equal(t, services.Starting, reader.State())
+		cancelReaderCtx()
+
+		test.Poll(t, 5*time.Second, services.Failed, func() interface{} {
+			return reader.State()
+		})
+	})
+}
+
+func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	var (
+		ctx = context.Background()
+	)
+
+	createKafkaClusterWithoutCustomConsumerGroupSupport := func(t *testing.T, numPartitions int32) (*kfake.Cluster, string) {
+		cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(numPartitions, topicName))
+		require.NoError(t, err)
+		t.Cleanup(cluster.Close)
+
+		addrs := cluster.ListenAddrs()
+		require.Len(t, addrs, 1)
+
+		return cluster, addrs[0]
+	}
+
+	t.Run("should return special value to consume partition from the start if Kafka returns GroupIDNotFound", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = createKafkaClusterWithoutCustomConsumerGroupSupport(t, partitionID+1)
+			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		)
+
+		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			req := request.(*kmsg.OffsetFetchRequest)
+			res := req.ResponseKind().(*kmsg.OffsetFetchResponse)
+			res.Default()
+			res.Groups = []kmsg.OffsetFetchResponseGroup{
+				{
+					Group:     reader.consumerGroup,
+					ErrorCode: kerr.GroupIDNotFound.Code,
+				},
+			}
+
+			return res, nil, true
+		})
+
+		offset, err := reader.fetchLastCommittedOffset(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, kafkaStartOffset, offset)
+	})
+
+	t.Run("should return special value to consume partition from the start if Kafka returns no offsets for the requested partition", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = createKafkaClusterWithoutCustomConsumerGroupSupport(t, partitionID+1)
+			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		)
+
+		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			req := request.(*kmsg.OffsetFetchRequest)
+			res := req.ResponseKind().(*kmsg.OffsetFetchResponse)
+			res.Default()
+			res.Groups = []kmsg.OffsetFetchResponseGroup{
+				{
+					Group: reader.consumerGroup,
+					Topics: []kmsg.OffsetFetchResponseGroupTopic{
+						{
+							Topic: topicName,
+							Partitions: []kmsg.OffsetFetchResponseGroupTopicPartition{
+								{
+									Partition: partitionID + 1, // Another partition.
+									Offset:    456,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			return res, nil, true
+		})
+
+		offset, err := reader.fetchLastCommittedOffset(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, kafkaStartOffset, offset)
+	})
+
+	t.Run("should return the committed offset to Kafka", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = createKafkaClusterWithoutCustomConsumerGroupSupport(t, partitionID+1)
+			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		)
+
+		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			req := request.(*kmsg.OffsetFetchRequest)
+			res := req.ResponseKind().(*kmsg.OffsetFetchResponse)
+			res.Default()
+			res.Groups = []kmsg.OffsetFetchResponseGroup{
+				{
+					Group: reader.consumerGroup,
+					Topics: []kmsg.OffsetFetchResponseGroupTopic{
+						{
+							Topic: topicName,
+							Partitions: []kmsg.OffsetFetchResponseGroupTopicPartition{
+								{
+									Partition: partitionID, // Our partition.
+									Offset:    123,
+								}, {
+									Partition: partitionID + 1, // Another partition.
+									Offset:    456,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			return res, nil, true
+		})
+
+		offset, err := reader.fetchLastCommittedOffset(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(123), offset)
+	})
+}
+
 func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
 	writeClient, err := kgo.NewClient(
 		kgo.SeedBrokers(addrs),
@@ -285,16 +676,22 @@ func withLastProducedOffsetPollInterval(i time.Duration) func(cfg *readerTestCfg
 	}
 }
 
+func withMaxConsumerLagAtStartup(maxLag time.Duration) func(cfg *readerTestCfg) {
+	return func(cfg *readerTestCfg) {
+		cfg.kafka.MaxConsumerLagAtStartup = maxLag
+	}
+}
+
 func withRegistry(reg prometheus.Registerer) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
 		cfg.registry = reg
 	}
 }
 
-func defaultReaderTestConfig(addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
+func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
 	return &readerTestCfg{
 		registry:       prometheus.NewPedanticRegistry(),
-		logger:         log.NewNopLogger(),
+		logger:         testutil.NewLogger(t),
 		kafka:          createTestKafkaConfig(addr, topicName),
 		partitionID:    partitionID,
 		consumer:       consumer,
@@ -302,14 +699,20 @@ func defaultReaderTestConfig(addr string, topicName string, partitionID int32, c
 	}
 }
 
-func startReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
-	cfg := defaultReaderTestConfig(addr, topicName, partitionID, consumer)
+func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
+	cfg := defaultReaderTestConfig(t, addr, topicName, partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
 	}
 	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	reader.commitInterval = cfg.commitInterval
+
+	return reader
+}
+
+func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
+	reader := createReader(t, addr, topicName, partitionID, consumer, opts...)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 	t.Cleanup(func() {
@@ -335,7 +738,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
 		consumer := newTestConsumer(3)
-		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
 		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
 		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("2"))
@@ -349,7 +752,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		recordsSentAfterShutdown := []byte("4")
 		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, recordsSentAfterShutdown)
 
-		startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
 		records, err := consumer.waitRecords(1, time.Second, 0)
 		assert.NoError(t, err)
@@ -367,7 +770,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
 		consumer := newTestConsumer(4)
-		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
 		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
 		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("2"))
@@ -378,7 +781,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("4"))
-		startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
 		// There should be only one record - the one produced after the shutdown.
 		// The offset of record "3" should have been committed at shutdown and the reader should have resumed from there.
@@ -396,7 +799,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
 		consumer := newTestConsumer(4)
-		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
 		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
 		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("2"))
@@ -406,7 +809,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		reader = startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		reader = createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
 		// No new records since the last commit.
 		_, err = consumer.waitRecords(0, time.Second, 0)
@@ -414,7 +817,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 
 		// Shut down without having consumed any records.
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		_ = startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		_ = createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
 		// No new records since the last commit (2 shutdowns ago).
 		_, err = consumer.waitRecords(0, time.Second, 0)

@@ -649,6 +649,9 @@
       'debug_pprof',
     ],
 
+    // All query methods from IngesterServer interface. Basically everything except Push.
+    ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
+
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',
     datasource_regex: '',
@@ -657,6 +660,10 @@
     // Set to at least twice the scrape interval; otherwise, recording rules will output no data.
     // Set to four times the scrape interval to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
     recording_rules_range_interval: '1m',
+
+    // Used to calculate range interval in alerts with default range selector under 10 minutes.
+    // Needed to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
+    base_alerts_range_interval_minutes: 1,
 
     // Used to inject rows into dashboards at specific places that support it.
     injectRows: {},
@@ -671,5 +678,11 @@
     // Disabled by default, because when -ingester.limit-inflight-requests-using-grpc-method-limiter and -distributor.limit-inflight-requests-using-grpc-method-limiter is
     // not used (default), then rejected requests are already counted as failures.
     show_rejected_requests_on_writes_dashboard: false,
+
+    // Show panels that use queries for gRPC-based ingestion (distributor -> ingester)
+    show_grpc_ingestion_panels: true,
+
+    // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
+    show_ingest_storage_panels: false,
   },
 }

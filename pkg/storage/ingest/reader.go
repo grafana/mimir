@@ -24,6 +24,11 @@ import (
 	"go.uber.org/atomic"
 )
 
+const (
+	// kafkaStartOffset is a special offset value that means the beginning of the partition.
+	kafkaStartOffset = int64(-2)
+)
+
 type record struct {
 	tenantID string
 	content  []byte
@@ -81,13 +86,26 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, consumerGroup s
 	return r, nil
 }
 
-func (r *PartitionReader) start(ctx context.Context) error {
+func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
+	// Stop dependencies if the start() fails.
+	defer func() {
+		if returnErr != nil {
+			_ = r.stopDependencies()
+		}
+	}()
+
 	startFromOffset, err := r.fetchLastCommittedOffsetWithRetries(ctx)
 	if err != nil {
 		return err
 	}
-	r.consumedOffsetWatcher.Notify(startFromOffset - 1)
-	level.Info(r.logger).Log("msg", "resuming consumption from offset", "offset", startFromOffset)
+	level.Info(r.logger).Log("msg", "resuming consumption from offset", "offset", startFromOffset, "consumer_group", r.consumerGroup)
+
+	// Initialise the last consumed offset only if we've got a real offset from the consumer group.
+	// If we got a special offset (e.g. kafkaStartOffset) we want to keep the last consumed offset uninitialized,
+	// and it will be updated as soon as we consume the first record.
+	if startFromOffset >= 0 {
+		r.consumedOffsetWatcher.Notify(startFromOffset - 1)
+	}
 
 	r.client, err = r.newKafkaReader(kgo.NewOffset().At(startFromOffset))
 	if err != nil {
@@ -105,36 +123,107 @@ func (r *PartitionReader) start(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "starting service manager")
 	}
+
+	// Enforce the max consumer lag (if enabled).
+	if maxLag := r.kafkaCfg.MaxConsumerLagAtStartup; maxLag > 0 {
+		if err := r.processNextFetchesUntilMaxLagHonored(ctx, maxLag); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 func (r *PartitionReader) stop(error) error {
 	level.Info(r.logger).Log("msg", "stopping partition reader")
 
-	err := services.StopManagerAndAwaitStopped(context.Background(), r.dependencies)
-	if err != nil {
-		return errors.Wrap(err, "stopping service manager")
+	return r.stopDependencies()
+}
+
+func (r *PartitionReader) stopDependencies() error {
+	if r.dependencies != nil {
+		if err := services.StopManagerAndAwaitStopped(context.Background(), r.dependencies); err != nil {
+			return errors.Wrap(err, "stopping service manager")
+		}
 	}
-	r.client.Close()
+
+	if r.client != nil {
+		r.client.Close()
+	}
+
 	return nil
 }
 
 func (r *PartitionReader) run(ctx context.Context) error {
 	for ctx.Err() == nil {
-		fetches := r.client.PollFetches(ctx)
-		r.recordFetchesMetrics(fetches)
-		r.logFetchErrs(fetches)
-		fetches = filterOutErrFetches(fetches)
-
-		// TODO consumeFetches() may get interrupted in the middle because of ctx canceled due to PartitionReader stopped.
-		// 		We should improve it, but we shouldn't just pass a context.Background() because if consumption is stuck
-		// 		then PartitionReader will never stop.
-		r.consumeFetches(ctx, fetches)
-		r.enqueueCommit(fetches)
-		r.notifyLastConsumedOffset(fetches)
+		r.processNextFetches(ctx)
 	}
 
 	return nil
+}
+
+func (r *PartitionReader) processNextFetches(ctx context.Context) {
+	fetches := r.client.PollFetches(ctx)
+	r.recordFetchesMetrics(fetches)
+	r.logFetchErrs(fetches)
+	fetches = filterOutErrFetches(fetches)
+
+	// TODO consumeFetches() may get interrupted in the middle because of ctx canceled due to PartitionReader stopped.
+	// 		We should improve it, but we shouldn't just pass a context.Background() because if consumption is stuck
+	// 		then PartitionReader will never stop.
+	r.consumeFetches(ctx, fetches)
+	r.enqueueCommit(fetches)
+	r.notifyLastConsumedOffset(fetches)
+}
+
+func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Context, maxLag time.Duration) error {
+	level.Info(r.logger).Log("msg", "partition reader is starting to consume partition until max consumer lag is honored", "max_lag", maxLag)
+
+	boff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 250 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
+		MaxRetries: 0, // retry forever
+	})
+
+	for boff.Ongoing() {
+		// Send a direct request to the Kafka backend to fetch the last produced offset.
+		// We intentionally don't use WaitNextFetchLastProducedOffset() to not introduce further
+		// latency.
+		lastProducedOffset, err := r.offsetReader.FetchLastProducedOffset(ctx)
+		if err != nil {
+			level.Warn(r.logger).Log("msg", "partition reader failed to fetch last produced offset", "err", err)
+			boff.Wait()
+			continue
+		}
+
+		lastProducedOffsetFetchedAt := time.Now()
+
+		// This message is NOT expected to be logged with a very high rate.
+		level.Info(r.logger).Log("msg", "partition reader is consuming records to honor max consumer lag", "last_produced_offset", lastProducedOffset)
+
+		for boff.Ongoing() {
+			// Continue reading until we reached the desired offset.
+			lastConsumedOffset := r.consumedOffsetWatcher.LastConsumedOffset()
+			if lastProducedOffset <= lastConsumedOffset {
+				break
+			}
+
+			r.processNextFetches(ctx)
+		}
+
+		if boff.Err() != nil {
+			return boff.Err()
+		}
+
+		// If it took less than the max desired lag to replay the partition
+		// then we can stop here, otherwise we'll have to redo it.
+		if currLag := time.Since(lastProducedOffsetFetchedAt); currLag <= maxLag {
+			level.Info(r.logger).Log("msg", "partition reader consumed partition and current lag is less than configured max consumer lag", "last_consumed_offset", r.consumedOffsetWatcher.LastConsumedOffset(), "current_lag", currLag, "max_lag", maxLag)
+			return nil
+		}
+	}
+
+	return boff.Err()
 }
 
 func filterOutErrFetches(fetches kgo.Fetches) kgo.Fetches {
@@ -316,28 +405,40 @@ func (r *PartitionReader) fetchLastCommittedOffsetWithRetries(ctx context.Contex
 	return offset, err
 }
 
+// fetchLastCommittedOffset returns the last consumed offset which has been committed by the PartitionReader
+// to the consumer group. If there is no offset committed, this function returns kafkaStartOffset constant,
+// which is a special value used to signal that partition should be consumed from the start.
 func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, error) {
-	const endOffset = -1 // -1 is a special value for kafka that means "the last offset"
-
 	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
 	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
 	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
-	cl, err := kgo.NewClient(kgo.SeedBrokers(r.kafkaCfg.Address))
+	cl, err := kgo.NewClient(commonKafkaClientOptions(r.kafkaCfg, r.metrics.kprom, r.logger)...)
 	if err != nil {
-		return endOffset, errors.Wrap(err, "unable to create admin client")
+		return 0, errors.Wrap(err, "unable to create admin client")
 	}
 	adm := kadm.NewClient(cl)
 	defer adm.Close()
 
 	offsets, err := adm.FetchOffsets(ctx, r.consumerGroup)
-	if errors.Is(err, kerr.UnknownTopicOrPartition) {
-		// In case we are booting up for the first time ever against this topic.
-		return endOffset, nil
+	if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
+		// Make sure we replay any data already written to the partition in case the consumer
+		// is booting up for the first time ever.
+		return kafkaStartOffset, nil
 	}
 	if err != nil {
-		return endOffset, errors.Wrap(err, "unable to fetch group offsets")
+		return 0, errors.Wrap(err, "unable to fetch group offsets")
 	}
-	offset, _ := offsets.Lookup(r.kafkaCfg.Topic, r.partitionID)
+
+	offset, exists := offsets.Lookup(r.kafkaCfg.Topic, r.partitionID)
+	if !exists {
+		// Make sure we replay any data already written to the partition in case the consumer
+		// is booting up for the first time ever.
+		return kafkaStartOffset, nil
+	}
+	if offset.Err != nil {
+		return 0, offset.Err
+	}
+
 	return offset.At, nil
 }
 
@@ -368,7 +469,7 @@ func (r *PartitionReader) WaitReadConsistency(ctx context.Context) (returnErr er
 	}
 
 	// Get the last produced offset.
-	lastProducedOffset, err := r.offsetReader.FetchLastProducedOffset(ctx)
+	lastProducedOffset, err := r.offsetReader.WaitNextFetchLastProducedOffset(ctx)
 	if err != nil {
 		return err
 	}
@@ -437,8 +538,10 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) {
 	toCommit.AddOffset(r.kafkaCfg.Topic, r.partitionID, offset+1, -1)
 
 	committed, err := r.admClient.CommitOffsets(ctx, r.consumerGroup, toCommit)
-	if err != nil || !committed.Ok() {
-		level.Error(r.logger).Log("msg", "encountered error while committing offsets", "err", err, "commit_err", committed.Error(), "offset", offset)
+	if err != nil {
+		level.Error(r.logger).Log("msg", "encountered error while committing offsets", "err", err, "offset", offset)
+	} else if !committed.Ok() {
+		level.Error(r.logger).Log("msg", "encountered error while committing offsets", "err", committed.Error(), "offset", offset)
 	} else {
 		committedOffset, _ := committed.Lookup(r.kafkaCfg.Topic, r.partitionID)
 		level.Debug(r.logger).Log("msg", "committed offset", "offset", committedOffset.Offset.At)

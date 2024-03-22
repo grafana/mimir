@@ -10123,7 +10123,217 @@ data:
                             },
                             "unit": "reqps"
                          },
-                         "overrides": [ ]
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/.*_api_v1_query($|[^_])/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "instant queries"
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#429D48",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/.*_api_v1_query_range($|[^_])/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "range queries"
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#F1C731",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/.*_api_v1_labels($|[^_])/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "\"label names\" queries"
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#2A66CF",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/.*_api_v1_label_name_values($|[^_])/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "\"label values\" queries"
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#9E44C1",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/.*_api_v1_series($|[^_])/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "series queries"
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFAB57",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/.*_api_v1_read($|[^_])/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "remote read queries"
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#C79424",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/.*_api_v1_metadata($|[^_])/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "metadata queries"
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#84D586",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/.*_api_v1_query_exemplars($|[^_])/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "exemplar queries"
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#A1C4FC",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/.*_api_v1_cardinality_active_series($|[^_])/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "\"active series\" queries"
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#C788DE",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/.*_api_v1_cardinality_label_names($|[^_])/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "\"label name cardinality\" queries"
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#3F6833",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/.*_api_v1_cardinality_label_values($|[^_])/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "\"label value cardinality\" queries"
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#447EBC",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
                       },
                       "id": 11,
                       "links": [ ],
@@ -10136,114 +10346,15 @@ data:
                             "sort": "none"
                          }
                       },
-                      "seriesOverrides": [
-                         {
-                            "alias": "instant queries",
-                            "color": "#429D48"
-                         },
-                         {
-                            "alias": "range queries",
-                            "color": "#F1C731"
-                         },
-                         {
-                            "alias": "\"label names\" queries",
-                            "color": "#2A66CF"
-                         },
-                         {
-                            "alias": "\"label values\" queries",
-                            "color": "#9E44C1"
-                         },
-                         {
-                            "alias": "series queries",
-                            "color": "#FFAB57"
-                         },
-                         {
-                            "alias": "remote read queries",
-                            "color": "#C79424"
-                         },
-                         {
-                            "alias": "metadata queries",
-                            "color": "#84D586"
-                         },
-                         {
-                            "alias": "exemplar queries",
-                            "color": "#A1C4FC"
-                         },
-                         {
-                            "alias": "\"active series\" queries",
-                            "color": "#C788DE"
-                         }
-                      ],
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_query\"}[$__rate_interval]))",
+                            "expr": "sum by (route) (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval]))",
                             "format": "time_series",
-                            "legendFormat": "instant queries",
                             "legendLink": null
                          },
                          {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_query_range\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "range queries",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_labels\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "\"label names\" queries",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_label_name_values\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "\"label values\" queries",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_series\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "series queries",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_read\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "remote read queries",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_metadata\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "metadata queries",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_query_exemplars\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "exemplar queries",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=\"prometheus_api_v1_cardinality_active_series\"}[$__rate_interval])) > 0",
-                            "format": "time_series",
-                            "legendFormat": "\"active series\" queries",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=\"prometheus_api_v1_cardinality_label_names\"}[$__rate_interval])) > 0",
-                            "format": "time_series",
-                            "legendFormat": "\"label name cardinality\" queries",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=\"prometheus_api_v1_cardinality_label_values\"}[$__rate_interval])) > 0",
-                            "format": "time_series",
-                            "legendFormat": "\"label value cardinality\" queries",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\".*(query|query_range|label.*|series|read|metadata|query_exemplars|cardinality_.*)\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "other",
                             "legendLink": null
@@ -19253,7 +19364,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=~\"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A"
@@ -19302,19 +19413,19 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=~\"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata\"})) * 1e3",
+                            "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"})) * 1e3",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=~\"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata\"})) * 1e3",
+                            "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"})) * 1e3",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=~\"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata\"}) / sum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=~\"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata\"})",
+                            "expr": "1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}) / sum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"})",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
@@ -19364,7 +19475,7 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=~\"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata\"}[$__rate_interval])))",
+                            "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])))",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null

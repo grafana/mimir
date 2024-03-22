@@ -452,6 +452,18 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectAnyError: true,
 		},
+		{
+			name: "should fails if push api disabled in ingester, and the ingester isn't running with ingest storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("ingester")
+				cfg.Ingester.PushGrpcMethodEnabled = false
+				cfg.IngestStorage.Enabled = false
+
+				return cfg
+			},
+			expectAnyError: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.getTestConfig().Validate(log.NewNopLogger())

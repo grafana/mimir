@@ -42,15 +42,7 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       
-      tolerations:
-        []
       terminationGracePeriodSeconds: 60
       volumes:
         - name: tls-certs
@@ -58,7 +50,7 @@ spec:
             secretName: tls-certs
       containers:
         - name: memcached
-          image: memcached:1.6.23-alpine
+          image: memcached:1.6.24-alpine
           imagePullPolicy: IfNotPresent
           resources:
             limits:

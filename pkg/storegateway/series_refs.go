@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -345,14 +346,8 @@ func (s *mergedSeriesChunkRefsSet) Next() bool {
 	next := newSeriesChunkRefsSet(s.batchSize, true)
 
 	for i := 0; i < s.batchSize; i++ {
-		if err := s.ensureItemAvailableToRead(s.aAt, s.a); err != nil {
-			// Stop iterating on first error encountered.
-			s.current = seriesChunkRefsSet{}
-			s.done = true
-			return false
-		}
-
-		if err := s.ensureItemAvailableToRead(s.bAt, s.b); err != nil {
+		err := s.ensureCursors(s.aAt, s.bAt, s.a, s.b)
+		if err != nil {
 			// Stop iterating on first error encountered.
 			s.current = seriesChunkRefsSet{}
 			s.done = true
@@ -377,6 +372,27 @@ func (s *mergedSeriesChunkRefsSet) Next() bool {
 
 	s.current = next
 	return true
+}
+
+func (s *mergedSeriesChunkRefsSet) ensureCursors(curr1, curr2 *seriesChunkRefsIterator, set1, set2 iterator[seriesChunkRefsSet]) error {
+	// When both cursors are empty, we advance their set iterators concurrently to reduce total waiting time for the
+	// IO from underlying set iterators (see grafana/mimir#4596).
+	// If either of cursors are already populated with data (or completed), the cost of goroutine switch outweigh
+	// the cost of single call to ensureItemAvailableToRead, thus below we call them sequentially.
+	if curr1.Done() && curr2.Done() {
+		var g errgroup.Group
+		g.Go(func() error { return s.ensureItemAvailableToRead(curr1, set1) })
+		g.Go(func() error { return s.ensureItemAvailableToRead(curr2, set2) })
+		return g.Wait()
+	}
+
+	if err := s.ensureItemAvailableToRead(curr1, set1); err != nil {
+		return err
+	}
+	if err := s.ensureItemAvailableToRead(curr2, set2); err != nil {
+		return err
+	}
+	return nil
 }
 
 // ensureItemAvailableToRead ensures curr has an item available to read, unless we reached the

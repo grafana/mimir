@@ -38,6 +38,8 @@ service Ingester {
   rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {};
 
   rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {};
+
+  // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
 }
 
 message LabelNamesAndValuesRequest {

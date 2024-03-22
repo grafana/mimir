@@ -48,7 +48,7 @@ func TestPartitionOffsetReader(t *testing.T) {
 
 		for i := 0; i < 2; i++ {
 			runAsync(&wg, func() {
-				_, err := reader.FetchLastProducedOffset(ctx)
+				_, err := reader.WaitNextFetchLastProducedOffset(ctx)
 				assert.Equal(t, errPartitionOffsetReaderStopped, err)
 			})
 		}
@@ -59,13 +59,13 @@ func TestPartitionOffsetReader(t *testing.T) {
 		// At the point we expect the waiting goroutines to be unblocked.
 		wg.Wait()
 
-		// The next call to FetchLastProducedOffset() should return immediately.
-		_, err := reader.FetchLastProducedOffset(ctx)
+		// The next call to WaitNextFetchLastProducedOffset() should return immediately.
+		_, err := reader.WaitNextFetchLastProducedOffset(ctx)
 		assert.Equal(t, errPartitionOffsetReaderStopped, err)
 	})
 }
 
-func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
+func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 	const (
 		numPartitions = 1
 		userID        = "user-1"
@@ -90,21 +90,21 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 			reader         = newPartitionOffsetReader(client, topicName, partitionID, pollInterval, reg, logger)
 		)
 
-		offset, err := reader.getLastProducedOffset(ctx)
+		offset, err := reader.FetchLastProducedOffset(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(-1), offset)
 
 		// Write the 1st message.
 		produceRecord(ctx, t, client, topicName, partitionID, []byte("message 1"))
 
-		offset, err = reader.getLastProducedOffset(ctx)
+		offset, err = reader.FetchLastProducedOffset(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), offset)
 
 		// Write the 2nd message.
 		produceRecord(ctx, t, client, topicName, partitionID, []byte("message 2"))
 
-		offset, err = reader.getLastProducedOffset(ctx)
+		offset, err = reader.FetchLastProducedOffset(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), offset)
 
@@ -151,20 +151,20 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 
 		wg := sync.WaitGroup{}
 
-		// Run the 1st getLastProducedOffset() with a timeout which is expected to expire
+		// Run the 1st FetchLastProducedOffset() with a timeout which is expected to expire
 		// before the request will succeed.
 		runAsync(&wg, func() {
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, firstRequestTimeout)
 			defer cancel()
 
-			_, err := reader.getLastProducedOffset(ctxWithTimeout)
+			_, err := reader.FetchLastProducedOffset(ctxWithTimeout)
 			require.ErrorIs(t, err, context.DeadlineExceeded)
 		})
 
-		// Run a 2nd getLastProducedOffset() once the 1st request is received. This request
+		// Run a 2nd FetchLastProducedOffset() once the 1st request is received. This request
 		// is expected to succeed.
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			offset, err := reader.getLastProducedOffset(ctx)
+			offset, err := reader.FetchLastProducedOffset(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, expectedOffset, offset)
 		})
@@ -194,7 +194,7 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 		})
 
 		startTime := time.Now()
-		_, err := reader.getLastProducedOffset(ctx)
+		_, err := reader.FetchLastProducedOffset(ctx)
 		elapsedTime := time.Since(startTime)
 
 		require.Error(t, err)
@@ -208,7 +208,7 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 	})
 }
 
-func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
+func TestPartitionOffsetReader_WaitNextFetchLastProducedOffset(t *testing.T) {
 	const (
 		numPartitions = 1
 		topicName     = "test"
@@ -256,18 +256,18 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 
 		wg := sync.WaitGroup{}
 
-		// The 1st FetchLastProducedOffset() is called before the service start so it's expected
+		// The 1st WaitNextFetchLastProducedOffset() is called before the service start so it's expected
 		// to wait the result of the 1st request.
 		runAsync(&wg, func() {
-			actual, err := reader.FetchLastProducedOffset(ctx)
+			actual, err := reader.WaitNextFetchLastProducedOffset(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, int64(1), actual)
 		})
 
-		// The 2nd FetchLastProducedOffset() is called while the 1st request is running, so it's expected
+		// The 2nd WaitNextFetchLastProducedOffset() is called while the 1st request is running, so it's expected
 		// to wait the result of the 2nd request.
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			actual, err := reader.FetchLastProducedOffset(ctx)
+			actual, err := reader.WaitNextFetchLastProducedOffset(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, int64(2), actual)
 		})
@@ -294,7 +294,7 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 		canceledCtx, cancel := context.WithCancel(ctx)
 		cancel()
 
-		_, err := reader.FetchLastProducedOffset(canceledCtx)
+		_, err := reader.WaitNextFetchLastProducedOffset(canceledCtx)
 		assert.ErrorIs(t, err, context.Canceled)
 	})
 }

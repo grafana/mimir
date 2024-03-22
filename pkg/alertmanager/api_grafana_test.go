@@ -38,7 +38,6 @@ func TestMultitenantAlertmanager_DeleteUserGrafanaConfig(t *testing.T) {
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
 		User:               "test_user",
 		RawConfig:          "a grafana config",
-		Id:                 int64(1),
 		Hash:               "bb788eaa294c05ec556c1ed87546b7a9",
 		CreatedAtTimestamp: now,
 		Default:            false,
@@ -159,7 +158,6 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
 		User:               "test_user",
 		RawConfig:          "a grafana config",
-		Id:                 int64(1),
 		Hash:               "bb788eaa294c05ec556c1ed87546b7a9",
 		CreatedAtTimestamp: now,
 		Default:            false,
@@ -189,8 +187,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 				 "configuration": "a grafana config",
 				 "configuration_hash": "bb788eaa294c05ec556c1ed87546b7a9",
 				 "created": %d,
-				 "default": false,
-				 "id": 1
+				 "default": false
 			},
 			"status": "success"
 		}
@@ -278,7 +275,6 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 		rec := httptest.NewRecorder()
 		json := `
 		{
-			"id": 124,
 			"configuration_hash": "",
 			"created": 12312414343,
 			"default": false
@@ -302,7 +298,6 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 		rec = httptest.NewRecorder()
 		json = `
 		{
-			"id": 124,
 			"configuration": "a grafana configuration",
 			"configuration_hash": "ChEKBW5mbG9nEghzb21lZGF0YQ==",
 			"created": 12312414343,

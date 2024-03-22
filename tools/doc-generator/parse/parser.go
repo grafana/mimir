@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/thanos-io/objstore/providers/s3"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -579,6 +580,23 @@ func getCustomFieldEntry(cfg interface{}, field reflect.StructField, fieldValue 
 			FieldFlag:     fieldFlag.Name,
 			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
 			FieldType:     "time",
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
+		}, nil
+	}
+	if field.Type == reflect.TypeOf(s3.BucketLookupType(0)) {
+		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
+		if err != nil || fieldFlag == nil {
+			return nil, err
+		}
+
+		return &ConfigEntry{
+			Kind:          KindField,
+			Name:          getFieldName(field),
+			Required:      isFieldRequired(field),
+			FieldFlag:     fieldFlag.Name,
+			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
+			FieldType:     "string",
 			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
 			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil

@@ -15,6 +15,7 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -554,6 +555,9 @@ func TestPartitionCacheExtents(t *testing.T) {
 
 func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	t.Parallel()
+	reg := prometheus.NewPedanticRegistry()
+	codec := NewPrometheusCodec(reg, formatJSON)
+
 	ctx := context.Background()
 
 	tests := []struct {
@@ -575,7 +579,7 @@ func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s - %s", tt.name, tt.interval), func(t *testing.T) {
-			if got := (DefaultCacheKeyGenerator{tt.interval}).QueryRequest(ctx, "fake", tt.r); got != tt.want {
+			if got := (DefaultCacheKeyGenerator{codec: codec, Interval: tt.interval}).QueryRequest(ctx, "fake", tt.r); got != tt.want {
 				t.Errorf("generateKey() = %v, want %v", got, tt.want)
 			}
 		})

@@ -320,7 +320,7 @@ func TestPreloadingSetIterator(t *testing.T) {
 
 				var source iterator[seriesChunksSet]
 				source = newSliceSeriesChunksSetIterator(sets...)
-				source = newDelayedSetIterator[seriesChunksSet](delay, source)
+				source = newDelayedIterator(delay, source)
 
 				preloading := newPreloadingSetIterator[seriesChunksSet](context.Background(), preloadSize, source)
 
@@ -348,7 +348,7 @@ func TestPreloadingSetIterator(t *testing.T) {
 
 				var source iterator[seriesChunksSet]
 				source = newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
-				source = newDelayedSetIterator[seriesChunksSet](delay, source)
+				source = newDelayedIterator(delay, source)
 
 				preloading := newPreloadingSetIterator[seriesChunksSet](context.Background(), preloadSize, source)
 
@@ -374,7 +374,7 @@ func TestPreloadingSetIterator(t *testing.T) {
 
 		var source iterator[seriesChunksSet]
 		source = newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
-		source = newDelayedSetIterator[seriesChunksSet](delay, source)
+		source = newDelayedIterator(delay, source)
 
 		preloading := newPreloadingSetIterator[seriesChunksSet](ctx, 1, source)
 
@@ -402,7 +402,7 @@ func TestPreloadingSetIterator(t *testing.T) {
 
 		var source iterator[seriesChunksSet]
 		source = newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
-		source = newDelayedSetIterator[seriesChunksSet](delay, source)
+		source = newDelayedIterator(delay, source)
 
 		preloading := newPreloadingSetIterator[seriesChunksSet](ctx, 1, source)
 
@@ -884,31 +884,30 @@ func (s *sliceSeriesChunksSetIterator) Err() error {
 	return nil
 }
 
-// delayedSetIterator implements iterator and
-// introduces an artificial delay before returning from Next() and At().
-type delayedSetIterator[S any] struct {
+// delayedIterator implements iterator and introduces an artificial delay before returning from Next() and At().
+type delayedIterator[S any] struct {
 	wrapped iterator[S]
 	delay   time.Duration
 }
 
-func newDelayedSetIterator[S any](delay time.Duration, wrapped iterator[S]) *delayedSetIterator[S] {
-	return &delayedSetIterator[S]{
+func newDelayedIterator[S any](delay time.Duration, wrapped iterator[S]) *delayedIterator[S] {
+	return &delayedIterator[S]{
 		wrapped: wrapped,
 		delay:   delay,
 	}
 }
 
-func (s *delayedSetIterator[S]) Next() bool {
+func (s *delayedIterator[S]) Next() bool {
 	time.Sleep(s.delay)
 	return s.wrapped.Next()
 }
 
-func (s *delayedSetIterator[S]) At() S {
+func (s *delayedIterator[S]) At() S {
 	time.Sleep(s.delay)
 	return s.wrapped.At()
 }
 
-func (s *delayedSetIterator[S]) Err() error {
+func (s *delayedIterator[S]) Err() error {
 	return s.wrapped.Err()
 }
 
