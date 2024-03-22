@@ -1307,6 +1307,26 @@ How to **investigate** and **fix** it:
     - Check the number of in-memory series shown on the `Mimir / Tenants` dashboard for an approximation of the number of series that will be compacted once these blocks are shipped from ingesters.
     - Check the configured `compactor_split_and_merge_shards` for the tenant. A reasonable rule of thumb is 8-10 million series per compactor shard - if the number of series per shard is above this range, increase `compactor_split_and_merge_shards` for the affected tenant(s) accordingly.
 
+## Mimir ingest storage (experimental)
+
+This section contains runbooks for alerts related to experimental Mimir ingest storage.
+In this context, any reference to Kafka means a Kafka protocol-compatible backend.
+
+### MimirIngesterLastConsumedOffsetCommitFailed
+
+This alert fires when an ingester is failing to commit the last consumed offset to the Kafka backend.
+
+How it **works**:
+
+- The ingester ingests data (metrics, exemplars, ...) from Kafka and periodically commits the last consumed offset back to Kafka.
+- At startup, an ingester reads the last consumed offset committed to Kafka and resumes the consumption from there.
+- If the ingester fails to commit the last consumed offset to Kafka, the ingester keeps working correctly from the consumption perspective (assuming there's no other on-going issue in the cluster) but in case of a restart the ingester will resume the consumption from the last successfully committed offset. If the last offset was successfully committed several minutes ago, the ingester will re-ingest data which has already been ingested, potentially causing OOO errors, wasting resources and taking longer to startup.
+
+How to **investigate**:
+
+- Check ingester logs to find details about the error.
+- Check Kafka logs and health.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.

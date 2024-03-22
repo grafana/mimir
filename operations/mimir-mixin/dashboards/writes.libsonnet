@@ -379,6 +379,60 @@ local filename = 'mimir-writes.json';
       )
     )
     .addRowIf(
+      $._config.show_ingest_storage_panels,
+      ($.row('Ingester (ingest storage - last consumed offset)'))
+      .addPanel(
+        $.timeseriesPanel('Last consumed offset commits / sec') +
+        $.panelDescription(
+          'Last consumed offset commits / sec',
+          |||
+            Rate of "last consumed offset" commits issued by ingesters to Kafka.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            |||
+              sum (rate (cortex_ingest_storage_reader_offset_commit_requests_total{%s}[$__rate_interval]))
+              -
+              sum (rate (cortex_ingest_storage_reader_offset_commit_failures_total{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_offset_commit_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'successful',
+            'failed',
+          ],
+        ) + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed }) + $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Last consumed offset commits latency') +
+        $.panelDescription(
+          'Kafka record processing latency',
+          |||
+            Time spent to commit "last consumed offset" by ingesters to Kafka.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            '50th percentile',
+            '99th percentile',
+            '99.9th percentile',
+            '100th percentile',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
+      )
+    )
+    .addRowIf(
       $._config.gateway_enabled && $._config.autoscaling.gateway.enabled,
       $.cpuAndMemoryBasedAutoScalingRow('Gateway'),
     )
