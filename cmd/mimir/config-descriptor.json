@@ -5684,12 +5684,12 @@
         },
         {
           "kind": "field",
-          "name": "use_shard_active_series_zero_allocation_decoder",
+          "name": "use_active_series_decoder",
           "required": false,
-          "desc": "True to use the zero-allocation response decoder for active series queries.",
+          "desc": "Set to true to use the zero-allocation response decoder for active series queries.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.use-shard-active-series-zero-allocation-decoder",
+          "fieldFlag": "query-frontend.use-active-series-decoder",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },

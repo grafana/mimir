@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -365,7 +366,7 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 func (s *shardActiveSeriesMiddleware) mergeResponsesWithZeroAllocationDecoder(ctx context.Context, responses []*http.Response, encoding string) *http.Response {
 	reader, writer := io.Pipe()
 
-	items := make(chan *shardActiveSeriesResponseDecoder, len(responses))
+	items := make(chan chan activeSeriesDataChunk, len(responses))
 
 	g := new(errgroup.Group)
 	for _, res := range responses {
@@ -374,27 +375,19 @@ func (s *shardActiveSeriesMiddleware) mergeResponsesWithZeroAllocationDecoder(ct
 		}
 		r := res
 		g.Go(func() error {
-			reuseDecoder := true
-
 			dec := borrowShardActiveSeriesResponseDecoder(ctx, r.Body)
 			defer func() {
-				if !reuseDecoder {
-					return
-				}
 				dec.close()
 				reuseShardActiveSeriesResponseDecoder(dec)
 			}()
 
-			if err := dec.decode(); err != nil {
+			chunkCh, err := dec.decode()
+			if err != nil {
 				return err
 			}
-			if !dec.hasDataValue() {
-				return nil
-			}
-			items <- dec
-			reuseDecoder = false
+			items <- chunkCh
 
-			return nil
+			return dec.streamData()
 		})
 	}
 
@@ -494,7 +487,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 	stream.WriteObjectEnd()
 }
 
-func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecoder(ctx context.Context, check func() error, w io.WriteCloser, items <-chan *shardActiveSeriesResponseDecoder, encoding string) {
+func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecoder(ctx context.Context, check func() error, w io.WriteCloser, items chan chan activeSeriesDataChunk, encoding string) {
 	defer w.Close()
 
 	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveSeries.writeMergedResponseWithZeroAllocationDecoder")
@@ -529,21 +522,40 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecod
 	stream.WriteObjectField("data")
 	stream.WriteArrayStart()
 	firstItem := true
-	for dec := range items {
+	for chunkCh := range items {
+		chunk := <-chunkCh
+		if chunk.done {
+			continue
+		}
+
 		if firstItem {
 			firstItem = false
 		} else {
 			stream.WriteMore()
 		}
-		// Write the value as is, since it's already a JSON array.
-		stream.WriteRaw(dec.dataValue())
 
-		// Flush the stream buffer if it's getting too large.
-		if stream.Buffered() > jsoniterMaxBufferSize {
-			_ = stream.Flush()
+		for {
+			chunkStr := unsafe.String(
+				unsafe.SliceData(chunk.buff.Bytes()),
+				chunk.buff.Len(),
+			)
+
+			// Write the value as is, since it's already a JSON array.
+			stream.WriteRaw(chunkStr)
+
+			// Flush the stream buffer if it's getting too large.
+			if stream.Buffered() > jsoniterMaxBufferSize {
+				_ = stream.Flush()
+			}
+
+			// Reuse chunk buffer.
+			reuseActiveSeriesDataChunkBuffer(chunk.buff)
+
+			chunk = <-chunkCh
+			if chunk.done {
+				break
+			}
 		}
-		dec.close()
-		reuseShardActiveSeriesResponseDecoder(dec)
 	}
 	stream.WriteArrayEnd()
 

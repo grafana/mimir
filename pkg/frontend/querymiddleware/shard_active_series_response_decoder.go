@@ -8,25 +8,37 @@ package querymiddleware
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 	"unicode/utf16"
 	"unsafe"
 )
 
-var shardActiveSeriesDecoderMaxBuffSize = os.Getpagesize()
+const activeSeriesChunkMaxBufferSize = 1024 * 1024 // 2MB
+
+var activeSeriesChunkBufferPool = sync.Pool{
+	New: func() any {
+		return bytes.NewBuffer(make([]byte, 0, activeSeriesChunkMaxBufferSize))
+	},
+}
 
 var shardActiveSeriesResponseDecoderPool = sync.Pool{
 	New: func() any {
 		return &shardActiveSeriesResponseDecoder{
-			br:  bufio.NewReaderSize(nil, 4096),
-			out: make([]byte, 0, shardActiveSeriesDecoderMaxBuffSize),
+			br:      bufio.NewReaderSize(nil, 4096),
+			strBuff: make([]byte, 0, 256),
+			chunkCh: make(chan activeSeriesDataChunk, 1),
 		}
 	},
+}
+
+type activeSeriesDataChunk struct {
+	buff *bytes.Buffer
+	done bool
 }
 
 func borrowShardActiveSeriesResponseDecoder(ctx context.Context, rc io.ReadCloser) *shardActiveSeriesResponseDecoder {
@@ -37,27 +49,31 @@ func borrowShardActiveSeriesResponseDecoder(ctx context.Context, rc io.ReadClose
 
 func reuseShardActiveSeriesResponseDecoder(d *shardActiveSeriesResponseDecoder) {
 	d.reset(context.Background(), nil)
-	if cap(d.out) > shardActiveSeriesDecoderMaxBuffSize {
-		return
-	}
 	shardActiveSeriesResponseDecoderPool.Put(d)
+}
+
+func reuseActiveSeriesDataChunkBuffer(buf *bytes.Buffer) {
+	buf.Reset()
+	activeSeriesChunkBufferPool.Put(buf)
 }
 
 type shardActiveSeriesResponseDecoder struct {
 	ctx            context.Context
 	rc             io.ReadCloser
 	br             *bufio.Reader
-	out            []byte
+	strBuff        []byte
+	chunkCh        chan activeSeriesDataChunk
 	readBytesCount int
 	foundDataValue bool
 	err            error
 }
 
 func (d *shardActiveSeriesResponseDecoder) reset(ctx context.Context, rc io.ReadCloser) {
+	d.br.Reset(rc)
+
 	d.ctx = ctx
 	d.rc = rc
-	d.br.Reset(rc)
-	d.out = d.out[:0]
+	d.strBuff = d.strBuff[:0]
 	d.readBytesCount = 0
 	d.foundDataValue = false
 	d.err = nil
@@ -75,25 +91,10 @@ func (d *shardActiveSeriesResponseDecoder) close() {
 	_ = d.rc.Close()
 }
 
-func (d *shardActiveSeriesResponseDecoder) hasDataValue() bool {
-	return d.foundDataValue && len(d.out) > 0
-}
-
-func (d *shardActiveSeriesResponseDecoder) dataValue() string {
-	if !d.foundDataValue {
-		return ""
-	}
-	return unsafe.String(unsafe.SliceData(d.out), len(d.out))
-}
-
-func (d *shardActiveSeriesResponseDecoder) decode() error {
-	if d.foundDataValue {
-		return nil // already decoded
-	}
-
+func (d *shardActiveSeriesResponseDecoder) decode() (chan activeSeriesDataChunk, error) {
 	c := d.nextToken()
 	if d.err != nil {
-		return d.err
+		return nil, d.err
 	}
 	switch c {
 	case '{':
@@ -101,18 +102,15 @@ func (d *shardActiveSeriesResponseDecoder) decode() error {
 			k := d.readString()
 			switch k {
 			case "data":
-				d.readDataValue()
+				d.readData()
 				if d.err != nil {
-					return d.err
+					return nil, d.err
 				}
-				return d.ctx.Err()
+				return d.chunkCh, nil
 
 			case "error":
-				d.readErrorValue()
-				if d.err != nil {
-					return d.err
-				}
-				return d.ctx.Err()
+				d.readError()
+				return nil, d.err
 
 			default:
 				d.skipValue()
@@ -127,43 +125,75 @@ func (d *shardActiveSeriesResponseDecoder) decode() error {
 		}
 
 	default:
-		return fmt.Errorf("decode: expected {, found %c", c)
+		return nil, fmt.Errorf("decode: expected {, found %c", c)
 	}
-	return errors.New("expected data field at top level")
+	return nil, errors.New("expected data field at top level")
 }
 
-func (d *shardActiveSeriesResponseDecoder) readDataValue() {
+func (d *shardActiveSeriesResponseDecoder) readData() {
+	defer func() {
+		if err := d.ctx.Err(); err != nil {
+			d.stickError(err)
+		}
+	}()
+
 	if c := d.nextToken(); c != ':' {
 		d.stickError(fmt.Errorf("readDataValue: expected :, found %c", c))
 		return
 	}
-	c := d.nextToken()
-	switch c {
+	switch d.nextToken() {
 	case '[':
-		d.out = d.out[:0]
-
-		inner := 1
-
-		c := d.readByte()
-		for d.err == nil {
-			switch c {
-			case '[':
-				inner++
-			case ']':
-				inner--
-				if inner == 0 {
-					d.foundDataValue = true
-					return
-				}
-			default:
-				d.out = append(d.out, c)
-			}
-			c = d.readByte()
-		}
+		return
 
 	default:
 		d.stickError(errors.New("expected data field to contain an array"))
 	}
+}
+
+func (d *shardActiveSeriesResponseDecoder) readError() {
+	defer func() {
+		if err := d.ctx.Err(); err != nil {
+			d.stickError(err)
+		}
+	}()
+
+	if c := d.nextToken(); c != ':' {
+		d.stickError(fmt.Errorf("readErrorValue: expected :, found %c", c))
+		return
+	}
+	d.stickError(fmt.Errorf("error in partial response: %s", d.readString()))
+}
+
+func (d *shardActiveSeriesResponseDecoder) streamData() error {
+	defer func() {
+		d.chunkCh <- activeSeriesDataChunk{done: true} // Send remaining data.
+	}()
+
+	cb := activeSeriesChunkBufferPool.Get().(*bytes.Buffer)
+
+	inner := 1
+	c := d.readByte()
+	for d.err == nil {
+		if c == '[' {
+			inner++
+		} else if c == ']' {
+			inner--
+			if inner == 0 {
+				if cb.Len() > 0 {
+					d.chunkCh <- activeSeriesDataChunk{buff: cb}
+				}
+				return nil
+			}
+		}
+		cb.WriteByte(c)
+
+		if cb.Len() >= activeSeriesChunkMaxBufferSize {
+			d.chunkCh <- activeSeriesDataChunk{buff: cb}
+			cb = activeSeriesChunkBufferPool.Get().(*bytes.Buffer)
+		}
+		c = d.readByte()
+	}
+	return d.err
 }
 
 func (d *shardActiveSeriesResponseDecoder) nextToken() byte {
@@ -187,32 +217,24 @@ func (d *shardActiveSeriesResponseDecoder) readString() string {
 		d.stickError(fmt.Errorf(`readString: expected ", found %c`, c))
 		return ""
 	}
-	d.out = d.out[:0]
+	d.strBuff = d.strBuff[:0]
 
 	for d.err == nil {
 		c = d.readByte()
 		if c == '"' {
 			return unsafe.String(
-				unsafe.SliceData(d.out), len(d.out),
+				unsafe.SliceData(d.strBuff), len(d.strBuff),
 			)
 		}
 		if c == '\\' {
 			c = d.readByte()
-			d.out = d.readEscapedChar(c, d.out)
+			d.strBuff = d.readEscapedChar(c, d.strBuff)
 		} else {
-			d.out = append(d.out, c)
+			d.strBuff = append(d.strBuff, c)
 		}
 	}
 	d.stickError(errors.New("readString: unexpected end of input"))
 	return ""
-}
-
-func (d *shardActiveSeriesResponseDecoder) readErrorValue() {
-	if c := d.nextToken(); c != ':' {
-		d.stickError(fmt.Errorf("readErrorValue: expected :, found %c", c))
-		return
-	}
-	d.stickError(fmt.Errorf("error in partial response: %s", d.readString()))
 }
 
 func (d *shardActiveSeriesResponseDecoder) skipValue() {
@@ -275,7 +297,7 @@ func (d *shardActiveSeriesResponseDecoder) skipArray() {
 func (d *shardActiveSeriesResponseDecoder) skipString() {
 	d.unreadByte()
 	_ = d.readString()
-	d.out = d.out[:0]
+	d.strBuff = d.strBuff[:0]
 }
 
 func (d *shardActiveSeriesResponseDecoder) readByte() byte {

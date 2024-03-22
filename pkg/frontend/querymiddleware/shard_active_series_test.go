@@ -442,9 +442,6 @@ func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testi
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 	}
 
-	cancelCause := "request canceled while streaming response"
-	cancel(fmt.Errorf(cancelCause))
-
 	resp := s.mergeResponses(ctx, responses, "")
 	defer func() {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -452,8 +449,11 @@ func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testi
 	}()
 
 	var buf bytes.Buffer
-	_, err = io.Copy(&buf, resp.Body)
+	_, err = io.CopyN(&buf, resp.Body, int64(os.Getpagesize()))
 	require.NoError(t, err)
+
+	cancelCause := "request canceled while streaming response"
+	cancel(fmt.Errorf(cancelCause))
 
 	_, err = io.Copy(&buf, resp.Body)
 	require.NoError(t, err)
@@ -520,7 +520,7 @@ func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				resp := s.mergeResponses(context.Background(), benchResponses[i], encoding)
+				resp := s.mergeResponsesWithZeroAllocationDecoder(context.Background(), benchResponses[i], encoding)
 
 				_, _ = io.Copy(io.Discard, resp.Body)
 				_ = resp.Body.Close()
