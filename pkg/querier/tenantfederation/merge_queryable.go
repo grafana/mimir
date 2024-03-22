@@ -122,7 +122,7 @@ func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, re
 
 		// Experimental: Observe time to kick off upstream query jobs as a native histogram
 		upstreamQueryWaitDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                            "mimir_querier_federation_upstream_query_wait_duration_seconds",
+			Name:                            "cortex_querier_federation_upstream_query_wait_duration_seconds",
 			Help:                            "Time spent waiting to run upstream queries",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
