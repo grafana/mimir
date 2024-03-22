@@ -342,6 +342,8 @@
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization)),
+          // Disable ignoring null values. This allows HPAs to effectively pause when metrics are unavailable rather than scaling
+          // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
           ignore_null_values: false,
         },
         {
@@ -355,6 +357,8 @@
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
+          // Disable ignoring null values. This allows HPAs to effectively pause when metrics are unavailable rather than scaling
+          // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
           ignore_null_values: false,
         },
       ],
