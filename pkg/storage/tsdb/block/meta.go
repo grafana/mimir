@@ -46,7 +46,7 @@ type Meta struct {
 	tsdb.BlockMeta
 
 	Thanos       ThanosMeta `json:"thanos"`
-	LastModified *time.Time `json:"last_modified,omitempty"`
+	LastModified *time.Time `json:"-"`
 }
 
 func (m *Meta) String() string {
