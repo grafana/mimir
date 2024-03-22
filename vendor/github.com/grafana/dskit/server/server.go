@@ -17,13 +17,13 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/grafana/pyroscope-go/godeltaprof/http/pprof" // anonymous import to get godelatprof handlers registered
-
 	gokit_log "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	_ "github.com/grafana/pyroscope-go/godeltaprof/http/pprof" // anonymous import to get godelatprof handlers registered
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
+	"github.com/pires/go-proxyproto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/config"
@@ -79,14 +79,15 @@ type Config struct {
 	// for details. A generally useful value is 1.1.
 	MetricsNativeHistogramFactor float64 `yaml:"-"`
 
-	HTTPListenNetwork string `yaml:"http_listen_network"`
-	HTTPListenAddress string `yaml:"http_listen_address"`
-	HTTPListenPort    int    `yaml:"http_listen_port"`
-	HTTPConnLimit     int    `yaml:"http_listen_conn_limit"`
-	GRPCListenNetwork string `yaml:"grpc_listen_network"`
-	GRPCListenAddress string `yaml:"grpc_listen_address"`
-	GRPCListenPort    int    `yaml:"grpc_listen_port"`
-	GRPCConnLimit     int    `yaml:"grpc_listen_conn_limit"`
+	HTTPListenNetwork    string `yaml:"http_listen_network"`
+	HTTPListenAddress    string `yaml:"http_listen_address"`
+	HTTPListenPort       int    `yaml:"http_listen_port"`
+	HTTPConnLimit        int    `yaml:"http_listen_conn_limit"`
+	GRPCListenNetwork    string `yaml:"grpc_listen_network"`
+	GRPCListenAddress    string `yaml:"grpc_listen_address"`
+	GRPCListenPort       int    `yaml:"grpc_listen_port"`
+	GRPCConnLimit        int    `yaml:"grpc_listen_conn_limit"`
+	ProxyProtocolEnabled bool   `yaml:"proxy_protocol_enabled"`
 
 	CipherSuites  string    `yaml:"tls_cipher_suites"`
 	MinVersion    string    `yaml:"tls_min_version"`
@@ -201,6 +202,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.LogRequestHeaders, "server.log-request-headers", false, "Optionally log request headers.")
 	f.StringVar(&cfg.LogRequestExcludeHeadersList, "server.log-request-headers-exclude-list", "", "Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.")
 	f.BoolVar(&cfg.LogRequestAtInfoLevel, "server.log-request-at-info-level-enabled", false, "Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.")
+	f.BoolVar(&cfg.ProxyProtocolEnabled, "server.proxy-protocol-enabled", false, "Enables PROXY protocol.")
 }
 
 func (cfg *Config) registererOrDefault() prometheus.Registerer {
@@ -284,6 +286,11 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	metrics.TCPConnectionsLimit.WithLabelValues("grpc").Set(float64(cfg.GRPCConnLimit))
 	if cfg.GRPCConnLimit > 0 {
 		grpcListener = netutil.LimitListener(grpcListener, cfg.GRPCConnLimit)
+	}
+
+	if cfg.ProxyProtocolEnabled {
+		httpListener = newProxyProtocolListener(httpListener, cfg.HTTPServerReadHeaderTimeout)
+		grpcListener = newProxyProtocolListener(grpcListener, cfg.HTTPServerReadHeaderTimeout)
 	}
 
 	cipherSuites, err := stringToCipherSuites(cfg.CipherSuites)
@@ -591,4 +598,14 @@ func (s *Server) Shutdown() {
 
 	_ = s.HTTPServer.Shutdown(ctx)
 	s.GRPC.GracefulStop()
+}
+
+func newProxyProtocolListener(httpListener net.Listener, readHeaderTimeout time.Duration) net.Listener {
+	// Wraps the listener with a proxy protocol listener.
+	// NOTE: go-proxyproto supports non-PROXY, PROXY v1 and PROXY v2 protocols via the same listener.
+	// Therefore, enabling this feature does not break existing setups.
+	return &proxyproto.Listener{
+		Listener:          httpListener,
+		ReadHeaderTimeout: readHeaderTimeout,
+	}
 }
