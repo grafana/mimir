@@ -28,7 +28,7 @@ type InstantVectorOperator interface {
 	Close()
 }
 
-var EOS = errors.New("operator stream exhausted")
+var EOS = errors.New("operator stream exhausted") //nolint:revive
 
 type SeriesMetadata struct {
 	Labels labels.Labels

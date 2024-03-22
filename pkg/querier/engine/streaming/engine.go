@@ -44,11 +44,11 @@ type Engine struct {
 	lookbackDelta time.Duration
 }
 
-func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+func (e *Engine) NewInstantQuery(_ context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	return newQuery(q, opts, qs, ts, ts, 0, e)
 }
 
-func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+func (e *Engine) NewRangeQuery(_ context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	if interval <= 0 {
 		return nil, fmt.Errorf("%v is not a valid interval for a range query, must be greater than 0", interval)
 	}

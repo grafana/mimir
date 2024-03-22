@@ -36,9 +36,9 @@ func (b *RingBuffer) Points() ([]promql.FPoint, []promql.FPoint) {
 		endOfHeadSegment := endOfTailSegment % len(b.points)
 		endOfTailSegment = len(b.points)
 		return b.points[b.firstIndex:endOfTailSegment], b.points[0:endOfHeadSegment]
-	} else {
-		return b.points[b.firstIndex:endOfTailSegment], nil
 	}
+
+	return b.points[b.firstIndex:endOfTailSegment], nil
 }
 
 // ForEach calls f for each point in this buffer.

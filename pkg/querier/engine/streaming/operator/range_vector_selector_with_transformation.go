@@ -9,6 +9,7 @@ package operator
 import (
 	"context"
 	"fmt"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"

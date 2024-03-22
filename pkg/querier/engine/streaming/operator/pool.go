@@ -41,13 +41,13 @@ var (
 	}}
 
 	// TODO: what is a reasonable upper limit here?
-	floatSlicePool = pool.New(1, 100000, 10, func(size int) interface{} {
+	floatSlicePool = pool.New(1, 100000, 10, func(_ int) interface{} {
 		// Don't allocate a new slice now - we'll allocate one in GetFloatSlice if we need it, so we can differentiate between reused and new slices.
 		return nil
 	})
 
 	// TODO: what is a reasonable upper limit here?
-	boolSlicePool = pool.New(1, 100000, 10, func(size int) interface{} {
+	boolSlicePool = pool.New(1, 100000, 10, func(_ int) interface{} {
 		// Don't allocate a new slice now - we'll allocate one in GetBoolSlice if we need it, so we can differentiate between reused and new slices.
 		return nil
 	})
