@@ -20,8 +20,8 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
@@ -743,22 +743,11 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		ctx = context.Background()
 	)
 
-	createKafkaClusterWithoutCustomConsumerGroupSupport := func(t *testing.T, numPartitions int32) (*kfake.Cluster, string) {
-		cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(numPartitions, topicName))
-		require.NoError(t, err)
-		t.Cleanup(cluster.Close)
-
-		addrs := cluster.ListenAddrs()
-		require.Len(t, addrs, 1)
-
-		return cluster, addrs[0]
-	}
-
 	t.Run("should return 'not exists' if Kafka returns GroupIDNotFound", func(t *testing.T) {
 		t.Parallel()
 
 		var (
-			cluster, clusterAddr = createKafkaClusterWithoutCustomConsumerGroupSupport(t, partitionID+1)
+			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
 			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
 		)
@@ -788,7 +777,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		t.Parallel()
 
 		var (
-			cluster, clusterAddr = createKafkaClusterWithoutCustomConsumerGroupSupport(t, partitionID+1)
+			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
 			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
 		)
@@ -828,7 +817,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		t.Parallel()
 
 		var (
-			cluster, clusterAddr = createKafkaClusterWithoutCustomConsumerGroupSupport(t, partitionID+1)
+			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
 			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
 		)
@@ -866,6 +855,182 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, exists)
 		assert.Equal(t, int64(123), offset)
+	})
+}
+
+func TestPartitionCommitter(t *testing.T) {
+	t.Parallel()
+
+	const (
+		topicName     = "test-topic"
+		consumerGroup = "test-group"
+		partitionID   = 1
+	)
+
+	t.Run("should keep trying to commit offset if the last commit failed, even if the offset has not been incremented", func(t *testing.T) {
+		t.Parallel()
+
+		cluster, clusterAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
+
+		// Mock the cluster to control OffsetCommit request.
+		commitRequestsCount := atomic.NewInt64(0)
+		commitRequestsShouldFail := atomic.NewBool(true)
+
+		cluster.ControlKey(kmsg.OffsetCommit.Int16(), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			res := kreq.ResponseKind().(*kmsg.OffsetCommitResponse)
+			res.Default()
+
+			if commitRequestsShouldFail.Load() {
+				res.Topics = []kmsg.OffsetCommitResponseTopic{
+					{Topic: topicName, Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID, ErrorCode: kerr.InvalidCommitOffsetSize.Code}}},
+				}
+			} else {
+				res.Topics = []kmsg.OffsetCommitResponseTopic{
+					{Topic: topicName, Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID}}},
+				}
+			}
+
+			return res, nil, true
+		})
+
+		logger := testutil.NewLogger(t)
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		client, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, logger)...)
+		require.NoError(t, err)
+		t.Cleanup(client.Close)
+
+		adm := kadm.NewClient(client)
+		reg := prometheus.NewPedanticRegistry()
+
+		interval := time.Second
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, interval, logger, reg)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), committer))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), committer))
+		})
+
+		committer.enqueueOffset(123)
+
+		// Since we mocked the Kafka cluster to fail the OffsetCommit requests, we wait until the
+		// first failure is tracked by the partition committer.
+		require.Eventually(t, func() bool {
+			return promtest.ToFloat64(committer.commitFailuresTotal) > 0
+		}, 5*time.Second, 10*time.Millisecond)
+
+		// At least 1 commit failed. Now we unblock it.
+		commitRequestsShouldFail.Store(false)
+
+		// Now we expect the commit to succeed, once the committer will trigger the commit the next interval.
+		test.Poll(t, 10*interval, nil, func() interface{} {
+			return promtest.GatherAndCompare(reg, strings.NewReader(`
+				# HELP cortex_ingest_storage_reader_last_committed_offset Total last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
+				# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
+				cortex_ingest_storage_reader_last_committed_offset{partition="1"} 124
+
+				# HELP cortex_ingest_storage_reader_offset_commit_failures_total Total number of failed requests to commit the last consumed offset.
+				# TYPE cortex_ingest_storage_reader_offset_commit_failures_total counter
+				cortex_ingest_storage_reader_offset_commit_failures_total{partition="1"} 1
+
+				# HELP cortex_ingest_storage_reader_offset_commit_requests_total Total number of requests issued to commit the last consumed offset (includes both successful and failed requests).
+				# TYPE cortex_ingest_storage_reader_offset_commit_requests_total counter
+				cortex_ingest_storage_reader_offset_commit_requests_total{partition="1"} 2
+			`),
+				"cortex_ingest_storage_reader_offset_commit_requests_total",
+				"cortex_ingest_storage_reader_offset_commit_failures_total",
+				"cortex_ingest_storage_reader_last_committed_offset")
+		})
+
+		// Since we haven't enqueued any other offset and the last enqueued one has been successfully committed,
+		// we expect the committer to not issue any other request in the future.
+		expectedRequestsCount := commitRequestsCount.Load()
+		time.Sleep(3 * interval)
+		assert.Equal(t, expectedRequestsCount, commitRequestsCount.Load())
+	})
+}
+
+func TestPartitionCommitter_commit(t *testing.T) {
+	t.Parallel()
+
+	const (
+		topicName     = "test-topic"
+		consumerGroup = "test-group"
+		partitionID   = 1
+	)
+
+	t.Run("should track metrics on successful commit", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		client, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, log.NewNopLogger())...)
+		require.NoError(t, err)
+		t.Cleanup(client.Close)
+
+		adm := kadm.NewClient(client)
+		reg := prometheus.NewPedanticRegistry()
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, time.Second, log.NewNopLogger(), reg)
+
+		require.NoError(t, committer.commit(context.Background(), 123))
+
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_last_committed_offset Total last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
+			# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
+			cortex_ingest_storage_reader_last_committed_offset{partition="1"} 124
+
+			# HELP cortex_ingest_storage_reader_offset_commit_failures_total Total number of failed requests to commit the last consumed offset.
+			# TYPE cortex_ingest_storage_reader_offset_commit_failures_total counter
+			cortex_ingest_storage_reader_offset_commit_failures_total{partition="1"} 0
+
+			# HELP cortex_ingest_storage_reader_offset_commit_requests_total Total number of requests issued to commit the last consumed offset (includes both successful and failed requests).
+			# TYPE cortex_ingest_storage_reader_offset_commit_requests_total counter
+			cortex_ingest_storage_reader_offset_commit_requests_total{partition="1"} 1
+		`),
+			"cortex_ingest_storage_reader_offset_commit_requests_total",
+			"cortex_ingest_storage_reader_offset_commit_failures_total",
+			"cortex_ingest_storage_reader_last_committed_offset"))
+	})
+
+	t.Run("should track metrics on failed commit", func(t *testing.T) {
+		t.Parallel()
+
+		cluster, clusterAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
+
+		// Mock the cluster to fail any offset commit request.
+		cluster.ControlKey(kmsg.OffsetCommit.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			return nil, errors.New("mocked error"), true
+		})
+
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		client, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, log.NewNopLogger())...)
+		require.NoError(t, err)
+		t.Cleanup(client.Close)
+
+		adm := kadm.NewClient(client)
+		reg := prometheus.NewPedanticRegistry()
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, time.Second, log.NewNopLogger(), reg)
+
+		require.Error(t, committer.commit(context.Background(), 123))
+
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_last_committed_offset Total last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
+			# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
+			cortex_ingest_storage_reader_last_committed_offset{partition="1"} -1
+
+			# HELP cortex_ingest_storage_reader_offset_commit_failures_total Total number of failed requests to commit the last consumed offset.
+			# TYPE cortex_ingest_storage_reader_offset_commit_failures_total counter
+			cortex_ingest_storage_reader_offset_commit_failures_total{partition="1"} 1
+
+			# HELP cortex_ingest_storage_reader_offset_commit_requests_total Total number of requests issued to commit the last consumed offset (includes both successful and failed requests).
+			# TYPE cortex_ingest_storage_reader_offset_commit_requests_total counter
+			cortex_ingest_storage_reader_offset_commit_requests_total{partition="1"} 1
+		`),
+			"cortex_ingest_storage_reader_offset_commit_requests_total",
+			"cortex_ingest_storage_reader_offset_commit_failures_total",
+			"cortex_ingest_storage_reader_last_committed_offset"))
 	})
 }
 
