@@ -13,10 +13,8 @@
   "grafana-agent":
     "command":
       - "run"
-      - "--storage.path"
-      - "/tmp"
-      - "--server.http.listen-addr"
-      - "127.0.0.1:9091"
+      - "--storage.path=/tmp"
+      - "--server.http.listen-addr=127.0.0.1:9091"
       - "/etc/agent-config/grafana-agent.flow"
     "environment":
       "AGENT_MODE": "flow"
