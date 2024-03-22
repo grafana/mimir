@@ -350,12 +350,12 @@ local filename = 'mimir-writes.json';
         },
       )
       .addPanel(
-        $.timeseriesPanel('Kafka record end-to-end latency when catching-up') +
+        $.timeseriesPanel('Kafka record end-to-end latency when starting') +
         $.panelDescription(
-          'Kafka record end-to-end latency when catching-up',
+          'Kafka record end-to-end latency when starting',
           |||
             Time between writing request by distributor to Kafka and reading the record by ingester during catch-up phase, when ingesters are starting.
-            If ingesters are not cathing up in selected time range, this panel will be empty.
+            If ingesters are not starting and catching up in the selected time range, this panel will be empty.
           |||
         ) +
         $.queryPanel(
