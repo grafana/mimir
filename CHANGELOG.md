@@ -30,6 +30,8 @@
 
 ### Jsonnet
 
+* [BUGFIX] Guard against missing samples in KEDA queries. #7691
+
 ### Mimirtool
 
 * [BUGFIX] Fix panic in `loadgen` subcommand. #7629
