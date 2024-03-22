@@ -182,15 +182,15 @@ func (r *PartitionReader) stopDependencies() error {
 
 func (r *PartitionReader) run(ctx context.Context) error {
 	for ctx.Err() == nil {
-		r.processNextFetches(ctx)
+		r.processNextFetches(ctx, "running")
 	}
 
 	return nil
 }
 
-func (r *PartitionReader) processNextFetches(ctx context.Context) {
+func (r *PartitionReader) processNextFetches(ctx context.Context, state string) {
 	fetches := r.client.PollFetches(ctx)
-	r.recordFetchesMetrics(fetches)
+	r.recordFetchesMetrics(fetches, state)
 	r.logFetchErrs(fetches)
 	fetches = filterOutErrFetches(fetches)
 
@@ -234,7 +234,7 @@ func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Conte
 				break
 			}
 
-			r.processNextFetches(ctx)
+			r.processNextFetches(ctx, "starting")
 		}
 
 		if boff.Err() != nil {
@@ -363,7 +363,7 @@ func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {
 	})
 }
 
-func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches) {
+func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches, state string) {
 	var (
 		now        = time.Now()
 		numRecords = 0
@@ -371,7 +371,7 @@ func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches) {
 
 	fetches.EachRecord(func(record *kgo.Record) {
 		numRecords++
-		r.metrics.receiveDelay.Observe(now.Sub(record.Timestamp).Seconds())
+		r.metrics.receiveDelay.WithLabelValues(state).Observe(now.Sub(record.Timestamp).Seconds())
 	})
 
 	r.metrics.fetchesTotal.Add(float64(len(fetches)))
@@ -580,7 +580,7 @@ func (r *partitionCommitter) stop(error) error {
 }
 
 type readerMetrics struct {
-	receiveDelay              prometheus.Histogram
+	receiveDelay              *prometheus.HistogramVec
 	recordsPerFetch           prometheus.Histogram
 	fetchesErrors             prometheus.Counter
 	fetchesTotal              prometheus.Counter
@@ -592,7 +592,7 @@ type readerMetrics struct {
 
 func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetrics {
 	return readerMetrics{
-		receiveDelay: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		receiveDelay: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_receive_delay_seconds",
 			Help:                            "Delay between producing a record and receiving it in the consumer.",
 			NativeHistogramZeroThreshold:    math.Pow(2, -10), // Values below this will be considered to be 0. Equals to 0.0009765625, or about 1ms.
@@ -600,7 +600,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.ExponentialBuckets(0.125, 2, 18), // Buckets between 125ms and 9h.
-		}),
+		}, []string{"phase"}),
 		recordsPerFetch: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingest_storage_reader_records_per_fetch",
 			Help:    "The number of records received by the consumer in a single fetch operation.",

@@ -318,20 +318,52 @@ local filename = 'mimir-writes.json';
           },
         },
       )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      ($.row('Ingester (ingest storage – end-to-end latency)'))
       .addPanel(
-        $.timeseriesPanel('Kafka record end-to-end latency') +
+        $.timeseriesPanel('Kafka record end-to-end latency when ingesters are running') +
         $.panelDescription(
-          'Kafka record end-to-end latency',
+          'Kafka record end-to-end latency when ingesters are running',
           |||
-            Time between writing request by distributor to Kafka and reading the record by ingester.
+            Time between writing request by distributor to Kafka and reading the record by ingester, when ingesters are running.
           |||
         ) +
         $.queryPanel(
           [
-            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            '50th percentile',
+            '99th percentile',
+            '99.9th percentile',
+            '100th percentile',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
+      )
+      .addPanel(
+        $.timeseriesPanel('Kafka record end-to-end latency when catching-up') +
+        $.panelDescription(
+          'Kafka record end-to-end latency when catching-up',
+          |||
+            Time between writing request by distributor to Kafka and reading the record by ingester during catch-up phase, when ingesters are starting.
+            If ingesters are not cathing up in selected time range, this panel will be empty.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
             '50th percentile',
