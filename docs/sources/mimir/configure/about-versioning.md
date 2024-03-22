@@ -170,6 +170,9 @@ The following features are currently experimental:
   - `-ingester.use-ingester-owned-series-for-limits`
   - `-ingester.track-ingester-owned-series`
   - `-ingester.owned-series-update-interval`
+- Server
+  - HTTP PROXY protocol support
+    - `-server.proxy-protocol-enabled`
 
 ## Deprecated features
 
