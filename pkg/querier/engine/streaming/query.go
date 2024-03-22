@@ -30,7 +30,7 @@ type Query struct {
 	result *promql.Result
 }
 
-func NewQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration, engine *Engine) (*Query, error) {
+func newQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration, engine *Engine) (*Query, error) {
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}

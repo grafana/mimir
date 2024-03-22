@@ -64,6 +64,20 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	}
 }
 
+func TestInvalidRangeQueryTime(t *testing.T) {
+	opts := newTestEngineOpts()
+	engine, err := NewEngine(opts)
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	_, err = engine.NewRangeQuery(ctx, nil, nil, "vector(0)", time.Now(), time.Now(), 0)
+	require.EqualError(t, err, "0s is not a valid interval for a range query, must be greater than 0")
+
+	start := time.Date(2024, 3, 22, 3, 0, 0, 0, time.UTC)
+	_, err = engine.NewRangeQuery(ctx, nil, nil, "vector(0)", start, start.Add(-time.Hour), time.Second)
+	require.EqualError(t, err, "range query time range is invalid: end time 2024-03-22T02:00:00Z is before start time 2024-03-22T03:00:00Z")
+}
+
 func newTestEngineOpts() promql.EngineOpts {
 	return promql.EngineOpts{
 		Logger:               nil,

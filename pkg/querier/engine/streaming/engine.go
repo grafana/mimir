@@ -8,6 +8,7 @@ package streaming
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/promql"
@@ -44,12 +45,18 @@ type Engine struct {
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	// TODO: do we need to do anything more for instant queries?
-	return e.NewRangeQuery(ctx, q, opts, qs, ts, ts, 0)
+	return newQuery(q, opts, qs, ts, ts, 0, e)
 }
 
 func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
-	// TODO: don't allow interval == 0
+	if interval <= 0 {
+		return nil, fmt.Errorf("%v is not a valid interval for a range query, must be greater than 0", interval)
+	}
+
+	if end.Before(start) {
+		return nil, fmt.Errorf("range query time range is invalid: end time %v is before start time %v", end.Format(time.RFC3339), start.Format(time.RFC3339))
+	}
+
 	// TODO: check that expression produces the expected kind of result (scalar or instant vector)
-	return NewQuery(q, opts, qs, start, end, interval, e)
+	return newQuery(q, opts, qs, start, end, interval, e)
 }
