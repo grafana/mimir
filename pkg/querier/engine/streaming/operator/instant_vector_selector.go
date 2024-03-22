@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
@@ -20,115 +19,44 @@ import (
 )
 
 type InstantVectorSelector struct {
-	Queryable     storage.Queryable
-	Start         time.Time
-	End           time.Time
-	Interval      time.Duration
-	LookbackDelta time.Duration
-	Matchers      []*labels.Matcher
+	Selector *Selector
 
-	querier storage.Querier
-	// TODO: create separate type for linked list of SeriesBatches, use here and in RangeVectorSelectorWithTransformation
-	currentSeriesBatch        *SeriesBatch
-	seriesIndexInCurrentBatch int
-	chunkIterator             chunkenc.Iterator
-	memoizedIterator          *storage.MemoizedSeriesIterator
-
-	// TODO: is it cheaper to just recompute these every time we need them rather than holding them?
-	startTimestamp       int64
-	endTimestamp         int64
-	intervalMilliseconds int64
+	chunkIterator    chunkenc.Iterator
+	memoizedIterator *storage.MemoizedSeriesIterator
 }
 
 var _ InstantVectorOperator = &InstantVectorSelector{}
 
 func (v *InstantVectorSelector) Series(ctx context.Context) ([]SeriesMetadata, error) {
-	if v.currentSeriesBatch != nil {
-		panic("should not call Series() multiple times")
-	}
-
-	v.startTimestamp = timestamp.FromTime(v.Start)
-	v.endTimestamp = timestamp.FromTime(v.End)
-	v.intervalMilliseconds = durationMilliseconds(v.Interval)
-
-	start := v.startTimestamp - durationMilliseconds(v.LookbackDelta)
-
-	hints := &storage.SelectHints{
-		Start: start,
-		End:   v.endTimestamp,
-		Step:  v.intervalMilliseconds,
-		// TODO: do we need to include other hints like Func, By, Grouping?
-	}
-
-	var err error
-	v.querier, err = v.Queryable.Querier(start, v.endTimestamp)
-	if err != nil {
-		return nil, err
-	}
-
-	ss := v.querier.Select(ctx, true, hints, v.Matchers...)
-	v.currentSeriesBatch = GetSeriesBatch()
-	incompleteBatch := v.currentSeriesBatch
-	totalSeries := 0
-
-	for ss.Next() {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		if len(incompleteBatch.series) == cap(incompleteBatch.series) {
-			nextBatch := GetSeriesBatch()
-			incompleteBatch.next = nextBatch
-			incompleteBatch = nextBatch
-		}
-
-		incompleteBatch.series = append(incompleteBatch.series, ss.At())
-		totalSeries++
-	}
-
-	metadata := GetSeriesMetadataSlice(totalSeries)
-	batch := v.currentSeriesBatch
-	for batch != nil {
-		for _, s := range batch.series {
-			metadata = append(metadata, SeriesMetadata{Labels: s.Labels()})
-		}
-
-		batch = batch.next
-	}
-
-	return metadata, ss.Err()
+	return v.Selector.Series(ctx)
 }
 
 func (v *InstantVectorSelector) Next(ctx context.Context) (InstantVectorSeriesData, error) {
-	if v.currentSeriesBatch == nil || len(v.currentSeriesBatch.series) == 0 {
-		return InstantVectorSeriesData{}, EOS
-	}
-
 	if ctx.Err() != nil {
 		return InstantVectorSeriesData{}, ctx.Err()
 	}
 
 	if v.memoizedIterator == nil {
-		v.memoizedIterator = storage.NewMemoizedEmptyIterator(durationMilliseconds(v.LookbackDelta))
+		v.memoizedIterator = storage.NewMemoizedEmptyIterator(durationMilliseconds(v.Selector.LookbackDelta))
 	}
 
-	v.chunkIterator = v.currentSeriesBatch.series[v.seriesIndexInCurrentBatch].Iterator(v.chunkIterator)
+	var err error
+	v.chunkIterator, err = v.Selector.Next(v.chunkIterator)
+	if err != nil {
+		return InstantVectorSeriesData{}, err
+	}
+
 	v.memoizedIterator.Reset(v.chunkIterator)
-	v.seriesIndexInCurrentBatch++
 
-	if v.seriesIndexInCurrentBatch == len(v.currentSeriesBatch.series) {
-		b := v.currentSeriesBatch
-		v.currentSeriesBatch = v.currentSeriesBatch.next
-		PutSeriesBatch(b)
-		v.seriesIndexInCurrentBatch = 0
-	}
-
-	numSteps := stepCount(v.startTimestamp, v.endTimestamp, v.intervalMilliseconds)
+	startTimestamp := timestamp.FromTime(v.Selector.Start)
+	endTimestamp := timestamp.FromTime(v.Selector.End)
+	intervalMilliseconds := durationMilliseconds(v.Selector.Interval)
+	numSteps := stepCount(startTimestamp, endTimestamp, intervalMilliseconds)
 	data := InstantVectorSeriesData{
 		Floats: GetFPointSlice(numSteps),
 	}
 
-	for ts := v.startTimestamp; ts <= v.endTimestamp; ts += v.intervalMilliseconds {
+	for ts := startTimestamp; ts <= endTimestamp; ts += intervalMilliseconds {
 		var t int64
 		var val float64
 		var h *histogram.FloatHistogram
@@ -153,7 +81,7 @@ func (v *InstantVectorSelector) Next(ctx context.Context) (InstantVectorSeriesDa
 			if h != nil {
 				panic("don't support histograms")
 			}
-			if !ok || t < ts-durationMilliseconds(v.LookbackDelta) {
+			if !ok || t < ts-durationMilliseconds(v.Selector.LookbackDelta) {
 				continue
 			}
 		}
@@ -172,15 +100,8 @@ func (v *InstantVectorSelector) Next(ctx context.Context) (InstantVectorSeriesDa
 }
 
 func (v *InstantVectorSelector) Close() {
-	for v.currentSeriesBatch != nil {
-		b := v.currentSeriesBatch
-		v.currentSeriesBatch = v.currentSeriesBatch.next
-		PutSeriesBatch(b)
-	}
-
-	if v.querier != nil {
-		_ = v.querier.Close()
-		v.querier = nil
+	if v.Selector != nil {
+		v.Selector.Close()
 	}
 }
 
@@ -190,9 +111,4 @@ func stepCount(start, end, interval int64) int {
 
 func durationMilliseconds(d time.Duration) int64 {
 	return int64(d / (time.Millisecond / time.Nanosecond))
-}
-
-type SeriesBatch struct {
-	series []storage.Series
-	next   *SeriesBatch
 }

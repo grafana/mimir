@@ -90,12 +90,14 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 		}
 
 		return &operator.InstantVectorSelector{
-			Queryable:     q.queryable,
-			Start:         q.statement.Start,
-			End:           q.statement.End,
-			Interval:      interval,
-			LookbackDelta: lookbackDelta,
-			Matchers:      e.LabelMatchers,
+			Selector: &operator.Selector{
+				Queryable:     q.queryable,
+				Start:         q.statement.Start,
+				End:           q.statement.End,
+				Interval:      interval,
+				LookbackDelta: lookbackDelta,
+				Matchers:      e.LabelMatchers,
+			},
 		}, nil
 	case *parser.AggregateExpr:
 		if e.Op != parser.SUM {

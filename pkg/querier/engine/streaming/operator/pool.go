@@ -3,10 +3,11 @@
 package operator
 
 import (
+	"sync"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/pool"
-	"sync"
 )
 
 // TODO: are there generic versions of pool.Pool and sync.Pool that we can use, and then eliminate the helper functions?
