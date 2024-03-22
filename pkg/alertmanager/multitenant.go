@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -592,7 +593,7 @@ func (am *MultitenantAlertmanager) stopping(_ error) error {
 // loadAlertmanagerConfigs Loads (and filters) the alertmanagers configuration from object storage, taking into consideration the sharding strategy. Returns:
 // - The list of discovered users (all users with a configuration in storage)
 // - The configurations of users owned by this instance.
-func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]alertspb.AlertConfigDesc, error) {
+func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]alertstore.ConfigDesc, error) {
 	// Find all users with an alertmanager config.
 	allUserIDs, err := am.store.ListAllUsers(ctx)
 	if err != nil {
@@ -610,7 +611,7 @@ func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) 
 	numUsersOwned := len(ownedUserIDs)
 
 	// Load the configs for the owned users.
-	configs, err := am.store.GetAlertConfigs(ctx, ownedUserIDs)
+	configs, err := am.store.GetAlertConfigsWithOptions(ctx, ownedUserIDs, am.cfg.GrafanaAlertmanagerCompatibilityEnabled)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to load alertmanager configurations for owned users")
 	}
@@ -631,7 +632,7 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 	return alertmanagers.Includes(am.ringLifecycler.GetInstanceAddr())
 }
 
-func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertConfigDesc) {
+func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertstore.ConfigDesc) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgs))
 	for user, cfg := range cfgs {
 		err := am.setConfig(cfg)
@@ -670,7 +671,8 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertCon
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
-func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error {
+func (am *MultitenantAlertmanager) setConfig(dualCfg alertstore.ConfigDesc) error {
+	cfg := dualCfg.Merge()
 	var userAmConfig *amconfig.Config
 	var err error
 	var hasTemplateChanges bool
@@ -781,7 +783,12 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amconfig.Config, rawCfg string) (*Alertmanager, error) {
+type combinedConfig struct {
+	upstream         *amconfig.Config
+	grafanaReceivers []*definition.PostableGrafanaReceiver
+}
+
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *combinedConfig, rawCfg string) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)

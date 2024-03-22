@@ -20,6 +20,7 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
@@ -101,6 +102,44 @@ func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string
 
 		cfgsMx.Lock()
 		cfgs[userID] = cfg
+		cfgsMx.Unlock()
+
+		return nil
+	})
+
+	return cfgs, err
+}
+
+func (s *BucketAlertStore) GetAlertConfigsWithOptions(ctx context.Context, userIDs []string, withGrafanaConfig bool) (map[string]alertstore.ConfigDesc, error) {
+	var (
+		cfgsMx = sync.Mutex{}
+		cfgs   = make(map[string]alertstore.ConfigDesc, len(userIDs))
+	)
+
+	err := concurrency.ForEachJob(ctx, len(userIDs), fetchConcurrency, func(ctx context.Context, idx int) error {
+		userID := userIDs[idx]
+
+		cfg, err := s.getAlertConfig(ctx, userID)
+		if s.alertsBucket.IsObjNotFoundErr(err) {
+			return nil
+		} else if err != nil {
+			return errors.Wrapf(err, "failed to fetch alertmanager config for user %s", userID)
+		}
+
+		r := alertstore.ConfigDesc{}
+
+		if withGrafanaConfig {
+			grafanaCfg, err := s.getGrafanaAlertConfig(ctx, userID)
+			if s.alertsBucket.IsObjNotFoundErr(err) {
+				// what do we here?
+			}
+
+			r.Grafana = grafanaCfg
+		}
+
+		cfgsMx.Lock()
+		r.Upstream = cfg
+		cfgs[userID] = r
 		cfgsMx.Unlock()
 
 		return nil
@@ -254,6 +293,12 @@ func (s *BucketAlertStore) DeleteFullGrafanaState(ctx context.Context, userID st
 func (s *BucketAlertStore) getAlertConfig(ctx context.Context, userID string) (alertspb.AlertConfigDesc, error) {
 	config := alertspb.AlertConfigDesc{}
 	err := s.get(ctx, s.getUserBucket(userID), userID, &config)
+	return config, err
+}
+
+func (s *BucketAlertStore) getGrafanaAlertConfig(ctx context.Context, userID string) (alertspb.GrafanaAlertConfigDesc, error) {
+	config := alertspb.GrafanaAlertConfigDesc{}
+	err := s.get(ctx, s.getGrafanaAlertmanagerUserBucket(userID), grafanaConfigName, &config)
 	return config, err
 }
 

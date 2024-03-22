@@ -7,6 +7,7 @@ package alertstore
 
 import (
 	"context"
+	amconfig "github.com/prometheus/alertmanager/config"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -18,6 +19,36 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
+type ConfigDesc struct {
+	// Prometheus metrics
+	Upstream alertspb.AlertConfigDesc
+	Grafana  alertspb.GrafanaAlertConfigDesc
+}
+
+func (d ConfigDesc) Merge() alertspb.AlertConfigDesc {
+	// Is promote enabled?
+	if !d.Grafana.Promote {
+		return d.Upstream
+	}
+	// If you don't have a grafana config or is the default configuration, you should only use upstream.
+	if d.Grafana.RawConfig == "" || d.Grafana.Default {
+		return d.Upstream
+	}
+
+	// TOOD: Do we have the default upstream config?
+	upstream, err := amconfig.Load(d.Upstream.RawConfig)
+
+	// If we got this far, this means we have a Grafana Config and we have the default upstream config. We should merge.
+	// Parse the configuration + templates and merge them.
+
+	return alertspb.AlertConfigDesc{
+		User:      d.Upstream.User,
+		RawConfig: d.Upstream.RawConfig,
+		Templates: d.Upstream.Templates,
+	}
+
+}
+
 // AlertStore stores and configures users rule configs
 type AlertStore interface {
 	// ListAllUsers returns all users with alertmanager configuration.
@@ -27,6 +58,8 @@ type AlertStore interface {
 	// If any of the provided users has no configuration, then this function does not return an
 	// error but the returned configs will not include the missing users.
 	GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDesc, error)
+
+	GetAlertConfigsWithOptions(ctx context.Context, userIDs []string, withGrafanaConfig bool) (map[string]ConfigDesc, error)
 
 	// GetAlertConfig loads and returns the alertmanager configuration for the given user.
 	GetAlertConfig(ctx context.Context, user string) (alertspb.AlertConfigDesc, error)

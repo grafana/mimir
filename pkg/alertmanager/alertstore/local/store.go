@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/alertmanager/config"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 )
 
 const (
@@ -41,6 +42,10 @@ func (cfg *StoreConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 // Store is used to load user alertmanager configs from a local disk
 type Store struct {
 	cfg StoreConfig
+}
+
+func (f *Store) GetAlertConfigsWithOptions(_ context.Context, _ []string, _ bool) (map[string]alertstore.ConfigDesc, error) {
+	return nil, errGrafanaStateAndConfig
 }
 
 func (f *Store) GetFullGrafanaState(_ context.Context, _ string) (alertspb.FullStateDesc, error) {

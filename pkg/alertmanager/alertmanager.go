@@ -313,9 +313,9 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg string) error {
-	templateFiles := make([]string, len(conf.Templates))
-	for i, t := range conf.Templates {
+func (am *Alertmanager) ApplyConfig(userID string, conf *combinedConfig, rawCfg string) error {
+	templateFiles := make([]string, len(conf.upstream.Templates))
+	for i, t := range conf.upstream.Templates {
 		templateFilepath, err := safeTemplateFilepath(filepath.Join(am.cfg.TenantDataDir, templatesDir), t)
 		if err != nil {
 			return err
@@ -330,7 +330,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	}
 	tmpl.ExternalURL = am.cfg.ExternalURL
 
-	am.api.Update(conf, func(_ model.LabelSet) {})
+	am.api.Update(conf.upstream, func(_ model.LabelSet) {})
 
 	// Ensure inhibitor is set before being called
 	if am.inhibitor != nil {
@@ -342,7 +342,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		am.dispatcher.Stop()
 	}
 
-	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules, am.marker, log.With(am.logger, "component", "inhibitor"))
+	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.upstream.InhibitRules, am.marker, log.With(am.logger, "component", "inhibitor"))
 
 	waitFunc := clusterWait(am.state.Position, am.cfg.PeerTimeout)
 
@@ -356,7 +356,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
 
-	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
+	integrationsMap, err := buildIntegrationsMap(conf.upstream.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      userID,
@@ -372,12 +372,17 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		return nil
 	}
 
-	timeIntervals := make(map[string][]timeinterval.TimeInterval, len(conf.MuteTimeIntervals)+len(conf.TimeIntervals))
-	for _, ti := range conf.MuteTimeIntervals {
+	//TODO: Build Grafana Receivers and Merge them.
+	// When you build you need to make sure to prefix grafana reicers with grafana_
+	grafanaReceivers := make(map[string][]notify.Integration, len(conf.grafanaReceivers))
+	integrationsMap = integrationsMap + grafanaReceivers
+
+	timeIntervals := make(map[string][]timeinterval.TimeInterval, len(conf.upstream.MuteTimeIntervals)+len(conf.upstream.TimeIntervals))
+	for _, ti := range conf.upstream.MuteTimeIntervals {
 		timeIntervals[ti.Name] = ti.TimeIntervals
 	}
 
-	for _, ti := range conf.TimeIntervals {
+	for _, ti := range conf.upstream.TimeIntervals {
 		timeIntervals[ti.Name] = ti.TimeIntervals
 	}
 	intervener := timeinterval.NewIntervener(timeIntervals)
@@ -394,7 +399,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	am.lastPipeline = pipeline
 	am.dispatcher = dispatch.NewDispatcher(
 		am.alerts,
-		dispatch.NewRoute(conf.Route, nil),
+		dispatch.NewRoute(conf.upstream.Route, nil),
 		pipeline,
 		am.marker,
 		timeoutFunc,
