@@ -66,17 +66,37 @@ func TestShardActiveSeriesResponseDecoder(t *testing.T) {
 	}
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			r := strings.NewReader(tc.input)
+			var dataStr strings.Builder
 
+			errCh := make(chan error, 1)
+
+			r := strings.NewReader(tc.input)
 			d := borrowShardActiveSeriesResponseDecoder(context.Background(), io.NopCloser(r))
-			err := d.decode()
+			chunkCh, err := d.decode()
+			if err == nil {
+				go func() {
+					errCh <- d.streamData()
+				}()
+
+				// Drain the data channel.
+				for chunk := range chunkCh {
+					if chunk.done {
+						break
+					}
+					dataStr.WriteString(chunk.buff.String())
+				}
+			} else {
+				errCh <- err
+			}
+
+			err = <-errCh
 
 			if len(tc.expectedError) > 0 {
 				require.Error(t, err)
-				require.Equal(t, tc.expectedError, err.Error())
+				require.EqualError(t, err, tc.expectedError)
 			} else {
 				require.NoError(t, err)
-				require.Equal(t, tc.expectedOutput, d.dataValue())
+				require.Equal(t, tc.expectedOutput, dataStr.String())
 			}
 		})
 	}
