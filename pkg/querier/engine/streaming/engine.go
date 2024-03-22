@@ -57,6 +57,5 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 		return nil, fmt.Errorf("range query time range is invalid: end time %v is before start time %v", end.Format(time.RFC3339), start.Format(time.RFC3339))
 	}
 
-	// TODO: check that expression produces the expected kind of result (scalar or instant vector)
 	return newQuery(q, opts, qs, start, end, interval, e)
 }

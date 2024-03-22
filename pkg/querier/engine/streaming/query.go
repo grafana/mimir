@@ -53,6 +53,12 @@ func newQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, sta
 		},
 	}
 
+	if !q.IsInstant() {
+		if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
+			return nil, fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(expr.Type()))
+		}
+	}
+
 	q.root, err = q.convertToOperator(expr)
 	if err != nil {
 		return nil, err
