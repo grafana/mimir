@@ -3,7 +3,6 @@
 package compactor
 
 import (
-	"context"
 	"path"
 	"testing"
 	"time"
@@ -131,7 +130,7 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 				userBucket.MockAttributes(path.Join(b.meta.ULID.String(), block.MetaFilename), b.attrs, b.attrsErr)
 			}
 
-			elapsed, meta, err := jobWaitPeriodElapsed(context.Background(), job, testData.waitPeriod, userBucket)
+			elapsed, meta, err := jobWaitPeriodElapsed(job, testData.waitPeriod)
 			if testData.expectedErr != "" {
 				require.Error(t, err)
 				assert.ErrorContains(t, err, testData.expectedErr)

@@ -650,7 +650,7 @@ type BucketCompactorMetrics struct {
 	groupCompactionRunsCompleted       prometheus.Counter
 	groupCompactionRunsFailed          prometheus.Counter
 	groupCompactions                   prometheus.Counter
-	blockCompactionDelay               *prometheus.SummaryVec
+	blockCompactionDelay               *prometheus.HistogramVec
 	compactionBlocksVerificationFailed prometheus.Counter
 	blocksMarkedForDeletion            prometheus.Counter
 	blocksMarkedForNoCompact           *prometheus.CounterVec
@@ -676,9 +676,13 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Name: "cortex_compactor_group_compactions_total",
 			Help: "Total number of group compaction attempts that resulted in new block(s).",
 		}),
-		blockCompactionDelay: promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
-			Name: "cortex_compactor_block_compaction_delay_seconds",
-			Help: "Delay between a block being created and successfully compacting it in seconds.",
+		blockCompactionDelay: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_compactor_block_compaction_delay_seconds",
+			Help:                            "Delay between a block being created and successfully compacting it in seconds.",
+			Buckets:                         []float64{1.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1200.0, 2400.0, 3600.0, 7200.0},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}, []string{"level"}),
 		compactionBlocksVerificationFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_blocks_verification_failures_total",
@@ -923,7 +927,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		}
 
 		// Skip jobs for which the wait period hasn't been honored yet.
-		jobs = c.filterJobsByWaitPeriod(ctx, jobs)
+		jobs = c.filterJobsByWaitPeriod(jobs)
 
 		// Sort jobs based on the configured ordering algorithm.
 		jobs = c.sortJobs(jobs)
@@ -1009,9 +1013,9 @@ func (c *BucketCompactor) filterOwnJobs(jobs []*Job) ([]*Job, error) {
 }
 
 // filterJobsByWaitPeriod filters out jobs for which the configured wait period hasn't been honored yet.
-func (c *BucketCompactor) filterJobsByWaitPeriod(ctx context.Context, jobs []*Job) []*Job {
+func (c *BucketCompactor) filterJobsByWaitPeriod(jobs []*Job) []*Job {
 	for i := 0; i < len(jobs); {
-		if elapsed, notElapsedBlock, err := jobWaitPeriodElapsed(ctx, jobs[i], c.waitPeriod, c.bkt); err != nil {
+		if elapsed, notElapsedBlock, err := jobWaitPeriodElapsed(jobs[i], c.waitPeriod); err != nil {
 			level.Warn(c.logger).Log("msg", "not enforcing compaction wait period because the check if compaction job contains recently uploaded blocks has failed", "groupKey", jobs[i].Key(), "err", err)
 
 			// Keep the job.
