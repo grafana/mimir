@@ -69,6 +69,37 @@ func TestPartitionReader(t *testing.T) {
 	assert.Equal(t, [][]byte{content, content}, records)
 }
 
+func TestPartitionReader_logFetchErrors(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	require.NoError(t, err)
+
+	reader.logFetchErrors(kgo.Fetches{
+		kgo.Fetch{Topics: []kgo.FetchTopic{
+			{
+				Topic: topicName,
+				Partitions: []kgo.FetchPartition{
+					{Partition: partitionID, Err: nil},
+					{Partition: partitionID, Err: context.Canceled},                            // not counted in metrics
+					{Partition: partitionID, Err: fmt.Errorf("wrapped: %w", context.Canceled)}, // not counted in metrics
+					{Partition: partitionID, Err: fmt.Errorf("real error")},                    // counted
+				},
+			},
+		}},
+	})
+
+	assert.NoError(t, promtest.GatherAndCompare(cfg.registry, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_fetch_errors_total The number of fetch errors encountered by the consumer.
+        	# TYPE cortex_ingest_storage_reader_fetch_errors_total counter
+        	cortex_ingest_storage_reader_fetch_errors_total 1
+	`), "cortex_ingest_storage_reader_fetch_errors_total"))
+}
+
 func TestPartitionReader_ConsumerError(t *testing.T) {
 	const (
 		topicName   = "test"
@@ -1073,7 +1104,7 @@ type readerTestCfg struct {
 	kafka          KafkaConfig
 	partitionID    int32
 	consumer       recordConsumer
-	registry       prometheus.Registerer
+	registry       *prometheus.Registry
 	logger         log.Logger
 	commitInterval time.Duration
 }
@@ -1104,7 +1135,7 @@ func withConsumeFromPositionAtStartup(position string) func(cfg *readerTestCfg) 
 	}
 }
 
-func withRegistry(reg prometheus.Registerer) func(cfg *readerTestCfg) {
+func withRegistry(reg *prometheus.Registry) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
 		cfg.registry = reg
 	}
