@@ -191,7 +191,7 @@ func (r *PartitionReader) run(ctx context.Context) error {
 func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver prometheus.Observer) {
 	fetches := r.client.PollFetches(ctx)
 	r.recordFetchesMetrics(fetches, delayObserver)
-	r.logFetchErrs(fetches)
+	r.logFetchErrors(fetches)
 	fetches = filterOutErrFetches(fetches)
 
 	// TODO consumeFetches() may get interrupted in the middle because of ctx canceled due to PartitionReader stopped.
@@ -274,12 +274,16 @@ func isErrFetch(fetch kgo.Fetch) bool {
 	return false
 }
 
-func (r *PartitionReader) logFetchErrs(fetches kgo.Fetches) {
+func (r *PartitionReader) logFetchErrors(fetches kgo.Fetches) {
 	mErr := multierror.New()
-	fetches.EachError(func(s string, i int32, err error) {
+	fetches.EachError(func(topic string, partition int32, err error) {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+
 		// kgo advises to "restart" the kafka client if the returned error is a kerr.Error.
 		// Recreating the client would cause duplicate metrics registration, so we don't do it for now.
-		mErr.Add(fmt.Errorf("topic %q, partition %d: %w", s, i, err))
+		mErr.Add(fmt.Errorf("topic %q, partition %d: %w", topic, partition, err))
 	})
 	if len(mErr) == 0 {
 		return

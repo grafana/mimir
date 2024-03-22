@@ -966,6 +966,30 @@ groups:
     for: 15m
     labels:
       severity: critical
+  - alert: MimirIngesterFailedToReadRecordsFromKafka
+    annotations:
+      message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} is failing to read records from Kafka.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailedtoreadrecordsfromkafka
+    expr: |
+      sum by(cluster, namespace, pod, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[1m]))
+      > 0
+    for: 5m
+    labels:
+      severity: critical
+  - alert: MimirIngesterKafkaFetchErrorsRateTooHigh
+    annotations:
+      message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} is receiving fetch errors when reading records from Kafka.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterkafkafetcherrorsratetoohigh
+    expr: |
+      sum by (cluster, namespace, pod) (rate (cortex_ingest_storage_reader_fetch_errors_total}[5m]))
+      /
+      sum by (cluster, namespace, pod) (rate (cortex_ingest_storage_reader_fetches_total[5m]))
+      > 0.1
+    for: 15m
+    labels:
+      severity: critical
 - name: mimir_continuous_test
   rules:
   - alert: MimirContinuousTestNotRunningOnWrites
