@@ -294,6 +294,8 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		// Mock Kafka to fail the Fetch request.
 		cluster.ControlKey(int16(kmsg.Fetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
 			return nil, errors.New("mocked error"), true
 		})
 
@@ -304,7 +306,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		t.Log("produced 2 records")
 
 		// Create and start the reader. We expect the reader to start even if Fetch is failing.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(0))
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 	})
@@ -675,6 +677,8 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		// Mock Kafka to always fail the ListOffsets request.
 		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
 			listOffsetsRequestsCount.Inc()
 			return nil, errors.New("mocked error"), true
 		})
@@ -710,6 +714,8 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		// Mock Kafka to always fail the Fetch request.
 		cluster.ControlKey(int16(kmsg.Fetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
 			fetchRequestsCount.Inc()
 			return nil, errors.New("mocked error"), true
 		})
