@@ -33,6 +33,7 @@ local filename = 'mimir-overview.json';
     assert std.md5(filename) == 'ffcd83628d7d4b5a03d1cafd159e6c9c' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Overview') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addShowNativeLatencyVariable()
 
     .addRow(
       $.row('%(product)s cluster health' % $._config)
@@ -53,9 +54,21 @@ local filename = 'mimir-overview.json';
           'Status',
           [
             // Write failures.
-            if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate else $.queries.distributor.writeFailuresRate,
+            utils.showNativeHistogramQuery(
+              if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate else $.queries.distributor.writeFailuresRate
+            ),
+            // Write failures but from classic histograms.
+            utils.showClassicHistogramQuery(
+              if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate else $.queries.distributor.writeFailuresRate
+            ),
             // Read failures.
-            if $._config.gateway_enabled then $.queries.gateway.readFailuresRate else $.queries.query_frontend.readFailuresRate,
+            utils.showNativeHistogramQuery(
+              if $._config.gateway_enabled then $.queries.gateway.readFailuresRate else $.queries.query_frontend.readFailuresRate,
+            ),
+            // Read failures but from classic histograms.
+            utils.showClassicHistogramQuery(
+              if $._config.gateway_enabled then $.queries.gateway.readFailuresRate else $.queries.query_frontend.readFailuresRate,
+            ),
             // Rule evaluation failures.
             $.queries.ruler.evaluations.failuresRate,
             // Alerting notifications.
@@ -84,7 +97,7 @@ local filename = 'mimir-overview.json';
             // Object storage failures.
             $.queries.storage.failuresRate,
           ],
-          ['Writes', 'Reads', 'Rule evaluations', 'Alerting notifications', 'Object storage']
+          ['Writes', 'Writes', 'Reads', 'Reads', 'Rule evaluations', 'Alerting notifications', 'Object storage']
         )
       )
       .addPanel(
