@@ -138,7 +138,7 @@ func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (Insta
 
 	numSteps := stepCount(m.startTimestamp, m.endTimestamp, m.intervalMilliseconds)
 	data := InstantVectorSeriesData{
-		Floats: GetFPointSlice(numSteps),
+		Floats: GetFPointSlice(numSteps), // TODO: only allocate this if we have any floats
 	}
 
 	// TODO: test behaviour with resets, missing points, extrapolation, stale markers

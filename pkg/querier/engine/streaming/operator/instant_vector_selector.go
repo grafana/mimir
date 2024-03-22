@@ -48,12 +48,14 @@ func (v *InstantVectorSelector) Next(ctx context.Context) (InstantVectorSeriesDa
 
 	v.memoizedIterator.Reset(v.chunkIterator)
 
+	// TODO: should we compute these once upfront in Series() or in Selector?
 	startTimestamp := timestamp.FromTime(v.Selector.Start)
 	endTimestamp := timestamp.FromTime(v.Selector.End)
 	intervalMilliseconds := durationMilliseconds(v.Selector.Interval)
 	numSteps := stepCount(startTimestamp, endTimestamp, intervalMilliseconds)
+
 	data := InstantVectorSeriesData{
-		Floats: GetFPointSlice(numSteps),
+		Floats: GetFPointSlice(numSteps), // TODO: only allocate this if we have any floats
 	}
 
 	for ts := startTimestamp; ts <= endTimestamp; ts += intervalMilliseconds {
