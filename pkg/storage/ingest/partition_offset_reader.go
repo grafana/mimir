@@ -44,7 +44,7 @@ type partitionOffsetReader struct {
 	// Metrics.
 	lastProducedOffsetRequestsTotal prometheus.Counter
 	lastProducedOffsetFailuresTotal prometheus.Counter
-	lastProducedOffsetLatency       prometheus.Summary
+	lastProducedOffsetLatency       prometheus.Histogram
 }
 
 func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
@@ -65,13 +65,14 @@ func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int3
 			Help:        "Total number of failed requests to get the last produced offset.",
 			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
 		}),
-		lastProducedOffsetLatency: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
-			Name:        "cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds",
-			Help:        "The duration of requests to fetch the last produced offset of a given partition.",
-			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
-			Objectives:  latencySummaryObjectives,
-			MaxAge:      time.Minute,
-			AgeBuckets:  10,
+		lastProducedOffsetLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds",
+			Help:                            "The duration of requests to fetch the last produced offset of a given partition.",
+			ConstLabels:                     prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			Buckets:                         prometheus.DefBuckets,
 		}),
 	}
 

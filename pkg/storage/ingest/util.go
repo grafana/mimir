@@ -18,16 +18,6 @@ import (
 var (
 	// Regular expression used to parse the ingester numeric ID.
 	ingesterIDRegexp = regexp.MustCompile("-([0-9]+)$")
-
-	// The Prometheus summary objectives used when tracking latency.
-	latencySummaryObjectives = map[float64]float64{
-		0.5:   0.05,
-		0.90:  0.01,
-		0.99:  0.001,
-		0.995: 0.001,
-		0.999: 0.001,
-		1:     0.001,
-	}
 )
 
 // IngesterPartitionID returns the partition ID owner the the given ingester.

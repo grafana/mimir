@@ -12,10 +12,13 @@
       - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards"
   "grafana-agent":
     "command":
-      - "-config.file=/etc/agent-config/grafana-agent.yaml"
-      - "-metrics.wal-directory=/tmp"
-      - "-server.http.address=127.0.0.1:9091"
-    "image": "grafana/agent:v0.37.3"
+      - "run"
+      - "--storage.path=/tmp"
+      - "--server.http.listen-addr=127.0.0.1:9091"
+      - "/etc/agent-config/grafana-agent.flow"
+    "environment":
+      "AGENT_MODE": "flow"
+    "image": "grafana/agent:v0.40.0"
     "ports":
       - "9091:9091"
     "volumes":

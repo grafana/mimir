@@ -184,10 +184,13 @@ std.manifestYamlDoc({
     // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
     // until metadata remote write is not supported by Prometheus).
     'grafana-agent': {
-      image: 'grafana/agent:v0.37.3',
-      command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-metrics.wal-directory=/tmp', '-server.http.address=127.0.0.1:9091'],
+      image: 'grafana/agent:v0.40.0',
+      command: ['run', '--storage.path=/tmp', '--server.http.listen-addr=127.0.0.1:9091', '/etc/agent-config/grafana-agent.flow'],
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],
+      environment: {
+        AGENT_MODE: 'flow',
+      },
     },
   },
 
