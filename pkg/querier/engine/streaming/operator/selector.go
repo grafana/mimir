@@ -33,9 +33,6 @@ type Selector struct {
 	seriesIndexInCurrentBatch int
 }
 
-// TODO: incorporate changes required for range vector selector
-// - Need to incorporate s.Range
-// - Range vector selector will need to drop metric name on returned metadata
 func (s *Selector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	if s.currentSeriesBatch != nil {
 		return nil, errors.New("should not call Selector.Series() multiple times")
@@ -47,14 +44,14 @@ func (s *Selector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 
 	startTimestamp := timestamp.FromTime(s.Start)
 	endTimestamp := timestamp.FromTime(s.End)
-	intervalMilliseconds := durationMilliseconds(s.Interval)
-
-	start := startTimestamp - durationMilliseconds(s.LookbackDelta)
+	rangeMilliseconds := durationMilliseconds(s.Range)
+	start := startTimestamp - durationMilliseconds(s.LookbackDelta) - rangeMilliseconds
 
 	hints := &storage.SelectHints{
 		Start: start,
 		End:   endTimestamp,
-		Step:  intervalMilliseconds,
+		Step:  durationMilliseconds(s.Interval),
+		Range: rangeMilliseconds,
 		// TODO: do we need to include other hints like Func, By, Grouping?
 	}
 
@@ -70,6 +67,7 @@ func (s *Selector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	totalSeries := 0
 
 	for ss.Next() {
+		// TODO: do we need this check on every iteration?
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}

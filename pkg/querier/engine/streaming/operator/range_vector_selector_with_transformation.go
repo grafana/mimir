@@ -9,101 +9,36 @@ package operator
 import (
 	"context"
 	"fmt"
-	"time"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/querier/engine/streaming/util"
 )
 
 type RangeVectorSelectorWithTransformation struct {
-	Queryable storage.Queryable
-	Start     time.Time
-	End       time.Time
-	Interval  time.Duration
-	Range     time.Duration
-	Matchers  []*labels.Matcher
+	Selector *Selector
 
-	querier storage.Querier
-	// TODO: create separate type for linked list of SeriesBatches, use here and in InstantVectorSelector
-	currentSeriesBatch      *SeriesBatch
-	currentSeriesBatchIndex int
-	chunkIterator           chunkenc.Iterator
-	buffer                  *util.RingBuffer
-
-	// TODO: is it cheaper to just recompute these every time we need them rather than holding them?
-	startTimestamp       int64
-	endTimestamp         int64
-	intervalMilliseconds int64
-	rangeMilliseconds    int64
+	chunkIterator chunkenc.Iterator
+	buffer        *util.RingBuffer
 }
 
 var _ InstantVectorOperator = &RangeVectorSelectorWithTransformation{}
 
 func (m *RangeVectorSelectorWithTransformation) Series(ctx context.Context) ([]SeriesMetadata, error) {
-	if m.currentSeriesBatch != nil {
-		panic("should not call Series() multiple times")
-	}
-
-	m.startTimestamp = timestamp.FromTime(m.Start)
-	m.endTimestamp = timestamp.FromTime(m.End)
-	m.intervalMilliseconds = durationMilliseconds(m.Interval)
-	m.rangeMilliseconds = durationMilliseconds(m.Range)
-
-	start := m.startTimestamp - m.rangeMilliseconds
-
-	hints := &storage.SelectHints{
-		Start: start,
-		End:   m.endTimestamp,
-		Step:  m.intervalMilliseconds,
-		Range: durationMilliseconds(m.Range),
-		Func:  "rate",
-		// TODO: do we need to include other hints like By, Grouping?
-	}
-
-	var err error
-	m.querier, err = m.Queryable.Querier(start, m.endTimestamp)
+	metadata, err := m.Selector.Series(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	ss := m.querier.Select(ctx, true, hints, m.Matchers...)
-	m.currentSeriesBatch = GetSeriesBatch()
-	incompleteBatch := m.currentSeriesBatch
-	totalSeries := 0
-
-	for ss.Next() {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		if len(incompleteBatch.series) == cap(incompleteBatch.series) {
-			nextBatch := GetSeriesBatch()
-			incompleteBatch.next = nextBatch
-			incompleteBatch = nextBatch
-		}
-
-		incompleteBatch.series = append(incompleteBatch.series, ss.At())
-		totalSeries++
-	}
-
-	metadata := GetSeriesMetadataSlice(totalSeries)
-	batch := m.currentSeriesBatch
 	lb := labels.NewBuilder(labels.EmptyLabels()) // TODO: pool this?
-	for batch != nil {
-		for _, s := range batch.series {
-			metadata = append(metadata, SeriesMetadata{Labels: dropMetricName(s.Labels(), lb)})
-		}
-
-		batch = batch.next
+	for i := range metadata {
+		metadata[i].Labels = dropMetricName(metadata[i].Labels, lb)
 	}
 
-	return metadata, ss.Err()
+	return metadata, nil
 }
 
 func dropMetricName(l labels.Labels, lb *labels.Builder) labels.Labels {
@@ -113,10 +48,6 @@ func dropMetricName(l labels.Labels, lb *labels.Builder) labels.Labels {
 }
 
 func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (InstantVectorSeriesData, error) {
-	if m.currentSeriesBatch == nil || len(m.currentSeriesBatch.series) == 0 {
-		return InstantVectorSeriesData{}, EOS
-	}
-
 	if ctx.Err() != nil {
 		return InstantVectorSeriesData{}, ctx.Err()
 	}
@@ -125,26 +56,29 @@ func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (Insta
 		m.buffer = &util.RingBuffer{} // TODO: pool?
 	}
 
-	m.chunkIterator = m.currentSeriesBatch.series[m.currentSeriesBatchIndex].Iterator(m.chunkIterator)
-	m.buffer.Reset()
-	m.currentSeriesBatchIndex++
-
-	if m.currentSeriesBatchIndex == len(m.currentSeriesBatch.series) {
-		b := m.currentSeriesBatch
-		m.currentSeriesBatch = m.currentSeriesBatch.next
-		PutSeriesBatch(b)
-		m.currentSeriesBatchIndex = 0
+	var err error
+	m.chunkIterator, err = m.Selector.Next(m.chunkIterator)
+	if err != nil {
+		return InstantVectorSeriesData{}, err
 	}
 
-	numSteps := stepCount(m.startTimestamp, m.endTimestamp, m.intervalMilliseconds)
+	m.buffer.Reset()
+
+	// TODO: should we compute these once upfront in Series() or in Selector?
+	startTimestamp := timestamp.FromTime(m.Selector.Start)
+	endTimestamp := timestamp.FromTime(m.Selector.End)
+	intervalMilliseconds := durationMilliseconds(m.Selector.Interval)
+	rangeMilliseconds := durationMilliseconds(m.Selector.Range)
+	numSteps := stepCount(startTimestamp, endTimestamp, intervalMilliseconds)
+
 	data := InstantVectorSeriesData{
 		Floats: GetFPointSlice(numSteps), // TODO: only allocate this if we have any floats
 	}
 
 	// TODO: test behaviour with resets, missing points, extrapolation, stale markers
 	// TODO: handle native histograms
-	for ts := m.startTimestamp; ts <= m.endTimestamp; ts += m.intervalMilliseconds {
-		rangeStart := ts - m.rangeMilliseconds
+	for ts := startTimestamp; ts <= endTimestamp; ts += intervalMilliseconds {
+		rangeStart := ts - rangeMilliseconds
 		rangeEnd := ts
 
 		m.buffer.DiscardPointsBefore(rangeStart)
@@ -249,19 +183,12 @@ func (m *RangeVectorSelectorWithTransformation) calculateRate(rangeStart, rangeE
 		extrapolateToInterval += averageDurationBetweenSamples / 2
 	}
 	factor := extrapolateToInterval / sampledInterval
-	factor /= m.Range.Seconds()
+	factor /= m.Selector.Range.Seconds()
 	return delta * factor
 }
 
 func (m *RangeVectorSelectorWithTransformation) Close() {
-	for m.currentSeriesBatch != nil {
-		b := m.currentSeriesBatch
-		m.currentSeriesBatch = m.currentSeriesBatch.next
-		PutSeriesBatch(b)
-	}
-
-	if m.querier != nil {
-		_ = m.querier.Close()
-		m.querier = nil
+	if m.Selector != nil {
+		m.Selector.Close()
 	}
 }

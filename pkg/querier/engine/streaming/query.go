@@ -160,12 +160,14 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 		}
 
 		return &operator.RangeVectorSelectorWithTransformation{
-			Queryable: q.queryable,
-			Start:     q.statement.Start,
-			End:       q.statement.End,
-			Interval:  interval,
-			Range:     matrixSelector.Range,
-			Matchers:  vectorSelector.LabelMatchers,
+			Selector: &operator.Selector{
+				Queryable: q.queryable,
+				Start:     q.statement.Start,
+				End:       q.statement.End,
+				Interval:  interval,
+				Range:     matrixSelector.Range,
+				Matchers:  vectorSelector.LabelMatchers,
+			},
 		}, nil
 	default:
 		return nil, NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
