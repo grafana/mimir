@@ -175,26 +175,12 @@ var (
 )
 
 // loadMeta returns metadata from object storage or error.
-// fetchAttributes indicates whether file attributes, such as lastModified, should be fetched and populated on the resulting meta.
 // It returns ErrorSyncMetaNotFound and ErrorSyncMetaCorrupted sentinel errors in those cases.
-func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID, fetchAttributes bool) (meta *Meta, err error) {
+func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error) {
 	var (
 		metaFile       = path.Join(id.String(), MetaFilename)
 		cachedBlockDir = filepath.Join(f.cacheDir, id.String())
 	)
-
-	if fetchAttributes {
-		defer func() {
-			if err == nil && meta != nil && meta.LastModified == nil {
-				attrs, getErr := GetAttributes(ctx, meta, f.bkt)
-				if getErr != nil {
-					err = getErr
-				} else {
-					meta.LastModified = &attrs.LastModified
-				}
-			}
-		}()
-	}
 
 	// Block meta.json file is immutable, so we lookup the cache as first thing without issuing
 	// any API call to the object storage. This significantly reduce the pressure on the object
@@ -289,7 +275,7 @@ type response struct {
 	markedForDeletionCount float64
 }
 
-func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool, fetchAttributes bool) (interface{}, error) {
+func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool) (interface{}, error) {
 	var (
 		resp = response{
 			metas:   make(map[ulid.ULID]*Meta),
@@ -316,7 +302,7 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 	for i := 0; i < f.concurrency; i++ {
 		eg.Go(func() error {
 			for id := range ch {
-				meta, err := f.loadMeta(ctx, id, fetchAttributes)
+				meta, err := f.loadMeta(ctx, id)
 				if err == nil {
 					mtx.Lock()
 					resp.metas[id] = meta
@@ -427,22 +413,21 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
 func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
-	metas, partials, err = f.fetch(ctx, false, false)
+	metas, partials, err = f.fetch(ctx, false)
 	return
 }
 
 // FetchWithoutMarkedForDeletion returns all block metas as well as partial blocks (blocks without or with corrupted meta file) from the bucket.
-// Attributes, such as LastModified, are also fetched and populated on resulting block metas.
 // This function excludes all blocks marked for deletion (no deletion delay applied).
 // It's caller responsibility to not change the returned metadata files. Maps can be modified.
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
 func (f *MetaFetcher) FetchWithoutMarkedForDeletion(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
-	metas, partials, err = f.fetch(ctx, true, true)
+	metas, partials, err = f.fetch(ctx, true)
 	return
 }
 
-func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool, fetchAttributes bool) (_ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
+func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) (_ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
 	start := time.Now()
 	defer func() {
 		f.metrics.SyncDuration.Observe(time.Since(start).Seconds())
@@ -456,7 +441,7 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool, 
 	// Run this in thread safe run group.
 	v, err := f.g.Do("", func() (i interface{}, err error) {
 		// NOTE: First go routine context will go through.
-		return f.fetchMetadata(ctx, excludeMarkedForDeletion, fetchAttributes)
+		return f.fetchMetadata(ctx, excludeMarkedForDeletion)
 	})
 	if err != nil {
 		return nil, nil, err
