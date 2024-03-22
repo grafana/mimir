@@ -38,6 +38,15 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Topic = "test"
 			},
 		},
+		"should fail if ingest storage is enabled and consume position is invalid": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ConsumeFromPositionAtStartup = "middle"
+			},
+			expectedErr: ErrInvalidConsumePosition,
+		},
 	}
 
 	for testName, testData := range tests {
