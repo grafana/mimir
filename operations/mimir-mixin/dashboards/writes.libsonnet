@@ -174,10 +174,10 @@ local filename = 'mimir-writes.json';
         ) +
         $.queryPanel(
           [
-            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.distributor)],
-            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.distributor)],
-            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.distributor)],
-            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="1.0"})' % [$.jobMatcher($._config.job_names.distributor)],
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
           ],
           [
             '50th percentile',
@@ -301,10 +301,10 @@ local filename = 'mimir-writes.json';
         ) +
         $.queryPanel(
           [
-            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="1.0"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
             '50th percentile',
@@ -328,10 +328,10 @@ local filename = 'mimir-writes.json';
         ) +
         $.queryPanel(
           [
-            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="1.0"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
             '50th percentile',

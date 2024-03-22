@@ -559,54 +559,55 @@ func (r *partitionCommitter) stop(error) error {
 }
 
 type readerMetrics struct {
-	receiveDelay              prometheus.Summary
+	receiveDelay              prometheus.Histogram
 	recordsPerFetch           prometheus.Histogram
 	fetchesErrors             prometheus.Counter
 	fetchesTotal              prometheus.Counter
 	strongConsistencyRequests prometheus.Counter
 	strongConsistencyFailures prometheus.Counter
-	strongConsistencyLatency  prometheus.Summary
+	strongConsistencyLatency  prometheus.Histogram
 	kprom                     *kprom.Metrics
 }
 
 func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetrics {
-	factory := promauto.With(reg)
-
 	return readerMetrics{
-		receiveDelay: factory.NewSummary(prometheus.SummaryOpts{
-			Name:       "cortex_ingest_storage_reader_receive_delay_seconds",
-			Help:       "Delay between producing a record and receiving it in the consumer.",
-			Objectives: latencySummaryObjectives,
-			MaxAge:     time.Minute,
-			AgeBuckets: 10,
+		receiveDelay: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_ingest_storage_reader_receive_delay_seconds",
+			Help:                            "Delay between producing a record and receiving it in the consumer.",
+			NativeHistogramZeroThreshold:    math.Pow(2, -10), // Values below this will be considered to be 0. Equals to 0.0009765625, or about 1ms.
+			NativeHistogramBucketFactor:     1.2,              // We use higher factor (scheme=2) to have wider spread of buckets.
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			Buckets:                         prometheus.ExponentialBuckets(0.125, 2, 18), // Buckets between 125ms and 9h.
 		}),
-		recordsPerFetch: factory.NewHistogram(prometheus.HistogramOpts{
+		recordsPerFetch: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingest_storage_reader_records_per_fetch",
 			Help:    "The number of records received by the consumer in a single fetch operation.",
 			Buckets: prometheus.ExponentialBuckets(1, 2, 15),
 		}),
-		fetchesErrors: factory.NewCounter(prometheus.CounterOpts{
+		fetchesErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_fetch_errors_total",
 			Help: "The number of fetch errors encountered by the consumer.",
 		}),
-		fetchesTotal: factory.NewCounter(prometheus.CounterOpts{
+		fetchesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_fetches_total",
 			Help: "Total number of Kafka fetches received by the consumer.",
 		}),
-		strongConsistencyRequests: factory.NewCounter(prometheus.CounterOpts{
+		strongConsistencyRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_strong_consistency_requests_total",
 			Help: "Total number of requests for which strong consistency has been requested.",
 		}),
-		strongConsistencyFailures: factory.NewCounter(prometheus.CounterOpts{
+		strongConsistencyFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_strong_consistency_failures_total",
 			Help: "Total number of failures while waiting for strong consistency to be enforced.",
 		}),
-		strongConsistencyLatency: factory.NewSummary(prometheus.SummaryOpts{
-			Name:       "cortex_ingest_storage_strong_consistency_wait_duration_seconds",
-			Help:       "How long a request spent waiting for strong consistency to be guaranteed.",
-			Objectives: latencySummaryObjectives,
-			MaxAge:     time.Minute,
-			AgeBuckets: 10,
+		strongConsistencyLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_ingest_storage_strong_consistency_wait_duration_seconds",
+			Help:                            "How long a request spent waiting for strong consistency to be guaranteed.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			Buckets:                         prometheus.DefBuckets,
 		}),
 		kprom: kprom.NewMetrics("cortex_ingest_storage_reader",
 			kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, reg)),
