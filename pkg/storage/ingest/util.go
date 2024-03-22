@@ -37,7 +37,7 @@ func IngesterPartitionID(ingesterID string) (int32, error) {
 }
 
 func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger) []kgo.Opt {
-	return []kgo.Opt{
+	opts := []kgo.Opt{
 		kgo.ClientID(cfg.ClientID),
 		kgo.SeedBrokers(cfg.Address),
 		kgo.AllowAutoTopicCreation(),
@@ -64,7 +64,6 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		kgo.MetadataMinAge(10 * time.Second),
 		kgo.MetadataMaxAge(10 * time.Second),
 
-		kgo.WithHooks(metrics),
 		kgo.WithLogger(newKafkaLogger(logger)),
 
 		kgo.RetryTimeoutFn(func(key int16) time.Duration {
@@ -77,6 +76,12 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 			return 30 * time.Second
 		}),
 	}
+
+	if metrics != nil {
+		opts = append(opts, kgo.WithHooks(metrics))
+	}
+
+	return opts
 }
 
 // resultPromise is a simple utility to have multiple goroutines waiting for a result from another one.
