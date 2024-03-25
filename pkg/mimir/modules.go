@@ -85,6 +85,7 @@ const (
 	Queryable                  string = "queryable"
 	StoreQueryable             string = "store-queryable"
 	QueryFrontend              string = "query-frontend"
+	QueryFrontendCodec         string = "query-frontend-codec"
 	QueryFrontendTripperware   string = "query-frontend-tripperware"
 	RulerStorage               string = "ruler-storage"
 	Ruler                      string = "ruler"
@@ -703,10 +704,16 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 	return t.Flusher, nil
 }
 
+// initQueryFrontendCodec initializes query frontend codec.
+// NOTE: Grafana Enterprise Metrics depends on this.
+func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
+	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat)
+	return nil, nil
+}
+
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
-	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat)
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
 	engineOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
@@ -1051,6 +1058,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(Querier, t.initQuerier)
 	mm.RegisterModule(StoreQueryable, t.initStoreQueryable, modules.UserInvisibleModule)
+	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
@@ -1085,7 +1093,7 @@ func (t *Mimir) setupModuleManager() error {
 		Queryable:                {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
 		Querier:                  {TenantFederation, Vault},
 		StoreQueryable:           {Overrides, MemberlistKV},
-		QueryFrontendTripperware: {API, Overrides},
+		QueryFrontendTripperware: {API, Overrides, QueryFrontendCodec},
 		QueryFrontend:            {QueryFrontendTripperware, MemberlistKV, Vault},
 		QueryScheduler:           {API, Overrides, MemberlistKV, Vault},
 		Ruler:                    {DistributorService, StoreQueryable, RulerStorage, Vault},
