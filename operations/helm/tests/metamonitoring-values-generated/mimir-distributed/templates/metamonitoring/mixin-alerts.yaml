@@ -978,6 +978,72 @@ spec:
       for: 15m
       labels:
         severity: critical
+    - alert: MimirIngesterFailedToReadRecordsFromKafka
+      annotations:
+        message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+          }} is failing to read records from Kafka.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailedtoreadrecordsfromkafka
+      expr: |
+        sum by(cluster, namespace, pod, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[1m]))
+        > 0
+      for: 5m
+      labels:
+        severity: critical
+    - alert: MimirIngesterKafkaFetchErrorsRateTooHigh
+      annotations:
+        message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+          }} is receiving fetch errors when reading records from Kafka.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterkafkafetcherrorsratetoohigh
+      expr: |
+        sum by (cluster, namespace, pod) (rate (cortex_ingest_storage_reader_fetch_errors_total[5m]))
+        /
+        sum by (cluster, namespace, pod) (rate (cortex_ingest_storage_reader_fetches_total[5m]))
+        > 0.1
+      for: 15m
+      labels:
+        severity: critical
+    - alert: MimirStartingIngesterKafkaReceiveDelayIncreasing
+      annotations:
+        message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+          }} in "starting" phase is not reducing consumption lag of write requests read
+          from Kafka.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstartingingesterkafkareceivedelayincreasing
+      expr: |
+        deriv(histogram_quantile(0.99, sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))[5m:1m]) > 0
+      for: 5m
+      labels:
+        severity: warning
+    - alert: MimirRunningIngesterReceiveDelayTooHigh
+      annotations:
+        message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+          }} in "running" phase is too far behind in its consumption of write requests
+          from Kafka.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrunningingesterreceivedelaytoohigh
+      expr: |
+        histogram_quantile(0.99, sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m]))) > (10*60)
+      for: 5m
+      labels:
+        severity: critical
+    - alert: MimirIngesterFailsToProcessRecordsFromKafka
+      annotations:
+        message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+          }} fails to consume write requests read from Kafka due to internal errors.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailstoprocessrecordsfromkafka
+      expr: |
+        sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m]) > 0
+      for: 5m
+      labels:
+        severity: critical
+    - alert: MimirIngesterFailsEnforceStrongConsistencyOnReadPath
+      annotations:
+        message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+          }} fails to enforce strong-consistency on read-path.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailsenforcestrongconsistencyonreadpath
+      expr: |
+        sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_strong_consistency_failures_total[1m])) > 0
+      for: 5m
+      labels:
+        severity: critical
   - name: mimir_continuous_test
     rules:
     - alert: MimirContinuousTestNotRunningOnWrites
