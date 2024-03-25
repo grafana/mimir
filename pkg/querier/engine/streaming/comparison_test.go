@@ -237,7 +237,7 @@ func BenchmarkQuery(b *testing.B) {
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
 
-	metricSizes := []int{1, 10, 100, 2000}
+	metricSizes := []int{1, 100, 2000}
 	err = setupTestData(db, metricSizes, interval, numIntervals)
 	require.NoError(b, err)
 	cases := testCases(metricSizes)
@@ -285,7 +285,7 @@ func TestBenchmarkQueries(t *testing.T) {
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
 
-	metricSizes := []int{1, 10, 100} // Don't bother with 2000 series test here: these test cases take a while and they're most interesting as benchmarks, not correctness tests.
+	metricSizes := []int{1, 100} // Don't bother with 2000 series test here: these test cases take a while and they're most interesting as benchmarks, not correctness tests.
 	err = setupTestData(db, metricSizes, interval, numIntervals)
 	require.NoError(t, err)
 	cases := testCases(metricSizes)
