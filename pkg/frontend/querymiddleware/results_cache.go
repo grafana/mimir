@@ -208,6 +208,13 @@ type DefaultCacheKeyGenerator struct {
 	Interval time.Duration
 }
 
+func NewDefaultCacheKeyGenerator(codec Codec, interval time.Duration) DefaultCacheKeyGenerator {
+	return DefaultCacheKeyGenerator{
+		codec:    codec,
+		Interval: interval,
+	}
+}
+
 // QueryRequest generates a cache key based on the userID, Request and Interval.
 func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, userID string, r Request) string {
 	startInterval := r.GetStart() / g.Interval.Milliseconds()
