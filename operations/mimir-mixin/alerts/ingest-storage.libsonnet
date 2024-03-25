@@ -56,6 +56,35 @@
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s is receiving fetch errors when reading records from Kafka.' % $._config,
           },
         },
+
+        // This is an experiment. We compute derivatition (ie. rate of consumption lag change) over 5 minutes. If derivation is above 0, it means consumption lag is increasing, instead of decreasing.
+        {
+          alert: $.alertName('StartingIngesterKafkaLagNotDecreasing'),
+          'for': '5m',
+          expr: |||
+            deriv(histogram_quantile(0.99, sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))[5m:1m]) > 0
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "starting" phase is not reducing consumption lag of write requests read from Kafka.' % $._config,
+          },
+        },
+
+        {
+          alert: $.alertName('RunningIngesterKafkaLagTooHigh'),
+          'for': '5m',
+          expr: |||
+            histogram_quantile(0.99, sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[$__rate_interval]))) > (10*60)
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "running" phase is too far behind in its consumption of write requests from Kafka.' % $._config,
+          },
+        },
       ],
     },
   ],
