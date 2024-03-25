@@ -5,10 +5,10 @@ package operator
 import (
 	"sync"
 
-	"github.com/grafana/mimir/pkg/util/pool"
-
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 // TODO: are there generic versions of pool.Pool and sync.Pool that we can use, and then eliminate the helper functions?
