@@ -368,14 +368,14 @@ func (s *shardActiveSeriesMiddleware) mergeResponsesWithZeroAllocationDecoder(ct
 
 	items := make(chan chan activeSeriesDataChunk, len(responses))
 
-	g := new(errgroup.Group)
+	g, gCtx := errgroup.WithContext(ctx)
 	for _, res := range responses {
 		if res == nil {
 			continue
 		}
 		r := res
 		g.Go(func() error {
-			dec := borrowShardActiveSeriesResponseDecoder(ctx, r.Body)
+			dec := borrowShardActiveSeriesResponseDecoder(gCtx, r.Body)
 			defer func() {
 				dec.close()
 				reuseShardActiveSeriesResponseDecoder(dec)
@@ -403,7 +403,7 @@ func (s *shardActiveSeriesMiddleware) mergeResponsesWithZeroAllocationDecoder(ct
 		resp.Header.Set("Content-Encoding", encodingTypeSnappyFramed)
 	}
 
-	go s.writeMergedResponseWithZeroAllocationDecoder(ctx, g.Wait, writer, items, encoding)
+	go s.writeMergedResponseWithZeroAllocationDecoder(gCtx, g.Wait, writer, items, encoding)
 
 	return resp
 }
