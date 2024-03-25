@@ -606,9 +606,9 @@ which allows us to keep generating everything for the default zone.
   "nodeSelector" ($rolloutZone.nodeSelector | default (dict) )
   "replicas" $replicaPerZone
   "storageClass" $rolloutZone.storageClass
-  "noDownscale":  $rolloutZone.noDownscale
-  "downscaleLeader": $rolloutZone.downscaleLeader
-  "prepareDownscale": $rolloutZone.prepareDownscale
+  "noDownscale"  $rolloutZone.noDownscale
+  "downscaleLeader" $rolloutZone.downscaleLeader
+  "prepareDownscale" $rolloutZone.prepareDownscale
   ) -}}
 {{- end -}}
 {{- if $componentSection.zoneAwareReplication.migration.enabled -}}
