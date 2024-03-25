@@ -59,7 +59,7 @@
 
         // This is an experiment. We compute derivatition (ie. rate of consumption lag change) over 5 minutes. If derivation is above 0, it means consumption lag is increasing, instead of decreasing.
         {
-          alert: $.alertName('StartingIngesterKafkaLagNotDecreasing'),
+          alert: $.alertName('StartingIngesterKafkaReceiveDelayIncreasing'),
           'for': '5m',
           expr: |||
             deriv(histogram_quantile(0.99, sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))[5m:1m]) > 0
@@ -73,7 +73,7 @@
         },
 
         {
-          alert: $.alertName('RunningIngesterKafkaLagTooHigh'),
+          alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
           'for': '5m',
           expr: |||
             histogram_quantile(0.99, sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[$__rate_interval]))) > (10*60)

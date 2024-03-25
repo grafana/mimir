@@ -977,23 +977,23 @@ groups:
     for: 15m
     labels:
       severity: critical
-  - alert: MimirStartingIngesterKafkaLagNotDecreasing
+  - alert: MimirStartingIngesterKafkaReceiveDelayIncreasing
     annotations:
       message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
         }} in "starting" phase is not reducing consumption lag of write requests read
         from Kafka.
-      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstartingingesterkafkalagnotdecreasing
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstartingingesterkafkareceivedelayincreasing
     expr: |
       deriv(histogram_quantile(0.99, sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))[5m:1m]) > 0
     for: 5m
     labels:
       severity: warning
-  - alert: MimirRunningIngesterKafkaLagTooHigh
+  - alert: MimirRunningIngesterReceiveDelayTooHigh
     annotations:
       message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
         }} in "running" phase is too far behind in its consumption of write requests
         from Kafka.
-      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrunningingesterkafkalagtoohigh
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrunningingesterreceivedelaytoohigh
     expr: |
       histogram_quantile(0.99, sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[$__rate_interval]))) > (10*60)
     for: 5m

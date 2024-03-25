@@ -1327,6 +1327,52 @@ How to **investigate**:
 - Check ingester logs to find details about the error.
 - Check Kafka logs and health.
 
+### MimirIngesterIngesterFailedToReadRecordsFromKafka
+
+This alert fires when an ingester is failing to read records from Kafka backend.
+
+How it **works**:
+
+- Ingester connects to Kafka brokers and reads records from it.
+- When ingester fails to read more records from Kafka due to error, ingester logs such error.
+- This can be normal if Kafka brokers are restarting, however if read errors continue for some time, alert is raised. 
+
+How to **investigate**:
+
+- Check ingester logs to find details about the error.
+- Check Kafka logs and health.
+
+### MimirIngesterKafkaFetchErrorsRateTooHigh
+
+This alert fires when an ingester is receiving errors instead of "fetches" from Kafka.
+
+How it **works**:
+
+- Ingester uses Kafka client to read records from Kafka.
+- Kafka client can return errors instead of more records.
+- If rate of returned errors compared to returned records is too high, alert is raised.
+- Kafka client can return errors [documented in the source code](https://github.com/grafana/mimir/blob/24591ae56cd7d6ef24a7cc1541a41405676773f4/vendor/github.com/twmb/franz-go/pkg/kgo/record_and_fetch.go#L332-L366).
+
+How to **investigate**:
+
+- Check ingester logs to find details about the error.
+- Check Kafka logs and health.
+
+### MimirStartingIngesterKafkaReceiveDelayIncreasing
+
+This alert fires when consumption lag reported by ingester during "starting" phase is not decreasing.
+
+How it **works**:
+
+- When ingester is starting, it needs to fetch and process records from Kafka until preconfigured consumption lag is honored.
+- Each record has a timestamp when it was stored to Kafka. When ingester reads the record, it computes "receive delay" as a difference between current time (when record was read) and time when record was stored to Kafka. This receive delay is reported in metrics.
+- Under normal conditions when ingester is processing records faster than records are appearing, receive delay should be decreasing.
+- When ingester is starting, and observed "receive delay" is increasing, alert is raised.
+
+How to **investigate**:
+
+- Check if ingester is fast enough to process all data in Kafka. If not, configure ingesters to start with later offset instead.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
