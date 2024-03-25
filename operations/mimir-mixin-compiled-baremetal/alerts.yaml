@@ -995,7 +995,7 @@ groups:
         from Kafka.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrunningingesterreceivedelaytoohigh
     expr: |
-      histogram_quantile(0.99, sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[$__rate_interval]))) > (10*60)
+      histogram_quantile(0.99, sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m]))) > (10*60)
     for: 5m
     labels:
       severity: critical

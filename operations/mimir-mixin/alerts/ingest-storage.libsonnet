@@ -76,7 +76,7 @@
           alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
           'for': '5m',
           expr: |||
-            histogram_quantile(0.99, sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[$__rate_interval]))) > (10*60)
+            histogram_quantile(0.99, sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m]))) > (10*60)
           ||| % $._config,
           labels: {
             severity: 'critical',
