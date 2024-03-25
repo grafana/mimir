@@ -970,7 +970,7 @@ groups:
         }} is receiving fetch errors when reading records from Kafka.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterkafkafetcherrorsratetoohigh
     expr: |
-      sum by (cluster, namespace, instance) (rate (cortex_ingest_storage_reader_fetch_errors_total}[5m]))
+      sum by (cluster, namespace, instance) (rate (cortex_ingest_storage_reader_fetch_errors_total[5m]))
       /
       sum by (cluster, namespace, instance) (rate (cortex_ingest_storage_reader_fetches_total[5m]))
       > 0.1
