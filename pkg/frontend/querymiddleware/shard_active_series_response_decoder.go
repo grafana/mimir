@@ -18,7 +18,7 @@ import (
 	"unsafe"
 )
 
-const activeSeriesChunkMaxBufferSize = 1024 * 1024 // 2MB
+const activeSeriesChunkMaxBufferSize = 1024 * 1024 // 1MB
 
 var activeSeriesChunkBufferPool = sync.Pool{
 	New: func() any {
@@ -31,7 +31,7 @@ var shardActiveSeriesResponseDecoderPool = sync.Pool{
 		return &shardActiveSeriesResponseDecoder{
 			br:      bufio.NewReaderSize(nil, 4096),
 			strBuff: make([]byte, 0, 256),
-			chunkCh: make(chan activeSeriesDataChunk, 1),
+			chunkCh: make(chan activeSeriesDataChunk),
 		}
 	},
 }
@@ -182,7 +182,8 @@ func (d *shardActiveSeriesResponseDecoder) streamData() error {
 				if cb.Len() > 0 {
 					d.chunkCh <- activeSeriesDataChunk{buff: cb}
 				}
-				return nil
+				d.checkContextCanceled()
+				return d.err
 			}
 		}
 		cb.WriteByte(c)
@@ -190,6 +191,7 @@ func (d *shardActiveSeriesResponseDecoder) streamData() error {
 		if cb.Len() >= activeSeriesChunkMaxBufferSize {
 			d.chunkCh <- activeSeriesDataChunk{buff: cb}
 			cb = activeSeriesChunkBufferPool.Get().(*bytes.Buffer)
+			d.checkContextCanceled()
 		}
 		c = d.readByte()
 	}
@@ -309,20 +311,23 @@ func (d *shardActiveSeriesResponseDecoder) readByte() byte {
 	// Check for context cancellation every 256 bytes.
 	d.readBytesCount++
 	if d.readBytesCount%256 == 0 {
-		if err := d.ctx.Err(); err != nil {
-			if cause := context.Cause(d.ctx); cause != nil {
-				d.stickError(fmt.Errorf("decoder context cancelled: %w", cause))
-			} else {
-				d.stickError(err)
-			}
-			return 0
-		}
+		d.checkContextCanceled()
 	}
 	return b
 }
 
 func (d *shardActiveSeriesResponseDecoder) unreadByte() {
 	if err := d.br.UnreadByte(); err != nil {
+		d.stickError(err)
+	}
+}
+
+func (d *shardActiveSeriesResponseDecoder) checkContextCanceled() {
+	if err := d.ctx.Err(); err != nil {
+		if cause := context.Cause(d.ctx); cause != nil {
+			d.stickError(fmt.Errorf("context canceled: %w", cause))
+			return
+		}
 		d.stickError(err)
 	}
 }
