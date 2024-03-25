@@ -5,31 +5,32 @@ package operator
 import (
 	"sync"
 
+	"github.com/grafana/mimir/pkg/util/pool"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/pool"
 )
 
 // TODO: are there generic versions of pool.Pool and sync.Pool that we can use, and then eliminate the helper functions?
 // TODO: do we need to nil-out slice elements as well, to avoid holding on to elements for too long?
 var (
 	// TODO: what is a reasonable upper limit here?
-	fPointSlicePool = pool.New(1, 100000, 10, func(size int) interface{} {
+	fPointSlicePool = pool.NewBucketedPool(1, 100000, 10, func(size int) []promql.FPoint {
 		return make([]promql.FPoint, 0, size)
 	})
 
 	// TODO: what is a reasonable upper limit here?
-	matrixPool = pool.New(1, 100000, 10, func(size int) interface{} {
+	matrixPool = pool.NewBucketedPool(1, 100000, 10, func(size int) promql.Matrix {
 		return make(promql.Matrix, 0, size)
 	})
 
 	// TODO: what is a reasonable upper limit here?
-	vectorPool = pool.New(1, 100000, 10, func(size int) interface{} {
+	vectorPool = pool.NewBucketedPool(1, 100000, 10, func(size int) promql.Vector {
 		return make(promql.Vector, 0, size)
 	})
 
 	// TODO: what is a reasonable upper limit here?
-	seriesMetadataSlicePool = pool.New(1, 100000, 10, func(size int) interface{} {
+	seriesMetadataSlicePool = pool.NewBucketedPool(1, 100000, 10, func(size int) []SeriesMetadata {
 		return make([]SeriesMetadata, 0, size)
 	})
 
@@ -41,20 +42,20 @@ var (
 	}}
 
 	// TODO: what is a reasonable upper limit here?
-	floatSlicePool = pool.New(1, 100000, 10, func(_ int) interface{} {
+	floatSlicePool = pool.NewBucketedPool(1, 100000, 10, func(_ int) []float64 {
 		// Don't allocate a new slice now - we'll allocate one in GetFloatSlice if we need it, so we can differentiate between reused and new slices.
 		return nil
 	})
 
 	// TODO: what is a reasonable upper limit here?
-	boolSlicePool = pool.New(1, 100000, 10, func(_ int) interface{} {
+	boolSlicePool = pool.NewBucketedPool(1, 100000, 10, func(_ int) []bool {
 		// Don't allocate a new slice now - we'll allocate one in GetBoolSlice if we need it, so we can differentiate between reused and new slices.
 		return nil
 	})
 )
 
 func GetFPointSlice(size int) []promql.FPoint {
-	return fPointSlicePool.Get(size).([]promql.FPoint)
+	return fPointSlicePool.Get(size)
 }
 
 func PutFPointSlice(s []promql.FPoint) {
@@ -64,7 +65,7 @@ func PutFPointSlice(s []promql.FPoint) {
 }
 
 func GetMatrix(size int) promql.Matrix {
-	return matrixPool.Get(size).(promql.Matrix)
+	return matrixPool.Get(size)
 }
 
 func PutMatrix(m promql.Matrix) {
@@ -74,7 +75,7 @@ func PutMatrix(m promql.Matrix) {
 }
 
 func GetVector(size int) promql.Vector {
-	return vectorPool.Get(size).(promql.Vector)
+	return vectorPool.Get(size)
 }
 
 func PutVector(v promql.Vector) {
@@ -84,7 +85,7 @@ func PutVector(v promql.Vector) {
 }
 
 func GetSeriesMetadataSlice(size int) []SeriesMetadata {
-	return seriesMetadataSlicePool.Get(size).([]SeriesMetadata)
+	return seriesMetadataSlicePool.Get(size)
 }
 
 func PutSeriesMetadataSlice(s []SeriesMetadata) {
@@ -108,7 +109,7 @@ func PutSeriesBatch(b *SeriesBatch) {
 func GetFloatSlice(size int) []float64 {
 	s := floatSlicePool.Get(size)
 	if s != nil {
-		return zeroFloatSlice(s.([]float64), size)
+		return zeroFloatSlice(s, size)
 	}
 
 	return make([]float64, 0, size)
@@ -124,7 +125,7 @@ func GetBoolSlice(size int) []bool {
 	s := boolSlicePool.Get(size)
 
 	if s != nil {
-		return zeroBoolSlice(s.([]bool), size)
+		return zeroBoolSlice(s, size)
 	}
 
 	return make([]bool, 0, size)
