@@ -1332,7 +1332,7 @@ How to **investigate**:
 - Check ingester logs to find details about the error.
 - Check Kafka logs and health.
 
-### MimirIngesterIngesterFailedToReadRecordsFromKafka
+### MimirIngesterFailedToReadRecordsFromKafka
 
 This alert fires when an ingester is failing to read records from Kafka backend.
 
