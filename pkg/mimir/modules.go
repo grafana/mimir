@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/grafana/mimir/pkg/querier/engine/common"
 	"net/http"
 	"strconv"
 	"time"
@@ -47,7 +48,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
-	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -712,7 +712,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat)
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
-	engineOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
+	engineOpts, engineExperimentalFunctionsEnabled := common.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
