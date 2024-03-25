@@ -11,26 +11,26 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
-// TODO: are there generic versions of pool.Pool and sync.Pool that we can use, and then eliminate the helper functions?
-// TODO: do we need to nil-out slice elements as well, to avoid holding on to elements for too long?
+const (
+	maxExpectedPointsPerSeries = 100_000 // There's not too much science behind this number: 100000 points allows for a point per minute for just under 70 days.
+
+	maxExpectedSeriesPerResult = 10_000_000 // Likewise, there's not too much science behind this number: this is the based on examining the largest queries seen at Grafana Labs.
+)
+
 var (
-	// TODO: what is a reasonable upper limit here?
-	fPointSlicePool = pool.NewBucketedPool(1, 100000, 10, func(size int) []promql.FPoint {
+	fPointSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, 10, func(size int) []promql.FPoint {
 		return make([]promql.FPoint, 0, size)
 	})
 
-	// TODO: what is a reasonable upper limit here?
-	matrixPool = pool.NewBucketedPool(1, 100000, 10, func(size int) promql.Matrix {
+	matrixPool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, 10, func(size int) promql.Matrix {
 		return make(promql.Matrix, 0, size)
 	})
 
-	// TODO: what is a reasonable upper limit here?
-	vectorPool = pool.NewBucketedPool(1, 100000, 10, func(size int) promql.Vector {
+	vectorPool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, 10, func(size int) promql.Vector {
 		return make(promql.Vector, 0, size)
 	})
 
-	// TODO: what is a reasonable upper limit here?
-	seriesMetadataSlicePool = pool.NewBucketedPool(1, 100000, 10, func(size int) []SeriesMetadata {
+	seriesMetadataSlicePool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, 10, func(size int) []SeriesMetadata {
 		return make([]SeriesMetadata, 0, size)
 	})
 
@@ -41,14 +41,11 @@ var (
 		}
 	}}
 
-	// TODO: what is a reasonable upper limit here?
-	floatSlicePool = pool.NewBucketedPool(1, 100000, 10, func(_ int) []float64 {
+	floatSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, 10, func(_ int) []float64 {
 		// Don't allocate a new slice now - we'll allocate one in GetFloatSlice if we need it, so we can differentiate between reused and new slices.
 		return nil
 	})
-
-	// TODO: what is a reasonable upper limit here?
-	boolSlicePool = pool.NewBucketedPool(1, 100000, 10, func(_ int) []bool {
+	boolSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, 10, func(_ int) []bool {
 		// Don't allocate a new slice now - we'll allocate one in GetBoolSlice if we need it, so we can differentiate between reused and new slices.
 		return nil
 	})
