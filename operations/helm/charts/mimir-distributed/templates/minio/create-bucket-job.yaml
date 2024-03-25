@@ -9,7 +9,7 @@ kind: Job
 metadata:
   {{- $minioSub := index .Subcharts "minio" }}
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "make-minio-buckets") }}-{{ $minioSub.Chart.Version }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
   labels:
     app: {{ template "minio.name" . }}-make-bucket-job
     chart: {{ template "minio.chart" . }}

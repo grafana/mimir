@@ -4,7 +4,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "grafana-agent") }}
-  namespace: {{ .namespace | default $.Release.Namespace | quote }}
+  namespace: {{ .namespace | default (include "mimir.namespace" $ ) | quote }}
   labels:
     {{- include "mimir.labels" (dict "ctx" $ "component" "meta-monitoring" ) | nindent 4 }}
 roleRef:
@@ -14,6 +14,8 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: {{ include "mimir.serviceAccountName" $ }}
-    namespace: {{ .namespace | default $.Release.Namespace }}
+    {{- with $ }}
+    namespace: {{ .namespace | default (include "mimir.namespace" $ ) }}
+    {{- end }}
 {{- end }}
 {{- end }}

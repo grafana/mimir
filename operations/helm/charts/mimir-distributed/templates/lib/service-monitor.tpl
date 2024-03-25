@@ -12,7 +12,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ include "mimir.resourceName" $ }}
-  namespace: {{ .namespace | default $.ctx.Release.Namespace | quote }}
+  namespace: {{ .namespace | default (include "mimir.namespace" $.ctx) | quote }}
   labels:
     {{- include "mimir.labels" $ | nindent 4 }}
     {{- with .labels }}
@@ -28,7 +28,7 @@ spec:
     {{- toYaml .namespaceSelector | nindent 4 }}
   {{- else }}
     matchNames:
-    - {{ $.ctx.Release.Namespace }}
+    - {{ $.ctx.Release.Namespace | default (include "mimir.namespace" $.ctx) }}
   {{- end }}
   selector:
     matchLabels:
@@ -48,7 +48,7 @@ spec:
       {{- end }}
       relabelings:
         - sourceLabels: [job]
-          replacement: "{{ $.ctx.Release.Namespace }}/{{ $.component }}"
+          replacement: "{{ $.ctx.Release.Namespace | default (include "mimir.namespace" $.ctx) }}/{{ $.component }}"
           targetLabel: job
         {{- if kindIs "string" .clusterLabel }}
         - replacement: "{{ .clusterLabel | default (include "mimir.clusterName" $.ctx) }}"

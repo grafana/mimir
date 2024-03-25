@@ -10,5 +10,5 @@ metadata:
     {{- end }}
   annotations:
     {{- toYaml .Values.ruler.serviceAccount.annotations | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 {{- end }}

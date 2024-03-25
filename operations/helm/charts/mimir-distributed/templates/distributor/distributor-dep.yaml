@@ -6,7 +6,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "distributor" "memberlist" true) | nindent 4 }}
   annotations:
     {{- toYaml .Values.distributor.annotations | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 spec:
   {{- if not .Values.distributor.kedaAutoscaling.enabled }}
   # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
@@ -25,7 +25,7 @@ spec:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "distributor" "memberlist" true) | nindent 8 }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "distributor") | nindent 8 }}
-      namespace: {{ .Release.Namespace | quote }}
+      namespace: {{ include "mimir.namespace" . | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.distributor.priorityClassName }}

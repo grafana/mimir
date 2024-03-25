@@ -7,7 +7,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "graphite-querier") | nindent 4 }}
   annotations:
     {{- toYaml .Values.graphite.querier.annotations | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 spec:
   replicas: {{ .Values.graphite.querier.replicas }}
   selector:
@@ -21,7 +21,7 @@ spec:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "graphite-querier") | nindent 8 }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "graphite-querier") | nindent 8 }}
-      namespace: {{ .Release.Namespace | quote }}
+      namespace: {{ include "mimir.namespace" . | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.graphite.querier.priorityClassName }}

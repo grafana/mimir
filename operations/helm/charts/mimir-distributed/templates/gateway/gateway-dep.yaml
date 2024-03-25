@@ -9,7 +9,7 @@ metadata:
   labels:
     {{- include "mimir.labels" (dict "ctx" $ "component" "gateway") | nindent 4 }}
   name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "gateway") }}
-  namespace: {{ $.Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" $ | quote }}
 spec:
 {{- if not .autoscaling.enabled }}
   replicas: {{ .replicas }}
@@ -31,7 +31,9 @@ spec:
         {{- $annotations = (dict "checksum/config" (include (print $.Template.BasePath "/gateway/nginx-configmap.yaml") $ | sha256sum )) | mergeOverwrite $annotations -}}
         {{- end -}}
         {{- $annotations | toYaml | nindent 8 }}
-      namespace: {{ $.Release.Namespace | quote }}
+      {{- with $ }}
+      namespace: {{ include "mimir.namespace" . | quote }}
+      {{- end }}
     spec:
       serviceAccountName: {{ include "mimir.serviceAccountName" $ }}
       {{- if .priorityClassName }}

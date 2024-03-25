@@ -11,7 +11,7 @@ metadata:
     {{- end }}
   annotations:
     {{- toYaml .Values.query_frontend.service.annotations | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 spec:
   type: ClusterIP
   clusterIP: None

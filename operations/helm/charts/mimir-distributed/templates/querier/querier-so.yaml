@@ -10,7 +10,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "querier") | nindent 4 }}
   annotations:
     {{- toYaml .Values.querier.annotations | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 spec:
   advanced:
     horizontalPodAutoscalerConfig:
@@ -27,7 +27,7 @@ spec:
     kind: Deployment
   triggers:
   - metadata:
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5"}[1m]))
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ include "mimir.namespace" . }}",quantile="0.5"}[1m]))
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }} 
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
@@ -36,7 +36,7 @@ spec:
     name: cortex_querier_hpa_default
     type: prometheus
   - metadata:
-      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="{{ .Release.Namespace }}"}[1m]))
+      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="{{ include "mimir.namespace" . }}"}[1m]))
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }} 
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}

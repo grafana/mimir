@@ -8,7 +8,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 4 }}
   annotations:
   {{- toYaml .Values.alertmanager.annotations | nindent 4 }} 
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 data:
   alertmanager_fallback_config.yaml: |
     {{- .Values.alertmanager.fallbackConfig | nindent 4 }}

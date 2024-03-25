@@ -5,7 +5,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "k8s-ksm") }}
-  namespace: {{ .namespace | default $.Release.Namespace | quote }}
+  namespace: {{ .namespace | default (include "mimir.namespace" $ ) | quote }}
   labels:
     {{- include "mimir.labels" (dict "ctx" $ "component" "meta-monitoring") | nindent 4 }}
     {{- with .labels }}

@@ -5,7 +5,7 @@ metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" .) }}
   labels:
     {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 allowHostDirVolumePlugin: true
 allowHostIPC: false
 allowHostNetwork: false
