@@ -1005,7 +1005,7 @@ groups:
         }} fails to consume write requests read from Kafka due to internal errors.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailstoprocessrecordsfromkafka
     expr: |
-      sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[5m]) > 0
+      sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m]) > 0
     for: 5m
     labels:
       severity: critical
@@ -1015,7 +1015,7 @@ groups:
         }} fails to enforce strong-consistency on read-path.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailsenforcestrongconsistencyonreadpath
     expr: |
-      sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_strong_consistency_failures_total[5m])) > 0
+      sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_strong_consistency_failures_total[1m])) > 0
     for: 5m
     labels:
       severity: critical

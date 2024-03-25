@@ -1360,7 +1360,7 @@ How to **investigate**:
 
 ### MimirStartingIngesterKafkaReceiveDelayIncreasing
 
-This alert fires when consumption lag reported by ingester during "starting" phase is not decreasing.
+This alert fires when "receive delay" reported by ingester during "starting" phase is not decreasing.
 
 How it **works**:
 
@@ -1372,6 +1372,52 @@ How it **works**:
 How to **investigate**:
 
 - Check if ingester is fast enough to process all data in Kafka. If not, configure ingesters to start with later offset instead.
+
+### MimirRunningIngesterReceiveDelayTooHigh
+
+This alert fires when "receive delay" reported by ingester while it's running reaches alert threshold.
+
+How it **works**:
+
+- After ingester start and catches up with records in Kafka, ingester switches to "running" mode. 
+- In running mode, ingester continues to process incoming samples from Kafka and continues to report "receive delay". See [`MimirStartingIngesterKafkaReceiveDelayIncreasing`](#MimirStartingIngesterKafkaReceiveDelayIncreasing) runbook for details about this metric.
+- Under normal conditions when ingester is running and it is processing records faster than records are appearing, receive delay should be stable.
+- If observed "receive delay" increases and reaches certain threshold, alert is raised.
+
+How to **investigate**:
+
+- Check if ingester is fast enough to process all data in Kafka.
+- If ingesters are too slow, consider scaling ingesters, either vertically (to make ingesters faster), or horizontally to spread incoming series between more ingesters.
+
+### MimirIngesterFailsToProcessRecordsFromKafka
+
+This alert fires when ingester is unable to process incoming records from Kafka due to internal errors. If ingest-storage wasn't used, such push requests would end up with 5xx errors.
+
+How it **works**:
+
+- Ingester reads records from Kafka, and processes them locally. Processing means unmarshalling the data and handling write requests stored in records.
+- Write requests can fail due to "user" or "server" errors. Typical user error is too low limit for number of series. Server error can be for example ingester hitting an instance limit.
+- If requests keep failing due to server errors, this alert is raised.
+
+How to **investigate**:
+
+- Check ingester logs to see why requests are failing, and troubleshoot based on that.
+
+### MimirIngesterFailsEnforceStrongConsistencyOnReadPath
+
+This alert fires when too many read-requests with strong consistency are failing.
+
+How it **works**:
+
+- When read request asks for strong-consistency guarantee, ingester will read the last produced offset from Kafka, and wait until record with this offset is consumed.
+- If read request times out during this wait, that is considered to be a failure of request with strong-consistency.
+- If requests keep failing due to failure to enforce strong-consistency, this alert is raised.
+
+How to **investigate**:
+
+- Check wait latency of requests with strong-consistency.
+- Check if ingester needs to process too many records, and whether ingesters need to be scaled up (vertically or horizontally).
+- Consider increasing read-timeout of requests.
 
 ## Errors catalog
 

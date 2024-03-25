@@ -90,7 +90,7 @@
           alert: $.alertName('IngesterFailsToProcessRecordsFromKafka'),
           'for': '5m',
           expr: |||
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[5m]) > 0
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m]) > 0
           ||| % $._config,
           labels: {
             severity: 'critical',
@@ -104,7 +104,7 @@
           alert: $.alertName('IngesterFailsEnforceStrongConsistencyOnReadPath'),
           'for': '5m',
           expr: |||
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_strong_consistency_failures_total[5m])) > 0
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_strong_consistency_failures_total[1m])) > 0
           ||| % $._config,
           labels: {
             severity: 'critical',
