@@ -10,7 +10,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/grafana/mimir/pkg/querier/engine/common"
 	"sync"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/querier/engine/common"
 	"github.com/grafana/mimir/pkg/querier/engine/streaming"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
