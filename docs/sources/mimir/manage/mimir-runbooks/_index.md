@@ -190,7 +190,7 @@ How to **investigate**:
 
 - Check the `Mimir / Writes` dashboard
   - Looking at the dashboard you should see in which Mimir service the high latency originates
-  - The panels in the dashboard are vertically sorted by the network path (eg. gateway -> distributor -> ingester). When using ingest-storage, network path changes to gateway -> distributor -> Kafka instead. 
+  - The panels in the dashboard are vertically sorted by the network path (eg. gateway -> distributor -> ingester). When using [ingest-storage](#mimir-ingest-storage-experimental), network path changes to gateway -> distributor -> Kafka instead. 
 - Deduce where in the stack the latency is being introduced
   - **`gateway`**
     - Latency may be caused by the time taken for the gateway to receive the entire request from the client. There are a multitude of reasons this can occur, so communication with the user may be necessary. For example:
@@ -201,7 +201,7 @@ How to **investigate**:
     - There could be a problem with authentication (eg. slow to run auth layer)
   - **`distributor`**
     - Typically, distributor p99 latency is in the range 50-100ms. If the distributor latency is higher than this, you may need to scale up the distributors.
-    - When using Mimir ingest-storage, distributors are writing requests to Kafka-compatible backend. Increased latency in distributor may also come from this backend.
+    - When using Mimir [ingest-storage](#mimir-ingest-storage-experimental), distributors are writing requests to Kafka-compatible backend. Increased latency in distributor may also come from this backend.
   - **`ingester`**
     - Typically, ingester p99 latency is in the range 5-50ms. If the ingester latency is higher than this, you should investigate the root cause before scaling up ingesters.
     - Check out the following alerts and fix them if firing:
@@ -246,7 +246,7 @@ How to **investigate**:
         - If query sharding already enabled, consider increasing total number of query shards (`query_sharding_total_shards`) for tenants submitting slow queries, so their queries can be further parallelized
   - **`ingester`**
     - Check if ingesters are not overloaded. If they are and you can scale up ingesters vertically, that may be the best action. If that's not possible, scaling horizontally can help as well, but it can take several hours for ingesters to fully redistribute their series.
-    - When using ingest-storage, check ratio of queries using strong-consistency, and latency of queries using strong-consistency.
+    - When using [ingest-storage](#mimir-ingest-storage-experimental), check ratio of queries using strong-consistency, and latency of queries using strong-consistency.
 
 #### Alertmanager
 
@@ -282,7 +282,7 @@ How to **investigate**:
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
   - If crashing service is query-frontend, querier or store-gateway, and you have "activity tracker" feature enabled, look for `found unfinished activities from previous run` message and subsequent `activity` messages in the log file to see which queries caused the crash.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
-- When using ingest-storage and distributors are failing to write requests to Kafka, make sure that Kafka is up and running correctly.
+- When using [ingest-storage](#mimir-ingest-storage-experimental) and distributors are failing to write requests to Kafka, make sure that Kafka is up and running correctly.
 
 #### Alertmanager
 
