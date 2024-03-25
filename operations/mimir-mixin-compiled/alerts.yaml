@@ -1018,7 +1018,7 @@ groups:
         }} fails to consume write requests read from Kafka due to internal errors.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailstoprocessrecordsfromkafka
     expr: |
-      sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m]) > 0
+      sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])) > 0
     for: 5m
     labels:
       severity: critical

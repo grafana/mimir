@@ -190,7 +190,7 @@ How to **investigate**:
 
 - Check the `Mimir / Writes` dashboard
   - Looking at the dashboard you should see in which Mimir service the high latency originates
-  - The panels in the dashboard are vertically sorted by the network path (eg. gateway -> distributor -> ingester). When using [ingest-storage](#mimir-ingest-storage-experimental), network path changes to gateway -> distributor -> Kafka instead. 
+  - The panels in the dashboard are vertically sorted by the network path (eg. gateway -> distributor -> ingester). When using [ingest-storage](#mimir-ingest-storage-experimental), network path changes to gateway -> distributor -> Kafka instead.
 - Deduce where in the stack the latency is being introduced
   - **`gateway`**
     - Latency may be caused by the time taken for the gateway to receive the entire request from the client. There are a multitude of reasons this can occur, so communication with the user may be necessary. For example:
@@ -1340,7 +1340,7 @@ How it **works**:
 
 - Ingester connects to Kafka brokers and reads records from it.
 - When ingester fails to read more records from Kafka due to error, ingester logs such error.
-- This can be normal if Kafka brokers are restarting, however if read errors continue for some time, alert is raised. 
+- This can be normal if Kafka brokers are restarting, however if read errors continue for some time, alert is raised.
 
 How to **investigate**:
 
@@ -1384,7 +1384,7 @@ This alert fires when "receive delay" reported by ingester while it's running re
 
 How it **works**:
 
-- After ingester start and catches up with records in Kafka, ingester switches to "running" mode. 
+- After ingester start and catches up with records in Kafka, ingester switches to "running" mode.
 - In running mode, ingester continues to process incoming samples from Kafka and continues to report "receive delay". See [`MimirStartingIngesterKafkaReceiveDelayIncreasing`](#MimirStartingIngesterKafkaReceiveDelayIncreasing) runbook for details about this metric.
 - Under normal conditions when ingester is running and it is processing records faster than records are appearing, receive delay should be stable.
 - If observed "receive delay" increases and reaches certain threshold, alert is raised.
