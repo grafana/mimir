@@ -85,6 +85,20 @@
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "running" phase is too far behind in its consumption of write requests from Kafka.' % $._config,
           },
         },
+
+        {
+          alert: $.alertName('IngesterFailsToProcessRecordsFromKafka'),
+          'for': '5m',
+          expr: |||
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[5m]) > 0
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s fails to consume write requests read from Kafka due to internal errors.' % $._config,
+          },
+        },
       ],
     },
   ],
