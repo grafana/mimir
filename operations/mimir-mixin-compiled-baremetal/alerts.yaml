@@ -1009,6 +1009,16 @@ groups:
     for: 5m
     labels:
       severity: critical
+  - alert: MimirIngesterFailsEnforceStrongConsistencyOnReadPath
+    annotations:
+      message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} fails to enforce strong-consistency on read-path.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailsenforcestrongconsistencyonreadpath
+    expr: |
+      sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_strong_consistency_failures_total[5m])) > 0
+    for: 5m
+    labels:
+      severity: critical
 - name: mimir_continuous_test
   rules:
   - alert: MimirContinuousTestNotRunningOnWrites

@@ -99,6 +99,20 @@
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s fails to consume write requests read from Kafka due to internal errors.' % $._config,
           },
         },
+
+        {
+          alert: $.alertName('IngesterFailsEnforceStrongConsistencyOnReadPath'),
+          'for': '5m',
+          expr: |||
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_strong_consistency_failures_total[5m])) > 0
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s fails to enforce strong-consistency on read-path.' % $._config,
+          },
+        },
       ],
     },
   ],
