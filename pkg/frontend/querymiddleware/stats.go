@@ -58,7 +58,7 @@ func newQueryStatsMiddleware(reg prometheus.Registerer, engine *promql.Engine) M
 	})
 }
 
-func (s queryStatsMiddleware) Do(ctx context.Context, req Request) (Response, error) {
+func (s queryStatsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	if !isRequestStepAligned(req) {
 		s.nonAlignedQueries.Inc()
 	}
@@ -70,7 +70,7 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req Request) (Response, er
 	return s.next.Do(ctx, req)
 }
 
-func (s queryStatsMiddleware) trackRegexpMatchers(req Request) {
+func (s queryStatsMiddleware) trackRegexpMatchers(req MetricsQueryRequest) {
 	expr, err := parser.ParseExpr(req.GetQuery())
 	if err != nil {
 		return
@@ -93,7 +93,7 @@ var queryStatsErrQueryable = &storage.MockQueryable{MockQuerier: &storage.MockQu
 	return storage.ErrSeriesSet(errors.New("cannot use query stats queryable for running queries"))
 }}}
 
-func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Request) {
+func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req MetricsQueryRequest) {
 	details := QueryDetailsFromContext(ctx)
 	if details == nil {
 		return

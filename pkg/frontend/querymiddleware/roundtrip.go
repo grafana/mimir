@@ -116,16 +116,16 @@ func (cfg *Config) cardinalityBasedShardingEnabled() bool {
 }
 
 // HandlerFunc is like http.HandlerFunc, but for Handler.
-type HandlerFunc func(context.Context, Request) (Response, error)
+type HandlerFunc func(context.Context, MetricsQueryRequest) (Response, error)
 
 // Do implements Handler.
-func (q HandlerFunc) Do(ctx context.Context, req Request) (Response, error) {
+func (q HandlerFunc) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	return q(ctx, req)
 }
 
 // Handler is like http.Handle, but specifically for Prometheus query_range calls.
 type Handler interface {
-	Do(context.Context, Request) (Response, error)
+	Do(context.Context, MetricsQueryRequest) (Response, error)
 }
 
 // MiddlewareFunc is like http.HandlerFunc, but for Middleware.
@@ -244,7 +244,7 @@ func newQueryTripperware(
 
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-		shouldCache := func(r Request) bool {
+		shouldCache := func(r MetricsQueryRequest) bool {
 			return !r.GetOptions().CacheDisabled
 		}
 

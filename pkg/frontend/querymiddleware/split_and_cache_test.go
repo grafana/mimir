@@ -293,13 +293,13 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	}
 
 	downstreamReqs := 0
-	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 		downstreamReqs++
 		return expectedResponse, nil
 	}))
 
 	step := int64(120 * 1000)
-	req := Request(&PrometheusRangeQueryRequest{
+	req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
 		Path:  "/api/v1/query_range",
 		Start: parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
 		End:   parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
@@ -425,12 +425,12 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 	}
 
 	downstreamReqs := 0
-	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 		downstreamReqs++
 		return expectedResponse, nil
 	}))
 
-	req := Request(&PrometheusRangeQueryRequest{
+	req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
 		Path:  "/api/v1/query_range",
 		Start: parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
 		End:   parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
@@ -518,12 +518,12 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 	}
 
 	downstreamReqs := 0
-	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 		downstreamReqs++
 		return expectedResponse, nil
 	}))
 
-	req := Request(&PrometheusRangeQueryRequest{
+	req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
 		Path:  "/api/v1/query_range",
 		Start: parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
 		End:   parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
@@ -661,7 +661,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			)
 
 			calls := 0
-			rc := mw.Wrap(HandlerFunc(func(_ context.Context, r Request) (Response, error) {
+			rc := mw.Wrap(HandlerFunc(func(_ context.Context, r MetricsQueryRequest) (Response, error) {
 				calls++
 
 				// Check the downstream request. We only check the 1st request because the subsequent
@@ -675,7 +675,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			}))
 			ctx := user.InjectOrgID(context.Background(), userID)
 
-			req := Request(&PrometheusRangeQueryRequest{
+			req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
 				Path:  "/api/v1/query_range",
 				Start: testData.queryStartTime.Unix() * 1000,
 				End:   testData.queryEndTime.Unix() * 1000,
@@ -683,7 +683,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				Query: `{__name__=~".+"}`,
 			})
 
-			// Request should result in a query.
+			// MetricsQueryRequest should result in a query.
 			resp, err := rc.Do(ctx, req)
 			require.NoError(t, err)
 			require.Equal(t, 1, calls)
@@ -813,7 +813,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 	}
 
 	// Generate some random requests.
-	reqs := make([]Request, 0, numQueries)
+	reqs := make([]MetricsQueryRequest, 0, numQueries)
 	for q := 0; q < numQueries; q++ {
 		// Generate a random time range within min/max time.
 		startTime := minTime.Add(time.Duration(rnd.Int63n(maxTime.Sub(minTime).Milliseconds())) * time.Millisecond)
@@ -889,7 +889,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 
 	now := time.Now().UnixMilli()
 	tests := map[string]struct {
-		req                    Request
+		req                    MetricsQueryRequest
 		cachedExtents          []Extent
 		expectedUpdatedExtents bool
 		expectedCachedExtents  []Extent
@@ -1148,7 +1148,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				resultsCacheAlwaysEnabled,
 				log.NewNopLogger(),
 				prometheus.NewPedanticRegistry(),
-			).Wrap(HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			).Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 				return mkAPIResponse(req.GetStart(), req.GetEnd(), req.GetStep()), nil
 			})).(*splitAndCacheMiddleware)
 			mw.currentTime = func() time.Time { return time.UnixMilli(now) }
@@ -1289,7 +1289,7 @@ func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
 func TestSplitRequests_prepareDownstreamRequests(t *testing.T) {
 	tests := map[string]struct {
 		input    splitRequests
-		expected []Request
+		expected []MetricsQueryRequest
 	}{
 		"should return an empty slice on no downstream requests": {
 			input:    nil,
@@ -1297,11 +1297,11 @@ func TestSplitRequests_prepareDownstreamRequests(t *testing.T) {
 		},
 		"should inject ID and hints on downstream requests and return them": {
 			input: splitRequests{
-				{downstreamRequests: []Request{&PrometheusRangeQueryRequest{Start: 1}, &PrometheusRangeQueryRequest{Start: 2}}},
-				{downstreamRequests: []Request{}},
-				{downstreamRequests: []Request{&PrometheusRangeQueryRequest{Start: 3}}},
+				{downstreamRequests: []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 1}, &PrometheusRangeQueryRequest{Start: 2}}},
+				{downstreamRequests: []MetricsQueryRequest{}},
+				{downstreamRequests: []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 3}}},
 			},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				(&PrometheusRangeQueryRequest{Start: 1}).WithID(1).WithTotalQueriesHint(3),
 				(&PrometheusRangeQueryRequest{Start: 2}).WithID(2).WithTotalQueriesHint(3),
 				(&PrometheusRangeQueryRequest{Start: 3}).WithID(3).WithTotalQueriesHint(3),
@@ -1335,24 +1335,24 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 	}{
 		"should do nothing on no downstream requests": {
 			requests: splitRequests{
-				{downstreamRequests: []Request{}},
-				{downstreamRequests: []Request{}},
+				{downstreamRequests: []MetricsQueryRequest{}},
+				{downstreamRequests: []MetricsQueryRequest{}},
 			},
 			responses: nil,
 			expected: splitRequests{
-				{downstreamRequests: []Request{}},
-				{downstreamRequests: []Request{}},
+				{downstreamRequests: []MetricsQueryRequest{}},
+				{downstreamRequests: []MetricsQueryRequest{}},
 			},
 		},
 		"should associate downstream responses to requests": {
 			requests: splitRequests{{
-				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
 				downstreamResponses: []Response{nil, nil},
 			}, {
-				downstreamRequests:  []Request{},
+				downstreamRequests:  []MetricsQueryRequest{},
 				downstreamResponses: []Response{},
 			}, {
-				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
 			responses: []requestResponse{{
@@ -1366,22 +1366,22 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 				Response: &PrometheusResponse{Status: "response-2"},
 			}},
 			expected: splitRequests{{
-				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
 				downstreamResponses: []Response{&PrometheusResponse{Status: "response-1"}, &PrometheusResponse{Status: "response-2"}},
 			}, {
-				downstreamRequests:  []Request{},
+				downstreamRequests:  []MetricsQueryRequest{},
 				downstreamResponses: []Response{},
 			}, {
-				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{&PrometheusResponse{Status: "response-3"}},
 			}},
 		},
 		"should return error if a downstream response is missing": {
 			requests: splitRequests{{
-				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
 				downstreamResponses: []Response{nil, nil},
 			}, {
-				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
 			responses: []requestResponse{{
@@ -1395,10 +1395,10 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 		},
 		"should return error if multiple downstream responses have the same ID": {
 			requests: splitRequests{{
-				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
 				downstreamResponses: []Response{nil, nil},
 			}, {
-				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
 			responses: []requestResponse{{
@@ -1412,10 +1412,10 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 		},
 		"should return error if extra downstream responses are requested to be stored": {
 			requests: splitRequests{{
-				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
 				downstreamResponses: []Response{nil, nil},
 			}, {
-				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
 			responses: []requestResponse{{
@@ -1519,7 +1519,7 @@ type assertHintsMiddleware struct {
 	expected *Hints
 }
 
-func (m *assertHintsMiddleware) Do(ctx context.Context, req Request) (Response, error) {
+func (m *assertHintsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	assert.Equal(m.t, m.expected, req.GetHints())
 	return m.next.Do(ctx, req)
 }
@@ -1602,41 +1602,41 @@ func TestNextIntervalBoundary(t *testing.T) {
 
 func TestSplitQueryByInterval(t *testing.T) {
 	for i, tc := range []struct {
-		input    Request
-		expected []Request
+		input    MetricsQueryRequest
+		expected []MetricsQueryRequest
 		interval time.Duration
 	}{
 		{
 			input: &PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: "foo"},
 			},
 			interval: day,
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: "foo"},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: 0, End: 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: 0, End: 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			},
 			interval: day,
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: 0, End: 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: 0, End: 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: 0, End: 2 * 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo @ start()"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: 0, End: (24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo @ 0.000"},
 				&PrometheusRangeQueryRequest{Start: 24 * 3600 * seconds, End: 2 * 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo @ 0.000"},
 			},
@@ -1644,7 +1644,7 @@ func TestSplitQueryByInterval(t *testing.T) {
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: 0, End: 2 * 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: 0, End: (3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: 2 * 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			},
@@ -1652,7 +1652,7 @@ func TestSplitQueryByInterval(t *testing.T) {
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: 3 * 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: (24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: 24 * 3600 * seconds, End: (2 * 24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: 2 * 24 * 3600 * seconds, End: 3 * 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
@@ -1661,7 +1661,7 @@ func TestSplitQueryByInterval(t *testing.T) {
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: 2 * 3600 * seconds, End: 3 * 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: 2 * 3600 * seconds, End: (3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: (2 * 3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: 2 * 3 * 3600 * seconds, End: 3 * 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
@@ -1670,14 +1670,14 @@ func TestSplitQueryByInterval(t *testing.T) {
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:03:00Z"), Step: 5 * time.Minute.Milliseconds(), Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:03:00Z"), Step: 5 * time.Minute.Milliseconds(), Query: "foo"},
 			},
 			interval: day,
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-14T23:54:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: "foo"},
 			},
@@ -1685,7 +1685,7 @@ func TestSplitQueryByInterval(t *testing.T) {
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T22:00:00Z"), End: timeToMillis(t, "2021-10-17T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T22:00:00Z"), End: timeToMillis(t, "2021-10-14T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-15T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T22:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
@@ -1695,7 +1695,7 @@ func TestSplitQueryByInterval(t *testing.T) {
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-18T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T00:00:00Z"), End: timeToMillis(t, "2021-10-16T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T00:00:00Z"), End: timeToMillis(t, "2021-10-17T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
@@ -1705,7 +1705,7 @@ func TestSplitQueryByInterval(t *testing.T) {
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-22T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-15T22:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T04:00:00Z"), End: timeToMillis(t, "2021-10-17T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-18T10:00:00Z"), End: timeToMillis(t, "2021-10-18T10:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
@@ -1717,7 +1717,7 @@ func TestSplitQueryByInterval(t *testing.T) {
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T14:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T06:00:00Z"), End: timeToMillis(t, "2021-10-16T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T06:00:00Z"), End: timeToMillis(t, "2021-10-17T14:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
@@ -1726,7 +1726,7 @@ func TestSplitQueryByInterval(t *testing.T) {
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T06:00:00Z"), End: timeToMillis(t, "2021-10-16T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
@@ -1735,7 +1735,7 @@ func TestSplitQueryByInterval(t *testing.T) {
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T16:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T02:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T08:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
@@ -1744,7 +1744,7 @@ func TestSplitQueryByInterval(t *testing.T) {
 		},
 		{
 			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T08:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
-			expected: []Request{
+			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T16:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T02:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
 				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T08:00:00Z"), End: timeToMillis(t, "2021-10-17T08:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},

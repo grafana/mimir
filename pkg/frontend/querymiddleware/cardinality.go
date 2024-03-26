@@ -63,7 +63,7 @@ func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, re
 
 // Do injects a cardinality estimate into the query hints (if available) and
 // caches the actual cardinality observed for this query.
-func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Response, error) {
+func (c *cardinalityEstimation) Do(ctx context.Context, request MetricsQueryRequest) (Response, error) {
 	spanLog := spanlogger.FromContext(ctx, c.logger)
 
 	tenants, err := tenant.TenantIDs(ctx)
@@ -162,7 +162,7 @@ func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {
 // with respect to both start time and range size. To avoid expiry of all
 // estimates at the bucket boundary, an offset is added based on the hash of the
 // query string.
-func generateCardinalityEstimationCacheKey(userID string, r Request, bucketSize time.Duration) string {
+func generateCardinalityEstimationCacheKey(userID string, r MetricsQueryRequest, bucketSize time.Duration) string {
 	hasher := fnv.New64a()
 	_, _ = hasher.Write([]byte(r.GetQuery()))
 

@@ -125,7 +125,7 @@ func newLimitsMiddleware(l Limits, logger log.Logger) Middleware {
 	})
 }
 
-func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
+func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, l.logger, "limits")
 	defer log.Finish()
 
@@ -246,7 +246,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	// parallel from upstream handlers and ensure that no more than MaxQueryParallelism
 	// sub-requests run in parallel.
 	response, err := rt.middleware.Wrap(
-		HandlerFunc(func(ctx context.Context, r Request) (Response, error) {
+		HandlerFunc(func(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 			if err := sem.Acquire(ctx, 1); err != nil {
 				return nil, fmt.Errorf("could not acquire work: %w", err)
 			}
@@ -263,14 +263,14 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 
 // roundTripperHandler is an adapter that implements the Handler interface using a http.RoundTripper to perform
 // the requests and a Codec to translate between http Request/Response model and this package's Request/Response model.
-// It basically encodes a Request from Handler.Do and decodes response from next roundtripper.
+// It basically encodes a MetricsQueryRequest from Handler.Do and decodes response from next roundtripper.
 type roundTripperHandler struct {
 	logger log.Logger
 	next   http.RoundTripper
 	codec  Codec
 }
 
-func (rth roundTripperHandler) Do(ctx context.Context, r Request) (Response, error) {
+func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	request, err := rth.codec.EncodeRequest(ctx, r)
 	if err != nil {
 		return nil, err

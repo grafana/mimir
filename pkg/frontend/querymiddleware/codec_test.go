@@ -44,7 +44,7 @@ func TestMetricsQueryRequest(t *testing.T) {
 
 	for i, tc := range []struct {
 		url         string
-		expected    Request
+		expected    MetricsQueryRequest
 		expectedErr error
 	}{
 		{

@@ -42,7 +42,7 @@ func newStepAlignMiddleware(limits Limits, logger log.Logger, registerer prometh
 	})
 }
 
-func (s *stepAlignMiddleware) Do(ctx context.Context, r Request) (Response, error) {
+func (s *stepAlignMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	tenants, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return s.next.Do(ctx, r)
@@ -75,9 +75,9 @@ func (s *stepAlignMiddleware) Do(ctx context.Context, r Request) (Response, erro
 	return s.next.Do(ctx, r)
 }
 
-// isRequestStepAligned returns whether the Request start and end timestamps are aligned
+// isRequestStepAligned returns whether the MetricsQueryRequest start and end timestamps are aligned
 // with the step.
-func isRequestStepAligned(req Request) bool {
+func isRequestStepAligned(req MetricsQueryRequest) bool {
 	if req.GetStep() == 0 {
 		return true
 	}

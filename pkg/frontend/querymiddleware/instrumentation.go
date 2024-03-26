@@ -27,7 +27,7 @@ func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) 
 	}
 
 	return MiddlewareFunc(func(next Handler) Handler {
-		return HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
+		return HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 			var resp Response
 			err := instrument.CollectedRequest(ctx, name, durationCol, instrument.ErrorCode, func(ctx context.Context) error {
 				sp := opentracing.SpanFromContext(ctx)

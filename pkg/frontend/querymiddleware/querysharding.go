@@ -96,7 +96,7 @@ func newQueryShardingMiddleware(
 	})
 }
 
-func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
+func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	log := spanlogger.FromContext(ctx, s.logger)
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
@@ -171,7 +171,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	}, nil
 }
 
-func newQuery(ctx context.Context, r Request, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
+func newQuery(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		return engine.NewRangeQuery(
@@ -255,7 +255,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 }
 
 // getShardsForQuery calculates and return the number of shards that should be used to run the query.
-func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r Request, queryExpr parser.Expr, spanLog *spanlogger.SpanLogger) int {
+func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r MetricsQueryRequest, queryExpr parser.Expr, spanLog *spanlogger.SpanLogger) int {
 	// Check if sharding is disabled for the given request.
 	if r.GetOptions().ShardingDisabled {
 		return 1

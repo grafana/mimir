@@ -186,8 +186,8 @@ var ErrUnsupportedRequest = errors.New("request is not cacheable")
 // CacheKeyGenerator generates cache keys. This is a useful interface for downstream
 // consumers who wish to implement their own strategies.
 type CacheKeyGenerator interface {
-	// QueryRequest should generate a cache key based on the tenant ID and Request.
-	QueryRequest(ctx context.Context, tenantID string, r Request) string
+	// QueryRequest should generate a cache key based on the tenant ID and MetricsQueryRequest.
+	QueryRequest(ctx context.Context, tenantID string, r MetricsQueryRequest) string
 
 	// LabelValues should return a cache key for a label values request. The cache key does not need to contain the tenant ID.
 	// LabelValues can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
@@ -215,8 +215,8 @@ func NewDefaultCacheKeyGenerator(codec Codec, interval time.Duration) DefaultCac
 	}
 }
 
-// QueryRequest generates a cache key based on the userID, Request and interval.
-func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, userID string, r Request) string {
+// QueryRequest generates a cache key based on the userID, MetricsQueryRequest and interval.
+func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, userID string, r MetricsQueryRequest) string {
 	startInterval := r.GetStart() / g.interval.Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 
@@ -230,13 +230,13 @@ func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, userID string,
 
 // shouldCacheFn checks whether the current request should go to cache
 // or not. If not, just send the request to next handler.
-type shouldCacheFn func(r Request) bool
+type shouldCacheFn func(r MetricsQueryRequest) bool
 
 // resultsCacheAlwaysEnabled is a shouldCacheFn function always returning true.
-var resultsCacheAlwaysEnabled = func(_ Request) bool { return true }
+var resultsCacheAlwaysEnabled = func(_ MetricsQueryRequest) bool { return true }
 
 // isRequestCachable says whether the request is eligible for caching.
-func isRequestCachable(req Request, maxCacheTime int64, cacheUnalignedRequests bool, logger log.Logger) (cachable bool, reason string) {
+func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalignedRequests bool, logger log.Logger) (cachable bool, reason string) {
 	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
 	// PromQL compatible. But this means we cannot cache queries that do not have their start and end aligned.
 	if !cacheUnalignedRequests && !isRequestStepAligned(req) {
@@ -274,7 +274,7 @@ var (
 )
 
 // areEvaluationTimeModifiersCachable returns true if the @ modifier and the offset modifier results are safe to cache.
-func areEvaluationTimeModifiersCachable(r Request, maxCacheTime int64, logger log.Logger) bool {
+func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int64, logger log.Logger) bool {
 	// There are 3 cases when evaluation time modifiers are not safe to cache:
 	//   1. When @ modifier points to time beyond the maxCacheTime.
 	//   2. If the @ modifier time is > the query range end while being
@@ -337,7 +337,7 @@ func getHeaderValuesWithName(r Response, headerName string) (headerValues []stri
 
 // mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
 // The input extents can be overlapping and are not required to be sorted.
-func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, extents []Extent) ([]Extent, error) {
+func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, merger Merger, extents []Extent) ([]Extent, error) {
 	// Fast path.
 	if len(extents) <= 1 {
 		return extents, nil
@@ -432,7 +432,7 @@ func newAccumulator(base Extent) (*accumulator, error) {
 	}, nil
 }
 
-func toExtent(ctx context.Context, req Request, res Response, queryTime time.Time) (Extent, error) {
+func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryTime time.Time) (Extent, error) {
 	marshalled, err := types.MarshalAny(res)
 	if err != nil {
 		return Extent{}, err
@@ -448,8 +448,8 @@ func toExtent(ctx context.Context, req Request, res Response, queryTime time.Tim
 
 // partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func partitionCacheExtents(req Request, extents []Extent, minCacheExtent int64, extractor Extractor) ([]Request, []Response, error) {
-	var requests []Request
+func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, error) {
+	var requests []MetricsQueryRequest
 	var cachedResponses []Response
 	start := req.GetStart()
 
@@ -512,7 +512,7 @@ func partitionCacheExtents(req Request, extents []Extent, minCacheExtent int64, 
 	return requests, cachedResponses, nil
 }
 
-func filterRecentCacheExtents(req Request, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
+func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
 	maxCacheTime := (int64(model.Now().Add(-maxCacheFreshness)) / req.GetStep()) * req.GetStep()
 	for i := range extents {
 		// Never cache data for the latest freshness period.

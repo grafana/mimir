@@ -100,7 +100,7 @@ func newSplitInstantQueryByIntervalMiddleware(
 	})
 }
 
-func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Request) (Response, error) {
+func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	// Log the instant query and its timestamp in every error log, so that we have more information for debugging failures.
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
@@ -201,7 +201,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 }
 
 // getSplitIntervalForQuery calculates and return the split interval that should be used to run the instant query.
-func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantsIds []string, r Request, spanLog *spanlogger.SpanLogger) time.Duration {
+func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantsIds []string, r MetricsQueryRequest, spanLog *spanlogger.SpanLogger) time.Duration {
 	// Check if splitting is disabled for the given request.
 	if r.GetOptions().InstantSplitDisabled {
 		return 0

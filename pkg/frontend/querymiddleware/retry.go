@@ -64,7 +64,7 @@ func newRetryMiddleware(log log.Logger, maxRetries int, metrics prometheus.Obser
 	})
 }
 
-func (r retry) Do(ctx context.Context, req Request) (Response, error) {
+func (r retry) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	tries := 0
 	defer func() { r.metrics.Observe(float64(tries)) }()
 
