@@ -259,17 +259,7 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 
 	// Check that bucket counts including zero bucket add up to the overall count.
 	if s.IsFloatHistogram() {
-		count := s.GetZeroCountFloat()
-		for _, c := range s.GetNegativeCounts() {
-			count += c
-		}
-		for _, c := range s.GetPositiveCounts() {
-			count += c
-		}
-		if count != s.GetCountFloat() {
-			m.bucketCountMismatch.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(bucketCountMismatchMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), s.GetCountFloat(), count)
-		}
+		// Do nothing. Due to floating point precision issues, we don't check the bucket count.
 	} else {
 		count := s.GetZeroCountInt()
 		bucketCount := int64(0)

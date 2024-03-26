@@ -654,7 +654,8 @@ func TestInvalidBucketCountHistogram(t *testing.T) {
 				ResetHint:      mimirpb.Histogram_UNKNOWN,
 				Timestamp:      0,
 			},
-			expectedError: fmt.Errorf("native histogram bucket count mismatch, timestamp: 0, series: a{a=\"a\"}, expected 4.5, got 5.5 (err-mimir-native-histogram-bucket-count-mismatch)"),
+			// Due to floating point precision issues, this case is not an error at the moment.
+			expectedError: nil,
 		},
 	}
 
@@ -672,7 +673,7 @@ func TestInvalidBucketCountHistogram(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{group="group-1",reason="native_histogram_bucket_count_mismatch",user="user-1"} 2
+			cortex_discarded_samples_total{group="group-1",reason="native_histogram_bucket_count_mismatch",user="user-1"} 1
 	`), "cortex_discarded_samples_total"))
 }
 
