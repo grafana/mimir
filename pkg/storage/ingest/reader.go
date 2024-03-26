@@ -97,36 +97,43 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		}
 	}()
 
-	var startOffset int64
-	var err error
+	var (
+		lastConsumedOffset int64
+		startOffset        int64
+		err                error
+	)
 
 	// Find the offset from which we should start consuming.
 	switch r.kafkaCfg.ConsumeFromPositionAtStartup {
 	case consumeFromStart:
+		lastConsumedOffset = -1
 		startOffset = kafkaStartOffset
-		level.Info(r.logger).Log("msg", "starting consumption from partition start", "consumer_group", r.consumerGroup)
+		level.Info(r.logger).Log("msg", "starting consumption from partition start", "start_offset", startOffset, "consumer_group", r.consumerGroup)
 
 	case consumeFromEnd:
+		lastConsumedOffset = -1
 		startOffset = kafkaEndOffset
-		level.Warn(r.logger).Log("msg", "starting consumption from partition end (may cause data loss)", "consumer_group", r.consumerGroup)
+		level.Warn(r.logger).Log("msg", "starting consumption from partition end (may cause data loss)", "start_offset", startOffset, "consumer_group", r.consumerGroup)
 
 	default:
-		if offset, exists, err := r.fetchLastCommittedOffsetWithRetries(ctx); err != nil {
+		var exists bool
+		lastConsumedOffset, exists, err = r.fetchLastCommittedOffsetWithRetries(ctx)
+
+		if err != nil {
 			return err
 		} else if exists {
-			level.Info(r.logger).Log("msg", "starting consumption from last committed offset", "offset", offset, "consumer_group", r.consumerGroup)
-			startOffset = offset
+			startOffset = lastConsumedOffset + 1 // We'll have to start consuming from the next offset (included).
+			level.Info(r.logger).Log("msg", "starting consumption from last consumed offset", "last_consumed_offset", lastConsumedOffset, "start_offset", startOffset, "consumer_group", r.consumerGroup)
 		} else {
-			level.Info(r.logger).Log("msg", "starting consumption from start because no committed offset has been found", "consumer_group", r.consumerGroup)
+			lastConsumedOffset = -1
 			startOffset = kafkaStartOffset
+			level.Info(r.logger).Log("msg", "starting consumption from partition start because no committed offset has been found", "start_offset", startOffset, "consumer_group", r.consumerGroup)
 		}
 	}
 
-	// Initialise the last consumed offset only if we've got a real offset from the consumer group.
-	// If we got a special offset (e.g. kafkaStartOffset) we want to keep the last consumed offset uninitialized,
-	// and it will be updated as soon as we consume the first record.
-	if startOffset >= 0 {
-		r.consumedOffsetWatcher.Notify(startOffset - 1)
+	// Initialise the last consumed offset only if we've got an actual offset from the consumer group.
+	if lastConsumedOffset >= 0 {
+		r.consumedOffsetWatcher.Notify(lastConsumedOffset)
 	}
 
 	r.client, err = r.newKafkaReader(kgo.NewOffset().At(startOffset))
@@ -603,11 +610,9 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) (returnEr
 		}
 	}()
 
-	// Commit the offset after the last record.
-	// The reason for this is that we resume consumption at this offset.
-	// Leader epoch is -1 because we don't know it. This lets Kafka figure it out.
+	// Commit the last consumed offset.
 	toCommit := kadm.Offsets{}
-	toCommit.AddOffset(r.kafkaCfg.Topic, r.partitionID, offset+1, -1)
+	toCommit.AddOffset(r.kafkaCfg.Topic, r.partitionID, offset, -1)
 
 	committed, err := r.admClient.CommitOffsets(ctx, r.consumerGroup, toCommit)
 	if err != nil {

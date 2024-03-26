@@ -982,7 +982,7 @@ func TestPartitionCommitter(t *testing.T) {
 			return promtest.GatherAndCompare(reg, strings.NewReader(`
 				# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 				# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
-				cortex_ingest_storage_reader_last_committed_offset{partition="1"} 124
+				cortex_ingest_storage_reader_last_committed_offset{partition="1"} 123
 
 				# HELP cortex_ingest_storage_reader_offset_commit_failures_total Total number of failed requests to commit the last consumed offset.
 				# TYPE cortex_ingest_storage_reader_offset_commit_failures_total counter
@@ -1033,7 +1033,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 			# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
-			cortex_ingest_storage_reader_last_committed_offset{partition="1"} 124
+			cortex_ingest_storage_reader_last_committed_offset{partition="1"} 123
 
 			# HELP cortex_ingest_storage_reader_offset_commit_failures_total Total number of failed requests to commit the last consumed offset.
 			# TYPE cortex_ingest_storage_reader_offset_commit_failures_total counter
