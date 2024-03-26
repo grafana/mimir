@@ -173,7 +173,7 @@ func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duratio
 			continue
 		}
 
-		attrs, err := block.GetAttributes(ctx, meta, userBucket)
+		attrs, err := block.GetMetaAttributes(ctx, meta, userBucket)
 		if err != nil {
 			return false, meta, err
 		}
