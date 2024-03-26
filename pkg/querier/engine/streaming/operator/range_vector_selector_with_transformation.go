@@ -196,4 +196,8 @@ func (m *RangeVectorSelectorWithTransformation) Close() {
 	if m.Selector != nil {
 		m.Selector.Close()
 	}
+
+	if m.buffer != nil {
+		m.buffer.Close()
+	}
 }

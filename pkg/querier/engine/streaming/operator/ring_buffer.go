@@ -102,6 +102,13 @@ func (b *RingBuffer) Reset() {
 	b.size = 0
 }
 
+// Close releases any resources associated with this buffer.
+func (b *RingBuffer) Close() {
+	b.Reset()
+	PutFPointSlice(b.points)
+	b.points = nil
+}
+
 func (b *RingBuffer) First() promql.FPoint {
 	if b.size == 0 {
 		panic("Can't get first element of empty buffer")
