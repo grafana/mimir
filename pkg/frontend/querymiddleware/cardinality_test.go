@@ -29,7 +29,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 	tests := []struct {
 		name     string
 		userID   string
-		r        Request
+		r        MetricsQueryRequest
 		expected string
 	}{
 		{
@@ -133,7 +133,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		Query: "up",
 	}
 	addSeriesHandler := func(estimate, actual uint64) HandlerFunc {
-		return func(ctx context.Context, request Request) (Response, error) {
+		return func(ctx context.Context, request MetricsQueryRequest) (Response, error) {
 			require.NotNil(t, request.GetHints())
 			request.GetHints().GetCardinalityEstimate()
 			require.Equal(t, request.GetHints().GetEstimatedSeriesCount(), estimate)
@@ -158,7 +158,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		{
 			name:     "no tenantID",
 			tenantID: "",
-			downstreamHandler: func(_ context.Context, _ Request) (Response, error) {
+			downstreamHandler: func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
 				return &PrometheusResponse{}, nil
 			},
 			expectedLoads:  0,
@@ -168,7 +168,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		{
 			name:     "downstream error",
 			tenantID: "1",
-			downstreamHandler: func(_ context.Context, _ Request) (Response, error) {
+			downstreamHandler: func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
 				return nil, errors.New("test error")
 			},
 			expectedLoads:  1,
@@ -205,7 +205,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		{
 			name:     "with empty cache",
 			tenantID: "1",
-			downstreamHandler: func(ctx context.Context, request Request) (Response, error) {
+			downstreamHandler: func(ctx context.Context, request MetricsQueryRequest) (Response, error) {
 				queryStats := stats.FromContext(ctx)
 				queryStats.AddFetchedSeries(numSeries)
 				return &PrometheusResponse{}, nil
@@ -251,8 +251,8 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 		name          string
 		tenantA       string
 		tenantB       string
-		requestA      Request
-		requestB      Request
+		requestA      MetricsQueryRequest
+		requestB      MetricsQueryRequest
 		expectedEqual bool
 	}{
 		{

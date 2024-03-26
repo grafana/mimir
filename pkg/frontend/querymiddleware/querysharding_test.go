@@ -50,8 +50,8 @@ var (
 	lookbackDelta = 5 * time.Minute
 )
 
-func mockHandlerWith(resp *PrometheusResponse, err error) Handler {
-	return HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
+func mockHandlerWith(resp *PrometheusResponse, err error) MetricsQueryHandler {
+	return HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 		if expired := ctx.Err(); expired != nil {
 			return nil, expired
 		}
@@ -681,7 +681,7 @@ func TestQuerySharding_Correctness(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-			reqs := []Request{
+			reqs := []MetricsQueryRequest{
 				&PrometheusInstantQueryRequest{
 					Path:  "/query",
 					Time:  util.TimeToMillis(end),
@@ -1356,7 +1356,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 					ResultType: string(parser.ValueTypeVector),
 				},
 			}, nil).Run(func(args mock.Arguments) {
-				req := args[1].(Request)
+				req := args[1].(MetricsQueryRequest)
 				reqShard := regexp.MustCompile(`__query_shard__="[^"]+"`).FindString(req.GetQuery())
 
 				uniqueShardsMx.Lock()
@@ -1449,7 +1449,7 @@ func TestQuerySharding_ShouldSupportMaxRegexpSizeBytes(t *testing.T) {
 					ResultType: string(parser.ValueTypeVector),
 				},
 			}, nil).Run(func(args mock.Arguments) {
-				req := args[1].(Request)
+				req := args[1].(MetricsQueryRequest)
 				reqShard := regexp.MustCompile(`__query_shard__="[^"]+"`).FindString(req.GetQuery())
 
 				uniqueShardsMx.Lock()
@@ -1681,7 +1681,7 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		req           Request
+		req           MetricsQueryRequest
 		expectedCalls int
 	}{
 		{
@@ -2147,7 +2147,7 @@ type downstreamHandler struct {
 	queryable storage.Queryable
 }
 
-func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error) {
+func (h *downstreamHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	qry, err := newQuery(ctx, r, h.engine, h.queryable)
 	if err != nil {
 		return nil, err
