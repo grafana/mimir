@@ -56,10 +56,10 @@ func (a *Aggregation) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	}
 
 	// Determine the groups we'll return
-	groups := map[uint64]*group{} // TODO: pool this?
+	groups := map[uint64]*group{}
 	buf := make([]byte, 0, 1024)
-	lb := labels.NewBuilder(labels.EmptyLabels())                       // TODO: pool this?
-	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries)) // TODO: pool this?
+	lb := labels.NewBuilder(labels.EmptyLabels()) // TODO: pool this?
+	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries))
 
 	for _, series := range innerSeries {
 		var groupingKey uint64
@@ -80,7 +80,7 @@ func (a *Aggregation) Series(ctx context.Context) ([]SeriesMetadata, error) {
 
 	// Sort the list of series we'll return, and maintain the order of the corresponding groups at the same time
 	seriesMetadata := GetSeriesMetadataSlice(len(groups))
-	a.remainingGroups = make([]*group, 0, len(groups)) // TODO: pool this?
+	a.remainingGroups = make([]*group, 0, len(groups))
 
 	for _, g := range groups {
 		seriesMetadata = append(seriesMetadata, SeriesMetadata{Labels: g.labels})
