@@ -693,8 +693,7 @@ func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, u
 		// We do include NoCompactionMarkFilter to avoid computing jobs from blocks that are marked for no-compaction.
 		NewNoCompactionMarkFilter(userBucket),
 	} {
-		err := f.Filter(ctx, metas, synced)
-		if err != nil {
+		if err := f.Filter(ctx, metas, synced); err != nil {
 			return nil, err
 		}
 	}
