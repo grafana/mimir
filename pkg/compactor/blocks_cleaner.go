@@ -706,14 +706,14 @@ func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, u
 // Convert index into map of block Metas, but ignore blocks marked for deletion.
 func convertBucketIndexToMetasForCompactionJobPlanning(idx *bucketindex.Index) map[ulid.ULID]*block.Meta {
 	deletedULIDs := idx.BlockDeletionMarks.GetULIDs()
-	deleted := make(map[ulid.ULID]bool, len(deletedULIDs))
+	deleted := make(map[ulid.ULID]struct{}, len(deletedULIDs))
 	for _, id := range deletedULIDs {
-		deleted[id] = true
+		deleted[id] = struct{}{}
 	}
 
 	metas := map[ulid.ULID]*block.Meta{}
 	for _, b := range idx.Blocks {
-		if deleted[b.ID] {
+		if _, del := deleted[b.ID]; del {
 			continue
 		}
 		metas[b.ID] = b.ThanosMeta()
