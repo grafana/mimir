@@ -185,6 +185,8 @@ func (q *Query) IsInstant() bool {
 }
 
 func (q *Query) Exec(ctx context.Context) *promql.Result {
+	defer q.root.Close()
+
 	series, err := q.root.Series(ctx)
 	if err != nil {
 		return &promql.Result{Err: err}
@@ -266,8 +268,6 @@ func (q *Query) populateMatrix(ctx context.Context, series []operator.SeriesMeta
 }
 
 func (q *Query) Close() {
-	q.root.Close() // TODO: should this go in Exec()?
-
 	if q.result == nil {
 		return
 	}
