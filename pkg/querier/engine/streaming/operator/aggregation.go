@@ -63,7 +63,7 @@ func (a *Aggregation) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	// Determine the groups we'll return
 	groups := map[uint64]*group{}
 	buf := make([]byte, 0, 1024)
-	lb := labels.NewBuilder(labels.EmptyLabels()) // TODO: pool this?
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries))
 
 	for _, series := range innerSeries {

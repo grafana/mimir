@@ -45,7 +45,7 @@ func (m *RangeVectorSelectorWithTransformation) Series(ctx context.Context) ([]S
 		return nil, err
 	}
 
-	lb := labels.NewBuilder(labels.EmptyLabels()) // TODO: pool this?
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	for i := range metadata {
 		metadata[i].Labels = dropMetricName(metadata[i].Labels, lb)
 	}
