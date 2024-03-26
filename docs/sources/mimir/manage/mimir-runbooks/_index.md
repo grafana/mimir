@@ -1385,6 +1385,14 @@ This non-critical error occurs when Mimir receives a write request that contains
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
 {{< /admonition >}}
 
+### err-mimir-native-histogram-bucket-count-mismatch
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram where the zero, positive and negative bucket counts do not add up to the overall count of the native histogram.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
 ### err-mimir-label-invalid
 
 This non-critical error occurs when Mimir receives a write request that contains a series with an invalid label name.
