@@ -1376,7 +1376,7 @@ How it **works**:
 
 How to **investigate**:
 
-- Check if ingester is fast enough to process all data in Kafka. If not, configure ingesters to start with later offset instead.
+- Check if ingester is fast enough to process all data in Kafka.
 
 ### MimirRunningIngesterReceiveDelayTooHigh
 
@@ -1392,7 +1392,7 @@ How it **works**:
 How to **investigate**:
 
 - Check if ingester is fast enough to process all data in Kafka.
-- If ingesters are too slow, consider scaling ingesters, either vertically (to make ingesters faster), or horizontally to spread incoming series between more ingesters.
+- If ingesters are too slow, consider scaling ingesters horizontally to spread incoming series between more ingesters.
 
 ### MimirIngesterFailsToProcessRecordsFromKafka
 
@@ -1401,7 +1401,7 @@ This alert fires when ingester is unable to process incoming records from Kafka 
 How it **works**:
 
 - Ingester reads records from Kafka, and processes them locally. Processing means unmarshalling the data and handling write requests stored in records.
-- Write requests can fail due to "user" or "server" errors. Typical user error is too low limit for number of series. Server error can be for example ingester hitting an instance limit.
+- Write requests can fail due to "client" or "server" errors. An example of client error is too low limit for number of series. Server error can be for example ingester hitting an instance limit.
 - If requests keep failing due to server errors, this alert is raised.
 
 How to **investigate**:
@@ -1420,9 +1420,8 @@ How it **works**:
 
 How to **investigate**:
 
-- Check wait latency of requests with strong-consistency.
+- Check wait latency of requests with strong-consistency on `Mimir / Queries` dashboard.
 - Check if ingester needs to process too many records, and whether ingesters need to be scaled up (vertically or horizontally).
-- Consider increasing read-timeout of requests.
 
 ## Errors catalog
 
