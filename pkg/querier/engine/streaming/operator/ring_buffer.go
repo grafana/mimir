@@ -75,7 +75,6 @@ func (b *RingBuffer) ForEach(f func(p promql.FPoint)) {
 func (b *RingBuffer) Append(p promql.FPoint) {
 	if b.size == len(b.points) {
 		// Create a new slice, copy the elements from the current slice.
-		// TODO: is there a better resizing strategy? Guess expected number of points based on expected time interval + step between points we've seen so far?
 		newSize := b.size * 2
 		if newSize == 0 {
 			newSize = 2

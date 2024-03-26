@@ -65,7 +65,7 @@ func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (Insta
 	}
 
 	if m.buffer == nil {
-		m.buffer = &RingBuffer{} // TODO: pool?
+		m.buffer = &RingBuffer{}
 	}
 
 	var err error
@@ -131,7 +131,6 @@ func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (Insta
 	return data, nil
 }
 
-// TODO: move to RingBuffer type?
 func (m *RangeVectorSelectorWithTransformation) fillBuffer(rangeStart, rangeEnd int64) error {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
 	for {
