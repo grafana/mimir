@@ -258,9 +258,8 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 	}
 
 	// Check that bucket counts including zero bucket add up to the overall count.
-	if s.IsFloatHistogram() {
-		// Do nothing. Due to floating point precision issues, we don't check the bucket count.
-	} else {
+	if !s.IsFloatHistogram() {
+		// Do nothing for float histograms, due to floating point precision issues, we don't check the bucket count.
 		count := s.GetZeroCountInt()
 		bucketCount := int64(0)
 		for _, c := range s.GetNegativeDeltas() {
