@@ -436,7 +436,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	for _, meta := range toCompact {
 		attrs, err := block.GetAttributes(ctx, meta, c.bkt)
 		if err != nil {
-			level.Warn(jobLogger).Log("err", err)
+			level.Warn(jobLogger).Log("msg", "failed to determine block upload time", "block", meta.ULID.String(), "err", err)
 		} else {
 			c.metrics.blockCompactionDelay.WithLabelValues(strconv.Itoa(meta.Compaction.Level)).Observe(compactionBegin.Sub(attrs.LastModified).Minutes())
 		}
