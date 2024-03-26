@@ -3,9 +3,10 @@
 package operator
 
 import (
+	"testing"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestRingBuffer(t *testing.T) {
