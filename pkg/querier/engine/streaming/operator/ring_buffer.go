@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package util // TODO: find a better package name
+package operator
 
 import "github.com/prometheus/prometheus/promql"
 
 type RingBuffer struct {
 	points     []promql.FPoint
-	firstIndex int
-	size       int
+	firstIndex int // Index into 'points' of first point in this buffer.
+	size       int // Number of points in this buffer.
 }
 
 // DiscardPointsBefore discards all points in this buffer with timestamp less than t.
@@ -21,7 +21,9 @@ func (b *RingBuffer) DiscardPointsBefore(t int64) {
 		}
 	}
 
-	// TODO: if we now have an empty buffer, reset firstIndex to 0?
+	if b.size == 0 {
+		b.firstIndex = 0
+	}
 }
 
 // Points returns slices of the points in this buffer.
@@ -74,17 +76,18 @@ func (b *RingBuffer) Append(p promql.FPoint) {
 	if b.size == len(b.points) {
 		// Create a new slice, copy the elements from the current slice.
 		// TODO: is there a better resizing strategy? Guess expected number of points based on expected time interval + step between points we've seen so far?
-		// TODO: pool slices
 		newSize := b.size * 2
 		if newSize == 0 {
 			newSize = 2
 		}
 
-		newSlice := make([]promql.FPoint, newSize)
+		newSlice := GetFPointSlice(newSize)
+		newSlice = newSlice[:cap(newSlice)]
 		pointsAtEnd := b.size - b.firstIndex
 		copy(newSlice, b.points[b.firstIndex:])
 		copy(newSlice[pointsAtEnd:], b.points[:b.firstIndex])
 
+		PutFPointSlice(b.points)
 		b.points = newSlice
 		b.firstIndex = 0
 	}

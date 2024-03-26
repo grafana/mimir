@@ -15,8 +15,6 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-
-	"github.com/grafana/mimir/pkg/querier/engine/streaming/util"
 )
 
 type RangeVectorSelectorWithTransformation struct {
@@ -29,7 +27,7 @@ type RangeVectorSelectorWithTransformation struct {
 	numSteps             int
 
 	chunkIterator chunkenc.Iterator
-	buffer        *util.RingBuffer
+	buffer        *RingBuffer
 }
 
 var _ InstantVectorOperator = &RangeVectorSelectorWithTransformation{}
@@ -67,7 +65,7 @@ func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (Insta
 	}
 
 	if m.buffer == nil {
-		m.buffer = &util.RingBuffer{} // TODO: pool?
+		m.buffer = &RingBuffer{} // TODO: pool?
 	}
 
 	var err error
