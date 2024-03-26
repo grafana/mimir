@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 type Aggregation struct {
@@ -38,6 +39,10 @@ type group struct {
 }
 
 var _ InstantVectorOperator = &Aggregation{}
+
+var groupPool = zeropool.New(func() *group {
+	return &group{}
+})
 
 // TODO: test case for grouping by multiple labels
 // TODO: add test for case where Inner returns no results
@@ -67,9 +72,9 @@ func (a *Aggregation) Series(ctx context.Context) ([]SeriesMetadata, error) {
 		g, groupExists := groups[groupingKey]
 
 		if !groupExists {
-			g = &group{ // TODO: pool these?
-				labels: a.labelsForGroup(series.Labels, lb),
-			}
+			g = groupPool.Get()
+			g.labels = a.labelsForGroup(series.Labels, lb)
+			g.remainingSeriesCount = 0
 
 			groups[groupingKey] = g
 		}
@@ -169,15 +174,15 @@ func (a *Aggregation) Next(ctx context.Context) (InstantVectorSeriesData, error)
 	PutFloatSlice(thisGroup.sums)
 	PutBoolSlice(thisGroup.present)
 
-	// TODO: return thisGroup to pool (zero-out slices)
+	thisGroup.sums = nil
+	thisGroup.present = nil
+	groupPool.Put(thisGroup)
 
 	return InstantVectorSeriesData{Floats: points}, nil
 }
 
 func (a *Aggregation) Close() {
 	a.Inner.Close()
-
-	// TODO: return remaining groups and their slices to the pool
 }
 
 type groupSorter struct {
