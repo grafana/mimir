@@ -628,7 +628,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 			level.Debug(s.logger).Log("msg", "queried non-compacted block", "blockId", b.meta.ULID, "ooo", b.meta.Compaction.FromOutOfOrder())
 		}
 
-		b.queried.CompareAndSwap(false, true)
+		b.queried.Store(true)
 	}
 	if err := s.sendHints(srv, resHints); err != nil {
 		return err
