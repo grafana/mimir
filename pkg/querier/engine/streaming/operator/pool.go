@@ -36,7 +36,7 @@ var (
 
 	seriesBatchPool = sync.Pool{New: func() any {
 		return &SeriesBatch{
-			series: make([]storage.Series, 0, 100), // TODO: what is a reasonable batch size?
+			series: make([]storage.Series, 0, 256), // There's not too much science behind this number: this is based on the batch size used for chunks streaming.
 			next:   nil,
 		}
 	}}
