@@ -583,6 +583,99 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 	`), "cortex_discarded_samples_total"))
 }
 
+func TestInvalidBucketCountHistogram(t *testing.T) {
+	testCases := map[string]struct {
+		h             *mimirpb.Histogram
+		expectedError error
+	}{
+		"a valid zero counts causes no error": {
+			h:             &mimirpb.Histogram{},
+			expectedError: nil,
+		},
+		"a valid integer histogram causes no error": {
+			h: &mimirpb.Histogram{
+				Count:          &mimirpb.Histogram_CountInt{CountInt: 5},
+				Sum:            10,
+				Schema:         1,
+				ZeroThreshold:  0.001,
+				ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 1},
+				NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+				NegativeDeltas: []int64{1, 1},
+				PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+				PositiveDeltas: []int64{1},
+				ResetHint:      mimirpb.Histogram_UNKNOWN,
+				Timestamp:      0,
+			},
+			expectedError: nil,
+		},
+		"a valid float histogram causes no error": {
+			h: &mimirpb.Histogram{
+				Count:          &mimirpb.Histogram_CountFloat{CountFloat: 5.5},
+				Sum:            10,
+				Schema:         1,
+				ZeroThreshold:  0.001,
+				ZeroCount:      &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: 1.5},
+				NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+				NegativeCounts: []float64{1.0, 2.0},
+				PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+				PositiveCounts: []float64{1.0},
+				ResetHint:      mimirpb.Histogram_UNKNOWN,
+				Timestamp:      0,
+			},
+			expectedError: nil,
+		},
+		"an integer histogram with the wrong overall count": {
+			h: &mimirpb.Histogram{
+				Count:          &mimirpb.Histogram_CountInt{CountInt: 4},
+				Sum:            10,
+				Schema:         1,
+				ZeroThreshold:  0.001,
+				ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 1},
+				NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+				NegativeDeltas: []int64{1, 1},
+				PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+				PositiveDeltas: []int64{1},
+				ResetHint:      mimirpb.Histogram_UNKNOWN,
+				Timestamp:      0,
+			},
+			expectedError: fmt.Errorf("native histogram bucket count mismatch, timestamp: 0, series: a{a=\"a\"}, expected 4, got 5 (err-mimir-native-histogram-bucket-count-mismatch)"),
+		},
+		"a float histogram with the wrong overall count": {
+			h: &mimirpb.Histogram{
+				Count:          &mimirpb.Histogram_CountFloat{CountFloat: 4.5},
+				Sum:            10,
+				Schema:         1,
+				ZeroThreshold:  0.001,
+				ZeroCount:      &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: 1.5},
+				NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+				NegativeCounts: []float64{1.0, 2.0},
+				PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+				PositiveCounts: []float64{1.0},
+				ResetHint:      mimirpb.Histogram_UNKNOWN,
+				Timestamp:      0,
+			},
+			expectedError: fmt.Errorf("native histogram bucket count mismatch, timestamp: 0, series: a{a=\"a\"}, expected 4.5, got 5.5 (err-mimir-native-histogram-bucket-count-mismatch)"),
+		},
+	}
+
+	registry := prometheus.NewRegistry()
+	metrics := newSampleValidationMetrics(registry)
+	cfg := sampleValidationCfg{}
+	labels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", labels, testCase.h)
+			require.Equal(t, testCase.expectedError, err)
+		})
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
+			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+			# TYPE cortex_discarded_samples_total counter
+			cortex_discarded_samples_total{group="group-1",reason="native_histogram_bucket_count_mismatch",user="user-1"} 2
+	`), "cortex_discarded_samples_total"))
+}
+
 func tooManyLabelsArgs(series []mimirpb.LabelAdapter, limit int) []any {
 	metric := mimirpb.FromLabelAdaptersToMetric(series).String()
 	ellipsis := ""
