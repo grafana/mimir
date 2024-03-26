@@ -72,6 +72,7 @@ type RuleCommand struct {
 	// Get Rule Groups Configs
 	Namespace string
 	RuleGroup string
+	OutputDir string
 
 	// Load Rules Config
 	RuleFilesList []string
@@ -204,6 +205,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 	getRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to retrieve.").Required().StringVar(&r.Namespace)
 	getRuleGroupCmd.Arg("group", "Name of the rulegroup to retrieve.").Required().StringVar(&r.RuleGroup)
 	getRuleGroupCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
+	getRuleGroupCmd.Flag("output-dir", "The directory where the rules will be written to.").ExistingDirVar(&r.OutputDir)
 
 	// Delete RuleGroup Command
 	deleteRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to delete.").Required().StringVar(&r.Namespace)
@@ -393,7 +395,7 @@ func (r *RuleCommand) listRules(_ *kingpin.ParseContext) error {
 }
 
 func (r *RuleCommand) printRules(_ *kingpin.ParseContext) error {
-	rules, err := r.cli.ListRules(context.Background(), "")
+	ruleNS, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
 		if errors.Is(err, client.ErrResourceNotFound) {
 			log.Infof("no rule groups currently exist for this user")
@@ -403,7 +405,25 @@ func (r *RuleCommand) printRules(_ *kingpin.ParseContext) error {
 	}
 
 	p := printer.New(r.DisableColor)
-	return p.PrintRuleGroups(rules)
+	return p.PrintRuleGroups(ruleNS)
+}
+
+func saveNamespaceRuleGroup(ns string, ruleGroup []rwrulefmt.RuleGroup, dir string) error {
+	baseDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	file := filepath.Join(baseDir, fmt.Sprintf("%s.yaml", ns))
+	rule := map[string]rules.RuleNamespace{ns: {
+		Namespace: ns,
+		Filepath:  file,
+		Groups:    ruleGroup,
+	}}
+	log.Debugf("Saving namespace group rules to file %s", file)
+	if err := save(rule, true); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *RuleCommand) getRuleGroup(_ *kingpin.ParseContext) error {
@@ -414,6 +434,14 @@ func (r *RuleCommand) getRuleGroup(_ *kingpin.ParseContext) error {
 			return nil
 		}
 		log.Fatalf("Unable to read rules from Grafana Mimir, %v", err)
+	}
+
+	if r.OutputDir != "" {
+		log.Debugf("Writing to file %s.yaml", r.Namespace)
+		err := saveNamespaceRuleGroup(r.Namespace, []rwrulefmt.RuleGroup{*group}, r.OutputDir)
+		if err != nil {
+			return err
+		}
 	}
 
 	p := printer.New(r.DisableColor)

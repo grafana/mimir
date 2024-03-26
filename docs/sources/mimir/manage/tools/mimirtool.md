@@ -284,6 +284,14 @@ The following command retrieves a single rule group and prints it to the termina
 mimirtool rules get <namespace> <rule_group_name>
 ```
 
+To save the rule group for editing and re-upload to mimir, simply add the flag `--save-file` and
+to desired output location which is defaulted to the current directory. The output file has the
+format required by `mimirtool rules load`.
+
+```bash
+mimirtool rules get <namespace> <rule_group_name> --save-file --output-dir="rules"
+```
+
 #### Delete rule group
 
 The following command deletes a rule group.
