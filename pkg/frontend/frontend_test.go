@@ -64,7 +64,7 @@ func TestFrontend_RequestHostHeaderWhenDownstreamURLIsConfigured(t *testing.T) {
 
 	// Configure the query-frontend with the mocked downstream server.
 	config := defaultFrontendConfig()
-	config.DownstreamURL = fmt.Sprintf("http://%s", downstreamListen.Addr())
+	config.DownstreamPrometheusURL = fmt.Sprintf("http://%s", downstreamListen.Addr())
 
 	// Configure the test to send a request to the query-frontend and assert on the
 	// Host HTTP header received by the downstream server.
@@ -117,7 +117,7 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 	// Configure the query-frontend with the mocked downstream server.
 	config := defaultFrontendConfig()
 	config.Handler.LogQueriesLongerThan = 1 * time.Microsecond
-	config.DownstreamURL = fmt.Sprintf("http://%s", downstreamListen.Addr())
+	config.DownstreamPrometheusURL = fmt.Sprintf("http://%s", downstreamListen.Addr())
 
 	var buf concurrency.SyncBuffer
 	l := log.NewLogfmtLogger(&buf)
@@ -178,7 +178,7 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 
 	// Configure the query-frontend with the mocked downstream server.
 	config := defaultFrontendConfig()
-	config.DownstreamURL = fmt.Sprintf("http://%s", downstreamListen.Addr())
+	config.DownstreamPrometheusURL = fmt.Sprintf("http://%s", downstreamListen.Addr())
 	config.Handler.MaxBodySize = 1
 
 	test := func(addr string) {
@@ -229,10 +229,10 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	httpListen, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
-	rt, v1, v2, err := InitFrontend(config, limits{}, limits{}, 0, logger, nil)
+	rt, v1, v2, err := InitFrontendDownstreamClient(config, limits{}, limits{}, 0, logger, nil)
 	require.NoError(t, err)
 	require.NotNil(t, rt)
-	// v1 will be nil if DownstreamURL is defined.
+	// v1 will be nil if DownstreamPrometheusURL is defined.
 	require.Nil(t, v2)
 	if v1 != nil {
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), v1))
