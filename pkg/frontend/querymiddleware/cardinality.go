@@ -34,23 +34,23 @@ const (
 	cacheErrorToleranceFraction = 0.1
 )
 
-// cardinalityEstimation is a Handler that caches estimates for a query's
+// cardinalityEstimation is a MetricsQueryHandler that caches estimates for a query's
 // cardinality based on similar queries seen previously.
 type cardinalityEstimation struct {
 	cache  cache.Cache
-	next   Handler
+	next   MetricsQueryHandler
 	logger log.Logger
 
 	estimationError prometheus.Histogram
 }
 
-func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, registerer prometheus.Registerer) Middleware {
+func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, registerer prometheus.Registerer) MetricsQueryMiddleware {
 	estimationError := promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_query_frontend_cardinality_estimation_difference",
 		Help:    "Difference between estimated and actual query cardinality",
 		Buckets: prometheus.ExponentialBuckets(100, 2, 10),
 	})
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &cardinalityEstimation{
 			cache:  cache,
 			next:   next,

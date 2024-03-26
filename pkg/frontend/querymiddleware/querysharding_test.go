@@ -50,7 +50,7 @@ var (
 	lookbackDelta = 5 * time.Minute
 )
 
-func mockHandlerWith(resp *PrometheusResponse, err error) Handler {
+func mockHandlerWith(resp *PrometheusResponse, err error) MetricsQueryHandler {
 	return HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 		if expired := ctx.Err(); expired != nil {
 			return nil, expired

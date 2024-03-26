@@ -25,10 +25,10 @@ type queryStatsMiddleware struct {
 	regexpMatcherCount          prometheus.Counter
 	regexpMatcherOptimizedCount prometheus.Counter
 	consistencyCounter          *prometheus.CounterVec
-	next                        Handler
+	next                        MetricsQueryHandler
 }
 
-func newQueryStatsMiddleware(reg prometheus.Registerer, engine *promql.Engine) Middleware {
+func newQueryStatsMiddleware(reg prometheus.Registerer, engine *promql.Engine) MetricsQueryMiddleware {
 	nonAlignedQueries := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_non_step_aligned_queries_total",
 		Help: "Total queries sent that are not step aligned.",
@@ -46,7 +46,7 @@ func newQueryStatsMiddleware(reg prometheus.Registerer, engine *promql.Engine) M
 		Help: "Total number of queries that explicitly request a level of consistency.",
 	}, []string{"user", "consistency"})
 
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &queryStatsMiddleware{
 			engine:                      engine,
 			nonAlignedQueries:           nonAlignedQueries,

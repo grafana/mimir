@@ -181,7 +181,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	)
 
 	// Chain middlewares together.
-	middlewares := []Middleware{
+	middlewares := []MetricsQueryMiddleware{
 		newLimitsMiddleware(mockLimits{}, log.NewNopLogger()),
 		splitCacheMiddleware,
 		newAssertHintsMiddleware(t, &Hints{TotalQueries: 4}),
@@ -1503,8 +1503,8 @@ func jsonEncodePrometheusResponse(t *testing.T, res *PrometheusResponse) string 
 	return string(encoded)
 }
 
-func newAssertHintsMiddleware(t *testing.T, expected *Hints) Middleware {
-	return MiddlewareFunc(func(next Handler) Handler {
+func newAssertHintsMiddleware(t *testing.T, expected *Hints) MetricsQueryMiddleware {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &assertHintsMiddleware{
 			next:     next,
 			t:        t,
@@ -1514,7 +1514,7 @@ func newAssertHintsMiddleware(t *testing.T, expected *Hints) Middleware {
 }
 
 type assertHintsMiddleware struct {
-	next     Handler
+	next     MetricsQueryHandler
 	t        *testing.T
 	expected *Hints
 }
@@ -1525,15 +1525,15 @@ func (m *assertHintsMiddleware) Do(ctx context.Context, req MetricsQueryRequest)
 }
 
 type roundTripper struct {
-	handler Handler
+	handler MetricsQueryHandler
 	codec   Codec
 }
 
 // newRoundTripper merges a set of middlewares into an handler, then inject it into the `next` roundtripper
 // using the codec to translate requests and responses.
-func newRoundTripper(next http.RoundTripper, codec Codec, logger log.Logger, middlewares ...Middleware) http.RoundTripper {
+func newRoundTripper(next http.RoundTripper, codec Codec, logger log.Logger, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return roundTripper{
-		handler: MergeMiddlewares(middlewares...).Wrap(roundTripperHandler{
+		handler: MergeMetricsQueryMiddlewares(middlewares...).Wrap(roundTripperHandler{
 			logger: logger,
 			next:   next,
 			codec:  codec,

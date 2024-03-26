@@ -35,7 +35,7 @@ func TestRetry(t *testing.T) {
 
 	for _, tc := range []struct {
 		name            string
-		handler         Handler
+		handler         MetricsQueryHandler
 		resp            Response
 		err             error
 		expectedRetries int

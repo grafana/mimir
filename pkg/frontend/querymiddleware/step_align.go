@@ -18,7 +18,7 @@ import (
 )
 
 type stepAlignMiddleware struct {
-	next    Handler
+	next    MetricsQueryHandler
 	limits  Limits
 	logger  log.Logger
 	aligned *prometheus.CounterVec
@@ -26,13 +26,13 @@ type stepAlignMiddleware struct {
 
 // newStepAlignMiddleware creates a middleware that aligns the start and end of request to the step to
 // improve the cacheability of the query results based on per-tenant configuration.
-func newStepAlignMiddleware(limits Limits, logger log.Logger, registerer prometheus.Registerer) Middleware {
+func newStepAlignMiddleware(limits Limits, logger log.Logger, registerer prometheus.Registerer) MetricsQueryMiddleware {
 	aligned := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_queries_step_aligned_total",
 		Help: "Number of queries whose start or end times have been adjusted to be step-aligned.",
 	}, []string{"user"})
 
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &stepAlignMiddleware{
 			next:    next,
 			limits:  limits,

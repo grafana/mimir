@@ -110,13 +110,13 @@ type Limits interface {
 
 type limitsMiddleware struct {
 	Limits
-	next   Handler
+	next   MetricsQueryHandler
 	logger log.Logger
 }
 
-// newLimitsMiddleware creates a new Middleware that enforces query limits.
-func newLimitsMiddleware(l Limits, logger log.Logger) Middleware {
-	return MiddlewareFunc(func(next Handler) Handler {
+// newLimitsMiddleware creates a new MetricsQueryMiddleware that enforces query limits.
+func newLimitsMiddleware(l Limits, logger log.Logger) MetricsQueryMiddleware {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return limitsMiddleware{
 			next:   next,
 			Limits: l,
@@ -201,15 +201,15 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 }
 
 type limitedParallelismRoundTripper struct {
-	downstream Handler
+	downstream MetricsQueryHandler
 	limits     Limits
 
 	codec      Codec
-	middleware Middleware
+	middleware MetricsQueryMiddleware
 }
 
 // newLimitedParallelismRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func newLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...Middleware) http.RoundTripper {
+func newLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return limitedParallelismRoundTripper{
 		downstream: roundTripperHandler{
 			next:  next,
@@ -217,7 +217,7 @@ func newLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limi
 		},
 		codec:      codec,
 		limits:     limits,
-		middleware: MergeMiddlewares(middlewares...),
+		middleware: MergeMetricsQueryMiddlewares(middlewares...),
 	}
 }
 
@@ -261,9 +261,9 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	return rt.codec.EncodeResponse(ctx, r, response)
 }
 
-// roundTripperHandler is an adapter that implements the Handler interface using a http.RoundTripper to perform
+// roundTripperHandler is an adapter that implements the MetricsQueryHandler interface using a http.RoundTripper to perform
 // the requests and a Codec to translate between http Request/Response model and this package's Request/Response model.
-// It basically encodes a MetricsQueryRequest from Handler.Do and decodes response from next roundtripper.
+// It basically encodes a MetricsQueryRequest from MetricsQueryHandler.Do and decodes response from next roundtripper.
 type roundTripperHandler struct {
 	logger log.Logger
 	next   http.RoundTripper

@@ -28,9 +28,9 @@ const (
 	skippedReasonMappingFailed = "mapping-failed"
 )
 
-// splitInstantQueryByIntervalMiddleware is a Middleware that can (optionally) split the instant query by splitInterval
+// splitInstantQueryByIntervalMiddleware is a MetricsQueryMiddleware that can (optionally) split the instant query by splitInterval
 type splitInstantQueryByIntervalMiddleware struct {
-	next   Handler
+	next   MetricsQueryHandler
 	limits Limits
 	logger log.Logger
 
@@ -86,10 +86,10 @@ func newSplitInstantQueryByIntervalMiddleware(
 	limits Limits,
 	logger log.Logger,
 	engine *promql.Engine,
-	registerer prometheus.Registerer) Middleware {
+	registerer prometheus.Registerer) MetricsQueryMiddleware {
 	metrics := newInstantQuerySplittingMetrics(registerer)
 
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &splitInstantQueryByIntervalMiddleware{
 			next:    next,
 			limits:  limits,

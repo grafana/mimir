@@ -76,10 +76,10 @@ func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCache
 	return m
 }
 
-// splitAndCacheMiddleware is a Middleware that can (optionally) split the query by interval
+// splitAndCacheMiddleware is a MetricsQueryMiddleware that can (optionally) split the query by interval
 // and run split queries through the results cache.
 type splitAndCacheMiddleware struct {
-	next    Handler
+	next    MetricsQueryHandler
 	limits  Limits
 	merger  Merger
 	logger  log.Logger
@@ -112,10 +112,10 @@ func newSplitAndCacheMiddleware(
 	extractor Extractor,
 	shouldCacheReq shouldCacheFn,
 	logger log.Logger,
-	reg prometheus.Registerer) Middleware {
+	reg prometheus.Registerer) MetricsQueryMiddleware {
 	metrics := newSplitAndCacheMiddlewareMetrics(reg)
 
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &splitAndCacheMiddleware{
 			splitEnabled:   splitEnabled,
 			cacheEnabled:   cacheEnabled,
@@ -593,7 +593,7 @@ type requestResponse struct {
 }
 
 // doRequests executes a list of requests in parallel.
-func doRequests(ctx context.Context, downstream Handler, reqs []MetricsQueryRequest) ([]requestResponse, error) {
+func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []MetricsQueryRequest) ([]requestResponse, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
 	resps := make([]requestResponse, 0, len(reqs))

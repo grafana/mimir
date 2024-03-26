@@ -115,36 +115,36 @@ func (cfg *Config) cardinalityBasedShardingEnabled() bool {
 	return cfg.TargetSeriesPerShard > 0
 }
 
-// HandlerFunc is like http.HandlerFunc, but for Handler.
+// HandlerFunc is like http.HandlerFunc, but for MetricsQueryHandler.
 type HandlerFunc func(context.Context, MetricsQueryRequest) (Response, error)
 
-// Do implements Handler.
+// Do implements MetricsQueryHandler.
 func (q HandlerFunc) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	return q(ctx, req)
 }
 
-// Handler is like http.Handle, but specifically for Prometheus query_range calls.
-type Handler interface {
+// MetricsQueryHandler is like http.Handle, but specifically for Prometheus query and query_range calls.
+type MetricsQueryHandler interface {
 	Do(context.Context, MetricsQueryRequest) (Response, error)
 }
 
-// MiddlewareFunc is like http.HandlerFunc, but for Middleware.
-type MiddlewareFunc func(Handler) Handler
+// MetricsQueryMiddlewareFunc is like http.HandlerFunc, but for MetricsQueryMiddleware.
+type MetricsQueryMiddlewareFunc func(MetricsQueryHandler) MetricsQueryHandler
 
-// Wrap implements Middleware.
-func (q MiddlewareFunc) Wrap(h Handler) Handler {
+// Wrap implements MetricsQueryMiddleware.
+func (q MetricsQueryMiddlewareFunc) Wrap(h MetricsQueryHandler) MetricsQueryHandler {
 	return q(h)
 }
 
-// Middleware is a higher order Handler.
-type Middleware interface {
-	Wrap(Handler) Handler
+// MetricsQueryMiddleware is a higher order MetricsQueryHandler.
+type MetricsQueryMiddleware interface {
+	Wrap(MetricsQueryHandler) MetricsQueryHandler
 }
 
-// MergeMiddlewares produces a middleware that applies multiple middleware in turn;
+// MergeMetricsQueryMiddlewares produces a middleware that applies multiple middleware in turn;
 // ie Merge(f,g,h).Wrap(handler) == f.Wrap(g.Wrap(h.Wrap(handler)))
-func MergeMiddlewares(middleware ...Middleware) Middleware {
-	return MiddlewareFunc(func(next Handler) Handler {
+func MergeMetricsQueryMiddlewares(middleware ...MetricsQueryMiddleware) MetricsQueryMiddleware {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		for i := len(middleware) - 1; i >= 0; i-- {
 			next = middleware[i].Wrap(next)
 		}
@@ -217,7 +217,7 @@ func newQueryTripperware(
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 
-	queryRangeMiddleware := []Middleware{
+	queryRangeMiddleware := []MetricsQueryMiddleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
@@ -263,7 +263,7 @@ func newQueryTripperware(
 		))
 	}
 
-	queryInstantMiddleware := []Middleware{
+	queryInstantMiddleware := []MetricsQueryMiddleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),

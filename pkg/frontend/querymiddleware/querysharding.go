@@ -38,7 +38,7 @@ type querySharding struct {
 	limit Limits
 
 	engine            *promql.Engine
-	next              Handler
+	next              MetricsQueryHandler
 	logger            log.Logger
 	maxSeriesPerShard uint64
 
@@ -64,7 +64,7 @@ func newQueryShardingMiddleware(
 	limit Limits,
 	maxSeriesPerShard uint64,
 	registerer prometheus.Registerer,
-) Middleware {
+) MetricsQueryMiddleware {
 	metrics := queryShardingMetrics{
 		shardingAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_query_sharding_rewrites_attempted_total",
@@ -84,7 +84,7 @@ func newQueryShardingMiddleware(
 			Buckets: prometheus.ExponentialBuckets(2, 2, 10),
 		}),
 	}
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &querySharding{
 			next:                 next,
 			queryShardingMetrics: metrics,

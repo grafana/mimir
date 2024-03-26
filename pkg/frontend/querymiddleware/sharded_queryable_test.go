@@ -287,7 +287,7 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	}, queryable.getResponseHeaders())
 }
 
-func mkShardedQuerier(handler Handler) *shardedQuerier {
+func mkShardedQuerier(handler MetricsQueryHandler) *shardedQuerier {
 	return &shardedQuerier{req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
 }
 
