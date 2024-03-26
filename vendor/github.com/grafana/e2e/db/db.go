@@ -45,6 +45,8 @@ func newMinio(port int, envVars map[string]string, bktNames ...string) *e2e.HTTP
 		e2e.NewCommandWithoutEntrypoint("sh", "-c", strings.Join(commands, " && ")),
 		e2e.NewHTTPReadinessProbe(port, "/minio/health/ready", 200, 200),
 		port,
+		nil,
+		nil,
 	)
 	envVars["MINIO_ACCESS_KEY"] = MinioAccessKey
 	envVars["MINIO_SECRET_KEY"] = MinioSecretKey
@@ -71,6 +73,8 @@ func NewKES(port int, serverName, serverKeyFile, serverCertFile, clientKeyFile, 
 		e2e.NewCommandWithoutEntrypoint("sh", "-c", command),
 		readinessProbe,
 		port,
+		nil,
+		nil,
 	), nil
 }
 
@@ -82,6 +86,8 @@ func NewConsul() *e2e.HTTPService {
 		e2e.NewCommand("agent", "-server", "-client=0.0.0.0", "-dev", "-log-level=err"),
 		e2e.NewHTTPReadinessProbe(8500, "/v1/operator/autopilot/health", 200, 200, `"Healthy": true`),
 		8500,
+		nil,
+		nil,
 	)
 }
 
@@ -92,7 +98,8 @@ func NewETCD() *e2e.HTTPService {
 		e2e.NewCommand("/usr/local/bin/etcd", "--listen-client-urls=http://0.0.0.0:2379", "--advertise-client-urls=http://0.0.0.0:2379", "--listen-metrics-urls=http://0.0.0.0:9000", "--log-level=error"),
 		e2e.NewHTTPReadinessProbe(9000, "/health", 200, 204),
 		2379,
-		9000, // Metrics
+		[]int{9000}, // Metrics
+		nil,
 	)
 }
 
@@ -104,5 +111,7 @@ func NewDynamoDB() *e2e.HTTPService {
 		// DynamoDB doesn't have a readiness probe, so we check if the / works even if returns 400
 		e2e.NewHTTPReadinessProbe(8000, "/", 400, 400),
 		8000,
+		nil,
+		nil,
 	)
 }
