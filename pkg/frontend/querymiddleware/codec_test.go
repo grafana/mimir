@@ -97,14 +97,14 @@ func TestMetricsQueryRequest(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "1")
 			r = r.WithContext(ctx)
 
-			req, err := codec.DecodeRequest(ctx, r)
+			req, err := codec.DecodeMetricsQueryRequest(ctx, r)
 			if err != nil || tc.expectedErr != nil {
 				require.EqualValues(t, tc.expectedErr, err)
 				return
 			}
 			require.EqualValues(t, tc.expected, req)
 
-			rdash, err := codec.EncodeRequest(context.Background(), req)
+			rdash, err := codec.EncodeMetricsQueryRequest(context.Background(), req)
 			require.NoError(t, err)
 			require.EqualValues(t, tc.url, rdash.RequestURI)
 		})
@@ -282,7 +282,7 @@ func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
 		t.Run(queryResultPayloadFormat, func(t *testing.T) {
 			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), queryResultPayloadFormat)
 			req := PrometheusInstantQueryRequest{}
-			encodedRequest, err := codec.EncodeRequest(context.Background(), &req)
+			encodedRequest, err := codec.EncodeMetricsQueryRequest(context.Background(), &req)
 			require.NoError(t, err)
 
 			switch queryResultPayloadFormat {
@@ -302,7 +302,7 @@ func TestPrometheusCodec_EncodeRequest_ReadConsistency(t *testing.T) {
 		t.Run(consistencyLevel, func(t *testing.T) {
 			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), formatProtobuf)
 			ctx := api.ContextWithReadConsistency(context.Background(), consistencyLevel)
-			encodedRequest, err := codec.EncodeRequest(ctx, &PrometheusInstantQueryRequest{})
+			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
 			require.NoError(t, err)
 			require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
 		})
@@ -1133,14 +1133,14 @@ func TestPrometheusCodec_DecodeEncode(t *testing.T) {
 				expected.Header = make(http.Header)
 			}
 
-			// This header is set by EncodeRequest according to the codec's config, so we
+			// This header is set by EncodeMetricsQueryRequest according to the codec's config, so we
 			// should always expect it to be present on the re-encoded request.
 			expected.Header.Set("Accept", "application/json")
 
 			ctx := context.Background()
-			decoded, err := codec.DecodeRequest(ctx, expected)
+			decoded, err := codec.DecodeMetricsQueryRequest(ctx, expected)
 			require.NoError(t, err)
-			encoded, err := codec.EncodeRequest(ctx, decoded)
+			encoded, err := codec.EncodeMetricsQueryRequest(ctx, decoded)
 			require.NoError(t, err)
 
 			assert.Equal(t, expected.URL, encoded.URL)

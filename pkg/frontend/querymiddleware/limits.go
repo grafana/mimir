@@ -225,7 +225,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	ctx, cancel := context.WithCancelCause(r.Context())
 	defer cancel(errExecutingParallelQueriesFinished)
 
-	request, err := rt.codec.DecodeRequest(ctx, r)
+	request, err := rt.codec.DecodeMetricsQueryRequest(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +271,7 @@ type roundTripperHandler struct {
 }
 
 func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
-	request, err := rth.codec.EncodeRequest(ctx, r)
+	request, err := rth.codec.EncodeMetricsQueryRequest(ctx, r)
 	if err != nil {
 		return nil, err
 	}

@@ -65,16 +65,16 @@ const (
 // Codec is used to encode/decode query requests and responses so they can be passed down to middlewares.
 type Codec interface {
 	Merger
-	// DecodeRequest decodes a MetricsQueryRequest from an http request.
-	DecodeRequest(context.Context, *http.Request) (MetricsQueryRequest, error)
+	// DecodeMetricsQueryRequest decodes a MetricsQueryRequest from an http request.
+	DecodeMetricsQueryRequest(context.Context, *http.Request) (MetricsQueryRequest, error)
 	// DecodeLabelsQueryRequest decodes a LabelsQueryRequest from an http request.
 	DecodeLabelsQueryRequest(context.Context, *http.Request) (LabelsQueryRequest, error)
 	// DecodeResponse decodes a Response from an http response.
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
 	DecodeResponse(context.Context, *http.Response, MetricsQueryRequest, log.Logger) (Response, error)
-	// EncodeRequest encodes a MetricsQueryRequest into an http request.
-	EncodeRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
+	// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
+	EncodeMetricsQueryRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
 	// EncodeLabelsQueryRequest encodes a LabelsQueryRequest into an http request.
 	EncodeLabelsQueryRequest(context.Context, LabelsQueryRequest) (*http.Request, error)
 	// EncodeResponse encodes a Response into an http response.
@@ -246,7 +246,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	}, nil
 }
 
-func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (MetricsQueryRequest, error) {
+func (c prometheusCodec) DecodeMetricsQueryRequest(_ context.Context, r *http.Request) (MetricsQueryRequest, error) {
 	switch {
 	case IsRangeQuery(r.URL.Path):
 		return c.decodeRangeQueryRequest(r)
@@ -460,7 +460,7 @@ func decodeCacheDisabledOption(r *http.Request) bool {
 	return false
 }
 
-func (c prometheusCodec) EncodeRequest(ctx context.Context, r MetricsQueryRequest) (*http.Request, error) {
+func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequest) (*http.Request, error) {
 	var u *url.URL
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
