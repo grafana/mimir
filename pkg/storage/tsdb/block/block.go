@@ -325,8 +325,8 @@ func GatherFileStats(blockDir string) (res []File, _ error) {
 	return res, err
 }
 
-// GetAttributes returns the attributes for the block associated with the meta, using the userBucket to read the attributes.
-func GetAttributes(ctx context.Context, meta *Meta, bucketReader objstore.BucketReader) (objstore.ObjectAttributes, error) {
+// GetMetaAttributes returns the attributes for the block associated with the meta, using the userBucket to read the attributes.
+func GetMetaAttributes(ctx context.Context, meta *Meta, bucketReader objstore.BucketReader) (objstore.ObjectAttributes, error) {
 	metaPath := path.Join(meta.ULID.String(), MetaFilename)
 	attrs, err := bucketReader.Attributes(ctx, metaPath)
 	if err != nil {

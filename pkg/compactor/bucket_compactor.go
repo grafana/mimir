@@ -434,11 +434,11 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// into the next planning cycle.
 	// Eventually the block we just uploaded should get synced into the job again (including sync-delay).
 	for _, meta := range toCompact {
-		attrs, err := block.GetAttributes(ctx, meta, c.bkt)
+		attrs, err := block.GetMetaAttributes(ctx, meta, c.bkt)
 		if err != nil {
 			level.Warn(jobLogger).Log("msg", "failed to determine block upload time", "block", meta.ULID.String(), "err", err)
 		} else {
-			c.metrics.blockCompactionDelay.WithLabelValues(strconv.Itoa(meta.Compaction.Level)).Observe(compactionBegin.Sub(attrs.LastModified).Minutes())
+			c.metrics.blockCompactionDelay.WithLabelValues(strconv.Itoa(meta.Compaction.Level)).Observe(compactionBegin.Sub(attrs.LastModified).Seconds())
 		}
 
 		if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
@@ -680,9 +680,9 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Help: "Total number of group compaction attempts that resulted in new block(s).",
 		}),
 		blockCompactionDelay: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                            "cortex_compactor_block_compaction_delay_minutes",
-			Help:                            "Delay between a block being created and successfully compacting it in minutes.",
-			Buckets:                         []float64{1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 180.0, 240.0, 300.0, 600.0, 1200.0},
+			Name:                            "cortex_compactor_block_compaction_delay_seconds",
+			Help:                            "Delay between a block being uploaded and successfully compacting it.",
+			Buckets:                         []float64{60.0, 300.0, 600.0, 1800.0, 3600.0, 7200.0, 10800.0, 14400.0, 18000.0, 36000.0, 72000.0},
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
