@@ -659,6 +659,15 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 		Buckets:                         prometheus.ExponentialBuckets(0.125, 2, 18), // Buckets between 125ms and 9h.
 	}, []string{"phase"})
 
+	lastConsumedOffset := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name:        "cortex_ingest_storage_reader_last_consumed_offset",
+		Help:        "The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.",
+		ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
+	})
+
+	// Initialise the last consumed offset metric to -1 to signal no offset has been consumed yet (0 is a valid offset).
+	lastConsumedOffset.Set(-1)
+
 	return readerMetrics{
 		receiveDelayWhenStarting: receiveDelay.WithLabelValues("starting"),
 		receiveDelayWhenRunning:  receiveDelay.WithLabelValues("running"),
@@ -691,11 +700,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
 		}),
-		lastConsumedOffset: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name:        "cortex_ingest_storage_reader_last_consumed_offset",
-			Help:        "The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.",
-			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
-		}),
+		lastConsumedOffset: lastConsumedOffset,
 		kprom: kprom.NewMetrics("cortex_ingest_storage_reader",
 			kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, reg)),
 			// Do not export the client ID, because we use it to specify options to the backend.
