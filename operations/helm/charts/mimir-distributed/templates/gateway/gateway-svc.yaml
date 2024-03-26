@@ -25,6 +25,9 @@ spec:
       protocol: TCP
       name: http-metrics
       targetPort: http-metrics
+      {{- if and (eq "NodePort" .service.type) .service.nodePort }}
+      nodePort: {{ .service.nodePort }}
+      {{- end }}
     {{- with .service.legacyPort }}
     - port: {{ . }}
       protocol: TCP
