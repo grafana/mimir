@@ -1338,7 +1338,7 @@ This alert fires when an ingester is failing to read records from Kafka backend.
 
 How it **works**:
 
-- Ingester connects to Kafka brokers and reads records from it.
+- Ingester connects to Kafka brokers and reads records from it. Records contain write requests committed by distributors.
 - When ingester fails to read more records from Kafka due to error, ingester logs such error.
 - This can be normal if Kafka brokers are restarting, however if read errors continue for some time, alert is raised.
 
@@ -1353,7 +1353,7 @@ This alert fires when an ingester is receiving errors instead of "fetches" from 
 
 How it **works**:
 
-- Ingester uses Kafka client to read records from Kafka.
+- Ingester uses Kafka client to read records (containing write requests) from Kafka.
 - Kafka client can return errors instead of more records.
 - If rate of returned errors compared to returned records is too high, alert is raised.
 - Kafka client can return errors [documented in the source code](https://github.com/grafana/mimir/blob/24591ae56cd7d6ef24a7cc1541a41405676773f4/vendor/github.com/twmb/franz-go/pkg/kgo/record_and_fetch.go#L332-L366).
@@ -1369,9 +1369,9 @@ This alert fires when "receive delay" reported by ingester during "starting" pha
 
 How it **works**:
 
-- When ingester is starting, it needs to fetch and process records from Kafka until preconfigured consumption lag is honored.
-- Each record has a timestamp when it was stored to Kafka. When ingester reads the record, it computes "receive delay" as a difference between current time (when record was read) and time when record was stored to Kafka. This receive delay is reported in metrics.
-- Under normal conditions when ingester is processing records faster than records are appearing, receive delay should be decreasing.
+- When ingester is starting, it needs to fetch and process records from Kafka until preconfigured consumption lag is honored. The maximum tolerated lag before an ingester is considered to have caught up reading from a partition at startup can be configured via `-ingest-storage.kafka.max-consumer-lag-at-startup`.
+- Each record has a timestamp when it was sent to Kafka by the distributor. When ingester reads the record, it computes "receive delay" as a difference between current time (when record was read) and time when record was sent to Kafka. This receive delay is reported in the metric `cortex_ingest_storage_reader_receive_delay_seconds`.
+- Under normal conditions when ingester is processing records faster than records are appearing, receive delay should be decreasing, until `-ingest-storage.kafka.max-consumer-lag-at-startup` is honored.
 - When ingester is starting, and observed "receive delay" is increasing, alert is raised.
 
 How to **investigate**:
@@ -1385,8 +1385,8 @@ This alert fires when "receive delay" reported by ingester while it's running re
 How it **works**:
 
 - After ingester start and catches up with records in Kafka, ingester switches to "running" mode.
-- In running mode, ingester continues to process incoming samples from Kafka and continues to report "receive delay". See [`MimirStartingIngesterKafkaReceiveDelayIncreasing`](#MimirStartingIngesterKafkaReceiveDelayIncreasing) runbook for details about this metric.
-- Under normal conditions when ingester is running and it is processing records faster than records are appearing, receive delay should be stable.
+- In running mode, ingester continues to process incoming records from Kafka and continues to report "receive delay". See [`MimirStartingIngesterKafkaReceiveDelayIncreasing`](#MimirStartingIngesterKafkaReceiveDelayIncreasing) runbook for details about this metric.
+- Under normal conditions when ingester is running and it is processing records faster than records are appearing, receive delay should be stable and low.
 - If observed "receive delay" increases and reaches certain threshold, alert is raised.
 
 How to **investigate**:
