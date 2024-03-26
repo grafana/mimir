@@ -10,14 +10,12 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/dns"
-	"github.com/grafana/dskit/flagext"
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -429,6 +427,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	// TODO probably need to add for continuous-test
 
 	return serv, err
 }
@@ -1033,45 +1032,52 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 }
 
 func (t *Mimir) initContinuousTest() (services.Service, error) {
-	// Parse CLI arguments.
-	cfg := &continuoustest.Config{}
-	cfg.RegisterFlags(flag.CommandLine)
+	//if t.Cfg.isModuleEnabled()
+	//cfg := &continuoustest.Config{}
+	//flagext.DefaultValues(&cfg)
+	logger := util_log.Logger
+	var err error
 
-	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-	}
-
+	level.Info(logger).Log("initing continuous-test")
 	// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
 	if trace, err := tracing.NewFromEnv("mimir-continuous-test", jaegercfg.MaxTagValueLength(16e3)); err != nil {
-		level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
+		level.Error(logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 	} else {
 		defer trace.Close()
 	}
-
-	logger := util_log.Logger
+	level.Info(logger).Log("continuous-test setup tracing happened")
 
 	// Run the instrumentation server.
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(version.NewCollector("mimir_continuous_test"))
 	registry.MustRegister(collectors.NewGoCollector())
+	level.Info(logger).Log("prom registry created for ct")
 
-	i := instrumentation.NewMetricsServer(cfg.ServerMetricsPort, registry)
+	i := instrumentation.NewMetricsServer(t.Cfg.ContinuousTest.ServerMetricsPort, registry)
+
+	level.Info(logger).Log("metrics server created for ct")
 	if err := i.Start(); err != nil {
 		level.Error(logger).Log("msg", "Unable to start instrumentation server", "err", err.Error())
 		util_log.Flush()
 	}
 
 	// Init the client used to write/read to/from Mimir.
-	client, err := continuoustest.NewClient(cfg.Client, logger)
+	// TODO: building an external client and then going back in on a continuous test that's a module in Mimir feels.... ick. Clean this up
+	client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, logger)
+	level.Info(logger).Log("new client created for ct")
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to initialize client", "err", err.Error())
 		util_log.Flush()
 	}
 
-	m := continuoustest.NewManager(cfg.Manager, logger)
-	m.AddTest(continuoustest.NewWriteReadSeriesTest(cfg.WriteReadSeriesTest, client, logger, registry))
+	m := continuoustest.NewManager(t.Cfg.ContinuousTest.Manager, logger)
+	m.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, logger, registry))
+	level.Info(logger).Log("new manager created for ct")
 
-	return m, nil
+	return services.NewIdleService(func(ctx context.Context) error {
+		level.Info(logger).Log("an idle service was created you just need to start it somehow")
+		return m.Run(context.Background())
+	}, nil), nil
 }
 
 func (t *Mimir) setupModuleManager() error {
@@ -1142,6 +1148,7 @@ func (t *Mimir) setupModuleManager() error {
 		Compactor:                {API, MemberlistKV, Overrides, Vault},
 		StoreGateway:             {API, Overrides, MemberlistKV, Vault},
 		TenantFederation:         {Queryable},
+		ContinuousTest:           {API, Queryable, Ingester, Distributor, StoreGateway, Compactor},
 		Write:                    {Distributor, Ingester},
 		Read:                     {QueryFrontend, Querier},
 		Backend:                  {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
