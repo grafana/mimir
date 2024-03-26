@@ -46,6 +46,7 @@
 * [CHANGE] The configuration option `-querier.max-query-into-future` has been deprecated and will be removed in Mimir 2.14. #7496
 * [CHANGE] Distributor: the metric `cortex_distributor_sample_delay_seconds` has been deprecated and will be removed in Mimir 2.14. #7516
 * [CHANGE] Query-frontend: The deprecated YAML setting `frontend.cache_unaligned_requests` has been moved to `limits.cache_unaligned_requests`. #7519
+* [CHANGE] Distributor: validate that in native histograms the zero, negative and positive bucket counts add up to the overall count of the histogram. Such errors are now reported as 4xx and not 5xx and show up in the `cortex_discarded_samples_total` with the label `reason="native_histogram_bucket_count_mismatch"`. #7736
 * [FEATURE] Introduce `-server.log-source-ips-full` option to log all IPs from `Forwarded`, `X-Real-IP`, `X-Forwarded-For` headers. #7250
 * [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
 * [FEATURE] Cardinality API: added a new `count_method` parameter which enables counting active label values. #7085
