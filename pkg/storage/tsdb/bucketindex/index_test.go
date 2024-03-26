@@ -285,6 +285,11 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				MinTime:          10,
 				MaxTime:          20,
 				CompactorShardID: "some weird value",
+				Labels: map[string]string{
+					"a":                                      "b",
+					"c":                                      "d",
+					mimir_tsdb.CompactorShardIDExternalLabel: "some weird value",
+				},
 			},
 		},
 	}
