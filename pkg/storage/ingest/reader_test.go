@@ -69,6 +69,37 @@ func TestPartitionReader(t *testing.T) {
 	assert.Equal(t, [][]byte{content, content}, records)
 }
 
+func TestPartitionReader_logFetchErrors(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	require.NoError(t, err)
+
+	reader.logFetchErrors(kgo.Fetches{
+		kgo.Fetch{Topics: []kgo.FetchTopic{
+			{
+				Topic: topicName,
+				Partitions: []kgo.FetchPartition{
+					{Partition: partitionID, Err: nil},
+					{Partition: partitionID, Err: context.Canceled},                            // not counted in metrics
+					{Partition: partitionID, Err: fmt.Errorf("wrapped: %w", context.Canceled)}, // not counted in metrics
+					{Partition: partitionID, Err: fmt.Errorf("real error")},                    // counted
+				},
+			},
+		}},
+	})
+
+	assert.NoError(t, promtest.GatherAndCompare(cfg.registry, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_fetch_errors_total The number of fetch errors encountered by the consumer.
+        	# TYPE cortex_ingest_storage_reader_fetch_errors_total counter
+        	cortex_ingest_storage_reader_fetch_errors_total 1
+	`), "cortex_ingest_storage_reader_fetch_errors_total"))
+}
+
 func TestPartitionReader_ConsumerError(t *testing.T) {
 	const (
 		topicName   = "test"
@@ -276,12 +307,20 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		var (
 			_, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
 			consumer       = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			reg            = prometheus.NewPedanticRegistry()
 		)
 
 		// Create and start the reader. We expect the reader to start even if partition is empty.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+
+		// The last consumed offset should be -1, since nothing has been consumed yet.
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+			# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+			cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
+		`), "cortex_ingest_storage_reader_last_consumed_offset"))
 	})
 
 	t.Run("should immediately switch to Running state if configured max lag is 0", func(t *testing.T) {
@@ -290,6 +329,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		var (
 			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			reg                  = prometheus.NewPedanticRegistry()
 		)
 
 		// Mock Kafka to fail the Fetch request.
@@ -306,9 +346,16 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		t.Log("produced 2 records")
 
 		// Create and start the reader. We expect the reader to start even if Fetch is failing.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(0))
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(0), withRegistry(reg))
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+
+		// The last consumed offset should be -1, since nothing has been consumed yet (Fetch requests are failing).
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+			# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+			cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
+		`), "cortex_ingest_storage_reader_last_consumed_offset"))
 	})
 
 	t.Run("should consume partition from start if last committed offset is missing and wait until max lag is honored", func(t *testing.T) {
@@ -456,6 +503,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+			reg                  = prometheus.NewPedanticRegistry()
 			fetchRequestsCount   = atomic.NewInt64(0)
 			fetchShouldFail      = atomic.NewBool(true)
 			consumedRecordsMx    sync.Mutex
@@ -490,7 +538,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		t.Log("produced 2 records before starting the reader")
 
 		// Create and start the reader.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromEnd), withMaxConsumerLagAtStartup(time.Second))
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromEnd), withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
 		require.NoError(t, reader.StartAsync(ctx))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -520,6 +568,15 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			consumedRecordsMx.Lock()
 			defer consumedRecordsMx.Unlock()
 			return slices.Clone(consumedRecords)
+		})
+
+		// We expect the last consumed offset to be tracked in a metric.
+		test.Poll(t, time.Second, nil, func() interface{} {
+			return promtest.GatherAndCompare(reg, strings.NewReader(`
+				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 2
+			`), "cortex_ingest_storage_reader_last_consumed_offset")
 		})
 	})
 
@@ -982,7 +1039,7 @@ func TestPartitionCommitter(t *testing.T) {
 			return promtest.GatherAndCompare(reg, strings.NewReader(`
 				# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 				# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
-				cortex_ingest_storage_reader_last_committed_offset{partition="1"} 124
+				cortex_ingest_storage_reader_last_committed_offset{partition="1"} 123
 
 				# HELP cortex_ingest_storage_reader_offset_commit_failures_total Total number of failed requests to commit the last consumed offset.
 				# TYPE cortex_ingest_storage_reader_offset_commit_failures_total counter
@@ -1033,7 +1090,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 			# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
-			cortex_ingest_storage_reader_last_committed_offset{partition="1"} 124
+			cortex_ingest_storage_reader_last_committed_offset{partition="1"} 123
 
 			# HELP cortex_ingest_storage_reader_offset_commit_failures_total Total number of failed requests to commit the last consumed offset.
 			# TYPE cortex_ingest_storage_reader_offset_commit_failures_total counter
@@ -1114,7 +1171,7 @@ type readerTestCfg struct {
 	kafka          KafkaConfig
 	partitionID    int32
 	consumer       recordConsumer
-	registry       prometheus.Registerer
+	registry       *prometheus.Registry
 	logger         log.Logger
 	commitInterval time.Duration
 }
@@ -1145,7 +1202,7 @@ func withConsumeFromPositionAtStartup(position string) func(cfg *readerTestCfg) 
 	}
 }
 
-func withRegistry(reg prometheus.Registerer) func(cfg *readerTestCfg) {
+func withRegistry(reg *prometheus.Registry) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
 		cfg.registry = reg
 	}
