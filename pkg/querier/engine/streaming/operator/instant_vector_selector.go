@@ -7,6 +7,7 @@ package operator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -81,7 +82,7 @@ func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData
 			var ok bool
 			t, val, h, ok = v.memoizedIterator.PeekPrev()
 			if h != nil {
-				panic("don't support histograms")
+				return InstantVectorSeriesData{}, errors.New("don't support histograms")
 			}
 			if !ok || t < ts-durationMilliseconds(v.Selector.LookbackDelta) {
 				continue
