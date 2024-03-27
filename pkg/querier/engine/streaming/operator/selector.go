@@ -5,6 +5,7 @@ package operator
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -26,12 +27,17 @@ type Selector struct {
 	// Set for range vector selectors, otherwise 0.
 	Range time.Duration
 
-	querier storage.Querier
-
-	// TODO: create separate type for linked list of SeriesBatches
-	currentSeriesBatch        *SeriesBatch
+	querier                   storage.Querier
+	currentSeriesBatch        *seriesBatch
 	seriesIndexInCurrentBatch int
 }
+
+var seriesBatchPool = sync.Pool{New: func() any {
+	return &seriesBatch{
+		series: make([]storage.Series, 0, 256), // There's not too much science behind this number: this is based on the batch size used for chunks streaming.
+		next:   nil,
+	}
+}}
 
 func (s *Selector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	if s.currentSeriesBatch != nil {
@@ -62,13 +68,13 @@ func (s *Selector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	}
 
 	ss := s.querier.Select(ctx, true, hints, s.Matchers...)
-	s.currentSeriesBatch = GetSeriesBatch()
+	s.currentSeriesBatch = seriesBatchPool.Get().(*seriesBatch)
 	incompleteBatch := s.currentSeriesBatch
 	totalSeries := 0
 
 	for ss.Next() {
 		if len(incompleteBatch.series) == cap(incompleteBatch.series) {
-			nextBatch := GetSeriesBatch()
+			nextBatch := seriesBatchPool.Get().(*seriesBatch)
 			incompleteBatch.next = nextBatch
 			incompleteBatch = nextBatch
 		}
@@ -101,7 +107,7 @@ func (s *Selector) Next(existing chunkenc.Iterator) (chunkenc.Iterator, error) {
 	if s.seriesIndexInCurrentBatch == len(s.currentSeriesBatch.series) {
 		b := s.currentSeriesBatch
 		s.currentSeriesBatch = s.currentSeriesBatch.next
-		PutSeriesBatch(b)
+		putSeriesBatch(b)
 		s.seriesIndexInCurrentBatch = 0
 	}
 
@@ -112,7 +118,7 @@ func (s *Selector) Close() {
 	for s.currentSeriesBatch != nil {
 		b := s.currentSeriesBatch
 		s.currentSeriesBatch = s.currentSeriesBatch.next
-		PutSeriesBatch(b)
+		putSeriesBatch(b)
 	}
 
 	if s.querier != nil {
@@ -121,7 +127,13 @@ func (s *Selector) Close() {
 	}
 }
 
-type SeriesBatch struct {
+type seriesBatch struct {
 	series []storage.Series
-	next   *SeriesBatch
+	next   *seriesBatch
+}
+
+func putSeriesBatch(b *seriesBatch) {
+	b.series = b.series[:0]
+	b.next = nil
+	seriesBatchPool.Put(b)
 }

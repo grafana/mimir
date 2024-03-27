@@ -3,10 +3,7 @@
 package operator
 
 import (
-	"sync"
-
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/util/pool"
 )
@@ -33,13 +30,6 @@ var (
 	seriesMetadataSlicePool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, 10, func(size int) []SeriesMetadata {
 		return make([]SeriesMetadata, 0, size)
 	})
-
-	seriesBatchPool = sync.Pool{New: func() any {
-		return &SeriesBatch{
-			series: make([]storage.Series, 0, 256), // There's not too much science behind this number: this is based on the batch size used for chunks streaming.
-			next:   nil,
-		}
-	}}
 
 	floatSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, 10, func(_ int) []float64 {
 		// Don't allocate a new slice now - we'll allocate one in GetFloatSlice if we need it, so we can differentiate between reused and new slices.
@@ -88,18 +78,6 @@ func GetSeriesMetadataSlice(size int) []SeriesMetadata {
 func PutSeriesMetadataSlice(s []SeriesMetadata) {
 	if s != nil {
 		seriesMetadataSlicePool.Put(s)
-	}
-}
-
-func GetSeriesBatch() *SeriesBatch {
-	return seriesBatchPool.Get().(*SeriesBatch)
-}
-
-func PutSeriesBatch(b *SeriesBatch) {
-	if b != nil {
-		b.series = b.series[:0]
-		b.next = nil
-		seriesBatchPool.Put(b)
 	}
 }
 
