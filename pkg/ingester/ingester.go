@@ -10,6 +10,7 @@ package ingester
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -3519,6 +3520,76 @@ func (i *Ingester) unsetPrepareShutdown() {
 	i.lifecycler.SetUnregisterOnShutdown(i.cfg.IngesterRing.UnregisterOnShutdown)
 	i.lifecycler.SetFlushOnShutdown(i.cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown)
 	i.metrics.shutdownMarker.Set(0)
+}
+
+type prepareUnregisterBody struct {
+	Unregister *bool `json:"unregister"`
+}
+
+// TODO document me.
+func (i *Ingester) PrepareUnregisterHandler(w http.ResponseWriter, r *http.Request) {
+	if i.State() != services.Running {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	requestBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		level.Error(i.logger).Log("msg", "failed to read prepare unregister request body", "err", err, "body", string(requestBody))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			level.Error(i.logger).Log("msg", "failed to close prepare unregister request body", "err", err)
+		}
+	}()
+
+	switch r.Method {
+	case http.MethodPut:
+		if len(requestBody) == 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		input := prepareUnregisterBody{}
+		if err := json.Unmarshal(requestBody, &input); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if input.Unregister == nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		i.lifecycler.SetUnregisterOnShutdown(*input.Unregister)
+	case http.MethodGet:
+		if len(requestBody) > 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+	case http.MethodDelete:
+		if len(requestBody) > 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		i.lifecycler.SetUnregisterOnShutdown(i.cfg.IngesterRing.UnregisterOnShutdown)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	shouldUnregister := i.lifecycler.ShouldUnregisterOnShutdown()
+	responseBody, err := json.Marshal(&prepareUnregisterBody{Unregister: &shouldUnregister})
+	if err != nil {
+		level.Error(i.logger).Log("msg", "failed to marshal prepare unregister response body", "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	_, _ = w.Write(responseBody)
 }
 
 // PreparePartitionDownscaleHandler prepares the ingester's partition downscaling. The partition owned by the

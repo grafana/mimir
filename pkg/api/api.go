@@ -293,6 +293,8 @@ func (a *API) RegisterIngester(i Ingester) {
 		{Dangerous: true, Desc: "Trigger ingester shutdown", Path: "/ingester/shutdown"},
 	})
 
+	// TODO register ingester prepare unregister endpoint.
+	// TODO formal documentation for the unregister endpoint.
 	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/prepare-shutdown", http.HandlerFunc(i.PrepareShutdownHandler), false, true, "GET", "POST", "DELETE")
 	a.RegisterRoute("/ingester/prepare-partition-downscale", http.HandlerFunc(i.PreparePartitionDownscaleHandler), false, true, "GET", "POST", "DELETE")
