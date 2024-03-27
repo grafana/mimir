@@ -238,7 +238,7 @@ func TestDequeueByPathUnbalancedTree(t *testing.T) {
 }
 
 func TestEnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
-	root := NewTreeQueue("root")
+	root := NewTreeQueue("root", roundRobin)
 
 	cache := map[string]struct{}{}
 
@@ -314,13 +314,13 @@ func TestEnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 }
 
 func TestNodeCannotDeleteItself(t *testing.T) {
-	root := NewTreeQueue("root")
+	root := NewTreeQueue("root", roundRobin)
 	require.False(t, root.deleteNode(QueuePath{}))
 	require.NotNil(t, root)
 }
 
 func makeBalancedTreeQueue(t *testing.T, firstDimensions, secondDimensions []string, itemsPerDimensions int) *TreeQueue {
-	root := NewTreeQueue("root")
+	root := NewTreeQueue("root", roundRobin)
 	require.Equal(t, 1, root.NodeCount())
 	require.Equal(t, 0, root.ItemCount())
 
@@ -373,7 +373,7 @@ func makeUnbalancedTreeQueue(t *testing.T) *TreeQueue {
 	   │		 └── localQueue
 	   └── localQueue
 	*/
-	root := NewTreeQueue("root")
+	root := NewTreeQueue("root", roundRobin)
 	require.Equal(t, 1, root.NodeCount())
 	require.Equal(t, 0, root.ItemCount())
 
