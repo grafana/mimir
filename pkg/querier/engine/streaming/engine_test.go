@@ -4,6 +4,9 @@ package streaming
 
 import (
 	"context"
+	"io"
+	"io/fs"
+	"os"
 	"testing"
 	"time"
 
@@ -96,6 +99,30 @@ func TestNewRangeQuery_InvalidExpressionTypes(t *testing.T) {
 
 	_, err = engine.NewRangeQuery(ctx, nil, nil, `"thing"`, time.Now(), time.Now(), time.Second)
 	require.EqualError(t, err, "query expression produces a string, but expression for range queries must produce an instant vector or scalar")
+}
+
+// This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
+// Test cases that are not supported by the streaming engine are commented out (or, if the entire file is not supported, .disabled is appended to the file name).
+// Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
+func TestUpstreamTestCases(t *testing.T) {
+	opts := newTestEngineOpts()
+	engine, err := NewEngine(opts)
+	require.NoError(t, err)
+
+	testdataFS := os.DirFS("./testdata")
+	testFiles, err := fs.Glob(testdataFS, "upstream/*.test")
+	require.NoError(t, err)
+
+	for _, testFile := range testFiles {
+		t.Run(testFile, func(t *testing.T) {
+			f, err := testdataFS.Open(testFile)
+			require.NoError(t, err)
+			defer f.Close()
+
+			testScript, err := io.ReadAll(f)
+			promql.RunTest(t, string(testScript), engine)
+		})
+	}
 }
 
 func newTestEngineOpts() promql.EngineOpts {
