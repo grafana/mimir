@@ -21,5 +21,8 @@ spec:
       protocol: TCP
       name: grpc
       targetPort: grpc
+      {{- if .Values.compactor.service.appProtocol.grpc }}
+      appProtocol: {{ .Values.compactor.service.appProtocol.grpc }}
+      {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "compactor" "memberlist" true) | nindent 4 }}

@@ -1,4 +1,3 @@
-{{- if not .Values.query_scheduler.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -25,6 +24,8 @@ spec:
       protocol: TCP
       name: grpc
       targetPort: grpc
+      {{- if .Values.query_frontend.service.appProtocol.grpc }}
+      appProtocol: {{ .Values.query_frontend.service.appProtocol.grpc }}
+      {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "query-frontend") | nindent 4 }}
-{{- end }}

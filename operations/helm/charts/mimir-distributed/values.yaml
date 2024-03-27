@@ -526,6 +526,11 @@ alertmanager:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional http service protocol. Ex: "http" or "tcp"
+      httpMetrics: null
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   # -- Optionally set the scheduler for pods of the alertmanager
   schedulerName: ""
@@ -787,6 +792,9 @@ distributor:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   resources:
     requests:
@@ -873,6 +881,9 @@ ingester:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   # -- Optionally set the scheduler for pods of the ingester
   schedulerName: ""
@@ -1182,6 +1193,9 @@ ruler:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   # -- Dedicated service account for ruler pods.
   # If not set, the default service account defined at the begining of this file will be used.
@@ -1297,6 +1311,9 @@ querier:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   resources:
     requests:
@@ -1395,6 +1412,9 @@ query_frontend:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   resources:
     requests:
@@ -1474,6 +1494,9 @@ query_scheduler:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   resources:
     requests:
@@ -1556,6 +1579,9 @@ store_gateway:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   # -- Optionally set the scheduler for pods of the store-gateway
   schedulerName: ""
@@ -1758,6 +1784,9 @@ compactor:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   # -- Optionally set the scheduler for pods of the compactor
   schedulerName: ""
@@ -2015,6 +2044,10 @@ chunks-cache:
     annotations: {}
     labels: {}
 
+  appProtocol:
+    # -- Set the optional service protocol. Ex: "tcp"
+    memcachedClient: null
+
 index-cache:
   # -- Specifies whether memcached based index-cache should be enabled
   enabled: false
@@ -2106,6 +2139,10 @@ index-cache:
   service:
     annotations: {}
     labels: {}
+
+  appProtocol:
+    # -- Set the optional service protocol. Ex: "tcp"
+    memcachedClient: null
 
 metadata-cache:
   # -- Specifies whether memcached based metadata-cache should be enabled
@@ -2199,6 +2236,10 @@ metadata-cache:
     annotations: {}
     labels: {}
 
+  appProtocol:
+    # -- Set the optional service protocol. Ex: "tcp"
+    memcachedClient: null
+
 results-cache:
   # -- Specifies whether memcached based results-cache should be enabled
   enabled: false
@@ -2290,6 +2331,10 @@ results-cache:
   service:
     annotations: {}
     labels: {}
+
+  appProtocol:
+    # -- Set the optional service protocol. Ex: "tcp"
+    memcachedClient: null
 
 # -- Setting for the Grafana Rollout Operator https://github.com/grafana/helm-charts/tree/main/charts/rollout-operator
 rollout_operator:
