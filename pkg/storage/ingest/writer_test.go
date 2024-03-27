@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
@@ -20,7 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
-	"github.com/twmb/franz-go/plugin/kprom"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -395,9 +393,13 @@ func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gather
 }
 
 func createTestKafkaClient(t *testing.T, cfg KafkaConfig) *kgo.Client {
-	metrics := kprom.NewMetrics("", kprom.Registerer(prometheus.NewPedanticRegistry()))
+	opts := commonKafkaClientOptions(cfg, nil, test.NewTestingLogger(t))
 
-	client, err := kgo.NewClient(commonKafkaClientOptions(cfg, metrics, log.NewNopLogger())...)
+	// Use the manual partitioner because produceRecord() utility explicitly specifies
+	// the partition to write to in the kgo.Record itself.
+	opts = append(opts, kgo.RecordPartitioner(kgo.ManualPartitioner()))
+
+	client, err := kgo.NewClient(opts...)
 	require.NoError(t, err)
 
 	// Automatically close it at the end of the test.
