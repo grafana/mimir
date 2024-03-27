@@ -419,6 +419,30 @@ This endpoint unregisters the ingester from the ring even if you disable `-inges
 
 This API endpoint is usually used by scale down automations.
 
+### Prepare for unregister
+
+```
+GET,PUT,DELETE /ingester/ingester/unregister-on-shutdown
+```
+
+This endpoint is used to control whether an ingester should unregister from the ring on its next termination.
+Via this endpoint, Mimir operators can dynamically control an ingester's unregister state without restarting the ingester.
+
+A `PUT` sets the ingester's unregister state. When invoked with the `PUT` method, the endpoint takes a request body:
+```
+{"unregister": true}
+```
+
+A `GET` returns the ingester's current unregister state.
+
+A `DELETE` resets the ingester's unregister state to the value that was passed via the `-ingester.ring.unregister-on-shutdown`
+configuration option.
+
+Regardless of the HTTP method used, the endpoint always returns a response body with the ingester's current unregister state:
+```
+{"unregister": true}
+```
+
 ### TSDB Metrics
 
 ```

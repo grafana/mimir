@@ -3526,7 +3526,7 @@ type prepareUnregisterBody struct {
 	Unregister *bool `json:"unregister"`
 }
 
-// PrepareUnregisterHandler manipulates whether an ingester will unregister from the ring on its next shutdown.
+// PrepareUnregisterHandler manipulates whether an ingester will unregister from the ring on its next termination.
 //
 // The following methods are supported:
 //
