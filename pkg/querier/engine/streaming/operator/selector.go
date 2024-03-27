@@ -67,11 +67,6 @@ func (s *Selector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	totalSeries := 0
 
 	for ss.Next() {
-		// TODO: do we need this check on every iteration?
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
 		if len(incompleteBatch.series) == cap(incompleteBatch.series) {
 			nextBatch := GetSeriesBatch()
 			incompleteBatch.next = nextBatch

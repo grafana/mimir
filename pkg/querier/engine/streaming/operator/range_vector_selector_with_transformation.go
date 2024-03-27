@@ -60,10 +60,6 @@ func dropMetricName(l labels.Labels, lb *labels.Builder) labels.Labels {
 }
 
 func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (InstantVectorSeriesData, error) {
-	if ctx.Err() != nil {
-		return InstantVectorSeriesData{}, ctx.Err()
-	}
-
 	if m.buffer == nil {
 		m.buffer = &RingBuffer{}
 	}
