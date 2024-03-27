@@ -912,7 +912,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 					# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 					# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-					cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 0
+					cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
 
 					# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 					# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
