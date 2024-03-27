@@ -8,6 +8,7 @@ package compactor
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"sync"
@@ -720,7 +721,9 @@ func convertBucketIndexToMetasForCompactionJobPlanning(idx *bucketindex.Index) m
 		if metas[b.ID].Thanos.Labels == nil {
 			metas[b.ID].Thanos.Labels = map[string]string{}
 		}
-		metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID // Needed for correct planning.
+		labels := metas[b.ID].Thanos.Labels
+		maps.Copy(labels, b.Labels)
+		labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID // Needed for correct planning.
 	}
 	return metas
 }
