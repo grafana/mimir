@@ -26,6 +26,7 @@ func main() {
 	// Parse CLI arguments.
 	cfg := &continuoustest.Config{}
 	cfg.RegisterFlags(flag.CommandLine)
+	cfg.LogLevel.RegisterFlags(flag.CommandLine)
 
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())

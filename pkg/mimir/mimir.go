@@ -723,6 +723,7 @@ type Mimir struct {
 	ActivityTracker               *activitytracker.ActivityTracker
 	Vault                         *vault.Vault
 	UsageStatsReporter            *usagestats.Reporter
+	ContinuousTestManager         *continuoustest.Manager
 	BuildInfoHandler              http.Handler
 }
 
