@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"os/signal"
 	"strings"
@@ -91,7 +92,9 @@ func main() {
 		if metas[b.ID].Thanos.Labels == nil {
 			metas[b.ID].Thanos.Labels = map[string]string{}
 		}
-		metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID // Needed for correct planning.
+		// We manually restore the shard ID label as we didn't always persist labels into the bucket index.
+		metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID
+		maps.Copy(metas[b.ID].Thanos.Labels, b.Labels)
 	}
 
 	synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{Name: "synced", Help: "Number of block metadata synced"},

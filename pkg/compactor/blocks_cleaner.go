@@ -721,6 +721,8 @@ func convertBucketIndexToMetasForCompactionJobPlanning(idx *bucketindex.Index) m
 		if metas[b.ID].Thanos.Labels == nil {
 			metas[b.ID].Thanos.Labels = map[string]string{}
 		}
+		// We manually restore the shard ID label as we didn't always persist labels into the bucket index.
+		metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID
 		maps.Copy(metas[b.ID].Thanos.Labels, b.Labels)
 	}
 	return metas
