@@ -721,9 +721,7 @@ func convertBucketIndexToMetasForCompactionJobPlanning(idx *bucketindex.Index) m
 		if metas[b.ID].Thanos.Labels == nil {
 			metas[b.ID].Thanos.Labels = map[string]string{}
 		}
-		labels := metas[b.ID].Thanos.Labels
-		maps.Copy(labels, b.Labels)
-		labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID // Needed for correct planning.
+		maps.Copy(metas[b.ID].Thanos.Labels, b.Labels)
 	}
 	return metas
 }
