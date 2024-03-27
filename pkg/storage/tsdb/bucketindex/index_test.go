@@ -241,6 +241,10 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				ID:      blockID,
 				MinTime: 10,
 				MaxTime: 20,
+				Labels: map[string]string{
+					"a": "b",
+					"c": "d",
+				},
 			},
 		},
 		"meta.json with external labels, with compactor shard ID": {
@@ -263,6 +267,11 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				MinTime:          10,
 				MaxTime:          20,
 				CompactorShardID: "10_of_20",
+				Labels: map[string]string{
+					"a":                                      "b",
+					"c":                                      "d",
+					mimir_tsdb.CompactorShardIDExternalLabel: "10_of_20",
+				},
 			},
 		},
 		"meta.json with external labels, with invalid shard ID": {
