@@ -985,9 +985,9 @@ groups:
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstartingingesterkafkareceivedelayincreasing
     expr: |
       deriv((
-          histogram_sum(sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))
+          sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="starting"}[1m]))
           /
-          histogram_count(sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))
+          sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="starting"}[1m]))
       )[5m:1m]) > 0
     for: 5m
     labels:
@@ -1000,9 +1000,9 @@ groups:
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrunningingesterreceivedelaytoohigh
     expr: |
       (
-        histogram_sum(sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+        sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[1m]))
         /
-        histogram_count(sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+        sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[1m]))
       ) > (10 * 60)
     for: 5m
     labels:

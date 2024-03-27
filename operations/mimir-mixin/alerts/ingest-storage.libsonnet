@@ -61,11 +61,12 @@
         {
           alert: $.alertName('StartingIngesterKafkaReceiveDelayIncreasing'),
           'for': '5m',
+          // We're using series from classic histogram here, because mixtool lint doesn't support histogram_sum, histogram_count functions yet.
           expr: |||
             deriv((
-                histogram_sum(sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))
+                sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="starting"}[1m]))
                 /
-                histogram_count(sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))
+                sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="starting"}[1m]))
             )[5m:1m]) > 0
           ||| % $._config,
           labels: {
@@ -79,11 +80,12 @@
         {
           alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
           'for': '5m',
+          // We're using series from classic histogram here, because mixtool lint doesn't support histogram_sum, histogram_count functions yet.
           expr: |||
             (
-              histogram_sum(sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+              sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[1m]))
               /
-              histogram_count(sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+              sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[1m]))
             ) > (10 * 60)
           ||| % $._config,
           labels: {
