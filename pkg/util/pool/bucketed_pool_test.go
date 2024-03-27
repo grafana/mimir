@@ -15,7 +15,7 @@ func makeFunc(size int) []int {
 	return make([]int, 0, size)
 }
 
-func TestPool(t *testing.T) {
+func TestBucketedPool_HappyPath(t *testing.T) {
 	testPool := NewBucketedPool(1, 8, 2, makeFunc)
 	cases := []struct {
 		size        int
@@ -39,4 +39,18 @@ func TestPool(t *testing.T) {
 		require.Equal(t, c.expectedCap, cap(ret))
 		testPool.Put(ret)
 	}
+}
+
+func TestBucketedPool_SliceNotAlignedToBuckets(t *testing.T) {
+	pool := NewBucketedPool(1, 1000, 10, makeFunc)
+	pool.Put(make([]int, 0, 2))
+	s := pool.Get(3)
+	require.GreaterOrEqual(t, cap(s), 3)
+}
+
+func TestBucketedPool_PutEmptySlice(t *testing.T) {
+	pool := NewBucketedPool(1, 1000, 10, makeFunc)
+	pool.Put([]int{})
+	s := pool.Get(1)
+	require.GreaterOrEqual(t, cap(s), 1)
 }

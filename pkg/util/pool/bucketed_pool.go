@@ -48,9 +48,9 @@ func NewBucketedPool[T ~[]E, E any](minSize, maxSize int, factor float64, makeFu
 }
 
 // Get returns a new slice that fits the given size.
-func (p *BucketedPool[T, E]) Get(sz int) T {
+func (p *BucketedPool[T, E]) Get(size int) T {
 	for i, bktSize := range p.sizes {
-		if sz > bktSize {
+		if size > bktSize {
 			continue
 		}
 		b := p.buckets[i].Get()
@@ -59,16 +59,28 @@ func (p *BucketedPool[T, E]) Get(sz int) T {
 		}
 		return b
 	}
-	return p.make(sz)
+	return p.make(size)
 }
 
 // Put adds a slice to the right bucket in the pool.
 func (p *BucketedPool[T, E]) Put(s T) {
+	if cap(s) == 0 {
+		return
+	}
+
 	for i, size := range p.sizes {
 		if cap(s) > size {
 			continue
 		}
-		p.buckets[i].Put(s[0:0])
+
+		if cap(s) == size {
+			// Slice is exactly the minimum size for this bucket. Add it to this bucket.
+			p.buckets[i].Put(s[0:0])
+		} else {
+			// Slice belongs in previous bucket.
+			p.buckets[i-1].Put(s[0:0])
+		}
+
 		return
 	}
 }
