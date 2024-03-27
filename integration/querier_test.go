@@ -532,9 +532,11 @@ func TestStreamingPromQLEngine(t *testing.T) {
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
 
-	// Wait until the distributor has updated the ring.
-	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	// Wait until the distributor and querier have updated the ring.
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring,
+	// and the querier should have 512 tokens for the ingester ring.
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
 	// Push a series to Mimir.
 	writeClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
