@@ -46,9 +46,7 @@ func GetFPointSlice(size int) []promql.FPoint {
 }
 
 func PutFPointSlice(s []promql.FPoint) {
-	if s != nil {
-		fPointSlicePool.Put(s)
-	}
+	fPointSlicePool.Put(s)
 }
 
 func GetMatrix(size int) promql.Matrix {
@@ -56,9 +54,7 @@ func GetMatrix(size int) promql.Matrix {
 }
 
 func PutMatrix(m promql.Matrix) {
-	if m != nil {
-		matrixPool.Put(m)
-	}
+	matrixPool.Put(m)
 }
 
 func GetVector(size int) promql.Vector {
@@ -66,9 +62,7 @@ func GetVector(size int) promql.Vector {
 }
 
 func PutVector(v promql.Vector) {
-	if v != nil {
-		vectorPool.Put(v)
-	}
+	vectorPool.Put(v)
 }
 
 func GetSeriesMetadataSlice(size int) []SeriesMetadata {
@@ -76,9 +70,7 @@ func GetSeriesMetadataSlice(size int) []SeriesMetadata {
 }
 
 func PutSeriesMetadataSlice(s []SeriesMetadata) {
-	if s != nil {
-		seriesMetadataSlicePool.Put(s)
-	}
+	seriesMetadataSlicePool.Put(s)
 }
 
 func GetFloatSlice(size int) []float64 {
@@ -91,9 +83,7 @@ func GetFloatSlice(size int) []float64 {
 }
 
 func PutFloatSlice(s []float64) {
-	if s != nil {
-		floatSlicePool.Put(s)
-	}
+	floatSlicePool.Put(s)
 }
 
 func GetBoolSlice(size int) []bool {
@@ -107,9 +97,7 @@ func GetBoolSlice(size int) []bool {
 }
 
 func PutBoolSlice(s []bool) {
-	if s != nil {
-		boolSlicePool.Put(s)
-	}
+	boolSlicePool.Put(s)
 }
 
 func zeroFloatSlice(s []float64, size int) []float64 {
