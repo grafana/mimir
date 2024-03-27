@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-RESULTS_FILE="$1" # Should be the path to a file produced by a command like `go test -run=XXX -bench="BenchmarkQuery" -count=6 -benchmem -timeout=1h.`
+RESULTS_FILE="$1" # Should be the path to a file produced by a command like `go test -run=XXX -bench="BenchmarkQuery" -count=6 -benchmem -timeout=1h .`
 
 STANDARD_RESULTS_FILE=$(mktemp /tmp/standard.XXXX)
 STREAMING_RESULTS_FILE=$(mktemp /tmp/streaming.XXXX)
