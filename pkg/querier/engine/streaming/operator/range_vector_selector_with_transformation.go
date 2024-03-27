@@ -59,7 +59,7 @@ func dropMetricName(l labels.Labels, lb *labels.Builder) labels.Labels {
 	return lb.Labels()
 }
 
-func (m *RangeVectorSelectorWithTransformation) Next(ctx context.Context) (InstantVectorSeriesData, error) {
+func (m *RangeVectorSelectorWithTransformation) Next(_ context.Context) (InstantVectorSeriesData, error) {
 	if m.buffer == nil {
 		m.buffer = &RingBuffer{}
 	}

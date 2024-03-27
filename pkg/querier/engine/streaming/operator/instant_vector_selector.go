@@ -41,7 +41,7 @@ func (v *InstantVectorSelector) Series(ctx context.Context) ([]SeriesMetadata, e
 	return v.Selector.Series(ctx)
 }
 
-func (v *InstantVectorSelector) Next(ctx context.Context) (InstantVectorSeriesData, error) {
+func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData, error) {
 	if v.memoizedIterator == nil {
 		v.memoizedIterator = storage.NewMemoizedEmptyIterator(durationMilliseconds(v.Selector.LookbackDelta))
 	}
