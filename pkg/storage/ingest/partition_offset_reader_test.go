@@ -221,7 +221,7 @@ func TestPartitionOffsetReader_FetchPartitionStartOffset(t *testing.T) {
 		logger = log.NewNopLogger()
 	)
 
-	t.Run("should return the partition start offset, or -1 if the partition is empty", func(t *testing.T) {
+	t.Run("should return the partition start offset", func(t *testing.T) {
 		t.Parallel()
 
 		var (
