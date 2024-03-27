@@ -384,6 +384,9 @@ func (s *mergedSeriesChunkRefsSet) Next() bool {
 func (s *mergedSeriesChunkRefsSet) Reset() {
 	s.a.Reset()
 	s.b.Reset()
+	s.done = false
+	s.aAt = newSeriesChunkRefsIterator(seriesChunkRefsSet{})
+	s.bAt = newSeriesChunkRefsIterator(seriesChunkRefsSet{})
 }
 
 func (s *mergedSeriesChunkRefsSet) ensureCursors(curr1, curr2 *seriesChunkRefsIterator, set1, set2 iterator[seriesChunkRefsSet]) error {
@@ -629,6 +632,7 @@ func (s *deduplicatingSeriesChunkRefsSetIterator) Next() bool {
 
 func (s *deduplicatingSeriesChunkRefsSetIterator) Reset() {
 	s.from.Reset()
+	s.peek = nil
 }
 
 type limitingSeriesChunkRefsSetIterator struct {
