@@ -3526,7 +3526,21 @@ type prepareUnregisterBody struct {
 	Unregister *bool `json:"unregister"`
 }
 
-// TODO document me.
+// PrepareUnregisterHandler manipulates whether an ingester will unregister from the ring on its next shutdown.
+//
+// The following methods are supported:
+//
+//   - GET
+//     Returns the ingester's current unregister state.
+//
+//   - PUT
+//     Sets the ingester's unregister state.
+//
+//   - DELETE
+//     Resets the ingester's unregister state to the value passed via the RingConfig.UnregisterOnShutdown ring
+//     configuration option.
+//
+// All methods are idempotent.
 func (i *Ingester) PrepareUnregisterHandler(w http.ResponseWriter, r *http.Request) {
 	if i.State() != services.Running {
 		w.WriteHeader(http.StatusServiceUnavailable)
