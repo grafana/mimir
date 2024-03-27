@@ -647,6 +647,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		if err != nil {
 			return err
 		}
+		seriesSet.Reset()
 
 		streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
 		if err != nil {
@@ -1076,8 +1077,10 @@ func (s *BucketStore) streamingChunksSetForBlocks(
 	stats *safeQueryStats,
 	it iterator[seriesChunkRefsSet], // Should come from streamingSeriesForBlocks.
 ) (iterator[seriesChunksSet], error) {
-	it.Reset()
+	fmt.Printf("Reset streamingChunksSetForBlock\n")
+	// it.Reset()
 	scsi := newChunksPreloadingIterator(ctx, s.logger, s.userID, *chunkReaders, it, s.maxSeriesPerBatch, stats)
+	scsi.Reset()
 	return scsi, nil
 }
 

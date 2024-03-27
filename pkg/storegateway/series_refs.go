@@ -562,9 +562,9 @@ func (s *seriesChunkRefsSeriesSet) Err() error {
 	return s.from.Err()
 }
 
-// func (s *seriesChunkRefsSeriesSet) Reset() {
-// 	s.from.Reset()
-// }
+func (s *seriesChunkRefsSeriesSet) Reset() {
+	s.from.Reset()
+}
 
 // deduplicatingSeriesChunkRefsSetIterator merges together consecutive series in the underlying iterator.
 type deduplicatingSeriesChunkRefsSetIterator struct {
@@ -711,6 +711,7 @@ func (l *limitingSeriesChunkRefsSetIterator) Reset() {
 	l.chunksSeen = 0
 	l.seriesSeen = 0
 	l.from.Reset()
+	fmt.Printf("Reset limitingSeriesChunkRefsSetIterator\n")
 }
 
 type loadingSeriesChunkRefsSetIterator struct {

@@ -66,6 +66,7 @@ type emptySeriesSet struct{}
 func (emptySeriesSet) Next() bool                       { return false }
 func (emptySeriesSet) At() (labels.Labels, []AggrChunk) { return labels.EmptyLabels(), nil }
 func (emptySeriesSet) Err() error                       { return nil }
+func (emptySeriesSet) Reset()                           {}
 
 // EmptySeriesSet returns a new series set that contains no series.
 func EmptySeriesSet() SeriesSet {
@@ -78,6 +79,7 @@ type SeriesSet interface {
 	Next() bool
 	At() (labels.Labels, []AggrChunk)
 	Err() error
+	Reset()
 }
 
 // PromMatchersToMatchers returns proto matchers from Prometheus matchers.

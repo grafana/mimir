@@ -4,6 +4,7 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
 	"hash/crc32"
 	"sync"
 	"time"
@@ -223,6 +224,11 @@ func (b *seriesChunksSeriesSet) Err() error {
 	return b.from.Err()
 }
 
+func (b *seriesChunksSeriesSet) Reset() {
+	b.from.Reset()
+	fmt.Printf("Reset seriesChunksSeriesSet\n")
+}
+
 // preloadedSeriesChunksSet holds the result of preloading the next set. It can either contain
 // the preloaded set or an error, but not both.
 type preloadedSeriesChunksSet[T any] struct {
@@ -290,6 +296,7 @@ func (p *preloadingSetIterator[Set]) Err() error {
 
 func (p *preloadingSetIterator[Set]) Reset() {
 	p.from.Reset()
+	fmt.Printf("Reset preloadingSetIterator\n")
 }
 
 func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, preloadedSetsCount int, iterator iterator[Set], stats *safeQueryStats) iterator[Set] {
@@ -330,6 +337,8 @@ type loadingSeriesChunksSetIterator struct {
 
 	current seriesChunksSet
 	err     error
+
+	hasBeenReset bool
 }
 
 func newLoadingSeriesChunksSetIterator(
@@ -440,6 +449,8 @@ func (c *loadingSeriesChunksSetIterator) Err() error {
 
 func (c *loadingSeriesChunksSetIterator) Reset() {
 	c.from.Reset()
+	c.hasBeenReset = true
+	fmt.Printf("Reset loadingSeriesChunksSetIterator\n")
 }
 
 func (c *loadingSeriesChunksSetIterator) recordReturnedChunks(series []seriesChunks) {
@@ -510,4 +521,5 @@ func (m *nextDurationMeasuringIterator[Set]) Err() error {
 
 func (m *nextDurationMeasuringIterator[Set]) Reset() {
 	m.from.Reset()
+	fmt.Printf("Reset nextDurationMeasuringIterator\n")
 }

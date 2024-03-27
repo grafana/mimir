@@ -34,6 +34,8 @@ type bucketChunkReader struct {
 	block *bucketBlock
 
 	toLoad [][]loadIdx
+
+	called bool
 }
 
 func newBucketChunkReader(ctx context.Context, block *bucketBlock) *bucketChunkReader {
@@ -176,6 +178,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 		// where the crc32 + length varint size are a substantial part of the chunk.
 		localStats.chunksTouchedSizeSum += varint.UvarintSize(chunkDataLen) + chunkEncDataLen + crc32.Size
 	}
+	r.called = true
 	return nil
 }
 
