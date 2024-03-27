@@ -325,6 +325,16 @@ func GatherFileStats(blockDir string) (res []File, _ error) {
 	return res, err
 }
 
+// GetMetaAttributes returns the attributes for the block associated with the meta, using the userBucket to read the attributes.
+func GetMetaAttributes(ctx context.Context, meta *Meta, bucketReader objstore.BucketReader) (objstore.ObjectAttributes, error) {
+	metaPath := path.Join(meta.ULID.String(), MetaFilename)
+	attrs, err := bucketReader.Attributes(ctx, metaPath)
+	if err != nil {
+		return objstore.ObjectAttributes{}, errors.Wrapf(err, "unable to get object attributes for %s", metaPath)
+	}
+	return attrs, nil
+}
+
 // MarkForNoCompact creates a file which marks block to be not compacted.
 func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID, reason NoCompactReason, details string, markedForNoCompact prometheus.Counter) error {
 	m := path.Join(id.String(), NoCompactMarkFilename)
