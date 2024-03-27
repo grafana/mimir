@@ -997,7 +997,11 @@ groups:
         from Kafka.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstartingingesterkafkareceivedelayincreasing
     expr: |
-      deriv(histogram_quantile(0.99, sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))[5m:1m]) > 0
+      deriv((
+          histogram_sum(sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))
+          /
+          histogram_count(sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))
+      )[5m:1m]) > 0
     for: 5m
     labels:
       severity: warning
@@ -1008,7 +1012,11 @@ groups:
         from Kafka.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrunningingesterreceivedelaytoohigh
     expr: |
-      histogram_quantile(0.99, sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m]))) > (10*60)
+      (
+        histogram_sum(sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+        /
+        histogram_count(sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+      ) > (10 * 60)
     for: 5m
     labels:
       severity: critical

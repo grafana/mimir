@@ -62,7 +62,11 @@
           alert: $.alertName('StartingIngesterKafkaReceiveDelayIncreasing'),
           'for': '5m',
           expr: |||
-            deriv(histogram_quantile(0.99, sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))[5m:1m]) > 0
+            deriv((
+                histogram_sum(sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))
+                /
+                histogram_count(sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))
+            )[5m:1m]) > 0
           ||| % $._config,
           labels: {
             severity: 'warning',
@@ -76,7 +80,11 @@
           alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
           'for': '5m',
           expr: |||
-            histogram_quantile(0.99, sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m]))) > (10*60)
+            (
+              histogram_sum(sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+              /
+              histogram_count(sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+            ) > (10 * 60)
           ||| % $._config,
           labels: {
             severity: 'critical',
