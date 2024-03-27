@@ -99,7 +99,7 @@ type Block struct {
 	// Whether the block was from out of order samples
 	OutOfOrder bool `json:"out_of_order,omitempty"`
 
-	// External labels from the block.
+	// Labels contains the external labels from the block's metadata.
 	Labels map[string]string `json:"labels,omitempty"`
 }
 
