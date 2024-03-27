@@ -27,6 +27,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"golang.org/x/exp/slices"
 
@@ -258,9 +260,10 @@ func (c prometheusCodec) DecodeMetricsQueryRequest(_ context.Context, r *http.Re
 }
 
 func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
+	var reqValues url.Values
 	var result PrometheusRangeQueryRequest
 	var err error
-	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
+	reqValues, err = util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -277,9 +280,10 @@ func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryReq
 }
 
 func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
+	var reqValues url.Values
 	var result PrometheusInstantQueryRequest
 	var err error
-	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
+	reqValues, err = util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -431,6 +435,24 @@ func DecodeLabelsQueryTimeParams(reqValues *url.Values, usePromDefaults bool) (s
 	}
 
 	return start, end, err
+}
+
+func MetricsQueryMinMaxTimeMS(req MetricsQueryRequest) (minTimeMS, maxTimeMS int64, err error) {
+	queryExpr, err := parser.ParseExpr(req.GetQuery())
+	if err != nil {
+		return 0, 0, err
+	}
+
+	evalStmt := &parser.EvalStmt{
+		Expr:          queryExpr,
+		Start:         util.TimeFromMillis(req.GetStart()),
+		End:           util.TimeFromMillis(req.GetEnd()),
+		Interval:      time.Duration(req.GetStep()) * time.Millisecond,
+		LookbackDelta: 0, // TODO decide if we need to use lookbackDelta here
+	}
+
+	minTimeMS, maxTimeMS = promql.FindMinMaxTime(evalStmt)
+	return minTimeMS, maxTimeMS, nil
 }
 
 func decodeOptions(r *http.Request, opts *Options) {
