@@ -640,6 +640,11 @@ type limitingSeriesChunkRefsSetIterator struct {
 	chunksLimiter ChunksLimiter
 	seriesLimiter SeriesLimiter
 
+	chunksSeen        uint64 // Number of chunks seen since last call to Reset()
+	maxChunksSeenEver uint64 // Maximum number of chunks ever seen across calls to Reset(), used to avoid double-counting after Reset()
+	seriesSeen        uint64 // Number of series seen since last call to Reset()
+	maxSeriesSeenEver uint64 // Maximum number of chunks ever seen across calls to Reset(), used to avoid double-counting after Reset()
+
 	err          error
 	currentBatch seriesChunkRefsSet
 }
@@ -663,22 +668,34 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 	}
 
 	l.currentBatch = l.from.At()
-	err := l.seriesLimiter.Reserve(uint64(l.currentBatch.len()))
-	if err != nil {
-		l.err = err
-		return false
+	l.seriesSeen += uint64(l.currentBatch.len())
+
+	if l.seriesSeen > l.maxSeriesSeenEver {
+		newSeries := l.seriesSeen - l.maxSeriesSeenEver
+
+		if err := l.seriesLimiter.Reserve(newSeries); err != nil {
+			l.err = err
+			return false
+		}
+
+		l.maxSeriesSeenEver = l.seriesSeen
 	}
 
-	var totalChunks int
 	for _, s := range l.currentBatch.series {
-		totalChunks += len(s.refs)
+		l.chunksSeen += uint64(len(s.refs))
 	}
 
-	err = l.chunksLimiter.Reserve(uint64(totalChunks))
-	if err != nil {
-		l.err = err
-		return false
+	if l.chunksSeen > l.maxChunksSeenEver {
+		newChunks := l.chunksSeen - l.maxChunksSeenEver
+
+		if err := l.chunksLimiter.Reserve(newChunks); err != nil {
+			l.err = err
+			return false
+		}
+
+		l.maxChunksSeenEver = l.chunksSeen
 	}
+
 	return true
 }
 
@@ -691,6 +708,8 @@ func (l *limitingSeriesChunkRefsSetIterator) Err() error {
 }
 
 func (l *limitingSeriesChunkRefsSetIterator) Reset() {
+	l.chunksSeen = 0
+	l.seriesSeen = 0
 	l.from.Reset()
 }
 
