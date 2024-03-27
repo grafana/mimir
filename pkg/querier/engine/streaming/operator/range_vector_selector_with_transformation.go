@@ -78,10 +78,14 @@ func (m *RangeVectorSelectorWithTransformation) Next(_ context.Context) (Instant
 
 	// TODO: test behaviour with resets, missing points, extrapolation, stale markers
 	// TODO: handle native histograms
-	for ts := m.startTimestamp; ts <= m.endTimestamp; ts += m.intervalMilliseconds {
-		rangeStart := ts - m.rangeMilliseconds
-		rangeEnd := ts
+	for stepT := m.startTimestamp; stepT <= m.endTimestamp; stepT += m.intervalMilliseconds {
+		rangeEnd := stepT
 
+		if m.Selector.Timestamp != nil {
+			rangeEnd = *m.Selector.Timestamp
+		}
+
+		rangeStart := rangeEnd - m.rangeMilliseconds
 		m.buffer.DiscardPointsBefore(rangeStart)
 
 		if err := m.fillBuffer(rangeStart, rangeEnd); err != nil {
@@ -121,7 +125,7 @@ func (m *RangeVectorSelectorWithTransformation) Next(_ context.Context) (Instant
 
 		val := m.calculateRate(rangeStart, rangeEnd, firstPoint, lastPoint, delta, count)
 
-		data.Floats = append(data.Floats, promql.FPoint{T: ts, F: val})
+		data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: val})
 	}
 
 	return data, nil

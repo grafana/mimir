@@ -40,6 +40,8 @@ func newQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, sta
 		return nil, err
 	}
 
+	expr = promql.PreprocessExpr(expr, start, end)
+
 	q := &Query{
 		queryable: queryable,
 		opts:      opts,
@@ -85,21 +87,12 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 			return nil, NewNotSupportedError("instant vector selector with 'offset'")
 		}
 
-		if e.Timestamp != nil {
-			return nil, NewNotSupportedError("instant vector selector with '@' modifier")
-		}
-
-		if e.StartOrEnd == parser.START {
-			return nil, NewNotSupportedError("instant vector selector with '@ start()'")
-		} else if e.StartOrEnd == parser.END {
-			return nil, NewNotSupportedError("instant vector selector with '@ end()'")
-		}
-
 		return &operator.InstantVectorSelector{
 			Selector: &operator.Selector{
 				Queryable:     q.queryable,
 				Start:         q.statement.Start,
 				End:           q.statement.End,
+				Timestamp:     e.Timestamp,
 				Interval:      interval,
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
@@ -155,26 +148,22 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 			return nil, NewNotSupportedError("range vector selector with 'offset'")
 		}
 
-		if vectorSelector.Timestamp != nil {
-			return nil, NewNotSupportedError("range vector selector with '@' modifier")
-		}
-
-		if vectorSelector.StartOrEnd == parser.START {
-			return nil, NewNotSupportedError("range vector selector with '@ start()'")
-		} else if vectorSelector.StartOrEnd == parser.END {
-			return nil, NewNotSupportedError("range vector selector with '@ end()'")
-		}
-
 		return &operator.RangeVectorSelectorWithTransformation{
 			Selector: &operator.Selector{
 				Queryable: q.queryable,
 				Start:     q.statement.Start,
 				End:       q.statement.End,
+				Timestamp: vectorSelector.Timestamp,
 				Interval:  interval,
 				Range:     matrixSelector.Range,
 				Matchers:  vectorSelector.LabelMatchers,
 			},
 		}, nil
+	case *parser.StepInvariantExpr:
+		// One day, we'll do something smarter here.
+		return q.convertToOperator(e.Expr)
+	case *parser.ParenExpr:
+		return q.convertToOperator(e.Expr)
 	default:
 		return nil, NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
 	}

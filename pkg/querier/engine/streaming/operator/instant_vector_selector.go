@@ -59,10 +59,15 @@ func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData
 		Floats: GetFPointSlice(v.numSteps), // TODO: only allocate this if we have any floats
 	}
 
-	for ts := v.startTimestamp; ts <= v.endTimestamp; ts += v.intervalMilliseconds {
+	for stepT := v.startTimestamp; stepT <= v.endTimestamp; stepT += v.intervalMilliseconds {
 		var t int64
 		var val float64
 		var h *histogram.FloatHistogram
+
+		ts := stepT
+		if v.Selector.Timestamp != nil {
+			ts = *v.Selector.Timestamp
+		}
 
 		valueType := v.memoizedIterator.Seek(ts)
 
@@ -92,7 +97,7 @@ func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData
 			continue
 		}
 
-		data.Floats = append(data.Floats, promql.FPoint{T: ts, F: val})
+		data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: val})
 	}
 
 	if v.memoizedIterator.Err() != nil {

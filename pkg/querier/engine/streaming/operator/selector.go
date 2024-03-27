@@ -16,9 +16,10 @@ import (
 
 type Selector struct {
 	Queryable storage.Queryable
-	Start     time.Time
-	End       time.Time
-	Interval  time.Duration
+	Start     time.Time // TODO: just take int64 here, and remove duplicate calculation in InstantVectorSelector and RangeVectorSelectorWithTransformation
+	End       time.Time // TODO: just take int64 here, and remove duplicate calculation in InstantVectorSelector and RangeVectorSelectorWithTransformation
+	Timestamp *int64
+	Interval  time.Duration // TODO: just take int64 here, and remove duplicate calculation in InstantVectorSelector and RangeVectorSelectorWithTransformation
 	Matchers  []*labels.Matcher
 
 	// Set for instant vector selectors, otherwise 0.
@@ -50,6 +51,12 @@ func (s *Selector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 
 	startTimestamp := timestamp.FromTime(s.Start)
 	endTimestamp := timestamp.FromTime(s.End)
+
+	if s.Timestamp != nil {
+		startTimestamp = *s.Timestamp
+		endTimestamp = *s.Timestamp
+	}
+
 	rangeMilliseconds := durationMilliseconds(s.Range)
 	start := startTimestamp - durationMilliseconds(s.LookbackDelta) - rangeMilliseconds
 

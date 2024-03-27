@@ -26,18 +26,11 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"metric{} + other_metric{}":    "PromQL expression type *parser.BinaryExpr",
 		"1":                            "PromQL expression type *parser.NumberLiteral",
 		"metric{} offset 2h":           "instant vector selector with 'offset'",
-		"metric{} @ 123":               "instant vector selector with '@' modifier",
-		"metric{} @ start()":           "instant vector selector with '@ start()'",
-		"metric{} @ end()":             "instant vector selector with '@ end()'",
 		"avg(metric{})":                "'avg' aggregation",
 		"sum without(l) (metric{})":    "grouping with 'without'",
 		"rate(metric{}[5m] offset 2h)": "range vector selector with 'offset'",
-		"rate(metric{}[5m] @ 123)":     "range vector selector with '@' modifier",
-		"rate(metric{}[5m] @ start())": "range vector selector with '@ start()'",
-		"rate(metric{}[5m] @ end())":   "range vector selector with '@ end()'",
 		"avg_over_time(metric{}[5m])":  "'avg_over_time' function",
 		"-sum(metric{})":               "PromQL expression type *parser.UnaryExpr",
-		"(metric{})":                   "PromQL expression type *parser.ParenExpr",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
