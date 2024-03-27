@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/plugin/kprom"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -393,7 +394,8 @@ func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gather
 }
 
 func createTestKafkaClient(t *testing.T, cfg KafkaConfig) *kgo.Client {
-	opts := commonKafkaClientOptions(cfg, nil, test.NewTestingLogger(t))
+	metrics := kprom.NewMetrics("", kprom.Registerer(prometheus.NewPedanticRegistry()))
+	opts := commonKafkaClientOptions(cfg, metrics, test.NewTestingLogger(t))
 
 	// Use the manual partitioner because produceRecord() utility explicitly specifies
 	// the partition to write to in the kgo.Record itself.
