@@ -152,6 +152,8 @@ func (i *ActivityTrackerWrapper) PrepareShutdownHandler(w http.ResponseWriter, r
 	i.ing.PrepareShutdownHandler(w, r)
 }
 
+// TODO add prepare unregister handler.
+
 func (i *ActivityTrackerWrapper) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/PreparePartitionDownscaleHandler", nil)

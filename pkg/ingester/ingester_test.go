@@ -10398,6 +10398,177 @@ func TestIngester_Starting(t *testing.T) {
 	}
 }
 
+func TestIngester_PrepareUnregisterHandler(t *testing.T) {
+	ctx := context.Background()
+
+	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	require.NoError(t, err)
+
+	type testCase struct {
+		name                     string
+		startIngester            bool
+		httpMethod               string
+		requestBody              io.Reader
+		prepare                  func(i *Ingester)
+		expectedStatusCode       int
+		expectedResponseBody     string
+		expectedUnregisterStatus bool
+	}
+
+	tests := []testCase{
+		{
+			name:                     "returns HTTP 503 if ingester is not running",
+			startIngester:            false,
+			httpMethod:               http.MethodGet,
+			requestBody:              nil,
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusServiceUnavailable,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 405 on invalid HTTP method",
+			startIngester:            true,
+			httpMethod:               http.MethodPost,
+			requestBody:              nil,
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusMethodNotAllowed,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 400 on GET with request body",
+			startIngester:            true,
+			httpMethod:               http.MethodGet,
+			requestBody:              strings.NewReader(`{"unregister": true}`),
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusBadRequest,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 400 on DELETE with request body",
+			startIngester:            true,
+			httpMethod:               http.MethodDelete,
+			requestBody:              strings.NewReader(`{"unregister": true}`),
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusBadRequest,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 400 on PUT with no request body",
+			startIngester:            true,
+			httpMethod:               http.MethodPut,
+			requestBody:              nil,
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusBadRequest,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 400 on PUT with request body that is not valid JSON",
+			startIngester:            true,
+			httpMethod:               http.MethodPut,
+			requestBody:              strings.NewReader("invalid json"),
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusBadRequest,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 400 on PUT with request body that is valid JSON but has incorrectly mapped fields",
+			startIngester:            true,
+			httpMethod:               http.MethodPut,
+			requestBody:              strings.NewReader(`{"unregister": "tomato"}`),
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusBadRequest,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 400 on PUT with request body that is valid JSON but has incorrect structure",
+			startIngester:            true,
+			httpMethod:               http.MethodPut,
+			requestBody:              strings.NewReader(`{"ping": "pong"}`),
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusBadRequest,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 200 and unregister status on PUT with valid request body",
+			startIngester:            true,
+			httpMethod:               http.MethodPut,
+			requestBody:              strings.NewReader(`{"unregister": false}`),
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusOK,
+			expectedResponseBody:     `{"unregister":false}`,
+			expectedUnregisterStatus: false,
+		},
+		{
+			name:                     "returns HTTP 200 with unregister status on GET request",
+			startIngester:            true,
+			httpMethod:               http.MethodGet,
+			requestBody:              nil,
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusOK,
+			expectedResponseBody:     `{"unregister":true}`,
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:          "returns HTTP 200 with unregister status on DELETE request",
+			startIngester: true,
+			httpMethod:    http.MethodDelete,
+			requestBody:   nil,
+			prepare: func(i *Ingester) {
+				i.lifecycler.SetUnregisterOnShutdown(false)
+			},
+			expectedStatusCode:       http.StatusOK,
+			expectedResponseBody:     `{"unregister":true}`,
+			expectedUnregisterStatus: true,
+		},
+	}
+
+	setup := func(t *testing.T, start bool, cfg Config) *Ingester {
+		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
+		require.NoError(t, err)
+
+		if start {
+			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+			})
+
+			test.Poll(t, 1*time.Second, 1, func() interface{} {
+				return ingester.lifecycler.HealthyInstancesCount()
+			})
+		}
+
+		return ingester
+	}
+
+	for _, tc := range tests {
+		// Avoid a common gotcha with table driven tests and t.Parallel().
+		// See https://gist.github.com/posener/92a55c4cd441fc5e5e85f27bca008721.
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ingester := setup(t, tc.startIngester, defaultIngesterTestConfig(t))
+			if tc.prepare != nil {
+				tc.prepare(ingester)
+			}
+			res := httptest.NewRecorder()
+			ingester.PrepareUnregisterHandler(res, httptest.NewRequest(tc.httpMethod, "/ingester/unregister-on-shutdown", tc.requestBody))
+			require.Equal(t, tc.expectedStatusCode, res.Code)
+			require.Equal(t, tc.expectedResponseBody, res.Body.String())
+			require.Equal(t, tc.expectedUnregisterStatus, ingester.lifecycler.ShouldUnregisterOnShutdown())
+		})
+	}
+}
+
 func setupFailingIngester(t *testing.T, cfg Config, failingCause error) *failingIngester {
 	// Start the first ingester. This ensures the ring will be created.
 	fI := newFailingIngester(t, cfg, nil, nil)
