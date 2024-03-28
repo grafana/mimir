@@ -9,8 +9,8 @@ import (
 )
 
 type Config struct {
-	ServerMetricsPort   int                       `yaml:"server_metrics_port"`
-	LogLevel            log.Level                 `yaml:"log_level"`
+	ServerMetricsPort   int                      
+	LogLevel            log.Level                 
 	Client              ClientConfig              `yaml:"mimir_client"`
 	Manager             ManagerConfig             `yaml:"manager"`
 	WriteReadSeriesTest WriteReadSeriesTestConfig `yaml:"write_read_series_test"`
