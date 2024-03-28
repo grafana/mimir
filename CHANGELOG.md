@@ -19,6 +19,8 @@
 * [BUGFIX] Query-frontend: Don't panic when using the `-query-frontend.downstream-url` flag. #7651
 * [BUGFIX] Ingester: when receiving multiple exemplars for a native histogram via remote write, sort them and only report an error if all are older than the latest exemplar as this could be a partial update. #7640
 * [BUGFIX] Ingester: don't retain blocks if they finish exactly on the boundary of the retention window. #7656
+* [BUGFIX] Ingester: correctly handle experimental native histograms when checkpointing WAL. #7744
+* [BUGFIX] Querier: return an error when a query uses `label_join` with an invalid destination label name. #7744
 
 ### Mixin
 
