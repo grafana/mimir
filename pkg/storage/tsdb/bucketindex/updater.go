@@ -55,12 +55,13 @@ func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid
 		oldBlockDeletionMarks = old.BlockDeletionMarks
 	}
 
-	blocks, partials, err := w.updateBlocks(ctx, oldBlocks)
+	partials := map[ulid.ULID]error{}
+	blocks, err := w.updateBlocks(ctx, oldBlocks, partials)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	blockDeletionMarks, err := w.updateBlockDeletionMarks(ctx, oldBlockDeletionMarks)
+	blockDeletionMarks, err := w.updateBlockDeletionMarks(ctx, oldBlockDeletionMarks, partials)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -73,9 +74,8 @@ func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid
 	}, partials, nil
 }
 
-func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Block, partials map[ulid.ULID]error, _ error) {
+func (w *Updater) updateBlocks(ctx context.Context, old []*Block, partials map[ulid.ULID]error) (blocks []*Block, _ error) {
 	discovered := map[ulid.ULID]struct{}{}
-	partials = map[ulid.ULID]error{}
 
 	// Find all blocks in the storage.
 	err := w.bkt.Iter(ctx, "", func(name string) error {
@@ -85,7 +85,7 @@ func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Blo
 		return nil
 	})
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "list blocks")
+		return nil, errors.Wrap(err, "list blocks")
 	}
 
 	// Since blocks are immutable, all blocks already existing in the index can just be copied.
@@ -110,19 +110,18 @@ func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Blo
 
 		if errors.Is(err, ErrBlockMetaNotFound) {
 			partials[id] = err
-			level.Warn(w.logger).Log("msg", "skipped partial block when updating bucket index", "block", id.String())
 			continue
 		}
 		if errors.Is(err, ErrBlockMetaCorrupted) {
-			partials[id] = err
+			// should not happen
 			level.Error(w.logger).Log("msg", "skipped block with corrupted meta.json when updating bucket index", "block", id.String(), "err", err)
 			continue
 		}
-		return nil, nil, err
+		return nil, err
 	}
 	level.Info(w.logger).Log("msg", "fetched blocks metas for newly discovered blocks", "total_blocks", len(blocks), "partial_errors", len(partials))
 
-	return blocks, partials, nil
+	return blocks, nil
 }
 
 func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Block, error) {
@@ -174,7 +173,7 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 	return block, nil
 }
 
-func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDeletionMark) ([]*BlockDeletionMark, error) {
+func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDeletionMark, partials map[ulid.ULID]error) ([]*BlockDeletionMark, error) {
 	out := make([]*BlockDeletionMark, 0, len(old))
 
 	// Find all markers in the storage.
@@ -198,7 +197,7 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 		m, err := w.updateBlockDeletionMarkIndexEntry(ctx, id)
 		if errors.Is(err, ErrBlockDeletionMarkNotFound) {
 			// This could happen if the block is permanently deleted between the "list objects" and now.
-			level.Warn(w.logger).Log("msg", "skipped missing block deletion mark when updating bucket index", "block", id.String())
+			partials[id] = err
 			continue
 		}
 		if errors.Is(err, ErrBlockDeletionMarkCorrupted) {
