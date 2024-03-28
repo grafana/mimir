@@ -134,7 +134,11 @@ Each compactor uses a storage device mounted at `-compactor.data-dir` to tempora
 - block files produced by the compactor to be uploaded to object storage
 
 {{% admonition type="note" %}}
-We recommend using a volume other than the root volume to avoid I/O contention with the operating system. Common volume types include a local SSD or a cloud provider's block storage service. Either of these can be mounted with a Kubernetes `PersistentVolumeClaim`. While the compactor is a stateless service, we run compactors in a Kubernetes `StatefulSet` so that each pod gets a dedicated volume.
+While the compactor is a stateless service, it's recommended that you configure the compactor to store its temporary files somewhere other than the root volume.
+Common volume types include a local SSD or a cloud provider's block storage service.
+This avoids I/O contention with the operating system.  
+
+In Kubernetes, run compactors as a StatefulSet so that each Pod has a dedicated volume.
 {{% /admonition %}}
 
 ## Compactor disk utilization
