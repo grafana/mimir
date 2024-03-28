@@ -415,6 +415,28 @@ func TestBlock_ThanosMeta(t *testing.T) {
 				},
 			},
 		},
+		"block with labels": {
+			block: Block{
+				ID:             blockID,
+				MinTime:        10,
+				MaxTime:        20,
+				SegmentsFormat: SegmentsFormatUnknown,
+				SegmentsNum:    0,
+				Labels:         map[string]string{"my_key": "0x8413"},
+			},
+			expected: &block.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: 10,
+					MaxTime: 20,
+					Version: block.TSDBVersion1,
+				},
+				Thanos: block.ThanosMeta{
+					Version: block.ThanosVersion1,
+					Labels:  map[string]string{"my_key": "0x8413"},
+				},
+			},
+		},
 	}
 
 	for testName, testData := range tests {

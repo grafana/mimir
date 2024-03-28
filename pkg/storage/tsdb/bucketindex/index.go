@@ -123,11 +123,6 @@ func (m *Block) ThanosMeta() *block.Meta {
 		compactionHints = []string{tsdb.CompactionHintFromOutOfOrder}
 	}
 
-	labels := maps.Clone(m.Labels)
-	if labels == nil {
-		labels = make(map[string]string)
-	}
-
 	return &block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    m.ID,
@@ -143,7 +138,7 @@ func (m *Block) ThanosMeta() *block.Meta {
 			Version:      block.ThanosVersion1,
 			SegmentFiles: m.thanosMetaSegmentFiles(),
 			Source:       block.SourceType(m.Source),
-			Labels:       labels,
+			Labels:       maps.Clone(m.Labels),
 		},
 	}
 }
@@ -173,11 +168,6 @@ func (m *Block) String() string {
 func BlockFromThanosMeta(meta block.Meta) *Block {
 	segmentsFormat, segmentsNum := detectBlockSegmentsFormat(meta)
 
-	blockLabels := maps.Clone(meta.Thanos.Labels)
-	if blockLabels == nil {
-		blockLabels = make(map[string]string)
-	}
-
 	return &Block{
 		ID:               meta.ULID,
 		MinTime:          meta.MinTime,
@@ -188,7 +178,7 @@ func BlockFromThanosMeta(meta block.Meta) *Block {
 		Source:           string(meta.Thanos.Source),
 		CompactionLevel:  meta.Compaction.Level,
 		OutOfOrder:       meta.Compaction.FromOutOfOrder(),
-		Labels:           blockLabels,
+		Labels:           maps.Clone(meta.Thanos.Labels),
 	}
 }
 
