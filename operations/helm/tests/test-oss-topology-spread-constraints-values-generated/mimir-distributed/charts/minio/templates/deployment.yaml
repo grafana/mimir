@@ -6,7 +6,7 @@ metadata:
   name: test-oss-topology-spread-constraints-values-minio
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.1.0
     release: test-oss-topology-spread-constraints-values
     heritage: Helm
 spec:
@@ -27,8 +27,8 @@ spec:
         app: minio
         release: test-oss-topology-spread-constraints-values
       annotations:
-        checksum/secrets: 08ff5e5a53040c4cf9200dff17541f4cdc3e80e1728953afa758878956ea151c
-        checksum/config: 42cacda08d76f6cbb4c80157776a3b88672edbdd9c79829980ad7d43e1fecfa8
+        checksum/secrets: 62ad54127dd73d05d2342af743c6e8405ee0f730b7180227fd0a8045d8c3ec3a
+        checksum/config: bcaeb2bbb8f17f1d06ca714a952873ca8175f393705d4a39c8229f7dc94fdd33
     spec:
       securityContext:
         runAsUser: 1000
@@ -39,7 +39,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
+          image: "quay.io/minio/minio:RELEASE.2024-03-03T17-50-39Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"
