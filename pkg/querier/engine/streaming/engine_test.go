@@ -125,6 +125,38 @@ func TestUpstreamTestCases(t *testing.T) {
 	}
 }
 
+func TestOurTestCases(t *testing.T) {
+	opts := newTestEngineOpts()
+	streamingEngine, err := NewEngine(opts)
+	require.NoError(t, err)
+
+	prometheusEngine := promql.NewEngine(opts)
+
+	testdataFS := os.DirFS("./testdata")
+	testFiles, err := fs.Glob(testdataFS, "ours/*.test")
+	require.NoError(t, err)
+
+	for _, testFile := range testFiles {
+		t.Run(testFile, func(t *testing.T) {
+			f, err := testdataFS.Open(testFile)
+			require.NoError(t, err)
+			defer f.Close()
+
+			b, err := io.ReadAll(f)
+			testScript := string(b)
+
+			t.Run("streaming engine", func(t *testing.T) {
+				promql.RunTest(t, testScript, streamingEngine)
+			})
+
+			// Run the tests against Prometheus' engine to ensure our test cases are valid.
+			t.Run("Prometheus' engine", func(t *testing.T) {
+				promql.RunTest(t, testScript, prometheusEngine)
+			})
+		})
+	}
+}
+
 func newTestEngineOpts() promql.EngineOpts {
 	return promql.EngineOpts{
 		Logger:               nil,

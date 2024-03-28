@@ -215,10 +215,11 @@ func (q *Query) populateVector(ctx context.Context, series []operator.SeriesMeta
 			return nil, err
 		}
 
-		if len(d.Floats) != 1 {
-			defer operator.PutFPointSlice(d.Floats)
+		if len(d.Floats)+len(d.Histograms) != 1 {
+			operator.PutFPointSlice(d.Floats)
+			// TODO: put histogram point slice back in pool
 
-			if len(d.Floats) == 0 {
+			if len(d.Floats)+len(d.Histograms) == 0 {
 				continue
 			}
 
@@ -233,6 +234,7 @@ func (q *Query) populateVector(ctx context.Context, series []operator.SeriesMeta
 		})
 
 		operator.PutFPointSlice(d.Floats)
+		// TODO: put histogram point slice back in pool
 	}
 
 	return v, nil
@@ -249,6 +251,13 @@ func (q *Query) populateMatrix(ctx context.Context, series []operator.SeriesMeta
 			}
 
 			return nil, err
+		}
+
+		if len(d.Floats) == 0 && len(d.Histograms) == 0 {
+			operator.PutFPointSlice(d.Floats)
+			// TODO: put histogram point slice back in pool
+
+			continue
 		}
 
 		m = append(m, promql.Series{
@@ -270,7 +279,7 @@ func (q *Query) Close() {
 	case promql.Matrix:
 		for _, s := range v {
 			operator.PutFPointSlice(s.Floats)
-			// TODO: histograms
+			// TODO: put histogram point slice back in pool
 		}
 
 		operator.PutMatrix(v)
