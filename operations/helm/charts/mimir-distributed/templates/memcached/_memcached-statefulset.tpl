@@ -104,14 +104,14 @@ spec:
             {{- range $key, $value := .extraArgs }}
             - "-{{ $key }}{{ if $value }} {{ $value }}{{ end }}"
             {{- end }}
+          {{- with $.ctx.Values.global.extraEnv }}
           env:
-            {{- with $.ctx.Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
-            {{- end }}
+          {{- end }}
+          {{- with $.ctx.Values.global.extraEnvFrom }}
           envFrom:
-            {{- with $.ctx.Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
-            {{- end }}
+          {{- end }}
           securityContext:
             {{- toYaml $.ctx.Values.memcached.containerSecurityContext | nindent 12 }}
           {{- if .extraVolumeMounts }}

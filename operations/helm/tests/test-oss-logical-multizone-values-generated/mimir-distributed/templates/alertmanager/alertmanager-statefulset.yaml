@@ -125,8 +125,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:
 ---
 # Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
 apiVersion: apps/v1
@@ -254,8 +252,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:
 ---
 # Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
 apiVersion: apps/v1
@@ -383,5 +379,3 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:

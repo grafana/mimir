@@ -60,6 +60,7 @@ spec:
               mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
+          {{- if or .Values.global.extraEnv .Values.tokengenJob.env }}
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
@@ -67,6 +68,8 @@ spec:
             {{- with .Values.tokengenJob.env }}
               {{ toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.tokengenJob.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -74,6 +77,7 @@ spec:
             {{- with .Values.tokengenJob.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
           securityContext:
             {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
       restartPolicy: OnFailure

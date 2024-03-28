@@ -162,7 +162,6 @@ spec:
               mountPath: "/data"
               {{- if .Values.alertmanager.persistentVolume.subPath }}
               subPath: {{ .Values.alertmanager.persistentVolume.subPath }}
-              {{- else }}
               {{- end }}
             {{- if .Values.alertmanager.fallbackConfig }}
             - name: alertmanager-fallback-config
@@ -189,7 +188,9 @@ spec:
           resources:
             {{- toYaml .Values.alertmanager.resources | nindent 12 }}
           securityContext:
-           {{- toYaml .Values.alertmanager.containerSecurityContext | nindent 12 }}
+            {{- toYaml .Values.alertmanager.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.alertmanager }}
+          {{- if or .Values.global.extraEnv .Values.alertmanager.env $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -197,11 +198,12 @@ spec:
             {{- with .Values.alertmanager.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.alertmanager }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.alertmanager.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -209,6 +211,7 @@ spec:
             {{- with .Values.alertmanager.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 
 ---
 {{ end }}

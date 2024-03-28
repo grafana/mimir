@@ -173,6 +173,10 @@ spec:
             {{- toYaml .Values.store_gateway.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.store_gateway.containerSecurityContext | nindent 12 }}
+          {{- $cpu_request := dig "requests" "cpu" nil .Values.store_gateway.resources }}
+          {{- $mem_request := dig "requests" "memory" nil .Values.store_gateway.resources }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.store_gateway }}
+          {{- if or .Values.global.extraEnv .Values.store_gateway.env $cpu_request $mem_request $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -180,23 +184,22 @@ spec:
             {{- with .Values.store_gateway.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- $cpu_request := dig "requests" "cpu" nil .Values.store_gateway.resources }}
             {{- if $cpu_request }}
               {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
               {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
             - name: "GOMAXPROCS"
               value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
             {{- end }}
-            {{- $mem_request := dig "requests" "memory" nil .Values.store_gateway.resources }}
             {{- if $mem_request }}
             - name: "GOMEMLIMIT"
               value: {{include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.store_gateway }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.store_gateway.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -204,6 +207,7 @@ spec:
             {{- with .Values.store_gateway.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 
 ---
 {{ end }}

@@ -57,7 +57,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-              subPath: 
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -87,7 +86,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret

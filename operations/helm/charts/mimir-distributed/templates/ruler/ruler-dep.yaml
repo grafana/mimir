@@ -81,7 +81,9 @@ spec:
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
               mountPath: "/data"
+              {{- if .Values.ruler.persistence.subPath }}
               subPath: {{ .Values.ruler.persistence.subPath }}
+              {{- end }}
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -102,6 +104,8 @@ spec:
             {{- toYaml .Values.ruler.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ruler.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.ruler }}
+          {{- if or .Values.global.extraEnv .Values.ruler.env $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -109,11 +113,12 @@ spec:
             {{- with .Values.ruler.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.ruler }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.ruler.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -121,6 +126,7 @@ spec:
             {{- with .Values.ruler.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 {{- if .Values.ruler.extraContainers }}
 {{ toYaml .Values.ruler.extraContainers | indent 8}}
 {{- end }}
