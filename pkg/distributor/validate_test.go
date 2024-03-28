@@ -123,6 +123,7 @@ func TestValidateLabels(t *testing.T) {
 			false,
 			fmt.Errorf(
 				labelValueTooLongMsgFormat,
+				"much_shorter_name",
 				"test_value_please_ignore_no_really_nothing_to_see_here",
 				mimirpb.FromLabelAdaptersToString(
 					[]mimirpb.LabelAdapter{
