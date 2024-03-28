@@ -137,6 +137,7 @@ func (m *Block) ThanosMeta() *block.Meta {
 			Version:      block.ThanosVersion1,
 			SegmentFiles: m.thanosMetaSegmentFiles(),
 			Source:       block.SourceType(m.Source),
+			Labels:       maps.Clone(m.Labels),
 		},
 	}
 }
