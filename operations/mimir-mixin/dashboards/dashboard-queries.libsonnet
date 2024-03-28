@@ -74,18 +74,54 @@
 
     query_frontend: {
       readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
-      instantQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query"}[$__rate_interval]))' % variables,
-      rangeQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query_range"}[$__rate_interval]))' % variables,
-      labelNamesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_labels"}[$__rate_interval]))' % variables,
-      labelValuesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_label_name_values"}[$__rate_interval]))' % variables,
-      seriesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_series"}[$__rate_interval]))' % variables,
-      remoteReadQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_read"}[$__rate_interval]))' % variables,
-      metadataQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_metadata"}[$__rate_interval]))' % variables,
-      exemplarsQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query_exemplars"}[$__rate_interval]))' % variables,
-      activeSeriesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route="prometheus_api_v1_cardinality_active_series"}[$__rate_interval])) > 0' % variables,
-      labelNamesCardinalityQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route="prometheus_api_v1_cardinality_label_names"}[$__rate_interval])) > 0' % variables,
-      labelValuesCardinalityQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route="prometheus_api_v1_cardinality_label_values"}[$__rate_interval])) > 0' % variables,
-      otherQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~".*(query|query_range|label.*|series|read|metadata|query_exemplars|cardinality_.*)"}[$__rate_interval]))' % variables,
+      // These query routes are used in the overview and other dashboard, everythign else is considered "other" queries.
+      // Has to be a list to keep the same colors as before, see overridesNonErrorColorsPalette.
+      local overviewRoutes = [
+        { name: 'instantQuery', displayName: 'instant queries', route: '/api/v1/query', routeLabel: '_api_v1_query' },
+        { name: 'rangeQuery', displayName: 'range queries', route: '/api/v1/query_range', routeLabel: '_api_v1_query_range' },
+        { name: 'labelNames', displayName: '"label names" queries', route: '/api/v1/labels', routeLabel: '_api_v1_labels' },
+        { name: 'labelValues', displayName: '"label values" queries', route: '/api/v1/label_name_values', routeLabel: '_api_v1_label_name_values' },
+        { name: 'series', displayName: 'series queries', route: '/api/v1/series', routeLabel: '_api_v1_series' },
+        { name: 'remoteRead', displayName: 'remote read queries', route: '/api/v1/read', routeLabel: '_api_v1_read' },
+        { name: 'metadata', displayName: 'metadata queries', route: '/api/v1/metadata', routeLabel: '_api_v1_metadata' },
+        { name: 'exemplars', displayName: 'exemplar queries', route: '/api/v1/query_exemplars', routeLabel: '_api_v1_query_exemplars' },
+        { name: 'activeSeries', displayName: '"active series" queries', route: '/api/v1/cardinality_active_series', routeLabel: '_api_v1_cardinality_active_series' },
+        { name: 'labelNamesCardinality', displayName: '"label name cardinality" queries', route: '/api/v1/cardinality_label_names', routeLabel: '_api_v1_cardinality_label_names' },
+        { name: 'labelValuesCardinality', displayName: '"label value cardinality" queries', route: '/api/v1/cardinality_label_values', routeLabel: '_api_v1_cardinality_label_values' },
+      ],
+      local overviewRoutesRegex = '(prometheus|api_prom)(%s)' % std.join('|', [r.routeLabel for r in overviewRoutes]),
+      overviewRoutesOverrides: [
+        {
+          matcher: {
+            id: 'byRegexp',
+            // To distinguish between query and query_range, we need to match the route with a negative lookahead.
+            options: '/.*%s($|[^_])/' % r.routeLabel,
+          },
+          properties: [
+            {
+              id: 'displayName',
+              value: r.displayName,
+            },
+          ],
+        }
+        for r in overviewRoutes
+      ],
+      overviewRoutesPerSecond: 'sum by (route) (rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"%(overviewRoutesRegex)s"}[$__rate_interval]))' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
+      nonOverviewRoutesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~"%(overviewRoutesRegex)s"}[$__rate_interval]))' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
+
+      local queryPerSecond(name) = 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)%(route)s"}[$__rate_interval]))' %
+                                   (variables { route: std.filter(function(r) r.name == name, overviewRoutes)[0].routeLabel }),
+      instantQueriesPerSecond: queryPerSecond('instantQuery'),
+      rangeQueriesPerSecond: queryPerSecond('rangeQuery'),
+      labelNamesQueriesPerSecond: queryPerSecond('labelNames'),
+      labelValuesQueriesPerSecond: queryPerSecond('labelValues'),
+      seriesQueriesPerSecond: queryPerSecond('series'),
+      remoteReadQueriesPerSecond: queryPerSecond('remoteRead'),
+      metadataQueriesPerSecond: queryPerSecond('metadata'),
+      exemplarsQueriesPerSecond: queryPerSecond('exemplars'),
+      activeSeriesQueriesPerSecond: queryPerSecond('activeSeries'),
+      labelNamesCardinalityQueriesPerSecond: queryPerSecond('labelNamesCardinality'),
+      labelValuesCardinalityQueriesPerSecond: queryPerSecond('labelValuesCardinality'),
 
       // Read failures rate as percentage of total requests.
       readFailuresRate: |||

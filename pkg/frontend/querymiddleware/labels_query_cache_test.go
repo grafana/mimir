@@ -3,7 +3,6 @@
 package querymiddleware
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
@@ -125,6 +125,7 @@ func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
 
 	requestTypes := map[string]struct {
 		requestPath                   string
+		request                       *http.Request
 		expectedCacheKeyPrefix        string
 		expectedCacheKeyWithLabelName bool
 	}{
@@ -140,12 +141,20 @@ func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
 		},
 	}
 
+	reg := prometheus.NewPedanticRegistry()
+	codec := NewPrometheusCodec(reg, formatJSON)
+
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			for requestTypeName, requestTypeData := range requestTypes {
 				t.Run(requestTypeName, func(t *testing.T) {
-					c := DefaultCacheKeyGenerator{}
-					actual, err := c.LabelValues(context.Background(), requestTypeData.requestPath, testData.params)
+					c := DefaultCacheKeyGenerator{codec: codec}
+					requestURL, _ := url.Parse(requestTypeData.requestPath)
+					requestURL.RawQuery = testData.params.Encode()
+					request, err := http.NewRequest("GET", requestURL.String(), nil)
+					require.NoError(t, err)
+
+					actual, err := c.LabelValues(request)
 					require.NoError(t, err)
 
 					assert.Equal(t, requestTypeData.expectedCacheKeyPrefix, actual.CacheKeyPrefix)

@@ -23,7 +23,7 @@ type ResponsesComparator interface {
 }
 
 type ProxyEndpoint struct {
-	backends              []*ProxyBackend
+	backends              []ProxyBackendInterface
 	metrics               *ProxyMetrics
 	logger                log.Logger
 	comparator            ResponsesComparator
@@ -36,10 +36,10 @@ type ProxyEndpoint struct {
 	routeName string
 }
 
-func NewProxyEndpoint(backends []*ProxyBackend, routeName string, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration) *ProxyEndpoint {
+func NewProxyEndpoint(backends []ProxyBackendInterface, routeName string, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration) *ProxyEndpoint {
 	hasPreferredBackend := false
 	for _, backend := range backends {
-		if backend.preferred {
+		if backend.Preferred() {
 			hasPreferredBackend = true
 			break
 		}
@@ -74,7 +74,7 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.name, r.Method, p.routeName).Inc()
+	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.Name(), r.Method, p.routeName).Inc()
 }
 
 func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *backendResponse) {
@@ -110,9 +110,9 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 	// Keep track of the fastest and slowest backends
 	var (
 		fastestDuration time.Duration
-		fastestBackend  *ProxyBackend
+		fastestBackend  ProxyBackendInterface
 		slowestDuration time.Duration
-		slowestBackend  *ProxyBackend
+		slowestBackend  ProxyBackendInterface
 	)
 
 	wg.Add(len(p.backends))
@@ -121,16 +121,12 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 
 		go func() {
 			defer wg.Done()
-			var (
-				bodyReader io.ReadCloser
-				start      = time.Now()
-			)
+			var bodyReader io.ReadCloser
 			if len(body) > 0 {
 				bodyReader = io.NopCloser(bytes.NewReader(body))
 			}
 
-			status, body, resp, err := b.ForwardRequest(req, bodyReader)
-			elapsed := time.Since(start)
+			elapsed, status, body, resp, err := b.ForwardRequest(req, bodyReader)
 			contentType := ""
 
 			if p.slowResponseThreshold > 0 {
@@ -165,8 +161,8 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 				lvl = level.Warn
 			}
 
-			lvl(p.logger).Log("msg", "Backend response", "path", req.URL.Path, "query", query, "backend", b.name, "status", status, "elapsed", elapsed)
-			p.metrics.requestDuration.WithLabelValues(res.backend.name, req.Method, p.routeName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
+			lvl(p.logger).Log("msg", "Backend response", "path", req.URL.Path, "query", query, "backend", b.Name(), "status", status, "elapsed", elapsed)
+			p.metrics.requestDuration.WithLabelValues(res.backend.Name(), req.Method, p.routeName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
 
 			// Keep track of the response if required.
 			if p.comparator != nil {
@@ -187,7 +183,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 	if p.comparator != nil {
 		expectedResponse := responses[0]
 		actualResponse := responses[1]
-		if responses[1].backend.preferred {
+		if responses[1].backend.Preferred() {
 			expectedResponse, actualResponse = actualResponse, expectedResponse
 		}
 
@@ -222,9 +218,9 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 				"query", query,
 				"user", req.Header.Get("X-Scope-OrgID"),
 				"slowest_duration", slowestDuration,
-				"slowest_backend", slowestBackend.name,
+				"slowest_backend", slowestBackend.Name(),
 				"fastest_duration", fastestDuration,
-				"fastest_backend", fastestBackend.name,
+				"fastest_backend", fastestBackend.Name(),
 			)
 		}
 
@@ -243,13 +239,13 @@ func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResp
 		// - There's no preferred backend configured
 		// - Or this response is from the preferred backend
 		// - Or the preferred backend response has already been received and wasn't successful
-		if res.succeeded() && (!p.hasPreferredBackend || res.backend.preferred || preferredResponseReceived) {
+		if res.succeeded() && (!p.hasPreferredBackend || res.backend.Preferred() || preferredResponseReceived) {
 			return res
 		}
 
 		// If we received a non-successful response from the preferred backend, then we can
 		// return the first successful response received so far (if any).
-		if res.backend.preferred && !res.succeeded() {
+		if res.backend.Preferred() && !res.succeeded() {
 			preferredResponseReceived = true
 
 			for _, prevRes := range responses {
@@ -292,7 +288,7 @@ func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backe
 }
 
 type backendResponse struct {
-	backend     *ProxyBackend
+	backend     ProxyBackendInterface
 	status      int
 	contentType string
 	body        []byte

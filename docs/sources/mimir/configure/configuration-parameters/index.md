@@ -4256,6 +4256,19 @@ sharding_ring:
   # Unregister from the ring upon clean shutdown.
   # CLI flag: -store-gateway.sharding-ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
+
+# (advanced) Comma separated list of tenants that can be loaded by the
+# store-gateway. If specified, only blocks for these tenants will be loaded by
+# the store-gateway, otherwise all tenants can be loaded. Subject to sharding.
+# CLI flag: -store-gateway.enabled-tenants
+[enabled_tenants: <string> | default = ""]
+
+# (advanced) Comma separated list of tenants that cannot be loaded by the
+# store-gateway. If specified, and the store-gateway would normally load a given
+# tenant for (via -store-gateway.enabled-tenants or sharding), it will be
+# ignored instead.
+# CLI flag: -store-gateway.disabled-tenants
+[disabled_tenants: <string> | default = ""]
 ```
 
 ### memcached
@@ -4604,6 +4617,11 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # are v1 or v2. Default is unset.
 # CLI flag: -<prefix>.s3.list-objects-version
 [list_objects_version: <string> | default = ""]
+
+# (advanced) Bucket lookup style type, used to access bucket in S3-compatible
+# service. Default is auto. Supported values are: auto, path, virtual-hosted.
+# CLI flag: -<prefix>.s3.bucket-lookup-type
+[bucket_lookup_type: <string> | default = "auto"]
 
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
