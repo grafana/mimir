@@ -219,6 +219,14 @@ func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Conte
 	})
 
 	for boff.Ongoing() {
+		// Send a direct request to the Kafka backend to fetch the partition start offset.
+		partitionStartOffset, err := r.offsetReader.FetchPartitionStartOffset(ctx)
+		if err != nil {
+			level.Warn(r.logger).Log("msg", "partition reader failed to fetch partition start offset", "err", err)
+			boff.Wait()
+			continue
+		}
+
 		// Send a direct request to the Kafka backend to fetch the last produced offset.
 		// We intentionally don't use WaitNextFetchLastProducedOffset() to not introduce further
 		// latency.
@@ -231,8 +239,16 @@ func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Conte
 
 		lastProducedOffsetFetchedAt := time.Now()
 
+		// Ensure there're some records to consume. For example, if the partition has been inactive for a long
+		// time and all its records have been deleted, the partition start offset may be > 0 but there are no
+		// records to actually consume.
+		if partitionStartOffset > lastProducedOffset {
+			level.Info(r.logger).Log("msg", "partition reader found no records to consume because partition is empty", "partition_start_offset", partitionStartOffset, "last_produced_offset", lastProducedOffset)
+			return nil
+		}
+
 		// This message is NOT expected to be logged with a very high rate.
-		level.Info(r.logger).Log("msg", "partition reader is consuming records to honor max consumer lag", "last_produced_offset", lastProducedOffset)
+		level.Info(r.logger).Log("msg", "partition reader is consuming records to honor max consumer lag", "partition_start_offset", partitionStartOffset, "last_produced_offset", lastProducedOffset)
 
 		for boff.Ongoing() {
 			// Continue reading until we reached the desired offset.

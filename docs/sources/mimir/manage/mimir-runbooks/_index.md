@@ -2095,7 +2095,7 @@ How to manually upload blocks from ingesters to the bucket:
 
 The blocks and WAL stored in the ingester persistent disk are the last fence of defence in case of an incident involving blocks not shipped to the bucket or corrupted blocks in the bucket. If the data integrity in the ingester's disk is at risk (eg. close to hit the TSDB retention period or close to reach max disk utilisation), you should freeze it taking a **disk snapshot**.
 
-To take a **GCP persistent disk snapshot**:
+To take a **GCP Persistent Disk snapshot**:
 
 1. Identify the Kubernetes PVC volume name (`kubectl get pvc --namespace <namespace>`) of the volumes to snapshot
 2. For each volume, [create a snapshot](https://console.cloud.google.com/compute/snapshotsAdd) from the GCP console ([documentation](https://cloud.google.com/compute/docs/disks/create-snapshots))
