@@ -13,7 +13,7 @@ metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" $.ctx "component" $.component) }}
   labels:
     {{- include "mimir.labels" (dict "ctx" $.ctx "component" $.component) | nindent 4 }}
-  namespace: {{ $.ctx.Release.Namespace | quote }}
+  namespace: {{ default $.ctx.Release.Namespace $.ctx.Values.namespaceOverride | trunc 63 | trimSuffix "-" | quote }}
 spec:
   selector:
     matchLabels:

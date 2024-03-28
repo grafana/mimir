@@ -4,7 +4,7 @@ apiVersion: monitoring.grafana.com/v1alpha1
 kind: PodLogs
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "meta-monitoring") }}
-  namespace: {{ .namespace | default $.Release.Namespace | quote }}
+  namespace: {{ .namespace | default (include "mimir.namespace" $ ) | quote }}
   labels:
     {{- include "mimir.labels" (dict "ctx" $ "component" "meta-monitoring") | nindent 4 }}
     {{- with .labels }}
@@ -34,7 +34,7 @@ spec:
 
   namespaceSelector:
     matchNames:
-      - {{ $.Release.Namespace | quote }}
+      - {{ include "mimir.namespace" $ | quote }}
 
   selector:
     matchLabels:

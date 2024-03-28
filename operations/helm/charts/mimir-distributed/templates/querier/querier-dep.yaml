@@ -6,7 +6,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "querier" "memberlist" true) | nindent 4 }}
   annotations:
     {{- toYaml .Values.querier.annotations | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 spec:
   {{- if not .Values.querier.kedaAutoscaling.enabled }}
   # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it

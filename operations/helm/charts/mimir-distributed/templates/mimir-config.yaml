@@ -9,7 +9,7 @@ metadata:
   name: {{ tpl .Values.externalConfigSecretName . }}
   labels:
     {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 {{- if eq .Values.configStorageType "Secret" }}
 data:
   mimir.yaml: {{ include "mimir.calculatedConfig" . | b64enc }}

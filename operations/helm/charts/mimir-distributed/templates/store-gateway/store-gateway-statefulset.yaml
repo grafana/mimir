@@ -11,7 +11,7 @@ metadata:
     {{- include "mimir.labels" $args | nindent 4 }}
   annotations:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 spec:
   podManagementPolicy: {{ .Values.store_gateway.podManagementPolicy }}
   replicas: {{ $rolloutZone.replicas }}
@@ -59,7 +59,7 @@ spec:
         {{- include "mimir.podLabels" $args | nindent 8 }}
       annotations:
         {{- include "mimir.podAnnotations" $args | nindent 8 }}
-      namespace: {{ .Release.Namespace | quote }}
+      namespace: {{ include "mimir.namespace" . | quote }}
     spec:
       {{- with .Values.store_gateway.schedulerName }}
       schedulerName: {{ . | quote }}

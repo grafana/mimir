@@ -7,6 +7,13 @@ Expand the name of the chart.
 {{- end -}}
 
 {{/*
+Override Namespace for multi-chart deployments.
+*/}}
+{{- define "mimir.namespace" -}}
+{{- default $.Release.Namespace $.Values.namespaceOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/*
 Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
@@ -36,9 +43,9 @@ Calculate the gateway url
 */}}
 {{- define "mimir.gatewayUrl" -}}
 {{- if eq (include "mimir.gateway.isEnabled" . ) "true" -}}
-http://{{ include "mimir.gateway.service.name" . }}.{{ .Release.Namespace }}.svc:{{ .Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
+http://{{ include "mimir.gateway.service.name" . }}.{{ include "mimir.namespace" . }}.svc:{{ .Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
 {{- else -}}
-http://{{ template "mimir.fullname" . }}-nginx.{{ .Release.Namespace }}.svc:{{ .Values.nginx.service.port }}
+http://{{ template "mimir.fullname" . }}-nginx.{{ include "mimir.namespace" . }}.svc:{{ .Values.nginx.service.port }}
 {{- end -}}
 {{- end -}}
 
@@ -160,23 +167,23 @@ Alertmanager cluster bind address
 {{- end -}}
 
 {{- define "mimir.chunksCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-chunks-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "chunks-cache").port }}
+dns+{{ template "mimir.fullname" . }}-chunks-cache.{{ include "mimir.namespace" . }}.svc:{{ (index .Values "chunks-cache").port }}
 {{- end -}}
 
 {{- define "mimir.indexCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-index-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "index-cache").port }}
+dns+{{ template "mimir.fullname" . }}-index-cache.{{ include "mimir.namespace" . }}.svc:{{ (index .Values "index-cache").port }}
 {{- end -}}
 
 {{- define "mimir.metadataCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-metadata-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "metadata-cache").port }}
+dns+{{ template "mimir.fullname" . }}-metadata-cache.{{ include "mimir.namespace" . }}.svc:{{ (index .Values "metadata-cache").port }}
 {{- end -}}
 
 {{- define "mimir.resultsCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-results-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "results-cache").port }}
+dns+{{ template "mimir.fullname" . }}-results-cache.{{ include "mimir.namespace" . }}.svc:{{ (index .Values "results-cache").port }}
 {{- end -}}
 
 {{- define "mimir.adminCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-admin-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "admin-cache").port }}
+dns+{{ template "mimir.fullname" . }}-admin-cache.{{ include "mimir.namespace" . }}.svc:{{ (index .Values "admin-cache").port }}
 {{- end -}}
 
 {{/*

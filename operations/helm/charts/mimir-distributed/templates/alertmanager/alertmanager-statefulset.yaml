@@ -13,7 +13,7 @@ metadata:
     {{- include "mimir.labels" $args | nindent 4 }}
   annotations:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 spec:
   replicas: {{ $rolloutZone.replicas }}
   {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.alertmanager.persistentVolume.enableRetentionPolicy)  }}
@@ -63,7 +63,7 @@ spec:
         {{- if .Values.alertmanager.fallbackConfig }}
         checksum/alertmanager-fallback-config: {{ include (print .Template.BasePath "/alertmanager/alertmanager-config.yaml") . | sha256sum }}
         {{- end }}
-      namespace: {{ .Release.Namespace | quote }}
+      namespace: {{ include "mimir.namespace" . | quote }}
     spec:
       {{- with .Values.alertmanager.schedulerName }}
       schedulerName: {{ . | quote }}

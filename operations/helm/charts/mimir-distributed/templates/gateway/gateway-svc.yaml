@@ -11,7 +11,7 @@ metadata:
     {{- end }}
   annotations:
     {{- toYaml .service.annotations | nindent 4 }}
-  namespace: {{ $.Release.Namespace | quote }}
+  namespace: {{ default (include "mimir.namespace" $ ) | quote }}
 spec:
   type: {{ .service.type }}
   {{- with .service.clusterIP }}

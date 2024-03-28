@@ -19,7 +19,7 @@ metadata:
     {{- end }}
   annotations:
     {{- toYaml .Values.alertmanager.service.annotations | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 spec:
   type: ClusterIP
   ports:
