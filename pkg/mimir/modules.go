@@ -24,20 +24,17 @@ import (
 	"github.com/grafana/dskit/runtimeconfig"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/tracing"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
-	jaegercfg "github.com/uber/jaeger-client-go/config"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -61,7 +58,6 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
-	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
@@ -1033,49 +1029,18 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 
 func (t *Mimir) initContinuousTest() (services.Service, error) {
 	start := func(ctx context.Context) error {
-		logger := util_log.Logger
-		var err error
-
-		level.Info(logger).Log("msg", "initing continuous-test")
-		// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
-		if trace, err := tracing.NewFromEnv("mimir-continuous-test", jaegercfg.MaxTagValueLength(16e3)); err != nil {
-			level.Error(logger).Log("msg", "Failed to setup tracing", "err", err.Error())
-		} else {
-			defer trace.Close()
-		}
-		level.Info(logger).Log("msg", "continuous-test setup tracing happened")
-
-		// Run the instrumentation server.
-		registry := prometheus.NewRegistry()
-		registry.MustRegister(version.NewCollector("mimir_continuous_test"))
-		registry.MustRegister(collectors.NewGoCollector())
-		level.Info(logger).Log("msg", "prom registry created for ct")
-
-		i := instrumentation.NewMetricsServer(t.Cfg.ContinuousTest.ServerMetricsPort, registry)
-
-		level.Info(logger).Log("msg", "metrics server created for ct")
-		if err := i.Start(); err != nil {
-			level.Error(logger).Log("msg", "Unable to start instrumentation server", "err", err.Error())
-			util_log.Flush()
-		}
-
-		// Init the client used to write/read to/from Mimir.
-		// TODO: building an external client and then going back in on a continuous test that's a module in Mimir feels.... ick. Clean this up
-		client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, logger)
-		level.Info(logger).Log("msg", "new client created for ct")
+		client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, util_log.Logger)
 		if err != nil {
-			level.Error(logger).Log("msg", "Failed to initialize client", "err", err.Error())
-			util_log.Flush()
+			return errors.Wrap(err, "Failed to initialize continuous-test client")
 		}
 
-		m := continuoustest.NewManager(t.Cfg.ContinuousTest.Manager, logger)
-		m.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, logger, registry))
-		t.ContinuousTestManager = m
-		level.Info(logger).Log("msg", "new manager created for ct")
-		return err
+		t.ContinuousTestManager = continuoustest.NewManager(t.Cfg.ContinuousTest.Manager, util_log.Logger)
+		t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, util_log.Logger, t.Registerer))
+		return nil
 	}
+
 	return services.NewBasicService(start, func(ctx context.Context) error {
-		return t.ContinuousTestManager.Run(context.Background())
+		return t.ContinuousTestManager.Run(ctx)
 	}, nil), nil
 }
 

@@ -17,7 +17,6 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
 	cfg.Client.RegisterFlags(f)
 	cfg.Manager.RegisterFlags(f)
 	cfg.WriteReadSeriesTest.RegisterFlags(f)

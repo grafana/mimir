@@ -25,6 +25,7 @@ import (
 func main() {
 	// Parse CLI arguments.
 	cfg := &continuoustest.Config{}
+	flag.CommandLine.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
 	cfg.RegisterFlags(flag.CommandLine)
 	cfg.LogLevel.RegisterFlags(flag.CommandLine)
 
