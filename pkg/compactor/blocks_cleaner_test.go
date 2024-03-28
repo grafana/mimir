@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	prom_tsdb "github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -1091,6 +1092,127 @@ func TestComputeCompactionJobs(t *testing.T) {
 	split, merge := computeSplitAndMergeJobs(jobs)
 	require.Equal(t, 1, split)
 	require.Equal(t, 2, merge)
+}
+
+func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
+	twoHoursMS := 2 * time.Hour.Milliseconds()
+
+	makeUlid := func(n byte) ulid.ULID {
+		return ulid.ULID{n}
+	}
+
+	makeMeta := func(id ulid.ULID, labels map[string]string) *block.Meta {
+		return &block.Meta{
+			BlockMeta: prom_tsdb.BlockMeta{
+				ULID:    id,
+				MinTime: 0,
+				MaxTime: twoHoursMS,
+				Version: block.TSDBVersion1,
+				Compaction: prom_tsdb.BlockMetaCompaction{
+					Level: 0,
+					Hints: nil,
+				},
+			},
+			Thanos: block.ThanosMeta{
+				Version:      block.ThanosVersion1,
+				SegmentFiles: nil,
+				Source:       "",
+				Labels:       labels,
+			},
+		}
+	}
+
+	cases := []struct {
+		name          string
+		index         *bucketindex.Index
+		expectedMetas map[ulid.ULID]*block.Meta
+	}{
+		{
+			name:          "empty",
+			index:         &bucketindex.Index{Blocks: bucketindex.Blocks{}},
+			expectedMetas: map[ulid.ULID]*block.Meta{},
+		},
+		{
+			name: "basic",
+			index: &bucketindex.Index{
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{}),
+			},
+		},
+		{
+			name: "adopt shard ID",
+			index: &bucketindex.Index{
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS, CompactorShardID: "78"},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "78"}),
+			},
+		},
+		{
+			name: "use labeled shard ID",
+			index: &bucketindex.Index{
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS,
+						Labels: map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
+			},
+		},
+		{
+			name: "don't overwrite labeled shard ID",
+			index: &bucketindex.Index{
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS, CompactorShardID: "78",
+						Labels: map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
+			},
+		},
+		{
+			name: "honor deletion marks",
+			index: &bucketindex.Index{
+				BlockDeletionMarks: bucketindex.BlockDeletionMarks{
+					&bucketindex.BlockDeletionMark{ID: makeUlid(14)},
+				},
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(14), MinTime: 0, MaxTime: twoHoursMS},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{},
+		},
+		{
+			name: "excess deletes",
+			index: &bucketindex.Index{
+				BlockDeletionMarks: bucketindex.BlockDeletionMarks{
+					&bucketindex.BlockDeletionMark{ID: makeUlid(15)},
+					&bucketindex.BlockDeletionMark{ID: makeUlid(16)},
+				},
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(14), MinTime: 0, MaxTime: twoHoursMS},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(14): makeMeta(makeUlid(14), map[string]string{}),
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := ConvertBucketIndexToMetasForCompactionJobPlanning(c.index)
+			require.Equal(t, c.expectedMetas, m)
+		})
+	}
 }
 
 type mockBucketFailure struct {
