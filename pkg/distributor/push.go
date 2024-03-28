@@ -122,7 +122,6 @@ func handler(
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)
 			if source != "" {
-				ctx = util.AddSourceIPsToOutgoingContext(ctx, source)
 				logger = utillog.WithSourceIPs(source, logger)
 			}
 		}
