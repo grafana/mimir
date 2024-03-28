@@ -1108,16 +1108,10 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 				MinTime: 0,
 				MaxTime: twoHoursMS,
 				Version: block.TSDBVersion1,
-				Compaction: prom_tsdb.BlockMetaCompaction{
-					Level: 0,
-					Hints: nil,
-				},
 			},
 			Thanos: block.ThanosMeta{
-				Version:      block.ThanosVersion1,
-				SegmentFiles: nil,
-				Source:       "",
-				Labels:       labels,
+				Version: block.ThanosVersion1,
+				Labels:  labels,
 			},
 		}
 	}
