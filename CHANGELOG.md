@@ -53,6 +53,8 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Clarify Compactor and its storage volume when configured under Kubernetes. #7675
+
 ### Tools
 
 * [ENHANCEMENT] ulidtime: add option to show random part of ULID, timestamp in milliseconds and header. #7615
