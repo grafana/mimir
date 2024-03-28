@@ -717,11 +717,15 @@ func ConvertBucketIndexToMetasForCompactionJobPlanning(idx *bucketindex.Index) m
 			continue
 		}
 		metas[b.ID] = b.ThanosMeta()
+		if metas[b.ID].Thanos.Labels == nil {
+			metas[b.ID].Thanos.Labels = map[string]string{}
+		}
+
+		// Correct planning depends on external labels being present. We didn't
+		// always persist labels into the bucket index, but we may have tracked
+		// the shard ID label, so copy that back over if it isn't there.
 		if b.CompactorShardID != "" {
 			if _, found := metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]; !found {
-				// Correct planning depends on external labels being present. We
-				// didn't always persist labels into the bucket index, but we may
-				// have tracked the shard ID label, so copy that back over.
 				metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID
 			}
 		}
