@@ -173,3 +173,11 @@ limits:
 
 runtime_config:
   file: ./config/runtime.yaml
+
+continuous_test:
+  server_metrics_port: 9900
+  mimir_client:
+    write_endpoint: "http://nginx:8080/"
+    read_endpoint: "http://nginx:8080/prometheus"
+  manager:
+    smoke_test: true
