@@ -9,7 +9,7 @@ metadata:
     {{- toYaml .Values.ruler.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.ruler.kedaAutoscaling.enabled }}
+  {{- if or (not .Values.ruler.kedaAutoscaling.enabled) (.Values.ruler.kedaAutoscaling.preserveReplicas) }}
   replicas: {{ .Values.ruler.replicas }}
   {{- end }}
   selector:
