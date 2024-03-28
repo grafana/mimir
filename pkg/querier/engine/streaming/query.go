@@ -217,6 +217,11 @@ func (q *Query) populateVector(ctx context.Context, series []operator.SeriesMeta
 
 		if len(d.Floats) != 1 {
 			defer operator.PutFPointSlice(d.Floats)
+
+			if len(d.Floats) == 0 {
+				continue
+			}
+
 			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v", s.Labels.String(), len(d.Floats))
 		}
 
