@@ -12,6 +12,8 @@
 * [ENHANCEMENT] Store-gateway: Add `stage="wait_max_concurrent"` to `cortex_bucket_store_series_request_stage_duration_seconds` which records how long the query had to wait for its turn for `-blocks-storage.bucket-store.max-concurrent`. #7609
 * [ENHANCEMENT] Querier: add `cortex_querier_federation_upstream_query_wait_duration_seconds` to observe time from when a querier picks up a cross-tenant query to when work begins on its single-tenant counterparts. #7209
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
+* [FEATURE] Ruler: add the possibility to set alert_relabel_configs to relabel labels before sending to the alertmanager.
+* [FEATURE] Ruler: add the possibility to add external label labels before sending to the alertmanager.
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 * [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
 * [BUGFIX] querier: Don't cache context.Canceled errors for bucket index. #7620
