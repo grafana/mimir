@@ -80,7 +80,7 @@ require (
 	go.opentelemetry.io/otel v1.24.0
 	go.opentelemetry.io/otel/trace v1.24.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/exp v0.0.0-20240222234643-814bf88cf225
+	golang.org/x/exp v0.0.0-20240318143956-a85f2c67cd81
 	google.golang.org/api v0.168.0
 	google.golang.org/protobuf v1.33.0
 	sigs.k8s.io/kustomize/kyaml v0.16.0
@@ -256,7 +256,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240313234931-e6a693368666
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240319094147-5a0ec4187ab5
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

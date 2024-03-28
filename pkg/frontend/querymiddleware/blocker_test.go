@@ -20,7 +20,7 @@ import (
 func Test_queryBlocker_Do(t *testing.T) {
 	tests := []struct {
 		name           string
-		request        Request
+		request        MetricsQueryRequest
 		shouldContinue bool
 		limits         mockLimits
 	}{
@@ -28,7 +28,7 @@ func Test_queryBlocker_Do(t *testing.T) {
 			name:           "doesn't block queries due to empty limits",
 			limits:         mockLimits{},
 			shouldContinue: true,
-			request: Request(&PrometheusRangeQueryRequest{
+			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
 				Query: "rate(metric_counter[5m])",
 			}),
 		},
@@ -39,7 +39,7 @@ func Test_queryBlocker_Do(t *testing.T) {
 					{Pattern: "rate(metric_counter[5m])", Regex: false},
 				},
 			},
-			request: Request(&PrometheusRangeQueryRequest{
+			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
 				Query: "rate(metric_counter[5m])",
 			}),
 		},
@@ -52,7 +52,7 @@ func Test_queryBlocker_Do(t *testing.T) {
 			},
 			shouldContinue: true,
 
-			request: Request(&PrometheusRangeQueryRequest{
+			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
 				Query: "rate(metric_counter[15m])",
 			}),
 		},
@@ -64,7 +64,7 @@ func Test_queryBlocker_Do(t *testing.T) {
 rate(other_counter[5m])`, Regex: false},
 				},
 			},
-			request: Request(&PrometheusRangeQueryRequest{
+			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
 				Query: `rate(metric_counter[5m])/
 rate(other_counter[5m])`,
 			}),
@@ -78,7 +78,7 @@ rate(other_counter[5m])`,
 			},
 			shouldContinue: true,
 
-			request: Request(&PrometheusRangeQueryRequest{
+			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
 				Query: `rate(metric_counter[15m])/
 rate(other_counter[15m])`,
 			}),
@@ -90,7 +90,7 @@ rate(other_counter[15m])`,
 					{Pattern: ".*metric_counter.*", Regex: true},
 				},
 			},
-			request: Request(&PrometheusRangeQueryRequest{
+			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
 				Query: "rate(metric_counter[5m])",
 			}),
 		},
@@ -102,7 +102,7 @@ rate(other_counter[15m])`,
 					{Pattern: "(?s).*metric_counter.*", Regex: true},
 				},
 			},
-			request: Request(&PrometheusRangeQueryRequest{
+			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
 				Query: `rate(other_counter[15m])/
 		rate(metric_counter[15m])`,
 			}),
@@ -116,7 +116,7 @@ rate(other_counter[15m])`,
 			},
 			shouldContinue: true,
 
-			request: Request(&PrometheusRangeQueryRequest{
+			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
 				Query: "rate(metric_counter[5m])",
 			}),
 		},
@@ -150,7 +150,7 @@ type mockNextHandler struct {
 	shouldContinue bool
 }
 
-func (h *mockNextHandler) Do(_ context.Context, _ Request) (Response, error) {
+func (h *mockNextHandler) Do(_ context.Context, _ MetricsQueryRequest) (Response, error) {
 	if !h.shouldContinue {
 		h.t.Error("The next middleware should not be called.")
 	}

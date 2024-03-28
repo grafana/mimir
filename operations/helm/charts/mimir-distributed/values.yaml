@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r281-93e069f
+  tag: r283-7728f42
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -1887,7 +1887,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.24-alpine
+    tag: 1.6.25-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -1910,7 +1910,7 @@ memcachedExporter:
 
   image:
     repository: prom/memcached-exporter
-    tag: v0.14.2
+    tag: v0.14.3
     pullPolicy: IfNotPresent
 
   resources:
@@ -2601,6 +2601,11 @@ nginx:
           "" "{{ include "mimir.noAuthTenant" . }}";
         }
 
+        map $http_x_scope_orgid $has_multiple_orgid_headers {
+          default 0;
+          "~^.+,.+$" 1;
+        }
+
         proxy_read_timeout 300;
         server {
           listen 8080;
@@ -2610,6 +2615,10 @@ nginx:
           auth_basic           "Mimir";
           auth_basic_user_file /etc/nginx/secrets/.htpasswd;
           {{- end }}
+
+          if ($has_multiple_orgid_headers = 1) {
+              return 400 'Sending multiple X-Scope-OrgID headers is not allowed. Use a single header with | as separator instead.';
+          }
 
           location = / {
             return 200 'OK';
@@ -2987,6 +2996,11 @@ gateway:
             "" "{{ include "mimir.noAuthTenant" . }}";
           }
 
+          map $http_x_scope_orgid $has_multiple_orgid_headers {
+            default 0;
+            "~^.+,.+$" 1;
+          }
+
           proxy_read_timeout 300;
           server {
             listen {{ include "mimir.serverHttpListenPort" . }};
@@ -2998,6 +3012,10 @@ gateway:
             auth_basic           "Mimir";
             auth_basic_user_file /etc/nginx/secrets/.htpasswd;
             {{- end }}
+
+            if ($has_multiple_orgid_headers = 1) {
+                return 400 'Sending multiple X-Scope-OrgID headers is not allowed. Use a single header with | as separator instead.';
+            }
 
             location = / {
               return 200 'OK';
@@ -3346,7 +3364,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r281-99ff9f91
+    tag: r283-fc1cd884
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3850,7 +3868,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r281-93e069f
+    tag: r283-7728f42
     pullPolicy: IfNotPresent
   tenantId: ""
   extraArgs: {}
@@ -3870,7 +3888,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r281-93e069f
+    tag: r283-7728f42
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

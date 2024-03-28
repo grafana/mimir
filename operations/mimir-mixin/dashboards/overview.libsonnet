@@ -175,42 +175,29 @@ local filename = 'mimir-overview.json';
         )
       )
       .addPanel(
-        local legends = [
-          'instant queries',
-          'range queries',
-          '"label names" queries',
-          '"label values" queries',
-          'series queries',
-          'remote read queries',
-          'metadata queries',
-          'exemplar queries',
-          '"active series" queries',
-          '"label name cardinality" queries',
-          '"label value cardinality" queries',
-          'other',
-        ];
-
         $.timeseriesPanel('Queries / sec') +
-        $.queryPanel(
-          [
-            $.queries.query_frontend.instantQueriesPerSecond,
-            $.queries.query_frontend.rangeQueriesPerSecond,
-            $.queries.query_frontend.labelNamesQueriesPerSecond,
-            $.queries.query_frontend.labelValuesQueriesPerSecond,
-            $.queries.query_frontend.seriesQueriesPerSecond,
-            $.queries.query_frontend.remoteReadQueriesPerSecond,
-            $.queries.query_frontend.metadataQueriesPerSecond,
-            $.queries.query_frontend.exemplarsQueriesPerSecond,
-            $.queries.query_frontend.activeSeriesQueriesPerSecond,
-            $.queries.query_frontend.labelNamesCardinalityQueriesPerSecond,
-            $.queries.query_frontend.labelValuesCardinalityQueriesPerSecond,
-            $.queries.query_frontend.otherQueriesPerSecond,
+        {
+          targets: [
+            {
+              expr: $.queries.query_frontend.overviewRoutesPerSecond,
+              format: 'time_series',
+              legendLink: null,
+            },
+            {
+              expr: $.queries.query_frontend.nonOverviewRoutesPerSecond,
+              format: 'time_series',
+              legendFormat: 'other',
+              legendLink: null,
+            },
           ],
-          legends,
-        ) +
-        $.panelSeriesNonErrorColorsPalette(legends) +
-        $.stack +
-        { fieldConfig+: { defaults+: { unit: 'reqps' } } },
+        } +
+        {
+          fieldConfig+: {
+            defaults+: { unit: 'reqps' },
+            overrides+: $.overridesNonErrorColorsPalette($.queries.query_frontend.overviewRoutesOverrides),
+          },
+        } +
+        $.stack
       )
     )
 

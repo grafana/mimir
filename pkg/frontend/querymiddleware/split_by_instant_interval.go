@@ -28,9 +28,9 @@ const (
 	skippedReasonMappingFailed = "mapping-failed"
 )
 
-// splitInstantQueryByIntervalMiddleware is a Middleware that can (optionally) split the instant query by splitInterval
+// splitInstantQueryByIntervalMiddleware is a MetricsQueryMiddleware that can (optionally) split the instant query by splitInterval
 type splitInstantQueryByIntervalMiddleware struct {
-	next   Handler
+	next   MetricsQueryHandler
 	limits Limits
 	logger log.Logger
 
@@ -86,10 +86,10 @@ func newSplitInstantQueryByIntervalMiddleware(
 	limits Limits,
 	logger log.Logger,
 	engine *promql.Engine,
-	registerer prometheus.Registerer) Middleware {
+	registerer prometheus.Registerer) MetricsQueryMiddleware {
 	metrics := newInstantQuerySplittingMetrics(registerer)
 
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &splitInstantQueryByIntervalMiddleware{
 			next:    next,
 			limits:  limits,
@@ -100,7 +100,7 @@ func newSplitInstantQueryByIntervalMiddleware(
 	})
 }
 
-func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Request) (Response, error) {
+func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	// Log the instant query and its timestamp in every error log, so that we have more information for debugging failures.
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
@@ -201,7 +201,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 }
 
 // getSplitIntervalForQuery calculates and return the split interval that should be used to run the instant query.
-func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantsIds []string, r Request, spanLog *spanlogger.SpanLogger) time.Duration {
+func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantsIds []string, r MetricsQueryRequest, spanLog *spanlogger.SpanLogger) time.Duration {
 	// Check if splitting is disabled for the given request.
 	if r.GetOptions().InstantSplitDisabled {
 		return 0

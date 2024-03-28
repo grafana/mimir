@@ -13,6 +13,13 @@ datasources:
       basicAuthPassword: $DATASOURCE_PASSWORD
     version: 1
     editable: true
+  - name: Mimir (ingest-storage local dev env)
+    type: prometheus
+    access: proxy
+    orgId: 1
+    url: http://nginx:8080/prometheus
+    version: 1
+    editable: true
   - name: Loki
     type: loki
     access: proxy

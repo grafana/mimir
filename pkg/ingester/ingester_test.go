@@ -15,6 +15,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -5858,6 +5859,26 @@ func TestIngester_flushing(t *testing.T) {
 				require.Equal(t, 50*time.Hour.Milliseconds()+1, blocks[2].Meta().MaxTime) // Block maxt is exclusive.
 			},
 		},
+
+		"should not allow to flush blocks with flush API endpoint if ingester is not in Running state": {
+			setupIngester: func(cfg *Config) {
+				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
+			},
+
+			action: func(t *testing.T, i *Ingester, reg *prometheus.Registry) {
+				// Stop the ingester.
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
+
+				rec := httptest.NewRecorder()
+				i.FlushHandler(rec, httptest.NewRequest("POST", "/ingester/flush?wait=true", nil))
+
+				assert.Equal(t, http.StatusServiceUnavailable, rec.Result().StatusCode)
+
+				body, err := io.ReadAll(rec.Result().Body)
+				require.NoError(t, err)
+				assert.Equal(t, newUnavailableError(services.Terminated).Error(), string(body))
+			},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
@@ -10269,7 +10290,9 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
-	defer services.StopAndAwaitTerminated(ctx, i) //nolint:errcheck
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, i))
+	})
 
 	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
@@ -10400,7 +10423,7 @@ func newFailingIngester(t *testing.T, cfg Config, kvStore kv.Client, failingCaus
 	if kvStore != nil {
 		fI.kvStore = kvStore
 	}
-	fI.BasicService = services.NewBasicService(fI.starting, fI.updateLoop, fI.stopping)
+	fI.BasicService = services.NewBasicService(fI.starting, fI.ingesterRunning, fI.stopping)
 	return fI
 }
 

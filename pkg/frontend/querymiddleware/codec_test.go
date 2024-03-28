@@ -13,6 +13,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -21,10 +22,11 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	jsoniter "github.com/json-iterator/go"
-	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	v1Client "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
+	v1API "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -37,12 +39,12 @@ var (
 	matrix = model.ValMatrix.String()
 )
 
-func TestRequest(t *testing.T) {
+func TestMetricsQueryRequest(t *testing.T) {
 	codec := newTestPrometheusCodec()
 
 	for i, tc := range []struct {
 		url         string
-		expected    Request
+		expected    MetricsQueryRequest
 		expectedErr error
 	}{
 		{
@@ -95,16 +97,182 @@ func TestRequest(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "1")
 			r = r.WithContext(ctx)
 
-			req, err := codec.DecodeRequest(ctx, r)
+			req, err := codec.DecodeMetricsQueryRequest(ctx, r)
 			if err != nil || tc.expectedErr != nil {
 				require.EqualValues(t, tc.expectedErr, err)
 				return
 			}
 			require.EqualValues(t, tc.expected, req)
 
-			rdash, err := codec.EncodeRequest(context.Background(), req)
+			rdash, err := codec.EncodeMetricsQueryRequest(context.Background(), req)
 			require.NoError(t, err)
 			require.EqualValues(t, tc.url, rdash.RequestURI)
+		})
+	}
+}
+
+func TestLabelsQueryRequest(t *testing.T) {
+	codec := newTestPrometheusCodec()
+
+	for _, testCase := range []struct {
+		name                      string
+		url                       string
+		expectedStruct            LabelsQueryRequest
+		expectedGetLabelName      string
+		expectedGetStartOrDefault int64
+		expectedGetEndOrDefault   int64
+		expectedErr               error
+	}{
+		{
+			name: "label names with start and end timestamps, no matcher sets",
+			url:  "/api/v1/labels?end=1708588800&start=1708502400",
+			expectedStruct: &PrometheusLabelNamesQueryRequest{
+				Path:             "/api/v1/labels",
+				Start:            1708502400 * 1e3,
+				End:              1708588800 * 1e3,
+				LabelMatcherSets: nil,
+			},
+			expectedGetLabelName:      "",
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+		{
+			name: "label values with start and end timestamps, no matcher sets",
+			url:  "/api/v1/label/job/values?end=1708588800&start=1708502400",
+			expectedStruct: &PrometheusLabelValuesQueryRequest{
+				Path:             "/api/v1/label/job/values",
+				LabelName:        "job",
+				Start:            1708502400 * 1e3,
+				End:              1708588800 * 1e3,
+				LabelMatcherSets: nil,
+			},
+			expectedGetLabelName:      "",
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+		{
+			name: "label names with start timestamp, no end timestamp, no matcher sets",
+			url:  "/api/v1/labels?start=1708502400",
+			expectedStruct: &PrometheusLabelNamesQueryRequest{
+				Path:             "/api/v1/labels",
+				Start:            1708502400 * 1e3,
+				End:              0,
+				LabelMatcherSets: nil,
+			},
+			expectedGetLabelName:      "",
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   v1API.MaxTime.UnixMilli(),
+		},
+		{
+			name: "label values with start timestamp, no end timestamp, no matcher sets",
+			url:  "/api/v1/label/job/values?start=1708502400",
+			expectedStruct: &PrometheusLabelValuesQueryRequest{
+				Path:             "/api/v1/label/job/values",
+				LabelName:        "job",
+				Start:            1708502400 * 1e3,
+				End:              0,
+				LabelMatcherSets: nil,
+			},
+			expectedGetLabelName:      "job",
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   v1API.MaxTime.UnixMilli(),
+		},
+		{
+			name: "label names with end timestamp, no start timestamp, no matcher sets",
+			url:  "/api/v1/labels?end=1708588800",
+			expectedStruct: &PrometheusLabelNamesQueryRequest{
+				Path:             "/api/v1/labels",
+				Start:            0,
+				End:              1708588800 * 1e3,
+				LabelMatcherSets: nil,
+			},
+			expectedGetLabelName:      "",
+			expectedGetStartOrDefault: v1API.MinTime.UnixMilli(),
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+		{
+			name: "label values with end timestamp, no start timestamp, no matcher sets",
+			url:  "/api/v1/label/job/values?end=1708588800",
+			expectedStruct: &PrometheusLabelValuesQueryRequest{
+				Path:             "/api/v1/label/job/values",
+				LabelName:        "job",
+				Start:            0,
+				End:              1708588800 * 1e3,
+				LabelMatcherSets: nil,
+			},
+			expectedGetLabelName:      "job",
+			expectedGetStartOrDefault: v1API.MinTime.UnixMilli(),
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+		{
+			name: "label names with start timestamp, no end timestamp, multiple matcher sets",
+			url:  "/api/v1/labels?end=1708588800&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			expectedStruct: &PrometheusLabelNamesQueryRequest{
+				Path:  "/api/v1/labels",
+				Start: 1708502400 * 1e3,
+				End:   1708588800 * 1e3,
+				LabelMatcherSets: []string{
+					"go_goroutines{container=~\"quer.*\"}",
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+			},
+			expectedGetLabelName:      "",
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+		{
+			name: "label values with start timestamp, no end timestamp, multiple matcher sets",
+			url:  "/api/v1/label/job/values?end=1708588800&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			expectedStruct: &PrometheusLabelValuesQueryRequest{
+				Path:      "/api/v1/label/job/values",
+				LabelName: "job",
+				Start:     1708502400 * 1e3,
+				End:       1708588800 * 1e3,
+				LabelMatcherSets: []string{
+					"go_goroutines{container=~\"quer.*\"}",
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+			},
+			expectedGetLabelName:      "job",
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			for _, reqMethod := range []string{http.MethodGet, http.MethodPost} {
+
+				var r *http.Request
+				var err error
+
+				switch reqMethod {
+				case http.MethodGet:
+					r, err = http.NewRequest(reqMethod, testCase.url, nil)
+					require.NoError(t, err)
+				case http.MethodPost:
+					parsedURL, _ := url.Parse(testCase.url)
+					r, err = http.NewRequest(reqMethod, parsedURL.Path, strings.NewReader(parsedURL.RawQuery))
+					require.NoError(t, err)
+					r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				default:
+					t.Fatalf("unsupported HTTP method %q", reqMethod)
+				}
+
+				ctx := user.InjectOrgID(context.Background(), "1")
+				r = r.WithContext(ctx)
+
+				reqDecoded, err := codec.DecodeLabelsQueryRequest(ctx, r)
+				if err != nil || testCase.expectedErr != nil {
+					require.EqualValues(t, testCase.expectedErr, err)
+					return
+				}
+				require.EqualValues(t, testCase.expectedStruct, reqDecoded)
+				require.EqualValues(t, testCase.expectedGetStartOrDefault, reqDecoded.GetStartOrDefault())
+				require.EqualValues(t, testCase.expectedGetEndOrDefault, reqDecoded.GetEndOrDefault())
+
+				reqEncoded, err := codec.EncodeLabelsQueryRequest(context.Background(), reqDecoded)
+				require.NoError(t, err)
+				require.EqualValues(t, testCase.url, reqEncoded.RequestURI)
+			}
 		})
 	}
 }
@@ -114,7 +282,7 @@ func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
 		t.Run(queryResultPayloadFormat, func(t *testing.T) {
 			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), queryResultPayloadFormat)
 			req := PrometheusInstantQueryRequest{}
-			encodedRequest, err := codec.EncodeRequest(context.Background(), &req)
+			encodedRequest, err := codec.EncodeMetricsQueryRequest(context.Background(), &req)
 			require.NoError(t, err)
 
 			switch queryResultPayloadFormat {
@@ -134,7 +302,7 @@ func TestPrometheusCodec_EncodeRequest_ReadConsistency(t *testing.T) {
 		t.Run(consistencyLevel, func(t *testing.T) {
 			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), formatProtobuf)
 			ctx := api.ContextWithReadConsistency(context.Background(), consistencyLevel)
-			encodedRequest, err := codec.EncodeRequest(ctx, &PrometheusInstantQueryRequest{})
+			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
 			require.NoError(t, err)
 			require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
 		})
@@ -144,7 +312,7 @@ func TestPrometheusCodec_EncodeRequest_ReadConsistency(t *testing.T) {
 func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 	testResponse := &PrometheusResponse{
 		Status:    statusError,
-		ErrorType: string(v1.ErrExec),
+		ErrorType: string(v1Client.ErrExec),
 		Error:     "something went wrong",
 	}
 
@@ -219,11 +387,11 @@ func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 }
 
 type prometheusAPIResponse struct {
-	Status    string       `json:"status"`
-	Data      interface{}  `json:"data,omitempty"`
-	ErrorType v1.ErrorType `json:"errorType,omitempty"`
-	Error     string       `json:"error,omitempty"`
-	Warnings  []string     `json:"warnings,omitempty"`
+	Status    string             `json:"status"`
+	Data      interface{}        `json:"data,omitempty"`
+	ErrorType v1Client.ErrorType `json:"errorType,omitempty"`
+	Error     string             `json:"error,omitempty"`
+	Warnings  []string           `json:"warnings,omitempty"`
 }
 
 type prometheusResponseData struct {
@@ -965,14 +1133,14 @@ func TestPrometheusCodec_DecodeEncode(t *testing.T) {
 				expected.Header = make(http.Header)
 			}
 
-			// This header is set by EncodeRequest according to the codec's config, so we
+			// This header is set by EncodeMetricsQueryRequest according to the codec's config, so we
 			// should always expect it to be present on the re-encoded request.
 			expected.Header.Set("Accept", "application/json")
 
 			ctx := context.Background()
-			decoded, err := codec.DecodeRequest(ctx, expected)
+			decoded, err := codec.DecodeMetricsQueryRequest(ctx, expected)
 			require.NoError(t, err)
-			encoded, err := codec.EncodeRequest(ctx, decoded)
+			encoded, err := codec.EncodeMetricsQueryRequest(ctx, decoded)
 			require.NoError(t, err)
 
 			assert.Equal(t, expected.URL, encoded.URL)

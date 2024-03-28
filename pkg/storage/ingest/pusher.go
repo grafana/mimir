@@ -47,12 +47,13 @@ func newPusherConsumer(p Pusher, reg prometheus.Registerer, l log.Logger) *pushe
 	return &pusherConsumer{
 		p: p,
 		l: l,
-		processingTimeSeconds: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
-			Name:       "cortex_ingest_storage_reader_processing_time_seconds",
-			Help:       "Time taken to process a single record (write request).",
-			Objectives: latencySummaryObjectives,
-			MaxAge:     time.Minute,
-			AgeBuckets: 10,
+		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_ingest_storage_reader_processing_time_seconds",
+			Help:                            "Time taken to process a single record (write request).",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			Buckets:                         prometheus.DefBuckets,
 		}),
 		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
 		serverErrRequests: errRequestsCounter.WithLabelValues("server"),

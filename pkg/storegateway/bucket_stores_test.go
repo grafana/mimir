@@ -70,8 +70,9 @@ func TestBucketStores_InitialSync(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Query series before the initial sync.
@@ -152,8 +153,9 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	// Wrap the bucket to fail the 1st Get() request.
 	bucket = &failFirstGetBucket{Bucket: bucket}
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Initial sync should succeed even if a transient error occurs.
@@ -213,8 +215,9 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Run an initial sync to discover 1 block.
@@ -279,6 +282,7 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 
 	tests := map[string]struct {
 		shardingStrategy ShardingStrategy
+		allowedTenants   *util.AllowedTenants
 		expectedStores   int32
 	}{
 		"when sharding is disabled all users should be synced": {
@@ -293,6 +297,17 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 			}(),
 			expectedStores: 2,
 		},
+		"when user is disabled, their stores should not be created": {
+			shardingStrategy: newNoShardingStrategy(),
+			allowedTenants:   util.NewAllowedTenants(nil, []string{"user-2"}),
+			expectedStores:   2,
+		},
+
+		"when single user is enabled, only their stores should be created": {
+			shardingStrategy: newNoShardingStrategy(),
+			allowedTenants:   util.NewAllowedTenants([]string{"user-3"}, nil),
+			expectedStores:   1,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -303,7 +318,7 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", allUsers, nil)
 
-			stores, err := NewBucketStores(cfg, testData.shardingStrategy, bucketClient, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
+			stores, err := NewBucketStores(cfg, testData.shardingStrategy, bucketClient, testData.allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// Sync user stores and count the number of times the callback is called.
@@ -315,7 +330,7 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 
 			assert.NoError(t, err)
 			bucketClient.AssertNumberOfCalls(t, "Iter", 1)
-			assert.Equal(t, storesCount.Load(), testData.expectedStores)
+			assert.Equal(t, testData.expectedStores, storesCount.Load())
 		})
 	}
 }
@@ -372,8 +387,9 @@ func TestBucketStores_ChunksAndSeriesLimiterFactoriesInitializedByEnforcedLimits
 			overrides, err := validation.NewOverrides(defaultLimits, validation.NewMockTenantLimits(testData.tenantLimits))
 			require.NoError(t, err)
 
+			var allowedTenants *util.AllowedTenants
 			reg := prometheus.NewPedanticRegistry()
-			stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, overrides, log.NewNopLogger(), reg)
+			stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, overrides, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 
 			store, err := stores.getOrCreateStore(userID)
@@ -424,8 +440,9 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	createBucketIndex(t, bucket, userID)
@@ -528,8 +545,9 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 
 	createBucketIndex(t, bkt, userID)
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bkt, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bkt, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, stores.InitialSync(ctx))
 
@@ -693,8 +711,9 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 
 	sharding := userShardingStrategy{}
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, &sharding, bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, &sharding, bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Perform sync.

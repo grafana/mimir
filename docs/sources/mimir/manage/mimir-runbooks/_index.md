@@ -190,7 +190,7 @@ How to **investigate**:
 
 - Check the `Mimir / Writes` dashboard
   - Looking at the dashboard you should see in which Mimir service the high latency originates
-  - The panels in the dashboard are vertically sorted by the network path (eg. gateway -> distributor -> ingester)
+  - The panels in the dashboard are vertically sorted by the network path (eg. gateway -> distributor -> ingester). When using [ingest-storage](#mimir-ingest-storage-experimental), network path changes to gateway -> distributor -> Kafka instead.
 - Deduce where in the stack the latency is being introduced
   - **`gateway`**
     - Latency may be caused by the time taken for the gateway to receive the entire request from the client. There are a multitude of reasons this can occur, so communication with the user may be necessary. For example:
@@ -201,6 +201,7 @@ How to **investigate**:
     - There could be a problem with authentication (eg. slow to run auth layer)
   - **`distributor`**
     - Typically, distributor p99 latency is in the range 50-100ms. If the distributor latency is higher than this, you may need to scale up the distributors.
+    - When using Mimir [ingest-storage](#mimir-ingest-storage-experimental), distributors are writing requests to Kafka-compatible backend. Increased latency in distributor may also come from this backend.
   - **`ingester`**
     - Typically, ingester p99 latency is in the range 5-50ms. If the ingester latency is higher than this, you should investigate the root cause before scaling up ingesters.
     - Check out the following alerts and fix them if firing:
@@ -243,6 +244,9 @@ How to **investigate**:
       - If queries are not waiting in queue
         - Consider [enabling query sharding]({{< relref "../../references/architecture/query-sharding#how-to-enable-query-sharding" >}}) if not already enabled, to increase query parallelism
         - If query sharding already enabled, consider increasing total number of query shards (`query_sharding_total_shards`) for tenants submitting slow queries, so their queries can be further parallelized
+  - **`ingester`**
+    - Check if ingesters are not overloaded. If they are and you can scale up ingesters vertically, that may be the best action. If that's not possible, scaling horizontally can help as well, but it can take several hours for ingesters to fully redistribute their series.
+    - When using [ingest-storage](#mimir-ingest-storage-experimental), check ratio of queries using strong-consistency, and latency of queries using strong-consistency.
 
 #### Alertmanager
 
@@ -278,6 +282,7 @@ How to **investigate**:
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
   - If crashing service is query-frontend, querier or store-gateway, and you have "activity tracker" feature enabled, look for `found unfinished activities from previous run` message and subsequent `activity` messages in the log file to see which queries caused the crash.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
+- When using [ingest-storage](#mimir-ingest-storage-experimental) and distributors are failing to write requests to Kafka, make sure that Kafka is up and running correctly.
 
 #### Alertmanager
 
@@ -1307,6 +1312,117 @@ How to **investigate** and **fix** it:
     - Check the number of in-memory series shown on the `Mimir / Tenants` dashboard for an approximation of the number of series that will be compacted once these blocks are shipped from ingesters.
     - Check the configured `compactor_split_and_merge_shards` for the tenant. A reasonable rule of thumb is 8-10 million series per compactor shard - if the number of series per shard is above this range, increase `compactor_split_and_merge_shards` for the affected tenant(s) accordingly.
 
+## Mimir ingest storage (experimental)
+
+This section contains runbooks for alerts related to experimental Mimir ingest storage.
+In this context, any reference to Kafka means a Kafka protocol-compatible backend.
+
+### MimirIngesterLastConsumedOffsetCommitFailed
+
+This alert fires when an ingester is failing to commit the last consumed offset to the Kafka backend.
+
+How it **works**:
+
+- The ingester ingests data (metrics, exemplars, ...) from Kafka and periodically commits the last consumed offset back to Kafka.
+- At startup, an ingester reads the last consumed offset committed to Kafka and resumes the consumption from there.
+- If the ingester fails to commit the last consumed offset to Kafka, the ingester keeps working correctly from the consumption perspective (assuming there's no other on-going issue in the cluster) but in case of a restart the ingester will resume the consumption from the last successfully committed offset. If the last offset was successfully committed several minutes ago, the ingester will re-ingest data which has already been ingested, potentially causing OOO errors, wasting resources and taking longer to startup.
+
+How to **investigate**:
+
+- Check ingester logs to find details about the error.
+- Check Kafka logs and health.
+
+### MimirIngesterFailedToReadRecordsFromKafka
+
+This alert fires when an ingester is failing to read records from Kafka backend.
+
+How it **works**:
+
+- Ingester connects to Kafka brokers and reads records from it. Records contain write requests committed by distributors.
+- When ingester fails to read more records from Kafka due to error, ingester logs such error.
+- This can be normal if Kafka brokers are restarting, however if read errors continue for some time, alert is raised.
+
+How to **investigate**:
+
+- Check ingester logs to find details about the error.
+- Check Kafka logs and health.
+
+### MimirIngesterKafkaFetchErrorsRateTooHigh
+
+This alert fires when an ingester is receiving errors instead of "fetches" from Kafka.
+
+How it **works**:
+
+- Ingester uses Kafka client to read records (containing write requests) from Kafka.
+- Kafka client can return errors instead of more records.
+- If rate of returned errors compared to returned records is too high, alert is raised.
+- Kafka client can return errors [documented in the source code](https://github.com/grafana/mimir/blob/24591ae56cd7d6ef24a7cc1541a41405676773f4/vendor/github.com/twmb/franz-go/pkg/kgo/record_and_fetch.go#L332-L366).
+
+How to **investigate**:
+
+- Check ingester logs to find details about the error.
+- Check Kafka logs and health.
+
+### MimirStartingIngesterKafkaReceiveDelayIncreasing
+
+This alert fires when "receive delay" reported by ingester during "starting" phase is not decreasing.
+
+How it **works**:
+
+- When ingester is starting, it needs to fetch and process records from Kafka until preconfigured consumption lag is honored. The maximum tolerated lag before an ingester is considered to have caught up reading from a partition at startup can be configured via `-ingest-storage.kafka.max-consumer-lag-at-startup`.
+- Each record has a timestamp when it was sent to Kafka by the distributor. When ingester reads the record, it computes "receive delay" as a difference between current time (when record was read) and time when record was sent to Kafka. This receive delay is reported in the metric `cortex_ingest_storage_reader_receive_delay_seconds`. You can see receive delay on `Mimir / Writes` dashboard, in section "Ingester (ingest storage – end-to-end latency)".
+- Under normal conditions when ingester is processing records faster than records are appearing, receive delay should be decreasing, until `-ingest-storage.kafka.max-consumer-lag-at-startup` is honored.
+- When ingester is starting, and observed "receive delay" is increasing, alert is raised.
+
+How to **investigate**:
+
+- Check if ingester is fast enough to process all data in Kafka.
+
+### MimirRunningIngesterReceiveDelayTooHigh
+
+This alert fires when "receive delay" reported by ingester while it's running reaches alert threshold.
+
+How it **works**:
+
+- After ingester start and catches up with records in Kafka, ingester switches to "running" mode.
+- In running mode, ingester continues to process incoming records from Kafka and continues to report "receive delay". See [`MimirStartingIngesterKafkaReceiveDelayIncreasing`](#MimirStartingIngesterKafkaReceiveDelayIncreasing) runbook for details about this metric.
+- Under normal conditions when ingester is running and it is processing records faster than records are appearing, receive delay should be stable and low.
+- If observed "receive delay" increases and reaches certain threshold, alert is raised.
+
+How to **investigate**:
+
+- Check if ingester is fast enough to process all data in Kafka.
+- If ingesters are too slow, consider scaling ingesters horizontally to spread incoming series between more ingesters.
+
+### MimirIngesterFailsToProcessRecordsFromKafka
+
+This alert fires when ingester is unable to process incoming records from Kafka due to internal errors. If ingest-storage wasn't used, such push requests would end up with 5xx errors.
+
+How it **works**:
+
+- Ingester reads records from Kafka, and processes them locally. Processing means unmarshalling the data and handling write requests stored in records.
+- Write requests can fail due to "client" or "server" errors. An example of client error is too low limit for number of series. Server error can be for example ingester hitting an instance limit.
+- If requests keep failing due to server errors, this alert is raised.
+
+How to **investigate**:
+
+- Check ingester logs to see why requests are failing, and troubleshoot based on that.
+
+### MimirIngesterFailsEnforceStrongConsistencyOnReadPath
+
+This alert fires when too many read-requests with strong consistency are failing.
+
+How it **works**:
+
+- When read request asks for strong-consistency guarantee, ingester will read the last produced offset from Kafka, and wait until record with this offset is consumed.
+- If read request times out during this wait, that is considered to be a failure of request with strong-consistency.
+- If requests keep failing due to failure to enforce strong-consistency, this alert is raised.
+
+How to **investigate**:
+
+- Check wait latency of requests with strong-consistency on `Mimir / Queries` dashboard.
+- Check if ingester needs to process too many records, and whether ingesters need to be scaled up (vertically or horizontally).
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
@@ -1979,7 +2095,7 @@ How to manually upload blocks from ingesters to the bucket:
 
 The blocks and WAL stored in the ingester persistent disk are the last fence of defence in case of an incident involving blocks not shipped to the bucket or corrupted blocks in the bucket. If the data integrity in the ingester's disk is at risk (eg. close to hit the TSDB retention period or close to reach max disk utilisation), you should freeze it taking a **disk snapshot**.
 
-To take a **GCP persistent disk snapshot**:
+To take a **GCP Persistent Disk snapshot**:
 
 1. Identify the Kubernetes PVC volume name (`kubectl get pvc --namespace <namespace>`) of the volumes to snapshot
 2. For each volume, [create a snapshot](https://console.cloud.google.com/compute/snapshotsAdd) from the GCP console ([documentation](https://cloud.google.com/compute/docs/disks/create-snapshots))
