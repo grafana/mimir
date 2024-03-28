@@ -9,11 +9,11 @@ import (
 )
 
 type Config struct {
-	ServerMetricsPort   int                      
-	LogLevel            log.Level                 
-	Client              ClientConfig              `yaml:"mimir_client"`
-	Manager             ManagerConfig             `yaml:"manager"`
-	WriteReadSeriesTest WriteReadSeriesTestConfig `yaml:"write_read_series_test"`
+	ServerMetricsPort   int
+	LogLevel            log.Level
+	Client              ClientConfig
+	Manager             ManagerConfig
+	WriteReadSeriesTest WriteReadSeriesTestConfig
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {

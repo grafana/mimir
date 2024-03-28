@@ -40,18 +40,18 @@ type MimirClient interface {
 }
 
 type ClientConfig struct {
-	TenantID          string `yaml:"tenant_id"`
-	BasicAuthUser     string `yaml:"basic_auth_user"`
-	BasicAuthPassword string `yaml:"basic_auth_password"`
-	BearerToken       string `yaml:"bearer_token"`
+	TenantID          string
+	BasicAuthUser     string
+	BasicAuthPassword string
+	BearerToken       string
 
-	WriteBaseEndpoint flagext.URLValue `yaml:"write_endpoint"`
-	WriteBatchSize    int              `yaml:"write_batch_size"`
-	WriteTimeout      time.Duration    `yaml:"write_timeout"`
-	WriteProtocol     string           `yaml:"write_protocol"`
+	WriteBaseEndpoint flagext.URLValue
+	WriteBatchSize    int
+	WriteTimeout      time.Duration
+	WriteProtocol     string
 
-	ReadBaseEndpoint flagext.URLValue `yaml:"read_endpoint"`
-	ReadTimeout      time.Duration    `yaml:"read_timeout"`
+	ReadBaseEndpoint flagext.URLValue
+	ReadTimeout      time.Duration
 }
 
 func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {

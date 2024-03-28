@@ -26,10 +26,10 @@ const (
 )
 
 type WriteReadSeriesTestConfig struct {
-	NumSeries      int           `yaml:"num_series"`
-	MaxQueryAge    time.Duration `yaml:"max_query_age"`
-	WithFloats     bool          `yaml:"float_samples_enabled"`
-	WithHistograms bool          `yaml:"histogram_samples_enabled"`
+	NumSeries      int
+	MaxQueryAge    time.Duration
+	WithFloats     bool
+	WithHistograms bool
 }
 
 func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {

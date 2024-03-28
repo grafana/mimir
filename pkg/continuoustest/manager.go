@@ -25,8 +25,8 @@ type Test interface {
 }
 
 type ManagerConfig struct {
-	SmokeTest   bool          `yaml:"smoke_test"`
-	RunInterval time.Duration `yaml:"run_interval"`
+	SmokeTest   bool
+	RunInterval time.Duration
 }
 
 func (cfg *ManagerConfig) RegisterFlags(f *flag.FlagSet) {
