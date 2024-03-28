@@ -22,6 +22,7 @@ type ManagerMetrics struct {
 	IterationsScheduled  *prometheus.Desc
 	EvalTotal            *prometheus.Desc
 	EvalFailures         *prometheus.Desc
+	ClientEvalFailures   *prometheus.Desc
 	GroupInterval        *prometheus.Desc
 	GroupLastEvalTime    *prometheus.Desc
 	GroupLastDuration    *prometheus.Desc
@@ -68,7 +69,13 @@ func NewManagerMetrics(logger log.Logger) *ManagerMetrics {
 			"cortex_prometheus_rule_evaluation_failures_total",
 			"The total number of rule evaluation failures.",
 			[]string{"user", "rule_group"},
-			nil,
+			prometheus.Labels{"client": "false"},
+		),
+		ClientEvalFailures: prometheus.NewDesc(
+			"cortex_prometheus_rule_evaluation_failures_total",
+			"The total number of rule evaluation failures.",
+			[]string{"user", "rule_group"},
+			prometheus.Labels{"client": "true"},
 		),
 		GroupInterval: prometheus.NewDesc(
 			"cortex_prometheus_rule_group_interval_seconds",
