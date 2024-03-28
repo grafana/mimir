@@ -13,14 +13,15 @@ const localQueueIndex = -1
 
 // TreeQueue is a hierarchical queue implementation with an arbitrary amount of child queues.
 //
-// TreeQueue internally maintains round-robin fair queuing across all of its queue dimensions.
+// TreeQueue uses a queueingAlgorithm to handle queuing across all of its queue dimensions.
 // Each queuing dimension is modeled as a node in the tree, internally reachable through a QueuePath.
 //
 // The QueuePath is an ordered array of strings describing the path through the tree to the node,
 // which contains the FIFO local queue of all items enqueued for that queuing dimension.
 //
-// When dequeuing from a given node, the node will round-robin equally between dequeuing directly
-// from its own local queue and dequeuing recursively from its list of child TreeQueues.
+// When dequeuing from a given node, the node will use its queueingAlgorithm to determine whether it should dequeue
+// from its own local queue or from its list of child TreeQueues. Each node is defined with its own queueingAlgorithm,
+// so dequeuing from a child TreeQueue may not follow the same logic as dequeuing from the parent.
 // No queue at a given level of the tree is dequeued from consecutively unless all others
 // at the same level of the tree are empty down to the leaf node.
 type TreeQueue struct {
@@ -30,15 +31,17 @@ type TreeQueue struct {
 	currentChildQueueIndex int
 	childQueueOrder        []string
 	childQueueMap          map[string]*TreeQueue
+	queueingAlgorithm      queueingAlgorithm
 }
 
-func NewTreeQueue(name string) *TreeQueue {
+func NewTreeQueue(name string, algorithm queueingAlgorithm) *TreeQueue {
 	return &TreeQueue{
 		name:                   name,
 		localQueue:             nil,
 		currentChildQueueIndex: localQueueIndex,
 		childQueueMap:          nil,
 		childQueueOrder:        nil,
+		queueingAlgorithm:      algorithm,
 	}
 }
 
@@ -141,28 +144,10 @@ func (q *TreeQueue) getOrAddNode(childPath QueuePath) (*TreeQueue, error) {
 	if childQueue, ok = q.childQueueMap[childPath[0]]; !ok {
 		// no child node matches next path segment
 		// create next child before recurring
-		childQueue = NewTreeQueue(childPath[0])
+		// TODO (casie): Need to add support for passing queueingAlgorithms for each child in childPath.
+		childQueue = NewTreeQueue(childPath[0], roundRobin)
 
-		// add new child queue to ordered list for round-robining;
-		// in order to maintain round-robin order as nodes are created and deleted,
-		// the new child queue should be inserted directly before the current child
-		// queue index, essentially placing the new node at the end of the line
-		if q.currentChildQueueIndex == localQueueIndex {
-			// special case; cannot slice into childQueueOrder with index -1
-			// place at end of slice, which is the last slot before the local queue slot
-			q.childQueueOrder = append(q.childQueueOrder, childQueue.name)
-		} else {
-			// insert into order behind current child queue index
-			q.childQueueOrder = append(
-				q.childQueueOrder[:q.currentChildQueueIndex],
-				append(
-					[]string{childQueue.name},
-					q.childQueueOrder[q.currentChildQueueIndex:]...,
-				)...,
-			)
-			// update current child queue index to its new place in the expanded slice
-			q.currentChildQueueIndex++
-		}
+		addNode(q.queueingAlgorithm)(q, childQueue)
 
 		// attach new child queue to lookup map
 		q.childQueueMap[childPath[0]] = childQueue
@@ -215,16 +200,18 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) any {
 
 // Dequeue removes and returns an item from the front of the next nonempty queue node in the tree.
 //
-// Dequeuing from a node follows the round-robin order of the node's childQueueOrder,
-// dequeuing either from the node's localQueue or selecting the next child node in the order
-// and recursively calling Dequeue on the child nodes until a nonempty queue is found.
+// # Dequeuing from a node follows a dequeueAlgorithm, which either dequeues from the node's own queue,
+// or selects a child node to dequeue from, according to that child node's own dequeueAlgorithm, until
+// a non-empty queue is found.
+//
+// In practice, the nodes at the same depth in the query scheduler tree queue will execute the same
+// dequeuing algorithm, since query components will be at depth=1, and tenant queues will be at depth=2.
 //
 // Nodes that empty down to the leaf after being dequeued from are deleted as the recursion returns
 // up the stack. This maintains structural guarantees relied on to make IsEmpty() non-recursive.
 func (q *TreeQueue) Dequeue() any {
 	var v any
 	initialLen := len(q.childQueueOrder)
-
 	for iters := 0; iters <= initialLen && v == nil; iters++ {
 		if q.currentChildQueueIndex == localQueueIndex {
 			// dequeuing from local queue; either we have:
@@ -236,7 +223,7 @@ func (q *TreeQueue) Dequeue() any {
 					v = elem.Value
 				}
 			}
-			q.wrapIndex(true)
+			setNextIndex(q.queueingAlgorithm)(q)
 		} else {
 			// dequeuing from child queue node;
 			// pick the child node whose turn it is and recur
@@ -249,11 +236,12 @@ func (q *TreeQueue) Dequeue() any {
 				// deleteNode wraps index for us
 				q.deleteNode(QueuePath{childQueueName})
 			} else {
-				q.wrapIndex(true)
+				setNextIndex(q.queueingAlgorithm)(q)
 			}
 		}
 	}
 	return v
+
 }
 
 // deleteNode removes a child node from the tree and the childQueueOrder and corrects the indices.
@@ -275,17 +263,14 @@ func (q *TreeQueue) deleteNode(childPath QueuePath) bool {
 	for i, name := range parentNode.childQueueOrder {
 		if name == childQueueName {
 			parentNode.childQueueOrder = append(q.childQueueOrder[:i], q.childQueueOrder[i+1:]...)
-			parentNode.wrapIndex(false)
+			parentNode.wrapIndex()
 			break
 		}
 	}
 	return true
 }
 
-func (q *TreeQueue) wrapIndex(increment bool) {
-	if increment {
-		q.currentChildQueueIndex++
-	}
+func (q *TreeQueue) wrapIndex() {
 	if q.currentChildQueueIndex >= len(q.childQueueOrder) {
 		q.currentChildQueueIndex = localQueueIndex
 	}

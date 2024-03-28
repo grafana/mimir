@@ -110,7 +110,7 @@ type queueBroker struct {
 
 func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled bool, forgetDelay time.Duration) *queueBroker {
 	return &queueBroker{
-		tenantQueuesTree: NewTreeQueue("root"),
+		tenantQueuesTree: NewTreeQueue("root", roundRobin),
 		tenantQuerierAssignments: tenantQuerierAssignments{
 			queriersByID:       map[QuerierID]*querierConn{},
 			querierIDsSorted:   nil,
