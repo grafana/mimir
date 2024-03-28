@@ -111,6 +111,85 @@ func TestMetricsQueryRequest(t *testing.T) {
 	}
 }
 
+func TestMetricsQueryMinMaxTimeMS(t *testing.T) {
+
+	rangeVectorDurationStr := "5m"
+	rangeVectorDuration, _ := time.ParseDuration(rangeVectorDurationStr)
+	rangeVectorDurationMS := rangeVectorDuration.Milliseconds()
+
+	offsetDurationStr := "1h"
+	offsetDuration, _ := time.ParseDuration(offsetDurationStr)
+	offsetDurationMS := offsetDuration.Milliseconds()
+
+	for _, testCase := range []struct {
+		name              string
+		metricsQuery      MetricsQueryRequest
+		expectedMinTimeMS int64
+		expectedMaxTimeMS int64
+		expectedErr       error
+	}{
+		{
+			name: "range query: without range vector, without offset",
+			metricsQuery: &PrometheusRangeQueryRequest{
+				Path:  "/api/v1/query_range",
+				Start: 1708502400 * 1e3,
+				End:   1708588800 * 1e3,
+				Step:  60 * 1e3,
+				Query: "go_goroutines{}",
+			},
+			expectedMinTimeMS: 1708502400 * 1e3,
+			expectedMaxTimeMS: 1708588800 * 1e3,
+			expectedErr:       nil,
+		},
+		{
+			name: "range query: with range vector, without offset",
+			metricsQuery: &PrometheusRangeQueryRequest{
+				Start: 1708502400 * 1e3,
+				End:   1708588800 * 1e3,
+				Step:  60 * 1e3,
+				Query: fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr),
+			},
+			expectedMinTimeMS: (1708502400 * 1e3) - rangeVectorDurationMS,
+			expectedMaxTimeMS: 1708588800 * 1e3,
+			expectedErr:       nil,
+		},
+		{
+			name: "range query: without range vector, with offset",
+			metricsQuery: &PrometheusRangeQueryRequest{
+				Start: 1708502400 * 1e3,
+				End:   1708588800 * 1e3,
+				Step:  60 * 1e3,
+				Query: fmt.Sprintf("go_goroutines{} offset %s", offsetDurationStr),
+			},
+			expectedMinTimeMS: (1708502400 * 1e3) - offsetDurationMS,
+			expectedMaxTimeMS: (1708588800 * 1e3) - offsetDurationMS,
+			expectedErr:       nil,
+		},
+		{
+			name: "range query: with range vector, with offset",
+			metricsQuery: &PrometheusRangeQueryRequest{
+				Start: 1708502400 * 1e3,
+				End:   1708588800 * 1e3,
+				Step:  60 * 1e3,
+				Query: fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr),
+			},
+			expectedMinTimeMS: (1708502400 * 1e3) - rangeVectorDurationMS - offsetDurationMS,
+			expectedMaxTimeMS: (1708588800 * 1e3) - offsetDurationMS,
+			expectedErr:       nil,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			minTimeMS, maxTimeMS, err := MetricsQueryMinMaxTimeMS(testCase.metricsQuery)
+			if err != nil || testCase.expectedErr != nil {
+				require.EqualValues(t, testCase.expectedErr, err)
+			}
+
+			require.EqualValues(t, testCase.expectedMinTimeMS, minTimeMS)
+			require.EqualValues(t, testCase.expectedMaxTimeMS, maxTimeMS)
+		})
+	}
+}
+
 func TestLabelsQueryRequest(t *testing.T) {
 	codec := newTestPrometheusCodec()
 
