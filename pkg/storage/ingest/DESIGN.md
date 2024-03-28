@@ -19,7 +19,7 @@ For this reason, the offset of the last produced record in a partition is `ListO
 
 ### Partition start offset
 
-The offset of the **first** record available for consumption in a partition, if the partition contains some record,
+The partition start offset is the offset of the **first** record available for consumption in a partition, if the partition contains some record,
 or the offset of the **next** produced offset if the partition is empty (either because no record has ever been produced yet,
 or the Kafka retention kicked in and deleted all segments).
 The partition start offset can be read from Kafka issuing `ListOffsets` request with `timestamp = -2`.
