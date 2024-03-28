@@ -843,6 +843,84 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			return reader.State()
 		})
 	})
+
+	t.Run("should not wait indefinitely if there are no records to consume from Kafka but partition start offset is > 0 (e.g. all previous records have been deleted by Kafka retention)", func(t *testing.T) {
+		t.Parallel()
+
+		for _, consumeFromPosition := range consumeFromPositionOptions {
+			consumeFromPosition := consumeFromPosition
+
+			t.Run(fmt.Sprintf("consume from position: %s", consumeFromPosition), func(t *testing.T) {
+				t.Parallel()
+
+				ctx, cancel := context.WithCancel(context.Background())
+				t.Cleanup(cancel)
+
+				consumer := consumerFunc(func(ctx context.Context, records []record) error {
+					return nil
+				})
+
+				cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+				cluster.ControlKey(int16(kmsg.Fetch), func(req kmsg.Request) (kmsg.Response, error, bool) {
+					cluster.KeepControl()
+
+					// Throttle the Fetch request.
+					select {
+					case <-ctx.Done():
+					case <-time.After(time.Second):
+					}
+
+					return nil, nil, false
+				})
+
+				// Produce some records.
+				writeClient := newKafkaProduceClient(t, clusterAddr)
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+				t.Log("produced 2 records")
+
+				// Fetch the partition end offset, which is the offset of the next record that will be produced.
+				adminClient := kadm.NewClient(writeClient)
+				endOffsets, err := adminClient.ListEndOffsets(ctx, topicName)
+				require.NoError(t, err)
+				endOffset, exists := endOffsets.Lookup(topicName, partitionID)
+				require.True(t, exists)
+				require.NoError(t, endOffset.Err)
+				t.Logf("fetched partition end offset: %d", endOffset.Offset)
+
+				// Issue a request to delete produced records so far. What Kafka does under the hood is to advance
+				// the partition start offset to the specified offset.
+				advancePartitionStartTo := kadm.Offsets{}
+				advancePartitionStartTo.Add(kadm.Offset{Topic: topicName, Partition: partitionID, At: endOffset.Offset})
+				_, err = adminClient.DeleteRecords(ctx, advancePartitionStartTo)
+				require.NoError(t, err)
+				t.Logf("advanced partition start offset to: %d", endOffset.Offset)
+
+				// Create and start the reader. We expect the reader to immediately switch to Running state.
+				reg := prometheus.NewPedanticRegistry()
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+					withConsumeFromPositionAtStartup(consumeFromPosition),
+					withMaxConsumerLagAtStartup(time.Second),
+					withRegistry(reg))
+
+				require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+				})
+
+				// We expect no record has been consumed.
+				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+					# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+					# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+					cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
+
+					# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
+					# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
+					cortex_ingest_storage_reader_last_committed_offset{partition="1"} -1
+				`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_last_committed_offset"))
+			})
+		}
+	})
 }
 
 func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {

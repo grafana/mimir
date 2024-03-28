@@ -144,6 +144,12 @@ std.manifestYamlDoc({
         'KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,ORBSTACK:PLAINTEXT',
         'KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT',
         'KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1',
+        'KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000',
+
+        // Decomment the following config to keep a short retentino of records in Kafka.
+        // This is useful to test the behaviour when Kafka records are deleted.
+        // 'KAFKA_LOG_RETENTION_MINUTES=1',
+        // 'KAFKA_LOG_SEGMENT_BYTES=1000000',
       ],
       ports: [
         '29092:29092',
