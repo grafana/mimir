@@ -140,6 +140,8 @@ type LabelsQueryRequest interface {
 	// to and from the http request format without needing to undo the Prometheus parser converting between formats
 	// like `up{job="prometheus"}` and `{__name__="up, job="prometheus"}`, or other idiosyncrasies.
 	GetLabelMatcherSets() []string
+	// GetLimit returns the limit of the number of items in the response.
+	GetLimit() int64
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(opentracing.Span)
 }
@@ -311,12 +313,18 @@ func (prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Reque
 
 	labelMatcherSets := reqValues["match[]"]
 
+	limit, err := strconv.ParseInt(reqValues.Get("limit"), 10, 64)
+	if reqValues.Has("limit") && err != nil {
+		return nil, apierror.New(apierror.TypeBadData, "limit parameter: "+err.Error())
+	}
+
 	if IsLabelNamesQuery(r.URL.Path) {
 		return &PrometheusLabelNamesQueryRequest{
 			Path:             r.URL.Path,
 			Start:            start,
 			End:              end,
 			LabelMatcherSets: labelMatcherSets,
+			Limit:            limit,
 		}, nil
 	}
 	// else, must be Label Values Request due to IsLabelsQuery check at beginning of func
@@ -326,6 +334,7 @@ func (prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Reque
 		Start:            start,
 		End:              end,
 		LabelMatcherSets: labelMatcherSets,
+		Limit:            limit,
 	}, nil
 }
 
