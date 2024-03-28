@@ -120,6 +120,8 @@ func TestUpstreamTestCases(t *testing.T) {
 			defer f.Close()
 
 			testScript, err := io.ReadAll(f)
+			require.NoError(t, err)
+
 			promql.RunTest(t, string(testScript), engine)
 		})
 	}
@@ -143,6 +145,8 @@ func TestOurTestCases(t *testing.T) {
 			defer f.Close()
 
 			b, err := io.ReadAll(f)
+			require.NoError(t, err)
+
 			testScript := string(b)
 
 			t.Run("streaming engine", func(t *testing.T) {
