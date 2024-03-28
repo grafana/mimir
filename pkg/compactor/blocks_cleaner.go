@@ -683,7 +683,7 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 }
 
 func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, userBucket objstore.InstrumentedBucket, idx *bucketindex.Index, compactionBlockRanges mimir_tsdb.DurationList, mergeShards int, splitGroups int) ([]*Job, error) {
-	metas := convertBucketIndexToMetasForCompactionJobPlanning(idx)
+	metas := ConvertBucketIndexToMetasForCompactionJobPlanning(idx)
 
 	// We need to pass this metric to MetadataFilters, but we don't need to report this value from BlocksCleaner.
 	synced := newNoopGaugeVec()
@@ -693,8 +693,7 @@ func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, u
 		// We do include NoCompactionMarkFilter to avoid computing jobs from blocks that are marked for no-compaction.
 		NewNoCompactionMarkFilter(userBucket),
 	} {
-		err := f.Filter(ctx, metas, synced)
-		if err != nil {
+		if err := f.Filter(ctx, metas, synced); err != nil {
 			return nil, err
 		}
 	}
@@ -705,23 +704,28 @@ func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, u
 }
 
 // Convert index into map of block Metas, but ignore blocks marked for deletion.
-func convertBucketIndexToMetasForCompactionJobPlanning(idx *bucketindex.Index) map[ulid.ULID]*block.Meta {
+func ConvertBucketIndexToMetasForCompactionJobPlanning(idx *bucketindex.Index) map[ulid.ULID]*block.Meta {
 	deletedULIDs := idx.BlockDeletionMarks.GetULIDs()
-	deleted := make(map[ulid.ULID]bool, len(deletedULIDs))
+	deleted := make(map[ulid.ULID]struct{}, len(deletedULIDs))
 	for _, id := range deletedULIDs {
-		deleted[id] = true
+		deleted[id] = struct{}{}
 	}
 
 	metas := map[ulid.ULID]*block.Meta{}
 	for _, b := range idx.Blocks {
-		if deleted[b.ID] {
+		if _, del := deleted[b.ID]; del {
 			continue
 		}
 		metas[b.ID] = b.ThanosMeta()
 		if metas[b.ID].Thanos.Labels == nil {
 			metas[b.ID].Thanos.Labels = map[string]string{}
 		}
-		metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID // Needed for correct planning.
+		if _, found := metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]; !found {
+			// Correct planning depends on external labels being present. We
+			// didn't always persist labels into the bucket index, but we did
+			// track the shard ID label, so copy that back over.
+			metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID
+		}
 	}
 	return metas
 }

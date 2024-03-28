@@ -1067,6 +1067,18 @@ func TestComputeCompactionJobs(t *testing.T) {
 		// This merge job is skipped, as block is marked for no-compaction.
 		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
 		&bucketindex.Block{ID: blockMarkedForNoCompact, MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
+
+		// Compactor wouldn't produce a job for this pair as their external labels differ:
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+			Labels: map[string]string{
+				tsdb.OutOfOrderExternalLabel: tsdb.OutOfOrderExternalLabelValue,
+			},
+		},
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+			Labels: map[string]string{
+				tsdb.DeprecatedTenantIDExternalLabel: "-1",
+			},
+		},
 	}
 
 	userBucket := bucket.NewUserBucketClient(user, bucketClient, nil)
