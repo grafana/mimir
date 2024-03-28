@@ -47,7 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
-	"github.com/grafana/mimir/pkg/querier/engine"
+	"github.com/grafana/mimir/pkg/querier/engine/common"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -498,9 +498,12 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	registerer := prometheus.WrapRegistererWith(querierEngine, t.Registerer)
 
 	// Create a querier queryable and PromQL engine
-	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(
+	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, err = querier.New(
 		t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, registerer, util_log.Logger, t.ActivityTracker,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("could not create queryable: %w", err)
+	}
 
 	// Use the distributor to return metric metadata by default
 	t.MetadataSupplier = t.Distributor
@@ -716,7 +719,7 @@ func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
-	engineOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
+	engineOpts, engineExperimentalFunctionsEnabled := common.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
@@ -840,7 +843,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(rulerEngine, t.Registerer)
 
-		queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+		queryable, _, eng, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+		if err != nil {
+			return nil, fmt.Errorf("could not create querier for ruler: %w", err)
+		}
+
 		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)
 
 		if t.Cfg.Ruler.TenantFederation.Enabled {

@@ -212,7 +212,7 @@ func NewQuerierHandler(
 	queryable storage.SampleAndChunkQueryable,
 	exemplarQueryable storage.ExemplarQueryable,
 	metadataSupplier querier.MetadataSupplier,
-	engine *promql.Engine,
+	engine promql.QueryEngine,
 	distributor Distributor,
 	reg prometheus.Registerer,
 	logger log.Logger,

@@ -514,6 +514,52 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 	}
 }
 
+func TestStreamingPromQLEngine(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+		"-querier.promql-engine": "streaming",
+	})
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+
+	// Wait until the distributor and querier have updated the ring.
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring,
+	// and the querier should have 512 tokens for the ingester ring.
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	// Push a series to Mimir.
+	writeClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
+	require.NoError(t, err)
+
+	seriesName := "series_1"
+	seriesTimestamp := time.Now()
+	series, expectedVector, _ := generateFloatSeries(seriesName, seriesTimestamp, prompb.Label{Name: seriesName, Value: seriesName})
+
+	res, err := writeClient.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	// Query back the same series using the streaming PromQL engine.
+	c, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
+	require.NoError(t, err)
+
+	result, err := c.Query(seriesName, seriesTimestamp)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result.Type())
+	assert.Equal(t, expectedVector, result.(model.Vector))
+}
+
 func testMetadataQueriesWithBlocksStorage(
 	t *testing.T,
 	c *e2emimir.Client,
