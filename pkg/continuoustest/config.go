@@ -9,11 +9,11 @@ import (
 )
 
 type Config struct {
-	ServerMetricsPort   int
-	LogLevel            log.Level
-	Client              ClientConfig
-	Manager             ManagerConfig
-	WriteReadSeriesTest WriteReadSeriesTestConfig
+	ServerMetricsPort   int                       `yaml:"-"`
+	LogLevel            log.Level                 `yaml:"-"`
+	Client              ClientConfig              `yaml:"-"`
+	Manager             ManagerConfig             `yaml:"-"`
+	WriteReadSeriesTest WriteReadSeriesTestConfig `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
