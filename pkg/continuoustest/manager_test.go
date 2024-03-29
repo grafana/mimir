@@ -47,7 +47,7 @@ func TestManager_PeriodicRun(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*50)
 	defer cancel()
-	err := manager.StartAsync(ctx)
+	err := manager.Run(ctx)
 
 	require.NoError(t, err)
 	// Theoretically the test will run 6 times, but small timing differences may
@@ -70,7 +70,7 @@ func TestManager_SmokeTest(t *testing.T) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*50)
 		defer cancel()
-		err := manager.StartAsync(ctx)
+		err := manager.Run(ctx)
 
 		require.NoError(t, err)
 		require.Equal(t, dummyTest.runs, 1)
@@ -91,7 +91,7 @@ func TestManager_SmokeTest(t *testing.T) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*50)
 		defer cancel()
-		err := manager.StartAsync(ctx)
+		err := manager.Run(ctx)
 
 		require.ErrorIs(t, err, dummyTest.err)
 		require.Equal(t, dummyTest.runs, 1)
