@@ -4,17 +4,22 @@ package queue
 
 import (
 	"container/list"
+	"fmt"
 )
 
 type QueuePath []string //nolint:revive // disallows types beginning with package name
 type QueueIndex int     //nolint:revive // disallows types beginning with package name
 
 const localQueueIndex = -1
+const rootNodeName = "root"
+
+var queueingAlgorithmsByDepth = []queueingAlgorithm{roundRobin, roundRobin, roundRobin}
 
 // TreeQueue is a hierarchical queue implementation with an arbitrary amount of child queues.
 //
-// TreeQueue uses a queueingAlgorithm to handle queuing across all of its queue dimensions.
 // Each queuing dimension is modeled as a node in the tree, internally reachable through a QueuePath.
+// TreeQueue uses a queueingAlgorithm (assigned by node depth at creation) to handle
+// queuing across all of its queue dimensions.
 //
 // The QueuePath is an ordered array of strings describing the path through the tree to the node,
 // which contains the FIFO local queue of all items enqueued for that queuing dimension.
@@ -32,16 +37,18 @@ type TreeQueue struct {
 	childQueueOrder        []string
 	childQueueMap          map[string]*TreeQueue
 	queueingAlgorithm      queueingAlgorithm
+	depth                  int
 }
 
-func NewTreeQueue(name string, algorithm queueingAlgorithm) *TreeQueue {
+func NewTreeQueue(name string, depth int) *TreeQueue {
 	return &TreeQueue{
 		name:                   name,
 		localQueue:             nil,
 		currentChildQueueIndex: localQueueIndex,
 		childQueueMap:          nil,
 		childQueueOrder:        nil,
-		queueingAlgorithm:      algorithm,
+		queueingAlgorithm:      queueingAlgorithmsByDepth[depth],
+		depth:                  depth,
 	}
 }
 
@@ -131,6 +138,13 @@ func (q *TreeQueue) EnqueueFrontByPath(childPath QueuePath, v any) error {
 // childPath must be relative to the receiver node; providing a QueuePath beginning with
 // the receiver/parent node name will create a child node of the same name as the parent.
 func (q *TreeQueue) getOrAddNode(childPath QueuePath) (*TreeQueue, error) {
+
+	// We should fail if anything attempts to get or add a node that we cannot assign a queueing algorithm to.
+	// TODO (casie): I guess we could also default to round robin, open to opinions.
+	if q.depth+len(childPath) >= len(queueingAlgorithmsByDepth) {
+		return nil, fmt.Errorf("cannot get or create nodes for %s beyond %s; exceeds max depth", childPath, q.name)
+	}
+
 	if len(childPath) == 0 {
 		return q, nil
 	}
@@ -144,8 +158,7 @@ func (q *TreeQueue) getOrAddNode(childPath QueuePath) (*TreeQueue, error) {
 	if childQueue, ok = q.childQueueMap[childPath[0]]; !ok {
 		// no child node matches next path segment
 		// create next child before recurring
-		// TODO (casie): Need to add support for passing queueingAlgorithms for each child in childPath.
-		childQueue = NewTreeQueue(childPath[0], roundRobin)
+		childQueue = NewTreeQueue(childPath[0], q.depth+1)
 
 		addNode(q.queueingAlgorithm)(q, childQueue)
 
