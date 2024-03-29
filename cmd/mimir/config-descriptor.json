@@ -15488,14 +15488,6 @@
     },
     {
       "kind": "block",
-      "name": "continuous_test",
-      "required": false,
-      "desc": "",
-      "fieldValue": null,
-      "fieldDefaultValue": null
-    },
-    {
-      "kind": "block",
       "name": "overrides_exporter",
       "required": false,
       "desc": "",
