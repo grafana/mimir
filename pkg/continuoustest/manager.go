@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/services"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -35,6 +36,8 @@ func (cfg *ManagerConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 type Manager struct {
+	services.Service
+
 	cfg    ManagerConfig
 	logger log.Logger
 	tests  []Test
@@ -51,7 +54,7 @@ func (m *Manager) AddTest(t Test) {
 	m.tests = append(m.tests, t)
 }
 
-func (m *Manager) Run(ctx context.Context) error {
+func (m *Manager) StartAsync(ctx context.Context) error {
 	// Initialize all tests.
 	for _, t := range m.tests {
 		if err := t.Init(ctx, time.Now()); err != nil {
