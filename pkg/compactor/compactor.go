@@ -60,6 +60,17 @@ var (
 	errInvalidSymbolFlushersConcurrency           = fmt.Errorf("invalid symbols-flushers-concurrency value, must be positive")
 	errInvalidMaxBlockUploadValidationConcurrency = fmt.Errorf("invalid max-block-upload-validation-concurrency value, can't be negative")
 	RingOp                                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+
+	// compactionIgnoredLabels defines the external labels the compactor
+	// will drop/ignore when planning jobs.
+	// * We remove ingester ID because we don't shard blocks anymore, while still
+	// 	honoring the shard ID if sharding was done in the past.
+	// * We remove tenant ID to make sure that we compact blocks with and without
+	//  the label together.
+	compactionIgnoredLabels = []string{
+		mimir_tsdb.DeprecatedIngesterIDExternalLabel,
+		mimir_tsdb.DeprecatedTenantIDExternalLabel,
+	}
 )
 
 // BlocksGrouperFactory builds and returns the grouper to use to compact a tenant's blocks.
@@ -733,14 +744,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	// List of filters to apply (order matters).
 	fetcherFilters := []block.MetadataFilter{
-		// Remove the ingester ID because we don't shard blocks anymore, while still
-		// honoring the shard ID if sharding was done in the past.
-		// Remove TenantID external label to make sure that we compact blocks with and without the label
-		// together.
-		NewLabelRemoverFilter([]string{
-			mimir_tsdb.DeprecatedTenantIDExternalLabel,
-			mimir_tsdb.DeprecatedIngesterIDExternalLabel,
-		}),
+		NewLabelRemoverFilter(compactionIgnoredLabels),
 		deduplicateBlocksFilter,
 		// removes blocks that should not be compacted due to being marked so.
 		NewNoCompactionMarkFilter(userBucket),
