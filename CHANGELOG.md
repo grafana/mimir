@@ -39,6 +39,7 @@
   * `MimirIngesterFailsToProcessRecordsFromKafka`
   * `MimirIngesterFailsEnforceStrongConsistencyOnReadPath`
 * [ENHANCEMENT] Dashboards: add in-flight queries scaling metric panel for ruler-querier. #7749
+* [ENHANCEMENT] Dashboards: renamed rows in the "Remote ruler reads" and "Remote ruler reads resources" dashboards to match the actual component names. #7750
 * [BUGFIX] Dashboards: Fix regular expression for matching read-path gRPC ingester methods to include querying of exemplars, label-related queries, or active series queries. #7676
 * [BUGFIX] Dashboards: Fix user id abbreviations and column heads for Top Tenants dashboard. #7724
 
