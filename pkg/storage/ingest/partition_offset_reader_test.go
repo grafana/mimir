@@ -16,6 +16,7 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
@@ -48,7 +49,7 @@ func TestPartitionOffsetReader(t *testing.T) {
 
 		for i := 0; i < 2; i++ {
 			runAsync(&wg, func() {
-				_, err := reader.FetchLastProducedOffset(ctx)
+				_, err := reader.WaitNextFetchLastProducedOffset(ctx)
 				assert.Equal(t, errPartitionOffsetReaderStopped, err)
 			})
 		}
@@ -59,16 +60,15 @@ func TestPartitionOffsetReader(t *testing.T) {
 		// At the point we expect the waiting goroutines to be unblocked.
 		wg.Wait()
 
-		// The next call to FetchLastProducedOffset() should return immediately.
-		_, err := reader.FetchLastProducedOffset(ctx)
+		// The next call to WaitNextFetchLastProducedOffset() should return immediately.
+		_, err := reader.WaitNextFetchLastProducedOffset(ctx)
 		assert.Equal(t, errPartitionOffsetReaderStopped, err)
 	})
 }
 
-func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
+func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 	const (
 		numPartitions = 1
-		userID        = "user-1"
 		topicName     = "test"
 		partitionID   = int32(0)
 		pollInterval  = time.Second
@@ -90,21 +90,21 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 			reader         = newPartitionOffsetReader(client, topicName, partitionID, pollInterval, reg, logger)
 		)
 
-		offset, err := reader.getLastProducedOffset(ctx)
+		offset, err := reader.FetchLastProducedOffset(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(-1), offset)
 
 		// Write the 1st message.
 		produceRecord(ctx, t, client, topicName, partitionID, []byte("message 1"))
 
-		offset, err = reader.getLastProducedOffset(ctx)
+		offset, err = reader.FetchLastProducedOffset(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), offset)
 
 		// Write the 2nd message.
 		produceRecord(ctx, t, client, topicName, partitionID, []byte("message 2"))
 
-		offset, err = reader.getLastProducedOffset(ctx)
+		offset, err = reader.FetchLastProducedOffset(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), offset)
 
@@ -151,20 +151,20 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 
 		wg := sync.WaitGroup{}
 
-		// Run the 1st getLastProducedOffset() with a timeout which is expected to expire
+		// Run the 1st FetchLastProducedOffset() with a timeout which is expected to expire
 		// before the request will succeed.
 		runAsync(&wg, func() {
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, firstRequestTimeout)
 			defer cancel()
 
-			_, err := reader.getLastProducedOffset(ctxWithTimeout)
+			_, err := reader.FetchLastProducedOffset(ctxWithTimeout)
 			require.ErrorIs(t, err, context.DeadlineExceeded)
 		})
 
-		// Run a 2nd getLastProducedOffset() once the 1st request is received. This request
+		// Run a 2nd FetchLastProducedOffset() once the 1st request is received. This request
 		// is expected to succeed.
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			offset, err := reader.getLastProducedOffset(ctx)
+			offset, err := reader.FetchLastProducedOffset(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, expectedOffset, offset)
 		})
@@ -194,7 +194,7 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 		})
 
 		startTime := time.Now()
-		_, err := reader.getLastProducedOffset(ctx)
+		_, err := reader.FetchLastProducedOffset(ctx)
 		elapsedTime := time.Since(startTime)
 
 		require.Error(t, err)
@@ -208,7 +208,171 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 	})
 }
 
-func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
+func TestPartitionOffsetReader_FetchPartitionStartOffset(t *testing.T) {
+	const (
+		numPartitions = 1
+		topicName     = "test"
+		partitionID   = int32(0)
+		pollInterval  = time.Second
+	)
+
+	var (
+		ctx    = context.Background()
+		logger = log.NewNopLogger()
+	)
+
+	t.Run("should return the partition start offset", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
+			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
+			client         = createTestKafkaClient(t, kafkaCfg)
+			reg            = prometheus.NewPedanticRegistry()
+			reader         = newPartitionOffsetReader(client, topicName, partitionID, pollInterval, reg, logger)
+		)
+
+		offset, err := reader.FetchPartitionStartOffset(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), offset)
+
+		// Write the 1st record.
+		produceRecord(ctx, t, client, topicName, partitionID, []byte("record 1"))
+
+		offset, err = reader.FetchPartitionStartOffset(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), offset)
+
+		// Write the 2nd record.
+		produceRecord(ctx, t, client, topicName, partitionID, []byte("record 2"))
+
+		offset, err = reader.FetchPartitionStartOffset(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), offset)
+
+		// Delete the 1st record.
+		adminClient := kadm.NewClient(client)
+		advancePartitionStartTo := kadm.Offsets{}
+		advancePartitionStartTo.Add(kadm.Offset{Topic: topicName, Partition: partitionID, At: 1})
+		_, err = adminClient.DeleteRecords(ctx, advancePartitionStartTo)
+		require.NoError(t, err)
+		t.Log("advanced partition start offset to 1")
+
+		offset, err = reader.FetchPartitionStartOffset(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), offset)
+
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_partition_start_offset_failures_total Total number of failed requests to get the partition start offset.
+			# TYPE cortex_ingest_storage_reader_partition_start_offset_failures_total counter
+			cortex_ingest_storage_reader_partition_start_offset_failures_total{partition="0"} 0
+
+			# HELP cortex_ingest_storage_reader_partition_start_offset_requests_total Total number of requests issued to get the partition start offset.
+			# TYPE cortex_ingest_storage_reader_partition_start_offset_requests_total counter
+			cortex_ingest_storage_reader_partition_start_offset_requests_total{partition="0"} 4
+		`), "cortex_ingest_storage_reader_partition_start_offset_requests_total",
+			"cortex_ingest_storage_reader_partition_start_offset_failures_total"))
+	})
+
+	t.Run("should honor context deadline and not fail other in-flight requests issued while the canceled one was still running", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
+			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
+			client               = createTestKafkaClient(t, kafkaCfg)
+			reg                  = prometheus.NewPedanticRegistry()
+			reader               = newPartitionOffsetReader(client, topicName, partitionID, pollInterval, reg, logger)
+
+			firstRequest         = atomic.NewBool(true)
+			firstRequestReceived = make(chan struct{})
+			firstRequestTimeout  = time.Second
+		)
+
+		// Write 2 records.
+		produceRecord(ctx, t, client, topicName, partitionID, []byte("record 1"))
+		produceRecord(ctx, t, client, topicName, partitionID, []byte("record 2"))
+		t.Log("produced 2 records")
+
+		// Delete the 1st record.
+		adminClient := kadm.NewClient(client)
+		advancePartitionStartTo := kadm.Offsets{}
+		advancePartitionStartTo.Add(kadm.Offset{Topic: topicName, Partition: partitionID, At: 1})
+		_, err := adminClient.DeleteRecords(ctx, advancePartitionStartTo)
+		require.NoError(t, err)
+		t.Log("advanced partition start offset to 1")
+
+		expectedStartOffset := int64(1)
+
+		// Slow down the 1st ListOffsets request.
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			if firstRequest.CompareAndSwap(true, false) {
+				close(firstRequestReceived)
+				time.Sleep(2 * firstRequestTimeout)
+			}
+			return nil, nil, false
+		})
+
+		wg := sync.WaitGroup{}
+
+		// Run the 1st FetchPartitionStartOffset() with a timeout which is expected to expire
+		// before the request will succeed.
+		runAsync(&wg, func() {
+			ctxWithTimeout, cancel := context.WithTimeout(ctx, firstRequestTimeout)
+			defer cancel()
+
+			_, err := reader.FetchPartitionStartOffset(ctxWithTimeout)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+		})
+
+		// Run a 2nd FetchPartitionStartOffset() once the 1st request is received. This request
+		// is expected to succeed.
+		runAsyncAfter(&wg, firstRequestReceived, func() {
+			offset, err := reader.FetchPartitionStartOffset(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, expectedStartOffset, offset)
+		})
+
+		wg.Wait()
+	})
+
+	t.Run("should honor the configured retry timeout", func(t *testing.T) {
+		t.Parallel()
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+
+		// Configure a short retry timeout.
+		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg.LastProducedOffsetRetryTimeout = time.Second
+
+		client := createTestKafkaClient(t, kafkaCfg)
+		reg := prometheus.NewPedanticRegistry()
+		reader := newPartitionOffsetReader(client, topicName, partitionID, pollInterval, reg, logger)
+
+		// Make the ListOffsets request failing.
+		actualTries := atomic.NewInt64(0)
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			actualTries.Inc()
+			return nil, errors.New("mocked error"), true
+		})
+
+		startTime := time.Now()
+		_, err := reader.FetchPartitionStartOffset(ctx)
+		elapsedTime := time.Since(startTime)
+
+		require.Error(t, err)
+
+		// Ensure the retry timeout has been honored.
+		toleranceSeconds := 0.5
+		assert.InDelta(t, kafkaCfg.LastProducedOffsetRetryTimeout.Seconds(), elapsedTime.Seconds(), toleranceSeconds)
+
+		// Ensure the request was retried.
+		assert.Greater(t, actualTries.Load(), int64(1))
+	})
+}
+
+func TestPartitionOffsetReader_WaitNextFetchLastProducedOffset(t *testing.T) {
 	const (
 		numPartitions = 1
 		topicName     = "test"
@@ -256,18 +420,18 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 
 		wg := sync.WaitGroup{}
 
-		// The 1st FetchLastProducedOffset() is called before the service start so it's expected
+		// The 1st WaitNextFetchLastProducedOffset() is called before the service start so it's expected
 		// to wait the result of the 1st request.
 		runAsync(&wg, func() {
-			actual, err := reader.FetchLastProducedOffset(ctx)
+			actual, err := reader.WaitNextFetchLastProducedOffset(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, int64(1), actual)
 		})
 
-		// The 2nd FetchLastProducedOffset() is called while the 1st request is running, so it's expected
+		// The 2nd WaitNextFetchLastProducedOffset() is called while the 1st request is running, so it's expected
 		// to wait the result of the 2nd request.
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			actual, err := reader.FetchLastProducedOffset(ctx)
+			actual, err := reader.WaitNextFetchLastProducedOffset(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, int64(2), actual)
 		})
@@ -294,7 +458,7 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 		canceledCtx, cancel := context.WithCancel(ctx)
 		cancel()
 
-		_, err := reader.FetchLastProducedOffset(canceledCtx)
+		_, err := reader.WaitNextFetchLastProducedOffset(canceledCtx)
 		assert.ErrorIs(t, err, context.Canceled)
 	})
 }

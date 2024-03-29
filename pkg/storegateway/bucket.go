@@ -577,11 +577,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		reqBlockMatchers []*labels.Matcher
 	)
 	defer s.recordSeriesCallResult(stats)
-	defer func(requestStart time.Time) {
-		stats.update(func(stats *queryStats) {
-			stats.streamingSeriesAmbientTime += time.Since(requestStart)
-		})
-	}(time.Now())
+	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	if req.Hints != nil {
 		reqHints := &hintspb.SeriesRequestHints{}
@@ -613,13 +609,11 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 
 	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
-	span, spanCtx := opentracing.StartSpanFromContext(ctx, "store_query_gate_ismyturn")
-	err = s.queryGate.Start(spanCtx)
-	span.Finish()
+	done, err := s.limitConcurrentQueries(ctx, stats)
 	if err != nil {
-		return errors.Wrapf(err, "failed to wait for turn")
+		return err
 	}
-	defer s.queryGate.Done()
+	defer done()
 
 	var (
 		// If we are streaming the series labels and chunks separately, we don't need to fetch the postings
@@ -713,6 +707,27 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	}
 
 	return nil
+}
+
+func (s *BucketStore) recordRequestAmbientTime(stats *safeQueryStats, requestStart time.Time) {
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesAmbientTime += time.Since(requestStart)
+	})
+}
+
+func (s *BucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (done func(), err error) {
+	span, spanCtx := opentracing.StartSpanFromContext(ctx, "store_query_gate_ismyturn")
+	defer span.Finish()
+
+	waitStart := time.Now()
+	err = s.queryGate.Start(spanCtx)
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesConcurrencyLimitWaitDuration = time.Since(waitStart)
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to wait for turn")
+	}
+	return s.queryGate.Done, nil
 }
 
 // sendStreamingSeriesLabelsAndStats sends the labels of the streaming series.
@@ -1181,6 +1196,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("encode").Observe(stats.streamingSeriesEncodeResponseDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("send").Observe(stats.streamingSeriesSendResponseDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("wait_max_concurrent").Observe(stats.streamingSeriesConcurrencyLimitWaitDuration.Seconds())
 
 	s.metrics.seriesDataFetched.WithLabelValues("chunks", "fetched").Observe(float64(stats.chunksFetched))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "fetched").Observe(float64(stats.chunksFetchedSizeSum))
@@ -1253,6 +1269,7 @@ func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
 	categorizedTime := stats.streamingSeriesExpandPostingsDuration +
 		stats.streamingSeriesBatchLoadDuration +
 		stats.streamingSeriesIndexHeaderLoadDuration +
+		stats.streamingSeriesConcurrencyLimitWaitDuration +
 		stats.streamingSeriesEncodeResponseDuration +
 		stats.streamingSeriesSendResponseDuration
 
@@ -1318,6 +1335,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	)
 
 	defer s.recordLabelNamesCallResult(stats)
+	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	var reqBlockMatchers []*labels.Matcher
 	if req.Hints != nil {
@@ -1510,6 +1528,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 	stats := newSafeQueryStats()
 	defer s.recordLabelValuesCallResult(stats)
+	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	resHints := &hintspb.LabelValuesResponseHints{}
 

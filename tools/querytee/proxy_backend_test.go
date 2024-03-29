@@ -84,7 +84,11 @@ func Test_ProxyBackend_createBackendRequest_HTTPBasicAuthentication(t *testing.T
 			}
 
 			b := NewProxyBackend("test", u, time.Second, false, false)
-			r, err := b.createBackendRequest(orig, nil)
+			bp, ok := b.(*ProxyBackend)
+			if !ok {
+				t.Fatalf("Type assertion to *ProxyBackend failed")
+			}
+			r, err := bp.createBackendRequest(orig, nil)
 			require.NoError(t, err)
 
 			actualUser, actualPass, _ := r.BasicAuth()

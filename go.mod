@@ -9,7 +9,7 @@ require (
 	github.com/alecthomas/units v0.0.0-20231202071711-9a357b53e9c9
 	github.com/dustin/go-humanize v1.0.1
 	github.com/edsrzf/mmap-go v1.1.0
-	github.com/failsafe-go/failsafe-go v0.4.4
+	github.com/failsafe-go/failsafe-go v0.6.1
 	github.com/felixge/fgprof v0.9.4
 	github.com/go-kit/log v0.2.1
 	github.com/go-openapi/strfmt v0.22.2
@@ -20,7 +20,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20240306142309-0e1c99b54ea7
+	github.com/grafana/dskit v0.0.0-20240311184239-73feada6c0d7
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/json-iterator/go v1.1.12
@@ -80,7 +80,7 @@ require (
 	go.opentelemetry.io/otel v1.24.0
 	go.opentelemetry.io/otel/trace v1.24.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/exp v0.0.0-20240222234643-814bf88cf225
+	golang.org/x/exp v0.0.0-20240318143956-a85f2c67cd81
 	google.golang.org/api v0.168.0
 	google.golang.org/protobuf v1.33.0
 	sigs.k8s.io/kustomize/kyaml v0.16.0
@@ -133,7 +133,7 @@ require (
 	github.com/aws/smithy-go v1.11.1 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.8.0 // indirect
+	github.com/bits-and-blooms/bitset v1.13.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
@@ -256,7 +256,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240312132807-2b3d9c010123
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240319094147-5a0ec4187ab5
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

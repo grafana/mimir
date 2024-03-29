@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -721,12 +722,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRin
 	c.ing = ing
 	c.partitionsRing = prw
 
-	// Ingester and partitions ring watcher are not started yet.
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c.partitionsRing))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.partitionsRing))
-	})
-
+	// Ingester is not started yet.
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c.ing))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.ing))
@@ -1287,6 +1283,88 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 			tc.testFunc(t, &c, tc.limits)
 		})
 	}
+}
+
+func TestOwnedSeriesStartsQuicklyWithEmptyIngesterRing(t *testing.T) {
+	ringKVStore, ringCloser := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, ringCloser.Close()) })
+
+	kvStore := &watchingKV{Client: ringKVStore}
+
+	rc := ring.Config{}
+	flagext.DefaultValues(&rc)
+
+	// Configure ring
+	rc.KVStore.Mock = kvStore
+	rc.HeartbeatTimeout = 1 * time.Minute
+	rc.ReplicationFactor = 1 // Number of zones must be equal to RF. We will only use 1 zone.
+	rc.ZoneAwarenessEnabled = true
+
+	rng := createAndStartRing(t, rc)
+
+	ringStrategy := newOwnedSeriesIngesterRingStrategy("ingester", rng, nil)
+
+	// Tenant checks are only done if ring is not empty.
+	tenantChecks := atomic.NewInt32(0)
+
+	const interval = 10 * time.Second
+	oss := newOwnedSeriesService(interval, ringStrategy, log.NewNopLogger(), nil, nil, func() []string { tenantChecks.Inc(); return []string{} }, nil)
+
+	// OwnedSeriesService will become Running immediately, but doesn't do any checks since ring is empty.
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), oss))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), oss))
+	})
+	require.Equal(t, int32(0), tenantChecks.Load())
+
+	// Add an instance to the ring. This is enough to start doing checks.
+	updateRingAndWaitForWatcherToReadUpdate(t, kvStore, func(desc *ring.Desc) {
+		desc.AddIngester("an-instance", "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now())
+	})
+
+	// We should see owned series doing its checks now.
+	test.Poll(t, 2*(interval/10), true, func() interface{} {
+		return tenantChecks.Load() > 0
+	})
+}
+
+func TestOwnedSeriesStartsQuicklyWithEmptyPartitionsRing(t *testing.T) {
+	partitionsKVStore, partitionsKVStoreCloser := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, partitionsKVStoreCloser.Close()) })
+
+	kvStore := &watchingKV{Client: partitionsKVStore}
+
+	ringWatcher := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, kvStore, log.NewNopLogger(), nil)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ringWatcher))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ringWatcher))
+	})
+
+	const partitionID = 5
+	partitionRingStrategy := newOwnedSeriesPartitionRingStrategy(partitionID, ringWatcher, nil)
+
+	// Tenant checks are only done if ring is not empty.
+	tenantChecks := atomic.NewInt32(0)
+	const interval = 10 * time.Second
+	oss := newOwnedSeriesService(interval, partitionRingStrategy, log.NewNopLogger(), nil, nil, func() []string { tenantChecks.Inc(); return []string{} }, nil)
+
+	// OwnedSeriesService will become Running immediately, but doesn't do any checks since ring is empty.
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), oss))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), oss))
+	})
+	require.Equal(t, int32(0), tenantChecks.Load())
+
+	// Add some partition to the ring. This is enough for owned series service to start running checks regularly.
+	updatePartitionRingAndWaitForWatcherToReadUpdate(t, kvStore, func(partitionRing *ring.PartitionRingDesc) {
+		partitionRing.AddPartition(partitionID+1, ring.PartitionActive, time.Now())
+	})
+
+	// We should see owned series doing its checks now.
+	test.Poll(t, 2*(interval/10), true, func() interface{} {
+		return tenantChecks.Load() > 0
+	})
 }
 
 func TestOwnedSeriesIngesterRingStrategyRingChanged(t *testing.T) {

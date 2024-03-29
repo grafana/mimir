@@ -248,6 +248,8 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 			errCode = codes.FailedPrecondition
 		case mimirpb.CIRCUIT_BREAKER_OPEN:
 			errCode = codes.Unavailable
+		case mimirpb.METHOD_NOT_ALLOWED:
+			errCode = codes.Unimplemented
 		}
 	}
 	stat := status.New(errCode, pushErr.Error())

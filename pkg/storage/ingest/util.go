@@ -18,16 +18,6 @@ import (
 var (
 	// Regular expression used to parse the ingester numeric ID.
 	ingesterIDRegexp = regexp.MustCompile("-([0-9]+)$")
-
-	// The Prometheus summary objectives used when tracking latency.
-	latencySummaryObjectives = map[float64]float64{
-		0.5:   0.05,
-		0.90:  0.01,
-		0.99:  0.001,
-		0.995: 0.001,
-		0.999: 0.001,
-		1:     0.001,
-	}
 )
 
 // IngesterPartitionID returns the partition ID owner the the given ingester.
@@ -47,7 +37,7 @@ func IngesterPartitionID(ingesterID string) (int32, error) {
 }
 
 func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger) []kgo.Opt {
-	return []kgo.Opt{
+	opts := []kgo.Opt{
 		kgo.ClientID(cfg.ClientID),
 		kgo.SeedBrokers(cfg.Address),
 		kgo.AllowAutoTopicCreation(),
@@ -74,7 +64,6 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		kgo.MetadataMinAge(10 * time.Second),
 		kgo.MetadataMaxAge(10 * time.Second),
 
-		kgo.WithHooks(metrics),
 		kgo.WithLogger(newKafkaLogger(logger)),
 
 		kgo.RetryTimeoutFn(func(key int16) time.Duration {
@@ -87,6 +76,12 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 			return 30 * time.Second
 		}),
 	}
+
+	if metrics != nil {
+		opts = append(opts, kgo.WithHooks(metrics))
+	}
+
+	return opts
 }
 
 // resultPromise is a simple utility to have multiple goroutines waiting for a result from another one.

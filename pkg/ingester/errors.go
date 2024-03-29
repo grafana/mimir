@@ -584,6 +584,8 @@ func mapPushErrorToErrorWithStatus(err error) error {
 			wrappedErr = middleware.DoNotLogError{Err: err}
 		case mimirpb.TSDB_UNAVAILABLE:
 			errCode = codes.Internal
+		case mimirpb.METHOD_NOT_ALLOWED:
+			errCode = codes.Unimplemented
 		}
 	}
 	return newErrorWithStatus(wrappedErr, errCode)
@@ -603,6 +605,8 @@ func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 			return newErrorWithStatus(middleware.DoNotLogError{Err: err}, codes.Unavailable)
 		case mimirpb.TSDB_UNAVAILABLE:
 			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
+		case mimirpb.METHOD_NOT_ALLOWED:
+			return newErrorWithStatus(err, codes.Unimplemented)
 		}
 	}
 	return err
@@ -620,6 +624,8 @@ func mapReadErrorToErrorWithStatus(err error) error {
 			errCode = codes.ResourceExhausted
 		case mimirpb.SERVICE_UNAVAILABLE:
 			errCode = codes.Unavailable
+		case mimirpb.METHOD_NOT_ALLOWED:
+			return newErrorWithStatus(err, codes.Unimplemented)
 		}
 	}
 	return newErrorWithStatus(err, errCode)
@@ -637,6 +643,8 @@ func mapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
 		case mimirpb.SERVICE_UNAVAILABLE:
 			return newErrorWithStatus(err, codes.Unavailable)
+		case mimirpb.METHOD_NOT_ALLOWED:
+			return newErrorWithStatus(err, codes.Unimplemented)
 		}
 	}
 	return err

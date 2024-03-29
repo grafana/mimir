@@ -41,8 +41,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: query-frontend
           imagePullPolicy: IfNotPresent
@@ -90,10 +88,6 @@ spec:
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "5000"
           envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -103,8 +97,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: keda-autoscaling-values
             app.kubernetes.io/component: query-frontend
-      tolerations:
-        []
       terminationGracePeriodSeconds: 390
       volumes:
         - name: config

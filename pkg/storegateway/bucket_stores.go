@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -76,6 +77,9 @@ type BucketStores struct {
 	storesMu sync.RWMutex
 	stores   map[string]*BucketStore
 
+	// Tenants that are specifically enabled or disabled via configuration
+	allowedTenants *util.AllowedTenants
+
 	// Metrics.
 	syncTimes         prometheus.Histogram
 	syncLastSuccess   prometheus.Gauge
@@ -85,7 +89,7 @@ type BucketStores struct {
 }
 
 // NewBucketStores makes a new BucketStores.
-func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
+func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowedTenants, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	chunksCacheClient, err := cache.CreateClient("chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, errors.Wrapf(err, "chunks-cache")
@@ -118,6 +122,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		limits:             limits,
 		bucket:             cachingBucket,
 		shardingStrategy:   shardingStrategy,
+		allowedTenants:     allowedTenants,
 		stores:             map[string]*BucketStore{},
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
@@ -229,9 +234,6 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 	errs := tsdb_errors.NewMulti()
 	errsMx := sync.Mutex{}
 
-	// Scan users in the bucket. In case of error, it may return a subset of users. If we sync a subset of users
-	// during a periodic sync, we may end up unloading blocks for users that still belong to this store-gateway
-	// so we do prefer to not run the sync at all.
 	userIDs, err := u.scanUsers(ctx)
 	if err != nil {
 		return err
@@ -360,10 +362,22 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return store.LabelValues(ctx, req)
 }
 
-// scanUsers in the bucket and return the list of found users. If an error occurs while
-// iterating the bucket, it may return both an error and a subset of the users in the bucket.
+// scanUsers in the bucket and return the list of found users, respecting any specifically
+// enabled or disabled users.
 func (u *BucketStores) scanUsers(ctx context.Context) ([]string, error) {
-	return tsdb.ListUsers(ctx, u.bucket)
+	users, err := tsdb.ListUsers(ctx, u.bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]string, 0, len(users))
+	for _, user := range users {
+		if u.allowedTenants.IsAllowed(user) {
+			filtered = append(filtered, user)
+		}
+	}
+
+	return filtered, nil
 }
 
 func (u *BucketStores) getStore(userID string) *BucketStore {

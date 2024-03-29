@@ -48,12 +48,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -62,8 +56,6 @@ spec:
           matchLabels:
             app: enterprise-metrics-alertmanager
             release: test-enterprise-legacy-label-values
-      tolerations:
-        []
       terminationGracePeriodSeconds: 60
       volumes:
         - name: config

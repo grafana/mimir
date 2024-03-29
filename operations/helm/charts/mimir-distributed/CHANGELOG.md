@@ -28,11 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [FEATURE] Added experimental feature for deploying [KEDA](https://keda.sh) ScaledObjects as part of the helm chart for the components: distributor, querier, query-frontend and ruler. #7282 #7392
-  * Autoscaling can be enabled via `distributor.kedaAutoscaling`, `ruler.kedaAutoscaling`, `query_frontend.kedaAutoscaling`, and `querier.kedaAutoscaling`.
-  * Global configuration of `promtheusAddress`, `pollingInterval` and `customHeaders` can be found in `kedaAutoscaling`section.
-  * Requires metamonitoring or custom installed Prometheus compatible solution, for more details on metamonitoring see [Monitor the health of your system](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/). See [grafana/mimir#7367](https://github.com/grafana/mimir/issues/7367) for a migration procedure.
-* [FEATURE] Gateway: Allow to configure whether or not NGINX binds IPv6 via `gateway.nginx.config.enableIPv6`. #7421
+* [CHANGE] Do not render resource blocks for `initContainers`, `nodeSelector`, `affinity` and `tolerations` if they are empty.
 * [CHANGE] Rollout-operator: remove default CPU limit. #7125
 * [CHANGE] Ring: relaxed the hash ring heartbeat period and timeout for distributor, ingester, store-gateway and compactor: #6860
   * `-distributor.ring.heartbeat-period` set to `1m`
@@ -47,6 +43,11 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Remove `-server.grpc.keepalive.max-connection-age` and `-server.grpc.keepalive.max-connection-age-grace` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7269
 * [CHANGE] Remove `-server.grpc.keepalive.max-connection-idle` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7298
 * [CHANGE] Distributor: termination grace period increased from 60s to 100s.
+* [FEATURE] Added experimental feature for deploying [KEDA](https://keda.sh) ScaledObjects as part of the helm chart for the components: distributor, querier, query-frontend and ruler. #7282 #7392 #7679
+  * Autoscaling can be enabled via `distributor.kedaAutoscaling`, `ruler.kedaAutoscaling`, `query_frontend.kedaAutoscaling`, and `querier.kedaAutoscaling`.
+  * Global configuration of `promtheusAddress`, `pollingInterval` and `customHeaders` can be found in `kedaAutoscaling`section.
+  * Requires metamonitoring or custom installed Prometheus compatible solution, for more details on metamonitoring see [Monitor the health of your system](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/). See [grafana/mimir#7367](https://github.com/grafana/mimir/issues/7367) for a migration procedure.
+* [FEATURE] Gateway: Allow to configure whether or not NGINX binds IPv6 via `gateway.nginx.config.enableIPv6`. #7421
 * [ENHANCEMENT] Add `jaegerReporterMaxQueueSize` Helm value for all components where configuring `JAEGER_REPORTER_MAX_QUEUE_SIZE` makes sense, and override the Jaeger client's default value of 100 for components expected to generate many trace spans. #7068 #7086 #7259
 * [ENHANCEMENT] Rollout-operator: upgraded to v0.13.0. #7469
 * [ENHANCEMENT] Query-frontend: configured `-shutdown-delay`, `-server.grpc.keepalive.max-connection-age` and termination grace period to reduce the likelihood of queries hitting terminated query-frontends. #7129
@@ -57,9 +58,14 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Make the PSP template configurable via `rbac.podSecurityPolicy`. #7190
 * [ENHANCEMENT] Recording rules: add native histogram recording rules to `cortex_request_duration_seconds`. #7528
 * [ENHANCEMENT] Make the port used in ServiceMonitor for kube-state-metrics configurable. #7507
+* [ENHANCEMENT] Produce a clearer error messages when multiple X-Scope-OrgID headers are present. #7704
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
 * [BUGFIX] Recording rules: drop rules for metrics removed in 2.0: `cortex_memcache_request_duration_seconds` and `cortex_cache_request_duration_seconds`. #7514
 * [BUGFIX] Store-gateway: setting "resources.requests.memory" with a quantity that used power-of-ten SI suffix, caused an error. #7506
+
+## 5.2.3
+
+* [BUGFIX] admin-cache: set max connections to fix failure to start #7632
 
 ## 5.2.2
 

@@ -86,6 +86,7 @@ const (
 	Queryable                  string = "queryable"
 	StoreQueryable             string = "store-queryable"
 	QueryFrontend              string = "query-frontend"
+	QueryFrontendCodec         string = "query-frontend-codec"
 	QueryFrontendTripperware   string = "query-frontend-tripperware"
 	RulerStorage               string = "ruler-storage"
 	Ruler                      string = "ruler"
@@ -288,9 +289,9 @@ func (t *Mimir) initServer() (services.Service, error) {
 	// t.Ingester or t.Distributor will be available. There's no race condition here, because gRPC server (service returned by this method, ie. initServer)
 	// is started only after t.Ingester and t.Distributor are set in initIngester or initDistributorService.
 
-	var ingFn func() ingesterPushReceiver
+	var ingFn func() pushReceiver
 	if t.Cfg.Ingester.LimitInflightRequestsUsingGrpcMethodLimiter {
-		ingFn = func() ingesterPushReceiver {
+		ingFn = func() pushReceiver {
 			// Return explicit nil, if there's no ingester. We don't want to return typed-nil as interface value.
 			if t.Ingester == nil {
 				return nil
@@ -299,9 +300,9 @@ func (t *Mimir) initServer() (services.Service, error) {
 		}
 	}
 
-	var distFn func() distributorPushReceiver
+	var distFn func() pushReceiver
 	if t.Cfg.Distributor.LimitInflightRequestsUsingGrpcMethodLimiter {
-		distFn = func() distributorPushReceiver {
+		distFn = func() pushReceiver {
 			// Return explicit nil, if there's no distributor. We don't want to return typed-nil as interface value.
 			if t.Distributor == nil {
 				return nil
@@ -470,7 +471,6 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isAnyModuleEnabled(Distributor, Write, All)
 
-	t.Cfg.Distributor.PreferStreamingChunksFromIngesters = t.Cfg.Querier.PreferStreamingChunksFromIngesters
 	t.Cfg.Distributor.StreamingChunksPerIngesterSeriesBufferSize = t.Cfg.Querier.StreamingChunksPerIngesterSeriesBufferSize
 	t.Cfg.Distributor.MinimizeIngesterRequests = t.Cfg.Querier.MinimizeIngesterRequests
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
@@ -707,10 +707,16 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 	return t.Flusher, nil
 }
 
+// initQueryFrontendCodec initializes query frontend codec.
+// NOTE: Grafana Enterprise Metrics depends on this.
+func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
+	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat)
+	return nil, nil
+}
+
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
-	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat)
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
 	engineOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
@@ -752,9 +758,13 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		frontendSvc = frontendV2
 	}
 
-	// Wrap roundtripper into Tripperware and then wrap this with the roundtripper that checks that the frontend is ready to receive requests.
+	// Wrap roundtripper into Tripperware and then wrap this with the roundtripper that checks
+	// that the frontend is ready to receive requests when running v1 or v2 of the query-frontend,
+	// i.e. not using the "downstream-url" feature.
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
-	roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendSvc, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
+	if frontendSvc != nil {
+		roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendSvc, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
+	}
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
@@ -1068,6 +1078,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(Querier, t.initQuerier)
 	mm.RegisterModule(StoreQueryable, t.initStoreQueryable, modules.UserInvisibleModule)
+	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
@@ -1103,7 +1114,7 @@ func (t *Mimir) setupModuleManager() error {
 		Queryable:                {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
 		Querier:                  {TenantFederation, Vault},
 		StoreQueryable:           {Overrides, MemberlistKV},
-		QueryFrontendTripperware: {API, Overrides},
+		QueryFrontendTripperware: {API, Overrides, QueryFrontendCodec},
 		QueryFrontend:            {QueryFrontendTripperware, MemberlistKV, Vault},
 		QueryScheduler:           {API, Overrides, MemberlistKV, Vault},
 		Ruler:                    {DistributorService, StoreQueryable, RulerStorage, Vault},
