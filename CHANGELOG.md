@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [FEATURE] Continuous-test: now runable as a module with `mimir -target=continuous-test`. #7747
 * [ENHANCEMENT] Store-gateway: merge series from different blocks concurrently. #7456
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
