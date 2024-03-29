@@ -25,16 +25,20 @@ import (
 func main() {
 	// Parse CLI arguments.
 	cfg := &continuoustest.Config{}
-	flag.CommandLine.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
+	var (
+		serverMetricsPort int
+		logLevel          log.Level
+	)
+	flag.CommandLine.IntVar(&serverMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
 	cfg.RegisterFlags(flag.CommandLine)
-	cfg.LogLevel.RegisterFlags(flag.CommandLine)
+	logLevel.RegisterFlags(flag.CommandLine)
 
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}
 
-	util_log.InitLogger(log.LogfmtFormat, cfg.LogLevel, false, util_log.RateLimitedLoggerCfg{})
+	util_log.InitLogger(log.LogfmtFormat, logLevel, false, util_log.RateLimitedLoggerCfg{})
 
 	// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
 	if trace, err := tracing.NewFromEnv("mimir-continuous-test", jaegercfg.MaxTagValueLength(16e3)); err != nil {
@@ -50,7 +54,7 @@ func main() {
 	registry.MustRegister(version.NewCollector("mimir_continuous_test"))
 	registry.MustRegister(collectors.NewGoCollector())
 
-	i := instrumentation.NewMetricsServer(cfg.ServerMetricsPort, registry)
+	i := instrumentation.NewMetricsServer(serverMetricsPort, registry)
 	if err := i.Start(); err != nil {
 		level.Error(logger).Log("msg", "Unable to start instrumentation server", "err", err.Error())
 		util_log.Flush()

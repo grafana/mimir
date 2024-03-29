@@ -4,13 +4,9 @@ package continuoustest
 
 import (
 	"flag"
-
-	"github.com/grafana/dskit/log"
 )
 
 type Config struct {
-	ServerMetricsPort   int                       `yaml:"-"`
-	LogLevel            log.Level                 `yaml:"-"`
 	Client              ClientConfig              `yaml:"-"`
 	Manager             ManagerConfig             `yaml:"-"`
 	WriteReadSeriesTest WriteReadSeriesTestConfig `yaml:"-"`
