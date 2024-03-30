@@ -784,6 +784,7 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		}
 
 		if !d.limits.MetricRelabelingEnabled(userID) {
+			cleanupInDefer = false
 			return next(ctx, pushReq)
 		}
 
