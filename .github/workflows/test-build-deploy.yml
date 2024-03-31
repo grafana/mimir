@@ -68,7 +68,7 @@ jobs:
         run: |
           echo "path=$(golangci-lint cache status | grep 'Dir: ' | cut -d ' ' -f2)" >> "$GITHUB_OUTPUT"
       - name: Cache golangci-lint cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           key: lint-golangci-lint-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', '.golangci.yml', 'Makefile') }}
           path: ${{ steps.golangcilintcache.outputs.path }}
@@ -78,14 +78,14 @@ jobs:
           echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
           echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
       - name: Cache Go build cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           key: lint-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           path: ${{ steps.goenv.outputs.gocache }}
       # Although we use vendoring, this linting job downloads all modules to verify that what is vendored is correct,
       # so it'll use GOMODCACHE. Other jobs don't need this.
       - name: Cache Go module cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           key: lint-go-mod-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           path: ${{ steps.goenv.outputs.gomodcache }}
@@ -222,7 +222,7 @@ jobs:
         run: |
           echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
       - name: Cache Go build cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           # Cache is shared between test groups.
           key: test-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
@@ -262,7 +262,7 @@ jobs:
         run: |
           echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
       - name: Cache Go build cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           key: build-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           path: ${{ steps.gocache.outputs.path }}
@@ -331,7 +331,7 @@ jobs:
         run: |
           echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
       - name: Cache Go build cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           # Cache is shared between test groups.
           key: integration-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
@@ -404,7 +404,7 @@ jobs:
         run: |
           echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
       - name: Cache Go build cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           # Cache is shared between test groups.
           key: integration-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
