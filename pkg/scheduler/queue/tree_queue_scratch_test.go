@@ -14,16 +14,8 @@ import (
 // Dequeuing from a balanced tree allows the test to have a simple looped structures
 // while running checks to ensure that round-robin order is respected.
 func TestDequeueBalancedTree_TreeQueueImplA(t *testing.T) {
-	roundRobinState1 := &RoundRobinState{
-		currentChildQueueIndex: -1,
-		childQueueOrder:        []string{"ingester", "ingester-and-store-gateway", "store-gateway"},
-		currentDequeueAttempts: 0,
-	}
-	roundRobinState2 := &RoundRobinState{
-		currentChildQueueIndex: -1,
-		childQueueOrder:        []string{"tenantA", "tenantB"},
-		currentDequeueAttempts: 0,
-	}
+	roundRobinState1 := NewRoundRobinState()
+	roundRobinState2 := NewRoundRobinState()
 
 	treeLevelQueueAlgoStates := []*RoundRobinState{roundRobinState1, roundRobinState2}
 
@@ -115,11 +107,6 @@ func TestDequeueBalancedTree_TreeQueueImplA(t *testing.T) {
 
 	dequeueOps := make([]*DequeueLevelOps, len(treeLevelQueueAlgoStates))
 
-	//var v any
-	for i, algoState := range treeLevelQueueAlgoStates {
-		dequeueOps[i] = algoState.MakeDequeueNodeSelectFunc()
-	}
-
 	itemCount := tree.ItemCount()
 	for i := 0; i < itemCount; i++ {
 		for level, algoState := range treeLevelQueueAlgoStates {
@@ -128,6 +115,7 @@ func TestDequeueBalancedTree_TreeQueueImplA(t *testing.T) {
 
 		v, err := tree.Dequeue(dequeueOps)
 		require.NoError(t, err)
+		fmt.Println(fmt.Sprintf("%d", i))
 		fmt.Println(fmt.Sprintf("%v", v))
 	}
 

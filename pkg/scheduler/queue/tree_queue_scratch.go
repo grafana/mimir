@@ -35,8 +35,18 @@ const NodeLocalQueueName = "_local"
 
 type RoundRobinState struct {
 	currentChildQueueIndex int
+	childQueueNodeNames    map[string]struct{}
 	childQueueOrder        []string
 	currentDequeueAttempts int
+}
+
+func NewRoundRobinState() *RoundRobinState {
+	return &RoundRobinState{
+		currentChildQueueIndex: -1,
+		childQueueNodeNames:    map[string]struct{}{},
+		childQueueOrder:        nil,
+		currentDequeueAttempts: 0,
+	}
 }
 
 func (rrs *RoundRobinState) wrapIndex(increment bool) {
@@ -50,21 +60,25 @@ func (rrs *RoundRobinState) wrapIndex(increment bool) {
 
 func (rrs *RoundRobinState) MakeEnqueueStateUpdateFunc() EnqueueStateUpdateFunc {
 	return func(nodeName string, _ bool) {
-		if rrs.currentChildQueueIndex == localQueueIndex {
-			// special case; cannot slice into childQueueOrder with index -1
-			// place at end of slice, which is the last slot before the local queue slot
-			rrs.childQueueOrder = append(rrs.childQueueOrder, nodeName)
-		} else {
-			// insert into order behind current child queue index
-			rrs.childQueueOrder = append(
-				rrs.childQueueOrder[:rrs.currentChildQueueIndex],
-				append(
-					[]string{nodeName},
-					rrs.childQueueOrder[rrs.currentChildQueueIndex:]...,
-				)...,
-			)
-			// update current child queue index to its new place in the expanded slice
-			rrs.currentChildQueueIndex++
+		// the only thing we need to do is add the node name to the rotation if it does not exist
+		if _, ok := rrs.childQueueNodeNames[nodeName]; !ok {
+			if rrs.currentChildQueueIndex == localQueueIndex {
+				// special case; cannot slice into childQueueOrder with index -1
+				// place at end of slice, which is the last slot before the local queue slot
+				rrs.childQueueOrder = append(rrs.childQueueOrder, nodeName)
+			} else {
+				// insert into order behind current child queue index
+				rrs.childQueueOrder = append(
+					rrs.childQueueOrder[:rrs.currentChildQueueIndex],
+					append(
+						[]string{nodeName},
+						rrs.childQueueOrder[rrs.currentChildQueueIndex:]...,
+					)...,
+				)
+				// update current child queue index to its new place in the expanded slice
+				rrs.currentChildQueueIndex++
+			}
+			rrs.childQueueNodeNames[nodeName] = struct{}{}
 		}
 	}
 }
@@ -85,7 +99,7 @@ func (rrs *RoundRobinState) MakeDequeueNodeSelectFunc() *DequeueLevelOps {
 		return rrs.childQueueOrder[rrs.currentChildQueueIndex], stop
 	}
 
-	stateUpdateFunc := func(dequeuedNodeName string, nodeDeleted bool) {
+	stateUpdateFunc := func(dequeuedNodeName string, _ bool) {
 		dequeueSuccess := dequeuedNodeName != ""
 		if dequeueSuccess {
 			rrs.currentDequeueAttempts = 0
@@ -93,17 +107,7 @@ func (rrs *RoundRobinState) MakeDequeueNodeSelectFunc() *DequeueLevelOps {
 			rrs.currentDequeueAttempts++
 		}
 
-		if nodeDeleted {
-			for i, name := range rrs.childQueueOrder {
-				if name == dequeuedNodeName {
-					rrs.childQueueOrder = append(rrs.childQueueOrder[:i], rrs.childQueueOrder[i+1:]...)
-					rrs.wrapIndex(false)
-					break
-				}
-			}
-		} else {
-			rrs.wrapIndex(true)
-		}
+		rrs.wrapIndex(true)
 	}
 
 	return &DequeueLevelOps{selectFunc, stateUpdateFunc}
@@ -162,57 +166,76 @@ func (tqa *TreeQueueImplA) Dequeue(ops []*DequeueLevelOps) (any, error) {
 	var v any
 	// error for ops longer than maxDepth ?
 
+	//stop := false
 	currentNode := tqa
 
 	// walk down tree selecting nodes until we dequeue
 	for opDepth, op := range ops {
-		childNodeName, _ := op.Select()
-
-		if childNodeName == NodeLocalQueueName {
-			// dequeue operations selected the local queue for the current node level;
-			// no need to go any deeper. dequeue from the current node's local queue.
-			if currentNode.localQueue != nil {
-				if elem := currentNode.localQueue.Front(); elem != nil {
-					currentNode.localQueue.Remove(elem)
-					v = elem.Value
-				}
+		for {
+			childNodeName, stop := op.Select()
+			if stop {
+				// we are done;
+				// queue algorithm has exhausted its options
+				// before we found a non-empty node to dequeue from
+				op.UpdateState("", false)
+				break
 			}
-			// we are done.
-			// inform the queue algorithm of successful node selection
-			op.UpdateState(childNodeName, false)
+
+			if childNodeName == NodeLocalQueueName {
+				// dequeue operations selected the local queue for the current node level;
+				// no need to go any deeper. dequeue from the current node's local queue.
+				if currentNode.localQueue != nil {
+					if elem := currentNode.localQueue.Front(); elem != nil {
+						currentNode.localQueue.Remove(elem)
+						v = elem.Value
+					}
+				}
+				if v != nil {
+					// we are done;
+					// inform the queue algorithm of successful node selection
+					op.UpdateState(childNodeName, false)
+					break
+				} else {
+					// there was nothing to dequeue in the node-local queue;
+					// inform the queue algorithm to select the next node and loop
+					op.UpdateState("", false)
+					continue
+				}
+
+			}
+
+			childNode, exists := currentNode.childNodeMap[childNodeName]
+			if !exists {
+				msg := fmt.Sprintf(
+					"child node %s selected from node %s at tree depth %d does not exist",
+					childNodeName, currentNode.name, opDepth,
+				)
+				return nil, errors.New(msg)
+			}
+
+			if opDepth+1 == len(ops) {
+				// reached the end; dequeue from selected child node-local queue
+				if childNode.localQueue != nil {
+					if elem := childNode.localQueue.Front(); elem != nil {
+						childNode.localQueue.Remove(elem)
+						v = elem.Value
+					}
+				}
+
+				if childNode.IsEmpty() {
+					delete(currentNode.childNodeMap, childNodeName)
+					op.UpdateState(childNodeName, true)
+				}
+			} else {
+				// still need to go deeper;
+				// but inform the queue algorithm of successful node selection
+				op.UpdateState(childNodeName, false)
+			}
+
+			// update current node to continue walking down the tree
+			currentNode = childNode
 			break
 		}
-
-		childNode, exists := currentNode.childNodeMap[childNodeName]
-		if !exists {
-			msg := fmt.Sprintf(
-				"child node %s selected from node %s at tree depth %d does not exist",
-				childNodeName, currentNode.name, opDepth,
-			)
-			return nil, errors.New(msg)
-		}
-
-		if opDepth+1 == len(ops) {
-			// reached the end; dequeue from selected child node's local queue
-			if childNode.localQueue != nil {
-				if elem := childNode.localQueue.Front(); elem != nil {
-					childNode.localQueue.Remove(elem)
-					v = elem.Value
-				}
-			}
-
-			if childNode.IsEmpty() {
-				delete(currentNode.childNodeMap, childNodeName)
-				op.UpdateState(childNodeName, true)
-			}
-		} else {
-			// still need to go deeper;
-			// but inform the queue algorithm of successful node selection
-			op.UpdateState(childNodeName, false)
-		}
-
-		// update current node to continue walking down the tree
-		currentNode = childNode
 	}
 
 	return v, nil
@@ -232,6 +255,8 @@ func (tqa *TreeQueueImplA) IsEmpty() bool {
 }
 
 //// NodeCount counts the TreeQueue node and all its children, recursively.
+// There's a bug - I am double-counting when I recur for reasons I understand
+// but haven't figured out how to solve  elegantly yet
 //func (tqa *TreeQueueImplA) NodeCount() int {
 //	count := 1 // count self
 //	for _, childNode := range tqa.childNodeMap {
