@@ -11,7 +11,6 @@ import (
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -20,11 +19,8 @@ import (
 type RangeVectorSelectorWithTransformation struct {
 	Selector *Selector
 
-	startTimestamp       int64
-	endTimestamp         int64
-	intervalMilliseconds int64
-	rangeMilliseconds    int64
-	numSteps             int
+	rangeMilliseconds int64
+	numSteps          int
 
 	chunkIterator chunkenc.Iterator
 	buffer        *RingBuffer
@@ -34,11 +30,8 @@ var _ InstantVectorOperator = &RangeVectorSelectorWithTransformation{}
 
 func (m *RangeVectorSelectorWithTransformation) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	// Compute values we need on every call to Next() once, here.
-	m.startTimestamp = timestamp.FromTime(m.Selector.Start)
-	m.endTimestamp = timestamp.FromTime(m.Selector.End)
-	m.intervalMilliseconds = durationMilliseconds(m.Selector.Interval)
-	m.rangeMilliseconds = durationMilliseconds(m.Selector.Range)
-	m.numSteps = stepCount(m.startTimestamp, m.endTimestamp, m.intervalMilliseconds)
+	m.rangeMilliseconds = DurationMilliseconds(m.Selector.Range)
+	m.numSteps = stepCount(m.Selector.Start, m.Selector.End, m.Selector.Interval)
 
 	metadata, err := m.Selector.Series(ctx)
 	if err != nil {
@@ -78,7 +71,7 @@ func (m *RangeVectorSelectorWithTransformation) Next(_ context.Context) (Instant
 
 	// TODO: test behaviour with resets, missing points, extrapolation, stale markers
 	// TODO: handle native histograms
-	for stepT := m.startTimestamp; stepT <= m.endTimestamp; stepT += m.intervalMilliseconds {
+	for stepT := m.Selector.Start; stepT <= m.Selector.End; stepT += m.Selector.Interval {
 		rangeEnd := stepT
 
 		if m.Selector.Timestamp != nil {

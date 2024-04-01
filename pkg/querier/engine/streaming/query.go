@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -90,10 +91,10 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 		return &operator.InstantVectorSelector{
 			Selector: &operator.Selector{
 				Queryable:     q.queryable,
-				Start:         q.statement.Start,
-				End:           q.statement.End,
+				Start:         timestamp.FromTime(q.statement.Start),
+				End:           timestamp.FromTime(q.statement.End),
 				Timestamp:     e.Timestamp,
-				Interval:      interval,
+				Interval:      operator.DurationMilliseconds(interval),
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
 			},
@@ -151,10 +152,10 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 		return &operator.RangeVectorSelectorWithTransformation{
 			Selector: &operator.Selector{
 				Queryable: q.queryable,
-				Start:     q.statement.Start,
-				End:       q.statement.End,
+				Start:     timestamp.FromTime(q.statement.Start),
+				End:       timestamp.FromTime(q.statement.End),
 				Timestamp: vectorSelector.Timestamp,
-				Interval:  interval,
+				Interval:  operator.DurationMilliseconds(interval),
 				Range:     matrixSelector.Range,
 				Matchers:  vectorSelector.LabelMatchers,
 			},

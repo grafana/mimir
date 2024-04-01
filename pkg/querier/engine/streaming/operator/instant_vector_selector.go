@@ -11,7 +11,6 @@ import (
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -21,10 +20,7 @@ import (
 type InstantVectorSelector struct {
 	Selector *Selector
 
-	startTimestamp       int64
-	endTimestamp         int64
-	intervalMilliseconds int64
-	numSteps             int
+	numSteps int
 
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
@@ -33,18 +29,15 @@ type InstantVectorSelector struct {
 var _ InstantVectorOperator = &InstantVectorSelector{}
 
 func (v *InstantVectorSelector) Series(ctx context.Context) ([]SeriesMetadata, error) {
-	// Compute values we need on every call to Next() once, here.
-	v.startTimestamp = timestamp.FromTime(v.Selector.Start)
-	v.endTimestamp = timestamp.FromTime(v.Selector.End)
-	v.intervalMilliseconds = durationMilliseconds(v.Selector.Interval)
-	v.numSteps = stepCount(v.startTimestamp, v.endTimestamp, v.intervalMilliseconds)
+	// Compute value we need on every call to Next() once, here.
+	v.numSteps = stepCount(v.Selector.Start, v.Selector.End, v.Selector.Interval)
 
 	return v.Selector.Series(ctx)
 }
 
 func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData, error) {
 	if v.memoizedIterator == nil {
-		v.memoizedIterator = storage.NewMemoizedEmptyIterator(durationMilliseconds(v.Selector.LookbackDelta))
+		v.memoizedIterator = storage.NewMemoizedEmptyIterator(DurationMilliseconds(v.Selector.LookbackDelta))
 	}
 
 	var err error
@@ -59,7 +52,7 @@ func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData
 		Floats: GetFPointSlice(v.numSteps), // TODO: only allocate this if we have any floats
 	}
 
-	for stepT := v.startTimestamp; stepT <= v.endTimestamp; stepT += v.intervalMilliseconds {
+	for stepT := v.Selector.Start; stepT <= v.Selector.End; stepT += v.Selector.Interval {
 		var t int64
 		var val float64
 		var h *histogram.FloatHistogram
@@ -89,7 +82,7 @@ func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData
 			if h != nil {
 				return InstantVectorSeriesData{}, errors.New("don't support histograms")
 			}
-			if !ok || t < ts-durationMilliseconds(v.Selector.LookbackDelta) {
+			if !ok || t < ts-DurationMilliseconds(v.Selector.LookbackDelta) {
 				continue
 			}
 		}

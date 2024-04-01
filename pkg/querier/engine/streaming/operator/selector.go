@@ -9,17 +9,16 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 type Selector struct {
 	Queryable storage.Queryable
-	Start     time.Time // TODO: just take int64 here, and remove duplicate calculation in InstantVectorSelector and RangeVectorSelectorWithTransformation
-	End       time.Time // TODO: just take int64 here, and remove duplicate calculation in InstantVectorSelector and RangeVectorSelectorWithTransformation
+	Start     int64 // Milliseconds since Unix epoch
+	End       int64 // Milliseconds since Unix epoch
 	Timestamp *int64
-	Interval  time.Duration // TODO: just take int64 here, and remove duplicate calculation in InstantVectorSelector and RangeVectorSelectorWithTransformation
+	Interval  int64 // In milliseconds
 	Matchers  []*labels.Matcher
 
 	// Set for instant vector selectors, otherwise 0.
@@ -49,21 +48,21 @@ func (s *Selector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 		return nil, errors.New("invalid Selector configuration: both LookbackDelta and Range are non-zero")
 	}
 
-	startTimestamp := timestamp.FromTime(s.Start)
-	endTimestamp := timestamp.FromTime(s.End)
+	startTimestamp := s.Start
+	endTimestamp := s.End
 
 	if s.Timestamp != nil {
 		startTimestamp = *s.Timestamp
 		endTimestamp = *s.Timestamp
 	}
 
-	rangeMilliseconds := durationMilliseconds(s.Range)
-	start := startTimestamp - durationMilliseconds(s.LookbackDelta) - rangeMilliseconds
+	rangeMilliseconds := DurationMilliseconds(s.Range)
+	start := startTimestamp - DurationMilliseconds(s.LookbackDelta) - rangeMilliseconds
 
 	hints := &storage.SelectHints{
 		Start: start,
 		End:   endTimestamp,
-		Step:  durationMilliseconds(s.Interval),
+		Step:  s.Interval,
 		Range: rangeMilliseconds,
 		// TODO: do we need to include other hints like Func, By, Grouping?
 	}
