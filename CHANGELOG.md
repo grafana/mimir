@@ -47,6 +47,7 @@
 
 ### Mimir Continuous Test
 
++* [CHANGE] `mimir-continuous-test` binary will be deprecated and replaced by a Mimir module that can be run as a target from the `mimir` binary. The grafana/mimir-continuous-test Docker image will continue the same behavior. #7753
 * [BUGFIX] Set `User-Agent` header for all requests sent from the testing client. #7607
 
 ### Query-tee
