@@ -3,6 +3,7 @@
 package querymiddleware
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -366,7 +367,7 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 func (s *shardActiveSeriesMiddleware) mergeResponsesWithZeroAllocationDecoder(ctx context.Context, responses []*http.Response, encoding string) *http.Response {
 	reader, writer := io.Pipe()
 
-	items := make(chan chan activeSeriesDataChunk, len(responses))
+	streams := make(chan chan *bytes.Buffer, len(responses))
 
 	g, gCtx := errgroup.WithContext(ctx)
 	for _, res := range responses {
@@ -375,17 +376,17 @@ func (s *shardActiveSeriesMiddleware) mergeResponsesWithZeroAllocationDecoder(ct
 		}
 		r := res
 		g.Go(func() error {
-			dec := borrowShardActiveSeriesResponseDecoder(gCtx, r.Body)
+			streamCh := make(chan *bytes.Buffer)
+			dec := borrowShardActiveSeriesResponseDecoder(gCtx, r.Body, streamCh)
 			defer func() {
 				dec.close()
 				reuseShardActiveSeriesResponseDecoder(dec)
 			}()
 
-			chunkCh, err := dec.decode()
-			if err != nil {
+			if err := dec.decode(); err != nil {
 				return err
 			}
-			items <- chunkCh
+			streams <- streamCh
 
 			return dec.streamData()
 		})
@@ -394,7 +395,7 @@ func (s *shardActiveSeriesMiddleware) mergeResponsesWithZeroAllocationDecoder(ct
 	go func() {
 		// We ignore the error from the errgroup because it will be checked again later.
 		_ = g.Wait()
-		close(items)
+		close(streams)
 	}()
 
 	resp := &http.Response{Body: reader, StatusCode: http.StatusOK, Header: http.Header{}}
@@ -403,7 +404,7 @@ func (s *shardActiveSeriesMiddleware) mergeResponsesWithZeroAllocationDecoder(ct
 		resp.Header.Set("Content-Encoding", encodingTypeSnappyFramed)
 	}
 
-	go s.writeMergedResponseWithZeroAllocationDecoder(gCtx, g.Wait, writer, items, encoding)
+	go s.writeMergedResponseWithZeroAllocationDecoder(gCtx, g.Wait, writer, streams, encoding)
 
 	return resp
 }
@@ -487,7 +488,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 	stream.WriteObjectEnd()
 }
 
-func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecoder(ctx context.Context, check func() error, w io.WriteCloser, items chan chan activeSeriesDataChunk, encoding string) {
+func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecoder(ctx context.Context, check func() error, w io.WriteCloser, streams chan chan *bytes.Buffer, encoding string) {
 	defer w.Close()
 
 	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveSeries.writeMergedResponseWithZeroAllocationDecoder")
@@ -522,26 +523,21 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecod
 	stream.WriteObjectField("data")
 	stream.WriteArrayStart()
 	firstItem := true
-	for chunkCh := range items {
-		chunk := <-chunkCh
-		if chunk.done {
-			continue
-		}
+	for streamCh := range streams {
+		for streamBuf := range streamCh {
+			if firstItem {
+				firstItem = false
+			} else {
+				stream.WriteMore()
+			}
 
-		if firstItem {
-			firstItem = false
-		} else {
-			stream.WriteMore()
-		}
-
-		for {
-			chunkStr := unsafe.String(
-				unsafe.SliceData(chunk.buff.Bytes()),
-				chunk.buff.Len(),
+			rawStr := unsafe.String(
+				unsafe.SliceData(streamBuf.Bytes()),
+				streamBuf.Len(),
 			)
 
 			// Write the value as is, since it's already a JSON array.
-			stream.WriteRaw(chunkStr)
+			stream.WriteRaw(rawStr)
 
 			// Flush the stream buffer if it's getting too large.
 			if stream.Buffered() > jsoniterMaxBufferSize {
@@ -549,12 +545,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecod
 			}
 
 			// Reuse chunk buffer.
-			reuseActiveSeriesDataChunkBuffer(chunk.buff)
-
-			chunk = <-chunkCh
-			if chunk.done {
-				break
-			}
+			reuseActiveSeriesDataChunkBuffer(streamBuf)
 		}
 	}
 	stream.WriteArrayEnd()

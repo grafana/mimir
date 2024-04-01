@@ -31,24 +31,18 @@ var shardActiveSeriesResponseDecoderPool = sync.Pool{
 		return &shardActiveSeriesResponseDecoder{
 			br:      bufio.NewReaderSize(nil, 4096),
 			strBuff: make([]byte, 0, 256),
-			chunkCh: make(chan activeSeriesDataChunk),
 		}
 	},
 }
 
-type activeSeriesDataChunk struct {
-	buff *bytes.Buffer
-	done bool
-}
-
-func borrowShardActiveSeriesResponseDecoder(ctx context.Context, rc io.ReadCloser) *shardActiveSeriesResponseDecoder {
+func borrowShardActiveSeriesResponseDecoder(ctx context.Context, rc io.ReadCloser, chunkCh chan<- *bytes.Buffer) *shardActiveSeriesResponseDecoder {
 	d := shardActiveSeriesResponseDecoderPool.Get().(*shardActiveSeriesResponseDecoder)
-	d.reset(ctx, rc)
+	d.reset(ctx, rc, chunkCh)
 	return d
 }
 
 func reuseShardActiveSeriesResponseDecoder(d *shardActiveSeriesResponseDecoder) {
-	d.reset(context.Background(), nil)
+	d.reset(context.Background(), nil, nil)
 	shardActiveSeriesResponseDecoderPool.Put(d)
 }
 
@@ -62,17 +56,18 @@ type shardActiveSeriesResponseDecoder struct {
 	rc             io.ReadCloser
 	br             *bufio.Reader
 	strBuff        []byte
-	chunkCh        chan activeSeriesDataChunk
+	streamCh       chan<- *bytes.Buffer
 	readBytesCount int
 	foundDataValue bool
 	err            error
 }
 
-func (d *shardActiveSeriesResponseDecoder) reset(ctx context.Context, rc io.ReadCloser) {
+func (d *shardActiveSeriesResponseDecoder) reset(ctx context.Context, rc io.ReadCloser, streamCh chan<- *bytes.Buffer) {
 	d.br.Reset(rc)
 
 	d.ctx = ctx
 	d.rc = rc
+	d.streamCh = streamCh
 	d.strBuff = d.strBuff[:0]
 	d.readBytesCount = 0
 	d.foundDataValue = false
@@ -87,14 +82,15 @@ func (d *shardActiveSeriesResponseDecoder) stickError(err error) {
 }
 
 func (d *shardActiveSeriesResponseDecoder) close() {
+	close(d.streamCh)
 	_, _ = io.Copy(io.Discard, d.rc)
 	_ = d.rc.Close()
 }
 
-func (d *shardActiveSeriesResponseDecoder) decode() (chan activeSeriesDataChunk, error) {
+func (d *shardActiveSeriesResponseDecoder) decode() error {
 	c := d.nextToken()
 	if d.err != nil {
-		return nil, d.err
+		return d.err
 	}
 	switch c {
 	case '{':
@@ -104,13 +100,13 @@ func (d *shardActiveSeriesResponseDecoder) decode() (chan activeSeriesDataChunk,
 			case "data":
 				d.readData()
 				if d.err != nil {
-					return nil, d.err
+					return d.err
 				}
-				return d.chunkCh, nil
+				return nil
 
 			case "error":
 				d.readError()
-				return nil, d.err
+				return d.err
 
 			default:
 				d.skipValue()
@@ -125,9 +121,9 @@ func (d *shardActiveSeriesResponseDecoder) decode() (chan activeSeriesDataChunk,
 		}
 
 	default:
-		return nil, fmt.Errorf("decode: expected {, found %c", c)
+		return fmt.Errorf("decode: expected {, found %c", c)
 	}
-	return nil, errors.New("expected data field at top level")
+	return errors.New("expected data field at top level")
 }
 
 func (d *shardActiveSeriesResponseDecoder) readData() {
@@ -165,10 +161,6 @@ func (d *shardActiveSeriesResponseDecoder) readError() {
 }
 
 func (d *shardActiveSeriesResponseDecoder) streamData() error {
-	defer func() {
-		d.chunkCh <- activeSeriesDataChunk{done: true} // Send remaining data.
-	}()
-
 	cb := activeSeriesChunkBufferPool.Get().(*bytes.Buffer)
 
 	inner := 1
@@ -180,7 +172,7 @@ func (d *shardActiveSeriesResponseDecoder) streamData() error {
 			inner--
 			if inner == 0 {
 				if cb.Len() > 0 {
-					d.chunkCh <- activeSeriesDataChunk{buff: cb}
+					d.streamCh <- cb
 				}
 				d.checkContextCanceled()
 				return d.err
@@ -189,7 +181,7 @@ func (d *shardActiveSeriesResponseDecoder) streamData() error {
 		cb.WriteByte(c)
 
 		if cb.Len() >= activeSeriesChunkMaxBufferSize {
-			d.chunkCh <- activeSeriesDataChunk{buff: cb}
+			d.streamCh <- cb
 			cb = activeSeriesChunkBufferPool.Get().(*bytes.Buffer)
 			d.checkContextCanceled()
 		}

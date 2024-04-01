@@ -3,6 +3,7 @@
 package querymiddleware
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"strings"
@@ -70,20 +71,21 @@ func TestShardActiveSeriesResponseDecoder(t *testing.T) {
 
 			errCh := make(chan error, 1)
 
+			streamCh := make(chan *bytes.Buffer)
+
 			r := strings.NewReader(tc.input)
-			d := borrowShardActiveSeriesResponseDecoder(context.Background(), io.NopCloser(r))
-			chunkCh, err := d.decode()
+			d := borrowShardActiveSeriesResponseDecoder(context.Background(), io.NopCloser(r), streamCh)
+
+			err := d.decode()
 			if err == nil {
 				go func() {
 					errCh <- d.streamData()
+					close(streamCh)
 				}()
 
 				// Drain the data channel.
-				for chunk := range chunkCh {
-					if chunk.done {
-						break
-					}
-					dataStr.WriteString(chunk.buff.String())
+				for streamBuf := range streamCh {
+					dataStr.WriteString(streamBuf.String())
 				}
 			} else {
 				errCh <- err
