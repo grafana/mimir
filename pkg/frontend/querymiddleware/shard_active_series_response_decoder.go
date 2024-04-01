@@ -18,7 +18,11 @@ import (
 	"unsafe"
 )
 
-const activeSeriesChunkMaxBufferSize = 1024 * 1024 // 1MB
+const (
+	activeSeriesChunkMaxBufferSize = 1024 * 1024 // 1MB
+
+	checkContextCancelledBytesInterval = 256
+)
 
 var activeSeriesChunkBufferPool = sync.Pool{
 	New: func() any {
@@ -46,7 +50,7 @@ func reuseShardActiveSeriesResponseDecoder(d *shardActiveSeriesResponseDecoder) 
 	shardActiveSeriesResponseDecoderPool.Put(d)
 }
 
-func reuseActiveSeriesDataChunkBuffer(buf *bytes.Buffer) {
+func reuseActiveSeriesDataStreamBuffer(buf *bytes.Buffer) {
 	buf.Reset()
 	activeSeriesChunkBufferPool.Put(buf)
 }
@@ -58,7 +62,6 @@ type shardActiveSeriesResponseDecoder struct {
 	strBuff        []byte
 	streamCh       chan<- *bytes.Buffer
 	readBytesCount int
-	foundDataValue bool
 	err            error
 }
 
@@ -70,7 +73,6 @@ func (d *shardActiveSeriesResponseDecoder) reset(ctx context.Context, rc io.Read
 	d.streamCh = streamCh
 	d.strBuff = d.strBuff[:0]
 	d.readBytesCount = 0
-	d.foundDataValue = false
 	d.err = nil
 }
 
@@ -328,9 +330,9 @@ func (d *shardActiveSeriesResponseDecoder) readByte() byte {
 		d.stickError(err)
 		return 0
 	}
-	// Check for context cancellation every 256 bytes.
+	// Check for context cancellation
 	d.readBytesCount++
-	if d.readBytesCount%256 == 0 {
+	if d.readBytesCount%checkContextCancelledBytesInterval == 0 {
 		d.checkContextCanceled()
 	}
 	return b

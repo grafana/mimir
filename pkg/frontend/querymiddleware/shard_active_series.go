@@ -538,7 +538,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecod
 		}
 
 		// Reuse stream buffer.
-		reuseActiveSeriesDataChunkBuffer(streamBuf)
+		reuseActiveSeriesDataStreamBuffer(streamBuf)
 	}
 	stream.WriteArrayEnd()
 
