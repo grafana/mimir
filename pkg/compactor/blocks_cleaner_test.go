@@ -1045,7 +1045,6 @@ func TestComputeCompactionJobs(t *testing.T) {
 	}
 
 	const user = "test"
-
 	twoHoursMS := 2 * time.Hour.Milliseconds()
 	dayMS := 24 * time.Hour.Milliseconds()
 
@@ -1055,77 +1054,85 @@ func TestComputeCompactionJobs(t *testing.T) {
 	blockMarkedForNoCompact := ulid.MustNew(ulid.Now(), rand.Reader)
 	require.NoError(t, block.MarkForNoCompact(context.Background(), log.NewNopLogger(), userBucket, blockMarkedForNoCompact, block.CriticalNoCompactReason, "testing", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
 
-	index := bucketindex.Index{}
+	cases := []struct {
+		name           string
+		blocks         bucketindex.Blocks
+		expectedSplits int
+		expectedMerges int
+	}{
+		{
+			name: "standard",
+			blocks: bucketindex.Blocks{
+				// Some 2h blocks that should be compacted together and split.
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
 
-	index.Blocks = bucketindex.Blocks{
-		// Some 2h blocks that should be compacted together and split.
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				// Some merge jobs.
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
 
-		// Some merge jobs.
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
 
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
-
-		// This merge job is skipped, as block is marked for no-compaction.
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
-		&bucketindex.Block{ID: blockMarkedForNoCompact, MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
-	}
-	{
-		// No grouping of jobs for split-compaction. All jobs will be in single split compaction.
-		jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, &index, cfg.CompactionBlockRanges, 3, 0)
-		require.NoError(t, err)
-		split, merge := computeSplitAndMergeJobs(jobs)
-		require.Equal(t, 1, split)
-		require.Equal(t, 2, merge)
-	}
-
-	index.Blocks = bucketindex.Blocks{
-		// Compactor wouldn't produce a job for this pair as their external labels differ:
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
-			Labels: map[string]string{
-				tsdb.OutOfOrderExternalLabel: tsdb.OutOfOrderExternalLabelValue,
+				// This merge job is skipped, as block is marked for no-compaction.
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
+				&bucketindex.Block{ID: blockMarkedForNoCompact, MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
 			},
+			expectedSplits: 1,
+			expectedMerges: 2,
 		},
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
-			Labels: map[string]string{
-				"another_label": "-1",
+		{
+			name: "labels don't match",
+			blocks: bucketindex.Blocks{
+				// Compactor wouldn't produce a job for this pair as their external labels differ:
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+					Labels: map[string]string{
+						tsdb.OutOfOrderExternalLabel: tsdb.OutOfOrderExternalLabelValue,
+					},
+				},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+					Labels: map[string]string{
+						"another_label": "-1",
+					},
+				},
 			},
+			expectedSplits: 0,
+			expectedMerges: 0,
 		},
-	}
-	{
-		jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, &index, cfg.CompactionBlockRanges, 3, 0)
-		require.NoError(t, err)
-		require.Empty(t, jobs)
+		{
+			name: "ignore deprecated labels",
+			blocks: bucketindex.Blocks{
+				// Compactor will ignore deprecated labels when computing jobs. Estimation should do the same.
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+					Labels: map[string]string{
+						"honored_label":                        "12345",
+						tsdb.DeprecatedTenantIDExternalLabel:   "tenant1",
+						tsdb.DeprecatedIngesterIDExternalLabel: "ingester1",
+					},
+				},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+					Labels: map[string]string{
+						"honored_label":                        "12345",
+						tsdb.DeprecatedTenantIDExternalLabel:   "tenant2",
+						tsdb.DeprecatedIngesterIDExternalLabel: "ingester2",
+					},
+				},
+			},
+			expectedSplits: 0,
+			expectedMerges: 1,
+		},
 	}
 
-	index.Blocks = bucketindex.Blocks{
-		// Compactor will ignore deprecated labels when computing jobs. Estimation should do the same.
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
-			Labels: map[string]string{
-				"honored_label":                        "12345",
-				tsdb.DeprecatedTenantIDExternalLabel:   "tenant1",
-				tsdb.DeprecatedIngesterIDExternalLabel: "ingester1",
-			},
-		},
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
-			Labels: map[string]string{
-				"honored_label":                        "12345",
-				tsdb.DeprecatedTenantIDExternalLabel:   "tenant2",
-				tsdb.DeprecatedIngesterIDExternalLabel: "ingester2",
-			},
-		},
-	}
-	{
-		jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, &index, cfg.CompactionBlockRanges, 3, 0)
-		require.NoError(t, err)
-		require.Len(t, jobs, 1)
-		split, merge := computeSplitAndMergeJobs(jobs)
-		require.Equal(t, 0, split)
-		require.Equal(t, 1, merge)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			index := &bucketindex.Index{Blocks: c.blocks}
+			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, 3, 0)
+			require.NoError(t, err)
+			split, merge := computeSplitAndMergeJobs(jobs)
+			require.Equal(t, c.expectedSplits, split)
+			require.Equal(t, c.expectedMerges, merge)
+		})
 	}
 }
 
