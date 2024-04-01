@@ -35,16 +35,16 @@ const NodeLocalQueueName = "_local"
 
 type RoundRobinState struct {
 	currentChildQueueIndex int
-	childQueueNodeNames    map[string]struct{}
-	childQueueOrder        []string
+	queueNodeCounts        map[string]int
+	queueNodeOrder         []string
 	currentDequeueAttempts int
 }
 
 func NewRoundRobinState() *RoundRobinState {
 	return &RoundRobinState{
 		currentChildQueueIndex: -1,
-		childQueueNodeNames:    map[string]struct{}{},
-		childQueueOrder:        nil,
+		queueNodeCounts:        map[string]int{},
+		queueNodeOrder:         nil,
 		currentDequeueAttempts: 0,
 	}
 }
@@ -53,38 +53,42 @@ func (rrs *RoundRobinState) wrapIndex(increment bool) {
 	if increment {
 		rrs.currentChildQueueIndex++
 	}
-	if rrs.currentChildQueueIndex >= len(rrs.childQueueOrder) {
+	if rrs.currentChildQueueIndex >= len(rrs.queueNodeOrder) {
 		rrs.currentChildQueueIndex = localQueueIndex
 	}
 }
 
 func (rrs *RoundRobinState) MakeEnqueueStateUpdateFunc() EnqueueStateUpdateFunc {
-	return func(nodeName string, _ bool) {
-		// the only thing we need to do is add the node name to the rotation if it does not exist
-		if _, ok := rrs.childQueueNodeNames[nodeName]; !ok {
+	return func(nodeName string, nodeCreated bool) {
+		// we just need to do is add the node to the rotation if it is not already tracked
+		if _, ok := rrs.queueNodeCounts[nodeName]; !ok {
 			if rrs.currentChildQueueIndex == localQueueIndex {
-				// special case; cannot slice into childQueueOrder with index -1
+				// special case; cannot slice into queueNodeOrder with index -1
 				// place at end of slice, which is the last slot before the local queue slot
-				rrs.childQueueOrder = append(rrs.childQueueOrder, nodeName)
+				rrs.queueNodeOrder = append(rrs.queueNodeOrder, nodeName)
 			} else {
 				// insert into order behind current child queue index
-				rrs.childQueueOrder = append(
-					rrs.childQueueOrder[:rrs.currentChildQueueIndex],
+				rrs.queueNodeOrder = append(
+					rrs.queueNodeOrder[:rrs.currentChildQueueIndex],
 					append(
 						[]string{nodeName},
-						rrs.childQueueOrder[rrs.currentChildQueueIndex:]...,
+						rrs.queueNodeOrder[rrs.currentChildQueueIndex:]...,
 					)...,
 				)
 				// update current child queue index to its new place in the expanded slice
 				rrs.currentChildQueueIndex++
 			}
-			rrs.childQueueNodeNames[nodeName] = struct{}{}
+			rrs.queueNodeCounts[nodeName] = 1
+		} else {
+			// node is already in the rotation;
+			// update the node count only if it was just created
+			rrs.queueNodeCounts[nodeName] += 1
 		}
 	}
 }
 
 func (rrs *RoundRobinState) MakeDequeueNodeSelectFunc() *DequeueLevelOps {
-	initialChildQueueOrderLen := len(rrs.childQueueOrder)
+	initialChildQueueOrderLen := len(rrs.queueNodeOrder)
 
 	selectFunc := func() (nodeName string, stop bool) {
 		stop = rrs.currentDequeueAttempts == initialChildQueueOrderLen
@@ -96,18 +100,37 @@ func (rrs *RoundRobinState) MakeDequeueNodeSelectFunc() *DequeueLevelOps {
 		}
 		// else; dequeuing from child queue node;
 		// pick the child node whose turn it is
-		return rrs.childQueueOrder[rrs.currentChildQueueIndex], stop
+		return rrs.queueNodeOrder[rrs.currentChildQueueIndex], stop
 	}
 
-	stateUpdateFunc := func(dequeuedNodeName string, _ bool) {
+	stateUpdateFunc := func(dequeuedNodeName string, nodeDeleted bool) {
 		dequeueSuccess := dequeuedNodeName != ""
 		if dequeueSuccess {
 			rrs.currentDequeueAttempts = 0
 		} else {
+			// nothing was found at the current node in the rotation;
 			rrs.currentDequeueAttempts++
 		}
 
-		rrs.wrapIndex(true)
+		if dequeueSuccess && nodeDeleted {
+			rrs.queueNodeCounts[dequeuedNodeName] -= 1
+		}
+
+		if dequeueSuccess && rrs.queueNodeCounts[dequeuedNodeName] == 0 {
+			// at the level in the tree governed by this queue algorithm,
+			// there are no nodes left with this node name;
+			// delete it from the map and remove it from the rotation
+			delete(rrs.queueNodeCounts, dequeuedNodeName)
+			for i, name := range rrs.queueNodeOrder {
+				if name == dequeuedNodeName {
+					rrs.queueNodeOrder = append(rrs.queueNodeOrder[:i], rrs.queueNodeOrder[i+1:]...)
+					rrs.wrapIndex(false)
+					break
+				}
+			}
+		} else {
+			rrs.wrapIndex(true)
+		}
 	}
 
 	return &DequeueLevelOps{selectFunc, stateUpdateFunc}
