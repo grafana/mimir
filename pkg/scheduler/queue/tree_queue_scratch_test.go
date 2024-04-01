@@ -3,7 +3,6 @@
 package queue
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,106 +16,78 @@ func TestDequeueBalancedTree_TreeQueueImplA(t *testing.T) {
 	roundRobinState1 := NewRoundRobinState()
 	roundRobinState2 := NewRoundRobinState()
 
-	treeLevelQueueAlgoStates := []*RoundRobinState{roundRobinState1, roundRobinState2}
-
 	tree := TreeQueueImplA{
 		name:         "root",
 		localQueue:   nil,
 		childNodeMap: nil,
 	}
 
-	treeLevelEnqueueOps := []EnqueueLevelOps{
-		{
-			"ingester",
-			roundRobinState1.MakeEnqueueStateUpdateFunc(),
-		},
-		{
-			"tenantA",
-			roundRobinState2.MakeEnqueueStateUpdateFunc(),
-		},
+	roundRobinState1EnqueueOps := roundRobinState1.EnqueueFuncs()
+	roundRobinState2EnqueueOps := roundRobinState2.EnqueueFuncs()
+
+	makeEnqueueOps := func(nodeNameLevel1, nodenameLevel2 string) []EnqueueLevelOps {
+		return []EnqueueLevelOps{
+			{
+				nodeNameLevel1,
+				roundRobinState1EnqueueOps,
+			},
+			{
+				nodenameLevel2,
+				roundRobinState2EnqueueOps,
+			},
+		}
 	}
-	err := tree.EnqueueBackByPath("ingester:tenantA", treeLevelEnqueueOps)
+	enqueueOps := makeEnqueueOps("ingester", "tenantA")
+	err := tree.EnqueueBackByPath("ingester:tenantA", enqueueOps)
 	require.NoError(t, err)
 
-	treeLevelEnqueueOps = []EnqueueLevelOps{
-		{
-			"ingester-and-store-gateway",
-			roundRobinState1.MakeEnqueueStateUpdateFunc(),
-		},
-		{
-			"tenantA",
-			roundRobinState2.MakeEnqueueStateUpdateFunc(),
-		},
-	}
-	err = tree.EnqueueBackByPath("ingester-and-store-gateway:tenantA", treeLevelEnqueueOps)
+	enqueueOps = makeEnqueueOps("ingester-and-store-gateway", "tenantA")
+	err = tree.EnqueueBackByPath("ingester-and-store-gateway:tenantA", enqueueOps)
 	require.NoError(t, err)
 
-	treeLevelEnqueueOps = []EnqueueLevelOps{
-		{
-			"store-gateway",
-			roundRobinState1.MakeEnqueueStateUpdateFunc(),
-		},
-		{
-			"tenantA",
-			roundRobinState2.MakeEnqueueStateUpdateFunc(),
-		},
-	}
-	err = tree.EnqueueBackByPath("store-gateway:tenantA", treeLevelEnqueueOps)
+	enqueueOps = makeEnqueueOps("store-gateway", "tenantA")
+	err = tree.EnqueueBackByPath("store-gateway:tenantA", enqueueOps)
 	require.NoError(t, err)
 
-	treeLevelEnqueueOps = []EnqueueLevelOps{
-		{
-			"ingester",
-			roundRobinState1.MakeEnqueueStateUpdateFunc(),
-		},
-		{
-			"tenantB",
-			roundRobinState2.MakeEnqueueStateUpdateFunc(),
-		},
-	}
-	err = tree.EnqueueBackByPath("ingester:tenantB", treeLevelEnqueueOps)
+	enqueueOps = makeEnqueueOps("ingester", "tenantB")
+	err = tree.EnqueueBackByPath("ingester:tenantB", enqueueOps)
 	require.NoError(t, err)
 
-	treeLevelEnqueueOps = []EnqueueLevelOps{
-		{
-			"ingester-and-store-gateway",
-			roundRobinState1.MakeEnqueueStateUpdateFunc(),
-		},
-		{
-			"tenantB",
-			roundRobinState2.MakeEnqueueStateUpdateFunc(),
-		},
-	}
-	err = tree.EnqueueBackByPath("ingester-and-store-gateway:tenantB", treeLevelEnqueueOps)
+	enqueueOps = makeEnqueueOps("ingester-and-store-gateway", "tenantB")
+	err = tree.EnqueueBackByPath("ingester-and-store-gateway:tenantB", enqueueOps)
 	require.NoError(t, err)
 
-	treeLevelEnqueueOps = []EnqueueLevelOps{
-		{
-			"store-gateway",
-			roundRobinState1.MakeEnqueueStateUpdateFunc(),
-		},
-		{
-			"tenantB",
-			roundRobinState2.MakeEnqueueStateUpdateFunc(),
-		},
-	}
-	err = tree.EnqueueBackByPath("store-gateway:tenantB", treeLevelEnqueueOps)
+	enqueueOps = makeEnqueueOps("store-gateway", "tenantB")
+	err = tree.EnqueueBackByPath("store-gateway:tenantB", enqueueOps)
 	require.NoError(t, err)
 
 	require.Equal(t, 6, tree.ItemCount())
 
-	dequeueOps := make([]*DequeueLevelOps, len(treeLevelQueueAlgoStates))
+	rrs1DequeueNodeSelect, rrs1DequeueUpdateState := roundRobinState1.DequeueFuncs()
+	rrs2DequeueNodeSelect, rrs2DequeueUpdateState := roundRobinState2.DequeueFuncs()
+	dequeueOps := []*DequeueLevelOps{
+		{Select: rrs1DequeueNodeSelect, UpdateState: rrs1DequeueUpdateState},
+		{Select: rrs2DequeueNodeSelect, UpdateState: rrs2DequeueUpdateState},
+	}
+
+	expectedItemDequeueOrder := []string{
+		"ingester:tenantA",
+		"ingester-and-store-gateway:tenantB",
+		"store-gateway:tenantA",
+		"ingester:tenantB",
+		"ingester-and-store-gateway:tenantA",
+		"store-gateway:tenantB",
+	}
+	itemDequeueOrder := make([]string, len(expectedItemDequeueOrder))
 
 	itemCount := tree.ItemCount()
 	for i := 0; i < itemCount; i++ {
-		for level, algoState := range treeLevelQueueAlgoStates {
-			dequeueOps[level] = algoState.MakeDequeueNodeSelectFunc()
-		}
 
 		v, err := tree.Dequeue(dequeueOps)
 		require.NoError(t, err)
-		fmt.Println(fmt.Sprintf("%d", i))
-		fmt.Println(fmt.Sprintf("%v", v))
+
+		itemDequeueOrder[i] = v.(string)
 	}
 
+	require.Equal(t, expectedItemDequeueOrder, itemDequeueOrder)
 }
