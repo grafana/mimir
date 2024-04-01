@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -38,6 +39,11 @@ func TestShardActiveSeriesResponseDecoder(t *testing.T) {
 			name:           "multiple labels",
 			input:          `{"data":[{"__name__":"metric","shard":"1"},{"__name__":"metric","shard":"2"}]}`,
 			expectedOutput: `{"__name__":"metric","shard":"1"},{"__name__":"metric","shard":"2"}`,
+		},
+		{
+			name:          "unexpected comma",
+			input:         `{"data":[{"__name__":"metric","shard":"1"},,,{"__name__":"metric","shard":"2"}`,
+			expectedError: "streamData: unexpected comma",
 		},
 		{
 			name:          "unexpected end of input",
@@ -85,6 +91,7 @@ func TestShardActiveSeriesResponseDecoder(t *testing.T) {
 
 				// Drain the data channel.
 				for streamBuf := range streamCh {
+					fmt.Println(streamBuf.String())
 					dataStr.WriteString(streamBuf.String())
 				}
 			} else {
