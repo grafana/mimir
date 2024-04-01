@@ -38,11 +38,11 @@
 
 ### Jsonnet
 
-* [CHANGE] Deprecate `rule-files` flag: #7756
 * [BUGFIX] Guard against missing samples in KEDA queries. #7691
 
 ### Mimirtool
 
+* [CHANGE] Deprecate `rule-files` flag: #7756
 * [BUGFIX] Fix panic in `loadgen` subcommand. #7629
 
 ### Mimir Continuous Test
