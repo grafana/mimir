@@ -35,9 +35,9 @@ var shardActiveSeriesResponseDecoderPool = sync.Pool{
 	},
 }
 
-func borrowShardActiveSeriesResponseDecoder(ctx context.Context, rc io.ReadCloser, chunkCh chan<- *bytes.Buffer) *shardActiveSeriesResponseDecoder {
+func borrowShardActiveSeriesResponseDecoder(ctx context.Context, rc io.ReadCloser, streamCh chan<- *bytes.Buffer) *shardActiveSeriesResponseDecoder {
 	d := shardActiveSeriesResponseDecoderPool.Get().(*shardActiveSeriesResponseDecoder)
-	d.reset(ctx, rc, chunkCh)
+	d.reset(ctx, rc, streamCh)
 	return d
 }
 
@@ -82,7 +82,6 @@ func (d *shardActiveSeriesResponseDecoder) stickError(err error) {
 }
 
 func (d *shardActiveSeriesResponseDecoder) close() {
-	close(d.streamCh)
 	_, _ = io.Copy(io.Discard, d.rc)
 	_ = d.rc.Close()
 }
