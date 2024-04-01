@@ -193,26 +193,22 @@ func (tqa *TreeQueueImplA) Dequeue(ops []*DequeueLevelOps) (any, error) {
 	currentNode := tqa
 
 	// walk down tree selecting nodes until we dequeue
-	for opDepth, op := range ops {
+	for opDepth := 0; opDepth < len(ops) && v == nil; opDepth++ {
+		op := ops[opDepth]
+
 		for {
 			childNodeName, stop := op.Select()
 			if stop {
-				// we are done;
-				// queue algorithm has exhausted its options
+				// we are done; queue algorithm has exhausted its options
 				// before we found a non-empty node to dequeue from
 				op.UpdateState("", false)
-				break
+				return nil, nil
 			}
 
 			if childNodeName == NodeLocalQueueName {
 				// dequeue operations selected the local queue for the current node level;
 				// no need to go any deeper. dequeue from the current node's local queue.
-				if currentNode.localQueue != nil {
-					if elem := currentNode.localQueue.Front(); elem != nil {
-						currentNode.localQueue.Remove(elem)
-						v = elem.Value
-					}
-				}
+				v = currentNode.deqeueLocal()
 				if v != nil {
 					// we are done;
 					// inform the queue algorithm of successful node selection
@@ -227,23 +223,15 @@ func (tqa *TreeQueueImplA) Dequeue(ops []*DequeueLevelOps) (any, error) {
 
 			}
 
+			// else; dequeue operations selected a child node for the current node level
 			childNode, exists := currentNode.childNodeMap[childNodeName]
 			if !exists {
-				msg := fmt.Sprintf(
-					"child node %s selected from node %s at tree depth %d does not exist",
-					childNodeName, currentNode.name, opDepth,
-				)
-				return nil, errors.New(msg)
+				return nil, MakeNodeDoesNotExistErr(currentNode.name, childNodeName, opDepth)
 			}
 
 			if opDepth+1 == len(ops) {
 				// reached the end; dequeue from selected child node-local queue
-				if childNode.localQueue != nil {
-					if elem := childNode.localQueue.Front(); elem != nil {
-						childNode.localQueue.Remove(elem)
-						v = elem.Value
-					}
-				}
+				v = childNode.deqeueLocal()
 
 				if childNode.IsEmpty() {
 					delete(currentNode.childNodeMap, childNodeName)
@@ -262,6 +250,24 @@ func (tqa *TreeQueueImplA) Dequeue(ops []*DequeueLevelOps) (any, error) {
 	}
 
 	return v, nil
+}
+
+func MakeNodeDoesNotExistErr(nodeName, childNodeName string, depth int) error {
+	msg := fmt.Sprintf(
+		"child node %s selected from node %s at tree depth %d does not exist",
+		childNodeName, nodeName, depth,
+	)
+	return errors.New(msg)
+}
+
+func (tqa *TreeQueueImplA) deqeueLocal() any {
+	if tqa.localQueue != nil {
+		if elem := tqa.localQueue.Front(); elem != nil {
+			tqa.localQueue.Remove(elem)
+			return elem.Value
+		}
+	}
+	return nil
 }
 
 func (tqa *TreeQueueImplA) IsEmpty() bool {
