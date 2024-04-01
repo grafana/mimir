@@ -530,11 +530,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecod
 			} else {
 				stream.WriteMore()
 			}
-
-			rawStr := unsafe.String(
-				unsafe.SliceData(streamBuf.Bytes()),
-				streamBuf.Len(),
-			)
+			rawStr := unsafe.String(unsafe.SliceData(streamBuf.Bytes()), streamBuf.Len())
 
 			// Write the value as is, since it's already a JSON array.
 			stream.WriteRaw(rawStr)
