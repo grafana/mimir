@@ -43,7 +43,7 @@ import (
 
 var errExecutingQueryRoundTripFinished = cancellation.NewErrorf("executing query round trip finished")
 
-// Config for a Frontend.
+// Config for a FrontendDownstreamClient.
 type Config struct {
 	SchedulerAddress  string            `yaml:"scheduler_address"`
 	DNSLookupPeriod   time.Duration     `yaml:"scheduler_dns_lookup_period" category:"advanced"`
@@ -94,9 +94,9 @@ type Limits interface {
 	QueryIngestersWithin(user string) time.Duration
 }
 
-// Frontend implements GrpcRoundTripper. It queues HTTP requests,
+// FrontendDownstreamClient implements GrpcRoundTripper. It queues HTTP requests,
 // dispatches them to backends via gRPC, and handles retries for requests which failed.
-type Frontend struct {
+type FrontendDownstreamClient struct {
 	services.Service
 
 	cfg Config
@@ -148,8 +148,8 @@ type enqueueResult struct {
 	cancelCh chan<- uint64 // Channel that can be used for request cancellation. If nil, cancellation is not possible.
 }
 
-// NewFrontend creates a new frontend.
-func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Registerer) (*Frontend, error) {
+// NewFrontendDownstreamClient creates a new frontend.
+func NewFrontendDownstreamClient(cfg Config, limits Limits, log log.Logger, reg prometheus.Registerer) (*FrontendDownstreamClient, error) {
 	requestsCh := make(chan *frontendRequest)
 	toSchedulerAdapter := frontendToSchedulerAdapter{
 		log:    log,
@@ -162,7 +162,7 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 		return nil, err
 	}
 
-	f := &Frontend{
+	f := &FrontendDownstreamClient{
 		cfg:                     cfg,
 		log:                     log,
 		requestsCh:              requestsCh,
@@ -193,13 +193,13 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 	return f, nil
 }
 
-func (f *Frontend) starting(ctx context.Context) error {
+func (f *FrontendDownstreamClient) starting(ctx context.Context) error {
 	f.schedulerWorkersWatcher.WatchService(f.schedulerWorkers)
 
 	return errors.Wrap(services.StartAndAwaitRunning(ctx, f.schedulerWorkers), "failed to start frontend scheduler workers")
 }
 
-func (f *Frontend) running(ctx context.Context) error {
+func (f *FrontendDownstreamClient) running(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return nil
@@ -208,12 +208,12 @@ func (f *Frontend) running(ctx context.Context) error {
 	}
 }
 
-func (f *Frontend) stopping(_ error) error {
+func (f *FrontendDownstreamClient) stopping(_ error) error {
 	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), f.schedulerWorkers), "failed to stop frontend scheduler workers")
 }
 
 // RoundTripGRPC round trips a proto (instead of an HTTP request).
-func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
+func (f *FrontendDownstreamClient) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
 	if s := f.State(); s != services.Running {
 		// This should never happen: requests should be blocked by frontendRunningRoundTripper before they get here.
 		return nil, nil, fmt.Errorf("frontend not running: %v", s)
@@ -347,7 +347,7 @@ func (c cleanupReadCloser) Close() error {
 	return c.rc.Close()
 }
 
-func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
+func (f *FrontendDownstreamClient) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, err
@@ -372,7 +372,7 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	return &frontendv2pb.QueryResultResponse{}, nil
 }
 
-func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
+func (f *FrontendDownstreamClient) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
 	defer func(s frontendv2pb.FrontendForQuerier_QueryResultStreamServer) {
 		err := s.SendAndClose(&frontendv2pb.QueryResultResponse{})
 		if err != nil && !errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
@@ -457,7 +457,7 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 
 // CheckReady determines if the query frontend is ready.  Function parameters/return
 // chosen to match the same method in the ingester
-func (f *Frontend) CheckReady(_ context.Context) error {
+func (f *FrontendDownstreamClient) CheckReady(_ context.Context) error {
 	workers := f.schedulerWorkers.getWorkersCount()
 
 	// If frontend is connected to at least one scheduler, we are ready.

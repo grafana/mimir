@@ -35,7 +35,7 @@ var (
 	errTooManyRequest = httpgrpc.Errorf(http.StatusTooManyRequests, "too many outstanding requests")
 )
 
-// Config for a Frontend.
+// Config for a FrontendDownstreamClient.
 type Config struct {
 	MaxOutstandingPerTenant int           `yaml:"max_outstanding_per_tenant" category:"advanced"`
 	QuerierForgetDelay      time.Duration `yaml:"querier_forget_delay" category:"experimental"`
@@ -52,9 +52,9 @@ type Limits interface {
 	MaxQueriersPerUser(user string) int
 }
 
-// Frontend queues HTTP requests, dispatches them to backends, and handles retries
+// FrontendDownstreamClient queues HTTP requests, dispatches them to backends, and handles retries
 // for requests which failed.
-type Frontend struct {
+type FrontendDownstreamClient struct {
 	services.Service
 
 	cfg    Config
@@ -85,9 +85,9 @@ type request struct {
 	response chan *httpgrpc.HTTPResponse
 }
 
-// New creates a new frontend. Frontend implements service, and must be started and stopped.
-func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Frontend, error) {
-	f := &Frontend{
+// NewFrontendDownstreamClient creates a new frontend. FrontendDownstreamClient implements service, and must be started and stopped.
+func NewFrontendDownstreamClient(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*FrontendDownstreamClient, error) {
+	f := &FrontendDownstreamClient{
 		cfg:                cfg,
 		log:                log,
 		limits:             limits,
@@ -131,7 +131,7 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 	return f, nil
 }
 
-func (f *Frontend) starting(ctx context.Context) error {
+func (f *FrontendDownstreamClient) starting(ctx context.Context) error {
 	f.subservicesWatcher.WatchManager(f.subservices)
 
 	if err := services.StartManagerAndAwaitHealthy(ctx, f.subservices); err != nil {
@@ -141,7 +141,7 @@ func (f *Frontend) starting(ctx context.Context) error {
 	return nil
 }
 
-func (f *Frontend) running(ctx context.Context) error {
+func (f *FrontendDownstreamClient) running(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -152,18 +152,18 @@ func (f *Frontend) running(ctx context.Context) error {
 	}
 }
 
-func (f *Frontend) stopping(_ error) error {
+func (f *FrontendDownstreamClient) stopping(_ error) error {
 	// This will also stop the requests queue, which stop accepting new requests and errors out any pending requests.
 	return services.StopManagerAndAwaitStopped(context.Background(), f.subservices)
 }
 
-func (f *Frontend) cleanupInactiveUserMetrics(user string) {
+func (f *FrontendDownstreamClient) cleanupInactiveUserMetrics(user string) {
 	f.queueLength.DeleteLabelValues(user)
 	f.discardedRequests.DeleteLabelValues(user)
 }
 
 // RoundTripGRPC round trips a proto (instead of an HTTP request).
-func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
+func (f *FrontendDownstreamClient) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
 	// Propagate trace context in gRPC too - this will be ignored if using HTTP.
 	tracer, span := opentracing.GlobalTracer(), opentracing.SpanFromContext(ctx)
 	if tracer != nil && span != nil {
@@ -202,7 +202,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 }
 
 // Process allows backends to pull requests from the frontend.
-func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
+func (f *FrontendDownstreamClient) Process(server frontendv1pb.Frontend_ProcessServer) error {
 	querierID, err := getQuerierID(server)
 	if err != nil {
 		return err
@@ -292,7 +292,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 	}
 }
 
-func (f *Frontend) NotifyClientShutdown(_ context.Context, req *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
+func (f *FrontendDownstreamClient) NotifyClientShutdown(_ context.Context, req *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
 	level.Info(f.log).Log("msg", "received shutdown notification from querier", "querier", req.GetClientID())
 	f.requestQueue.NotifyQuerierShutdown(req.GetClientID())
 
@@ -322,7 +322,7 @@ func getQuerierID(server frontendv1pb.Frontend_ProcessServer) (string, error) {
 	return resp.GetClientID(), err
 }
 
-func (f *Frontend) queueRequest(ctx context.Context, req *request) error {
+func (f *FrontendDownstreamClient) queueRequest(ctx context.Context, req *request) error {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return err
@@ -347,7 +347,7 @@ func (f *Frontend) queueRequest(ctx context.Context, req *request) error {
 
 // CheckReady determines if the query frontend is ready.  Function parameters/return
 // chosen to match the same method in the ingester
-func (f *Frontend) CheckReady(_ context.Context) error {
+func (f *FrontendDownstreamClient) CheckReady(_ context.Context) error {
 	// if we have more than one querier connected we will consider ourselves ready
 	connectedClients := f.requestQueue.GetConnectedQuerierWorkersMetric()
 	if connectedClients > 0 {

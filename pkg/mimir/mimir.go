@@ -704,7 +704,7 @@ type Mimir struct {
 	Distributor                   *distributor.Distributor
 	Ingester                      *ingester.Ingester
 	Flusher                       *flusher.Flusher
-	FrontendV1                    *frontendv1.Frontend
+	FrontendV1                    *frontendv1.FrontendDownstreamClient
 	RuntimeConfig                 *runtimeconfig.Manager
 	QuerierQueryable              prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable             prom_storage.ExemplarQueryable
@@ -969,11 +969,11 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 			}
 		}
 
-		// Query Frontend has a special check that makes sure that a querier is attached before it signals
+		// Query FrontendDownstreamClient has a special check that makes sure that a querier is attached before it signals
 		// itself as ready
 		if t.FrontendV1 != nil {
 			if err := t.FrontendV1.CheckReady(r.Context()); err != nil {
-				http.Error(w, "Query Frontend not ready: "+err.Error(), http.StatusServiceUnavailable)
+				http.Error(w, "Query FrontendDownstreamClient not ready: "+err.Error(), http.StatusServiceUnavailable)
 				return
 			}
 		}

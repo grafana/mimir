@@ -51,11 +51,11 @@ func TestMain(m *testing.M) {
 
 const testFrontendWorkerConcurrency = 5
 
-func setupFrontend(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) (*Frontend, *mockScheduler) {
+func setupFrontend(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) (*FrontendDownstreamClient, *mockScheduler) {
 	return setupFrontendWithConcurrencyAndServerOptions(t, reg, schedulerReplyFunc, testFrontendWorkerConcurrency)
 }
 
-func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend, concurrency int, opts ...grpc.ServerOption) (*Frontend, *mockScheduler) {
+func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend, concurrency int, opts ...grpc.ServerOption) (*FrontendDownstreamClient, *mockScheduler) {
 	l, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
@@ -75,7 +75,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	cfg.Port = grpcPort
 
 	logger := log.NewLogfmtLogger(os.Stdout)
-	f, err := NewFrontend(cfg, limits{}, logger, reg)
+	f, err := NewFrontendDownstreamClient(cfg, limits{}, logger, reg)
 	require.NoError(t, err)
 
 	frontendv2pb.RegisterFrontendForQuerierServer(server, f)
@@ -108,7 +108,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	return f, ms
 }
 
-func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, queryID uint64, resp *httpgrpc.HTTPResponse) {
+func sendResponseWithDelay(f *FrontendDownstreamClient, delay time.Duration, userID string, queryID uint64, resp *httpgrpc.HTTPResponse) {
 	if delay > 0 {
 		time.Sleep(delay)
 	}
@@ -127,8 +127,8 @@ func TestFrontendBasicWorkflow(t *testing.T) {
 		userID = "test"
 	)
 
-	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
+	f, _ := setupFrontend(t, nil, func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		// We cannot call QueryResult directly, as FrontendDownstreamClient is not yet waiting for the response.
 		// It first needs to be told that enqueuing has succeeded.
 		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
 			Code: 200,
@@ -155,8 +155,8 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 
 	reg := prometheus.NewRegistry()
 
-	f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
+	f, _ := setupFrontend(t, reg, func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		// We cannot call QueryResult directly, as FrontendDownstreamClient is not yet waiting for the response.
 		// It first needs to be told that enqueuing has succeeded.
 		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
 			Code: 200,
@@ -199,14 +199,14 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 }
 
 func TestFrontendRetryEnqueue(t *testing.T) {
-	// Frontend uses worker concurrency to compute number of retries. We use one less failure.
+	// FrontendDownstreamClient uses worker concurrency to compute number of retries. We use one less failure.
 	failures := atomic.NewInt64(testFrontendWorkerConcurrency - 1)
 	const (
 		body   = "hello world"
 		userID = "test"
 	)
 
-	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+	f, _ := setupFrontend(t, nil, func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		fail := failures.Dec()
 		if fail >= 0 {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
@@ -227,7 +227,7 @@ func TestFrontendRetryEnqueue(t *testing.T) {
 }
 
 func TestFrontendTooManyRequests(t *testing.T) {
-	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+	f, _ := setupFrontend(t, nil, func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	})
 
@@ -240,7 +240,7 @@ func TestFrontendTooManyRequests(t *testing.T) {
 }
 
 func TestFrontendEnqueueFailure(t *testing.T) {
-	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+	f, _ := setupFrontend(t, nil, func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 	})
 
@@ -356,7 +356,7 @@ func TestFrontendFailedCancellation(t *testing.T) {
 		// Wait for worker goroutines to stop.
 		time.Sleep(100 * time.Millisecond)
 
-		// Cancel request. Frontend will try to send cancellation to scheduler, but that will fail (not visible to user).
+		// Cancel request. FrontendDownstreamClient will try to send cancellation to scheduler, but that will fail (not visible to user).
 		// Everything else should still work fine.
 		cancel()
 	}()
@@ -381,14 +381,14 @@ func TestFrontendStreamingResponse(t *testing.T) {
 
 	for _, tt := range []struct {
 		name                string
-		sendResultStream    func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error
+		sendResultStream    func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) error
 		expectStreamError   bool
 		expectContentLength int
 		expectBody          string
 	}{
 		{
 			name: "metadata and two chunks",
-			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+			sendResultStream: func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) error {
 				body := "result stream body"
 				headers := []*httpgrpc.Header{{Key: "Content-Length", Values: []string{strconv.Itoa(len(body))}}}
 				resp := &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(body), Headers: headers}
@@ -405,7 +405,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 		},
 		{
 			name: "received metadata only, no body data sent",
-			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+			sendResultStream: func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) error {
 				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
 				s.msgs = append(s.msgs,
 					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"0"}}}),
@@ -416,7 +416,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 		},
 		{
 			name: "metadata and empty body chunks",
-			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+			sendResultStream: func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) error {
 				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
 				s.msgs = append(s.msgs,
 					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"0"}}}),
@@ -429,7 +429,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 		},
 		{
 			name: "errors on wrong message sequence",
-			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+			sendResultStream: func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) error {
 				s := &mockQueryResultStreamServer{ctx: user.InjectOrgID(context.Background(), userID), queryID: msg.QueryID}
 				s.msgs = append(s.msgs,
 					metadataRequest(msg, http.StatusOK, []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"16"}}}),
@@ -445,7 +445,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 		},
 		{
 			name: "context cancelled while streaming response",
-			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
+			sendResultStream: func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) error {
 				ctx, cancelCause := context.WithCancelCause(user.InjectOrgID(context.Background(), userID))
 				recvCalled := make(chan struct{})
 				cancelAfterCalls := 2
@@ -473,7 +473,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+			f, _ := setupFrontend(t, nil, func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 				go func() {
 					err := tt.sendResultStream(f, msg)
 					if tt.expectStreamError {
@@ -568,16 +568,16 @@ func (s *mockQueryResultStreamServer) Recv() (*frontendv2pb.QueryResultStreamReq
 
 type mockScheduler struct {
 	t *testing.T
-	f *Frontend
+	f *FrontendDownstreamClient
 
-	replyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend
+	replyFunc func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend
 
 	mu           sync.Mutex
 	frontendAddr map[string]int
 	msgs         []*schedulerpb.FrontendToScheduler
 }
 
-func newMockScheduler(t *testing.T, f *Frontend, replyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) *mockScheduler {
+func newMockScheduler(t *testing.T, f *FrontendDownstreamClient, replyFunc func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) *mockScheduler {
 	return &mockScheduler{t: t, f: f, frontendAddr: map[string]int{}, replyFunc: replyFunc}
 }
 
@@ -668,7 +668,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 	const frontendConcurrency = 1
 	const userID = "test"
 
-	f, _ := setupFrontendWithConcurrencyAndServerOptions(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+	f, _ := setupFrontendWithConcurrencyAndServerOptions(t, nil, func(f *FrontendDownstreamClient, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	}, frontendConcurrency, grpc.KeepaliveParams(keepalive.ServerParameters{
 		MaxConnectionIdle:     100 * time.Millisecond,
