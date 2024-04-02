@@ -35,7 +35,7 @@ func (c Category) String() string {
 // Fields are primarily categorized via struct tags, but this can be impossible when third party libraries are involved
 // Only categorize fields here when you can't otherwise, since struct tags are less likely to become stale
 var overrides = map[string]Category{
-	// weaveworks/common/server in server.Config
+	// Defined in grafana/dskit/server.Config
 	"server.graceful-shutdown-timeout":                  Advanced,
 	"server.grpc-conn-limit":                            Advanced,
 	"server.grpc-listen-network":                        Advanced,
