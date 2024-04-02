@@ -611,6 +611,11 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
 	done, err := s.limitConcurrentQueries(ctx, stats)
 	if err != nil {
+		if errors.Is(err, errGateTimeout) {
+			// If the gate timed out, then we behave in the same way as if the blocks aren't discovered yet.
+			// The querier will try the blocks again on a different store-gateway replica.
+			return nil
+		}
 		return err
 	}
 	defer done()

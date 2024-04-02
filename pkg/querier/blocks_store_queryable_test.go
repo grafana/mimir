@@ -625,6 +625,49 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			`
 			},
 		},
+		"a single store-gateway instance returns no response implies querying another instance for the same blocks (consistency check passed)": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+			},
+			storeSetResponses: []interface{}{
+				// First attempt returns a client whose response does not include all expected blocks.
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "1.1.1.1", mockedSeriesResponses: nil,
+					}: {block1},
+				},
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "2.2.2.2", mockedSeriesResponses: []*storepb.SeriesResponse{mockHintsResponse(block1)},
+					}: {block1},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+		},
+		"two store-gateway instances returning no response causes consistency check to fail": { // TODO dimitarvdimitrov
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+			},
+			storeSetResponses: []interface{}{
+				// First attempt returns a client whose response does not include all expected blocks.
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "1.1.1.1", mockedSeriesResponses: nil,
+					}: {block1},
+				},
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "2.2.2.2", mockedSeriesResponses: nil,
+					}: {block1},
+				},
+				// Third attempt returns an error because there are no other store-gateways left.
+				errors.New("no store-gateway remaining after exclude"),
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedErr:  newStoreConsistencyCheckFailedError([]ulid.ULID{block1}),
+		},
 		"a single store-gateway instance has some missing blocks (consistency check failed)": {
 			finderResult: bucketindex.Blocks{
 				{ID: block1},

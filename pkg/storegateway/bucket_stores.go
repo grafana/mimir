@@ -105,6 +105,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	// The number of concurrent queries against the tenants BucketStores are limited.
 	queryGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "query"}, gateReg)
 	queryGate := gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
+	queryGate = timeoutGate{delegate: queryGate, timeout: cfg.BucketStore.MaxConcurrentQueueTimeout}
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
 
 	// The number of concurrent index header loads from storegateway are limited.
@@ -418,6 +419,27 @@ func (u *BucketStores) closeBucketStore(userID string) error {
 
 func (u *BucketStores) syncDirForUser(userID string) string {
 	return filepath.Join(u.cfg.BucketStore.SyncDir, userID)
+}
+
+type timeoutGate struct {
+	delegate gate.Gate
+	timeout  time.Duration
+}
+
+var errGateTimeout = errors.New("concurrency gate waiting timeout")
+
+func (t timeoutGate) Start(ctx context.Context) error {
+	if t.timeout == 0 {
+		return t.delegate.Start(ctx)
+	}
+	ctx, cancel := context.WithTimeoutCause(ctx, t.timeout, errGateTimeout)
+	defer cancel()
+
+	return t.delegate.Start(ctx)
+}
+
+func (t timeoutGate) Done() {
+	t.delegate.Done()
 }
 
 func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {

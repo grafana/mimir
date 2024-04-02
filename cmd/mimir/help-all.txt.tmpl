@@ -537,6 +537,8 @@ Usage of ./cmd/mimir/mimir:
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
   -blocks-storage.bucket-store.max-concurrent int
     	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 100)
+  -blocks-storage.bucket-store.max-concurrent-queue-timeout duration
+    	Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retired on another store-gateway. 0 means no timeout and all queries will wait for their turn.
   -blocks-storage.bucket-store.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from object storage per tenant. (default 20)
   -blocks-storage.bucket-store.metadata-cache.backend string
