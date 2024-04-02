@@ -36,18 +36,6 @@ groups:
     for: 15m
     labels:
       severity: warning
-  - alert: MimirQueriesIncorrect
-    annotations:
-      message: |
-        The Mimir cluster {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% incorrect query results.
-      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirqueriesincorrect
-    expr: |
-      100 * sum by (cluster, namespace) (rate(test_exporter_test_case_result_total{result="fail"}[5m]))
-        /
-      sum by (cluster, namespace) (rate(test_exporter_test_case_result_total[5m])) > 1
-    for: 15m
-    labels:
-      severity: warning
   - alert: MimirInconsistentRuntimeConfig
     annotations:
       message: |

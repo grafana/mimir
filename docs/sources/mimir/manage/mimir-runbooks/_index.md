@@ -677,10 +677,6 @@ How to **investigate**:
 - Ensure the compactor is successfully running
 - Look for any error in the compactor logs
 
-### MimirQueriesIncorrect
-
-_TODO: this runbook has not been written yet._
-
 ### MimirInconsistentRuntimeConfig
 
 This alert fires if multiple replicas of the same Mimir service are using a different runtime config for a longer period of time.
@@ -1476,6 +1472,14 @@ The series containing such samples are skipped during ingestion, and valid serie
 ### err-mimir-invalid-native-histogram-schema
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram with an invalid schema number. Currently, valid schema numbers are from the range [-4, 8].
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-bucket-count-mismatch
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram where the zero, positive and negative bucket counts do not add up to the overall count of the native histogram.
 
 {{< admonition type="note" >}}
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.

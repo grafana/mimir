@@ -91,15 +91,22 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 		ctx := user.InjectOrgID(ctx, wr.tenantID)
 		err := c.p.PushToStorage(ctx, wr.WriteRequest)
 
-		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
+		processingElapsedTime := time.Since(processingStart)
+		c.processingTimeSeconds.Observe(processingElapsedTime.Seconds())
 		c.totalRequests.Inc()
+
 		if err != nil {
 			if !mimirpb.IsClientError(err) {
 				c.serverErrRequests.Inc()
 				return fmt.Errorf("consuming record at index %d for tenant %s: %w", recordIdx, wr.tenantID, err)
 			}
 			c.clientErrRequests.Inc()
-			level.Warn(c.l).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "err", err, "user", wr.tenantID)
+
+			// The error could be sampled or marked to be skipped in logs, so we check whether it should be
+			// logged before doing it.
+			if shouldLog(ctx, err, processingElapsedTime) {
+				level.Warn(c.l).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "err", err, "user", wr.tenantID)
+			}
 		}
 	}
 	return nil
