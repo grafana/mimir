@@ -42,12 +42,13 @@ RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers
     DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
     rm -rf /go/pkg /go/src /root/.cache
 
+# github.com/pstibrany/faillint@update-deps-and-rename-mod is a fork of github.com/fatih/faillint with PR https://github.com/fatih/faillint/pull/41. Once it's merged, we should switch back.
 RUN GO111MODULE=on \
 	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
 	go install github.com/golang/protobuf/protoc-gen-go@v1.3.1 && \
 	go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.0 && \
 	go install github.com/weaveworks/tools/cover@bdd647e92546027e12cdde3ae0714bb495e43013 && \
-	go install github.com/fatih/faillint@v1.11.0 && \
+	go install github.com/pstibrany/faillint@update-deps-and-rename-mod && \
 	go install github.com/campoy/embedmd@v1.0.0 && \
 	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.4.0 && \
 	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@bca3066 && \
