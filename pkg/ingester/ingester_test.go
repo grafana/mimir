@@ -10532,7 +10532,6 @@ func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 
 	setup := func(t *testing.T, start bool, cfg Config) *Ingester {
 		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
-		require.NoError(t, err)
 
 		if start {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
