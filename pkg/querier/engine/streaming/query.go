@@ -27,6 +27,7 @@ type Query struct {
 	statement *parser.EvalStmt
 	root      operator.InstantVectorOperator
 	engine    *Engine
+	qs        string
 
 	result *promql.Result
 }
@@ -47,6 +48,7 @@ func newQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, sta
 		queryable: queryable,
 		opts:      opts,
 		engine:    engine,
+		qs:        qs,
 		statement: &parser.EvalStmt{
 			Expr:          expr,
 			Start:         start,
@@ -296,17 +298,16 @@ func (q *Query) Statement() parser.Statement {
 }
 
 func (q *Query) Stats() *stats.Statistics {
-	// TODO
+	// Not yet supported.
 	return nil
 }
 
 func (q *Query) Cancel() {
-	// TODO
+	// Not yet supported.
 }
 
 func (q *Query) String() string {
-	//TODO
-	return ""
+	return q.qs
 }
 
 func timeMilliseconds(t time.Time) int64 {
