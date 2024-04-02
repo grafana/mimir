@@ -44,6 +44,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Remove `-server.grpc.keepalive.max-connection-age` and `-server.grpc.keepalive.max-connection-age-grace` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7269
 * [CHANGE] Remove `-server.grpc.keepalive.max-connection-idle` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7298
 * [CHANGE] Distributor: termination grace period increased from 60s to 100s.
+* [CHANGE] Memcached: Change default read timeout for chunks and index caches to `750ms` from `450ms`. #7778
 * [FEATURE] Added experimental feature for deploying [KEDA](https://keda.sh) ScaledObjects as part of the helm chart for the components: distributor, querier, query-frontend and ruler. #7282 #7392 #7431 #7679
   * Autoscaling can be enabled via `distributor.kedaAutoscaling`, `ruler.kedaAutoscaling`, `query_frontend.kedaAutoscaling`, and `querier.kedaAutoscaling`.
   * Global configuration of `promtheusAddress`, `pollingInterval` and `customHeaders` can be found in `kedaAutoscaling`section.

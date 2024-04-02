@@ -46,6 +46,7 @@
 
 ### Jsonnet
 
+* [CHANGE] Memcached: Change default read timeout for chunks and index caches to `750ms` from `450ms`. #7778
 * [BUGFIX] Guard against missing samples in KEDA queries. #7691
 
 ### Mimirtool
