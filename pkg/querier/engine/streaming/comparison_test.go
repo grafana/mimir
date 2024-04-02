@@ -9,6 +9,7 @@ package streaming
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
 type benchCase struct {
@@ -325,9 +325,9 @@ func requireEqualResults(t testing.TB, expected, actual *promql.Result) {
 		actualVector, err := actual.Vector()
 		require.NoError(t, err)
 
-		slices.SortFunc(expectedVector, func(a, b promql.Sample) int {
-			return labels.Compare(a.Metric, b.Metric)
-		})
+		// Instant queries don't guarantee any particular sort order, so sort results here so that we can easily compare them.
+		sortVector(expectedVector)
+		sortVector(actualVector)
 
 		require.Len(t, actualVector, len(expectedVector))
 
@@ -344,10 +344,6 @@ func requireEqualResults(t testing.TB, expected, actual *promql.Result) {
 		require.NoError(t, err)
 		actualMatrix, err := actual.Matrix()
 		require.NoError(t, err)
-
-		slices.SortFunc(expectedMatrix, func(a, b promql.Series) int {
-			return labels.Compare(a.Metric, b.Metric)
-		})
 
 		require.Len(t, actualMatrix, len(expectedMatrix))
 
@@ -441,4 +437,10 @@ func newTestDB(t testing.TB) *tsdb.DB {
 	})
 
 	return db
+}
+
+func sortVector(v promql.Vector) {
+	slices.SortFunc(v, func(a, b promql.Sample) int {
+		return labels.Compare(a.Metric, b.Metric)
+	})
 }
