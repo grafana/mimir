@@ -677,10 +677,6 @@ How to **investigate**:
 - Ensure the compactor is successfully running
 - Look for any error in the compactor logs
 
-### MimirQueriesIncorrect
-
-_TODO: this runbook has not been written yet._
-
 ### MimirInconsistentRuntimeConfig
 
 This alert fires if multiple replicas of the same Mimir service are using a different runtime config for a longer period of time.
