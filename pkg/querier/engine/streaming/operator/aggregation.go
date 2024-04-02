@@ -44,8 +44,6 @@ var groupPool = zeropool.New(func() *group {
 	return &group{}
 })
 
-// TODO: test case for grouping by multiple labels
-// TODO: add test for case where Inner returns no results
 func (a *Aggregation) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	// Fetch the source series
 	innerSeries, err := a.Inner.Series(ctx)
@@ -107,7 +105,6 @@ func (a *Aggregation) labelsForGroup(m labels.Labels, lb *labels.Builder) labels
 	return lb.Labels()
 }
 
-// TODO: add test for case where series does not contain a point at every step
 func (a *Aggregation) Next(ctx context.Context) (InstantVectorSeriesData, error) {
 	if len(a.remainingGroups) == 0 {
 		// No more groups left.

@@ -66,10 +66,9 @@ func (m *RangeVectorSelectorWithTransformation) Next(_ context.Context) (Instant
 	m.buffer.Reset()
 
 	data := InstantVectorSeriesData{
-		Floats: GetFPointSlice(m.numSteps), // TODO: only allocate this if we have any floats
+		Floats: GetFPointSlice(m.numSteps), // TODO: only allocate this if we have any floats (once we support native histograms)
 	}
 
-	// TODO: test behaviour with resets, missing points, extrapolation, stale markers
 	// TODO: handle native histograms
 	for stepT := m.Selector.Start; stepT <= m.Selector.End; stepT += m.Selector.Interval {
 		rangeEnd := stepT

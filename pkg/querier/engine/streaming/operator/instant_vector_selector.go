@@ -49,7 +49,7 @@ func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData
 	v.memoizedIterator.Reset(v.chunkIterator)
 
 	data := InstantVectorSeriesData{
-		Floats: GetFPointSlice(v.numSteps), // TODO: only allocate this if we have any floats
+		Floats: GetFPointSlice(v.numSteps), // TODO: only allocate this if we have any floats (once we support native histograms)
 	}
 
 	for stepT := v.Selector.Start; stepT <= v.Selector.End; stepT += v.Selector.Interval {

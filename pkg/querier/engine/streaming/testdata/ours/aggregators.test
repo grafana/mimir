@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+load 1m
+  some_metric 1 stale 2
+
+# If no series are matched, we shouldn't return any results.
+eval range from 0 to 1m step 30s sum(some_other_metric)
+  # Should return no results.
+
+# If no non-stale points are available, we shouldn't return the series at all.
+eval range from 1m to 1m30s step 1s sum(some_metric)
+  # Should return no results.
+
