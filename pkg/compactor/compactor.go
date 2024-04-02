@@ -61,12 +61,9 @@ var (
 	errInvalidMaxBlockUploadValidationConcurrency = fmt.Errorf("invalid max-block-upload-validation-concurrency value, can't be negative")
 	RingOp                                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
-	// compactionIgnoredLabels defines the external labels the compactor
-	// will drop/ignore when planning jobs.
-	// * We remove ingester ID because we don't shard blocks anymore, while still
-	// 	honoring the shard ID if sharding was done in the past.
-	// * We remove tenant ID to make sure that we compact blocks with and without
-	//  the label together.
+	// compactionIgnoredLabels defines the external labels that compactor will
+	// drop/ignore when planning jobs so that they don't keep blocks from
+	// compacting together.
 	compactionIgnoredLabels = []string{
 		mimir_tsdb.DeprecatedIngesterIDExternalLabel,
 		mimir_tsdb.DeprecatedTenantIDExternalLabel,
