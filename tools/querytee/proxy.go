@@ -73,7 +73,7 @@ type Route struct {
 
 type Proxy struct {
 	cfg        ProxyConfig
-	backends   []*ProxyBackend
+	backends   []ProxyBackendInterface
 	logger     log.Logger
 	registerer prometheus.Registerer
 	metrics    *ProxyMetrics
@@ -141,7 +141,7 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	if cfg.PreferredBackend != "" {
 		exists := false
 		for _, b := range p.backends {
-			if b.preferred {
+			if b.Preferred() {
 				exists = true
 				break
 			}
@@ -216,8 +216,8 @@ func (p *Proxy) Start() error {
 
 	if p.cfg.PassThroughNonRegisteredRoutes {
 		for _, backend := range p.backends {
-			if backend.preferred {
-				router.PathPrefix("/").Handler(httputil.NewSingleHostReverseProxy(backend.endpoint))
+			if backend.Preferred() {
+				router.PathPrefix("/").Handler(httputil.NewSingleHostReverseProxy(backend.Endpoint()))
 				break
 			}
 		}

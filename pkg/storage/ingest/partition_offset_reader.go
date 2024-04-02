@@ -42,9 +42,12 @@ type partitionOffsetReader struct {
 	nextResultPromise   *resultPromise[int64]
 
 	// Metrics.
-	lastProducedOffsetRequestsTotal prometheus.Counter
-	lastProducedOffsetFailuresTotal prometheus.Counter
-	lastProducedOffsetLatency       prometheus.Summary
+	lastProducedOffsetRequestsTotal   prometheus.Counter
+	lastProducedOffsetFailuresTotal   prometheus.Counter
+	lastProducedOffsetLatency         prometheus.Histogram
+	partitionStartOffsetRequestsTotal prometheus.Counter
+	partitionStartOffsetFailuresTotal prometheus.Counter
+	partitionStartOffsetLatency       prometheus.Histogram
 }
 
 func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
@@ -65,13 +68,34 @@ func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int3
 			Help:        "Total number of failed requests to get the last produced offset.",
 			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
 		}),
-		lastProducedOffsetLatency: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
-			Name:        "cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds",
-			Help:        "The duration of requests to fetch the last produced offset of a given partition.",
+		lastProducedOffsetLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds",
+			Help:                            "The duration of requests to fetch the last produced offset of a given partition.",
+			ConstLabels:                     prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			Buckets:                         prometheus.DefBuckets,
+		}),
+
+		partitionStartOffsetRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_ingest_storage_reader_partition_start_offset_requests_total",
+			Help:        "Total number of requests issued to get the partition start offset.",
 			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
-			Objectives:  latencySummaryObjectives,
-			MaxAge:      time.Minute,
-			AgeBuckets:  10,
+		}),
+		partitionStartOffsetFailuresTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_ingest_storage_reader_partition_start_offset_failures_total",
+			Help:        "Total number of failed requests to get the partition start offset.",
+			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
+		}),
+		partitionStartOffsetLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_ingest_storage_reader_partition_start_offset_request_duration_seconds",
+			Help:                            "The duration of requests to fetch the start offset of a given partition.",
+			ConstLabels:                     prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			Buckets:                         prometheus.DefBuckets,
 		}),
 	}
 
@@ -120,8 +144,8 @@ func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Conte
 	promise.notify(offset, err)
 }
 
-// FetchLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if the
-// partition is empty. This function issues a single request, but the Kafka client used under the
+// FetchLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if no record has
+// been ever produced in the partition. This function issues a single request, but the Kafka client used under the
 // hood may retry a failed request until the retry timeout is hit.
 func (p *partitionOffsetReader) FetchLastProducedOffset(ctx context.Context) (_ int64, returnErr error) {
 	startTime := time.Now()
@@ -137,10 +161,41 @@ func (p *partitionOffsetReader) FetchLastProducedOffset(ctx context.Context) (_ 
 		}
 	}()
 
+	offset, err := p.fetchPartitionOffset(ctx, kafkaEndOffset)
+	if err != nil {
+		return 0, err
+	}
+
+	// The offset we get is the offset at which the next message will be written, so to get the last produced offset
+	// we have to subtract 1. See DESIGN.md for more details.
+	return offset - 1, nil
+}
+
+// FetchPartitionStartOffset fetches and returns the start offset for a partition. This function returns 0 if no record has
+// been ever produced in the partition. This function issues a single request, but the Kafka client used under the
+// hood may retry a failed request until the retry timeout is hit.
+func (p *partitionOffsetReader) FetchPartitionStartOffset(ctx context.Context) (_ int64, returnErr error) {
+	startTime := time.Now()
+
+	p.partitionStartOffsetRequestsTotal.Inc()
+	defer func() {
+		// We track the latency also in case of error, so that if the request times out it gets
+		// pretty clear looking at latency too.
+		p.partitionStartOffsetLatency.Observe(time.Since(startTime).Seconds())
+
+		if returnErr != nil {
+			p.partitionStartOffsetFailuresTotal.Inc()
+		}
+	}()
+
+	return p.fetchPartitionOffset(ctx, kafkaStartOffset)
+}
+
+func (p *partitionOffsetReader) fetchPartitionOffset(ctx context.Context, position int64) (int64, error) {
 	// Create a custom request to fetch the latest offset of a specific partition.
 	partitionReq := kmsg.NewListOffsetsRequestTopicPartition()
 	partitionReq.Partition = p.partitionID
-	partitionReq.Timestamp = -1 // -1 means "latest".
+	partitionReq.Timestamp = position
 
 	topicReq := kmsg.NewListOffsetsRequestTopic()
 	topicReq.Topic = p.topic
@@ -186,9 +241,7 @@ func (p *partitionOffsetReader) FetchLastProducedOffset(ctx context.Context) (_ 
 		return 0, err
 	}
 
-	// The offset we get is the offset at which the next message will be written, so to get the last produced offset
-	// we have to subtract 1. See DESIGN.md for more details.
-	return listRes.Topics[0].Partitions[0].Offset - 1, nil
+	return listRes.Topics[0].Partitions[0].Offset, nil
 }
 
 // WaitNextFetchLastProducedOffset returns the result of the *next* "last produced offset" request

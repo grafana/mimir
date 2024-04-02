@@ -174,10 +174,10 @@ local filename = 'mimir-writes.json';
         ) +
         $.queryPanel(
           [
-            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.distributor)],
-            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.distributor)],
-            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.distributor)],
-            'max(cortex_ingest_storage_writer_latency_seconds{%s,quantile="1.0"})' % [$.jobMatcher($._config.job_names.distributor)],
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
           ],
           [
             '50th percentile',
@@ -301,10 +301,41 @@ local filename = 'mimir-writes.json';
         ) +
         $.queryPanel(
           [
-            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_processing_time_seconds{%s,quantile="1.0"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            '50th percentile',
+            '99th percentile',
+            '99.9th percentile',
+            '100th percentile',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      ($.row('Ingester (ingest storage – end-to-end latency)'))
+      .addPanel(
+        $.timeseriesPanel('Kafka record end-to-end latency when ingesters are running') +
+        $.panelDescription(
+          'Kafka record end-to-end latency when ingesters are running',
+          |||
+            Time between writing request by distributor to Kafka and reading the record by ingester, when ingesters are running.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
             '50th percentile',
@@ -319,19 +350,74 @@ local filename = 'mimir-writes.json';
         },
       )
       .addPanel(
-        $.timeseriesPanel('Kafka record end-to-end latency') +
+        $.timeseriesPanel('Kafka record end-to-end latency when starting') +
         $.panelDescription(
-          'Kafka record end-to-end latency',
+          'Kafka record end-to-end latency when starting',
           |||
-            Time between writing request by distributor to Kafka and reading the record by ingester.
+            Time between writing request by distributor to Kafka and reading the record by ingester during catch-up phase, when ingesters are starting.
+            If ingesters are not starting and catching up in the selected time range, this panel will be empty.
           |||
         ) +
         $.queryPanel(
           [
-            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="0.5"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="0.99"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="0.999"})' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(cortex_ingest_storage_reader_receive_delay_seconds{%s,quantile="1.0"})' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            '50th percentile',
+            '99th percentile',
+            '99.9th percentile',
+            '100th percentile',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      ($.row('Ingester (ingest storage - last consumed offset)'))
+      .addPanel(
+        $.timeseriesPanel('Last consumed offset commits / sec') +
+        $.panelDescription(
+          'Last consumed offset commits / sec',
+          |||
+            Rate of "last consumed offset" commits issued by ingesters to Kafka.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            |||
+              sum (rate (cortex_ingest_storage_reader_offset_commit_requests_total{%s}[$__rate_interval]))
+              -
+              sum (rate (cortex_ingest_storage_reader_offset_commit_failures_total{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_offset_commit_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'successful',
+            'failed',
+          ],
+        ) + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed }) + $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Last consumed offset commits latency') +
+        $.panelDescription(
+          'Kafka record processing latency',
+          |||
+            Time spent to commit "last consumed offset" by ingesters to Kafka.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
             '50th percentile',
