@@ -152,12 +152,20 @@ func (m *RangeVectorSelectorWithTransformation) fillBuffer(rangeStart, rangeEnd 
 }
 
 // This is based on extrapolatedRate from promql/functions.go.
+// https://github.com/prometheus/prometheus/pull/13725 has a good explanation of the intended behaviour here.
 func (m *RangeVectorSelectorWithTransformation) calculateRate(rangeStart, rangeEnd int64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
 	durationToStart := float64(firstPoint.T-rangeStart) / 1000
 	durationToEnd := float64(rangeEnd-lastPoint.T) / 1000
 
 	sampledInterval := float64(lastPoint.T-firstPoint.T) / 1000
 	averageDurationBetweenSamples := sampledInterval / float64(count-1)
+
+	extrapolationThreshold := averageDurationBetweenSamples * 1.1
+	extrapolateToInterval := sampledInterval
+
+	if durationToStart >= extrapolationThreshold {
+		durationToStart = averageDurationBetweenSamples / 2
+	}
 
 	if delta > 0 && firstPoint.F >= 0 {
 		durationToZero := sampledInterval * (firstPoint.F / delta)
@@ -166,19 +174,14 @@ func (m *RangeVectorSelectorWithTransformation) calculateRate(rangeStart, rangeE
 		}
 	}
 
-	extrapolationThreshold := averageDurationBetweenSamples * 1.1
-	extrapolateToInterval := sampledInterval
+	extrapolateToInterval += durationToStart
 
-	if durationToStart < extrapolationThreshold {
-		extrapolateToInterval += durationToStart
-	} else {
-		extrapolateToInterval += averageDurationBetweenSamples / 2
+	if durationToEnd >= extrapolationThreshold {
+		durationToEnd = averageDurationBetweenSamples / 2
 	}
-	if durationToEnd < extrapolationThreshold {
-		extrapolateToInterval += durationToEnd
-	} else {
-		extrapolateToInterval += averageDurationBetweenSamples / 2
-	}
+
+	extrapolateToInterval += durationToEnd
+
 	factor := extrapolateToInterval / sampledInterval
 	factor /= m.Selector.Range.Seconds()
 	return delta * factor
