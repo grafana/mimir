@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+# Most cases for the @ modifier are covered already in the upstream test cases.
+# These test cases cover scenarios not covered by the upstream test cases, such as range queries, or edge cases that are uniquely likely to cause issues in the streaming engine.
+
 load 10s
   metric 0 1 2 3 4 5
 

@@ -98,6 +98,7 @@ func (b *RingBuffer) Append(p promql.FPoint) {
 	b.size++
 }
 
+// Reset clears the contents of this buffer.
 func (b *RingBuffer) Reset() {
 	b.firstIndex = 0
 	b.size = 0
@@ -110,6 +111,8 @@ func (b *RingBuffer) Close() {
 	b.points = nil
 }
 
+// First returns the first point in this buffer.
+// It panics if the buffer is empty.
 func (b *RingBuffer) First() promql.FPoint {
 	if b.size == 0 {
 		panic("Can't get first element of empty buffer")
@@ -118,6 +121,8 @@ func (b *RingBuffer) First() promql.FPoint {
 	return b.points[b.firstIndex]
 }
 
+// Last returns the last point in this buffer.
+// It panics if the buffer is empty.
 func (b *RingBuffer) Last() promql.FPoint {
 	if b.size == 0 {
 		panic("Can't get last element of empty buffer")
