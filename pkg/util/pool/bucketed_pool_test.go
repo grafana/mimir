@@ -54,3 +54,10 @@ func TestBucketedPool_PutEmptySlice(t *testing.T) {
 	s := pool.Get(1)
 	require.GreaterOrEqual(t, cap(s), 1)
 }
+
+func TestBucketedPool_PutSliceSmallerThanMinimum(t *testing.T) {
+	pool := NewBucketedPool(3, 1000, 10, makeFunc)
+	pool.Put([]int{1, 2})
+	s := pool.Get(3)
+	require.GreaterOrEqual(t, cap(s), 3)
+}

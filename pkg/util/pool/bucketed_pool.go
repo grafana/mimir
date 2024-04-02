@@ -47,7 +47,7 @@ func NewBucketedPool[T ~[]E, E any](minSize, maxSize int, factor float64, makeFu
 	return p
 }
 
-// Get returns a new slice that fits the given size.
+// Get returns a new slice with capacity greater than or equal to size.
 func (p *BucketedPool[T, E]) Get(size int) T {
 	for i, bktSize := range p.sizes {
 		if size > bktSize {
@@ -63,8 +63,9 @@ func (p *BucketedPool[T, E]) Get(size int) T {
 }
 
 // Put adds a slice to the right bucket in the pool.
+// If the slice does not belong to any bucket in the pool, it is ignored.
 func (p *BucketedPool[T, E]) Put(s T) {
-	if cap(s) == 0 {
+	if cap(s) < p.sizes[0] {
 		return
 	}
 
