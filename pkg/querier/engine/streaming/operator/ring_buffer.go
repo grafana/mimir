@@ -29,7 +29,9 @@ func (b *RingBuffer) DiscardPointsBefore(t int64) {
 // Points returns slices of the points in this buffer.
 // Either or both slice could be empty.
 // Callers must not modify the values in the returned slices.
+//
 // FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
+// Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
 func (b *RingBuffer) Points() ([]promql.FPoint, []promql.FPoint) {
 	endOfTailSegment := b.firstIndex + b.size
 
