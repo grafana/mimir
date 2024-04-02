@@ -38,6 +38,7 @@ var (
 	reasonLabelValueTooLong            = globalerror.SeriesLabelValueTooLong.LabelValue()
 	reasonMaxNativeHistogramBuckets    = globalerror.MaxNativeHistogramBuckets.LabelValue()
 	reasonInvalidNativeHistogramSchema = globalerror.InvalidSchemaNativeHistogram.LabelValue()
+	reasonBucketCountMismatch          = globalerror.BucketCountMismatch.LabelValue()
 	reasonDuplicateLabelNames          = globalerror.SeriesWithDuplicateLabelNames.LabelValue()
 	reasonTooFarInFuture               = globalerror.SampleTooFarInFuture.LabelValue()
 
@@ -65,7 +66,7 @@ var (
 		validation.MaxLabelNameLengthFlag,
 	)
 	labelValueTooLongMsgFormat = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
-		"received a series whose label value length exceeds the limit, value: '%.200s' (truncated) series: '%.200s'",
+		"received a series whose label value length exceeds the limit, label: '%s', value: '%.200s' (truncated) series: '%.200s'",
 		validation.MaxLabelValueLengthFlag,
 	)
 	invalidLabelMsgFormat   = globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
@@ -79,6 +80,7 @@ var (
 	maxNativeHistogramBucketsMsgFormat    = globalerror.MaxNativeHistogramBuckets.Message("received a native histogram sample with too many buckets, timestamp: %d series: %s, buckets: %d, limit: %d")
 	notReducibleNativeHistogramMsgFormat  = globalerror.NotReducibleNativeHistogram.Message("received a native histogram sample with too many buckets and cannot reduce, timestamp: %d series: %s, buckets: %d, limit: %d")
 	invalidSchemaNativeHistogramMsgFormat = globalerror.InvalidSchemaNativeHistogram.Message("received a native histogram sample with an invalid schema: %d")
+	bucketCountMismatchMsgFormat          = globalerror.BucketCountMismatch.Message("native histogram bucket count mismatch, timestamp: %d, series: %s, expected %v, got %v")
 	sampleTimestampTooNewMsgFormat        = globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
 		"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
 		validation.CreationGracePeriodFlag,
@@ -121,6 +123,7 @@ type sampleValidationMetrics struct {
 	labelValueTooLong            *prometheus.CounterVec
 	maxNativeHistogramBuckets    *prometheus.CounterVec
 	invalidNativeHistogramSchema *prometheus.CounterVec
+	bucketCountMismatch          *prometheus.CounterVec
 	duplicateLabelNames          *prometheus.CounterVec
 	tooFarInFuture               *prometheus.CounterVec
 }
@@ -135,6 +138,7 @@ func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
 	m.labelValueTooLong.DeletePartialMatch(filter)
 	m.maxNativeHistogramBuckets.DeletePartialMatch(filter)
 	m.invalidNativeHistogramSchema.DeletePartialMatch(filter)
+	m.bucketCountMismatch.DeletePartialMatch(filter)
 	m.duplicateLabelNames.DeletePartialMatch(filter)
 	m.tooFarInFuture.DeletePartialMatch(filter)
 }
@@ -148,6 +152,7 @@ func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string
 	m.labelValueTooLong.DeleteLabelValues(userID, group)
 	m.maxNativeHistogramBuckets.DeleteLabelValues(userID, group)
 	m.invalidNativeHistogramSchema.DeleteLabelValues(userID, group)
+	m.bucketCountMismatch.DeleteLabelValues(userID, group)
 	m.duplicateLabelNames.DeleteLabelValues(userID, group)
 	m.tooFarInFuture.DeleteLabelValues(userID, group)
 }
@@ -162,6 +167,7 @@ func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetric
 		labelValueTooLong:            validation.DiscardedSamplesCounter(r, reasonLabelValueTooLong),
 		maxNativeHistogramBuckets:    validation.DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
 		invalidNativeHistogramSchema: validation.DiscardedSamplesCounter(r, reasonInvalidNativeHistogramSchema),
+		bucketCountMismatch:          validation.DiscardedSamplesCounter(r, reasonBucketCountMismatch),
 		duplicateLabelNames:          validation.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
 		tooFarInFuture:               validation.DiscardedSamplesCounter(r, reasonTooFarInFuture),
 	}
@@ -248,6 +254,26 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 					break
 				}
 			}
+		}
+	}
+
+	// Check that bucket counts including zero bucket add up to the overall count.
+	if !s.IsFloatHistogram() {
+		// Do nothing for float histograms, due to floating point precision issues, we don't check the bucket count.
+		count := s.GetZeroCountInt()
+		bucketCount := int64(0)
+		for _, c := range s.GetNegativeDeltas() {
+			bucketCount += c
+			count += uint64(bucketCount)
+		}
+		bucketCount = int64(0)
+		for _, c := range s.GetPositiveDeltas() {
+			bucketCount += c
+			count += uint64(bucketCount)
+		}
+		if count != s.GetCountInt() {
+			m.bucketCountMismatch.WithLabelValues(userID, group).Inc()
+			return fmt.Errorf(bucketCountMismatchMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), s.GetCountInt(), count)
 		}
 	}
 
@@ -370,7 +396,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if len(l.Value) > maxLabelValueLength {
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(labelValueTooLongMsgFormat, l.Value, mimirpb.FromLabelAdaptersToString(ls))
+			return fmt.Errorf(labelValueTooLongMsgFormat, l.Name, l.Value, mimirpb.FromLabelAdaptersToString(ls))
 		} else if lastLabelName == l.Name {
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(duplicateLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))

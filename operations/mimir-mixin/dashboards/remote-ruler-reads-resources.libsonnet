@@ -7,7 +7,7 @@ local filename = 'mimir-remote-ruler-reads-resources.json';
     ($.dashboard('Remote ruler reads resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow(
-      $.row('Query-frontend (dedicated to ruler)')
+      $.row('Ruler-query-frontend')
       .addPanel(
         $.containerCPUUsagePanelByComponent('ruler_query_frontend'),
       )
@@ -19,7 +19,7 @@ local filename = 'mimir-remote-ruler-reads-resources.json';
       )
     )
     .addRow(
-      $.row('Query-scheduler (dedicated to ruler)')
+      $.row('Ruler-query-scheduler')
       .addPanel(
         $.containerCPUUsagePanelByComponent('ruler_query_scheduler'),
       )
@@ -31,7 +31,7 @@ local filename = 'mimir-remote-ruler-reads-resources.json';
       )
     )
     .addRow(
-      $.row('Querier (dedicated to ruler)')
+      $.row('Ruler-querier')
       .addPanel(
         $.containerCPUUsagePanelByComponent('ruler_querier'),
       )

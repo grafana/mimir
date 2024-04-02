@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"path"
 	"sort"
 	"time"
 
@@ -174,11 +173,9 @@ func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duratio
 			continue
 		}
 
-		metaPath := path.Join(meta.ULID.String(), block.MetaFilename)
-
-		attrs, err := userBucket.Attributes(ctx, metaPath)
+		attrs, err := block.GetMetaAttributes(ctx, meta, userBucket)
 		if err != nil {
-			return false, meta, errors.Wrapf(err, "unable to get object attributes for %s", metaPath)
+			return false, meta, err
 		}
 
 		if attrs.LastModified.After(threshold) {
