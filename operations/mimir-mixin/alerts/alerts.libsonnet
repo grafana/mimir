@@ -80,26 +80,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          alert: $.alertName('QueriesIncorrect'),
-          expr: |||
-            100 * sum by (%(group_by)s) (rate(test_exporter_test_case_result_total{result="fail"}[%(range_interval)s]))
-              /
-            sum by (%(group_by)s) (rate(test_exporter_test_case_result_total[%(range_interval)s])) > 1
-          ||| % {
-            group_by: $._config.alert_aggregation_labels,
-            range_interval: $.alertRangeInterval(5),
-          },
-          'for': '15m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              The %(product)s cluster %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% incorrect query results.
-            ||| % $._config,
-          },
-        },
-        {
           alert: $.alertName('InconsistentRuntimeConfig'),
           expr: |||
             count(count by(%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash)) without(sha256) > 1
