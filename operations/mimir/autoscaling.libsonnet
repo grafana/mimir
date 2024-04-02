@@ -6,6 +6,7 @@
     autoscaling_querier_min_replicas: error 'you must set autoscaling_querier_min_replicas in the _config',
     autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
     autoscaling_querier_target_utilization: 0.75,  // Target to utilize 75% querier workers on peak traffic, so we have 25% room for higher peaks.
+    autoscaling_querier_predictive_scaling_enabled: false,  // Use inflight queries from 7d ago to predict the number of queriers needed.
 
     autoscaling_ruler_querier_enabled: false,
     autoscaling_ruler_querier_min_replicas: error 'you must set autoscaling_ruler_querier_min_replicas in the _config',
@@ -170,31 +171,43 @@
     min_replica_count: replicasWithWeight(min_replicas, weight),
     max_replica_count: replicasWithWeight(max_replicas, weight),
 
-    triggers: [
-      {
-        metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+    triggers:
+      [
+        {
+          metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        // Each query scheduler tracks *at regular intervals* the number of inflight requests
-        // (both enqueued and processing queries) as a summary. With the following query we target
-        // to have enough querier workers to run the max observed inflight requests 50% of time.
-        //
-        // This metric covers the case queries are piling up in the query-scheduler queue.
-        query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[1m]))' % [query_scheduler_container_name, $._config.namespace], weight),
+          // Each query scheduler tracks *at regular intervals* the number of inflight requests
+          // (both enqueued and processing queries) as a summary. With the following query we target
+          // to have enough querier workers to run the max observed inflight requests 50% of time.
+          //
+          // This metric covers the case queries are piling up in the query-scheduler queue.
+          query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[1m]))' % [query_scheduler_container_name, $._config.namespace], weight),
 
-        threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
-      },
-      {
-        metric_name: 'cortex_%s_hpa_%s_requests_duration' % [std.strReplace(name, '-', '_'), $._config.namespace],
+          threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+        },
+        {
+          metric_name: 'cortex_%s_hpa_%s_requests_duration' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        // The total requests duration / second is a good approximation of the number of querier workers used.
-        //
-        // This metric covers the case queries are not necessarily piling up in the query-scheduler queue,
-        // but queriers are busy.
-        query: metricWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%s",namespace="%s"}[1m]))' % [querier_container_name, $._config.namespace], weight),
+          // The total requests duration / second is a good approximation of the number of querier workers used.
+          //
+          // This metric covers the case queries are not necessarily piling up in the query-scheduler queue,
+          // but queriers are busy.
+          query: metricWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%s",namespace="%s"}[1m]))' % [querier_container_name, $._config.namespace], weight),
 
-        threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
-      },
-    ],
+          threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+        },
+      ]
+      + if !$._config.autoscaling_querier_predictive_scaling_enabled then [] else [
+        {
+          metric_name: 'cortex_%s_hpa_%s_7d_offset' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+          // Scale queriers accodring to how many queriers would have been sufficient to handle the load 7 days ago.
+          // We use the query scheduler metric which includes active queries and queries in the queue.
+          // Preslace 30m before the event so we have time to spin up the extra queriers (including node autoscaling).
+          query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[30m] offset 6d23h30m))' % [query_scheduler_container_name, $._config.namespace], weight),
+          threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+        },
+      ],
   }) + {
     spec+: {
       advanced: {

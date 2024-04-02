@@ -1289,6 +1289,10 @@ querier:
     minReplicaCount: 1
     maxReplicaCount: 10
     querySchedulerInflightRequestsThreshold: 12
+    # -- predictiveScalingEnabled scales up the querier based on the inflight requests a week ago (6d23h30m).
+    # This helps with scaling up for predictable traffic patterns and minimizing HTTP 429 responses due to filled query queues.
+    # Due to false positive items it can increase the querier TCO.
+    predictiveScalingEnabled: false
     behavior:
       scaleDown:
         policies:
