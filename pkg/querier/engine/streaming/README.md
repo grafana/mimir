@@ -14,7 +14,7 @@ For example, let's say we're evaluating the query `sum by (environment) (some_me
 
 Prometheus' PromQL engine will first load all samples for all series selected by `some_metric{cluster="cluster-1"}` into memory.
 It will then compute the sum for each unique value of `environment`.
-At its peak, Prometheus' PromQL engine will hold all samples for all input series (from `some_metric{cluster="cluster-1"}) and all samples for all output series in memory at once.
+At its peak, Prometheus' PromQL engine will hold all samples for all input series (from `some_metric{cluster="cluster-1"}`) and all samples for all output series in memory at once.
 
 The streaming engine here will instead execute the selector `some_metric{cluster="cluster-1"}` and gather the labels of all series returned.
 With these labels, it will then compute all the possible output series for the `sum by (environment)` operation (ie. one output series per unique value of `environment`).
@@ -61,25 +61,32 @@ In our example, the instant vector selector operator would return all the matchi
 `Next()` is then called by the consuming operator to read each series' data, one series at a time.
 In our example, the `sum` aggregation operator would call `Next()` on the instant vector selector operator to get the first series' data, then again to get the second series' data and so on.
 
-Elaborating on the example from before, the overall query would proceed like this:
+Elaborating on the example from before, the overall query would proceed like this, assuming the request is received over HTTP:
 
-1. root of the query calls `Series()` on `max` aggregation operator
-   1. `max` aggregation operator calls `Series()` on `sum` aggregation operator
-      1. `sum` aggregation operator calls `Series()` on instant vector selector operator
-         - instant vector selector operator issues `Select()` call, which retrieves labels from ingesters and store-gateways
-      2. `sum` aggregation operator computes output series (one per unique value of `environment`) based on input series from instant vector selector
-   2. `max` aggregation operator computes output series based on input series from `sum` aggregation operator
-      - in this case, there's just one output series, given no grouping is being performed
-2. root of the query calls `Next()` on `max` aggregation operator until all series have been returned
-   1. `max` aggregation operator calls `Next()` on `sum` aggregation operator
-      1. `sum` aggregation operator calls `Next()` on instant vector selector operator
-         - instant vector selector returns samples for next series
-      2. `sum` aggregation operator updates its running totals for the relevant output series
-      3. if all input series have now been seen for the output series just updated, `sum` aggregation operator returns that output series and removes it from its internal state
-      4. otherwise, it calls `Next()` again and repeats
-   2. `max` aggregation operator updates its running maximum based on the series returned
-   3. if all input series have been seen, `max` aggregation operator returns
-   4. otherwise, it calls `Next()` again and repeats
+1. query HTTP API handler calls `Engine.NewInstantQuery()` or `Engine.NewRangeQuery()` as appropriate ([source](./engine.go))
+   1. engine parses PromQL expression using Prometheus' PromQL parser, producing an abstract syntax tree (AST) ([source](./query.go))
+   1. engine converts AST produced by PromQL parser to query plan ([source](./query.go))
+   1. engine returns created `Query` instance
+1. query HTTP API handler calls `Query.Exec()`
+   1. `Query.Exec()` calls `Series()` on `max` aggregation operator
+      1. `max` aggregation operator calls `Series()` on `sum` aggregation operator
+         1. `sum` aggregation operator calls `Series()` on instant vector selector operator
+            - instant vector selector operator issues `Select()` call, which retrieves labels from ingesters and store-gateways
+         1. `sum` aggregation operator computes output series (one per unique value of `environment`) based on input series from instant vector selector
+      1. `max` aggregation operator computes output series based on input series from `sum` aggregation operator
+         - in this case, there's just one output series, given no grouping is being performed
+   1. root of the query calls `Next()` on `max` aggregation operator until all series have been returned
+      1. `max` aggregation operator calls `Next()` on `sum` aggregation operator
+         1. `sum` aggregation operator calls `Next()` on instant vector selector operator
+            - instant vector selector returns samples for next series
+         1. `sum` aggregation operator updates its running totals for the relevant output series
+         1. if all input series have now been seen for the output series just updated, `sum` aggregation operator returns that output series and removes it from its internal state
+         1. otherwise, it calls `Next()` again and repeats
+      1. `max` aggregation operator updates its running maximum based on the series returned
+      1. if all input series have been seen, `max` aggregation operator returns
+      1. otherwise, it calls `Next()` again and repeats
+1. query HTTP API handler converts returned result to wire format (either JSON or Protobuf) and sends to caller
+1. query HTTP API handler calls `Query.Close()` to release remaining resources
 
 [^1]:
     This isn't strictly correct, as chunks streaming will buffer chunks for some series in memory as they're received over the network, and it ignores the initial memory consumption caused by the non-streaming calls to `Series()`.
