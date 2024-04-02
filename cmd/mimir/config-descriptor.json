@@ -220,7 +220,8 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "server.proxy-protocol-enabled",
-          "fieldType": "boolean"
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

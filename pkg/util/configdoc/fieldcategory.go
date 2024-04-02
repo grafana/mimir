@@ -69,6 +69,7 @@ var categoryOverrides = map[string]Category{
 	"server.path-prefix":                                Advanced,
 	"server.register-instrumentation":                   Advanced,
 	"server.log-request-at-info-level-enabled":          Advanced,
+	"server.proxy-protocol-enabled":                     Experimental,
 
 	// main.go global flags
 	"config.file":       Basic,
