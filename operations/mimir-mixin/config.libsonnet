@@ -57,7 +57,8 @@
     },
 
     // Some dashboards show panels grouping together multiple components of a given "path".
-    // This mapping configures which components belong to each group.
+    // This mapping configures which components belong to each group. A component can belong
+    // to multiple groups.
     local componentGroups = {
       write: ['distributor', 'ingester', 'mimir_write'],
       read: ['query_frontend', 'querier', 'ruler_query_frontend', 'ruler_querier', 'mimir_read'],
