@@ -1054,14 +1054,12 @@ func TestComputeCompactionJobs(t *testing.T) {
 	blockMarkedForNoCompact := ulid.MustNew(ulid.Now(), rand.Reader)
 	require.NoError(t, block.MarkForNoCompact(context.Background(), log.NewNopLogger(), userBucket, blockMarkedForNoCompact, block.CriticalNoCompactReason, "testing", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
 
-	cases := []struct {
-		name           string
+	cases := map[string]struct {
 		blocks         bucketindex.Blocks
 		expectedSplits int
 		expectedMerges int
 	}{
-		{
-			name: "standard",
+		"standard": {
 			blocks: bucketindex.Blocks{
 				// Some 2h blocks that should be compacted together and split.
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
@@ -1082,8 +1080,7 @@ func TestComputeCompactionJobs(t *testing.T) {
 			expectedSplits: 1,
 			expectedMerges: 2,
 		},
-		{
-			name: "labels don't match",
+		"labels don't match": {
 			blocks: bucketindex.Blocks{
 				// Compactor wouldn't produce a job for this pair as their external labels differ:
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
@@ -1100,8 +1097,7 @@ func TestComputeCompactionJobs(t *testing.T) {
 			expectedSplits: 0,
 			expectedMerges: 0,
 		},
-		{
-			name: "ignore deprecated labels",
+		"ignore deprecated labels": {
 			blocks: bucketindex.Blocks{
 				// Compactor will ignore deprecated labels when computing jobs. Estimation should do the same.
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
@@ -1124,8 +1120,8 @@ func TestComputeCompactionJobs(t *testing.T) {
 		},
 	}
 
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
 			index := &bucketindex.Index{Blocks: c.blocks}
 			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, 3, 0)
 			require.NoError(t, err)
@@ -1158,18 +1154,15 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 		}
 	}
 
-	cases := []struct {
-		name          string
+	cases := map[string]struct {
 		index         *bucketindex.Index
 		expectedMetas map[ulid.ULID]*block.Meta
 	}{
-		{
-			name:          "empty",
+		"empty": {
 			index:         &bucketindex.Index{Blocks: bucketindex.Blocks{}},
 			expectedMetas: map[ulid.ULID]*block.Meta{},
 		},
-		{
-			name: "basic",
+		"basic": {
 			index: &bucketindex.Index{
 				Blocks: bucketindex.Blocks{
 					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS},
@@ -1179,8 +1172,7 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 				makeUlid(1): makeMeta(makeUlid(1), map[string]string{}),
 			},
 		},
-		{
-			name: "adopt shard ID",
+		"adopt shard ID": {
 			index: &bucketindex.Index{
 				Blocks: bucketindex.Blocks{
 					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS, CompactorShardID: "78"},
@@ -1190,8 +1182,7 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "78"}),
 			},
 		},
-		{
-			name: "use labeled shard ID",
+		"use labeled shard ID": {
 			index: &bucketindex.Index{
 				Blocks: bucketindex.Blocks{
 					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS,
@@ -1202,8 +1193,7 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
 			},
 		},
-		{
-			name: "don't overwrite labeled shard ID",
+		"don't overwrite labeled shard ID": {
 			index: &bucketindex.Index{
 				Blocks: bucketindex.Blocks{
 					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS, CompactorShardID: "78",
@@ -1214,8 +1204,7 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
 			},
 		},
-		{
-			name: "honor deletion marks",
+		"honor deletion marks": {
 			index: &bucketindex.Index{
 				BlockDeletionMarks: bucketindex.BlockDeletionMarks{
 					&bucketindex.BlockDeletionMark{ID: makeUlid(14)},
@@ -1226,8 +1215,7 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 			},
 			expectedMetas: map[ulid.ULID]*block.Meta{},
 		},
-		{
-			name: "excess deletes",
+		"excess deletes": {
 			index: &bucketindex.Index{
 				BlockDeletionMarks: bucketindex.BlockDeletionMarks{
 					&bucketindex.BlockDeletionMark{ID: makeUlid(15)},
@@ -1243,8 +1231,8 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 		},
 	}
 
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
 			m := ConvertBucketIndexToMetasForCompactionJobPlanning(c.index)
 			require.Equal(t, c.expectedMetas, m)
 		})
