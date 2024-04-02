@@ -1184,6 +1184,33 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
 			})
 			return true
+
+		// Map TSDB native histogram validation errors to soft errors.
+		case errors.Is(err, histogram.ErrHistogramCountMismatch):
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, err, model.Time(timestamp), labels)
+			})
+			return true
+		case errors.Is(err, histogram.ErrHistogramCountNotBigEnough):
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, err, model.Time(timestamp), labels)
+			})
+			return true
+		case errors.Is(err, histogram.ErrHistogramNegativeBucketCount):
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, err, model.Time(timestamp), labels)
+			})
+			return true
+		case errors.Is(err, histogram.ErrHistogramSpanNegativeOffset):
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, err, model.Time(timestamp), labels)
+			})
+			return true
+		case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
+			})
+			return true
 		}
 		return false
 	}

@@ -122,6 +122,7 @@
 * [BUGFIX] Fix metadata API using wrong JSON field names. #7475
 * [BUGFIX] Ruler: fix native histogram recording rule result corruption. #7552
 * [BUGFIX] Query-frontend: Fix memory leak on every request. #7654
+* [BUGFIX] Ingester: turn native histogram validation errors in TSDB into soft ingester errors that result in returning 4xx to the end-user instead of 5xx. #7736 #7773
 
 ### Mixin
 

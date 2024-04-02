@@ -1365,6 +1365,53 @@ This non-critical error occurs when Mimir receives a write request that contains
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
 {{< /admonition >}}
 
+### err-mimir-native-histogram-count-mismatch
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where the buckets counts don't add up to the overall count recorded in the native histogram, provided that the overall
+sum is a regular float number.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-count-not-big-enough
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where the buckets counts add up to a higher number than the overall count recorded in the native histogram, provided
+that the overall sum is not a float number (NaN).
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-negative-bucket-count
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where some bucket count is negative.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-span-negative-offset
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where a bucket span has a negative offset.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-spans-buckets-mismatch
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where the number of bucket counts does not agree with the number of buckets encoded in the bucket spans.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
 ### err-mimir-label-invalid
 
 This non-critical error occurs when Mimir receives a write request that contains a series with an invalid label name.
