@@ -78,32 +78,31 @@ func TestTimeseriesFromPool(t *testing.T) {
 }
 
 func TestCopyToYoloString(t *testing.T) {
-	stringByteArray := func(val string) uintptr {
-		return (*reflect.SliceHeader)(unsafe.Pointer(&val)).Data
-	}
-
 	testString := yoloString([]byte("testString"))
-	testStringByteArray := stringByteArray(testString)
+	testStringByteArray := unsafe.StringData(testString)
 
 	// Verify that the unsafe copy is unsafe.
 	unsafeCopy := testString
-	unsafeCopyByteArray := stringByteArray(unsafeCopy)
-	assert.Equal(t, testStringByteArray, unsafeCopyByteArray)
+	unsafeCopyByteArray := unsafe.StringData(unsafeCopy)
+	assert.Same(t, testStringByteArray, unsafeCopyByteArray)
 
 	// Create a safe copy by using the newBuf byte slice.
 	newBuf := make([]byte, 0, len(testString))
 	safeCopy, remainingBuf := copyToYoloString(newBuf, unsafeCopy)
 
 	// Verify that the safe copy is safe by checking that the underlying byte arrays are different.
-	safeCopyByteArray := stringByteArray(safeCopy)
-	assert.NotEqual(t, testStringByteArray, safeCopyByteArray)
+	safeCopyByteArray := unsafe.StringData(safeCopy)
+	assert.NotSame(t, testStringByteArray, safeCopyByteArray)
 
 	// Verify that the remainingBuf has been used up completely.
 	assert.Len(t, remainingBuf, 0)
 
 	// Verify that the remainingBuf is using the same underlying byte array as safeCopy but advanced by the length.
+	remainingBufArrayData := unsafe.SliceData(remainingBuf)
 	remainingBufArray := (*reflect.SliceHeader)(unsafe.Pointer(&remainingBuf)).Data
-	assert.Equal(t, int(safeCopyByteArray)+len(newBuf), int(remainingBufArray))
+	t.Logf("remainingBufArray should be at %d, is at %d", remainingBufArray, int(uintptr(unsafe.Pointer(&safeCopy)))+len(newBuf))
+	//assert.Equal(t, int(safeCopyByteArray)+len(newBuf), int(remainingBufArray))
+	assert.Equal(t, uintptr(unsafe.Add(unsafe.Pointer(&safeCopy), len(newBuf))), uintptr(unsafe.Pointer(remainingBufArrayData)))
 }
 
 func TestDeepCopyTimeseries(t *testing.T) {
