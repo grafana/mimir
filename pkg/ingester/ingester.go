@@ -642,11 +642,15 @@ func (i *Ingester) stopping(_ error) error {
 		}
 	}
 
-	if err := services.StopManagerAndAwaitStopped(context.Background(), i.subservicesBeforePartitionReader); err != nil {
+	// Stop subservices.
+	i.subservicesBeforePartitionReader.StopAsync()
+	i.subservicesAfterIngesterRingLifecycler.StopAsync()
+
+	if err := i.subservicesBeforePartitionReader.AwaitStopped(context.Background()); err != nil {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
 
-	if err := services.StopManagerAndAwaitStopped(context.Background(), i.subservicesAfterIngesterRingLifecycler); err != nil {
+	if err := i.subservicesAfterIngesterRingLifecycler.AwaitStopped(context.Background()); err != nil {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
 
