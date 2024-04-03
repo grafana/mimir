@@ -360,6 +360,8 @@ func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {
 		// Records are expected to be sorted by offsets, so we can simply look at the last one.
 		rec := partition.Records[len(partition.Records)-1]
 		r.consumedOffsetWatcher.Notify(rec.Offset)
+
+		r.metrics.lastConsumedOffset.Set(float64(rec.Offset))
 	})
 }
 
@@ -550,7 +552,7 @@ func newPartitionCommitter(kafkaCfg KafkaConfig, admClient *kadm.Client, partiti
 		}),
 		lastCommittedOffset: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name:        "cortex_ingest_storage_reader_last_committed_offset",
-			Help:        "Total last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.",
+			Help:        "The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.",
 			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
 		}),
 	}
@@ -642,6 +644,7 @@ type readerMetrics struct {
 	strongConsistencyRequests prometheus.Counter
 	strongConsistencyFailures prometheus.Counter
 	strongConsistencyLatency  prometheus.Histogram
+	lastConsumedOffset        prometheus.Gauge
 	kprom                     *kprom.Metrics
 }
 
@@ -687,6 +690,11 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
+		}),
+		lastConsumedOffset: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name:        "cortex_ingest_storage_reader_last_consumed_offset",
+			Help:        "The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.",
+			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
 		}),
 		kprom: kprom.NewMetrics("cortex_ingest_storage_reader",
 			kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, reg)),
