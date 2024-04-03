@@ -49,6 +49,7 @@
 ### Jsonnet
 
 * [CHANGE] Memcached: Change default read timeout for chunks and index caches to `750ms` from `450ms`. #7778
+* [ENHANCEMENT] Compactor: add `$._config.cortex_compactor_concurrent_rollout_enabled` option (disabled by default) that makes use of rollout-operator to speed up the rollout of compactors. #7783
 * [BUGFIX] Guard against missing samples in KEDA queries. #7691
 
 ### Mimirtool
