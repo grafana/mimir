@@ -1,12 +1,6 @@
 # Changelog
 
-## 2.12.0-rc.1
-
-### Grafana Mimir
-
-* [BUGFIX] Query-frontend: Fix memory leak on every request. #7654
-
-## 2.12.0-rc.0
+## 2.12.0
 
 ### Grafana Mimir
 
@@ -129,6 +123,7 @@
 * [BUGFIX] Fix metadata API using wrong JSON field names. #7475
 * [BUGFIX] Ruler: fix native histogram recording rule result corruption. #7552
 * [BUGFIX] Querier: fix HTTP status code translations for remote read requests. Previously, remote-read had conflicting behaviours: when returning samples all internal errors were translated to HTTP 400; when returning chunks all internal errors were translated to HTTP 500. #7487
+* [BUGFIX] Query-frontend: Fix memory leak on every request. #7654
 
 ### Mixin
 
