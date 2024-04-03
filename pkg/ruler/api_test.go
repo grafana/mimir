@@ -298,7 +298,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				},
 			},
 			expectedConfigured: 1,
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits[userID] = validation.MockDefaultLimits()
 				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = true
 				tenantLimits[userID].RulerAlertingRulesEvaluationEnabled = false
@@ -330,7 +330,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				},
 			},
 			expectedConfigured: 1,
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits[userID] = validation.MockDefaultLimits()
 				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
 				tenantLimits[userID].RulerAlertingRulesEvaluationEnabled = true
@@ -364,7 +364,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				},
 			},
 			expectedConfigured: 0,
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits[userID] = validation.MockDefaultLimits()
 				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
 				tenantLimits[userID].RulerAlertingRulesEvaluationEnabled = false

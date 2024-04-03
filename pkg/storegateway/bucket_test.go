@@ -340,7 +340,7 @@ func TestBlockLabelNames(t *testing.T) {
 			onLabelNamesCalled: func() error {
 				return fmt.Errorf("not expected the LabelNames() calls with matchers")
 			},
-			onLabelValuesOffsetsCalled: func(name string) error {
+			onLabelValuesOffsetsCalled: func(string) error {
 				expectedCalls--
 				if expectedCalls < 0 {
 					return fmt.Errorf("didn't expect another index.Reader.LabelValues() call")
@@ -392,7 +392,7 @@ func TestBlockLabelValues(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
 			Reader:                     b.indexHeaderReader,
-			onLabelValuesOffsetsCalled: func(name string) error { return context.DeadlineExceeded },
+			onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
 		}
 		b.indexCache = cacheNotExpectingToStoreLabelValues{t: t}
 
@@ -405,7 +405,7 @@ func TestBlockLabelValues(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
 			Reader: b.indexHeaderReader,
-			onLabelValuesOffsetsCalled: func(name string) error {
+			onLabelValuesOffsetsCalled: func(string) error {
 				expectedCalls--
 				if expectedCalls < 0 {
 					return fmt.Errorf("didn't expect another index.Reader.LabelValues() call")
@@ -1904,7 +1904,7 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 	tb, store, seriesSet1, seriesSet2, block1, block2, cleanup := setupStoreForHintsTest(t, 5000)
 	tb.Cleanup(cleanup)
 	for _, streamingBatchSize := range []int{0, 1, 5} {
-		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(*testing.T) {
 			runTestServerSeries(tb, store, streamingBatchSize, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
 		})
 	}

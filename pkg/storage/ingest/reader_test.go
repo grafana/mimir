@@ -174,7 +174,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		// We define a custom consume function which introduces a delay once the 2nd record
 		// has been consumed but before the function returns. From the PartitionReader perspective,
 		// the 2nd record consumption will be delayed.
-		consumer := consumerFunc(func(ctx context.Context, records []record) error {
+		consumer := consumerFunc(func(_ context.Context, records []record) error {
 			for _, record := range records {
 				// Introduce a delay before returning from the consume function once
 				// the 2nd record has been consumed.
@@ -306,7 +306,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		var (
 			_, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-			consumer       = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			consumer       = consumerFunc(func(context.Context, []record) error { return nil })
 			reg            = prometheus.NewPedanticRegistry()
 		)
 
@@ -328,12 +328,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
 			reg                  = prometheus.NewPedanticRegistry()
 		)
 
 		// Mock Kafka to fail the Fetch request.
-		cluster.ControlKey(int16(kmsg.Fetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 
 			return nil, errors.New("mocked error"), true
@@ -368,12 +368,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			consumedRecordsCount = atomic.NewInt64(0)
 		)
 
-		consumer := consumerFunc(func(ctx context.Context, records []record) error {
+		consumer := consumerFunc(func(_ context.Context, records []record) error {
 			consumedRecordsCount.Add(int64(len(records)))
 			return nil
 		})
 
-		cluster.ControlKey(int16(kmsg.Fetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 			fetchRequestsCount.Inc()
 
@@ -438,12 +438,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			consumedRecordsCount     = atomic.NewInt64(0)
 		)
 
-		consumer := consumerFunc(func(ctx context.Context, records []record) error {
+		consumer := consumerFunc(func(_ context.Context, records []record) error {
 			consumedRecordsCount.Add(int64(len(records)))
 			return nil
 		})
 
-		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 			listOffsetsRequestsCount.Inc()
 
@@ -510,7 +510,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			consumedRecords      []string
 		)
 
-		consumer := consumerFunc(func(ctx context.Context, records []record) error {
+		consumer := consumerFunc(func(_ context.Context, records []record) error {
 			consumedRecordsMx.Lock()
 			defer consumedRecordsMx.Unlock()
 
@@ -520,7 +520,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			return nil
 		})
 
-		cluster.ControlKey(int16(kmsg.Fetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 
 			fetchRequestsCount.Inc()
@@ -591,7 +591,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			consumedRecords      []string
 		)
 
-		consumer := consumerFunc(func(ctx context.Context, records []record) error {
+		consumer := consumerFunc(func(_ context.Context, records []record) error {
 			consumedRecordsMx.Lock()
 			defer consumedRecordsMx.Unlock()
 
@@ -601,7 +601,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			return nil
 		})
 
-		cluster.ControlKey(int16(kmsg.Fetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 			fetchRequestsCount.Inc()
 
@@ -683,7 +683,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			consumedRecords      []string
 		)
 
-		consumer := consumerFunc(func(ctx context.Context, records []record) error {
+		consumer := consumerFunc(func(_ context.Context, records []record) error {
 			consumedRecordsMx.Lock()
 			defer consumedRecordsMx.Unlock()
 
@@ -693,7 +693,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			return nil
 		})
 
-		cluster.ControlKey(int16(kmsg.Fetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 			fetchRequestsCount.Inc()
 
@@ -769,12 +769,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		var (
 			cluster, clusterAddr     = testkafka.CreateCluster(t, partitionID+1, topicName)
-			consumer                 = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			consumer                 = consumerFunc(func(context.Context, []record) error { return nil })
 			listOffsetsRequestsCount = atomic.NewInt64(0)
 		)
 
 		// Mock Kafka to always fail the ListOffsets request.
-		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 
 			listOffsetsRequestsCount.Inc()
@@ -806,12 +806,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
 			fetchRequestsCount   = atomic.NewInt64(0)
 		)
 
 		// Mock Kafka to always fail the Fetch request.
-		cluster.ControlKey(int16(kmsg.Fetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 
 			fetchRequestsCount.Inc()
@@ -856,12 +856,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				t.Cleanup(cancel)
 
-				consumer := consumerFunc(func(ctx context.Context, records []record) error {
+				consumer := consumerFunc(func(context.Context, []record) error {
 					return nil
 				})
 
 				cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
-				cluster.ControlKey(int16(kmsg.Fetch), func(req kmsg.Request) (kmsg.Response, error, bool) {
+				cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
 					cluster.KeepControl()
 
 					// Throttle the Fetch request.
@@ -938,7 +938,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
 			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
 		)
 
@@ -968,7 +968,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
 			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
 		)
 
@@ -1008,7 +1008,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(ctx context.Context, records []record) error { return nil })
+			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
 			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
 		)
 
@@ -1189,7 +1189,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 		cluster, clusterAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 
 		// Mock the cluster to fail any offset commit request.
-		cluster.ControlKey(kmsg.OffsetCommit.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(kmsg.OffsetCommit.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 			return nil, errors.New("mocked error"), true
 		})
