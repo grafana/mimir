@@ -1,8 +1,7 @@
 
 ---
 aliases:
-  - /docs/
-  - /docs/
+  - /docs/mimir/ # /docs/mimir/<MIMIR_VERSION>/
 description: Learn about the key benefits and features of Grafana Mimir.
 labels:
   products:
@@ -25,22 +24,22 @@ cards:
       description: Get started with Grafana Mimir
       height: 24
     - title: Configurations
-      href: ./
-      description: Learn about Mimir configuration options
+      href: ./configure/about-configurations/
+      description: Learn about configuration options for Grafana Mimir
       height: 24
     - title: Send metric data
-      href: .configure/
+      href: .send/
       description: Configure your data source to write data to Mimir
       height: 24
     - title: Manage
-      href: .configure
+      href: ./manage/
       description: Explore your options when deploying, configuring and managing Mimir
     - title: Query metric labels
-      href: ./
+      href: ./query/
       description: Query metric labels with HTTP API endpoints.
       height: 24
     - title: Visualize data
-      href: ./visualize-data
+      href: ./visualize-data/
       description: Use Grafana Explore and PromQL to visualize data in Grafana
       height: 24
 ---
