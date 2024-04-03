@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -242,7 +243,7 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		// Should return no error on client errors.
 		require.NoError(t, consumer.consume(context.Background(), []record{reqRecord}))
 
-		assert.Contains(t, logs.String(), pusherErr.Error())
+		assert.Contains(t, logs.String(), fmt.Sprintf("%s (sampled 1/100)", pusherErr.Error()))
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_records_failed_total Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
 			# TYPE cortex_ingest_storage_reader_records_failed_total counter

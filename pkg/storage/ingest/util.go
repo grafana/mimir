@@ -120,7 +120,11 @@ func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
 }
 
 // shouldLog returns whether err should be logged.
-func shouldLog(ctx context.Context, err error, elapsedTime time.Duration) bool {
+func shouldLog(ctx context.Context, err error) (bool, string) {
 	var optional middleware.OptionalLogging
-	return !errors.As(err, &optional) || optional.ShouldLog(ctx, elapsedTime)
+	if !errors.As(err, &optional) {
+		return true, ""
+	}
+
+	return optional.ShouldLog(ctx)
 }
