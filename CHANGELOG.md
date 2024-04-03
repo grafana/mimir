@@ -30,7 +30,7 @@
 * [ENHANCEMENT] Rules: Add metric `cortex_prometheus_rule_group_last_restore_duration_seconds` which measures how long it takes to restore rule groups using the `ALERTS_FOR_STATE` series #7974
 * [ENHANCEMENT] OTLP: Improve remote write format translation performance by using label set hashes for metric identifiers instead of string based ones. #8012
 * [ENHANCEMENT] Querying: Remove OpEmptyMatch from regex concatenations. #8012
-* [ENHANCEMENT] Store-gateway: add `-blocks-storage.bucket-store.max-concurrent-queue-timeout`. When set, queries at the store-gateway's query gate will not wait longer than that to execute. If a query reaches the wait timeout, then the querier will retry the blocks on a different store-gateway. If all store-gateways are unavailable, then the query will fail with `err-mimi-store-consistency-check-failed`. #7777
+* [ENHANCEMENT] Store-gateway: add `-blocks-storage.bucket-store.max-concurrent-queue-timeout`. When set, queries at the store-gateway's query gate will not wait longer than that to execute. If a query reaches the wait timeout, then the querier will retry the blocks on a different store-gateway. If all store-gateways are unavailable, then the query will fail with `err-mimir-store-consistency-check-failed`. #7777
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 * [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
