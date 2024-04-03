@@ -25,6 +25,7 @@
 * [BUGFIX] Ingester: don't retain blocks if they finish exactly on the boundary of the retention window. #7656
 * [BUGFIX] Bug-fixes and improvements to experimental native histograms. #7744
 * [BUGFIX] Querier: return an error when a query uses `label_join` with an invalid destination label name. #7744
+* [BUGFIX] Compactor: correct outstanding job estimation in metrics and `compaction-planner` tool when block labels differ. #7745
 
 ### Mixin
 
