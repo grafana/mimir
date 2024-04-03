@@ -312,7 +312,7 @@ type Ingester struct {
 	// Metrics shared across all per-tenant shippers.
 	shipperMetrics *shipperMetrics
 
-	subservicesBeforePartitionReader       *services.Manager
+	subservicesForPartitionReplay          *services.Manager
 	subservicesAfterIngesterRingLifecycler *services.Manager
 
 	activeGroups *util.ActiveGroupsCleanupService
@@ -574,7 +574,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	// Start the following services before starting the ingest storage reader, in order to have them
 	// running while replaying the partition (if ingest storage is enabled).
-	i.subservicesBeforePartitionReader, err = createManagerThenStartAndAwaitHealthy(ctx, i.compactionService, i.metricsUpdaterService, i.metadataPurgerService)
+	i.subservicesForPartitionReplay, err = createManagerThenStartAndAwaitHealthy(ctx, i.compactionService, i.metricsUpdaterService, i.metadataPurgerService)
 	if err != nil {
 		return errors.Wrap(err, "failed to start ingester subservices before partition reader")
 	}
@@ -654,10 +654,10 @@ func (i *Ingester) stopping(_ error) error {
 	}
 
 	// Stop subservices.
-	i.subservicesBeforePartitionReader.StopAsync()
+	i.subservicesForPartitionReplay.StopAsync()
 	i.subservicesAfterIngesterRingLifecycler.StopAsync()
 
-	if err := i.subservicesBeforePartitionReader.AwaitStopped(context.Background()); err != nil {
+	if err := i.subservicesForPartitionReplay.AwaitStopped(context.Background()); err != nil {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
 
