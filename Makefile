@@ -526,6 +526,9 @@ dist: ## Generates binaries for a Mimir release.
 			echo "Building metaconvert for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
 			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
+			echo "Building mimir-continuous-test for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-continuous-test-$$os-$$arch$$suffix ./cmd/mimir-continuous-test; \
+			sha256sum ./dist/mimir-continuous-test-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-continuous-test-$$os-$$arch$$suffix-sha-256; \
 			echo "Building markblocks for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/markblocks-$$os-$$arch$$suffix ./tools/markblocks; \
 			sha256sum ./dist/markblocks-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/markblocks-$$os-$$arch$$suffix-sha-256; \
