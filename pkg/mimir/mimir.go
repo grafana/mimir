@@ -759,6 +759,10 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
 		})
 
+	// Do not allow to configure potentially unsafe options until we've properly tested them in Mimir.
+	// These configuration options are hidden in the auto-generated documentation (see pkg/util/configdoc).
+	cfg.Server.GRPCServerRecvBufferPoolsEnabled = false
+
 	// Inject the registerer in the Server config too.
 	cfg.Server.Registerer = reg
 

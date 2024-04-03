@@ -214,6 +214,17 @@
         },
         {
           "kind": "field",
+          "name": "proxy_protocol_enabled",
+          "required": false,
+          "desc": "Enables PROXY protocol.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.proxy-protocol-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "tls_cipher_suites",
           "required": false,
           "desc": "Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.",
