@@ -12,7 +12,7 @@ weight: 1
 hero:
   title: Grafana Mimir
   level: 1
-  image: /media/docs/
+  image: /media/docs/mimir/GrafanaLogo_Mimir_icon.png
   width: 100
   height: 100
   description: Grafana Mimir is an open source software that provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus.
