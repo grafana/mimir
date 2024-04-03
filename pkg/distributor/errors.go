@@ -253,14 +253,7 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 			errCode = codes.Unimplemented
 		}
 	}
-	stat := status.New(errCode, pushErr.Error())
-	if errDetails != nil {
-		statWithDetails, err := stat.WithDetails(errDetails)
-		if err == nil {
-			return statWithDetails.Err()
-		}
-	}
-	return stat.Err()
+	return globalerror.NewErrorWithGRPCStatus(pushErr, errCode, errDetails)
 }
 
 func wrapIngesterPushError(err error, ingesterID string) error {
