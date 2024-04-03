@@ -645,7 +645,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: noOpQueryLimiter,
 		},
-		"two store-gateway instances returning no response causes consistency check to fail": { // TODO dimitarvdimitrov
+		"two store-gateway instances returning no response causes consistency check to fail": {
 			finderResult: bucketindex.Blocks{
 				{ID: block1},
 			},
