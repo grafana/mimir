@@ -5695,6 +5695,17 @@
         },
         {
           "kind": "field",
+          "name": "use_active_series_decoder",
+          "required": false,
+          "desc": "Set to true to use the zero-allocation response decoder for active series queries.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.use-active-series-decoder",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "query_result_response_format",
           "required": false,
           "desc": "Format to use when retrieving query results from queriers. Supported values: json, protobuf",
