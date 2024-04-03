@@ -224,6 +224,8 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 			)
 		}
 
+		relativeDuration := expectedResponse.elapsedTime - actualResponse.elapsedTime
+		p.metrics.relativeDuration.WithLabelValues(req.Method, p.routeName).Observe(relativeDuration.Seconds())
 		p.metrics.responsesComparedTotal.WithLabelValues(p.routeName, string(result)).Inc()
 	}
 }

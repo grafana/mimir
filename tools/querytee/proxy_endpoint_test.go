@@ -446,6 +446,138 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 	}
 }
 
+func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
+	scenarios := map[string]struct {
+		preferredResponseLatency time.Duration
+		secondaryResponseLatency time.Duration
+		expectedMetric           string
+	}{
+		"secondary backend is 2 seconds faster than preferred": {
+			preferredResponseLatency: 3 * time.Second,
+			secondaryResponseLatency: 1 * time.Second,
+			expectedMetric: (`
+			# HELP cortex_querytee_backend_request_relative_duration_seconds Time (in seconds) of preferred backend less secondary backend.
+			# TYPE cortex_querytee_backend_request_relative_duration_seconds histogram
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-100"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-50"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-25"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-10"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-5"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-4"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-3"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-2"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-1.5"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-1"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.75"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.5"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.25"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.1"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.05"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.025"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.01"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.005"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.005"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.01"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.025"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.05"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.1"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.25"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.5"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.75"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="1"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="1.5"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="2"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="3"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="4"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="5"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="10"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="25"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="50"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="100"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="+Inf"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_sum{method="GET",route="test"} 2
+			cortex_querytee_backend_request_relative_duration_seconds_count{method="GET",route="test"} 1
+`),
+		},
+		"preferred backend is 5 seconds faster than secondary": {
+			preferredResponseLatency: 2 * time.Second,
+			secondaryResponseLatency: 7 * time.Second,
+			expectedMetric: (`
+			# HELP cortex_querytee_backend_request_relative_duration_seconds Time (in seconds) of preferred backend less secondary backend.
+			# TYPE cortex_querytee_backend_request_relative_duration_seconds histogram
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-100"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-50"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-25"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-10"} 0
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-5"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-4"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-3"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-2"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-1.5"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-1"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.75"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.5"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.25"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.1"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.05"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.025"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.01"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="-0.005"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.005"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.01"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.025"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.05"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.1"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.25"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.5"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="0.75"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="1"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="1.5"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="2"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="3"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="4"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="5"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="10"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="25"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="50"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="100"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_bucket{method="GET",route="test",le="+Inf"} 1
+			cortex_querytee_backend_request_relative_duration_seconds_sum{method="GET",route="test"} -5
+			cortex_querytee_backend_request_relative_duration_seconds_count{method="GET",route="test"} 1
+`),
+		},
+	}
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			backends := []ProxyBackendInterface{
+				newMockProxyBackend("preferred-backend", time.Second, true, scenario.preferredResponseLatency),
+				newMockProxyBackend("secondary-backend", time.Second, false, scenario.secondaryResponseLatency),
+			}
+
+			logger := newMockLogger()
+			reg := prometheus.NewPedanticRegistry()
+			comparator := &mockComparator{
+				comparisonResult: ComparisonSuccess,
+			}
+
+			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator, 0)
+
+			resp := httptest.NewRecorder()
+			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
+			require.NoError(t, err)
+			endpoint.ServeHTTP(resp, req)
+
+			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
+			// Wait for the response comparison to complete before checking the logged messages.
+			waitForResponseComparisonMetric(t, reg, ComparisonSuccess)
+
+			require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(scenario.expectedMetric), "cortex_querytee_backend_request_relative_duration_seconds"))
+
+		})
+	}
+}
+
 func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expectedResult ComparisonResult) {
 	started := time.Now()
 	timeoutAt := started.Add(2 * time.Second)
