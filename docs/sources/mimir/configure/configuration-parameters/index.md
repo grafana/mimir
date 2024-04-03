@@ -524,6 +524,10 @@ The `server` block configures the HTTP and gRPC server of the launched service(s
 # CLI flag: -server.grpc-conn-limit
 [grpc_listen_conn_limit: <int> | default = 0]
 
+# (experimental) Enables PROXY protocol.
+# CLI flag: -server.proxy-protocol-enabled
+[proxy_protocol_enabled: <boolean> | default = false]
+
 # Comma-separated list of cipher suites to use. If blank, the default Go cipher
 # suites is used.
 # CLI flag: -server.tls-cipher-suites
@@ -1248,10 +1252,6 @@ store_gateway_client:
   # Allowed values:
   #
   # Secure Ciphers:
-  # - TLS_RSA_WITH_AES_128_CBC_SHA
-  # - TLS_RSA_WITH_AES_256_CBC_SHA
-  # - TLS_RSA_WITH_AES_128_GCM_SHA256
-  # - TLS_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
   # - TLS_CHACHA20_POLY1305_SHA256
@@ -1269,7 +1269,11 @@ store_gateway_client:
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
   # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
   # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
   # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -1716,10 +1720,6 @@ alertmanager_client:
   # Allowed values:
   #
   # Secure Ciphers:
-  # - TLS_RSA_WITH_AES_128_CBC_SHA
-  # - TLS_RSA_WITH_AES_256_CBC_SHA
-  # - TLS_RSA_WITH_AES_128_GCM_SHA256
-  # - TLS_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
   # - TLS_CHACHA20_POLY1305_SHA256
@@ -1737,7 +1737,11 @@ alertmanager_client:
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
   # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
   # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
   # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2193,10 +2197,6 @@ alertmanager_client:
   # Allowed values:
   #
   # Secure Ciphers:
-  # - TLS_RSA_WITH_AES_128_CBC_SHA
-  # - TLS_RSA_WITH_AES_256_CBC_SHA
-  # - TLS_RSA_WITH_AES_128_GCM_SHA256
-  # - TLS_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
   # - TLS_CHACHA20_POLY1305_SHA256
@@ -2214,7 +2214,11 @@ alertmanager_client:
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
   # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
   # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
   # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2464,10 +2468,6 @@ backoff_config:
 # Allowed values:
 #
 # Secure Ciphers:
-# - TLS_RSA_WITH_AES_128_CBC_SHA
-# - TLS_RSA_WITH_AES_256_CBC_SHA
-# - TLS_RSA_WITH_AES_128_GCM_SHA256
-# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
 # - TLS_CHACHA20_POLY1305_SHA256
@@ -2485,7 +2485,11 @@ backoff_config:
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_RSA_WITH_AES_128_CBC_SHA
+# - TLS_RSA_WITH_AES_256_CBC_SHA
 # - TLS_RSA_WITH_AES_128_CBC_SHA256
+# - TLS_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2621,10 +2625,6 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 # Allowed values:
 #
 # Secure Ciphers:
-# - TLS_RSA_WITH_AES_128_CBC_SHA
-# - TLS_RSA_WITH_AES_256_CBC_SHA
-# - TLS_RSA_WITH_AES_128_GCM_SHA256
-# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
 # - TLS_CHACHA20_POLY1305_SHA256
@@ -2642,7 +2642,11 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_RSA_WITH_AES_128_CBC_SHA
+# - TLS_RSA_WITH_AES_256_CBC_SHA
 # - TLS_RSA_WITH_AES_128_CBC_SHA256
+# - TLS_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2878,10 +2882,6 @@ The `memberlist` block configures the Gossip memberlist.
 # Allowed values:
 #
 # Secure Ciphers:
-# - TLS_RSA_WITH_AES_128_CBC_SHA
-# - TLS_RSA_WITH_AES_256_CBC_SHA
-# - TLS_RSA_WITH_AES_128_GCM_SHA256
-# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
 # - TLS_CHACHA20_POLY1305_SHA256
@@ -2899,7 +2899,11 @@ The `memberlist` block configures the Gossip memberlist.
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_RSA_WITH_AES_128_CBC_SHA
+# - TLS_RSA_WITH_AES_256_CBC_SHA
 # - TLS_RSA_WITH_AES_128_CBC_SHA256
+# - TLS_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -4374,10 +4378,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # Allowed values:
 #
 # Secure Ciphers:
-# - TLS_RSA_WITH_AES_128_CBC_SHA
-# - TLS_RSA_WITH_AES_256_CBC_SHA
-# - TLS_RSA_WITH_AES_128_GCM_SHA256
-# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
 # - TLS_CHACHA20_POLY1305_SHA256
@@ -4395,7 +4395,11 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_RSA_WITH_AES_128_CBC_SHA
+# - TLS_RSA_WITH_AES_256_CBC_SHA
 # - TLS_RSA_WITH_AES_128_CBC_SHA256
+# - TLS_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -4531,10 +4535,6 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 # Allowed values:
 #
 # Secure Ciphers:
-# - TLS_RSA_WITH_AES_128_CBC_SHA
-# - TLS_RSA_WITH_AES_256_CBC_SHA
-# - TLS_RSA_WITH_AES_128_GCM_SHA256
-# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
 # - TLS_CHACHA20_POLY1305_SHA256
@@ -4552,7 +4552,11 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_RSA_WITH_AES_128_CBC_SHA
+# - TLS_RSA_WITH_AES_256_CBC_SHA
 # - TLS_RSA_WITH_AES_128_CBC_SHA256
+# - TLS_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA

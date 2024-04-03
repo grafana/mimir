@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/middleware"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,4 +45,13 @@ func TestSampledError_ShouldLog(t *testing.T) {
 		require.False(t, sampledErr.ShouldLog(ctx, time.Duration(0)))
 	}
 	require.True(t, sampledErr.ShouldLog(ctx, time.Duration(0)))
+}
+
+func TestSampledError_ShouldImplementOptionalLoggingInterface(t *testing.T) {
+	sampler := NewSampler(errorSampleRate)
+	err := fmt.Errorf(errorWithIDFormat, 1)
+	sampledErr := SampledError{err: err, sampler: sampler}
+
+	var optionalLoggingErr middleware.OptionalLogging
+	require.ErrorAs(t, sampledErr, &optionalLoggingErr)
 }

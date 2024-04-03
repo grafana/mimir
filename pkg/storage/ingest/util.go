@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/regexp"
+	"github.com/pkg/errors"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kprom"
@@ -115,4 +117,10 @@ func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
 	case <-w.done:
 		return w.resultValue, w.resultErr
 	}
+}
+
+// shouldLog returns whether err should be logged.
+func shouldLog(ctx context.Context, err error, elapsedTime time.Duration) bool {
+	var optional middleware.OptionalLogging
+	return !errors.As(err, &optional) || optional.ShouldLog(ctx, elapsedTime)
 }
