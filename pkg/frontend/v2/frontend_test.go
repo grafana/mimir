@@ -37,6 +37,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -75,7 +76,9 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	cfg.Port = grpcPort
 
 	logger := log.NewLogfmtLogger(os.Stdout)
-	f, err := NewFrontend(cfg, limits{}, logger, reg)
+	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), "json")
+
+	f, err := NewFrontend(cfg, limits{}, logger, reg, codec)
 	require.NoError(t, err)
 
 	frontendv2pb.RegisterFrontendForQuerierServer(server, f)

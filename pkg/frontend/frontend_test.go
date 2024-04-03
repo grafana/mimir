@@ -28,10 +28,12 @@ import (
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
@@ -216,6 +218,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	if l != nil {
 		logger = l
 	}
+	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), "json")
 
 	var workerConfig querier_worker.Config
 	flagext.DefaultValues(&workerConfig)
@@ -229,7 +232,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	httpListen, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
-	rt, v1, v2, err := InitFrontend(config, limits{}, limits{}, 0, logger, nil)
+	rt, v1, v2, err := InitFrontend(config, limits{}, limits{}, 0, logger, nil, codec)
 	require.NoError(t, err)
 	require.NotNil(t, rt)
 	// v1 will be nil if DownstreamURL is defined.

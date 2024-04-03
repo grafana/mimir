@@ -412,10 +412,6 @@ func DecodeLabelsQueryTimeParams(reqValues *url.Values, usePromDefaults bool) (s
 		defaultEnd = v1.MaxTime.UnixMilli()
 	}
 
-	if err != nil {
-		return 0, 0, apierror.New(apierror.TypeBadData, err.Error())
-	}
-
 	startVal := reqValues.Get("start")
 	if startVal == "" {
 		start = defaultStart
