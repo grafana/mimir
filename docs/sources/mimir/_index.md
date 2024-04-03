@@ -1,29 +1,62 @@
+
 ---
-description: Technical documentation for Grafana Mimir
-keywords:
-  - Grafana Mimir
-  - Grafana metrics
-  - time series database
-  - TSDB
-  - Prometheus storage
-  - Prometheus remote write
-  - metrics storage
-  - metrics datastore
-  - observability
+aliases:
+  - /docs/
+  - /docs/
+description: Learn about the key benefits and features of Grafana Mimir.
+labels:
+  products:
+    - OSS
 menuTitle: Grafana Mimir
-title: Grafana Mimir documentation
+title: Grafana Mimir
 weight: 1
+hero:
+  title: Grafana Mimir
+  level: 1
+  image: /media/docs/
+  width: 100
+  height: 100
+  description: Grafana Mimir is an open source software that provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus.
+cards:
+  title_class: pt-0 lh-1
+  items:
+    - title: Get started
+      href: ./get-started/
+      description: Get started with Grafana Mimir
+      height: 24
+    - title: Configurations
+      href: ./
+      description: Learn about Mimir configuration options
+      height: 24
+    - title: Send metric data
+      href: .configure/
+      description: Configure your data source to write data to Mimir
+      height: 24
+    - title: Manage
+      href: .configure
+      description: Explore your options when deploying, configuring and managing Mimir
+    - title: Query metric labels
+      href: ./
+      description: Query metric labels with HTTP API endpoints.
+      height: 24
+    - title: Visualize data
+      href: ./visualize-data
+      description: Use Grafana Explore and PromQL to visualize data in Grafana
+      height: 24
 ---
 
-# Grafana Mimir documentation
+{{< docs/hero-simple key="hero" >}}
 
-![Grafana Mimir](mimir-logo.png)
+---
 
-Grafana Mimir is an open source software project that provides a scalable long-term storage for [Prometheus](https://prometheus.io). Some of the core strengths of Grafana Mimir include:
+## Overview
 
-- **Easy to install and maintain:** Grafana Mimir’s extensive documentation, tutorials, and deployment tooling make it quick to get started. Using its monolithic mode, you can get Grafana Mimir up and running with just one binary and no additional dependencies. Once deployed, the best-practice dashboards, alerts, and runbooks packaged with Grafana Mimir make it easy to monitor the health of the system.
-- **Massive scalability:** You can run Grafana Mimir's horizontally-scalable architecture across multiple machines, resulting in the ability to process orders of magnitude more time series than a single Prometheus instance. Internal testing shows that Grafana Mimir handles up to 1 billion active time series.
-- **Global view of metrics:** Grafana Mimir enables you to run queries that aggregate series from multiple Prometheus instances, giving you a global view of your systems. Its query engine extensively parallelizes query execution, so that even the highest-cardinality queries complete with blazing speed.
-- **Cheap, durable metric storage:** Grafana Mimir uses object storage for long-term data storage, allowing it to take advantage of this ubiquitous, cost-effective, high-durability technology. It is compatible with multiple object store implementations, including AWS S3, Google Cloud Storage, Azure Blob Storage, OpenStack Swift, as well as any S3-compatible object storage.
-- **High availability:** Grafana Mimir replicates incoming metrics, ensuring that no data is lost in the event of machine failure. Its horizontally scalable architecture also means that it can be restarted, upgraded, or downgraded with zero downtime, which means no interruptions to metrics ingestion or querying.
-- **Natively multi-tenant:** Grafana Mimir’s multi-tenant architecture enables you to isolate data and queries from independent teams or business units, making it possible for these groups to share the same cluster. Advanced limits and quality-of-service controls ensure that capacity is shared fairly among tenants.
+Experience the capabilities of Grafana Mimir for scalable, cost-effective, and reliable long-term storage of your Prometheus metrics. With easy installation and global visibility bundled with dashboards, alerts, and runbooks, Mimir simplifies system monitoring. Its horizontally-scalable architecture handles up to 1 billion active time series, while its query engine parallelizes execution for quick processing of aggregated metrics from multiple Prometheus instances.
+
+Utilize data and query isolation among independent teams with Mimir's native multi-tenancy architecture. Take advantage of affordability and durability with support for various object storage implementations, including AWS S3, Google Cloud Storage, and Azure Blob Storage.
+
+## Explore
+
+{{< card-grid key="cards" type="simple" >}}
+
+---
