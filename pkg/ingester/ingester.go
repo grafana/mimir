@@ -597,10 +597,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 
 	// Finally we start all services that should run after the ingester ring lifecycler.
-	servs := []services.Service{
-		i.utilizationBasedLimiter,
-		i.ingestPartitionLifecycler,
-	}
+	var servs []services.Service
 
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		shippingService := services.NewBasicService(nil, i.shipBlocksLoop, nil)
@@ -614,6 +611,20 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		}
 		closeIdleService := services.NewTimerService(interval, nil, i.closeAndDeleteIdleUserTSDBs, nil)
 		servs = append(servs, closeIdleService)
+	}
+
+	if i.utilizationBasedLimiter != nil {
+		servs = append(servs, i.utilizationBasedLimiter)
+	}
+
+	if i.ingestPartitionLifecycler != nil {
+		servs = append(servs, i.ingestPartitionLifecycler)
+	}
+
+	// Since subservices are conditional, We add an idle service if there are no subservices to
+	// guarantee there's at least 1 service to run otherwise the service manager fails to start.
+	if len(servs) == 0 {
+		servs = append(servs, services.NewIdleService(nil, nil))
 	}
 
 	i.subservicesAfterIngesterRingLifecycler, err = createManagerThenStartAndAwaitHealthy(ctx, servs...)
@@ -3928,16 +3939,6 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 }
 
 func createManagerThenStartAndAwaitHealthy(ctx context.Context, srvs ...services.Service) (*services.Manager, error) {
-	// Filter out nil services.
-	srvs = slices.DeleteFunc(srvs, func(srv services.Service) bool {
-		return srv == nil
-	})
-
-	// Ensure there's at least 1 service otherwise the manager fails to start.
-	if len(srvs) == 0 {
-		srvs = append(srvs, services.NewIdleService(nil, nil))
-	}
-
 	manager, err := services.NewManager(srvs...)
 	if err != nil {
 		return nil, err
