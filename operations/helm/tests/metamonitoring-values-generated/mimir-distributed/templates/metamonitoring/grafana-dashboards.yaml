@@ -23638,7 +23638,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Query-frontend (dedicated to ruler)",
+                "title": "Ruler-query-frontend",
                 "titleSize": "h6"
              },
              {
@@ -23920,7 +23920,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Query-scheduler (dedicated to ruler)",
+                "title": "Ruler-query-scheduler",
                 "titleSize": "h6"
              },
              {
@@ -24202,7 +24202,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Querier (dedicated to ruler)",
+                "title": "Ruler-querier",
                 "titleSize": "h6"
              }
           ],
@@ -24772,7 +24772,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Query-frontend (dedicated to ruler)",
+                "title": "Ruler-query-frontend",
                 "titleSize": "h6"
              },
              {
@@ -25100,7 +25100,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Query-scheduler (dedicated to ruler)",
+                "title": "Ruler-query-scheduler",
                 "titleSize": "h6"
              },
              {
@@ -25262,7 +25262,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions",
+                "title": "Ruler-query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions",
                 "titleSize": "h6"
              },
              {
@@ -25569,7 +25569,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Querier (dedicated to ruler)",
+                "title": "Ruler-querier",
                 "titleSize": "h6"
              },
              {

@@ -25,7 +25,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/util/fieldcategory"
+	"github.com/grafana/mimir/pkg/util/configdoc"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -155,7 +155,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 		fieldValue := v.FieldByIndex(field.Index)
 
 		// Skip fields explicitly marked as "hidden" in the doc
-		if isFieldHidden(field) {
+		if isFieldHidden(field, "") {
 			continue
 		}
 
@@ -290,6 +290,12 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 				FieldCategory: getFieldCategory(field, ""),
 				Element:       element,
 			})
+			continue
+		}
+
+		// The config field has a CLI flag registered. We should check again if the field is hidden,
+		// to ensure any CLI flag override is honored too.
+		if isFieldHidden(field, fieldFlag.Name) {
 			continue
 		}
 
@@ -606,7 +612,7 @@ func getCustomFieldEntry(cfg interface{}, field reflect.StructField, fieldValue 
 }
 
 func getFieldCategory(field reflect.StructField, name string) string {
-	if category, ok := fieldcategory.GetOverride(name); ok {
+	if category, ok := configdoc.GetCategoryOverride(name); ok {
 		return category.String()
 	}
 	return field.Tag.Get("category")
@@ -620,7 +626,10 @@ func getFieldDefault(field reflect.StructField, fallback string) string {
 	return fallback
 }
 
-func isFieldHidden(f reflect.StructField) bool {
+func isFieldHidden(f reflect.StructField, name string) bool {
+	if hidden, ok := configdoc.GetHiddenOverride(name); ok {
+		return hidden
+	}
 	return getDocTagFlag(f, "hidden")
 }
 

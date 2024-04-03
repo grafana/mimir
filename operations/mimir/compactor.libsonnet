@@ -102,14 +102,28 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  newCompactorStatefulSet(name, container, nodeAffinityMatchers=[])::
+  newCompactorStatefulSet(name, container, nodeAffinityMatchers=[], concurrent_rollout_enabled=false, max_unavailable=1)::
     $.newMimirStatefulSet(name, 1, container, compactor_data_pvc) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
-    $.mimirVolumeMounts,
+    $.mimirVolumeMounts +
+    (
+      if !concurrent_rollout_enabled then {} else
+        statefulSet.mixin.spec.selector.withMatchLabels({ name: 'compactor', 'rollout-group': 'compactor' }) +
+        statefulSet.mixin.spec.updateStrategy.withType('OnDelete') +
+        statefulSet.mixin.metadata.withLabelsMixin({ 'rollout-group': 'compactor' }) +
+        statefulSet.mixin.metadata.withAnnotationsMixin({ 'rollout-max-unavailable': std.toString(max_unavailable) }) +
+        statefulSet.mixin.spec.template.metadata.withLabelsMixin({ 'rollout-group': 'compactor' })
+    ),
 
   compactor_statefulset: if !$._config.is_microservices_deployment_mode then null else
-    $.newCompactorStatefulSet('compactor', $.compactor_container, $.compactor_node_affinity_matchers),
+    $.newCompactorStatefulSet(
+      'compactor',
+      $.compactor_container,
+      $.compactor_node_affinity_matchers,
+      $._config.cortex_compactor_concurrent_rollout_enabled,
+      $._config.cortex_compactor_max_unavailable,
+    ),
 
   compactor_service: if !$._config.is_microservices_deployment_mode then null else
     local service = $.core.v1.service;
