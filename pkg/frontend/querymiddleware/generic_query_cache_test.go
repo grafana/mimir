@@ -131,7 +131,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 			expectedStoredToCache:    false, // Should not store anything to the cache.
 		},
 		"should fetch the response from the downstream and overwrite the cached response if corrupted": {
-			init: func(t *testing.T, c cache.Cache, _, reqHashedCacheKey string) {
+			init: func(_ *testing.T, c cache.Cache, _, reqHashedCacheKey string) {
 				c.StoreAsync(map[string][]byte{reqHashedCacheKey: []byte("corrupted")}, time.Minute)
 			},
 			cacheTTL:                 time.Minute,

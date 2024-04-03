@@ -51,7 +51,7 @@ var (
 )
 
 func mockHandlerWith(resp *PrometheusResponse, err error) MetricsQueryHandler {
-	return HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+	return HandlerFunc(func(ctx context.Context, _ MetricsQueryRequest) (Response, error) {
 		if expired := ctx.Err(); expired != nil {
 			return nil, expired
 		}
@@ -1499,7 +1499,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			LookbackDelta:        lookbackDelta,
 			EnableAtModifier:     true,
 			EnableNegativeOffset: true,
-			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
+			NoStepSubqueryIntervalFn: func(int64) int64 {
 				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 			},
 		})
@@ -1512,14 +1512,14 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			LookbackDelta:        lookbackDelta,
 			EnableAtModifier:     true,
 			EnableNegativeOffset: true,
-			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
+			NoStepSubqueryIntervalFn: func(int64) int64 {
 				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 			},
 		})
-		queryableInternalErr = storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+		queryableInternalErr = storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 			return nil, apierror.New(apierror.TypeInternal, "some internal error")
 		})
-		queryablePrometheusExecErr = storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+		queryablePrometheusExecErr = storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 			return nil, apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour))
 		})
 		queryable = storageSeriesQueryable([]*promql.StorageSeries{
@@ -1633,7 +1633,7 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 		series = append(series, newSeries(newTestCounterLabels(i), start.Add(-lookbackDelta), end, step, factor(float64(i)*0.1)))
 	}
 
-	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+	queryable := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 		return &querierMock{series: series}, nil
 	})
 
@@ -2174,7 +2174,7 @@ func (h *downstreamHandler) Do(ctx context.Context, r MetricsQueryRequest) (Resp
 }
 
 func storageSeriesQueryable(series []*promql.StorageSeries) storage.Queryable {
-	return storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+	return storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 		return &querierMock{series: series}, nil
 	})
 }
@@ -2391,7 +2391,7 @@ func stale(from, to time.Time, wrap generator) generator {
 
 // constant returns a generator that generates a constant value
 func constant(value float64) generator {
-	return func(ts int64) float64 {
+	return func(int64) float64 {
 		return value
 	}
 }
@@ -2440,7 +2440,7 @@ func newEngine() *promql.Engine {
 		LookbackDelta:        lookbackDelta,
 		EnableAtModifier:     true,
 		EnableNegativeOffset: true,
-		NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
+		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 		},
 	})

@@ -521,7 +521,7 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 		expectedErr string
 	}{
 		"should succeed with the default configuration": {
-			setup: func(cfg *Config) {},
+			setup: func(*Config) {},
 		},
 		"should fail if alertmanager data directory contains bucket store sync directory when running mimir-backend": {
 			setup: func(cfg *Config) {

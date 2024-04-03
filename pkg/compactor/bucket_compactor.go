@@ -711,7 +711,7 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 type ownCompactionJobFunc func(job *Job) (bool, error)
 
 // ownAllJobs is a ownCompactionJobFunc that always return true.
-var ownAllJobs = func(job *Job) (bool, error) {
+var ownAllJobs = func(*Job) (bool, error) {
 	return true, nil
 }
 

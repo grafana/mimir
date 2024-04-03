@@ -205,7 +205,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		{
 			name:     "with empty cache",
 			tenantID: "1",
-			downstreamHandler: func(ctx context.Context, request MetricsQueryRequest) (Response, error) {
+			downstreamHandler: func(ctx context.Context, _ MetricsQueryRequest) (Response, error) {
 				queryStats := stats.FromContext(ctx)
 				queryStats.AddFetchedSeries(numSeries)
 				return &PrometheusResponse{}, nil

@@ -70,10 +70,10 @@ func NewCircuitBreaker(inst ring.InstanceDesc, cfg CircuitBreakerConfig, metrics
 	breaker := circuitbreaker.Builder[any]().
 		WithFailureRateThreshold(cfg.FailureThreshold, cfg.FailureExecutionThreshold, cfg.ThresholdingPeriod).
 		WithDelay(cfg.CooldownPeriod).
-		OnFailure(func(event failsafe.ExecutionEvent[any]) {
+		OnFailure(func(failsafe.ExecutionEvent[any]) {
 			countError.Inc()
 		}).
-		OnSuccess(func(event failsafe.ExecutionEvent[any]) {
+		OnSuccess(func(failsafe.ExecutionEvent[any]) {
 			countSuccess.Inc()
 		}).
 		OnClose(func(event circuitbreaker.StateChangedEvent) {
@@ -88,7 +88,7 @@ func NewCircuitBreaker(inst ring.InstanceDesc, cfg CircuitBreakerConfig, metrics
 			transitionHalfOpen.Inc()
 			level.Info(logger).Log("msg", "circuit breaker is half-open", "ingester", inst.Id, "previous", event.OldState, "current", event.NewState)
 		}).
-		HandleIf(func(r any, err error) bool { return isFailure(err) }).
+		HandleIf(func(_ any, err error) bool { return isFailure(err) }).
 		Build()
 
 	executor := failsafe.NewExecutor[any](breaker)

@@ -86,7 +86,7 @@ func TestIngester_Start(t *testing.T) {
 		// - Count the Fetch requests.
 		// - Mock the ListOffsets response, returning the offset expected once the ingester can be
 		//   considered having successfully caught up.
-		kafkaCluster.ControlKey(int16(kmsg.Fetch), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
 			kafkaCluster.KeepControl()
 			fetchRequestsCount.Inc()
 
@@ -266,7 +266,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			// to "strong" then a query shouldn't succeed until the Fetch requests succeed.
 			failFetch := atomic.NewBool(true)
 
-			kafkaCluster.ControlKey(int16(kmsg.Fetch), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			kafkaCluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
 				kafkaCluster.KeepControl()
 
 				if failFetch.Load() {
