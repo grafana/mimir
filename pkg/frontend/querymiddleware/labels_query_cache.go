@@ -88,7 +88,7 @@ func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCac
 	}, nil
 }
 
-func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName string, matcherSets [][]*labels.Matcher, limit int64) string {
+func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName string, matcherSets [][]*labels.Matcher, limit uint64) string {
 	var (
 		twoHoursMillis = (2 * time.Hour).Milliseconds()
 		b              = strings.Builder{}

@@ -82,7 +82,7 @@ message PrometheusLabelNamesQueryRequest {
   int64 id = 5;
 
   // Limit the number of label names returned.
-  int64 limit = 6;
+  uint64 limit = 6;
 }
 
 message PrometheusLabelValuesQueryRequest {
@@ -103,7 +103,7 @@ message PrometheusLabelValuesQueryRequest {
   int64 id = 6;
 
   // Limit the number of label values returned.
-  int64 limit = 7;
+  uint64 limit = 7;
 }
 
 message PrometheusResponseHeader {

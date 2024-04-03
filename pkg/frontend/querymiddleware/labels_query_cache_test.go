@@ -177,7 +177,7 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 		labelName        string
 		matcherSets      [][]*labels.Matcher
 		expectedCacheKey string
-		limit            int64
+		limit            uint64
 	}{
 		"start and end time are aligned to 2h boundaries": {
 			startTime: mustParseTime("2023-07-05T00:00:00Z"),
