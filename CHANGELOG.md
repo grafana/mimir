@@ -13,6 +13,7 @@
 * [BUGFIX] querier: Don't cache context.Canceled errors for bucket index. #7620
 * [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622
 * [BUGFIX] Query-frontend: Fix memory leak on every request. #7654
+* [BUGFIX] Ingester: turn native histogram validation errors in TSDB into soft ingester errors that result in returning 4xx to the end-user instead of 5xx. In the case of TSDB validation errors, the counter `cortex_discarded_samples_total` will be increased with the `reason` label set to `"invalid-native-histogram"`. #7736 #7773
 
 ### Mixin
 
