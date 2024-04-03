@@ -21,6 +21,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/peakmem"
 )
 
 type benchCase struct {
@@ -260,13 +262,15 @@ func BenchmarkQuery(b *testing.B) {
 
 			for name, engine := range engines {
 				b.Run(name, func(b *testing.B) {
-					for i := 0; i < b.N; i++ {
-						res, cleanup := c.Run(ctx, b, start, end, interval, engine, db)
+					peakmem.Capture(b, func(b *testing.B) {
+						for i := 0; i < b.N; i++ {
+							res, cleanup := c.Run(ctx, b, start, end, interval, engine, db)
 
-						if res != nil {
-							cleanup()
+							if res != nil {
+								cleanup()
+							}
 						}
-					}
+					})
 				})
 			}
 		})
