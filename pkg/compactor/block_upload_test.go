@@ -1769,7 +1769,7 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 		},
 		{
 			name: "updating validation file succeeds",
-			assertions: func(t *testing.T, ctx context.Context, bkt objstore.Bucket) {
+			assertions: func(t *testing.T, _ context.Context, bkt objstore.Bucket) {
 				test.Poll(t, heartbeatInterval*2, true, func() interface{} {
 					return validationExists(t, bkt)
 				})
@@ -1787,7 +1787,7 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 		{
 			name:          "context cancelled before update",
 			cancelContext: true,
-			assertions: func(t *testing.T, ctx context.Context, bkt objstore.Bucket) {
+			assertions: func(t *testing.T, _ context.Context, bkt objstore.Bucket) {
 				require.False(t, validationExists(t, bkt))
 			},
 		},

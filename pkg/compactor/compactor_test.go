@@ -95,7 +95,7 @@ func TestConfig_Validate(t *testing.T) {
 		expected string
 	}{
 		"should pass with the default config": {
-			setup:    func(cfg *Config) {},
+			setup:    func(*Config) {},
 			expected: "",
 		},
 		"should pass with only 1 block range period": {
@@ -1352,7 +1352,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 	c, _, tsdbPlanner, logs, registry := prepareWithConfigProvider(t, cfg, bucketClient, limits)
 
 	// Mock the planner as if there's no compaction to do, in order to simplify tests.
-	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{}, nil).Run(func(args mock.Arguments) {
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{}, nil).Run(func(mock.Arguments) {
 		// As soon as the first Plan() is called by the compactor, we do switch
 		// the instance to LEAVING state. This way,  after this call, we expect the compactor
 		// to skip next compaction job because not owned anymore by this instance.
@@ -1783,11 +1783,11 @@ func prepareWithConfigProvider(t *testing.T, compactorCfg Config, bucketClient o
 	logger := &componentLogger{component: "compactor", log: log.NewLogfmtLogger(logs)}
 	registry := prometheus.NewRegistry()
 
-	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
+	bucketClientFactory := func(context.Context) (objstore.Bucket, error) {
 		return bucketClient, nil
 	}
 
-	blocksCompactorFactory := func(ctx context.Context, cfg Config, logger log.Logger, reg prometheus.Registerer) (Compactor, Planner, error) {
+	blocksCompactorFactory := func(context.Context, Config, log.Logger, prometheus.Registerer) (Compactor, Planner, error) {
 		return tsdbCompactor, tsdbPlanner, nil
 	}
 

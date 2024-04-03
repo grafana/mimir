@@ -2624,8 +2624,8 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 		runBenchmark    func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample)
 	}{
 		"out of bound samples": {
-			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool { return true },
-			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
+			prepareConfig: func(*validation.Limits, *InstanceLimits) bool { return true },
+			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a single time series to set the TSDB min time.
 				currTimeReq := mimirpb.ToWriteRequest(
 					[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: metricName}}},
@@ -2649,7 +2649,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 		},
 		"out-of-order samples": {
-			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool { return true },
+			prepareConfig: func(*validation.Limits, *InstanceLimits) bool { return true },
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// For each series, push a single sample with a timestamp greater than next pushes.
 				for i := 0; i < numSeriesPerRequest; i++ {
@@ -2676,11 +2676,11 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 		},
 		"per-user series limit reached": {
-			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool {
+			prepareConfig: func(limits *validation.Limits, _ *InstanceLimits) bool {
 				limits.MaxGlobalSeriesPerUser = 1
 				return true
 			},
-			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
+			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a series with a metric name different than the one used during the benchmark.
 				currTimeReq := mimirpb.ToWriteRequest(
 					[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "another"}}},
@@ -2701,11 +2701,11 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 		},
 		"per-metric series limit reached": {
-			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool {
+			prepareConfig: func(limits *validation.Limits, _ *InstanceLimits) bool {
 				limits.MaxGlobalSeriesPerMetric = 1
 				return true
 			},
-			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
+			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a series with the same metric name but different labels than the one used during the benchmark.
 				currTimeReq := mimirpb.ToWriteRequest(
 					[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: "another"}}},
@@ -2726,14 +2726,14 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 		},
 		"very low ingestion rate limit": {
-			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool {
+			prepareConfig: func(_ *validation.Limits, instanceLimits *InstanceLimits) bool {
 				if instanceLimits == nil {
 					return false
 				}
 				instanceLimits.MaxIngestionRate = 0.00001 // very low
 				return true
 			},
-			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
+			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Send a lot of samples
 				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
 				require.NoError(b, err)
@@ -2749,14 +2749,14 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 		},
 		"max number of tenants reached": {
-			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool {
+			prepareConfig: func(_ *validation.Limits, instanceLimits *InstanceLimits) bool {
 				if instanceLimits == nil {
 					return false
 				}
 				instanceLimits.MaxInMemoryTenants = 1
 				return true
 			},
-			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
+			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Send some samples for one tenant (not the same that is used during the test)
 				ctx := user.InjectOrgID(context.Background(), "different_tenant")
 				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
@@ -2771,14 +2771,14 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 		},
 		"max number of series reached": {
-			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool {
+			prepareConfig: func(_ *validation.Limits, instanceLimits *InstanceLimits) bool {
 				if instanceLimits == nil {
 					return false
 				}
 				instanceLimits.MaxInMemorySeries = 1
 				return true
 			},
-			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
+			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
 				require.NoError(b, err)
 			},
@@ -2790,14 +2790,14 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 		},
 		"max inflight requests reached": {
-			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool {
+			prepareConfig: func(_ *validation.Limits, instanceLimits *InstanceLimits) bool {
 				if instanceLimits == nil {
 					return false
 				}
 				instanceLimits.MaxInflightPushRequests = 1
 				return true
 			},
-			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
+			beforeBenchmark: func(_ *testing.B, ingester *Ingester, _ int) {
 				ingester.inflightPushRequests.Inc()
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
@@ -5066,7 +5066,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 		},
 		"should not load any TSDB if the root directory is empty": {
 			walReplayConcurrency: 10,
-			setup:                func(t *testing.T, dir string) {},
+			setup:                func(*testing.T, string) {},
 			check: func(t *testing.T, i *Ingester) {
 				require.Zero(t, len(i.tsdbs))
 			},
@@ -5400,7 +5400,7 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 
 	// Mock the shipper to slow down Sync() execution.
 	s := mockUserShipper(t, i)
-	s.On("Sync", mock.Anything).Run(func(args mock.Arguments) {
+	s.On("Sync", mock.Anything).Run(func(mock.Arguments) {
 		time.Sleep(3 * time.Second)
 	}).Return(0, nil)
 
@@ -5865,7 +5865,7 @@ func TestIngester_flushing(t *testing.T) {
 				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
 			},
 
-			action: func(t *testing.T, i *Ingester, reg *prometheus.Registry) {
+			action: func(t *testing.T, i *Ingester, _ *prometheus.Registry) {
 				// Stop the ingester.
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
 
@@ -8362,7 +8362,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			},
 		},
 		"active series for cardinality API": {
-			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+			test: func(t *testing.T, ingester *Ingester, _ prometheus.Gatherer) {
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
 				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
