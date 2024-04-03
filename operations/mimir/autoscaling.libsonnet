@@ -203,9 +203,8 @@
         {
           metric_name: 'cortex_%s_hpa_%s_7d_offset' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          // Scale queriers accodring to how many queriers would have been sufficient to handle the load 7 days ago.
+          // Scale queriers according to how many queriers would have been sufficient to handle the load $period ago.
           // We use the query scheduler metric which includes active queries and queries in the queue.
-          // Preslace 30m before the event so we have time to spin up the extra queriers (including node autoscaling).
           query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(container)s",namespace="%(namespace)s",quantile="0.5"}[%(lookback)s] offset %(peroid)s))' % {
             container: query_scheduler_container_name,
             namespace: $._config.namespace,
