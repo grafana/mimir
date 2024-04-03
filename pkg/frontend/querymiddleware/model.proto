@@ -81,7 +81,7 @@ message PrometheusLabelNamesQueryRequest {
   // ID of the request used to correlate downstream requests and responses.
   int64 id = 5;
 
-  // Limit the number of label names returned.
+  // Limit the number of label names returned. A value of 0 means no limit.
   uint64 limit = 6;
 }
 
@@ -102,7 +102,7 @@ message PrometheusLabelValuesQueryRequest {
   // ID of the request used to correlate downstream requests and responses.
   int64 id = 6;
 
-  // Limit the number of label values returned.
+  // Limit the number of label values returned. A value of 0 means no limit.
   uint64 limit = 7;
 }
 

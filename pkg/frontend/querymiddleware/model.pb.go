@@ -372,7 +372,7 @@ type PrometheusLabelNamesQueryRequest struct {
 	LabelMatcherSets []string `protobuf:"bytes,4,rep,name=labelMatcherSets,proto3" json:"labelMatcherSets,omitempty"`
 	// ID of the request used to correlate downstream requests and responses.
 	Id int64 `protobuf:"varint,5,opt,name=id,proto3" json:"id,omitempty"`
-	// Limit the number of label names returned.
+	// Limit the number of label names returned. A value of 0 means no limit.
 	Limit uint64 `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`
 }
 
@@ -462,7 +462,7 @@ type PrometheusLabelValuesQueryRequest struct {
 	LabelMatcherSets []string `protobuf:"bytes,5,rep,name=labelMatcherSets,proto3" json:"labelMatcherSets,omitempty"`
 	// ID of the request used to correlate downstream requests and responses.
 	Id int64 `protobuf:"varint,6,opt,name=id,proto3" json:"id,omitempty"`
-	// Limit the number of label values returned.
+	// Limit the number of label values returned. A value of 0 means no limit.
 	Limit uint64 `protobuf:"varint,7,opt,name=limit,proto3" json:"limit,omitempty"`
 }
 
