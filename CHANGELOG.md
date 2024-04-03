@@ -38,7 +38,7 @@
 
 ### Jsonnet
 
-* [ENHANCEMENT] Compactor: add `$._config.cortex_compactor_concurrent_rollout_enabled` option (disabled by default) that makes use of rollout-operator to speed up the rollout of compactors. 
+* [ENHANCEMENT] Compactor: add `$._config.cortex_compactor_concurrent_rollout_enabled` option (disabled by default) that makes use of rollout-operator to speed up the rollout of compactors. #7783
 * [BUGFIX] Guard against missing samples in KEDA queries. #7691
 
 ### Mimirtool
