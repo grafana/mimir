@@ -421,6 +421,10 @@ func (u *BucketStores) syncDirForUser(userID string) string {
 	return filepath.Join(u.cfg.BucketStore.SyncDir, userID)
 }
 
+// timeoutGate belongs better in dskit. However, at the time of writing dskit supports go 1.20.
+// go 1.20 doesn't have context.WithTimeoutCause yet,
+// so we choose to implement timeoutGate here instead of implementing context.WithTimeoutCause ourselves in dskit.
+// It also allows to keep the span logger in timeoutGate as opposed to in the bucket store.
 type timeoutGate struct {
 	delegate gate.Gate
 	timeout  time.Duration
