@@ -11,7 +11,7 @@ ARG        BINARY_SUFFIX="_${TARGETOS}_${TARGETARCH}"
 ARG        USE_BINARY_SUFFIX
 COPY       mimir${USE_BINARY_SUFFIX:+${BINARY_SUFFIX}} /bin/mimir
 EXPOSE     8080
-ENTRYPOINT ["/bin/mimir -target=continuous-test"]
+ENTRYPOINT ["/bin/mimir", "-target=continuous-test"]
 
 ARG revision
 LABEL org.opencontainers.image.title="mimir-continuous-test" \
