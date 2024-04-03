@@ -92,6 +92,12 @@
     // While this is the default value, we want to pass the same to the -blocks-storage.bucket-store.sync-interval
     compactor_cleanup_interval: '15m',
 
+    // Enable concurrent rollout of compactor through the usage of the rollout operator.
+    // This feature modifies the compactor StatefulSet which cannot be altered, so if it already exists it has to be deleted and re-applied again in order to be enabled.
+    cortex_compactor_concurrent_rollout_enabled: false,
+    // Maximum number of unavailable replicas during a compactor rollout when using cortex_compactor_concurrent_rollout_enabled feature.
+    cortex_compactor_max_unavailable: std.max($.compactor_statefulset.spec.replicas / 2, 1),
+
     // Enable use of bucket index by querier, ruler and store-gateway.
     bucket_index_enabled: true,
 
