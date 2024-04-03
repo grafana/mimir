@@ -101,6 +101,12 @@ type MetricsQueryRequest interface {
 	GetStep() int64
 	// GetQuery returns the query of the request.
 	GetQuery() string
+	// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
+	// as determined from the start timestamp and any range vector or offset in the query.
+	GetMinT() (int64, error)
+	// GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
+	// as determined from the end timestamp and any offset in the query.
+	GetMaxT() (int64, error)
 	// GetOptions returns the options for the given request.
 	GetOptions() Options
 	// GetHints returns hints that could be optionally attached to the request to pass down the stack.
@@ -437,22 +443,22 @@ func DecodeLabelsQueryTimeParams(reqValues *url.Values, usePromDefaults bool) (s
 	return start, end, err
 }
 
-func MetricsQueryMinMaxTimeMS(req MetricsQueryRequest) (minTimeMS, maxTimeMS int64, err error) {
-	queryExpr, err := parser.ParseExpr(req.GetQuery())
+func decodeQueryMinMaxTime(query string, start, end, step int64) (minTime, maxTime int64, err error) {
+	queryExpr, err := parser.ParseExpr(query)
 	if err != nil {
 		return 0, 0, err
 	}
 
 	evalStmt := &parser.EvalStmt{
 		Expr:          queryExpr,
-		Start:         util.TimeFromMillis(req.GetStart()),
-		End:           util.TimeFromMillis(req.GetEnd()),
-		Interval:      time.Duration(req.GetStep()) * time.Millisecond,
+		Start:         util.TimeFromMillis(start),
+		End:           util.TimeFromMillis(end),
+		Interval:      time.Duration(step) * time.Millisecond,
 		LookbackDelta: 0, // TODO decide if we need to use lookbackDelta here
 	}
 
-	minTimeMS, maxTimeMS = promql.FindMinMaxTime(evalStmt)
-	return minTimeMS, maxTimeMS, nil
+	minTime, maxTime = promql.FindMinMaxTime(evalStmt)
+	return minTime, maxTime, nil
 }
 
 func decodeOptions(r *http.Request, opts *Options) {

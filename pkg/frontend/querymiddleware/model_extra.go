@@ -58,6 +58,10 @@ type PrometheusRangeQueryRequest struct {
 	Hints *Hints
 }
 
+func (r *PrometheusRangeQueryRequest) GetID() int64 {
+	return r.ID
+}
+
 func (r *PrometheusRangeQueryRequest) GetPath() string {
 	return r.Path
 }
@@ -82,78 +86,30 @@ func (r *PrometheusRangeQueryRequest) GetQuery() string {
 	return r.Query
 }
 
+// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
+// as determined from the start timestamp and any range vector or offset in the query.
+func (r *PrometheusRangeQueryRequest) GetMinT() (int64, error) {
+	minT, _, err := decodeQueryMinMaxTime(
+		r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep(),
+	)
+	return minT, err
+}
+
+// GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
+// as determined from the end timestamp and any offset in the query.
+func (r *PrometheusRangeQueryRequest) GetMaxT() (int64, error) {
+	_, maxT, err := decodeQueryMinMaxTime(
+		r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep(),
+	)
+	return maxT, err
+}
+
 func (r *PrometheusRangeQueryRequest) GetOptions() Options {
 	return r.Options
 }
 
-func (r *PrometheusRangeQueryRequest) GetID() int64 {
-	return r.ID
-}
-
 func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
 	return r.Hints
-}
-
-type PrometheusInstantQueryRequest struct {
-	Path    string
-	Time    int64
-	Query   string
-	Options Options
-	// ID of the request used to correlate downstream requests and responses.
-	ID int64
-	// Hints that could be optionally attached to the request to pass down the stack.
-	// These hints can be used to optimize the query execution.
-	Hints *Hints
-}
-
-func (r *PrometheusInstantQueryRequest) GetPath() string {
-	return r.Path
-}
-
-func (r *PrometheusInstantQueryRequest) GetTime() int64 {
-	return r.Time
-}
-
-func (r *PrometheusInstantQueryRequest) GetQuery() string {
-	return r.Query
-}
-
-func (r *PrometheusInstantQueryRequest) GetOptions() Options {
-	return r.Options
-}
-
-func (r *PrometheusInstantQueryRequest) GetID() int64 {
-	return r.ID
-}
-
-func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
-	return r.Hints
-}
-
-type Hints struct {
-	// Total number of queries that are expected to be executed to serve the original request.
-	TotalQueries int32
-	// Estimated total number of series that a request might return.
-	CardinalityEstimate *EstimatedSeriesCount
-}
-
-func (h *Hints) GetCardinalityEstimate() *EstimatedSeriesCount {
-	return h.CardinalityEstimate
-}
-
-func (h *Hints) GetTotalQueries() int32 {
-	return h.TotalQueries
-}
-
-func (h *Hints) GetEstimatedSeriesCount() uint64 {
-	if x := h.GetCardinalityEstimate(); x != nil {
-		return x.EstimatedSeriesCount
-	}
-	return 0
-}
-
-type EstimatedSeriesCount struct {
-	EstimatedSeriesCount uint64
 }
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
@@ -215,6 +171,34 @@ func (r *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
 	sp.SetTag("step_ms", r.GetStep())
 }
 
+type PrometheusInstantQueryRequest struct {
+	Path    string
+	Time    int64
+	Query   string
+	Options Options
+	// ID of the request used to correlate downstream requests and responses.
+	ID int64
+	// Hints that could be optionally attached to the request to pass down the stack.
+	// These hints can be used to optimize the query execution.
+	Hints *Hints
+}
+
+func (r *PrometheusInstantQueryRequest) GetID() int64 {
+	return r.ID
+}
+
+func (r *PrometheusInstantQueryRequest) GetPath() string {
+	return r.Path
+}
+
+func (r *PrometheusInstantQueryRequest) GetTime() int64 {
+	return r.Time
+}
+
+func (r *PrometheusInstantQueryRequest) GetQuery() string {
+	return r.Query
+}
+
 func (r *PrometheusInstantQueryRequest) GetStart() int64 {
 	return r.GetTime()
 }
@@ -227,21 +211,49 @@ func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 	return 0
 }
 
+// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
+// as determined from the start timestamp and any range vector or offset in the query.
+func (r *PrometheusInstantQueryRequest) GetMinT() (int64, error) {
+	minT, _, err := decodeQueryMinMaxTime(
+		r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep(),
+	)
+	return minT, err
+}
+
+// GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
+// as determined from the end timestamp and any offset in the query.
+func (r *PrometheusInstantQueryRequest) GetMaxT() (int64, error) {
+	_, maxT, err := decodeQueryMinMaxTime(
+		r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep(),
+	)
+	return maxT, err
+}
+
+func (r *PrometheusInstantQueryRequest) GetOptions() Options {
+	return r.Options
+}
+
+func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
+	return r.Hints
+}
+
 func (r *PrometheusInstantQueryRequest) WithID(id int64) MetricsQueryRequest {
 	newRequest := *r
 	newRequest.ID = id
 	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, _ int64) MetricsQueryRequest {
+// WithStartEnd clones the current `PrometheusInstantQueryRequest` with a new `time` timestamp.
+func (r *PrometheusInstantQueryRequest) WithStartEnd(time int64, _ int64) MetricsQueryRequest {
 	newRequest := *r
-	newRequest.Time = startTime
+	newRequest.Time = time
 	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) WithQuery(s string) MetricsQueryRequest {
+// WithQuery clones the current `PrometheusInstantQueryRequest` with a new query.
+func (r *PrometheusInstantQueryRequest) WithQuery(query string) MetricsQueryRequest {
 	newRequest := *r
-	newRequest.Query = s
+	newRequest.Query = query
 	return &newRequest
 }
 
@@ -274,6 +286,32 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 func (r *PrometheusInstantQueryRequest) AddSpanTags(sp opentracing.Span) {
 	sp.SetTag("query", r.GetQuery())
 	sp.SetTag("time", timestamp.Time(r.GetTime()).String())
+}
+
+type Hints struct {
+	// Total number of queries that are expected to be executed to serve the original request.
+	TotalQueries int32
+	// Estimated total number of series that a request might return.
+	CardinalityEstimate *EstimatedSeriesCount
+}
+
+func (h *Hints) GetCardinalityEstimate() *EstimatedSeriesCount {
+	return h.CardinalityEstimate
+}
+
+func (h *Hints) GetTotalQueries() int32 {
+	return h.TotalQueries
+}
+
+func (h *Hints) GetEstimatedSeriesCount() uint64 {
+	if x := h.GetCardinalityEstimate(); x != nil {
+		return x.EstimatedSeriesCount
+	}
+	return 0
+}
+
+type EstimatedSeriesCount struct {
+	EstimatedSeriesCount uint64
 }
 
 func (r *PrometheusLabelNamesQueryRequest) GetLabelName() string {
