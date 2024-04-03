@@ -344,7 +344,8 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		t.Log("produced 2 records")
 
 		// Create and start the reader.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		reg := prometheus.NewPedanticRegistry()
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
 		require.NoError(t, reader.StartAsync(ctx))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -369,6 +370,15 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		})
 
 		assert.Equal(t, int64(2), consumedRecordsCount.Load())
+
+		// We expect the last consumed offset to be tracked in a metric.
+		test.Poll(t, time.Second, nil, func() interface{} {
+			return promtest.GatherAndCompare(reg, strings.NewReader(`
+				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+			`), "cortex_ingest_storage_reader_last_consumed_offset")
+		})
 	})
 
 	t.Run("should consume partition from start if last committed offset is missing and wait until max lag is honored and retry if a failure occurs when fetching last produced offset", func(t *testing.T) {
@@ -404,7 +414,8 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		t.Log("produced 2 records")
 
 		// Create and start the reader.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		reg := prometheus.NewPedanticRegistry()
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
 		require.NoError(t, reader.StartAsync(ctx))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -429,6 +440,15 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		})
 
 		assert.Equal(t, int64(2), consumedRecordsCount.Load())
+
+		// We expect the last consumed offset to be tracked in a metric.
+		test.Poll(t, time.Second, nil, func() interface{} {
+			return promtest.GatherAndCompare(reg, strings.NewReader(`
+				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+			`), "cortex_ingest_storage_reader_last_consumed_offset")
+		})
 	})
 
 	t.Run("should consume partition from end if position=end, and skip honoring max lag", func(t *testing.T) {
@@ -552,7 +572,8 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 				consumedRecordsMx.Unlock()
 
 				// Create and start the reader.
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromStart), withMaxConsumerLagAtStartup(time.Second))
+				reg := prometheus.NewPedanticRegistry()
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromStart), withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
 				require.NoError(t, reader.StartAsync(ctx))
 				t.Cleanup(func() {
 					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -580,6 +601,15 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 					return slices.Clone(consumedRecords)
+				})
+
+				// We expect the last consumed offset to be tracked in a metric.
+				test.Poll(t, time.Second, nil, func() interface{} {
+					return promtest.GatherAndCompare(reg, strings.NewReader(`
+						# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+						# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+						cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+					`), "cortex_ingest_storage_reader_last_consumed_offset")
 				})
 			})
 		}
@@ -633,7 +663,8 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 				t.Log("produced 1 record")
 
 				// Create and start the reader.
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromLastOffset), withMaxConsumerLagAtStartup(time.Second))
+				reg := prometheus.NewPedanticRegistry()
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromLastOffset), withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
 				require.NoError(t, reader.StartAsync(ctx))
 				t.Cleanup(func() {
 					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -661,6 +692,16 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 					return slices.Clone(consumedRecords)
+				})
+
+				// We expect the last consumed offset to be tracked in a metric.
+				expectedConsumedOffset := run - 1
+				test.Poll(t, time.Second, nil, func() interface{} {
+					return promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+						# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+						# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+						cortex_ingest_storage_reader_last_consumed_offset{partition="1"} %d
+					`, expectedConsumedOffset)), "cortex_ingest_storage_reader_last_consumed_offset")
 				})
 			})
 		}
@@ -939,7 +980,7 @@ func TestPartitionCommitter(t *testing.T) {
 		// Now we expect the commit to succeed, once the committer will trigger the commit the next interval.
 		test.Poll(t, 10*interval, nil, func() interface{} {
 			return promtest.GatherAndCompare(reg, strings.NewReader(`
-				# HELP cortex_ingest_storage_reader_last_committed_offset Total last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
+				# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 				# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
 				cortex_ingest_storage_reader_last_committed_offset{partition="1"} 124
 
@@ -990,7 +1031,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 		require.NoError(t, committer.commit(context.Background(), 123))
 
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_reader_last_committed_offset Total last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
+			# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 			# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
 			cortex_ingest_storage_reader_last_committed_offset{partition="1"} 124
 
@@ -1030,7 +1071,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 		require.Error(t, committer.commit(context.Background(), 123))
 
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_reader_last_committed_offset Total last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
+			# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 			# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
 			cortex_ingest_storage_reader_last_committed_offset{partition="1"} -1
 

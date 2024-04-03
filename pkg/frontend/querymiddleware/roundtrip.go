@@ -239,7 +239,7 @@ func newQueryTripperware(
 
 	cacheKeyGenerator := cfg.CacheKeyGenerator
 	if cacheKeyGenerator == nil {
-		cacheKeyGenerator = DefaultCacheKeyGenerator{codec: codec, Interval: cfg.SplitQueriesByInterval}
+		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
 
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).

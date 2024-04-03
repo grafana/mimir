@@ -579,7 +579,7 @@ func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s - %s", tt.name, tt.interval), func(t *testing.T) {
-			if got := (DefaultCacheKeyGenerator{codec: codec, Interval: tt.interval}).QueryRequest(ctx, "fake", tt.r); got != tt.want {
+			if got := (DefaultCacheKeyGenerator{codec: codec, interval: tt.interval}).QueryRequest(ctx, "fake", tt.r); got != tt.want {
 				t.Errorf("generateKey() = %v, want %v", got, tt.want)
 			}
 		})
