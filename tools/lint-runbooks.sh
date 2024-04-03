@@ -26,7 +26,7 @@ for ALERT in $ALERTS; do
 done
 
 # List all global error IDs.
-if ! ERROR_IDS=$(${SED_BIN} --quiet -E 's/^.*ID\s+=\s+"([^"]+)"$/\1/p' "${SCRIPT_DIR}/../pkg/util/globalerror/errors.go"); then
+if ! ERROR_IDS=$(${SED_BIN} --quiet -E 's/^.*ID\s+=\s+"([^"]+)"$/\1/p' "${SCRIPT_DIR}/../pkg/util/globalerror/user.go"); then
   echo "Unable to list error IDs. Got output:"
   echo "$ERROR_IDS"
   exit 1
