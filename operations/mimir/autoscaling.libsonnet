@@ -7,6 +7,8 @@
     autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
     autoscaling_querier_target_utilization: 0.75,  // Target to utilize 75% querier workers on peak traffic, so we have 25% room for higher peaks.
     autoscaling_querier_predictive_scaling_enabled: false,  // Use inflight queries from 7d ago to predict the number of queriers needed.
+    autoscaling_querier_predictive_scaling_period: '6d23h30m',  // The period to consider when considering scheduler metrics for predictive scaling. This is usually slightly lower than the period of the repeating query events to give scaling up head time.
+    autoscaling_querier_predictive_scaling_lookback: '30m',  // The time range to consider when considering scheduler metrics for predictive scaling. For example: if lookback is 30m and period is 6d23h30m, the querier will scale based on the maximum infligth queries between 6d23h00m and 6d23h30m ago.
 
     autoscaling_ruler_querier_enabled: false,
     autoscaling_ruler_querier_min_replicas: error 'you must set autoscaling_ruler_querier_min_replicas in the _config',
@@ -204,7 +206,12 @@
           // Scale queriers accodring to how many queriers would have been sufficient to handle the load 7 days ago.
           // We use the query scheduler metric which includes active queries and queries in the queue.
           // Preslace 30m before the event so we have time to spin up the extra queriers (including node autoscaling).
-          query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[30m] offset 6d23h30m))' % [query_scheduler_container_name, $._config.namespace], weight),
+          query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(container)s",namespace="%(namespace)s",quantile="0.5"}[%(lookback)s] offset %(peroid)s))' % {
+            container: query_scheduler_container_name,
+            namespace: $._config.namespace,
+            lookback: $._config.autoscaling_querier_predictive_scaling_lookback,
+            peroid: $._config.autoscaling_querier_predictive_scaling_period,
+          }, weight),
           threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
         },
       ],
