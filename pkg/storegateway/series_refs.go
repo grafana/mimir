@@ -131,7 +131,6 @@ func (b seriesChunkRefsSet) len() int {
 //
 // This function is not idempotent. Calling it twice would introduce subtle bugs.
 func (b seriesChunkRefsSet) release() {
-	// TODO: how do we ensure that this isn't called on a set that will be reused?
 	if b.series == nil || !b.releasable {
 		return
 	}
@@ -1192,8 +1191,11 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet sy
 		}
 	}
 
-	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again.
-	set := newSeriesChunkRefsSet(len(symbolizedSet.series), true)
+	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again,
+	// provided it's not the first and only batch.
+	// TODO: should we forcibly release the retained first and only batch later?
+	releaseable := !s.postingsSetIterator.IsFirstAndOnlyBatch()
+	set := newSeriesChunkRefsSet(len(symbolizedSet.series), releaseable)
 
 	labelsBuilder := labels.NewScratchBuilder(maxLabelsPerSeries)
 	for _, series := range symbolizedSet.series {
@@ -1212,8 +1214,11 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet sy
 }
 
 func (s *loadingSeriesChunkRefsSetIterator) multiLookupStringify(symbolizedSet symbolizedSeriesChunkRefsSet) (seriesChunkRefsSet, error) {
-	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again.
-	set := newSeriesChunkRefsSet(len(symbolizedSet.series), true)
+	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again,
+	// provided it's not the first and only batch.
+	// TODO: should we forcibly release the retained first and only batch later?
+	releaseable := !s.postingsSetIterator.IsFirstAndOnlyBatch()
+	set := newSeriesChunkRefsSet(len(symbolizedSet.series), releaseable)
 
 	labelsBuilder := labels.NewScratchBuilder(16)
 	for _, series := range symbolizedSet.series {
