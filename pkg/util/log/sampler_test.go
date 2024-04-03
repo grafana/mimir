@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/grafana/dskit/middleware"
 	"github.com/stretchr/testify/require"
@@ -31,7 +30,7 @@ func TestSampledError_Error(t *testing.T) {
 	err := fmt.Errorf(errorWithIDFormat, 1)
 	sampledErr := SampledError{err: err, sampler: sampler}
 
-	require.EqualError(t, sampledErr, fmt.Sprintf("%s (sampled 1/%d)", err.Error(), errorSampleRate))
+	require.EqualError(t, sampledErr, err.Error())
 }
 
 func TestSampledError_ShouldLog(t *testing.T) {
@@ -40,11 +39,19 @@ func TestSampledError_ShouldLog(t *testing.T) {
 	sampledErr := SampledError{err: err, sampler: sampler}
 	ctx := context.Background()
 
-	require.True(t, sampledErr.ShouldLog(ctx, time.Duration(0)))
+	shouldLog, reason := sampledErr.ShouldLog(ctx)
+	require.True(t, shouldLog)
+	require.Equal(t, fmt.Sprintf("sampled 1/%d", errorSampleRate), reason)
+
 	for i := 1; i < errorSampleRate; i++ {
-		require.False(t, sampledErr.ShouldLog(ctx, time.Duration(0)))
+		shouldLog, reason = sampledErr.ShouldLog(ctx)
+		require.False(t, shouldLog)
+		require.Equal(t, fmt.Sprintf("sampled 1/%d", errorSampleRate), reason)
 	}
-	require.True(t, sampledErr.ShouldLog(ctx, time.Duration(0)))
+
+	shouldLog, reason = sampledErr.ShouldLog(ctx)
+	require.True(t, shouldLog)
+	require.Equal(t, fmt.Sprintf("sampled 1/%d", errorSampleRate), reason)
 }
 
 func TestSampledError_ShouldImplementOptionalLoggingInterface(t *testing.T) {

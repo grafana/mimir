@@ -314,7 +314,9 @@ func TestErrorWithStatus(t *testing.T) {
 			if data.doNotLog {
 				var optional middleware.OptionalLogging
 				require.ErrorAs(t, errWithStatus, &optional)
-				require.False(t, optional.ShouldLog(context.Background(), 0))
+
+				shouldLog, _ := optional.ShouldLog(context.Background())
+				require.False(t, shouldLog)
 			}
 		})
 	}
@@ -548,7 +550,9 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 			if tc.doNotLogExpected {
 				var doNotLogError middleware.DoNotLogError
 				require.ErrorAs(t, handledErr, &doNotLogError)
-				require.False(t, doNotLogError.ShouldLog(context.Background(), 0))
+
+				shouldLog, _ := doNotLogError.ShouldLog(context.Background())
+				require.False(t, shouldLog)
 			}
 		})
 	}
@@ -723,7 +727,9 @@ func TestMapPushErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 			if tc.doNotLogExpected {
 				var doNotLogError middleware.DoNotLogError
 				require.ErrorAs(t, handledErr, &doNotLogError)
-				require.False(t, doNotLogError.ShouldLog(context.Background(), 0))
+
+				shouldLog, _ := doNotLogError.ShouldLog(context.Background())
+				require.False(t, shouldLog)
 			}
 		})
 	}

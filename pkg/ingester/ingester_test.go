@@ -7569,7 +7569,9 @@ func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.
 
 			var optional middleware.OptionalLogging
 			require.ErrorAs(t, err, &optional)
-			require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
+
+			shouldLog, _ := optional.ShouldLog(ctx)
+			require.False(t, shouldLog, "expected not to log via .ShouldLog()")
 
 			s, ok := grpcutil.ErrorToStatus(err)
 			require.True(t, ok, "expected to be able to convert to gRPC status")
@@ -7692,7 +7694,9 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 
 					var optional middleware.OptionalLogging
 					require.ErrorAs(t, err, &optional)
-					require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
+
+					shouldLog, _ := optional.ShouldLog(ctx)
+					require.False(t, shouldLog, "expected not to log via .ShouldLog()")
 
 					s, ok := grpcutil.ErrorToStatus(err)
 					require.True(t, ok, "expected to be able to convert to gRPC status")

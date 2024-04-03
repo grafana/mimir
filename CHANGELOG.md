@@ -15,6 +15,7 @@
 * [ENHANCEMENT] Store-gateway: Add `stage="wait_max_concurrent"` to `cortex_bucket_store_series_request_stage_duration_seconds` which records how long the query had to wait for its turn for `-blocks-storage.bucket-store.max-concurrent`. #7609
 * [ENHANCEMENT] Querier: add `cortex_querier_federation_upstream_query_wait_duration_seconds` to observe time from when a querier picks up a cross-tenant query to when work begins on its single-tenant counterparts. #7209
 * [ENHANCEMENT] Compactor: Add `cortex_compactor_block_compaction_delay_seconds` metric to track how long it takes to compact blocks. #7635
+* [ENHANCEMENT] Store-gateway: add `outcome` label to `cortex_bucket_stores_gate_duration_seconds` histogram metric. Possible values for the `outcome` label are: `rejected_canceled`, `rejected_deadline_exceeded`, `rejected_other`, and `permitted`. #7784
 * [ENHANCEMENT] Query-frontend: use zero-allocation experimental decoder for active series queries via `-query-frontend.use-active-series-decoder`. #7665
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
@@ -28,6 +29,7 @@
 * [BUGFIX] Querier: return an error when a query uses `label_join` with an invalid destination label name. #7744
 * [BUGFIX] Compactor: correct outstanding job estimation in metrics and `compaction-planner` tool when block labels differ. #7745
 * [BUGFIX] Ingester: turn native histogram validation errors in TSDB into soft ingester errors that result in returning 4xx to the end-user instead of 5xx. In the case of TSDB validation errors, the counter `cortex_discarded_samples_total` will be increased with the `reason` label set to `"invalid-native-histogram"`. #7736 #7773
+* [BUGFIX] Do not wrap error message with `sampled 1/<frequency>` if it's not actually sampled. #7784
 
 ### Mixin
 

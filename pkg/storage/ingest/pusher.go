@@ -91,8 +91,7 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 		ctx := user.InjectOrgID(ctx, wr.tenantID)
 		err := c.p.PushToStorage(ctx, wr.WriteRequest)
 
-		processingElapsedTime := time.Since(processingStart)
-		c.processingTimeSeconds.Observe(processingElapsedTime.Seconds())
+		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 		c.totalRequests.Inc()
 
 		if err != nil {
@@ -104,7 +103,11 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 
 			// The error could be sampled or marked to be skipped in logs, so we check whether it should be
 			// logged before doing it.
-			if shouldLog(ctx, err, processingElapsedTime) {
+			if keep, reason := shouldLog(ctx, err); keep {
+				if reason != "" {
+					err = fmt.Errorf("%w (%s)", err, reason)
+				}
+
 				level.Warn(c.l).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "err", err, "user", wr.tenantID)
 			}
 		}
