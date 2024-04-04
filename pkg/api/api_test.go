@@ -191,7 +191,7 @@ func TestApiGzip(t *testing.T) {
 		})
 	}
 
-	t.Run("compressed with gzip", func(t *testing.T) {
+	t.Run("compressed with gzip", func(*testing.T) {
 	})
 }
 

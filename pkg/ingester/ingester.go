@@ -98,13 +98,14 @@ const (
 	instanceIngestionRateTickInterval = time.Second
 
 	// Reasons for discarding samples
-	reasonSampleOutOfOrder     = "sample-out-of-order"
-	reasonSampleTooOld         = "sample-too-old"
-	reasonSampleTooFarInFuture = "sample-too-far-in-future"
-	reasonNewValueForTimestamp = "new-value-for-timestamp"
-	reasonSampleOutOfBounds    = "sample-out-of-bounds"
-	reasonPerUserSeriesLimit   = "per_user_series_limit"
-	reasonPerMetricSeriesLimit = "per_metric_series_limit"
+	reasonSampleOutOfOrder       = "sample-out-of-order"
+	reasonSampleTooOld           = "sample-too-old"
+	reasonSampleTooFarInFuture   = "sample-too-far-in-future"
+	reasonNewValueForTimestamp   = "new-value-for-timestamp"
+	reasonSampleOutOfBounds      = "sample-out-of-bounds"
+	reasonPerUserSeriesLimit     = "per_user_series_limit"
+	reasonPerMetricSeriesLimit   = "per_metric_series_limit"
+	reasonInvalidNativeHistogram = "invalid-native-histogram"
 
 	replicationFactorStatsName             = "ingester_replication_factor"
 	ringStoreStatsName                     = "ingester_ring_store"
@@ -487,7 +488,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.subservicesWatcher.WatchService(i.metricsUpdaterService)
 
 	// Init metadata purger service, responsible to periodically delete metrics metadata past their retention period.
-	i.metadataPurgerService = services.NewTimerService(metadataPurgePeriod, nil, func(ctx context.Context) error {
+	i.metadataPurgerService = services.NewTimerService(metadataPurgePeriod, nil, func(context.Context) error {
 		i.purgeUserMetricsMetadata()
 		return nil
 	}, nil)
@@ -945,17 +946,18 @@ type extendedAppender interface {
 }
 
 type pushStats struct {
-	succeededSamplesCount     int
-	failedSamplesCount        int
-	succeededExemplarsCount   int
-	failedExemplarsCount      int
-	sampleOutOfBoundsCount    int
-	sampleOutOfOrderCount     int
-	sampleTooOldCount         int
-	sampleTooFarInFutureCount int
-	newValueForTimestampCount int
-	perUserSeriesLimitCount   int
-	perMetricSeriesLimitCount int
+	succeededSamplesCount       int
+	failedSamplesCount          int
+	succeededExemplarsCount     int
+	failedExemplarsCount        int
+	sampleOutOfBoundsCount      int
+	sampleOutOfOrderCount       int
+	sampleTooOldCount           int
+	sampleTooFarInFutureCount   int
+	newValueForTimestampCount   int
+	perUserSeriesLimitCount     int
+	perMetricSeriesLimitCount   int
+	invalidNativeHistogramCount int
 }
 
 type ctxKey int
@@ -1215,6 +1217,9 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	if stats.perMetricSeriesLimitCount > 0 {
 		discarded.perMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perMetricSeriesLimitCount))
 	}
+	if stats.invalidNativeHistogramCount > 0 {
+		discarded.invalidNativeHistogram.WithLabelValues(userID, group).Add(float64(stats.invalidNativeHistogramCount))
+	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
 
@@ -1288,6 +1293,38 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() softError {
 				return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
+			})
+			return true
+
+		// Map TSDB native histogram validation errors to soft errors.
+		case errors.Is(err, histogram.ErrHistogramCountMismatch):
+			stats.invalidNativeHistogramCount++
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, err, model.Time(timestamp), labels)
+			})
+			return true
+		case errors.Is(err, histogram.ErrHistogramCountNotBigEnough):
+			stats.invalidNativeHistogramCount++
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, err, model.Time(timestamp), labels)
+			})
+			return true
+		case errors.Is(err, histogram.ErrHistogramNegativeBucketCount):
+			stats.invalidNativeHistogramCount++
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, err, model.Time(timestamp), labels)
+			})
+			return true
+		case errors.Is(err, histogram.ErrHistogramSpanNegativeOffset):
+			stats.invalidNativeHistogramCount++
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, err, model.Time(timestamp), labels)
+			})
+			return true
+		case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
+			stats.invalidNativeHistogramCount++
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
 			})
 			return true
 		}
@@ -1852,7 +1889,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	var valueFilter func(name, value string) (bool, error)
 	switch request.GetCountMethod() {
 	case client.IN_MEMORY:
-		valueFilter = func(name, value string) (bool, error) {
+		valueFilter = func(string, string) (bool, error) {
 			return true, nil
 		}
 	case client.ACTIVE:
@@ -3029,7 +3066,7 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowedTenants) {
-	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(ctx context.Context, userID string) error {
+	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
 		if !allowed.IsAllowed(userID) {
 			return nil
 		}

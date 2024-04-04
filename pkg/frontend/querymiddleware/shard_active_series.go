@@ -3,6 +3,7 @@
 package querymiddleware
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -65,16 +67,18 @@ func getSnappyWriter(w io.Writer) *s2.Writer {
 }
 
 type shardActiveSeriesMiddleware struct {
-	upstream http.RoundTripper
-	limits   Limits
-	logger   log.Logger
+	upstream                 http.RoundTripper
+	useZeroAllocationDecoder bool
+	limits                   Limits
+	logger                   log.Logger
 }
 
-func newShardActiveSeriesMiddleware(upstream http.RoundTripper, limits Limits, logger log.Logger) http.RoundTripper {
+func newShardActiveSeriesMiddleware(upstream http.RoundTripper, useZeroAllocationDecoder bool, limits Limits, logger log.Logger) http.RoundTripper {
 	return &shardActiveSeriesMiddleware{
-		upstream: upstream,
-		limits:   limits,
-		logger:   logger,
+		upstream:                 upstream,
+		useZeroAllocationDecoder: useZeroAllocationDecoder,
+		limits:                   limits,
+		logger:                   logger,
 	}
 }
 
@@ -124,8 +128,12 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 		}
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
+	acceptEncoding := r.Header.Get("Accept-Encoding")
 
-	return s.mergeResponses(ctx, resp, r.Header.Get("Accept-Encoding")), nil
+	if s.useZeroAllocationDecoder {
+		return s.mergeResponsesWithZeroAllocationDecoder(ctx, resp, acceptEncoding), nil
+	}
+	return s.mergeResponses(ctx, resp, acceptEncoding), nil
 }
 
 func setShardCountFromHeader(origShardCount int, r *http.Request, spanLog *spanlogger.SpanLogger) int {
@@ -356,6 +364,48 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 	return resp
 }
 
+func (s *shardActiveSeriesMiddleware) mergeResponsesWithZeroAllocationDecoder(ctx context.Context, responses []*http.Response, encoding string) *http.Response {
+	reader, writer := io.Pipe()
+
+	streamCh := make(chan *bytes.Buffer)
+
+	g, gCtx := errgroup.WithContext(ctx)
+	for _, res := range responses {
+		if res == nil {
+			continue
+		}
+		r := res
+		g.Go(func() error {
+			dec := borrowShardActiveSeriesResponseDecoder(gCtx, r.Body, streamCh)
+			defer func() {
+				dec.close()
+				reuseShardActiveSeriesResponseDecoder(dec)
+			}()
+
+			if err := dec.decode(); err != nil {
+				return err
+			}
+			return dec.streamData()
+		})
+	}
+
+	go func() {
+		// We ignore the error from the errgroup because it will be checked again later.
+		_ = g.Wait()
+		close(streamCh)
+	}()
+
+	resp := &http.Response{Body: reader, StatusCode: http.StatusOK, Header: http.Header{}}
+	resp.Header.Set("Content-Type", "application/json")
+	if encoding == encodingTypeSnappyFramed {
+		resp.Header.Set("Content-Encoding", encodingTypeSnappyFramed)
+	}
+
+	go s.writeMergedResponseWithZeroAllocationDecoder(gCtx, g.Wait, writer, streamCh, encoding)
+
+	return resp
+}
+
 func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items <-chan *labels.Builder, encoding string) {
 	defer w.Close()
 
@@ -418,6 +468,77 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 		if stream.Buffered() > jsoniterMaxBufferSize {
 			_ = stream.Flush()
 		}
+	}
+	stream.WriteArrayEnd()
+
+	if err := check(); err != nil {
+		level.Error(s.logger).Log("msg", "error merging partial responses", "err", err.Error())
+		span.LogFields(otlog.Error(err))
+		stream.WriteMore()
+		stream.WriteObjectField("status")
+		stream.WriteString("error")
+		stream.WriteMore()
+		stream.WriteObjectField("error")
+		stream.WriteString(fmt.Sprintf("error merging partial responses: %s", err.Error()))
+	}
+
+	stream.WriteObjectEnd()
+}
+
+func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecoder(ctx context.Context, check func() error, w io.WriteCloser, streamCh chan *bytes.Buffer, encoding string) {
+	defer w.Close()
+
+	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveSeries.writeMergedResponseWithZeroAllocationDecoder")
+	defer span.Finish()
+
+	var out io.Writer = w
+	if encoding == encodingTypeSnappyFramed {
+		span.LogFields(otlog.String("encoding", encodingTypeSnappyFramed))
+		enc := getSnappyWriter(w)
+		out = enc
+		defer func() {
+			enc.Close()
+			// Reset the encoder before putting it back to pool to avoid it to hold the writer.
+			enc.Reset(nil)
+			snappyWriterPool.Put(enc)
+		}()
+	} else {
+		span.LogFields(otlog.String("encoding", "none"))
+	}
+
+	stream := jsoniter.ConfigFastest.BorrowStream(out)
+	defer func(stream *jsoniter.Stream) {
+		_ = stream.Flush()
+
+		if cap(stream.Buffer()) > jsoniterMaxBufferSize {
+			return
+		}
+		jsoniter.ConfigFastest.ReturnStream(stream)
+	}(stream)
+
+	stream.WriteObjectStart()
+	stream.WriteObjectField("data")
+	stream.WriteArrayStart()
+
+	firstItem := true
+	for streamBuf := range streamCh {
+		if firstItem {
+			firstItem = false
+		} else {
+			stream.WriteMore()
+		}
+		rawStr := unsafe.String(unsafe.SliceData(streamBuf.Bytes()), streamBuf.Len())
+
+		// Write the value as is, since it's already a JSON array.
+		stream.WriteRaw(rawStr)
+
+		// Flush the stream buffer if it's getting too large.
+		if stream.Buffered() > jsoniterMaxBufferSize {
+			_ = stream.Flush()
+		}
+
+		// Reuse stream buffer.
+		reuseActiveSeriesDataStreamBuffer(streamBuf)
 	}
 	stream.WriteArrayEnd()
 

@@ -59,7 +59,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 
 				// override handler func to assert new query has been substituted
 				q.handler = HandlerFunc(
-					func(ctx context.Context, req Request) (Response, error) {
+					func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 						require.Equal(t, `http_requests_total{cluster="prod"}`, req.GetQuery())
 						return expected, nil
 					},
@@ -218,7 +218,7 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 	downstreamWg := sync.WaitGroup{}
 	downstreamWg.Add(len(embeddedQueries))
 
-	querier := mkShardedQuerier(HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
+	querier := mkShardedQuerier(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 		// Wait until the downstream handler has been concurrently called for each embedded query.
 		downstreamWg.Done()
 		downstreamWg.Wait()
@@ -287,7 +287,7 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	}, queryable.getResponseHeaders())
 }
 
-func mkShardedQuerier(handler Handler) *shardedQuerier {
+func mkShardedQuerier(handler MetricsQueryHandler) *shardedQuerier {
 	return &shardedQuerier{req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
 }
 

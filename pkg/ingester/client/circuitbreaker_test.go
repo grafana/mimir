@@ -76,12 +76,12 @@ func perInstanceLimitError(t *testing.T) error {
 
 func TestNewCircuitBreaker(t *testing.T) {
 	// gRPC invoker that does not return an error
-	success := func(currentCtx context.Context, currentMethod string, currentReq, currentRepl interface{}, currentConn *grpc.ClientConn, currentOpts ...grpc.CallOption) error {
+	success := func(context.Context, string, interface{}, interface{}, *grpc.ClientConn, ...grpc.CallOption) error {
 		return nil
 	}
 
 	// gRPC invoker that returns an error that will be treated as an error by the circuit breaker
-	failure := func(currentCtx context.Context, currentMethod string, currentReq, currentRepl interface{}, currentConn *grpc.ClientConn, currentOpts ...grpc.CallOption) error {
+	failure := func(context.Context, string, interface{}, interface{}, *grpc.ClientConn, ...grpc.CallOption) error {
 		return perInstanceLimitError(t)
 	}
 

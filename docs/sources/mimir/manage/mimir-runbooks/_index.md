@@ -190,7 +190,7 @@ How to **investigate**:
 
 - Check the `Mimir / Writes` dashboard
   - Looking at the dashboard you should see in which Mimir service the high latency originates
-  - The panels in the dashboard are vertically sorted by the network path (eg. gateway -> distributor -> ingester)
+  - The panels in the dashboard are vertically sorted by the network path (eg. gateway -> distributor -> ingester). When using [ingest-storage](#mimir-ingest-storage-experimental), network path changes to gateway -> distributor -> Kafka instead.
 - Deduce where in the stack the latency is being introduced
   - **`gateway`**
     - Latency may be caused by the time taken for the gateway to receive the entire request from the client. There are a multitude of reasons this can occur, so communication with the user may be necessary. For example:
@@ -201,6 +201,7 @@ How to **investigate**:
     - There could be a problem with authentication (eg. slow to run auth layer)
   - **`distributor`**
     - Typically, distributor p99 latency is in the range 50-100ms. If the distributor latency is higher than this, you may need to scale up the distributors.
+    - When using Mimir [ingest-storage](#mimir-ingest-storage-experimental), distributors are writing requests to Kafka-compatible backend. Increased latency in distributor may also come from this backend.
   - **`ingester`**
     - Typically, ingester p99 latency is in the range 5-50ms. If the ingester latency is higher than this, you should investigate the root cause before scaling up ingesters.
     - Check out the following alerts and fix them if firing:
@@ -243,6 +244,9 @@ How to **investigate**:
       - If queries are not waiting in queue
         - Consider [enabling query sharding]({{< relref "../../references/architecture/query-sharding#how-to-enable-query-sharding" >}}) if not already enabled, to increase query parallelism
         - If query sharding already enabled, consider increasing total number of query shards (`query_sharding_total_shards`) for tenants submitting slow queries, so their queries can be further parallelized
+  - **`ingester`**
+    - Check if ingesters are not overloaded. If they are and you can scale up ingesters vertically, that may be the best action. If that's not possible, scaling horizontally can help as well, but it can take several hours for ingesters to fully redistribute their series.
+    - When using [ingest-storage](#mimir-ingest-storage-experimental), check ratio of queries using strong-consistency, and latency of queries using strong-consistency.
 
 #### Alertmanager
 
@@ -278,6 +282,7 @@ How to **investigate**:
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
   - If crashing service is query-frontend, querier or store-gateway, and you have "activity tracker" feature enabled, look for `found unfinished activities from previous run` message and subsequent `activity` messages in the log file to see which queries caused the crash.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
+- When using [ingest-storage](#mimir-ingest-storage-experimental) and distributors are failing to write requests to Kafka, make sure that Kafka is up and running correctly.
 
 #### Alertmanager
 
@@ -671,10 +676,6 @@ How to **investigate**:
 
 - Ensure the compactor is successfully running
 - Look for any error in the compactor logs
-
-### MimirQueriesIncorrect
-
-_TODO: this runbook has not been written yet._
 
 ### MimirInconsistentRuntimeConfig
 
@@ -1327,6 +1328,97 @@ How to **investigate**:
 - Check ingester logs to find details about the error.
 - Check Kafka logs and health.
 
+### MimirIngesterFailedToReadRecordsFromKafka
+
+This alert fires when an ingester is failing to read records from Kafka backend.
+
+How it **works**:
+
+- Ingester connects to Kafka brokers and reads records from it. Records contain write requests committed by distributors.
+- When ingester fails to read more records from Kafka due to error, ingester logs such error.
+- This can be normal if Kafka brokers are restarting, however if read errors continue for some time, alert is raised.
+
+How to **investigate**:
+
+- Check ingester logs to find details about the error.
+- Check Kafka logs and health.
+
+### MimirIngesterKafkaFetchErrorsRateTooHigh
+
+This alert fires when an ingester is receiving errors instead of "fetches" from Kafka.
+
+How it **works**:
+
+- Ingester uses Kafka client to read records (containing write requests) from Kafka.
+- Kafka client can return errors instead of more records.
+- If rate of returned errors compared to returned records is too high, alert is raised.
+- Kafka client can return errors [documented in the source code](https://github.com/grafana/mimir/blob/24591ae56cd7d6ef24a7cc1541a41405676773f4/vendor/github.com/twmb/franz-go/pkg/kgo/record_and_fetch.go#L332-L366).
+
+How to **investigate**:
+
+- Check ingester logs to find details about the error.
+- Check Kafka logs and health.
+
+### MimirStartingIngesterKafkaReceiveDelayIncreasing
+
+This alert fires when "receive delay" reported by ingester during "starting" phase is not decreasing.
+
+How it **works**:
+
+- When ingester is starting, it needs to fetch and process records from Kafka until preconfigured consumption lag is honored. The maximum tolerated lag before an ingester is considered to have caught up reading from a partition at startup can be configured via `-ingest-storage.kafka.max-consumer-lag-at-startup`.
+- Each record has a timestamp when it was sent to Kafka by the distributor. When ingester reads the record, it computes "receive delay" as a difference between current time (when record was read) and time when record was sent to Kafka. This receive delay is reported in the metric `cortex_ingest_storage_reader_receive_delay_seconds`. You can see receive delay on `Mimir / Writes` dashboard, in section "Ingester (ingest storage – end-to-end latency)".
+- Under normal conditions when ingester is processing records faster than records are appearing, receive delay should be decreasing, until `-ingest-storage.kafka.max-consumer-lag-at-startup` is honored.
+- When ingester is starting, and observed "receive delay" is increasing, alert is raised.
+
+How to **investigate**:
+
+- Check if ingester is fast enough to process all data in Kafka.
+
+### MimirRunningIngesterReceiveDelayTooHigh
+
+This alert fires when "receive delay" reported by ingester while it's running reaches alert threshold.
+
+How it **works**:
+
+- After ingester start and catches up with records in Kafka, ingester switches to "running" mode.
+- In running mode, ingester continues to process incoming records from Kafka and continues to report "receive delay". See [`MimirStartingIngesterKafkaReceiveDelayIncreasing`](#MimirStartingIngesterKafkaReceiveDelayIncreasing) runbook for details about this metric.
+- Under normal conditions when ingester is running and it is processing records faster than records are appearing, receive delay should be stable and low.
+- If observed "receive delay" increases and reaches certain threshold, alert is raised.
+
+How to **investigate**:
+
+- Check if ingester is fast enough to process all data in Kafka.
+- If ingesters are too slow, consider scaling ingesters horizontally to spread incoming series between more ingesters.
+
+### MimirIngesterFailsToProcessRecordsFromKafka
+
+This alert fires when ingester is unable to process incoming records from Kafka due to internal errors. If ingest-storage wasn't used, such push requests would end up with 5xx errors.
+
+How it **works**:
+
+- Ingester reads records from Kafka, and processes them locally. Processing means unmarshalling the data and handling write requests stored in records.
+- Write requests can fail due to "client" or "server" errors. An example of client error is too low limit for number of series. Server error can be for example ingester hitting an instance limit.
+- If requests keep failing due to server errors, this alert is raised.
+
+How to **investigate**:
+
+- Check ingester logs to see why requests are failing, and troubleshoot based on that.
+
+### MimirIngesterFailsEnforceStrongConsistencyOnReadPath
+
+This alert fires when too many read-requests with strong consistency are failing.
+
+How it **works**:
+
+- When read request asks for strong-consistency guarantee, ingester will read the last produced offset from Kafka, and wait until record with this offset is consumed.
+- If read request times out during this wait, that is considered to be a failure of request with strong-consistency.
+- If requests keep failing due to failure to enforce strong-consistency, this alert is raised.
+
+How to **investigate**:
+
+- Check wait latency of requests with strong-consistency on `Mimir / Queries` dashboard.
+- Check if ingester needs to process too many records, and whether ingesters need to be scaled up (vertically or horizontally).
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
@@ -1380,6 +1472,53 @@ The series containing such samples are skipped during ingestion, and valid serie
 ### err-mimir-invalid-native-histogram-schema
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram with an invalid schema number. Currently, valid schema numbers are from the range [-4, 8].
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-count-mismatch
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where the buckets counts don't add up to the overall count recorded in the native histogram, provided that the overall
+sum is a regular float number.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-count-not-big-enough
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where the buckets counts add up to a higher number than the overall count recorded in the native histogram, provided
+that the overall sum is not a float number (NaN).
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-negative-bucket-count
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where some bucket count is negative.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-span-negative-offset
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where a bucket span has a negative offset.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-spans-buckets-mismatch
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where the number of bucket counts does not agree with the number of buckets encoded in the bucket spans.
 
 {{< admonition type="note" >}}
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
@@ -1999,7 +2138,7 @@ How to manually upload blocks from ingesters to the bucket:
 
 The blocks and WAL stored in the ingester persistent disk are the last fence of defence in case of an incident involving blocks not shipped to the bucket or corrupted blocks in the bucket. If the data integrity in the ingester's disk is at risk (eg. close to hit the TSDB retention period or close to reach max disk utilisation), you should freeze it taking a **disk snapshot**.
 
-To take a **GCP persistent disk snapshot**:
+To take a **GCP Persistent Disk snapshot**:
 
 1. Identify the Kubernetes PVC volume name (`kubectl get pvc --namespace <namespace>`) of the volumes to snapshot
 2. For each volume, [create a snapshot](https://console.cloud.google.com/compute/snapshotsAdd) from the GCP console ([documentation](https://cloud.google.com/compute/docs/disks/create-snapshots))
@@ -2122,14 +2261,27 @@ After this preparation, one can use `kubectl exec --tty=false --stdin=false clon
    # Project ID: your google project ID
    ```
 
-### Deleting a StatefulSet with persistent volumes
+### Deleting or scaling a StatefulSet with persistent volumes
 
-When you delete a Kubernetes StatefulSet whose pods have persistent volume claims (PVC), the PVCs are not automatically deleted. This means that if the StatefulSet is recreated, the pods for which there was already a PVC will get the volume mounted previously.
+When you delete or scale down a Kubernetes StatefulSet whose pods have persistent volume claims (PVCs), the unused PVCs are not automatically deleted by default.
+This means that if the StatefulSet is recreated or scaled back up, the pods for which there was already a PVC will get the volume mounted previously.
 
-A PVC can be manually deleted by an operator. When a PVC claim is deleted, what happens to the volume depends on its [Reclaim Policy](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#reclaiming):
+However, this behaviour can be changed [as of Kubernetes 1.27](https://kubernetes.io/blog/2023/05/04/kubernetes-1-27-statefulset-pvc-auto-deletion-beta/).
+If `spec.persistentVolumeClaimRetentionPolicy.whenScaled` is set to `Delete`, unused PVCs will be deleted when the StatefulSet is scaled down.
+Similarly, if `spec.persistentVolumeClaimRetentionPolicy.whenDeleted` is set to `Delete`, all PVCs will be deleted when the StatefulSet is deleted.
+Note that neither of these behaviours apply when a StatefulSet is scaled up, a rolling update is performed or pods are shifted between nodes.
 
-- `Retain`: the volume will not be deleted until the PV resource will be manually deleted from Kubernetes
+When a PVC is deleted, what happens to the persistent volume (PV) it is bound to depends on its [reclaim policy](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#reclaiming):
+
+- `Retain`: the volume will not be deleted automatically, and will need to be manually deleted
 - `Delete`: the volume will be automatically deleted
+
+The initial reclaim policy for a PV is defined by its associated storage class.
+However, once the PV has been created, the PV's reclaim policy can be changed at any time, allowing it to be retained for further examination after the PVC has been deleted.
+For example, if the StatefulSet has `spec.persistentVolumeClaimRetentionPolicy.whenScaled` set to `Delete` and the PV has its reclaim policy set to `Delete`,
+but you wish to retain a PV for a pod that will be removed when scaling down the StatefulSet, you should change the affected PV's reclaim policy to `Retain` before scaling down the StatefulSet.
+
+To set a PV's reclaim policy to `Retain`, use `kubectl patch pv`: `kubectl patch pv <pv-name> -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'`
 
 ### Recover accidentally deleted blocks (Google Cloud specific)
 

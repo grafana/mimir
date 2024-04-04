@@ -706,12 +706,8 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -724,7 +720,6 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
-			cleanupInDefer = false
 			return next(ctx, pushReq)
 		}
 
@@ -771,19 +766,14 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
 		}
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
 }
 
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -791,7 +781,6 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		}
 
 		if !d.limits.MetricRelabelingEnabled(userID) {
-			cleanupInDefer = false
 			return next(ctx, pushReq)
 		}
 
@@ -834,7 +823,6 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
 }
@@ -843,12 +831,8 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 // filtering empty values. This is a protection mechanism for ingesters.
 func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -884,19 +868,14 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
 }
 
 func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -1020,7 +999,6 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
 		d.ingestionRate.Add(int64(totalN))
 
-		cleanupInDefer = false
 		err = next(ctx, pushReq)
 		if err != nil {
 			// Errors resulting from the pushing to the ingesters have priority over validation errors.
@@ -1035,12 +1013,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 // including data that later gets modified or dropped.
 func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -1071,7 +1045,6 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
 		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
 }
@@ -1228,12 +1201,8 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			d.cleanupAfterPushFinished(rs)
 		})
 
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -1259,9 +1228,23 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
+}
+
+// nextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
+// The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
+func nextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
+	cleanupInDefer := true
+	return func(ctx context.Context, req *Request) error {
+			cleanupInDefer = false
+			return next(ctx, req)
+		},
+		func() {
+			if cleanupInDefer {
+				pushReq.CleanUp()
+			}
+		}
 }
 
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
