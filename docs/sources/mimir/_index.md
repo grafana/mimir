@@ -1,7 +1,5 @@
 
 ---
-aliases:
-  - /docs/mimir/ # /docs/mimir/<MIMIR_VERSION>/
 description: Learn about the key benefits and features of Grafana Mimir.
 labels:
   products:
