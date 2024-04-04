@@ -407,7 +407,7 @@ func WithConfigFile(configFile string) Option {
 }
 
 // WithNoopOption returns an option that doesn't change anything.
-func WithNoopOption() Option { return func(options *Options) {} }
+func WithNoopOption() Option { return func(*Options) {} }
 
 // FlagMapper is the type of function that maps flags, just to reduce some verbosity.
 type FlagMapper func(flags map[string]string) map[string]string

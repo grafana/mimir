@@ -29,6 +29,8 @@ Usage of ./cmd/mimir/mimir:
     	Path at which alertmanager configurations are stored.
   -alertmanager-storage.s3.access-key-id string
     	S3 access key ID
+  -alertmanager-storage.s3.bucket-lookup-type value
+    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -alertmanager-storage.s3.bucket-name string
     	S3 bucket name
   -alertmanager-storage.s3.endpoint string
@@ -667,6 +669,8 @@ Usage of ./cmd/mimir/mimir:
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -blocks-storage.s3.access-key-id string
     	S3 access key ID
+  -blocks-storage.s3.bucket-lookup-type value
+    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -blocks-storage.s3.bucket-name string
     	S3 bucket name
   -blocks-storage.s3.endpoint string
@@ -835,6 +839,8 @@ Usage of ./cmd/mimir/mimir:
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -common.storage.s3.access-key-id string
     	S3 access key ID
+  -common.storage.s3.bucket-lookup-type value
+    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -common.storage.s3.bucket-name string
     	S3 bucket name
   -common.storage.s3.endpoint string
@@ -2011,6 +2017,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Split instant queries by an interval and execute in parallel. 0 to disable it.
   -query-frontend.split-queries-by-interval duration
     	Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
+  -query-frontend.use-active-series-decoder
+    	[experimental] Set to true to use the zero-allocation response decoder for active series queries.
   -query-scheduler.additional-query-queue-dimensions-enabled
     	[experimental] Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
   -query-scheduler.grpc-client-config.backoff-max-period duration
@@ -2251,6 +2259,8 @@ Usage of ./cmd/mimir/mimir:
     	Directory to scan for rules
   -ruler-storage.s3.access-key-id string
     	S3 access key ID
+  -ruler-storage.s3.bucket-lookup-type value
+    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -ruler-storage.s3.bucket-name string
     	S3 bucket name
   -ruler-storage.s3.endpoint string
@@ -2647,6 +2657,8 @@ Usage of ./cmd/mimir/mimir:
     	Regex for matching the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used
   -server.path-prefix string
     	Base path to serve all API routes from (e.g. /v1/)
+  -server.proxy-protocol-enabled
+    	[experimental] Enables PROXY protocol.
   -server.register-instrumentation
     	Register the intrumentation handlers (/metrics etc). (default true)
   -server.report-grpc-codes-in-instrumentation-label-enabled
@@ -2757,6 +2769,38 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The number of workers used for each tenant federated query. This setting limits the maximum number of per-tenant queries executed at a time for a tenant federated query. (default 16)
   -tenant-federation.max-tenants int
     	[experimental] The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.
+  -tests.basic-auth-password string
+    	The password to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
+  -tests.basic-auth-user string
+    	The username to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
+  -tests.bearer-token string
+    	The bearer token to use for HTTP bearer authentication. (mutually exclusive with tenant-id flag or basic-auth flags)
+  -tests.read-endpoint string
+    	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
+  -tests.read-timeout duration
+    	The timeout for a single read request. (default 1m0s)
+  -tests.run-interval duration
+    	How frequently tests should run. (default 5m0s)
+  -tests.smoke-test
+    	Run a smoke test, i.e. run all tests once and exit.
+  -tests.tenant-id string
+    	The tenant ID to use to write and read metrics in tests. (mutually exclusive with basic-auth or bearer-token flags) (default "anonymous")
+  -tests.write-batch-size int
+    	The maximum number of series to write in a single request. (default 1000)
+  -tests.write-endpoint string
+    	The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.
+  -tests.write-protocol string
+    	The protocol to use to write series data. Supported values are: prometheus, otlp-http (default "prometheus")
+  -tests.write-read-series-test.float-samples-enabled
+    	Set to true to use float samples (default true)
+  -tests.write-read-series-test.histogram-samples-enabled
+    	Set to true to use native histogram samples
+  -tests.write-read-series-test.max-query-age duration
+    	How back in the past metrics can be queried at most. (default 168h0m0s)
+  -tests.write-read-series-test.num-series int
+    	Number of series used for the test. (default 10000)
+  -tests.write-timeout duration
+    	The timeout for a single write request. (default 5s)
   -timeseries-unmarshal-caching-optimization-enabled
     	[experimental] Enables optimized marshaling of timeseries. (default true)
   -usage-stats.enabled

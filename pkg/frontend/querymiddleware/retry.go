@@ -41,7 +41,7 @@ func (m *retryMiddlewareMetrics) Observe(v float64) {
 
 type retry struct {
 	log        log.Logger
-	next       Handler
+	next       MetricsQueryHandler
 	maxRetries int
 
 	metrics prometheus.Observer
@@ -49,12 +49,12 @@ type retry struct {
 
 // newRetryMiddleware returns a middleware that retries requests if they
 // fail with 500 or a non-HTTP error.
-func newRetryMiddleware(log log.Logger, maxRetries int, metrics prometheus.Observer) Middleware {
+func newRetryMiddleware(log log.Logger, maxRetries int, metrics prometheus.Observer) MetricsQueryMiddleware {
 	if metrics == nil {
 		metrics = newRetryMiddlewareMetrics(nil)
 	}
 
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return retry{
 			log:        log,
 			next:       next,
@@ -64,7 +64,7 @@ func newRetryMiddleware(log log.Logger, maxRetries int, metrics prometheus.Obser
 	})
 }
 
-func (r retry) Do(ctx context.Context, req Request) (Response, error) {
+func (r retry) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	tries := 0
 	defer func() { r.metrics.Observe(float64(tries)) }()
 

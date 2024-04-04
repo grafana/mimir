@@ -405,7 +405,7 @@ func mapRulerAlertmanagerS3URL(dotStoragePath, storagePath string) MapperFunc {
 		if s3URL.User != nil {
 			username := s3URL.User.Username()
 			password, _ := s3URL.User.Password()
-			setIfNonEmpty := func(p Parameters, path, val string) error {
+			setIfNonEmpty := func(_ Parameters, path, val string) error {
 				currentVal, _ := target.GetValue(path)
 				currentStr := currentVal.AsString()
 				if val == "" || currentStr != "" {

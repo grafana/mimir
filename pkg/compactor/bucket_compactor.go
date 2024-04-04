@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -433,6 +434,13 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// into the next planning cycle.
 	// Eventually the block we just uploaded should get synced into the job again (including sync-delay).
 	for _, meta := range toCompact {
+		attrs, err := block.GetMetaAttributes(ctx, meta, c.bkt)
+		if err != nil {
+			level.Warn(jobLogger).Log("msg", "failed to determine block upload time", "block", meta.ULID.String(), "err", err)
+		} else {
+			c.metrics.blockCompactionDelay.WithLabelValues(strconv.Itoa(meta.Compaction.Level)).Observe(compactionBegin.Sub(attrs.LastModified).Seconds())
+		}
+
 		if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
 			return false, nil, errors.Wrapf(err, "mark old block for deletion from bucket")
 		}
@@ -645,6 +653,7 @@ type BucketCompactorMetrics struct {
 	groupCompactionRunsCompleted       prometheus.Counter
 	groupCompactionRunsFailed          prometheus.Counter
 	groupCompactions                   prometheus.Counter
+	blockCompactionDelay               *prometheus.HistogramVec
 	compactionBlocksVerificationFailed prometheus.Counter
 	blocksMarkedForDeletion            prometheus.Counter
 	blocksMarkedForNoCompact           *prometheus.CounterVec
@@ -670,6 +679,14 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Name: "cortex_compactor_group_compactions_total",
 			Help: "Total number of group compaction attempts that resulted in new block(s).",
 		}),
+		blockCompactionDelay: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_compactor_block_compaction_delay_seconds",
+			Help:                            "Delay between a block being uploaded and successfully compacting it.",
+			Buckets:                         []float64{60.0, 300.0, 600.0, 1800.0, 3600.0, 7200.0, 10800.0, 14400.0, 18000.0, 36000.0, 72000.0},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}, []string{"level"}),
 		compactionBlocksVerificationFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_blocks_verification_failures_total",
 			Help: "Total number of failures when verifying min/max time ranges of compacted blocks.",
@@ -694,7 +711,7 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 type ownCompactionJobFunc func(job *Job) (bool, error)
 
 // ownAllJobs is a ownCompactionJobFunc that always return true.
-var ownAllJobs = func(job *Job) (bool, error) {
+var ownAllJobs = func(*Job) (bool, error) {
 	return true, nil
 }
 

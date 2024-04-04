@@ -16,7 +16,7 @@ import (
 )
 
 // newInstrumentMiddleware can be inserted into the middleware chain to expose timing information.
-func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) Middleware {
+func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) MetricsQueryMiddleware {
 	var durationCol instrument.Collector
 
 	// Support the case metrics shouldn't be tracked (ie. unit tests).
@@ -26,8 +26,8 @@ func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) 
 		durationCol = &noopCollector{}
 	}
 
-	return MiddlewareFunc(func(next Handler) Handler {
-		return HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+		return HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 			var resp Response
 			err := instrument.CollectedRequest(ctx, name, durationCol, instrument.ErrorCode, func(ctx context.Context) error {
 				sp := opentracing.SpanFromContext(ctx)

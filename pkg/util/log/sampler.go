@@ -5,7 +5,6 @@ package log
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"go.uber.org/atomic"
 )
@@ -15,18 +14,17 @@ type SampledError struct {
 	sampler *Sampler
 }
 
-func (s SampledError) Error() string {
-	if s.sampler == nil {
-		return s.err.Error()
-	}
-	return fmt.Sprintf("%s (sampled 1/%d)", s.err.Error(), s.sampler.freq)
-}
-
+func (s SampledError) Error() string { return s.err.Error() }
 func (s SampledError) Unwrap() error { return s.err }
 
 // ShouldLog is called by common logging module.
-func (s SampledError) ShouldLog(_ context.Context, _ time.Duration) bool {
-	return s.sampler == nil || s.sampler.Sample()
+func (s SampledError) ShouldLog(_ context.Context) (bool, string) {
+	if s.sampler == nil {
+		return true, ""
+	}
+
+	return s.sampler.Sample(), fmt.Sprintf("sampled 1/%d", s.sampler.freq)
+
 }
 
 type Sampler struct {

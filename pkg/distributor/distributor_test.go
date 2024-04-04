@@ -1004,7 +1004,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			testReplica:     "instance1234567890123456789012345678901234567890",
 			cluster:         "cluster0",
 			samples:         5,
-			expectedError:   status.New(codes.FailedPrecondition, fmt.Sprintf(labelValueTooLongMsgFormat, "instance1234567890123456789012345678901234567890", mimirpb.FromLabelAdaptersToString(labelSetGenWithReplicaAndCluster("instance1234567890123456789012345678901234567890", "cluster0")(0)))),
+			expectedError:   status.New(codes.FailedPrecondition, fmt.Sprintf(labelValueTooLongMsgFormat, "__replica__", "instance1234567890123456789012345678901234567890", mimirpb.FromLabelAdaptersToString(labelSetGenWithReplicaAndCluster("instance1234567890123456789012345678901234567890", "cluster0")(0)))),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 	} {
@@ -1885,7 +1885,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 		expectedErr   string
 	}{
 		"all samples successfully pushed": {
-			prepareConfig: func(limits *validation.Limits) {},
+			prepareConfig: func(*validation.Limits) {},
 			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
 				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
@@ -2075,7 +2075,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			limits.IngestionRate = float64(rate.Inf) // Unlimited.
 			testData.prepareConfig(&limits)
 
-			distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
+			distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
 				return &noopIngester{}, nil
 			})
 
@@ -4397,7 +4397,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 
 			nextCallCount := 0
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *Request) error {
+			next := func(_ context.Context, pushReq *Request) error {
 				nextCallCount++
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
@@ -4463,7 +4463,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
-	mockPush := func(ctx context.Context, pushReq *Request) error {
+	mockPush := func(_ context.Context, pushReq *Request) error {
 		defer pushReq.CleanUp()
 		writeReq, err := pushReq.WriteRequest()
 		require.NoError(t, err)
@@ -4646,7 +4646,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			}
 
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *Request) error {
+			next := func(_ context.Context, pushReq *Request) error {
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
@@ -4724,7 +4724,7 @@ func TestSortAndFilterMiddleware(t *testing.T) {
 			}
 
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *Request) error {
+			next := func(_ context.Context, pushReq *Request) error {
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
@@ -6685,7 +6685,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 	exemplarLabelGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{{Name: "exemplarLabel", Value: fmt.Sprintf("value_%d", sampleIdx)}}
 	}
-	metaDataGen := func(metricIdx int, metricName string) *mimirpb.MetricMetadata {
+	metaDataGen := func(_ int, metricName string) *mimirpb.MetricMetadata {
 		return &mimirpb.MetricMetadata{
 			Type:             mimirpb.COUNTER,
 			MetricFamilyName: metricName,
@@ -7039,7 +7039,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	exemplarLabelGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{{Name: "exemplarLabel", Value: fmt.Sprintf("value_%d", sampleIdx)}}
 	}
-	metaDataGen := func(metricIdx int, metricName string) *mimirpb.MetricMetadata {
+	metaDataGen := func(_ int, metricName string) *mimirpb.MetricMetadata {
 		return &mimirpb.MetricMetadata{
 			Type:             mimirpb.COUNTER,
 			MetricFamilyName: metricName,
@@ -7430,7 +7430,7 @@ func TestSendMessageMetadata(t *testing.T) {
 	require.NoError(t, err)
 
 	mock := &mockInstanceClient{}
-	distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
+	distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
 		return mock, nil
 	})
 

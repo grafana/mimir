@@ -48,6 +48,7 @@ import (
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -135,6 +136,7 @@ type Config struct {
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
+	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
 	Common CommonConfig `yaml:"common"`
@@ -192,6 +194,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
+	c.ContinuousTest.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
 
 	c.Common.RegisterFlags(f)
@@ -720,6 +723,7 @@ type Mimir struct {
 	ActivityTracker               *activitytracker.ActivityTracker
 	Vault                         *vault.Vault
 	UsageStatsReporter            *usagestats.Reporter
+	ContinuousTestManager         *continuoustest.Manager
 	BuildInfoHandler              http.Handler
 }
 
@@ -754,6 +758,10 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
 		})
+
+	// Do not allow to configure potentially unsafe options until we've properly tested them in Mimir.
+	// These configuration options are hidden in the auto-generated documentation (see pkg/util/configdoc).
+	cfg.Server.GRPCServerRecvBufferPoolsEnabled = false
 
 	// Inject the registerer in the Server config too.
 	cfg.Server.Registerer = reg

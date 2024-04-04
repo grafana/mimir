@@ -240,10 +240,10 @@ local filename = 'mimir-queries.json';
         ) +
         $.queryPanel(
           [
-            'max(max_over_time(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s,quantile="0.5"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(max_over_time(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s,quantile="0.99"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(max_over_time(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s,quantile="0.999"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(max_over_time(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s,quantile="1.0"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
             '50th percentile',
@@ -300,10 +300,10 @@ local filename = 'mimir-queries.json';
         ) +
         $.queryPanel(
           [
-            'max(max_over_time(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s,quantile="0.5"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(max_over_time(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s,quantile="0.99"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(max_over_time(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s,quantile="0.999"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-            'max(max_over_time(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s,quantile="1.0"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
             '50th percentile',

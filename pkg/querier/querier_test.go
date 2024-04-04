@@ -1284,10 +1284,10 @@ func TestConfig_ValidateLimits(t *testing.T) {
 		expected error
 	}{
 		"should pass with default config": {
-			setup: func(cfg *Config, limits *validation.Limits) {},
+			setup: func(*Config, *validation.Limits) {},
 		},
 		"should pass if 'query store after' is enabled and shuffle-sharding is disabled": {
-			setup: func(cfg *Config, limits *validation.Limits) {
+			setup: func(cfg *Config, _ *validation.Limits) {
 				cfg.QueryStoreAfter = time.Hour
 			},
 		},

@@ -153,7 +153,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 		testFunc       func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits)
 	}{
 		"empty ingester": {
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
 				require.Equal(t, 0, c.ownedSeries.updateAllTenants(context.Background(), false))
 			},
 		},
@@ -164,7 +164,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 					IngestionTenantShardSize: 0,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 
 				// first ingester owns all the series, even without any ownedSeries run. this is because each created series is automatically counted as "owned".
@@ -192,7 +192,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 					IngestionTenantShardSize: 0,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -223,7 +223,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 					IngestionTenantShardSize: 1,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -272,7 +272,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 					IngestionTenantShardSize: 1,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -320,7 +320,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 					IngestionTenantShardSize: 0,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -550,7 +550,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 					IngestionTenantShardSize: 0,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -578,7 +578,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 					IngestionTenantShardSize: 0,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -722,12 +722,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRin
 	c.ing = ing
 	c.partitionsRing = prw
 
-	// Ingester and partitions ring watcher are not started yet.
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c.partitionsRing))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.partitionsRing))
-	})
-
+	// Ingester is not started yet.
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c.ing))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.ing))
@@ -811,7 +806,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 		testFunc            func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits)
 	}{
 		"empty ingester": {
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
 				require.Equal(t, 0, c.ownedSeries.updateAllTenants(context.Background(), false))
 			},
 		},
@@ -822,7 +817,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 					IngestionPartitionsTenantShardSize: 0,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 
 				// first ingester owns all the series, even without any ownedSeries run. this is because each created series is automatically counted as "owned".
@@ -850,7 +845,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 					IngestionPartitionsTenantShardSize: 0,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -881,7 +876,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 					IngestionPartitionsTenantShardSize: 1,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -931,7 +926,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 					IngestionPartitionsTenantShardSize: 1,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -979,7 +974,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 					IngestionPartitionsTenantShardSize: 0,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1214,7 +1209,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 					IngestionPartitionsTenantShardSize: 0,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1242,7 +1237,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 					IngestionPartitionsTenantShardSize: 0,
 				},
 			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1467,7 +1462,7 @@ func TestOwnedSeriesPartitionsRingStrategyRingChanged(t *testing.T) {
 		partitionRing.AddPartition(1, ring.PartitionActive, time.Now())
 	})
 
-	t.Run("first call with active partition in the ring reports change", func(t *testing.T) {
+	t.Run("first call with active partition in the ring reports change", func(*testing.T) {
 		// State of the ring: 1: Active
 		checkExpectedRingChange(true)
 		// second call reports no change

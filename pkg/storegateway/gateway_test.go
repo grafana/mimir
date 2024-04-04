@@ -63,17 +63,17 @@ func TestConfig_Validate(t *testing.T) {
 		expected error
 	}{
 		"should pass by default": {
-			setup:    func(cfg *Config, limits *validation.Limits) {},
+			setup:    func(*Config, *validation.Limits) {},
 			expected: nil,
 		},
 		"should fail if shard size is negative": {
-			setup: func(cfg *Config, limits *validation.Limits) {
+			setup: func(_ *Config, limits *validation.Limits) {
 				limits.StoreGatewayTenantShardSize = -3
 			},
 			expected: errInvalidTenantShardSize,
 		},
 		"should pass if shard size has been set": {
-			setup: func(cfg *Config, limits *validation.Limits) {
+			setup: func(_ *Config, limits *validation.Limits) {
 				limits.StoreGatewayTenantShardSize = 3
 			},
 			expected: nil,
@@ -193,7 +193,7 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	bucketClient := &bucket.ErrorInjectedBucketClient{Injector: func(operation bucket.Operation, s string) error { return assert.AnError }}
+	bucketClient := &bucket.ErrorInjectedBucketClient{Injector: func(bucket.Operation, string) error { return assert.AnError }}
 
 	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), nil, nil)
 	require.NoError(t, err)

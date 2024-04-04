@@ -11,6 +11,7 @@ metaMonitoring:
 distributor:
   kedaAutoscaling:
     enabled: true
+    preserveReplicas: true
     minReplicaCount: 1
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 80
@@ -19,6 +20,7 @@ distributor:
 ruler:
   kedaAutoscaling:
     enabled: true
+    preserveReplicas: true
     minReplicaCount: 1
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 80
@@ -27,6 +29,7 @@ ruler:
 querier:
   kedaAutoscaling:
     enabled: true
+    preserveReplicas: true
     minReplicaCount: 2
     maxReplicaCount: 10
     querySchedulerInflightRequestsThreshold: 6
@@ -34,6 +37,7 @@ querier:
 query_frontend:
   kedaAutoscaling:
     enabled: true
+    preserveReplicas: true
     minReplicaCount: 1
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 80

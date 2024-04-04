@@ -323,7 +323,7 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 
 			// Sync user stores and count the number of times the callback is called.
 			var storesCount atomic.Int32
-			err = stores.syncUsersBlocks(context.Background(), func(ctx context.Context, bs *BucketStore) error {
+			err = stores.syncUsersBlocks(context.Background(), func(context.Context, *BucketStore) error {
 				storesCount.Inc()
 				return nil
 			})
