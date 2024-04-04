@@ -313,7 +313,9 @@ type Ingester struct {
 	// Metrics shared across all per-tenant shippers.
 	shipperMetrics *shipperMetrics
 
-	subservices  *services.Manager
+	subservicesForPartitionReplay          *services.Manager
+	subservicesAfterIngesterRingLifecycler *services.Manager
+
 	activeGroups *util.ActiveGroupsCleanupService
 
 	tsdbMetrics *tsdbMetrics
@@ -573,16 +575,9 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	// Start the following services before starting the ingest storage reader, in order to have them
 	// running while replaying the partition (if ingest storage is enabled).
-	if err := services.StartAndAwaitRunning(ctx, i.compactionService); err != nil {
-		return errors.Wrap(err, "failed to start TSDB Head compaction service")
-	}
-
-	if err := services.StartAndAwaitRunning(ctx, i.metricsUpdaterService); err != nil {
-		return errors.Wrap(err, "failed to start metrics updater service")
-	}
-
-	if err := services.StartAndAwaitRunning(ctx, i.metadataPurgerService); err != nil {
-		return errors.Wrap(err, "failed to start metadata purger service")
+	i.subservicesForPartitionReplay, err = createManagerThenStartAndAwaitHealthy(ctx, i.compactionService, i.metricsUpdaterService, i.metadataPurgerService)
+	if err != nil {
+		return errors.Wrap(err, "failed to start ingester subservices before partition reader")
 	}
 
 	// When ingest storage is enabled, we have to make sure that reader catches up replaying the partition
@@ -633,11 +628,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, services.NewIdleService(nil, nil))
 	}
 
-	i.subservices, err = services.NewManager(servs...)
-	if err == nil {
-		err = services.StartManagerAndAwaitHealthy(ctx, i.subservices)
-	}
-	return errors.Wrap(err, "failed to start ingester components")
+	i.subservicesAfterIngesterRingLifecycler, err = createManagerThenStartAndAwaitHealthy(ctx, servs...)
+	return errors.Wrap(err, "failed to start ingester subservices after ingester ring lifecycler")
 }
 
 func (i *Ingester) stoppingForFlusher(_ error) error {
@@ -662,19 +654,15 @@ func (i *Ingester) stopping(_ error) error {
 		}
 	}
 
-	if err := services.StopAndAwaitTerminated(context.Background(), i.compactionService); err != nil {
-		level.Warn(i.logger).Log("msg", "failed to stop TSDB Head compaction service", "err", err)
+	// Stop subservices.
+	i.subservicesForPartitionReplay.StopAsync()
+	i.subservicesAfterIngesterRingLifecycler.StopAsync()
+
+	if err := i.subservicesForPartitionReplay.AwaitStopped(context.Background()); err != nil {
+		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
 
-	if err := services.StopAndAwaitTerminated(context.Background(), i.metricsUpdaterService); err != nil {
-		level.Warn(i.logger).Log("msg", "failed to stop metrics updater service", "err", err)
-	}
-
-	if err := services.StopAndAwaitTerminated(context.Background(), i.metadataPurgerService); err != nil {
-		level.Warn(i.logger).Log("msg", "failed to stop metadata purger service", "err", err)
-	}
-
-	if err := services.StopManagerAndAwaitStopped(context.Background(), i.subservices); err != nil {
+	if err := i.subservicesAfterIngesterRingLifecycler.AwaitStopped(context.Background()); err != nil {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
 
@@ -3985,4 +3973,17 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	}
 
 	return errors.Wrap(i.ingestReader.WaitReadConsistency(ctx), "wait for read consistency")
+}
+
+func createManagerThenStartAndAwaitHealthy(ctx context.Context, srvs ...services.Service) (*services.Manager, error) {
+	manager, err := services.NewManager(srvs...)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := services.StartManagerAndAwaitHealthy(ctx, manager); err != nil {
+		return nil, err
+	}
+
+	return manager, nil
 }
