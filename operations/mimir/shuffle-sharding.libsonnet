@@ -8,9 +8,15 @@
       ruler_enabled: false,
       store_gateway_enabled: false,
 
+      // Enables shuffle sharding for partitions, for (experimental) ingest storage.
+      ingest_storage_partitions_enabled: false,
+
       // Default shard sizes. We want the shard size to be divisible by the number of zones.
       // We typically run 3 zones
       ingester_shard_size: 3,
+      // Default partitions shard size. With ingest storage we shard series across Kafka topic's partitions,
+      // not across ingesters.
+      ingester_partitions_shard_size: 1,
       querier_shard_size: 10,
       store_gateway_shard_size: 3,
       ruler_shard_size: 2,
@@ -32,6 +38,10 @@
       $._config.shuffle_sharding.store_gateway_enabled ||
       $._config.shuffle_sharding.ruler_enabled,
 
+    // Check if shuffle-sharding is enabled for partitions.
+    local partitions_shuffle_sharding_enabled =
+      shuffle_sharding_enabled &&
+      $._config.shuffle_sharding.ingest_storage_partitions_enabled,
 
     local roundUpToMultipleOfThree(n) = std.ceil(n / 3) * 3,
 
@@ -49,6 +59,18 @@
       roundUpToMultipleOfThree(series * 3 * $._config.shuffle_sharding.target_utilization_percentage / 100 / $._config.shuffle_sharding.target_series_per_ingester)
     ),
 
+    // The partitions shard size is computed with the notion, that, in the ingest storage mode, Kafka's partion
+    // is the unit of sharding, and one partion is assigned to RF number of ingesters.
+    // We expect ingesters tenants shard size to be always multi-zone ready, so here we divide its value by 3,
+    // to get the shard size for the partitions.
+    // Note, to gracefully migrate the running Mimir cluster, we guard the value with the extra "partitions_shuffle_sharding_enabled" flag.
+    local ingesterPartitionsTenantShardSize(series) =
+      if !partitions_shuffle_sharding_enabled then null else
+        std.max(
+          $._config.shuffle_sharding.ingester_partitions_shard_size,
+          ingesterTenantShardSize(series) / 3,
+        ),
+
     overrides+:: if !shuffle_sharding_enabled then {} else {
       // Use defaults for this user class.
       extra_small_user+:: {},
@@ -56,6 +78,7 @@
       // Target 300K active series.
       medium_small_user+:: {
         ingestion_tenant_shard_size: ingesterTenantShardSize(300e3),
+        ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(300e3),
         store_gateway_tenant_shard_size: std.max(3, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
       },
@@ -63,6 +86,7 @@
       // Target 1M active series.
       small_user+:: {
         ingestion_tenant_shard_size: ingesterTenantShardSize(1e6),
+        ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(1e6),
         store_gateway_tenant_shard_size: std.max(6, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
       },
@@ -70,6 +94,7 @@
       // Target 3M active series.
       medium_user+:: {
         ingestion_tenant_shard_size: ingesterTenantShardSize(3e6),
+        ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(3e6),
         store_gateway_tenant_shard_size: std.max(9, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
       },
@@ -77,6 +102,7 @@
       // Target 6M active series.
       big_user+:: {
         ingestion_tenant_shard_size: ingesterTenantShardSize(6e6),
+        ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(6e6),
         store_gateway_tenant_shard_size: std.max(12, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(3, $._config.shuffle_sharding.ruler_shard_size),
       },
@@ -84,6 +110,7 @@
       // Target 12M active series.
       super_user+:: {
         ingestion_tenant_shard_size: ingesterTenantShardSize(12e6),
+        ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(12e6),
         store_gateway_tenant_shard_size: std.max(18, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(6, $._config.shuffle_sharding.ruler_shard_size),
       },
@@ -91,6 +118,7 @@
       // Target 16M active series.
       mega_user+:: {
         ingestion_tenant_shard_size: ingesterTenantShardSize(16e6),
+        ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(16e6),
         store_gateway_tenant_shard_size: std.max(24, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(8, $._config.shuffle_sharding.ruler_shard_size),
       },
@@ -98,6 +126,7 @@
       // Target 24M active series.
       user_24M+:: {
         ingestion_tenant_shard_size: ingesterTenantShardSize(24e6),
+        ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(24e6),
         store_gateway_tenant_shard_size: std.max(30, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(8, $._config.shuffle_sharding.ruler_shard_size),
       },
@@ -105,6 +134,7 @@
       // Target 32M active series.
       user_32M+:: {
         ingestion_tenant_shard_size: ingesterTenantShardSize(32e6),
+        ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(32e6),
         store_gateway_tenant_shard_size: std.max(42, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(12, $._config.shuffle_sharding.ruler_shard_size),
       },
@@ -113,11 +143,15 @@
 
   distributor_args+:: if !$._config.shuffle_sharding.ingester_write_path_enabled then {} else {
     'distributor.ingestion-tenant-shard-size': $._config.shuffle_sharding.ingester_shard_size,
+    [if $._config.shuffle_sharding.ingest_storage_partitions_enabled
+    then 'ingest-storage.ingestion-partition-tenant-shard-size']: $._config.shuffle_sharding.ingester_partitions_shard_size,
   },
 
   ingester_args+:: if !$._config.shuffle_sharding.ingester_write_path_enabled then {} else {
     // The shuffle sharding configuration is required on ingesters too because of global limits.
     'distributor.ingestion-tenant-shard-size': $._config.shuffle_sharding.ingester_shard_size,
+    [if $._config.shuffle_sharding.ingest_storage_partitions_enabled
+    then 'ingest-storage.ingestion-partition-tenant-shard-size']: $._config.shuffle_sharding.ingester_partitions_shard_size,
   },
 
   query_frontend_args+:: if !$._config.shuffle_sharding.querier_enabled then {} else {
@@ -140,6 +174,8 @@
   ) + (
     if !$._config.shuffle_sharding.ingester_read_path_enabled then {} else {
       'distributor.ingestion-tenant-shard-size': $._config.shuffle_sharding.ingester_shard_size,
+      [if $._config.shuffle_sharding.ingest_storage_partitions_enabled
+      then 'ingest-storage.ingestion-partition-tenant-shard-size']: $._config.shuffle_sharding.ingester_partitions_shard_size,
     }
   ),
 
@@ -155,10 +191,14 @@
     if !$._config.shuffle_sharding.ingester_write_path_enabled then {} else {
       // Required because the ruler directly writes to ingesters.
       'distributor.ingestion-tenant-shard-size': $._config.shuffle_sharding.ingester_shard_size,
+      [if $._config.shuffle_sharding.ingest_storage_partitions_enabled
+      then 'ingest-storage.ingestion-partition-tenant-shard-size']: $._config.shuffle_sharding.ingester_partitions_shard_size,
     }
   ) + (
     if !$._config.shuffle_sharding.ingester_read_path_enabled then {} else {
       'distributor.ingestion-tenant-shard-size': $._config.shuffle_sharding.ingester_shard_size,
+      [if $._config.shuffle_sharding.ingest_storage_partitions_enabled
+      then 'ingest-storage.ingestion-partition-tenant-shard-size']: $._config.shuffle_sharding.ingester_partitions_shard_size,
     }
   ) + (
     if !($._config.shuffle_sharding.ingester_write_path_enabled && !$._config.shuffle_sharding.ingester_read_path_enabled) then {} else {
