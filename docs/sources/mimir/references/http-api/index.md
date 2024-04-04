@@ -429,6 +429,7 @@ This endpoint is used to control whether an ingester should unregister from the 
 Via this endpoint, Mimir operators can dynamically control an ingester's `-ingester.ring.unregister-on-shutdown` state without having to restart the ingester.
 
 A `PUT` sets the ingester's unregister state. When invoked with the `PUT` method, the endpoint takes a request body:
+
 ```
 {"unregister": true}
 ```
@@ -439,6 +440,7 @@ A `DELETE` resets the ingester's unregister state to the value that was passed v
 configuration option.
 
 Regardless of the HTTP method used, the endpoint always returns a response body with the ingester's current unregister state:
+
 ```
 {"unregister": true}
 ```
