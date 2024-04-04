@@ -55,6 +55,7 @@
 
 * [CHANGE] Memcached: Change default read timeout for chunks and index caches to `750ms` from `450ms`. #7778
 * [ENHANCEMENT] Compactor: add `$._config.cortex_compactor_concurrent_rollout_enabled` option (disabled by default) that makes use of rollout-operator to speed up the rollout of compactors. #7783
+* [ENHANCEMENT] Shuffle-sharding: add `$._config.shuffle_sharding.ingest_storage_partitions_enabled` and `$._config.shuffle_sharding.ingester_partitions_shard_size` options, that allow configuring partitions shard size in ingest-storage mode. #7804
 * [BUGFIX] Guard against missing samples in KEDA queries. #7691
 
 ### Mimirtool
