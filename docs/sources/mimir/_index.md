@@ -3,7 +3,6 @@ description: Learn about the key benefits and features of Grafana Mimir.
 labels:
   products:
     - OSS
-menuTitle: Grafana Mimir
 title: Grafana Mimir
 weight: 1
 hero:
@@ -57,4 +56,3 @@ Take advantage of affordability and durability with support for various object s
 ## Explore
 
 {{< card-grid key="cards" type="simple" >}}
-
