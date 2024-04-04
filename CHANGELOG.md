@@ -58,6 +58,7 @@
 
 ### Mimirtool
 
+* [CHANGE] Deprecated `--rule-files` flag in favor of CLI arguments. #7756
 * [BUGFIX] Fix panic in `loadgen` subcommand. #7629
 
 ### Mimir Continuous Test
