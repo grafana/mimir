@@ -293,7 +293,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	}
 
 	downstreamReqs := 0
-	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+	rc := mw.Wrap(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 		downstreamReqs++
 		return expectedResponse, nil
 	}))
@@ -425,7 +425,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 	}
 
 	downstreamReqs := 0
-	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+	rc := mw.Wrap(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 		downstreamReqs++
 		return expectedResponse, nil
 	}))
@@ -518,7 +518,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 	}
 
 	downstreamReqs := 0
-	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+	rc := mw.Wrap(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 		downstreamReqs++
 		return expectedResponse, nil
 	}))

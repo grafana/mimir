@@ -43,7 +43,7 @@ func TestUsersScanner_ScanUsers_ShouldReturnUsersForWhichOwnerCheckOrTenantDelet
 	bucketClient.MockExists(path.Join("user-1", TenantDeletionMarkPath), false, nil)
 	bucketClient.MockExists(path.Join("user-2", TenantDeletionMarkPath), false, errors.New("fail"))
 
-	isOwned := func(userID string) (bool, error) {
+	isOwned := func(string) (bool, error) {
 		return false, errors.New("failed to check if user is owned")
 	}
 

@@ -56,7 +56,7 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 	}
 	mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
 	var stream client.Ingester_LabelNamesAndValuesServer = &mockServer
-	var valueFilter = func(name, value string) (bool, error) {
+	var valueFilter = func(string, string) (bool, error) {
 		return true, nil
 	}
 	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
@@ -95,7 +95,7 @@ func TestLabelNamesAndValues_FilteredValues(t *testing.T) {
 	}
 	mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
 	var stream client.Ingester_LabelNamesAndValuesServer = &mockServer
-	var valueFilter = func(name, value string) (bool, error) {
+	var valueFilter = func(_, value string) (bool, error) {
 		return strings.Contains(value, "0"), nil
 	}
 	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
@@ -286,7 +286,7 @@ func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 		opDelay:        idxOpDelay,
 	}
 
-	var valueFilter = func(name, value string) (bool, error) {
+	var valueFilter = func(string, string) (bool, error) {
 		return true, nil
 	}
 	doneCh := make(chan error, 1)

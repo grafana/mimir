@@ -63,6 +63,7 @@ type Config struct {
 	ShardedQueries                 bool          `yaml:"parallelize_shardable_queries"`
 	TargetSeriesPerShard           uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 	ShardActiveSeriesQueries       bool          `yaml:"shard_active_series_queries" category:"experimental"`
+	UseActiveSeriesDecoder         bool          `yaml:"use_active_series_decoder" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -81,6 +82,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
+	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 
 	// The query-frontend.align-queries-with-step flag has been moved to the limits.go file
@@ -334,7 +336,7 @@ func newQueryTripperware(
 		}
 
 		if cfg.ShardActiveSeriesQueries {
-			activeSeries = newShardActiveSeriesMiddleware(activeSeries, limits, log)
+			activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.UseActiveSeriesDecoder, limits, log)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {

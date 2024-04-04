@@ -4,17 +4,23 @@ package ingest
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 type pusherFunc func(context.Context, *mimirpb.WriteRequest) error
@@ -185,6 +191,88 @@ func TestPusherConsumer(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testing.T) {
+	// Create a request that will be used in this test. The content doesn't matter,
+	// since we only test errors.
+	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}}
+	reqBytes, err := req.Marshal()
+	require.NoError(t, err)
+	reqRecord := record{tenantID: "user-1", content: reqBytes}
+
+	// Utility function used to setup the test.
+	setupTest := func(pusherErr error) (*pusherConsumer, *concurrency.SyncBuffer, *prometheus.Registry) {
+		pusher := pusherFunc(func(context.Context, *mimirpb.WriteRequest) error {
+			return pusherErr
+		})
+
+		reg := prometheus.NewPedanticRegistry()
+		logs := &concurrency.SyncBuffer{}
+		consumer := newPusherConsumer(pusher, reg, log.NewLogfmtLogger(logs))
+
+		return consumer, logs, reg
+	}
+
+	t.Run("should log a client error if does not implement optional logging interface", func(t *testing.T) {
+		pusherErr := ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "mocked error")
+		consumer, logs, reg := setupTest(pusherErr)
+
+		// Should return no error on client errors.
+		require.NoError(t, consumer.consume(context.Background(), []record{reqRecord}))
+
+		assert.Contains(t, logs.String(), pusherErr.Error())
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_records_failed_total Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
+			# TYPE cortex_ingest_storage_reader_records_failed_total counter
+			cortex_ingest_storage_reader_records_failed_total{cause="client"} 1
+			cortex_ingest_storage_reader_records_failed_total{cause="server"} 0
+		`), "cortex_ingest_storage_reader_records_failed_total"))
+	})
+
+	t.Run("should log a client error if does implement optional logging interface and ShouldLog() returns true", func(t *testing.T) {
+		pusherErrSampler := util_log.NewSampler(100)
+		pusherErr := pusherErrSampler.WrapError(ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "mocked error"))
+
+		// Pre-requisite: the mocked error should implement the optional logging interface.
+		var optionalLoggingErr middleware.OptionalLogging
+		require.ErrorAs(t, pusherErr, &optionalLoggingErr)
+
+		consumer, logs, reg := setupTest(pusherErr)
+
+		// Should return no error on client errors.
+		require.NoError(t, consumer.consume(context.Background(), []record{reqRecord}))
+
+		assert.Contains(t, logs.String(), fmt.Sprintf("%s (sampled 1/100)", pusherErr.Error()))
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_records_failed_total Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
+			# TYPE cortex_ingest_storage_reader_records_failed_total counter
+			cortex_ingest_storage_reader_records_failed_total{cause="client"} 1
+			cortex_ingest_storage_reader_records_failed_total{cause="server"} 0
+		`), "cortex_ingest_storage_reader_records_failed_total"))
+	})
+
+	t.Run("should not log a client error if does implement optional logging interface and ShouldLog() returns false", func(t *testing.T) {
+		pusherErr := middleware.DoNotLogError{Err: ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "mocked error")}
+
+		// Pre-requisite: the mocked error should implement the optional logging interface.
+		var optionalLoggingErr middleware.OptionalLogging
+		require.ErrorAs(t, pusherErr, &optionalLoggingErr)
+
+		consumer, logs, reg := setupTest(pusherErr)
+
+		// Should return no error on client errors.
+		require.NoError(t, consumer.consume(context.Background(), []record{reqRecord}))
+
+		assert.Empty(t, logs.String())
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_records_failed_total Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
+			# TYPE cortex_ingest_storage_reader_records_failed_total counter
+			cortex_ingest_storage_reader_records_failed_total{cause="client"} 1
+			cortex_ingest_storage_reader_records_failed_total{cause="server"} 0
+		`), "cortex_ingest_storage_reader_records_failed_total"))
+	})
+
 }
 
 // ingesterError mimics how the ingester construct errors

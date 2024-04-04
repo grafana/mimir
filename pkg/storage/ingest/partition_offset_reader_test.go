@@ -141,7 +141,7 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 		expectedOffset := int64(1)
 
 		// Slow down the 1st ListOffsets request.
-		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
 			if firstRequest.CompareAndSwap(true, false) {
 				close(firstRequestReceived)
 				time.Sleep(2 * firstRequestTimeout)
@@ -187,7 +187,7 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 
 		// Make the ListOffsets request failing.
 		actualTries := atomic.NewInt64(0)
-		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 			actualTries.Inc()
 			return nil, errors.New("mocked error"), true
@@ -305,7 +305,7 @@ func TestPartitionOffsetReader_FetchPartitionStartOffset(t *testing.T) {
 		expectedStartOffset := int64(1)
 
 		// Slow down the 1st ListOffsets request.
-		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
 			if firstRequest.CompareAndSwap(true, false) {
 				close(firstRequestReceived)
 				time.Sleep(2 * firstRequestTimeout)
@@ -351,7 +351,7 @@ func TestPartitionOffsetReader_FetchPartitionStartOffset(t *testing.T) {
 
 		// Make the ListOffsets request failing.
 		actualTries := atomic.NewInt64(0)
-		cluster.ControlKey(int16(kmsg.ListOffsets), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 			actualTries.Inc()
 			return nil, errors.New("mocked error"), true

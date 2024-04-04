@@ -99,13 +99,14 @@ const (
 	instanceIngestionRateTickInterval = time.Second
 
 	// Reasons for discarding samples
-	reasonSampleOutOfOrder     = "sample-out-of-order"
-	reasonSampleTooOld         = "sample-too-old"
-	reasonSampleTooFarInFuture = "sample-too-far-in-future"
-	reasonNewValueForTimestamp = "new-value-for-timestamp"
-	reasonSampleOutOfBounds    = "sample-out-of-bounds"
-	reasonPerUserSeriesLimit   = "per_user_series_limit"
-	reasonPerMetricSeriesLimit = "per_metric_series_limit"
+	reasonSampleOutOfOrder       = "sample-out-of-order"
+	reasonSampleTooOld           = "sample-too-old"
+	reasonSampleTooFarInFuture   = "sample-too-far-in-future"
+	reasonNewValueForTimestamp   = "new-value-for-timestamp"
+	reasonSampleOutOfBounds      = "sample-out-of-bounds"
+	reasonPerUserSeriesLimit     = "per_user_series_limit"
+	reasonPerMetricSeriesLimit   = "per_metric_series_limit"
+	reasonInvalidNativeHistogram = "invalid-native-histogram"
 
 	replicationFactorStatsName             = "ingester_replication_factor"
 	ringStoreStatsName                     = "ingester_ring_store"
@@ -313,7 +314,9 @@ type Ingester struct {
 	// Metrics shared across all per-tenant shippers.
 	shipperMetrics *shipperMetrics
 
-	subservices  *services.Manager
+	subservicesForPartitionReplay          *services.Manager
+	subservicesAfterIngesterRingLifecycler *services.Manager
+
 	activeGroups *util.ActiveGroupsCleanupService
 
 	tsdbMetrics *tsdbMetrics
@@ -488,7 +491,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.subservicesWatcher.WatchService(i.metricsUpdaterService)
 
 	// Init metadata purger service, responsible to periodically delete metrics metadata past their retention period.
-	i.metadataPurgerService = services.NewTimerService(metadataPurgePeriod, nil, func(ctx context.Context) error {
+	i.metadataPurgerService = services.NewTimerService(metadataPurgePeriod, nil, func(context.Context) error {
 		i.purgeUserMetricsMetadata()
 		return nil
 	}, nil)
@@ -573,16 +576,9 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	// Start the following services before starting the ingest storage reader, in order to have them
 	// running while replaying the partition (if ingest storage is enabled).
-	if err := services.StartAndAwaitRunning(ctx, i.compactionService); err != nil {
-		return errors.Wrap(err, "failed to start TSDB Head compaction service")
-	}
-
-	if err := services.StartAndAwaitRunning(ctx, i.metricsUpdaterService); err != nil {
-		return errors.Wrap(err, "failed to start metrics updater service")
-	}
-
-	if err := services.StartAndAwaitRunning(ctx, i.metadataPurgerService); err != nil {
-		return errors.Wrap(err, "failed to start metadata purger service")
+	i.subservicesForPartitionReplay, err = createManagerThenStartAndAwaitHealthy(ctx, i.compactionService, i.metricsUpdaterService, i.metadataPurgerService)
+	if err != nil {
+		return errors.Wrap(err, "failed to start ingester subservices before partition reader")
 	}
 
 	// When ingest storage is enabled, we have to make sure that reader catches up replaying the partition
@@ -633,11 +629,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, services.NewIdleService(nil, nil))
 	}
 
-	i.subservices, err = services.NewManager(servs...)
-	if err == nil {
-		err = services.StartManagerAndAwaitHealthy(ctx, i.subservices)
-	}
-	return errors.Wrap(err, "failed to start ingester components")
+	i.subservicesAfterIngesterRingLifecycler, err = createManagerThenStartAndAwaitHealthy(ctx, servs...)
+	return errors.Wrap(err, "failed to start ingester subservices after ingester ring lifecycler")
 }
 
 func (i *Ingester) stoppingForFlusher(_ error) error {
@@ -662,19 +655,15 @@ func (i *Ingester) stopping(_ error) error {
 		}
 	}
 
-	if err := services.StopAndAwaitTerminated(context.Background(), i.compactionService); err != nil {
-		level.Warn(i.logger).Log("msg", "failed to stop TSDB Head compaction service", "err", err)
+	// Stop subservices.
+	i.subservicesForPartitionReplay.StopAsync()
+	i.subservicesAfterIngesterRingLifecycler.StopAsync()
+
+	if err := i.subservicesForPartitionReplay.AwaitStopped(context.Background()); err != nil {
+		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
 
-	if err := services.StopAndAwaitTerminated(context.Background(), i.metricsUpdaterService); err != nil {
-		level.Warn(i.logger).Log("msg", "failed to stop metrics updater service", "err", err)
-	}
-
-	if err := services.StopAndAwaitTerminated(context.Background(), i.metadataPurgerService); err != nil {
-		level.Warn(i.logger).Log("msg", "failed to stop metadata purger service", "err", err)
-	}
-
-	if err := services.StopManagerAndAwaitStopped(context.Background(), i.subservices); err != nil {
+	if err := i.subservicesAfterIngesterRingLifecycler.AwaitStopped(context.Background()); err != nil {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
 
@@ -946,17 +935,18 @@ type extendedAppender interface {
 }
 
 type pushStats struct {
-	succeededSamplesCount     int
-	failedSamplesCount        int
-	succeededExemplarsCount   int
-	failedExemplarsCount      int
-	sampleOutOfBoundsCount    int
-	sampleOutOfOrderCount     int
-	sampleTooOldCount         int
-	sampleTooFarInFutureCount int
-	newValueForTimestampCount int
-	perUserSeriesLimitCount   int
-	perMetricSeriesLimitCount int
+	succeededSamplesCount       int
+	failedSamplesCount          int
+	succeededExemplarsCount     int
+	failedExemplarsCount        int
+	sampleOutOfBoundsCount      int
+	sampleOutOfOrderCount       int
+	sampleTooOldCount           int
+	sampleTooFarInFutureCount   int
+	newValueForTimestampCount   int
+	perUserSeriesLimitCount     int
+	perMetricSeriesLimitCount   int
+	invalidNativeHistogramCount int
 }
 
 type ctxKey int
@@ -1216,6 +1206,9 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	if stats.perMetricSeriesLimitCount > 0 {
 		discarded.perMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perMetricSeriesLimitCount))
 	}
+	if stats.invalidNativeHistogramCount > 0 {
+		discarded.invalidNativeHistogram.WithLabelValues(userID, group).Add(float64(stats.invalidNativeHistogramCount))
+	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
 
@@ -1289,6 +1282,38 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() softError {
 				return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
+			})
+			return true
+
+		// Map TSDB native histogram validation errors to soft errors.
+		case errors.Is(err, histogram.ErrHistogramCountMismatch):
+			stats.invalidNativeHistogramCount++
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, err, model.Time(timestamp), labels)
+			})
+			return true
+		case errors.Is(err, histogram.ErrHistogramCountNotBigEnough):
+			stats.invalidNativeHistogramCount++
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, err, model.Time(timestamp), labels)
+			})
+			return true
+		case errors.Is(err, histogram.ErrHistogramNegativeBucketCount):
+			stats.invalidNativeHistogramCount++
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, err, model.Time(timestamp), labels)
+			})
+			return true
+		case errors.Is(err, histogram.ErrHistogramSpanNegativeOffset):
+			stats.invalidNativeHistogramCount++
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, err, model.Time(timestamp), labels)
+			})
+			return true
+		case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
+			stats.invalidNativeHistogramCount++
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
 			})
 			return true
 		}
@@ -1853,7 +1878,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	var valueFilter func(name, value string) (bool, error)
 	switch request.GetCountMethod() {
 	case client.IN_MEMORY:
-		valueFilter = func(name, value string) (bool, error) {
+		valueFilter = func(string, string) (bool, error) {
 			return true, nil
 		}
 	case client.ACTIVE:
@@ -3030,7 +3055,7 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowedTenants) {
-	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(ctx context.Context, userID string) error {
+	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
 		if !allowed.IsAllowed(userID) {
 			return nil
 		}
@@ -4033,4 +4058,17 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	}
 
 	return errors.Wrap(i.ingestReader.WaitReadConsistency(ctx), "wait for read consistency")
+}
+
+func createManagerThenStartAndAwaitHealthy(ctx context.Context, srvs ...services.Service) (*services.Manager, error) {
+	manager, err := services.NewManager(srvs...)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := services.StartManagerAndAwaitHealthy(ctx, manager); err != nil {
+		return nil, err
+	}
+
+	return manager, nil
 }

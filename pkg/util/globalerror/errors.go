@@ -20,7 +20,6 @@ const (
 	MaxNativeHistogramBuckets     ID = "max-native-histogram-buckets"
 	NotReducibleNativeHistogram   ID = "not-reducible-native-histogram"
 	InvalidSchemaNativeHistogram  ID = "invalid-native-histogram-schema"
-	BucketCountMismatch           ID = "native-histogram-bucket-count-mismatch"
 	SeriesInvalidLabel            ID = "label-invalid"
 	SeriesLabelNameTooLong        ID = "label-name-too-long"
 	SeriesLabelValueTooLong       ID = "label-value-too-long"
@@ -73,6 +72,14 @@ const (
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 
 	DistributorMaxWriteMessageSize ID = "distributor-max-write-message-size"
+
+	// Map Prometheus TSDB native histogram validation errors to Mimir errors.
+	// E.g. histogram.ErrHistogramCountNotBigEnough -> NativeHistogramCountNotBigEnough
+	NativeHistogramCountMismatch        ID = "native-histogram-count-mismatch"
+	NativeHistogramCountNotBigEnough    ID = "native-histogram-count-not-big-enough"
+	NativeHistogramNegativeBucketCount  ID = "native-histogram-negative-bucket-count"
+	NativeHistogramSpanNegativeOffset   ID = "native-histogram-span-negative-offset"
+	NativeHistogramSpansBucketsMismatch ID = "native-histogram-spans-buckets-mismatch"
 )
 
 // Message returns the provided msg, appending the error id.

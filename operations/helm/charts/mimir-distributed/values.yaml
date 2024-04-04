@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r283-7728f42
+  tag: r284-1a35693
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -183,7 +183,7 @@ mimir:
           memcached:
             addresses: {{ include "mimir.chunksCacheAddress" . }}
             max_item_size: {{ mul (index .Values "chunks-cache").maxItemMemory 1024 1024 }}
-            timeout: 450ms
+            timeout: 750ms
             max_idle_connections: 150
         {{- end }}
         {{- if index .Values "index-cache" "enabled" }}
@@ -192,7 +192,7 @@ mimir:
           memcached:
             addresses: {{ include "mimir.indexCacheAddress" . }}
             max_item_size: {{ mul (index .Values "index-cache").maxItemMemory 1024 1024 }}
-            timeout: 450ms
+            timeout: 750ms
             max_idle_connections: 150
         {{- end }}
         {{- if index .Values "metadata-cache" "enabled" }}
@@ -773,6 +773,9 @@ distributor:
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
     enabled: false
+    # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
+    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 100
@@ -1168,6 +1171,9 @@ ruler:
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
     enabled: false
+    # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
+    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 100
@@ -1274,6 +1280,9 @@ querier:
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
     enabled: false
+    # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
+    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
     querySchedulerInflightRequestsThreshold: 12
@@ -1381,6 +1390,9 @@ query_frontend:
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
     enabled: false
+    # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
+    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 75
@@ -3352,7 +3364,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r283-fc1cd884
+    tag: r284-05515399
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3856,7 +3868,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r283-7728f42
+    tag: r284-1a35693
     pullPolicy: IfNotPresent
   tenantId: ""
   extraArgs: {}
@@ -3876,7 +3888,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r283-7728f42
+    tag: r284-1a35693
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

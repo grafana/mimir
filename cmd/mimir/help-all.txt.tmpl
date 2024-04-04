@@ -2017,6 +2017,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Split instant queries by an interval and execute in parallel. 0 to disable it.
   -query-frontend.split-queries-by-interval duration
     	Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
+  -query-frontend.use-active-series-decoder
+    	[experimental] Set to true to use the zero-allocation response decoder for active series queries.
   -query-scheduler.additional-query-queue-dimensions-enabled
     	[experimental] Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
   -query-scheduler.grpc-client-config.backoff-max-period duration
@@ -2655,6 +2657,8 @@ Usage of ./cmd/mimir/mimir:
     	Regex for matching the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used
   -server.path-prefix string
     	Base path to serve all API routes from (e.g. /v1/)
+  -server.proxy-protocol-enabled
+    	[experimental] Enables PROXY protocol.
   -server.register-instrumentation
     	Register the intrumentation handlers (/metrics etc). (default true)
   -server.report-grpc-codes-in-instrumentation-label-enabled

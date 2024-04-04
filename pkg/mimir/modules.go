@@ -621,7 +621,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		}
 
 		// Add a middleware to extract the trace context and add a header.
-		internalQuerierRouter = nethttp.MiddlewareFunc(opentracing.GlobalTracer(), internalQuerierRouter.ServeHTTP, nethttp.OperationNameFunc(func(r *http.Request) string {
+		internalQuerierRouter = nethttp.MiddlewareFunc(opentracing.GlobalTracer(), internalQuerierRouter.ServeHTTP, nethttp.OperationNameFunc(func(*http.Request) string {
 			return "internalQuerier"
 		}))
 
