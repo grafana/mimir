@@ -553,7 +553,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		// Do not track consistency check metrics if query failed with an error unrelated to consistency check (e.g. context canceled),
 		// because it means we interrupted the requests, and we don't know whether consistency check would have succeeded
 		// or failed.
-		if returnErr != nil && !errors.Is(returnErr, storeConsistencyCheckFailedErr{}) {
+		if returnErr != nil && !errors.Is(returnErr, &storeConsistencyCheckFailedErr{}) {
 			return
 		}
 
@@ -616,26 +616,25 @@ type storeConsistencyCheckFailedErr struct {
 	remainingBlocks []ulid.ULID
 }
 
-func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) storeConsistencyCheckFailedErr {
+func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) *storeConsistencyCheckFailedErr {
 	// Sort the blocks, so it's easier to test the error strings.
 	sort.Slice(remainingBlocks, func(i, j int) bool {
 		return remainingBlocks[i].Compare(remainingBlocks[j]) < 0
 	})
 
-	return storeConsistencyCheckFailedErr{
+	return &storeConsistencyCheckFailedErr{
 		remainingBlocks: remainingBlocks,
 	}
 }
 
-func (e storeConsistencyCheckFailedErr) Error() string {
-	return fmt.Sprintf("%v. The failed blocks are: %s", globalerror.StoreConsistencyCheckFailed.Message("failed to fetch some blocks"), strings.Join(convertULIDsToString(e.remainingBlocks), " "))
+func (e *storeConsistencyCheckFailedErr) Error() string {
+	return fmt.Sprintf("%s. The failed blocks are: %s", globalerror.StoreConsistencyCheckFailed.Message("failed to fetch some blocks"), strings.Join(convertULIDsToString(e.remainingBlocks), " "))
 }
 
 // Is implements support for errors.Is.
-func (e storeConsistencyCheckFailedErr) Is(err error) bool {
-	_, ok1 := err.(storeConsistencyCheckFailedErr)
-	_, ok2 := err.(*storeConsistencyCheckFailedErr)
-	return ok1 || ok2
+func (e *storeConsistencyCheckFailedErr) Is(err error) bool {
+	var target *storeConsistencyCheckFailedErr
+	return errors.As(err, &target)
 }
 
 // filterBlocksByShard removes blocks that can be safely ignored when using query sharding.

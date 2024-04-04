@@ -3181,13 +3181,20 @@ func TestStoreConsistencyCheckFailedErr(t *testing.T) {
 
 	t.Run("should support errors.Is()", func(t *testing.T) {
 		err := newStoreConsistencyCheckFailedError([]ulid.ULID{ulid.MustNew(1, nil)})
-		wrapped := errors.Wrap(err, "wrapped")
-
-		assert.True(t, errors.Is(err, storeConsistencyCheckFailedErr{}))
 		assert.True(t, errors.Is(err, &storeConsistencyCheckFailedErr{}))
 
-		assert.True(t, errors.Is(wrapped, storeConsistencyCheckFailedErr{}))
+		wrapped := errors.Wrap(err, "wrapped")
 		assert.True(t, errors.Is(wrapped, &storeConsistencyCheckFailedErr{}))
+	})
+
+	t.Run("should support errors.As()", func(t *testing.T) {
+		var target *storeConsistencyCheckFailedErr
+
+		err := newStoreConsistencyCheckFailedError([]ulid.ULID{ulid.MustNew(1, nil)})
+		assert.ErrorAs(t, err, &target)
+
+		wrapped := errors.Wrap(err, "wrapped")
+		assert.ErrorAs(t, wrapped, &target)
 	})
 }
 
