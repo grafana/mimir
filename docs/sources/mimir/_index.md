@@ -39,7 +39,7 @@ cards:
       description: Query metric labels with HTTP API endpoints.
       height: 24
     - title: Visualize data
-      href: ./visualize-data/
+      href: ./visualize/
       description: Use Grafana Explore and PromQL to visualize data in Grafana
       height: 24
 ---
