@@ -335,7 +335,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 
 			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
 			// Wait for the response comparison to complete before checking the logged messages.
-			waitForResponseComparisonMetric(t, reg, scenario.expectedComparisonResult)
+			waitForResponseComparisonMetric(t, reg, scenario.expectedComparisonResult, 1)
 
 			switch scenario.expectedComparisonResult {
 			case ComparisonSuccess:
@@ -354,67 +354,81 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 	scenarios := map[string]struct {
 		slowResponseThreshold         time.Duration
-		preferredResponseLatency      time.Duration
-		secondaryResponseLatency      time.Duration
+		latencyPairs                  []latencyPair
 		expectLatencyExceedsThreshold bool
 		fastestBackend                string
 		slowestBackend                string
 	}{
 		"responses are below threshold": {
-			slowResponseThreshold:         100 * time.Millisecond,
-			preferredResponseLatency:      1 * time.Millisecond,
-			secondaryResponseLatency:      1 * time.Millisecond,
+			slowResponseThreshold: 100 * time.Millisecond,
+			latencyPairs: []latencyPair{{
+				preferredResponseLatency: 1 * time.Millisecond,
+				secondaryResponseLatency: 1 * time.Millisecond,
+			}},
 			expectLatencyExceedsThreshold: false,
 		},
 		"one response above threshold": {
-			slowResponseThreshold:         50 * time.Millisecond,
-			preferredResponseLatency:      1 * time.Millisecond,
-			secondaryResponseLatency:      70 * time.Millisecond,
+			slowResponseThreshold: 50 * time.Millisecond,
+			latencyPairs: []latencyPair{{
+				preferredResponseLatency: 1 * time.Millisecond,
+				secondaryResponseLatency: 70 * time.Millisecond,
+			}},
 			expectLatencyExceedsThreshold: true,
 			fastestBackend:                "preferred-backend",
 			slowestBackend:                "secondary-backend",
 		},
 		"responses are both above threshold, but lower than threshold between themselves": {
-			slowResponseThreshold:         50 * time.Millisecond,
-			preferredResponseLatency:      51 * time.Millisecond,
-			secondaryResponseLatency:      62 * time.Millisecond,
+			slowResponseThreshold: 50 * time.Millisecond,
+			latencyPairs: []latencyPair{{
+				preferredResponseLatency: 51 * time.Millisecond,
+				secondaryResponseLatency: 62 * time.Millisecond,
+			}},
 			expectLatencyExceedsThreshold: false,
 		},
 		"responses are both above threshold, and above threshold between themselves": {
-			slowResponseThreshold:         10 * time.Millisecond,
-			preferredResponseLatency:      11 * time.Millisecond,
-			secondaryResponseLatency:      52 * time.Millisecond,
+			slowResponseThreshold: 10 * time.Millisecond,
+			latencyPairs: []latencyPair{{
+				preferredResponseLatency: 11 * time.Millisecond,
+				secondaryResponseLatency: 52 * time.Millisecond,
+			}},
 			expectLatencyExceedsThreshold: true,
 			fastestBackend:                "preferred-backend",
 			slowestBackend:                "secondary-backend",
 		},
 		"secondary latency is faster than primary, and difference is below threshold": {
-			slowResponseThreshold:         50 * time.Millisecond,
-			preferredResponseLatency:      10 * time.Millisecond,
-			secondaryResponseLatency:      1 * time.Millisecond,
+			slowResponseThreshold: 50 * time.Millisecond,
+			latencyPairs: []latencyPair{{
+				preferredResponseLatency: 10 * time.Millisecond,
+				secondaryResponseLatency: 1 * time.Millisecond,
+			}},
 			expectLatencyExceedsThreshold: false,
 		},
 		"secondary latency is faster than primary, and difference is above threshold": {
-			slowResponseThreshold:         50 * time.Millisecond,
-			preferredResponseLatency:      71 * time.Millisecond,
-			secondaryResponseLatency:      1 * time.Millisecond,
+			slowResponseThreshold: 50 * time.Millisecond,
+			latencyPairs: []latencyPair{{
+				preferredResponseLatency: 71 * time.Millisecond,
+				secondaryResponseLatency: 1 * time.Millisecond,
+			}},
 			expectLatencyExceedsThreshold: true,
 			fastestBackend:                "secondary-backend",
 			slowestBackend:                "preferred-backend",
 		},
 		"slowest response threshold is disabled (0)": {
-			slowResponseThreshold:         0 * time.Millisecond,
-			preferredResponseLatency:      200 * time.Millisecond,
-			secondaryResponseLatency:      100 * time.Millisecond,
+			slowResponseThreshold: 0 * time.Millisecond,
+			latencyPairs: []latencyPair{{
+				preferredResponseLatency: 200 * time.Millisecond,
+				secondaryResponseLatency: 100 * time.Millisecond,
+			}},
 			expectLatencyExceedsThreshold: false,
 		},
 	}
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
+			preferredLatencies, secondaryLatencies := splitLatencyPairs(scenario.latencyPairs)
 			backends := []ProxyBackendInterface{
-				newMockProxyBackend("preferred-backend", time.Second, true, scenario.preferredResponseLatency),
-				newMockProxyBackend("secondary-backend", time.Second, false, scenario.secondaryResponseLatency),
+				newMockProxyBackend("preferred-backend", time.Second, true, preferredLatencies),
+				newMockProxyBackend("secondary-backend", time.Second, false, secondaryLatencies),
 			}
 
 			logger := newMockLogger()
@@ -432,7 +446,7 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 
 			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
 			// Wait for the response comparison to complete before checking the logged messages.
-			waitForResponseComparisonMetric(t, reg, ComparisonSuccess)
+			waitForResponseComparisonMetric(t, reg, ComparisonSuccess, uint64(len(scenario.latencyPairs)))
 
 			if scenario.expectLatencyExceedsThreshold {
 				requireLogKeyValues(t, logger.messages, map[string]string{
@@ -449,27 +463,42 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 
 func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 	scenarios := map[string]struct {
-		preferredResponseLatency time.Duration
-		secondaryResponseLatency time.Duration
-		expectedMetric           string
+		latencyPairs                  []latencyPair
+		expectedSampleCount           uint64
+		expectedDurationSampleSum     float64
+		expectedProportionalSampleSum float64
 	}{
-		"secondary backend is 2 seconds faster than preferred": {
-			preferredResponseLatency: 3 * time.Second,
-			secondaryResponseLatency: 1 * time.Second,
-			expectedMetric:           (`todo`),
+		"secondary backend is faster than preferred": {
+			latencyPairs: []latencyPair{{
+				preferredResponseLatency: 3 * time.Second,
+				secondaryResponseLatency: 1 * time.Second,
+			}, {
+				preferredResponseLatency: 5 * time.Second,
+				secondaryResponseLatency: 2 * time.Second,
+			},
+			},
+			expectedSampleCount:           2,
+			expectedDurationSampleSum:     5,
+			expectedProportionalSampleSum: (3.0/1 + 5.0/2),
 		},
 		"preferred backend is 5 seconds faster than secondary": {
-			preferredResponseLatency: 2 * time.Second,
-			secondaryResponseLatency: 7 * time.Second,
-			expectedMetric:           (`todo`),
+			latencyPairs: []latencyPair{{
+				preferredResponseLatency: 2 * time.Second,
+				secondaryResponseLatency: 7 * time.Second,
+			},
+			},
+			expectedSampleCount:           1,
+			expectedDurationSampleSum:     -5,
+			expectedProportionalSampleSum: (2.0 / 7),
 		},
 	}
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
+			preferredLatencies, secondaryLatencies := splitLatencyPairs(scenario.latencyPairs)
 			backends := []ProxyBackendInterface{
-				newMockProxyBackend("preferred-backend", time.Second, true, scenario.preferredResponseLatency),
-				newMockProxyBackend("secondary-backend", time.Second, false, scenario.secondaryResponseLatency),
+				newMockProxyBackend("preferred-backend", time.Second, true, preferredLatencies),
+				newMockProxyBackend("secondary-backend", time.Second, false, secondaryLatencies),
 			}
 
 			logger := newMockLogger()
@@ -483,19 +512,28 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
 			require.NoError(t, err)
-			endpoint.ServeHTTP(resp, req)
+			for range scenario.latencyPairs {
+				// This is just in serial to keep the tests simple
+				endpoint.ServeHTTP(resp, req)
+			}
 
 			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
-			// Wait for the response comparison to complete before checking the logged messages.
-			waitForResponseComparisonMetric(t, reg, ComparisonSuccess)
+			// Wait for the response comparison to complete the number of requests we have
+			waitForResponseComparisonMetric(t, reg, ComparisonSuccess, scenario.expectedSampleCount)
 
-			//require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(scenario.expectedMetric), "cortex_querytee_backend_request_relative_duration_seconds"))
 			got, done, err := prometheus.ToTransactionalGatherer(reg).Gather()
 			defer done()
 			require.NoError(t, err, "Failed to gather metrics from registry")
-			got = filterMetrics(got, []string{"cortex_querytee_backend_request_relative_duration_seconds"})
-			require.Equal(t, 1, len(got), "Expect only one metric after filtering")
-			require.Equal(t, uint64(1), got[0].Metric[0].Histogram.GetSampleCount(), "Expect only 1 sample")
+
+			gotDuration := filterMetrics(got, []string{"cortex_querytee_backend_request_relative_duration_seconds"})
+			require.Equal(t, 1, len(gotDuration), "Expect only one metric after filtering")
+			require.Equal(t, scenario.expectedSampleCount, gotDuration[0].Metric[0].Histogram.GetSampleCount())
+			require.Equal(t, scenario.expectedDurationSampleSum, gotDuration[0].Metric[0].Histogram.GetSampleSum())
+
+			gotProportional := filterMetrics(got, []string{"cortex_querytee_backend_request_relative_duration_proportional"})
+			require.Equal(t, 1, len(gotProportional), "Expect only one metric after filtering")
+			require.Equal(t, scenario.expectedSampleCount, gotProportional[0].Metric[0].Histogram.GetSampleCount())
+			require.Equal(t, scenario.expectedProportionalSampleSum, gotProportional[0].Metric[0].Histogram.GetSampleSum())
 		})
 	}
 }
@@ -513,7 +551,7 @@ func filterMetrics(metrics []*dto.MetricFamily, names []string) []*dto.MetricFam
 	return filtered
 }
 
-func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expectedResult ComparisonResult) {
+func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expectedResult ComparisonResult, expectedCount uint64) {
 	started := time.Now()
 	timeoutAt := started.Add(2 * time.Second)
 
@@ -521,8 +559,8 @@ func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expect
 		expected := fmt.Sprintf(`
 			# HELP cortex_querytee_responses_compared_total Total number of responses compared per route name by result.
 			# TYPE cortex_querytee_responses_compared_total counter
-			cortex_querytee_responses_compared_total{result="%v",route="test"} 1
-`, expectedResult)
+			cortex_querytee_responses_compared_total{result="%v",route="test"} %d
+`, expectedResult, expectedCount)
 		err := testutil.GatherAndCompare(g, bytes.NewBufferString(expected), "cortex_querytee_responses_compared_total")
 
 		if err == nil {
@@ -699,19 +737,33 @@ func (m *mockLogger) Log(keyvals ...interface{}) error {
 	return nil
 }
 
-type mockProxyBackend struct {
-	name                string
-	timeout             time.Duration
-	preferred           bool
-	fakeResponseLatency time.Duration
+type latencyPair struct {
+	preferredResponseLatency time.Duration
+	secondaryResponseLatency time.Duration
 }
 
-func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fakeResponseLatency time.Duration) ProxyBackendInterface {
+func splitLatencyPairs(latencyPairs []latencyPair) (preferredLatencies []time.Duration, secondaryLatencies []time.Duration) {
+	for _, pair := range latencyPairs {
+		preferredLatencies = append(preferredLatencies, pair.preferredResponseLatency)
+		secondaryLatencies = append(secondaryLatencies, pair.secondaryResponseLatency)
+	}
+	return
+}
+
+type mockProxyBackend struct {
+	name                  string
+	timeout               time.Duration
+	preferred             bool
+	fakeResponseLatencies []time.Duration
+	responseIndex         int
+}
+
+func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fakeResponseLatencies []time.Duration) ProxyBackendInterface {
 	return &mockProxyBackend{
-		name:                name,
-		timeout:             timeout,
-		preferred:           preferred,
-		fakeResponseLatency: fakeResponseLatency,
+		name:                  name,
+		timeout:               timeout,
+		preferred:             preferred,
+		fakeResponseLatencies: fakeResponseLatencies,
 	}
 }
 
@@ -728,11 +780,20 @@ func (b *mockProxyBackend) Preferred() bool {
 }
 
 func (b *mockProxyBackend) ForwardRequest(_ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
+	statusCode := 200
+	if b.responseIndex >= len(b.fakeResponseLatencies) {
+		statusCode = 500
+	}
 	resp := &http.Response{
-		StatusCode: 200,
+		StatusCode: statusCode,
 		Header:     make(http.Header),
 		Body:       io.NopCloser(bytes.NewBufferString(`{}`)),
 	}
 	resp.Header.Set("Content-Type", "application/json")
-	return time.Duration(b.fakeResponseLatency), 200, []byte("{}"), resp, nil
+	if b.responseIndex >= len(b.fakeResponseLatencies) {
+		return 0, 500, []byte("{}"), resp, errors.New("no more latencies available")
+	}
+	latency := b.fakeResponseLatencies[b.responseIndex]
+	b.responseIndex++
+	return latency, 200, []byte("{}"), resp, nil
 }
