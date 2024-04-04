@@ -59,8 +59,8 @@
       roundUpToMultipleOfThree(series * 3 * $._config.shuffle_sharding.target_utilization_percentage / 100 / $._config.shuffle_sharding.target_series_per_ingester)
     ),
 
-    // The partitions shard size is computed with the notion, that, in the ingest storage mode, Kafka's partion
-    // is the unit of sharding, and one partion is assigned to RF number of ingesters.
+    // The partitions shard size is computed with the notion, that, in the ingest storage mode, Kafka's partition
+    // is the unit of sharding, and one partition is assigned to RF number of ingesters.
     // We expect ingesters tenants shard size to be always multi-zone ready, so here we divide its value by 3,
     // to get the shard size for the partitions.
     // Note, to gracefully migrate the running Mimir cluster, we guard the value with the extra "partitions_shuffle_sharding_enabled" flag.
