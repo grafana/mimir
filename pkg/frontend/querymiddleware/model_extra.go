@@ -121,6 +121,60 @@ func (m *PrometheusRangeQueryRequest) GetHints() *Hints {
 	return nil
 }
 
+type PrometheusInstantQueryRequest struct {
+	Path    string  `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Time    int64   `protobuf:"varint,2,opt,name=time,proto3" json:"time,omitempty"`
+	Query   string  `protobuf:"bytes,3,opt,name=query,proto3" json:"query,omitempty"`
+	Options Options `protobuf:"bytes,4,opt,name=options,proto3" json:"options"`
+	// ID of the request used to correlate downstream requests and responses.
+	Id int64 `protobuf:"varint,5,opt,name=id,proto3" json:"id,omitempty"`
+	// Hints that could be optionally attached to the request to pass down the stack.
+	// These hints can be used to optimize the query execution.
+	Hints *Hints `protobuf:"bytes,6,opt,name=hints,proto3" json:"hints,omitempty"`
+}
+
+func (m *PrometheusInstantQueryRequest) GetPath() string {
+	if m != nil {
+		return m.Path
+	}
+	return ""
+}
+
+func (m *PrometheusInstantQueryRequest) GetTime() int64 {
+	if m != nil {
+		return m.Time
+	}
+	return 0
+}
+
+func (m *PrometheusInstantQueryRequest) GetQuery() string {
+	if m != nil {
+		return m.Query
+	}
+	return ""
+}
+
+func (m *PrometheusInstantQueryRequest) GetOptions() Options {
+	if m != nil {
+		return m.Options
+	}
+	return Options{}
+}
+
+func (m *PrometheusInstantQueryRequest) GetId() int64 {
+	if m != nil {
+		return m.Id
+	}
+	return 0
+}
+
+func (m *PrometheusInstantQueryRequest) GetHints() *Hints {
+	if m != nil {
+		return m.Hints
+	}
+	return nil
+}
+
 type Hints struct {
 	// Total number of queries that are expected to to be executed to serve the original request.
 	TotalQueries int32 `protobuf:"varint,1,opt,name=TotalQueries,proto3" json:"TotalQueries,omitempty"`
