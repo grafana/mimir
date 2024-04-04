@@ -135,7 +135,6 @@ type Distributor struct {
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
 	sampleDelayHistogram             prometheus.Histogram
-	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
 	hashCollisionCount               prometheus.Counter
 
@@ -353,10 +352,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 				60 * 60 * 24, // 24h
 			},
 		}),
-		replicationFactor: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_distributor_replication_factor",
-			Help: "The configured replication factor.",
-		}),
 		latestSeenSampleTimestampPerUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_distributor_latest_seen_sample_timestamp_seconds",
 			Help: "Unix timestamp of latest received sample per user.",
@@ -458,7 +453,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 
-	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
 	d.activeGroups = activeGroupsCleanupService
 
@@ -480,6 +474,20 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if cfg.IngestStorageConfig.Enabled {
 		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, log, reg)
 		subservices = append(subservices, d.ingestStorageWriter)
+	}
+
+	// Register each metric only if the corresponding storage is enabled.
+	// Some queries in the mixin use the presence of these metrics as indication whether Mimir is running with ingest storage or not.
+	if cfg.IngestStorageConfig.Enabled {
+		promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_distributor_ingest_storage_enabled",
+			Help: "Whether writes are being processed via ingest storage. Always 1 if ingest storage is enabled.",
+		}).Set(1)
+	} else {
+		promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_distributor_replication_factor",
+			Help: "The configured replication factor.",
+		}).Set(float64(ingestersRing.ReplicationFactor()))
 	}
 
 	d.subservices, err = services.NewManager(subservices...)
