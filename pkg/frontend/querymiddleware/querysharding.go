@@ -289,7 +289,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 	maxShardedQueries := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingMaxShardedQueries)
 	hints := r.GetHints()
 
-	if v, ok := hints.GetCardinalityEstimate().(*Hints_EstimatedSeriesCount); ok && s.maxSeriesPerShard > 0 {
+	if v := hints.GetCardinalityEstimate(); v != nil && s.maxSeriesPerShard > 0 {
 		prevTotalShards := totalShards
 		// If an estimate for query cardinality is available, use it to limit the number
 		// of shards based on linear interpolation.

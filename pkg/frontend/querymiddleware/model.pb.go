@@ -63,115 +63,115 @@ func (MatchType) EnumDescriptor() ([]byte, []int) {
 	return fileDescriptor_4c16552f9fdb66d8, []int{0}
 }
 
-type PrometheusRangeQueryRequest struct {
-	Path    string        `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	Start   int64         `protobuf:"varint,2,opt,name=start,proto3" json:"start,omitempty"`
-	End     int64         `protobuf:"varint,3,opt,name=end,proto3" json:"end,omitempty"`
-	Step    int64         `protobuf:"varint,4,opt,name=step,proto3" json:"step,omitempty"`
-	Timeout time.Duration `protobuf:"bytes,5,opt,name=timeout,proto3,stdduration" json:"timeout"`
-	Query   string        `protobuf:"bytes,6,opt,name=query,proto3" json:"query,omitempty"`
-	Options Options       `protobuf:"bytes,7,opt,name=options,proto3" json:"options"`
-	// ID of the request used to correlate downstream requests and responses.
-	Id int64 `protobuf:"varint,8,opt,name=id,proto3" json:"id,omitempty"`
-	// Hints that could be optionally attached to the request to pass down the stack.
-	// These hints can be used to optimize the query execution.
-	Hints *Hints `protobuf:"bytes,9,opt,name=hints,proto3" json:"hints,omitempty"`
-}
+//type PrometheusRangeQueryRequest struct {
+//	Path    string        `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+//	Start   int64         `protobuf:"varint,2,opt,name=start,proto3" json:"start,omitempty"`
+//	End     int64         `protobuf:"varint,3,opt,name=end,proto3" json:"end,omitempty"`
+//	Step    int64         `protobuf:"varint,4,opt,name=step,proto3" json:"step,omitempty"`
+//	Timeout time.Duration `protobuf:"bytes,5,opt,name=timeout,proto3,stdduration" json:"timeout"`
+//	Query   string        `protobuf:"bytes,6,opt,name=query,proto3" json:"query,omitempty"`
+//	Options Options       `protobuf:"bytes,7,opt,name=options,proto3" json:"options"`
+//	// ID of the request used to correlate downstream requests and responses.
+//	Id int64 `protobuf:"varint,8,opt,name=id,proto3" json:"id,omitempty"`
+//	// Hints that could be optionally attached to the request to pass down the stack.
+//	// These hints can be used to optimize the query execution.
+//	Hints *Hints `protobuf:"bytes,9,opt,name=hints,proto3" json:"hints,omitempty"`
+//}
 
-func (m *PrometheusRangeQueryRequest) Reset()      { *m = PrometheusRangeQueryRequest{} }
-func (*PrometheusRangeQueryRequest) ProtoMessage() {}
-func (*PrometheusRangeQueryRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4c16552f9fdb66d8, []int{0}
-}
-func (m *PrometheusRangeQueryRequest) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *PrometheusRangeQueryRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_PrometheusRangeQueryRequest.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *PrometheusRangeQueryRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_PrometheusRangeQueryRequest.Merge(m, src)
-}
-func (m *PrometheusRangeQueryRequest) XXX_Size() int {
-	return m.Size()
-}
-func (m *PrometheusRangeQueryRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_PrometheusRangeQueryRequest.DiscardUnknown(m)
-}
+//func (m *PrometheusRangeQueryRequest) Reset()      { *m = PrometheusRangeQueryRequest{} }
+//func (*PrometheusRangeQueryRequest) ProtoMessage() {}
+//func (*PrometheusRangeQueryRequest) Descriptor() ([]byte, []int) {
+//	return fileDescriptor_4c16552f9fdb66d8, []int{0}
+//}
+//func (m *PrometheusRangeQueryRequest) XXX_Unmarshal(b []byte) error {
+//	return m.Unmarshal(b)
+//}
+//func (m *PrometheusRangeQueryRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+//	if deterministic {
+//		return xxx_messageInfo_PrometheusRangeQueryRequest.Marshal(b, m, deterministic)
+//	} else {
+//		b = b[:cap(b)]
+//		n, err := m.MarshalToSizedBuffer(b)
+//		if err != nil {
+//			return nil, err
+//		}
+//		return b[:n], nil
+//	}
+//}
+//func (m *PrometheusRangeQueryRequest) XXX_Merge(src proto.Message) {
+//	xxx_messageInfo_PrometheusRangeQueryRequest.Merge(m, src)
+//}
+//func (m *PrometheusRangeQueryRequest) XXX_Size() int {
+//	return m.Size()
+//}
+//func (m *PrometheusRangeQueryRequest) XXX_DiscardUnknown() {
+//	xxx_messageInfo_PrometheusRangeQueryRequest.DiscardUnknown(m)
+//}
+//
+//var xxx_messageInfo_PrometheusRangeQueryRequest proto.InternalMessageInfo
 
-var xxx_messageInfo_PrometheusRangeQueryRequest proto.InternalMessageInfo
-
-func (m *PrometheusRangeQueryRequest) GetPath() string {
-	if m != nil {
-		return m.Path
-	}
-	return ""
-}
-
-func (m *PrometheusRangeQueryRequest) GetStart() int64 {
-	if m != nil {
-		return m.Start
-	}
-	return 0
-}
-
-func (m *PrometheusRangeQueryRequest) GetEnd() int64 {
-	if m != nil {
-		return m.End
-	}
-	return 0
-}
-
-func (m *PrometheusRangeQueryRequest) GetStep() int64 {
-	if m != nil {
-		return m.Step
-	}
-	return 0
-}
-
-func (m *PrometheusRangeQueryRequest) GetTimeout() time.Duration {
-	if m != nil {
-		return m.Timeout
-	}
-	return 0
-}
-
-func (m *PrometheusRangeQueryRequest) GetQuery() string {
-	if m != nil {
-		return m.Query
-	}
-	return ""
-}
-
-func (m *PrometheusRangeQueryRequest) GetOptions() Options {
-	if m != nil {
-		return m.Options
-	}
-	return Options{}
-}
-
-func (m *PrometheusRangeQueryRequest) GetId() int64 {
-	if m != nil {
-		return m.Id
-	}
-	return 0
-}
-
-func (m *PrometheusRangeQueryRequest) GetHints() *Hints {
-	if m != nil {
-		return m.Hints
-	}
-	return nil
-}
+//func (m *PrometheusRangeQueryRequest) GetPath() string {
+//	if m != nil {
+//		return m.Path
+//	}
+//	return ""
+//}
+//
+//func (m *PrometheusRangeQueryRequest) GetStart() int64 {
+//	if m != nil {
+//		return m.Start
+//	}
+//	return 0
+//}
+//
+//func (m *PrometheusRangeQueryRequest) GetEnd() int64 {
+//	if m != nil {
+//		return m.End
+//	}
+//	return 0
+//}
+//
+//func (m *PrometheusRangeQueryRequest) GetStep() int64 {
+//	if m != nil {
+//		return m.Step
+//	}
+//	return 0
+//}
+//
+//func (m *PrometheusRangeQueryRequest) GetTimeout() time.Duration {
+//	if m != nil {
+//		return m.Timeout
+//	}
+//	return 0
+//}
+//
+//func (m *PrometheusRangeQueryRequest) GetQuery() string {
+//	if m != nil {
+//		return m.Query
+//	}
+//	return ""
+//}
+//
+//func (m *PrometheusRangeQueryRequest) GetOptions() Options {
+//	if m != nil {
+//		return m.Options
+//	}
+//	return Options{}
+//}
+//
+//func (m *PrometheusRangeQueryRequest) GetId() int64 {
+//	if m != nil {
+//		return m.Id
+//	}
+//	return 0
+//}
+//
+//func (m *PrometheusRangeQueryRequest) GetHints() *Hints {
+//	if m != nil {
+//		return m.Hints
+//	}
+//	return nil
+//}
 
 type PrometheusInstantQueryRequest struct {
 	Path    string  `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
@@ -972,83 +972,83 @@ func (m *Options) GetInstantSplitInterval() int64 {
 	return 0
 }
 
-type Hints struct {
-	// Total number of queries that are expected to to be executed to serve the original request.
-	TotalQueries int32 `protobuf:"varint,1,opt,name=TotalQueries,proto3" json:"TotalQueries,omitempty"`
-	// Estimated total number of series that a request might return.
-	// This is a `oneof` instead of an `optional` because our tooling is on a version
-	// that does not yet support optional fields in proto3.
-	//
-	// Types that are valid to be assigned to CardinalityEstimate:
-	//	*Hints_EstimatedSeriesCount
-	CardinalityEstimate isHints_CardinalityEstimate `protobuf_oneof:"CardinalityEstimate"`
-}
+//type Hints struct {
+//	// Total number of queries that are expected to to be executed to serve the original request.
+//	TotalQueries int32 `protobuf:"varint,1,opt,name=TotalQueries,proto3" json:"TotalQueries,omitempty"`
+//	// Estimated total number of series that a request might return.
+//	// This is a `oneof` instead of an `optional` because our tooling is on a version
+//	// that does not yet support optional fields in proto3.
+//	//
+//	// Types that are valid to be assigned to CardinalityEstimate:
+//	//	*Hints_EstimatedSeriesCount
+//	CardinalityEstimate *Hints_EstimatedSeriesCount `protobuf_oneof:"CardinalityEstimate"`
+//}
 
-func (m *Hints) Reset()      { *m = Hints{} }
-func (*Hints) ProtoMessage() {}
-func (*Hints) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4c16552f9fdb66d8, []int{13}
-}
-func (m *Hints) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *Hints) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_Hints.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *Hints) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Hints.Merge(m, src)
-}
-func (m *Hints) XXX_Size() int {
-	return m.Size()
-}
-func (m *Hints) XXX_DiscardUnknown() {
-	xxx_messageInfo_Hints.DiscardUnknown(m)
-}
+//func (m *Hints) Reset()      { *m = Hints{} }
+//func (*Hints) ProtoMessage() {}
+//func (*Hints) Descriptor() ([]byte, []int) {
+//	return fileDescriptor_4c16552f9fdb66d8, []int{13}
+//}
+//func (m *Hints) XXX_Unmarshal(b []byte) error {
+//	return m.Unmarshal(b)
+//}
+//func (m *Hints) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+//	if deterministic {
+//		return xxx_messageInfo_Hints.Marshal(b, m, deterministic)
+//	} else {
+//		b = b[:cap(b)]
+//		n, err := m.MarshalToSizedBuffer(b)
+//		if err != nil {
+//			return nil, err
+//		}
+//		return b[:n], nil
+//	}
+//}
+//func (m *Hints) XXX_Merge(src proto.Message) {
+//	xxx_messageInfo_Hints.Merge(m, src)
+//}
+//func (m *Hints) XXX_Size() int {
+//	return m.Size()
+//}
+//func (m *Hints) XXX_DiscardUnknown() {
+//	xxx_messageInfo_Hints.DiscardUnknown(m)
+//}
+//
+//var xxx_messageInfo_Hints proto.InternalMessageInfo
 
-var xxx_messageInfo_Hints proto.InternalMessageInfo
+//type isHints_CardinalityEstimate interface {
+//	isHints_CardinalityEstimate()
+//	Equal(interface{}) bool
+//	MarshalTo([]byte) (int, error)
+//	Size() int
+//}
+//
+//type Hints_EstimatedSeriesCount struct {
+//	EstimatedSeriesCount uint64 `protobuf:"varint,2,opt,name=EstimatedSeriesCount,proto3,oneof"`
+//}
+//
+//func (*Hints_EstimatedSeriesCount) isHints_CardinalityEstimate() {}
 
-type isHints_CardinalityEstimate interface {
-	isHints_CardinalityEstimate()
-	Equal(interface{}) bool
-	MarshalTo([]byte) (int, error)
-	Size() int
-}
-
-type Hints_EstimatedSeriesCount struct {
-	EstimatedSeriesCount uint64 `protobuf:"varint,2,opt,name=EstimatedSeriesCount,proto3,oneof"`
-}
-
-func (*Hints_EstimatedSeriesCount) isHints_CardinalityEstimate() {}
-
-func (m *Hints) GetCardinalityEstimate() isHints_CardinalityEstimate {
-	if m != nil {
-		return m.CardinalityEstimate
-	}
-	return nil
-}
-
-func (m *Hints) GetTotalQueries() int32 {
-	if m != nil {
-		return m.TotalQueries
-	}
-	return 0
-}
-
-func (m *Hints) GetEstimatedSeriesCount() uint64 {
-	if x, ok := m.GetCardinalityEstimate().(*Hints_EstimatedSeriesCount); ok {
-		return x.EstimatedSeriesCount
-	}
-	return 0
-}
+//func (m *Hints) GetCardinalityEstimate() *Hints_EstimatedSeriesCount {
+//	if m != nil {
+//		return m.CardinalityEstimate
+//	}
+//	return nil
+//}
+//
+//func (m *Hints) GetTotalQueries() int32 {
+//	if m != nil {
+//		return m.TotalQueries
+//	}
+//	return 0
+//}
+//
+//func (m *Hints) GetEstimatedSeriesCount() uint64 {
+//	if x := m.GetCardinalityEstimate(); x != nil {
+//		return x.EstimatedSeriesCount
+//	}
+//	return 0
+//}
 
 // XXX_OneofWrappers is for the internal use of the proto package.
 func (*Hints) XXX_OneofWrappers() []interface{} {
@@ -1227,7 +1227,7 @@ func (m *CachedHTTPHeader) GetValue() string {
 
 func init() {
 	proto.RegisterEnum("queryrange.MatchType", MatchType_name, MatchType_value)
-	proto.RegisterType((*PrometheusRangeQueryRequest)(nil), "queryrange.PrometheusRangeQueryRequest")
+	//proto.RegisterType((*PrometheusRangeQueryRequest)(nil), "queryrange.PrometheusRangeQueryRequest")
 	proto.RegisterType((*PrometheusInstantQueryRequest)(nil), "queryrange.PrometheusInstantQueryRequest")
 	proto.RegisterType((*LabelMatchers)(nil), "queryrange.LabelMatchers")
 	proto.RegisterType((*LabelMatcher)(nil), "queryrange.LabelMatcher")
@@ -1240,7 +1240,7 @@ func init() {
 	proto.RegisterType((*CachedResponse)(nil), "queryrange.CachedResponse")
 	proto.RegisterType((*Extent)(nil), "queryrange.Extent")
 	proto.RegisterType((*Options)(nil), "queryrange.Options")
-	proto.RegisterType((*Hints)(nil), "queryrange.Hints")
+	//proto.RegisterType((*Hints)(nil), "queryrange.Hints")
 	proto.RegisterType((*QueryStatistics)(nil), "queryrange.QueryStatistics")
 	proto.RegisterType((*CachedHTTPResponse)(nil), "queryrange.CachedHTTPResponse")
 	proto.RegisterType((*CachedHTTPHeader)(nil), "queryrange.CachedHTTPHeader")
