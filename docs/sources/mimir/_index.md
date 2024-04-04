@@ -1,4 +1,3 @@
-
 ---
 description: Learn about the key benefits and features of Grafana Mimir.
 labels:
