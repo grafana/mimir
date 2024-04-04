@@ -54,7 +54,7 @@ type Config struct {
 	EnableOtelMetadataStorage bool `yaml:"enable_otel_metadata_translation" category:"deprecated"`
 
 	// TODO: Remove option in Mimir 2.15.
-	GETRequestForIngesterShutdown bool `yaml:"get_request_for_ingester_shutdown_enabled" category:"deprecated"`
+	GETRequestForIngesterShutdownEnabled bool `yaml:"get_request_for_ingester_shutdown_enabled" category:"deprecated"`
 
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
 	PrometheusHTTPPrefix   string `yaml:"prometheus_http_prefix" category:"advanced"`
@@ -74,7 +74,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.")
 	f.BoolVar(&cfg.EnableOtelMetadataStorage, "distributor.enable-otlp-metadata-storage", true, "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.")
-	f.BoolVar(&cfg.GETRequestForIngesterShutdown, "ingester.get-request-for-shutdown-enabled", false, "Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.")
+	f.BoolVar(&cfg.GETRequestForIngesterShutdownEnabled, "get-request-for-ingester-shutdown-enabled", false, "Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.")
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
@@ -301,7 +301,7 @@ func (a *API) RegisterIngester(i Ingester) {
 	a.RegisterRoute("/ingester/prepare-shutdown", http.HandlerFunc(i.PrepareShutdownHandler), false, true, "GET", "POST", "DELETE")
 	a.RegisterRoute("/ingester/prepare-partition-downscale", http.HandlerFunc(i.PreparePartitionDownscaleHandler), false, true, "GET", "POST", "DELETE")
 	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "POST")
-	if a.cfg.GETRequestForIngesterShutdown {
+	if a.cfg.GETRequestForIngesterShutdownEnabled {
 		a.RegisterDeprecatedRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "GET")
 	}
 	a.RegisterRoute("/ingester/tsdb_metrics", http.HandlerFunc(i.UserRegistryHandler), true, true, "GET")

@@ -222,7 +222,7 @@ func TestApiIngesterShutdown(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := Config{
-				GETRequestForIngesterShutdown: tc.setFlag,
+				GETRequestForIngesterShutdownEnabled: tc.setFlag,
 			}
 			serverCfg := getServerConfig(t)
 			federationCfg := tenantfederation.Config{}

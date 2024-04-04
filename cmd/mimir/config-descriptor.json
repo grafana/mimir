@@ -103,7 +103,7 @@
           "desc": "Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "ingester.get-request-for-shutdown-enabled",
+          "fieldFlag": "get-request-for-ingester-shutdown-enabled",
           "fieldType": "boolean",
           "fieldCategory": "deprecated"
         },
