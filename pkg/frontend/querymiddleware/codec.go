@@ -90,7 +90,7 @@ type Merger interface {
 // MetricsQueryRequest represents an instant or query range request that can be process by middlewares.
 type MetricsQueryRequest interface {
 	// GetId returns the ID of the request used to correlate downstream requests and responses.
-	GetId() int64
+	GetID() int64
 	// GetStart returns the start timestamp of the request in milliseconds.
 	GetStart() int64
 	// GetEnd returns the end timestamp of the request in milliseconds.

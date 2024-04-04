@@ -52,71 +52,71 @@ type PrometheusRangeQueryRequest struct {
 	Query   string        `protobuf:"bytes,6,opt,name=query,proto3" json:"query,omitempty"`
 	Options Options       `protobuf:"bytes,7,opt,name=options,proto3" json:"options"`
 	// ID of the request used to correlate downstream requests and responses.
-	Id int64 `protobuf:"varint,8,opt,name=id,proto3" json:"id,omitempty"`
+	ID int64 `protobuf:"varint,8,opt,name=id,proto3" json:"id,omitempty"`
 	// Hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	Hints *Hints `protobuf:"bytes,9,opt,name=hints,proto3" json:"hints,omitempty"`
 }
 
-func (m *PrometheusRangeQueryRequest) GetPath() string {
-	if m != nil {
-		return m.Path
+func (r *PrometheusRangeQueryRequest) GetPath() string {
+	if r != nil {
+		return r.Path
 	}
 	return ""
 }
 
-func (m *PrometheusRangeQueryRequest) GetStart() int64 {
-	if m != nil {
-		return m.Start
+func (r *PrometheusRangeQueryRequest) GetStart() int64 {
+	if r != nil {
+		return r.Start
 	}
 	return 0
 }
 
-func (m *PrometheusRangeQueryRequest) GetEnd() int64 {
-	if m != nil {
-		return m.End
+func (r *PrometheusRangeQueryRequest) GetEnd() int64 {
+	if r != nil {
+		return r.End
 	}
 	return 0
 }
 
-func (m *PrometheusRangeQueryRequest) GetStep() int64 {
-	if m != nil {
-		return m.Step
+func (r *PrometheusRangeQueryRequest) GetStep() int64 {
+	if r != nil {
+		return r.Step
 	}
 	return 0
 }
 
-func (m *PrometheusRangeQueryRequest) GetTimeout() time.Duration {
-	if m != nil {
-		return m.Timeout
+func (r *PrometheusRangeQueryRequest) GetTimeout() time.Duration {
+	if r != nil {
+		return r.Timeout
 	}
 	return 0
 }
 
-func (m *PrometheusRangeQueryRequest) GetQuery() string {
-	if m != nil {
-		return m.Query
+func (r *PrometheusRangeQueryRequest) GetQuery() string {
+	if r != nil {
+		return r.Query
 	}
 	return ""
 }
 
-func (m *PrometheusRangeQueryRequest) GetOptions() Options {
-	if m != nil {
-		return m.Options
+func (r *PrometheusRangeQueryRequest) GetOptions() Options {
+	if r != nil {
+		return r.Options
 	}
 	return Options{}
 }
 
-func (m *PrometheusRangeQueryRequest) GetId() int64 {
-	if m != nil {
-		return m.Id
+func (r *PrometheusRangeQueryRequest) GetID() int64 {
+	if r != nil {
+		return r.ID
 	}
 	return 0
 }
 
-func (m *PrometheusRangeQueryRequest) GetHints() *Hints {
-	if m != nil {
-		return m.Hints
+func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
+	if r != nil {
+		return r.Hints
 	}
 	return nil
 }
@@ -127,50 +127,50 @@ type PrometheusInstantQueryRequest struct {
 	Query   string  `protobuf:"bytes,3,opt,name=query,proto3" json:"query,omitempty"`
 	Options Options `protobuf:"bytes,4,opt,name=options,proto3" json:"options"`
 	// ID of the request used to correlate downstream requests and responses.
-	Id int64 `protobuf:"varint,5,opt,name=id,proto3" json:"id,omitempty"`
+	ID int64 `protobuf:"varint,5,opt,name=id,proto3" json:"id,omitempty"`
 	// Hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	Hints *Hints `protobuf:"bytes,6,opt,name=hints,proto3" json:"hints,omitempty"`
 }
 
-func (m *PrometheusInstantQueryRequest) GetPath() string {
-	if m != nil {
-		return m.Path
+func (r *PrometheusInstantQueryRequest) GetPath() string {
+	if r != nil {
+		return r.Path
 	}
 	return ""
 }
 
-func (m *PrometheusInstantQueryRequest) GetTime() int64 {
-	if m != nil {
-		return m.Time
+func (r *PrometheusInstantQueryRequest) GetTime() int64 {
+	if r != nil {
+		return r.Time
 	}
 	return 0
 }
 
-func (m *PrometheusInstantQueryRequest) GetQuery() string {
-	if m != nil {
-		return m.Query
+func (r *PrometheusInstantQueryRequest) GetQuery() string {
+	if r != nil {
+		return r.Query
 	}
 	return ""
 }
 
-func (m *PrometheusInstantQueryRequest) GetOptions() Options {
-	if m != nil {
-		return m.Options
+func (r *PrometheusInstantQueryRequest) GetOptions() Options {
+	if r != nil {
+		return r.Options
 	}
 	return Options{}
 }
 
-func (m *PrometheusInstantQueryRequest) GetId() int64 {
-	if m != nil {
-		return m.Id
+func (r *PrometheusInstantQueryRequest) GetID() int64 {
+	if r != nil {
+		return r.ID
 	}
 	return 0
 }
 
-func (m *PrometheusInstantQueryRequest) GetHints() *Hints {
-	if m != nil {
-		return m.Hints
+func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
+	if r != nil {
+		return r.Hints
 	}
 	return nil
 }
@@ -183,65 +183,65 @@ type Hints struct {
 	// that does not yet support optional fields in proto3.
 	//
 	// Types that are valid to be assigned to CardinalityEstimate:
-	//	*Hints_EstimatedSeriesCount
-	CardinalityEstimate *Hints_EstimatedSeriesCount `protobuf_oneof:"CardinalityEstimate"`
+	//	*EstimatedSeriesCount
+	CardinalityEstimate *EstimatedSeriesCount `protobuf_oneof:"CardinalityEstimate"`
 }
 
-func (m *Hints) GetCardinalityEstimate() *Hints_EstimatedSeriesCount {
-	if m != nil {
-		return m.CardinalityEstimate
+func (h *Hints) GetCardinalityEstimate() *EstimatedSeriesCount {
+	if h != nil {
+		return h.CardinalityEstimate
 	}
 	return nil
 }
 
-func (m *Hints) GetTotalQueries() int32 {
-	if m != nil {
-		return m.TotalQueries
+func (h *Hints) GetTotalQueries() int32 {
+	if h != nil {
+		return h.TotalQueries
 	}
 	return 0
 }
 
-func (m *Hints) GetEstimatedSeriesCount() uint64 {
-	if x := m.GetCardinalityEstimate(); x != nil {
+func (h *Hints) GetEstimatedSeriesCount() uint64 {
+	if x := h.GetCardinalityEstimate(); x != nil {
 		return x.EstimatedSeriesCount
 	}
 	return 0
 }
 
-type Hints_EstimatedSeriesCount struct {
+type EstimatedSeriesCount struct {
 	EstimatedSeriesCount uint64 `protobuf:"varint,2,opt,name=EstimatedSeriesCount,proto3,oneof"`
 }
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
-func (q *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
-	newRequest := *q
-	newRequest.Id = id
+func (r *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.ID = id
 	return &newRequest
 }
 
 // WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
-func (q *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) MetricsQueryRequest {
-	newRequest := *q
+func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) MetricsQueryRequest {
+	newRequest := *r
 	newRequest.Start = start
 	newRequest.End = end
 	return &newRequest
 }
 
 // WithQuery clones the current `PrometheusRangeQueryRequest` with a new query.
-func (q *PrometheusRangeQueryRequest) WithQuery(query string) MetricsQueryRequest {
-	newRequest := *q
+func (r *PrometheusRangeQueryRequest) WithQuery(query string) MetricsQueryRequest {
+	newRequest := *r
 	newRequest.Query = query
 	return &newRequest
 }
 
 // WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
 // added Hint value for TotalQueries.
-func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
-	newRequest := *q
+func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
+	newRequest := *r
 	if newRequest.Hints == nil {
 		newRequest.Hints = &Hints{TotalQueries: totalQueries}
 	} else {
-		*newRequest.Hints = *(q.Hints)
+		*newRequest.Hints = *(r.Hints)
 		newRequest.Hints.TotalQueries = totalQueries
 	}
 	return &newRequest
@@ -249,26 +249,26 @@ func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) M
 
 // WithEstimatedSeriesCountHint clones the current `PrometheusRangeQueryRequest`
 // with an added Hint value for EstimatedCardinality.
-func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
-	newRequest := *q
+func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
+	newRequest := *r
 	if newRequest.Hints == nil {
 		newRequest.Hints = &Hints{
-			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
+			CardinalityEstimate: &EstimatedSeriesCount{count},
 		}
 	} else {
-		*newRequest.Hints = *(q.Hints)
-		newRequest.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
+		*newRequest.Hints = *(r.Hints)
+		newRequest.Hints.CardinalityEstimate = &EstimatedSeriesCount{count}
 	}
 	return &newRequest
 }
 
 // AddSpanTags writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
 // ("attributes" in OpenTelemetry parlance).
-func (q *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("query", q.GetQuery())
-	sp.SetTag("start", timestamp.Time(q.GetStart()).String())
-	sp.SetTag("end", timestamp.Time(q.GetEnd()).String())
-	sp.SetTag("step_ms", q.GetStep())
+func (r *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
+	sp.SetTag("query", r.GetQuery())
+	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
+	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+	sp.SetTag("step_ms", r.GetStep())
 }
 
 func (r *PrometheusInstantQueryRequest) GetStart() int64 {
@@ -285,7 +285,7 @@ func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 
 func (r *PrometheusInstantQueryRequest) WithID(id int64) MetricsQueryRequest {
 	newRequest := *r
-	newRequest.Id = id
+	newRequest.ID = id
 	return &newRequest
 }
 
@@ -316,11 +316,11 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 	newRequest := *r
 	if newRequest.Hints == nil {
 		newRequest.Hints = &Hints{
-			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
+			CardinalityEstimate: &EstimatedSeriesCount{count},
 		}
 	} else {
 		*newRequest.Hints = *(r.Hints)
-		newRequest.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
+		newRequest.Hints.CardinalityEstimate = &EstimatedSeriesCount{count}
 	}
 	return &newRequest
 }
