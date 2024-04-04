@@ -1298,7 +1298,7 @@ querier:
     predictiveScalingPeriod: 6d23h30m
     # -- The time range to consider when considering scheduler metrics for predictive scaling.
     # For example: if lookback is 30m and period is 6d23h30m,
-    # the querier will scale based on the maximum infligth queries between 6d23h00m and 6d23h30m ago.
+    # the querier will scale based on the maximum inflight queries between 6d23h30m and 7d ago.
     predictiveScalingLookback: 30m
     behavior:
       scaleDown:
