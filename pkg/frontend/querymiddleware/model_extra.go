@@ -381,6 +381,103 @@ func (r *PrometheusLabelValuesQueryRequest) AddSpanTags(sp opentracing.Span) {
 	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
 }
 
+type PrometheusLabelNamesQueryRequest struct {
+	Path  string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Start int64  `protobuf:"varint,2,opt,name=start,proto3" json:"start,omitempty"`
+	End   int64  `protobuf:"varint,3,opt,name=end,proto3" json:"end,omitempty"`
+	// labelMatcherSets is a repeated field here in order to enable the representation
+	// of labels queries which have not yet been split; the prometheus querier code
+	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
+	// into separate queries, one for each matcher set
+	LabelMatcherSets []string `protobuf:"bytes,4,rep,name=labelMatcherSets,proto3" json:"labelMatcherSets,omitempty"`
+	// ID of the request used to correlate downstream requests and responses.
+	ID int64 `protobuf:"varint,5,opt,name=id,proto3" json:"id,omitempty"`
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetPath() string {
+	if r != nil {
+		return r.Path
+	}
+	return ""
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetStart() int64 {
+	if r != nil {
+		return r.Start
+	}
+	return 0
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetEnd() int64 {
+	if r != nil {
+		return r.End
+	}
+	return 0
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetLabelMatcherSets() []string {
+	if r != nil {
+		return r.LabelMatcherSets
+	}
+	return nil
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetID() int64 {
+	if r != nil {
+		return r.ID
+	}
+	return 0
+}
+
+type PrometheusLabelValuesQueryRequest struct {
+	Path      string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	LabelName string `protobuf:"bytes,2,opt,name=labelName,proto3" json:"labelName,omitempty"`
+	Start     int64  `protobuf:"varint,3,opt,name=start,proto3" json:"start,omitempty"`
+	End       int64  `protobuf:"varint,4,opt,name=end,proto3" json:"end,omitempty"`
+	// labelMatcherSets is a repeated field here in order to enable the representation
+	// of labels queries which have not yet been split; the prometheus querier code
+	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
+	// into separate queries, one for each matcher set
+	LabelMatcherSets []string `protobuf:"bytes,5,rep,name=labelMatcherSets,proto3" json:"labelMatcherSets,omitempty"`
+	// ID of the request used to correlate downstream requests and responses.
+	ID int64 `protobuf:"varint,6,opt,name=id,proto3" json:"id,omitempty"`
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetLabelName() string {
+	if r != nil {
+		return r.LabelName
+	}
+	return ""
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetStart() int64 {
+	if r != nil {
+		return r.Start
+	}
+	return 0
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetEnd() int64 {
+	if r != nil {
+		return r.End
+	}
+	return 0
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetLabelMatcherSets() []string {
+	if r != nil {
+		return r.LabelMatcherSets
+	}
+	return nil
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetID() int64 {
+	if r != nil {
+		return r.ID
+	}
+	return 0
+}
+
 func (d *PrometheusData) UnmarshalJSON(b []byte) error {
 	v := struct {
 		Type   model.ValueType    `json:"resultType"`

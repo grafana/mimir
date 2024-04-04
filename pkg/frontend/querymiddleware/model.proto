@@ -17,57 +17,6 @@ import "google/protobuf/any.proto";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
-message LabelMatchers {
-  repeated LabelMatcher matcherSet = 1;
-}
-
-enum MatchType {
-  EQUAL = 0;
-  NOT_EQUAL = 1;
-  REGEX_MATCH = 2;
-  REGEX_NO_MATCH = 3;
-}
-
-message LabelMatcher {
-  MatchType type = 1;
-  string name = 2;
-  string value = 3;
-}
-
-message PrometheusLabelNamesQueryRequest {
-  string path = 1;
-
-  int64 start = 2;
-  int64 end = 3;
-
-  // labelMatcherSets is a repeated field here in order to enable the representation
-  // of labels queries which have not yet been split; the prometheus querier code
-  // will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
-  // into separate queries, one for each matcher set
-  repeated string labelMatcherSets = 4;
-
-  // ID of the request used to correlate downstream requests and responses.
-  int64 id = 5;
-}
-
-message PrometheusLabelValuesQueryRequest {
-  string path = 1;
-
-  string labelName = 2;
-
-  int64 start = 3;
-  int64 end = 4;
-
-  // labelMatcherSets is a repeated field here in order to enable the representation
-  // of labels queries which have not yet been split; the prometheus querier code
-  // will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
-  // into separate queries, one for each matcher set
-  repeated string labelMatcherSets = 5;
-
-  // ID of the request used to correlate downstream requests and responses.
-  int64 id = 6;
-}
-
 message PrometheusResponseHeader {
   string Name = 1 [(gogoproto.jsontag) = "-"];
   repeated string Values = 2 [(gogoproto.jsontag) = "-"];
