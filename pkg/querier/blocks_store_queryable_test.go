@@ -1046,7 +1046,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 		srv, q := prepareTestCase(t)
 
-		srv.onSeries = func(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+		srv.onSeries = func(*storepb.SeriesRequest, storegatewaypb.StoreGateway_SeriesServer) error {
 			if numExecutions.Inc() == 1 {
 				close(waitExecution)
 				<-continueExecution
@@ -1082,7 +1082,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 		srv, q := prepareTestCase(t)
 
-		srv.onLabelNames = func(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+		srv.onLabelNames = func(context.Context, *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
 			if numExecutions.Inc() == 1 {
 				close(waitExecution)
 				<-continueExecution
@@ -1117,7 +1117,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 		srv, q := prepareTestCase(t)
 
-		srv.onLabelValues = func(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+		srv.onLabelValues = func(context.Context, *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
 			if numExecutions.Inc() == 1 {
 				close(waitExecution)
 				<-continueExecution

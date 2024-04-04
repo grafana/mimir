@@ -203,7 +203,7 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 
 	// Utility function used to setup the test.
 	setupTest := func(pusherErr error) (*pusherConsumer, *concurrency.SyncBuffer, *prometheus.Registry) {
-		pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
+		pusher := pusherFunc(func(context.Context, *mimirpb.WriteRequest) error {
 			return pusherErr
 		})
 

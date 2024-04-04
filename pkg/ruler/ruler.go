@@ -1290,7 +1290,7 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 	// the client-side gRPC instrumentation fails.
 	ctx = user.InjectOrgID(ctx, "")
 
-	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, inst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
+	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, _ *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
 		var err error
 
 		if rulerClientErr != nil {
