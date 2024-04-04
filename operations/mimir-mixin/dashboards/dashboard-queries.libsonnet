@@ -32,9 +32,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
 
       local p = self,
-      writeRequestsPerSecondMetric: 'cortex_request_duration_seconds',
+      requestsPerSecondMetric: 'cortex_request_duration_seconds',
       writeRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"' % variables,
-      readRequestsPerSecondMetric: 'cortex_request_duration_seconds',
       readRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
 
       // Write failures rate as percentage of total requests.
@@ -51,12 +50,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           sum(%(countQuery)s)
         |||,
         classic: template % {
-          countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector + ',status_code=~"5.*|error"').classic,
-          countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).classic,
+          countFailQuery: utils.nativeClassicHistogramCountRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector + ',status_code=~"5.*|error"').classic,
+          countQuery: utils.nativeClassicHistogramCountRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector).classic,
         },
         native: template % {
-          countFailQuery: utils.nativeHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector + ',status_code=~"5.*|error"').native,
-          countQuery: utils.nativeHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).native,
+          countFailQuery: utils.nativeHistogramCountRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector + ',status_code=~"5.*|error"').native,
+          countQuery: utils.nativeHistogramCountRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector).native,
         },
       },
 
@@ -89,7 +88,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}' % variables,
 
       local p = self,
-      writeRequestsPerSecondMetric: 'cortex_request_duration_seconds',
+      requestsPerSecondMetric: 'cortex_request_duration_seconds',
       writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"' % variables,
       samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
@@ -108,12 +107,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           sum(%(countQuery)s)
         |||,
         classic: template % {
-          countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector + ',status_code=~"5.*|error"').classic,
-          countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).classic,
+          countFailQuery: utils.nativeClassicHistogramCountRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector + ',status_code=~"5.*|error"').classic,
+          countQuery: utils.nativeClassicHistogramCountRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector).classic,
         },
         native: template % {
-          countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector + ',status_code=~"5.*|error"').native,
-          countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).native,
+          countFailQuery: utils.nativeClassicHistogramCountRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector + ',status_code=~"5.*|error"').native,
+          countQuery: utils.nativeClassicHistogramCountRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector).native,
         },
       },
     },
