@@ -146,11 +146,11 @@ api:
   # CLI flag: -distributor.enable-otlp-metadata-storage
   [enable_otel_metadata_translation: <boolean> | default = true]
 
-  # (deprecated) If true, allow GET requests to the /ingester/shutdown endpoint
-  # to trigger an ingester shutdown. This is a potentially dangerous operation
-  # and should only be enabled consciously.
-  # CLI flag: -ingester.allow-get-request-for-shutdown
-  [allow_get_request_for_ingester_shutdown: <boolean> | default = false]
+  # (deprecated) Enable GET requests to the /ingester/shutdown endpoint to
+  # trigger an ingester shutdown. This is a potentially dangerous operation and
+  # should only be enabled consciously.
+  # CLI flag: -ingester.get-request-for-shutdown-enabled
+  [get_request_for_ingester_shutdown_enabled: <boolean> | default = false]
 
   # (advanced) HTTP URL path under which the Alertmanager ui and api will be
   # served.
