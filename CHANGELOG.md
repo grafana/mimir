@@ -125,7 +125,7 @@
 * [CHANGE] Distributor: the metric `cortex_distributor_sample_delay_seconds` has been deprecated and will be removed in Mimir 2.14. #7516
 * [CHANGE] Query-frontend: The deprecated YAML setting `frontend.cache_unaligned_requests` has been moved to `limits.cache_unaligned_requests`. #7519
 * [CHANGE] Querier: the CLI flag `-querier.minimize-ingester-requests` has been moved from "experimental" to "advanced". #7638
-* [CHANGE] Ingester: allow only POST method on `/ingester/shutdown`, as previously it was too easy to accidentally trigger through GET requests. At the same time, add an option to keep the existing behavior by introducing an `-ingester.get-request-for-shutdown-enabled` flag. This flag will be removed in Mimir 2.14. #7707
+* [CHANGE] Ingester: allow only POST method on `/ingester/shutdown`, as previously it was too easy to accidentally trigger through GET requests. At the same time, add an option to keep the existing behavior by introducing an `-ingester.get-request-for-shutdown-enabled` flag. This flag will be removed in Mimir 2.15. #7707
 * [FEATURE] Introduce `-server.log-source-ips-full` option to log all IPs from `Forwarded`, `X-Real-IP`, `X-Forwarded-For` headers. #7250
 * [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
 * [FEATURE] Cardinality API: added a new `count_method` parameter which enables counting active label names. #7085

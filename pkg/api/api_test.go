@@ -251,16 +251,6 @@ func TestApiIngesterShutdown(t *testing.T) {
 	}
 }
 
-type MockRegisterer struct{}
-
-func (mr *MockRegisterer) Register(prometheus.Collector) error {
-	return nil
-}
-func (mr *MockRegisterer) MustRegister(...prometheus.Collector) {}
-func (mr *MockRegisterer) Unregister(prometheus.Collector) bool {
-	return true
-}
-
 // Generates server config, with gRPC listening on random port.
 func getServerConfig(t *testing.T) server.Config {
 	grpcHost, grpcPortNum := getHostnameAndRandomPort(t)
@@ -275,9 +265,8 @@ func getServerConfig(t *testing.T) server.Config {
 
 		GRPCServerMaxRecvMsgSize: 1024,
 
-		// to avoid panic due to
-		// "duplicate metrics collector registration attempted"
-		Registerer: &MockRegisterer{},
+		// Use new registry to avoid using default one and panic due to duplicate metrics.
+		Registerer: prometheus.NewPedanticRegistry(),
 	}
 	require.NoError(t, cfg.LogLevel.Set("info"))
 	return cfg

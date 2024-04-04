@@ -53,7 +53,7 @@ type Config struct {
 	// TODO: Remove option in Mimir 2.14.
 	EnableOtelMetadataStorage bool `yaml:"enable_otel_metadata_translation" category:"deprecated"`
 
-	// TODO: Remove option in Mimir 2.14.
+	// TODO: Remove option in Mimir 2.15.
 	GETRequestForIngesterShutdown bool `yaml:"get_request_for_ingester_shutdown_enabled" category:"deprecated"`
 
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
