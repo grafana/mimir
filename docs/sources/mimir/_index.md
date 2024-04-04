@@ -29,7 +29,7 @@ cards:
       height: 24
     - title: Send metric data
       href: .send/
-      description: Configure your data source to write data to Mimir
+      description: Configure your data source to write data to Grafana Mimir
       height: 24
     - title: Manage
       href: ./manage/
