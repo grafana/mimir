@@ -59,4 +59,3 @@ Take advantage of affordability and durability with support for various object s
 
 {{< card-grid key="cards" type="simple" >}}
 
----
