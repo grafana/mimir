@@ -1580,6 +1580,10 @@ On a per-tenant basis, you can fine tune the tolerance by configuring the `creat
 Only series with invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
 {{< /admonition >}}
 
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
 ### err-mimir-exemplar-too-far-in-future
 
 This non-critical error occurs when Mimir receives a write request that contains an exemplar whose timestamp is in the future compared to the current "real world" time.
@@ -1770,6 +1774,10 @@ How to **fix** it:
 - Ensure the actual number of series written by the affected tenant is legit.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
 
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
 ### err-mimir-max-series-per-metric
 
 This error occurs when the number of in-memory series for a given tenant and metric name exceeds the configured limit.
@@ -1786,6 +1794,10 @@ How to **fix** it:
 - Consider reducing the cardinality of the affected metric, by tuning or removing some of its labels.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option.
 - Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `max_global_series_per_metric` in the runtime configuration).
+
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
 
 ### err-mimir-max-metadata-per-user
 
@@ -1804,6 +1816,10 @@ How to **fix** it:
 - Check the current number of metric names for the affected tenant, running the instant query `count(count by(__name__) ({__name__=~".+"}))`. Alternatively, you can get the cardinality of `__name__` label calling the API endpoint `/api/v1/cardinality/label_names`.
 - Consider increasing the per-tenant limit setting to a value greater than the number of unique metric names returned by the previous query.
 
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
 ### err-mimir-max-metadata-per-metric
 
 This non-critical error occurs when the number of different metadata for a given metric name exceeds the configured limit.
@@ -1821,6 +1837,10 @@ How to **fix** it:
 - Check the metadata for the affected metric name, querying the `/api/v1/metadata?metric=<name>` API endpoint (replace `<name>` with the metric name).
 - If the different metadata is unexpected, consider fixing the discrepancy in the instrumented applications.
 - If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
 
 ### err-mimir-max-chunks-per-query
 
@@ -1962,6 +1982,10 @@ How it **works**:
 If the out-of-order sample ingestion is enabled, then this error is similar to `err-mimir-sample-out-of-order` below with a difference that the sample is older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
 {{< /admonition >}}
 
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
 ### err-mimir-sample-out-of-order
 
 This error occurs when the ingester rejects a sample because another sample with a more recent timestamp has already been ingested.
@@ -1983,6 +2007,10 @@ Common **causes**:
 You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
 {{< /admonition >}}
 
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
 ### err-mimir-sample-duplicate-timestamp
 
 This error occurs when the ingester rejects a sample because it is a duplicate of a previously received sample with the same timestamp but different value in the same time series.
@@ -1991,6 +2019,10 @@ Common **causes**:
 
 - Multiple endpoints are exporting the same metrics, or multiple Prometheus instances are scraping different metrics with identical labels.
 - Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a duplicate sample.
+
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
 
 ### err-mimir-exemplar-series-missing
 
