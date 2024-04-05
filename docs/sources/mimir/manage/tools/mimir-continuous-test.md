@@ -11,30 +11,32 @@ weight: 30
 
 # Grafana mimir-continuous-test
 
-As a developer, you can use the standalone mimir-continuous-test tool to run smoke tests on live Grafana Mimir clusters.
+As a developer, you can use the mimir-continuous-test tool to run smoke tests on live Grafana Mimir clusters.
 This tool identifies a class of bugs that could be difficult to spot during development.
 Two operating modes are supported:
 
 - As a continuously running deployment in your environment, mimir-continuous-test can be used to detect issues on a live Grafana Mimir cluster over time.
 - As an ad-hoc smoke test tool, mimir-continuous-test can be used to validate basic functionality after configuration changes are made to a Grafana Mimir cluster.
 
-## Download mimir-continuous-test
+## Download and Run mimir-continuous-test
 
 - Using Docker:
 
 ```bash
 docker pull "grafana/mimir-continuous-test:latest"
+docker run grafana/mimir-continuous-test
 ```
 
 - Using a local binary:
 
-Download the appropriate [mimir-continuous-test binary](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture, and make it executable.
+Download the appropriate [mimir binary](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture, and make it executable.
 
 For Linux with the AMD64 architecture, execute the following command:
 
 ```bash
-curl -Lo mimir-continuous-test https://github.com/grafana/mimir/releases/latest/download/mimir-continuous-test-linux-amd64
-chmod +x mimir-continuous-test
+curl -Lo mimir https://github.com/grafana/mimir/releases/latest/download/mimir-linux-amd64
+chmod +x mimir
+mimir -target=continuous-test
 ```
 
 ## Configure mimir-continuous-test
@@ -50,7 +52,7 @@ Mimir-continuous-test requires the endpoints of the backend Grafana Mimir cluste
 - Set `-tests.smoke-test` to run the test once and immediately exit. In this mode, the process exit code is non-zero when the test fails.
 
 {{< admonition type="note" >}}
-You can run `mimir-continuous-test -help` to list all available configuration options.
+You can run `mimir -help` to list all available configuration options. All configuration options for mimir-continuous-test will begin with `tests`.
 {{< /admonition >}}
 
 ## How it works
