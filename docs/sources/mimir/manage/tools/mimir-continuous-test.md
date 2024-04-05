@@ -38,6 +38,9 @@ curl -Lo mimir https://github.com/grafana/mimir/releases/latest/download/mimir-l
 chmod +x mimir
 mimir -target=continuous-test
 ```
+{{< admonition type="note" >}}
+The standalone [mimir-continuous-test binary](https://github.com/grafana/mimir/releases/tag/mimir-2.12.0) is deprecated.
+{{< /admonition >}}
 
 ## Configure mimir-continuous-test
 
