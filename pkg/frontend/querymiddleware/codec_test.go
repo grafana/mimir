@@ -152,6 +152,8 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 	endTime, err := time.Parse(time.RFC3339, "2024-02-22T00:00:00-08:00")
 	require.NoError(t, err)
 
+	atModifierDuration := 10 * time.Minute
+
 	stepDurationStr := "60s"
 	stepDuration, _ := time.ParseDuration(stepDurationStr)
 
@@ -170,6 +172,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		expectedMaxT int64
 		expectedErr  error
 	}{
+		// permutations with and without range vectors and offsets
 		{
 			name: "range query: without range vector, without offset",
 			metricsQuery: makeRangeRequest(t,
@@ -274,18 +277,57 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 			expectedErr:  nil,
 		},
+		// permutations with and without range vectors and @ modifiers
 		{
-			name: "range query: with range vector, without offset",
+			name: "range query: with @ modifer",
 			metricsQuery: makeRangeRequest(t,
 				"/api/v1/query_range",
 				startTime,
 				endTime,
 				stepDuration,
 				time.Duration(0),
-				fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr),
+				fmt.Sprintf("go_goroutines{} @ %d", endTime.Add(-atModifierDuration).Unix()),
 			),
-			expectedMinT: startTime.UnixMilli() - rangeVectorDurationMS,
-			expectedMaxT: endTime.UnixMilli(),
+			expectedMinT: endTime.Add(-atModifierDuration).UnixMilli(),
+			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
+			expectedErr:  nil,
+		},
+		{
+			name: "instant query: with @ modifer",
+			metricsQuery: makeInstantRequest(t,
+				"/api/v1/query",
+				endTime,
+				time.Duration(0),
+				fmt.Sprintf("go_goroutines{} @ %d", endTime.Add(-atModifierDuration).Unix()),
+			),
+			expectedMinT: endTime.Add(-atModifierDuration).UnixMilli(),
+			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
+			expectedErr:  nil,
+		},
+		{
+			name: "range query: with range vector, with @ modifer",
+			metricsQuery: makeRangeRequest(t,
+				"/api/v1/query_range",
+				startTime,
+				endTime,
+				stepDuration,
+				time.Duration(0),
+				fmt.Sprintf("go_goroutines{}[%s] @ %d", rangeVectorDurationStr, endTime.Add(-atModifierDuration).Unix()),
+			),
+			expectedMinT: endTime.Add(-(atModifierDuration + rangeVectorDuration)).UnixMilli(),
+			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
+			expectedErr:  nil,
+		},
+		{
+			name: "instant query: with range vector, with @ modifer",
+			metricsQuery: makeInstantRequest(t,
+				"/api/v1/query",
+				endTime,
+				stepDuration,
+				fmt.Sprintf("go_goroutines{}[%s] @ %d", rangeVectorDurationStr, endTime.Add(-atModifierDuration).Unix()),
+			),
+			expectedMinT: endTime.Add(-(atModifierDuration + rangeVectorDuration)).UnixMilli(),
+			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
 			expectedErr:  nil,
 		},
 	} {
