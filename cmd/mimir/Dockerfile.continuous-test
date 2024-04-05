@@ -9,10 +9,11 @@ ARG        TARGETARCH
 ARG        BINARY_SUFFIX="_${TARGETOS}_${TARGETARCH}"
 # Set to non-empty value to use ${BINARY_SUFFIX} when copying binary, leave unset to use no suffix.
 ARG        USE_BINARY_SUFFIX
-COPY       mimir-continuous-test${USE_BINARY_SUFFIX:+${BINARY_SUFFIX}} /mimir-continuous-test
-ENTRYPOINT ["/mimir-continuous-test"]
+COPY       mimir${USE_BINARY_SUFFIX:+${BINARY_SUFFIX}} /bin/mimir
+EXPOSE     8080
+ENTRYPOINT ["/bin/mimir", "-target=continuous-test"]
 
 ARG revision
 LABEL org.opencontainers.image.title="mimir-continuous-test" \
-      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/cmd/mimir-continuous-test" \
+      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/cmd/mimir" \
       org.opencontainers.image.revision="${revision}"
