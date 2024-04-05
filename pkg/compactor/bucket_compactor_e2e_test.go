@@ -695,7 +695,7 @@ func createBlockWithOptions(
 		return id, errors.Wrap(err, "create compactor")
 	}
 
-	id, err = c.Write(dir, h, mint, maxt, nil)
+	id, err = c.Write(dir, h, mint, maxt, false, nil)
 	if err != nil {
 		return id, errors.Wrap(err, "write block")
 	}

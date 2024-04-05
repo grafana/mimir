@@ -1848,7 +1848,7 @@ func (m *tsdbCompactorMock) Plan(dir string) ([]string, error) {
 	return args.Get(0).([]string), args.Error(1)
 }
 
-func (m *tsdbCompactorMock) Write(dest string, b tsdb.BlockReader, mint, maxt int64, parent *tsdb.BlockMeta) (ulid.ULID, error) {
+func (m *tsdbCompactorMock) Write(dest string, b tsdb.BlockReader, mint, maxt int64, _ bool, parent *tsdb.BlockMeta) (ulid.ULID, error) {
 	args := m.Called(dest, b, mint, maxt, parent)
 	return args.Get(0).(ulid.ULID), args.Error(1)
 }
