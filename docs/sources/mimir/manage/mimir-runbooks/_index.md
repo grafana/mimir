@@ -677,10 +677,6 @@ How to **investigate**:
 - Ensure the compactor is successfully running
 - Look for any error in the compactor logs
 
-### MimirQueriesIncorrect
-
-_TODO: this runbook has not been written yet._
-
 ### MimirInconsistentRuntimeConfig
 
 This alert fires if multiple replicas of the same Mimir service are using a different runtime config for a longer period of time.
@@ -1481,6 +1477,53 @@ This non-critical error occurs when Mimir receives a write request that contains
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
 {{< /admonition >}}
 
+### err-mimir-native-histogram-count-mismatch
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where the buckets counts don't add up to the overall count recorded in the native histogram, provided that the overall
+sum is a regular float number.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-count-not-big-enough
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where the buckets counts add up to a higher number than the overall count recorded in the native histogram, provided
+that the overall sum is not a float number (NaN).
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-negative-bucket-count
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where some bucket count is negative.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-span-negative-offset
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where a bucket span has a negative offset.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-spans-buckets-mismatch
+
+This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+where the number of bucket counts does not agree with the number of buckets encoded in the bucket spans.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
 ### err-mimir-label-invalid
 
 This non-critical error occurs when Mimir receives a write request that contains a series with an invalid label name.
@@ -2218,14 +2261,27 @@ After this preparation, one can use `kubectl exec --tty=false --stdin=false clon
    # Project ID: your google project ID
    ```
 
-### Deleting a StatefulSet with persistent volumes
+### Deleting or scaling a StatefulSet with persistent volumes
 
-When you delete a Kubernetes StatefulSet whose pods have persistent volume claims (PVC), the PVCs are not automatically deleted. This means that if the StatefulSet is recreated, the pods for which there was already a PVC will get the volume mounted previously.
+When you delete or scale down a Kubernetes StatefulSet whose pods have persistent volume claims (PVCs), the unused PVCs are not automatically deleted by default.
+This means that if the StatefulSet is recreated or scaled back up, the pods for which there was already a PVC will get the volume mounted previously.
 
-A PVC can be manually deleted by an operator. When a PVC claim is deleted, what happens to the volume depends on its [Reclaim Policy](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#reclaiming):
+However, this behaviour can be changed [as of Kubernetes 1.27](https://kubernetes.io/blog/2023/05/04/kubernetes-1-27-statefulset-pvc-auto-deletion-beta/).
+If `spec.persistentVolumeClaimRetentionPolicy.whenScaled` is set to `Delete`, unused PVCs will be deleted when the StatefulSet is scaled down.
+Similarly, if `spec.persistentVolumeClaimRetentionPolicy.whenDeleted` is set to `Delete`, all PVCs will be deleted when the StatefulSet is deleted.
+Note that neither of these behaviours apply when a StatefulSet is scaled up, a rolling update is performed or pods are shifted between nodes.
 
-- `Retain`: the volume will not be deleted until the PV resource will be manually deleted from Kubernetes
+When a PVC is deleted, what happens to the persistent volume (PV) it is bound to depends on its [reclaim policy](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#reclaiming):
+
+- `Retain`: the volume will not be deleted automatically, and will need to be manually deleted
 - `Delete`: the volume will be automatically deleted
+
+The initial reclaim policy for a PV is defined by its associated storage class.
+However, once the PV has been created, the PV's reclaim policy can be changed at any time, allowing it to be retained for further examination after the PVC has been deleted.
+For example, if the StatefulSet has `spec.persistentVolumeClaimRetentionPolicy.whenScaled` set to `Delete` and the PV has its reclaim policy set to `Delete`,
+but you wish to retain a PV for a pod that will be removed when scaling down the StatefulSet, you should change the affected PV's reclaim policy to `Retain` before scaling down the StatefulSet.
+
+To set a PV's reclaim policy to `Retain`, use `kubectl patch pv`: `kubectl patch pv <pv-name> -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'`
 
 ### Recover accidentally deleted blocks (Google Cloud specific)
 

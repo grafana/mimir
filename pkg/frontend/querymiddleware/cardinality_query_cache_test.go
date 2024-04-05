@@ -46,7 +46,7 @@ func TestCardinalityQueryCache_RoundTrip_WithTenantFederation(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Mock the downstream.
-			downstream := RoundTripFunc(func(request *http.Request) (*http.Response, error) {
+			downstream := RoundTripFunc(func(*http.Request) (*http.Response, error) {
 				return &http.Response{
 					StatusCode: 200,
 					Body:       io.NopCloser(strings.NewReader("{}")),

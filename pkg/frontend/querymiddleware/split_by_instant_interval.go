@@ -107,12 +107,12 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "splitInstantQueryByIntervalMiddleware.Do")
 	defer spanLog.Span.Finish()
 
-	tenantsIds, err := tenant.TenantIDs(ctx)
+	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	splitInterval := s.getSplitIntervalForQuery(tenantsIds, req, spanLog)
+	splitInterval := s.getSplitIntervalForQuery(tenantIDs, req, spanLog)
 	if splitInterval <= 0 {
 		spanLog.DebugLog("msg", "query splitting is disabled for this query or tenant")
 		return s.next.Do(ctx, req)
@@ -201,13 +201,13 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 }
 
 // getSplitIntervalForQuery calculates and return the split interval that should be used to run the instant query.
-func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantsIds []string, r MetricsQueryRequest, spanLog *spanlogger.SpanLogger) time.Duration {
+func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantIDs []string, r MetricsQueryRequest, spanLog *spanlogger.SpanLogger) time.Duration {
 	// Check if splitting is disabled for the given request.
 	if r.GetOptions().InstantSplitDisabled {
 		return 0
 	}
 
-	splitInterval := validation.SmallestPositiveNonZeroDurationPerTenant(tenantsIds, s.limits.SplitInstantQueriesByInterval)
+	splitInterval := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, s.limits.SplitInstantQueriesByInterval)
 	if splitInterval <= 0 {
 		return 0
 	}
@@ -217,7 +217,7 @@ func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenants
 		splitInterval = time.Duration(r.GetOptions().InstantSplitInterval)
 	}
 
-	spanLog.DebugLog("msg", "getting split instant query interval", "tenantsIds", tenantsIds, "split interval", splitInterval)
+	spanLog.DebugLog("msg", "getting split instant query interval", "tenantIDs", tenantIDs, "split interval", splitInterval)
 
 	return splitInterval
 }

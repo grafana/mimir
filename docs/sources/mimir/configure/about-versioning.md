@@ -171,6 +171,9 @@ The following features are currently experimental:
   - `-ingester.use-ingester-owned-series-for-limits`
   - `-ingester.track-ingester-owned-series`
   - `-ingester.owned-series-update-interval`
+- Server
+  - [PROXY protocol](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt) support
+    - `-server.proxy-protocol-enabled`
 
 ## Deprecated features
 
@@ -190,3 +193,5 @@ The following features or configuration parameters are currently deprecated and 
   - `-ingester.return-only-grpc-errors`
 - Ingester client
   - `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled`
+- Mimirtool
+  - the flag `--rule-files`

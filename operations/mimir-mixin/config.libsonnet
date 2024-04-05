@@ -57,11 +57,13 @@
     },
 
     // Some dashboards show panels grouping together multiple components of a given "path".
-    // This mapping configures which components belong to each group.
+    // This mapping configures which components belong to each group. A component can belong
+    // to multiple groups.
     local componentGroups = {
       write: ['distributor', 'ingester', 'mimir_write'],
       read: ['query_frontend', 'querier', 'ruler_query_frontend', 'ruler_querier', 'mimir_read'],
       backend: ['query_scheduler', 'ruler_query_scheduler', 'ruler', 'store_gateway', 'compactor', 'alertmanager', 'overrides_exporter', 'mimir_backend'],
+      remote_ruler_read: ['ruler_query_frontend', 'ruler_query_scheduler', 'ruler_querier'],
     },
 
     // These are used by the dashboards and allow for the simultaneous display of
@@ -133,6 +135,7 @@
       write: componentsGroupMatcher(componentGroups.write),
       read: componentsGroupMatcher(componentGroups.read),
       backend: componentsGroupMatcher(componentGroups.backend),
+      remote_ruler_read: componentsGroupMatcher(componentGroups.remote_ruler_read),
     },
     all_instances: std.join('|', std.map(function(name) componentNameRegexp[name], componentGroups.write + componentGroups.read + componentGroups.backend)),
 

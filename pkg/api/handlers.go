@@ -125,7 +125,7 @@ func indexHandler(httpPathPrefix string, content *IndexPageContent) http.Handler
 	})
 	template.Must(templ.Parse(indexPageHTML))
 
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		err := templ.Execute(w, indexPageContents{LinkGroups: content.GetContent()})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -180,7 +180,7 @@ type configResponse struct {
 }
 
 func (cfg *Config) statusConfigHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		response := configResponse{
 			Status: "success",
 			Config: map[string]string{},
@@ -195,7 +195,7 @@ type flagsResponse struct {
 }
 
 func (cfg *Config) statusFlagsHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		response := flagsResponse{
 			Status: "success",
 			Flags:  map[string]string{},

@@ -93,13 +93,23 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 
 		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 		c.totalRequests.Inc()
+
 		if err != nil {
 			if !mimirpb.IsClientError(err) {
 				c.serverErrRequests.Inc()
 				return fmt.Errorf("consuming record at index %d for tenant %s: %w", recordIdx, wr.tenantID, err)
 			}
 			c.clientErrRequests.Inc()
-			level.Warn(c.l).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "err", err, "user", wr.tenantID)
+
+			// The error could be sampled or marked to be skipped in logs, so we check whether it should be
+			// logged before doing it.
+			if keep, reason := shouldLog(ctx, err); keep {
+				if reason != "" {
+					err = fmt.Errorf("%w (%s)", err, reason)
+				}
+
+				level.Warn(c.l).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "err", err, "user", wr.tenantID)
+			}
 		}
 	}
 	return nil

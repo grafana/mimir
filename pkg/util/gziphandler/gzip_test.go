@@ -157,7 +157,7 @@ func TestGzipHandlerAlreadyCompressed(t *testing.T) {
 }
 
 func TestNewGzipLevelHandler(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, testBody)
 	})
@@ -216,7 +216,7 @@ func TestGzipHandlerNoBody(t *testing.T) {
 	}
 
 	for num, test := range tests {
-		handler := GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(test.statusCode)
 			if test.body != nil {
 				_, _ = w.Write(test.body)
@@ -284,7 +284,7 @@ func TestGzipHandlerContentLength(t *testing.T) {
 	go func() { _ = srv.Serve(ln) }()
 
 	for num, test := range tests {
-		srv.Handler = GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv.Handler = GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			if test.bodyLen > 0 {
 				w.Header().Set("Content-Length", strconv.Itoa(test.bodyLen))
 			}
@@ -336,13 +336,13 @@ func TestGzipHandlerMinSize(t *testing.T) {
 
 	wrapper, _ := NewGzipLevelAndMinSize(gzip.DefaultCompression, 128)
 	handler := wrapper(http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
+		func(w http.ResponseWriter, _ *http.Request) {
 			// Write responses one byte at a time to ensure that the flush
 			// mechanism, if used, is working properly.
 			for i := 0; i < responseLength; i++ {
 				n, err := w.Write(b)
 				assert.Equal(t, 1, n)
-				assert.Nil(t, err)
+				assert.NoError(t, err)
 			}
 		},
 	))
@@ -372,7 +372,7 @@ func TestGzipDoubleClose(t *testing.T) {
 	// aren't added back by double close
 	addLevelPool(gzip.DefaultCompression)
 
-	handler := GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// call close here and it'll get called again interally by
 		// NewGzipLevelHandler's handler defer
 		_, _ = w.Write([]byte("test"))
@@ -406,7 +406,7 @@ func (w *panicOnSecondWriteHeaderWriter) WriteHeader(s int) {
 }
 
 func TestGzipHandlerDoubleWriteHeader(t *testing.T) {
-	handler := GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Length", "15000")
 		// Specifically write the header here
 		w.WriteHeader(304)
@@ -459,7 +459,7 @@ func TestStatusCodes(t *testing.T) {
 
 func TestFlushBeforeWrite(t *testing.T) {
 	b := []byte(testBody)
-	handler := GzipHandler(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+	handler := GzipHandler(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusNotFound)
 		rw.(http.Flusher).Flush()
 		_, _ = rw.Write(b)
@@ -478,14 +478,14 @@ func TestFlushBeforeWrite(t *testing.T) {
 func TestImplementFlusher(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request.Header.Set(acceptEncoding, "gzip")
-	GzipHandler(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+	GzipHandler(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		_, okFlusher := rw.(http.Flusher)
 		assert.True(t, okFlusher, "response writer must implement http.Flusher")
 	})).ServeHTTP(httptest.NewRecorder(), request)
 }
 
 func TestIgnoreSubsequentWriteHeader(t *testing.T) {
-	handler := GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(500)
 		w.WriteHeader(404)
 	}))
@@ -505,7 +505,7 @@ func TestDontWriteWhenNotWrittenTo(t *testing.T) {
 	// ensure the gzip middleware doesn't touch the actual ResponseWriter
 	// either.
 
-	handler0 := GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler0 := GzipHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 	}))
 
 	handler1 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -588,7 +588,7 @@ var contentTypeTests = []struct {
 
 func TestContentTypes(t *testing.T) {
 	for _, tt := range contentTypeTests {
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			w.Header().Set("Content-Type", tt.contentType)
 			_, _ = io.WriteString(w, testBody)

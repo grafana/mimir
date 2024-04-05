@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package fieldcategory
+package configdoc
 
 import "fmt"
 
@@ -34,8 +34,8 @@ func (c Category) String() string {
 
 // Fields are primarily categorized via struct tags, but this can be impossible when third party libraries are involved
 // Only categorize fields here when you can't otherwise, since struct tags are less likely to become stale
-var overrides = map[string]Category{
-	// weaveworks/common/server in server.Config
+var categoryOverrides = map[string]Category{
+	// Defined in grafana/dskit/server.Config
 	"server.graceful-shutdown-timeout":                  Advanced,
 	"server.grpc-conn-limit":                            Advanced,
 	"server.grpc-listen-network":                        Advanced,
@@ -69,25 +69,26 @@ var overrides = map[string]Category{
 	"server.path-prefix":                                Advanced,
 	"server.register-instrumentation":                   Advanced,
 	"server.log-request-at-info-level-enabled":          Advanced,
+	"server.proxy-protocol-enabled":                     Experimental,
 
 	// main.go global flags
 	"config.file":       Basic,
 	"config.expand-env": Basic,
 }
 
-func AddOverrides(o map[string]Category) {
+func AddCategoryOverrides(o map[string]Category) {
 	for n, c := range o {
-		overrides[n] = c
+		categoryOverrides[n] = c
 	}
 }
 
-func GetOverride(fieldName string) (category Category, ok bool) {
-	category, ok = overrides[fieldName]
+func GetCategoryOverride(fieldName string) (category Category, ok bool) {
+	category, ok = categoryOverrides[fieldName]
 	return
 }
 
-func VisitOverrides(f func(name string)) {
-	for override := range overrides {
+func VisitCategoryOverrides(f func(name string)) {
+	for override := range categoryOverrides {
 		f(override)
 	}
 }

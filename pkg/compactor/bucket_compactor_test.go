@@ -94,13 +94,13 @@ func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 		expectedJobs int
 	}{
 		"should return all planned jobs if the compactor instance owns all of them": {
-			ownJob: func(job *Job) (bool, error) {
+			ownJob: func(*Job) (bool, error) {
 				return true, nil
 			},
 			expectedJobs: 4,
 		},
 		"should return no jobs if the compactor instance owns none of them": {
-			ownJob: func(job *Job) (bool, error) {
+			ownJob: func(*Job) (bool, error) {
 				return false, nil
 			},
 			expectedJobs: 0,
@@ -108,7 +108,7 @@ func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 		"should return some jobs if the compactor instance owns some of them": {
 			ownJob: func() ownCompactionJobFunc {
 				count := 0
-				return func(job *Job) (bool, error) {
+				return func(*Job) (bool, error) {
 					count++
 					return count%2 == 0, nil
 				}
