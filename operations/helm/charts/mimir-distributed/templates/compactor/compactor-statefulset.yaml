@@ -6,7 +6,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "compactor" "memberlist" true) | nindent 4 }}
   annotations:
     {{- toYaml .Values.compactor.annotations | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 spec:
   podManagementPolicy: {{ .Values.compactor.podManagementPolicy }}
   {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.compactor.persistentVolume.enableRetentionPolicy)  }}
@@ -49,7 +49,7 @@ spec:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "compactor" "memberlist" true) | nindent 8 }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "compactor") | nindent 8 }}
-      namespace: {{ .Release.Namespace | quote }}
+      namespace: {{ include "mimir.namespace" . | quote }}
     spec:
       {{- with .Values.compactor.schedulerName }}
       schedulerName: {{ . | quote }}

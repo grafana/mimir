@@ -5,7 +5,7 @@ metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "gateway-nginx") }}
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "gateway-nginx") | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 data:
   nginx.conf: |
     {{- tpl .Values.gateway.nginx.config.file . | nindent 4 }}

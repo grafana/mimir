@@ -10,7 +10,7 @@ metadata:
     {{- toYaml .Values.smoke_test.annotations | nindent 4 }}
     {{- end }}
     "helm.sh/hook": test
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 spec:
   backoffLimit: 5
   completions: 1

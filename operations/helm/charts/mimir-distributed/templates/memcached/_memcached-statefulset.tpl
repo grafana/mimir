@@ -12,7 +12,7 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" $.ctx "component" "memcached") | nindent 4 }}
   annotations:
     {{- toYaml .annotations | nindent 4 }}
-  namespace: {{ $.ctx.Release.Namespace | quote }}
+  namespace: {{ default $.ctx.Release.Namespace $.ctx.Values.namespaceOverride | trunc 63 | trimSuffix "-" | quote }}
 spec:
   podManagementPolicy: {{ .podManagementPolicy }}
   replicas: {{ .replicas }}

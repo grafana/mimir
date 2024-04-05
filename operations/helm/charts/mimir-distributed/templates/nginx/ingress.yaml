@@ -11,7 +11,7 @@ metadata:
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "mimir.namespace" . | quote }}
 spec:
   {{- if .Values.nginx.ingress.ingressClassName }}
   ingressClassName: {{ .Values.nginx.ingress.ingressClassName }}

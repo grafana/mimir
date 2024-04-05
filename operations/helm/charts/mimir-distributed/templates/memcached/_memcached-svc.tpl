@@ -15,7 +15,7 @@ metadata:
     {{- end }}
   annotations:
     {{- toYaml .service.annotations | nindent 4 }}
-  namespace: {{ $.ctx.Release.Namespace | quote }}
+  namespace: {{ default $.ctx.Release.Namespace $.ctx.Values.namespaceOverride | trunc 63 | trimSuffix "-" | quote }}
 spec:
   type: ClusterIP
   clusterIP: None
