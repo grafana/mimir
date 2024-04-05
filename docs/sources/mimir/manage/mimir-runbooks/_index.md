@@ -1487,6 +1487,10 @@ sum is a regular float number.
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
 {{< /admonition >}}
 
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
 ### err-mimir-native-histogram-count-not-big-enough
 
 This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
@@ -1495,6 +1499,10 @@ that the overall sum is not a float number (NaN).
 
 {{< admonition type="note" >}}
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
 {{< /admonition >}}
 
 ### err-mimir-native-histogram-negative-bucket-count
@@ -1506,6 +1514,10 @@ where some bucket count is negative.
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
 {{< /admonition >}}
 
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
 ### err-mimir-native-histogram-span-negative-offset
 
 This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
@@ -1515,6 +1527,10 @@ where a bucket span has a negative offset.
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
 {{< /admonition >}}
 
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
 ### err-mimir-native-histogram-spans-buckets-mismatch
 
 This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
@@ -1522,6 +1538,10 @@ where the number of bucket counts does not agree with the number of buckets enco
 
 {{< admonition type="note" >}}
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
 {{< /admonition >}}
 
 ### err-mimir-label-invalid
