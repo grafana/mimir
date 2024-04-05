@@ -128,19 +128,23 @@ local filename = 'mimir-overview.json';
       )
       .addPanel(
         $.timeseriesPanel(std.stripChars('Write requests / sec %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) +
-        $.qpsPanel(
+        $.qpsPanelNativeHistogram(
           if $._config.gateway_enabled then
-            $.queries.gateway.writeRequestsPerSecond
+            $.queries.gateway.requestsPerSecondMetric
           else
-            $.queries.distributor.writeRequestsPerSecond
+            $.queries.distributor.requestsPerSecondMetric,
+          if $._config.gateway_enabled then
+            $.queries.gateway.writeRequestsPerSecondSelector
+          else
+            $.queries.distributor.writeRequestsPerSecondSelector
         )
       )
       .addPanel(
         $.timeseriesPanel(std.stripChars('Write latency %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) + (
           if $._config.gateway_enabled then
-            $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
+            $.latencyRecordingRulePanelNativeHistogram('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
           else
-            $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/distributor.Distributor/Push|/httpgrpc.*|%s' % $.queries.write_http_routes_regex)])
+            $.latencyRecordingRulePanelNativeHistogram('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/distributor.Distributor/Push|/httpgrpc.*|%s' % $.queries.write_http_routes_regex)])
         )
       )
       .addPanel(
@@ -172,19 +176,23 @@ local filename = 'mimir-overview.json';
       )
       .addPanel(
         $.timeseriesPanel(std.stripChars('Read requests / sec %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) +
-        $.qpsPanel(
+        $.qpsPanelNativeHistogram(
           if $._config.gateway_enabled then
-            $.queries.gateway.readRequestsPerSecond
+            $.queries.gateway.readRequestsPerSecondMetric
           else
-            $.queries.query_frontend.readRequestsPerSecond
+            $.queries.query_frontend.readRequestsPerSecondMetric,
+          if $._config.gateway_enabled then
+            $.queries.gateway.readRequestsPerSecondSelector
+          else
+            $.queries.query_frontend.readRequestsPerSecondSelector
         )
       )
       .addPanel(
         $.timeseriesPanel(std.stripChars('Read latency %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) + (
           if $._config.gateway_enabled then
-            $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+            $.latencyRecordingRulePanelNativeHistogram('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
           else
-            $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+            $.latencyRecordingRulePanelNativeHistogram('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
         )
       )
       .addPanel(

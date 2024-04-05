@@ -1239,6 +1239,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[])::
+    utils.latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors, multiplier, sum_by) + {
+      // Hide yaxes from JSON Model; it's not supported by timeseriesPanel.
+      yaxes:: super.yaxes,
+      fieldConfig+: {
+        defaults+: {
+          unit: 'ms',
+          min: 0,
+        },
+      },
+    },
+
   filterNodeDiskContainer(containerName)::
     |||
       ignoring(%(instanceLabel)s) group_right() (
