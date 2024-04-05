@@ -1,5 +1,6 @@
 #! /usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
+# This script compares benchmark results for the two engines.
 
 set -euo pipefail
 
