@@ -76,84 +76,84 @@
       extra_small_user+:: {},
 
       // Target 300K active series.
-      medium_small_user+:: {
+      medium_small_user+:: std.prune({
         local series = 300e3,
 
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(3, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
-      },
+      }),
 
       // Target 1M active series.
-      small_user+:: {
+      small_user+:: std.prune({
         local series = 1e6,
 
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(6, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
-      },
+      }),
 
       // Target 3M active series.
-      medium_user+:: {
+      medium_user+:: std.prune({
         local series = 3e6,
 
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(9, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
-      },
+      }),
 
       // Target 6M active series.
-      big_user+:: {
+      big_user+:: std.prune({
         local series = 6e6,
 
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(12, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(3, $._config.shuffle_sharding.ruler_shard_size),
-      },
+      }),
 
       // Target 12M active series.
-      super_user+:: {
+      super_user+:: std.prune({
         local series = 12e6,
 
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(18, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(6, $._config.shuffle_sharding.ruler_shard_size),
-      },
+      }),
 
       // Target 16M active series.
-      mega_user+:: {
+      mega_user+:: std.prune({
         local series = 16e6,
 
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(24, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(8, $._config.shuffle_sharding.ruler_shard_size),
-      },
+      }),
 
       // Target 24M active series.
-      user_24M+:: {
+      user_24M+:: std.prune({
         local series = 24e6,
 
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(30, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(8, $._config.shuffle_sharding.ruler_shard_size),
-      },
+      }),
 
       // Target 32M active series.
-      user_32M+:: {
+      user_32M+:: std.prune({
         local series = 32e6,
 
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(42, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(12, $._config.shuffle_sharding.ruler_shard_size),
-      },
+      }),
     },
   },
 
