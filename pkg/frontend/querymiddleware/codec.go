@@ -114,16 +114,12 @@ type MetricsQueryRequest interface {
 	WithTotalQueriesHint(int32) MetricsQueryRequest
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
 	WithEstimatedSeriesCountHint(uint64) MetricsQueryRequest
-	//proto.Message
-
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(opentracing.Span)
 }
 
 // LabelsQueryRequest represents a label names or values query request that can be process by middlewares.
 type LabelsQueryRequest interface {
-	//proto.Message
-
 	// GetLabelName returns the label name param from a Label Values request `/api/v1/label/<label_name>/values`
 	// or an empty string for a Label Names request `/api/v1/labels`
 	GetLabelName() string

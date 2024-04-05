@@ -44,18 +44,18 @@ func newEmptyPrometheusResponse() *PrometheusResponse {
 }
 
 type PrometheusRangeQueryRequest struct {
-	Path    string        `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	Start   int64         `protobuf:"varint,2,opt,name=start,proto3" json:"start,omitempty"`
-	End     int64         `protobuf:"varint,3,opt,name=end,proto3" json:"end,omitempty"`
-	Step    int64         `protobuf:"varint,4,opt,name=step,proto3" json:"step,omitempty"`
-	Timeout time.Duration `protobuf:"bytes,5,opt,name=timeout,proto3,stdduration" json:"timeout"`
-	Query   string        `protobuf:"bytes,6,opt,name=query,proto3" json:"query,omitempty"`
-	Options Options       `protobuf:"bytes,7,opt,name=options,proto3" json:"options"`
+	Path    string
+	Start   int64
+	End     int64
+	Step    int64
+	Timeout time.Duration
+	Query   string
+	Options Options
 	// ID of the request used to correlate downstream requests and responses.
-	ID int64 `protobuf:"varint,8,opt,name=id,proto3" json:"id,omitempty"`
+	ID int64
 	// Hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
-	Hints *Hints `protobuf:"bytes,9,opt,name=hints,proto3" json:"hints,omitempty"`
+	Hints *Hints
 }
 
 func (r *PrometheusRangeQueryRequest) GetPath() string {
@@ -122,15 +122,15 @@ func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
 }
 
 type PrometheusInstantQueryRequest struct {
-	Path    string  `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	Time    int64   `protobuf:"varint,2,opt,name=time,proto3" json:"time,omitempty"`
-	Query   string  `protobuf:"bytes,3,opt,name=query,proto3" json:"query,omitempty"`
-	Options Options `protobuf:"bytes,4,opt,name=options,proto3" json:"options"`
+	Path    string
+	Time    int64
+	Query   string
+	Options Options
 	// ID of the request used to correlate downstream requests and responses.
-	ID int64 `protobuf:"varint,5,opt,name=id,proto3" json:"id,omitempty"`
+	ID int64
 	// Hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
-	Hints *Hints `protobuf:"bytes,6,opt,name=hints,proto3" json:"hints,omitempty"`
+	Hints *Hints
 }
 
 func (r *PrometheusInstantQueryRequest) GetPath() string {
@@ -176,15 +176,10 @@ func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
 }
 
 type Hints struct {
-	// Total number of queries that are expected to to be executed to serve the original request.
-	TotalQueries int32 `protobuf:"varint,1,opt,name=TotalQueries,proto3" json:"TotalQueries,omitempty"`
+	// Total number of queries that are expected to be executed to serve the original request.
+	TotalQueries int32
 	// Estimated total number of series that a request might return.
-	// This is a `oneof` instead of an `optional` because our tooling is on a version
-	// that does not yet support optional fields in proto3.
-	//
-	// Types that are valid to be assigned to CardinalityEstimate:
-	//	*EstimatedSeriesCount
-	CardinalityEstimate *EstimatedSeriesCount `protobuf_oneof:"CardinalityEstimate"`
+	CardinalityEstimate *EstimatedSeriesCount
 }
 
 func (h *Hints) GetCardinalityEstimate() *EstimatedSeriesCount {
@@ -209,7 +204,7 @@ func (h *Hints) GetEstimatedSeriesCount() uint64 {
 }
 
 type EstimatedSeriesCount struct {
-	EstimatedSeriesCount uint64 `protobuf:"varint,2,opt,name=EstimatedSeriesCount,proto3,oneof"`
+	EstimatedSeriesCount uint64
 }
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
@@ -382,16 +377,16 @@ func (r *PrometheusLabelValuesQueryRequest) AddSpanTags(sp opentracing.Span) {
 }
 
 type PrometheusLabelNamesQueryRequest struct {
-	Path  string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	Start int64  `protobuf:"varint,2,opt,name=start,proto3" json:"start,omitempty"`
-	End   int64  `protobuf:"varint,3,opt,name=end,proto3" json:"end,omitempty"`
+	Path  string
+	Start int64
+	End   int64
 	// labelMatcherSets is a repeated field here in order to enable the representation
 	// of labels queries which have not yet been split; the prometheus querier code
 	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
 	// into separate queries, one for each matcher set
-	LabelMatcherSets []string `protobuf:"bytes,4,rep,name=labelMatcherSets,proto3" json:"labelMatcherSets,omitempty"`
+	LabelMatcherSets []string
 	// ID of the request used to correlate downstream requests and responses.
-	ID int64 `protobuf:"varint,5,opt,name=id,proto3" json:"id,omitempty"`
+	ID int64
 }
 
 func (r *PrometheusLabelNamesQueryRequest) GetPath() string {
@@ -430,17 +425,17 @@ func (r *PrometheusLabelNamesQueryRequest) GetID() int64 {
 }
 
 type PrometheusLabelValuesQueryRequest struct {
-	Path      string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	LabelName string `protobuf:"bytes,2,opt,name=labelName,proto3" json:"labelName,omitempty"`
-	Start     int64  `protobuf:"varint,3,opt,name=start,proto3" json:"start,omitempty"`
-	End       int64  `protobuf:"varint,4,opt,name=end,proto3" json:"end,omitempty"`
+	Path      string
+	LabelName string
+	Start     int64
+	End       int64
 	// labelMatcherSets is a repeated field here in order to enable the representation
 	// of labels queries which have not yet been split; the prometheus querier code
 	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
 	// into separate queries, one for each matcher set
-	LabelMatcherSets []string `protobuf:"bytes,5,rep,name=labelMatcherSets,proto3" json:"labelMatcherSets,omitempty"`
+	LabelMatcherSets []string
 	// ID of the request used to correlate downstream requests and responses.
-	ID int64 `protobuf:"varint,6,opt,name=id,proto3" json:"id,omitempty"`
+	ID int64
 }
 
 func (r *PrometheusLabelValuesQueryRequest) GetLabelName() string {
