@@ -40,6 +40,37 @@ var (
 	matrix = model.ValMatrix.String()
 )
 
+func parseQuery(t *testing.T, query string) parser.Expr {
+	queryExpr, err := parser.ParseExpr(query)
+	require.NoError(t, err)
+	return queryExpr
+}
+
+func makeRangeRequest(
+	t *testing.T, path string, start, end time.Time, step, lookbackDelta time.Duration, query string,
+) *PrometheusRangeQueryRequest {
+	return &PrometheusRangeQueryRequest{
+		Path:          path,
+		Start:         start.UnixMilli(),
+		End:           end.UnixMilli(),
+		Step:          step.Milliseconds(),
+		LookbackDelta: lookbackDelta,
+		Query:         query,
+		QueryExpr:     parseQuery(t, query),
+	}
+}
+func makeInstantRequest(
+	t *testing.T, path string, start time.Time, lookbackDelta time.Duration, query string,
+) *PrometheusInstantQueryRequest {
+	return &PrometheusInstantQueryRequest{
+		Path:          path,
+		Time:          start.UnixMilli(),
+		LookbackDelta: lookbackDelta,
+		Query:         query,
+		QueryExpr:     parseQuery(t, query),
+	}
+}
+
 func TestMetricsQueryRequest(t *testing.T) {
 	codec := newTestPrometheusCodec()
 
@@ -50,21 +81,23 @@ func TestMetricsQueryRequest(t *testing.T) {
 	}{
 		{
 			url: "/api/v1/query_range?end=1536716880&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120",
-			expected: &PrometheusRangeQueryRequest{
-				Path:  "/api/v1/query_range",
-				Start: 1536673680 * 1e3,
-				End:   1536716880 * 1e3,
-				Step:  120 * 1e3,
-				Query: "sum(container_memory_rss) by (namespace)",
-			},
+			expected: makeRangeRequest(t,
+				"/api/v1/query_range",
+				time.UnixMilli(1536673680*1e3),
+				time.UnixMilli(1536716880*1e3),
+				2*time.Minute,
+				0*time.Minute,
+				"sum(container_memory_rss) by (namespace)",
+			),
 		},
 		{
 			url: "/api/v1/query?query=sum%28container_memory_rss%29+by+%28namespace%29&time=1536716880",
-			expected: &PrometheusInstantQueryRequest{
-				Path:  "/api/v1/query",
-				Time:  1536716880 * 1e3,
-				Query: "sum(container_memory_rss) by (namespace)",
-			},
+			expected: makeInstantRequest(t,
+				"/api/v1/query",
+				time.UnixMilli(1536716880*1e3),
+				0*time.Minute,
+				"sum(container_memory_rss) by (namespace)",
+			),
 		},
 		{
 			url:         "/api/v1/query_range?start=foo",
@@ -130,37 +163,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 	offsetDuration, _ := time.ParseDuration(offsetDurationStr)
 	offsetDurationMS := offsetDuration.Milliseconds()
 
-	parseQuery := func(query string) parser.Expr {
-		queryExpr, err := parser.ParseExpr(query)
-		require.NoError(t, err)
-		return queryExpr
-	}
-
-	makeRangeRequest := func(
-		path string, start, end time.Time, step, lookbackDelta time.Duration, query string,
-	) *PrometheusRangeQueryRequest {
-		return &PrometheusRangeQueryRequest{
-			Path:          path,
-			Start:         start.UnixMilli(),
-			End:           end.UnixMilli(),
-			Step:          step.Milliseconds(),
-			LookbackDelta: lookbackDelta,
-			Query:         query,
-			QueryExpr:     parseQuery(query),
-		}
-	}
-	makeInstantRequest := func(
-		path string, start time.Time, lookbackDelta time.Duration, query string,
-	) *PrometheusInstantQueryRequest {
-		return &PrometheusInstantQueryRequest{
-			Path:          path,
-			Time:          start.UnixMilli(),
-			LookbackDelta: lookbackDelta,
-			Query:         query,
-			QueryExpr:     parseQuery(query),
-		}
-	}
-
 	for _, testCase := range []struct {
 		name         string
 		metricsQuery MetricsQueryRequest
@@ -170,7 +172,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 	}{
 		{
 			name: "range query: without range vector, without offset",
-			metricsQuery: makeRangeRequest(
+			metricsQuery: makeRangeRequest(t,
 				"/api/v1/query_range",
 				startTime,
 				endTime,
@@ -184,7 +186,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		},
 		{
 			name: "instant query: without range vector, without offset",
-			metricsQuery: makeInstantRequest(
+			metricsQuery: makeInstantRequest(t,
 				"/api/v1/query",
 				endTime,
 				time.Duration(0),
@@ -196,7 +198,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		},
 		{
 			name: "range query: with range vector, without offset",
-			metricsQuery: makeRangeRequest(
+			metricsQuery: makeRangeRequest(t,
 				"/api/v1/query_range",
 				startTime,
 				endTime,
@@ -210,7 +212,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		},
 		{
 			name: "instant query: with range vector, without offset",
-			metricsQuery: makeInstantRequest(
+			metricsQuery: makeInstantRequest(t,
 				"/api/v1/query",
 				endTime,
 				time.Duration(0),
@@ -222,7 +224,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		},
 		{
 			name: "range query: without range vector, with offset",
-			metricsQuery: makeRangeRequest(
+			metricsQuery: makeRangeRequest(t,
 				"/api/v1/query_range",
 				startTime,
 				endTime,
@@ -236,7 +238,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		},
 		{
 			name: "instant query: without range vector, with offset",
-			metricsQuery: makeInstantRequest(
+			metricsQuery: makeInstantRequest(t,
 				"/api/v1/query",
 				endTime,
 				time.Duration(0),
@@ -248,7 +250,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		},
 		{
 			name: "range query: with range vector, with offset",
-			metricsQuery: makeRangeRequest(
+			metricsQuery: makeRangeRequest(t,
 				"/api/v1/query_range",
 				startTime,
 				endTime,
@@ -262,7 +264,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		},
 		{
 			name: "instant query: with range vector, with offset",
-			metricsQuery: makeInstantRequest(
+			metricsQuery: makeInstantRequest(t,
 				"/api/v1/query",
 				endTime,
 				time.Duration(0),
@@ -270,6 +272,20 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
+			expectedErr:  nil,
+		},
+		{
+			name: "range query: with range vector, without offset",
+			metricsQuery: makeRangeRequest(t,
+				"/api/v1/query_range",
+				startTime,
+				endTime,
+				stepDuration,
+				time.Duration(0),
+				fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr),
+			),
+			expectedMinT: startTime.UnixMilli() - rangeVectorDurationMS,
+			expectedMaxT: endTime.UnixMilli(),
 			expectedErr:  nil,
 		},
 	} {
