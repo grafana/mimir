@@ -16,7 +16,7 @@ func TestConfig_Validate(t *testing.T) {
 		expectedErr string
 	}{
 		"should pass with default config": {
-			setup: func(cfg *Config) {},
+			setup: func(*Config) {},
 		},
 		"should fail if service discovery mode is invalid": {
 			setup: func(cfg *Config) {

@@ -1177,10 +1177,10 @@ instance_limits:
 # CLI flag: -ingester.limit-inflight-requests-using-grpc-method-limiter
 [limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = true]
 
-# (experimental) Each error will be logged once in this many times. Use 0 to log
-# all of them.
+# (advanced) Each error will be logged once in this many times. Use 0 to log all
+# of them.
 # CLI flag: -ingester.error-sample-rate
-[error_sample_rate: <int> | default = 0]
+[error_sample_rate: <int> | default = 10]
 
 # (deprecated) When enabled only gRPC errors will be returned by the ingester.
 # CLI flag: -ingester.return-only-grpc-errors

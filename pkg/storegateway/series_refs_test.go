@@ -1489,7 +1489,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appenderFactory func() storage.Appender) {
+	newTestBlock := prepareTestBlock(test.NewTB(t), func(_ testing.TB, appenderFactory func() storage.Appender) {
 		const (
 			samplesFor1Chunk   = 100                  // not a complete chunk
 			samplesFor2Chunks  = samplesFor1Chunk * 2 // not a complete chunk
@@ -2008,10 +2008,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 		for ts := int64(0); ts < 10; ts++ {
 			for _, s := range existingSeries {
 				_, err := appender.Append(0, s, ts, 0)
-				assert.NoError(t, err)
+				assert.NoError(tb, err)
 			}
 		}
-		assert.NoError(t, appender.Commit())
+		assert.NoError(tb, appender.Commit())
 	})
 
 	mockedSeriesHashes := map[string]uint64{

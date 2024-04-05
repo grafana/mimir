@@ -97,6 +97,12 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # in that case.
 %/$(UPTODATE): GOOS=linux
 %/$(UPTODATE): %/Dockerfile
+	if [ -f $(@D)/Dockerfile.continuous-test ]; then \
+		$(SUDO) docker build -f $(@D)/Dockerfile.continuous-test \
+			--build-arg=revision=$(GIT_REVISION) \
+			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
+			-t $(IMAGE_PREFIX)$(shell basename $(@D))-continuous-test:$(IMAGE_TAG) $(@D)/; \
+	fi;
 	if [ -f $(@D)/Dockerfile.distroless ]; then \
 		$(SUDO) docker build -f $(@D)/Dockerfile.distroless \
 			--build-arg=revision=$(GIT_REVISION) \
@@ -110,6 +116,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG)
+	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))-continuous-test:$(IMAGE_TAG)
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))-distroless:$(IMAGE_TAG)
 	@echo
 	@echo Please use '"make push-multiarch-build-image"' to build and push build image.
@@ -158,6 +165,16 @@ push-multiarch-%/$(UPTODATE):
 	fi
 	$(SUDO) docker buildx build -o $(PUSH_MULTIARCH_TARGET) --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
 
+	# Build Dockerfile.continuous-test
+	if [ -f $(DIR)/Dockerfile.continuous-test ]; then \
+		$(SUDO) docker buildx build -f $(DIR)/Dockerfile.continuous-test \
+			-o $(PUSH_MULTIARCH_TARGET) \
+			--platform linux/amd64,linux/arm64 \
+			--build-arg=revision=$(GIT_REVISION) \
+			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
+			--build-arg=USE_BINARY_SUFFIX=true \
+			-t $(IMAGE_PREFIX)$(shell basename $(DIR))-continuous-test:$(IMAGE_TAG) $(DIR)/; \
+	fi;
 	# Build Dockerfile.distroless if it exists
 	if [ -f $(DIR)/Dockerfile.distroless ]; then \
 		$(SUDO) docker buildx build -f $(DIR)/Dockerfile.distroless \
@@ -242,7 +259,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr7776-bae88f6be5
+LATEST_BUILD_IMAGE_TAG ?= pr7802-42cedde636
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden

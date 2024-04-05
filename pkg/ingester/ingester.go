@@ -200,7 +200,7 @@ type Config struct {
 
 	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"deprecated"` // TODO Remove the configuration option in Mimir 2.14, keeping the same behavior as if it's enabled.
 
-	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
+	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"advanced"`
 
 	DeprecatedReturnOnlyGRPCErrors bool `yaml:"return_only_grpc_errors" json:"return_only_grpc_errors" category:"deprecated"`
 
@@ -233,7 +233,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
 	f.BoolVar(&cfg.LogUtilizationBasedLimiterCPUSamples, "ingester.log-utilization-based-limiter-cpu-samples", false, "Enable logging of utilization based limiter CPU samples.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "ingester.limit-inflight-requests-using-grpc-method-limiter", true, "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.")
-	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 0, "Each error will be logged once in this many times. Use 0 to log all of them.")
+	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 10, "Each error will be logged once in this many times. Use 0 to log all of them.")
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
@@ -313,7 +313,9 @@ type Ingester struct {
 	// Metrics shared across all per-tenant shippers.
 	shipperMetrics *shipperMetrics
 
-	subservices  *services.Manager
+	subservicesForPartitionReplay          *services.Manager
+	subservicesAfterIngesterRingLifecycler *services.Manager
+
 	activeGroups *util.ActiveGroupsCleanupService
 
 	tsdbMetrics *tsdbMetrics
@@ -573,16 +575,9 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	// Start the following services before starting the ingest storage reader, in order to have them
 	// running while replaying the partition (if ingest storage is enabled).
-	if err := services.StartAndAwaitRunning(ctx, i.compactionService); err != nil {
-		return errors.Wrap(err, "failed to start TSDB Head compaction service")
-	}
-
-	if err := services.StartAndAwaitRunning(ctx, i.metricsUpdaterService); err != nil {
-		return errors.Wrap(err, "failed to start metrics updater service")
-	}
-
-	if err := services.StartAndAwaitRunning(ctx, i.metadataPurgerService); err != nil {
-		return errors.Wrap(err, "failed to start metadata purger service")
+	i.subservicesForPartitionReplay, err = createManagerThenStartAndAwaitHealthy(ctx, i.compactionService, i.metricsUpdaterService, i.metadataPurgerService)
+	if err != nil {
+		return errors.Wrap(err, "failed to start ingester subservices before partition reader")
 	}
 
 	// When ingest storage is enabled, we have to make sure that reader catches up replaying the partition
@@ -633,11 +628,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, services.NewIdleService(nil, nil))
 	}
 
-	i.subservices, err = services.NewManager(servs...)
-	if err == nil {
-		err = services.StartManagerAndAwaitHealthy(ctx, i.subservices)
-	}
-	return errors.Wrap(err, "failed to start ingester components")
+	i.subservicesAfterIngesterRingLifecycler, err = createManagerThenStartAndAwaitHealthy(ctx, servs...)
+	return errors.Wrap(err, "failed to start ingester subservices after ingester ring lifecycler")
 }
 
 func (i *Ingester) stoppingForFlusher(_ error) error {
@@ -662,19 +654,15 @@ func (i *Ingester) stopping(_ error) error {
 		}
 	}
 
-	if err := services.StopAndAwaitTerminated(context.Background(), i.compactionService); err != nil {
-		level.Warn(i.logger).Log("msg", "failed to stop TSDB Head compaction service", "err", err)
+	// Stop subservices.
+	i.subservicesForPartitionReplay.StopAsync()
+	i.subservicesAfterIngesterRingLifecycler.StopAsync()
+
+	if err := i.subservicesForPartitionReplay.AwaitStopped(context.Background()); err != nil {
+		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
 
-	if err := services.StopAndAwaitTerminated(context.Background(), i.metricsUpdaterService); err != nil {
-		level.Warn(i.logger).Log("msg", "failed to stop metrics updater service", "err", err)
-	}
-
-	if err := services.StopAndAwaitTerminated(context.Background(), i.metadataPurgerService); err != nil {
-		level.Warn(i.logger).Log("msg", "failed to stop metadata purger service", "err", err)
-	}
-
-	if err := services.StopManagerAndAwaitStopped(context.Background(), i.subservices); err != nil {
+	if err := i.subservicesAfterIngesterRingLifecycler.AwaitStopped(context.Background()); err != nil {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
 
@@ -3985,4 +3973,17 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	}
 
 	return errors.Wrap(i.ingestReader.WaitReadConsistency(ctx), "wait for read consistency")
+}
+
+func createManagerThenStartAndAwaitHealthy(ctx context.Context, srvs ...services.Service) (*services.Manager, error) {
+	manager, err := services.NewManager(srvs...)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := services.StartManagerAndAwaitHealthy(ctx, manager); err != nil {
+		return nil, err
+	}
+
+	return manager, nil
 }

@@ -212,7 +212,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 			wg.Add(2)
 
 			if tc.handler == nil {
-				testHandler = func(w http.ResponseWriter, r *http.Request) {
+				testHandler = func(w http.ResponseWriter, _ *http.Request) {
 					_, _ = w.Write([]byte("ok"))
 				}
 
@@ -288,7 +288,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			preferredBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			preferredBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", scenario.preferredResponseContentType)
 				w.WriteHeader(scenario.preferredResponseStatusCode)
 				_, err := w.Write([]byte("preferred response"))
@@ -299,7 +299,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			preferredBackendURL, err := url.Parse(preferredBackend.URL)
 			require.NoError(t, err)
 
-			secondaryBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			secondaryBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", scenario.secondaryResponseContentType)
 				w.WriteHeader(scenario.secondaryResponseStatusCode)
 				_, err := w.Write([]byte("secondary response"))
