@@ -19,6 +19,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/parser"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -44,13 +45,15 @@ func newEmptyPrometheusResponse() *PrometheusResponse {
 }
 
 type PrometheusRangeQueryRequest struct {
-	Path    string
-	Start   int64
-	End     int64
-	Step    int64
-	Timeout time.Duration
-	Query   string
-	Options Options
+	Path          string
+	Start         int64
+	End           int64
+	Step          int64
+	Timeout       time.Duration
+	Query         string
+	QueryExpr     parser.Expr
+	LookbackDelta time.Duration
+	Options       Options
 	// ID of the request used to correlate downstream requests and responses.
 	ID int64
 	// Hints that could be optionally attached to the request to pass down the stack.
@@ -90,7 +93,7 @@ func (r *PrometheusRangeQueryRequest) GetQuery() string {
 // as determined from the start timestamp and any range vector or offset in the query.
 func (r *PrometheusRangeQueryRequest) GetMinT() (int64, error) {
 	minT, _, err := decodeQueryMinMaxTime(
-		r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep(),
+		r.QueryExpr, r.GetStart(), r.GetEnd(), r.GetStep(), r.LookbackDelta,
 	)
 	return minT, err
 }
@@ -99,7 +102,7 @@ func (r *PrometheusRangeQueryRequest) GetMinT() (int64, error) {
 // as determined from the end timestamp and any offset in the query.
 func (r *PrometheusRangeQueryRequest) GetMaxT() (int64, error) {
 	_, maxT, err := decodeQueryMinMaxTime(
-		r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep(),
+		r.QueryExpr, r.GetStart(), r.GetEnd(), r.GetStep(), r.LookbackDelta,
 	)
 	return maxT, err
 }
@@ -172,10 +175,12 @@ func (r *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
 }
 
 type PrometheusInstantQueryRequest struct {
-	Path    string
-	Time    int64
-	Query   string
-	Options Options
+	Path          string
+	Time          int64
+	Query         string
+	QueryExpr     parser.Expr
+	LookbackDelta time.Duration
+	Options       Options
 	// ID of the request used to correlate downstream requests and responses.
 	ID int64
 	// Hints that could be optionally attached to the request to pass down the stack.
@@ -215,7 +220,7 @@ func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 // as determined from the start timestamp and any range vector or offset in the query.
 func (r *PrometheusInstantQueryRequest) GetMinT() (int64, error) {
 	minT, _, err := decodeQueryMinMaxTime(
-		r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep(),
+		r.QueryExpr, r.GetStart(), r.GetEnd(), r.GetStep(), r.LookbackDelta,
 	)
 	return minT, err
 }
@@ -224,7 +229,7 @@ func (r *PrometheusInstantQueryRequest) GetMinT() (int64, error) {
 // as determined from the end timestamp and any offset in the query.
 func (r *PrometheusInstantQueryRequest) GetMaxT() (int64, error) {
 	_, maxT, err := decodeQueryMinMaxTime(
-		r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep(),
+		r.QueryExpr, r.GetStart(), r.GetEnd(), r.GetStep(), r.LookbackDelta,
 	)
 	return maxT, err
 }

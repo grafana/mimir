@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/promql/parser"
 	v1API "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -113,6 +114,14 @@ func TestMetricsQueryRequest(t *testing.T) {
 
 func TestMetricsQuery_MinMaxTime(t *testing.T) {
 
+	startTime, err := time.Parse(time.RFC3339, "2024-02-21T00:00:00-08:00")
+	require.NoError(t, err)
+	endTime, err := time.Parse(time.RFC3339, "2024-02-22T00:00:00-08:00")
+	require.NoError(t, err)
+
+	stepDurationStr := "60s"
+	stepDuration, _ := time.ParseDuration(stepDurationStr)
+
 	rangeVectorDurationStr := "5m"
 	rangeVectorDuration, _ := time.ParseDuration(rangeVectorDurationStr)
 	rangeVectorDurationMS := rangeVectorDuration.Milliseconds()
@@ -120,6 +129,37 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 	offsetDurationStr := "1h"
 	offsetDuration, _ := time.ParseDuration(offsetDurationStr)
 	offsetDurationMS := offsetDuration.Milliseconds()
+
+	parseQuery := func(query string) parser.Expr {
+		queryExpr, err := parser.ParseExpr(query)
+		require.NoError(t, err)
+		return queryExpr
+	}
+
+	makeRangeRequest := func(
+		path string, start, end time.Time, step, lookbackDelta time.Duration, query string,
+	) *PrometheusRangeQueryRequest {
+		return &PrometheusRangeQueryRequest{
+			Path:          path,
+			Start:         start.UnixMilli(),
+			End:           end.UnixMilli(),
+			Step:          step.Milliseconds(),
+			LookbackDelta: lookbackDelta,
+			Query:         query,
+			QueryExpr:     parseQuery(query),
+		}
+	}
+	makeInstantRequest := func(
+		path string, start time.Time, lookbackDelta time.Duration, query string,
+	) *PrometheusInstantQueryRequest {
+		return &PrometheusInstantQueryRequest{
+			Path:          path,
+			Time:          start.UnixMilli(),
+			LookbackDelta: lookbackDelta,
+			Query:         query,
+			QueryExpr:     parseQuery(query),
+		}
+	}
 
 	for _, testCase := range []struct {
 		name         string
@@ -130,92 +170,106 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 	}{
 		{
 			name: "range query: without range vector, without offset",
-			metricsQuery: &PrometheusRangeQueryRequest{
-				Path:  "/api/v1/query_range",
-				Start: 1708502400 * 1e3,
-				End:   1708588800 * 1e3,
-				Step:  60 * 1e3,
-				Query: "go_goroutines{}",
-			},
-			expectedMinT: 1708502400 * 1e3,
-			expectedMaxT: 1708588800 * 1e3,
+			metricsQuery: makeRangeRequest(
+				"/api/v1/query_range",
+				startTime,
+				endTime,
+				stepDuration,
+				time.Duration(0),
+				"go_goroutines{}",
+			),
+			expectedMinT: startTime.UnixMilli(),
+			expectedMaxT: endTime.UnixMilli(),
 			expectedErr:  nil,
 		},
 		{
 			name: "instant query: without range vector, without offset",
-			metricsQuery: &PrometheusInstantQueryRequest{
-				Path:  "/api/v1/query_range",
-				Time:  1708588800 * 1e3,
-				Query: "go_goroutines{}",
-			},
-			expectedMinT: 1708588800 * 1e3,
-			expectedMaxT: 1708588800 * 1e3,
+			metricsQuery: makeInstantRequest(
+				"/api/v1/query",
+				endTime,
+				time.Duration(0),
+				"go_goroutines{}",
+			),
+			expectedMinT: endTime.UnixMilli(),
+			expectedMaxT: endTime.UnixMilli(),
 			expectedErr:  nil,
 		},
 		{
 			name: "range query: with range vector, without offset",
-			metricsQuery: &PrometheusRangeQueryRequest{
-				Start: 1708502400 * 1e3,
-				End:   1708588800 * 1e3,
-				Step:  60 * 1e3,
-				Query: fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr),
-			},
-			expectedMinT: (1708502400 * 1e3) - rangeVectorDurationMS,
-			expectedMaxT: 1708588800 * 1e3,
+			metricsQuery: makeRangeRequest(
+				"/api/v1/query_range",
+				startTime,
+				endTime,
+				stepDuration,
+				time.Duration(0),
+				fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr),
+			),
+			expectedMinT: startTime.UnixMilli() - rangeVectorDurationMS,
+			expectedMaxT: endTime.UnixMilli(),
 			expectedErr:  nil,
 		},
 		{
 			name: "instant query: with range vector, without offset",
-			metricsQuery: &PrometheusInstantQueryRequest{
-				Time:  1708588800 * 1e3,
-				Query: fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr),
-			},
-			expectedMinT: (1708588800 * 1e3) - rangeVectorDurationMS,
-			expectedMaxT: 1708588800 * 1e3,
+			metricsQuery: makeInstantRequest(
+				"/api/v1/query",
+				endTime,
+				time.Duration(0),
+				fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr),
+			),
+			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS,
+			expectedMaxT: endTime.UnixMilli(),
 			expectedErr:  nil,
 		},
 		{
 			name: "range query: without range vector, with offset",
-			metricsQuery: &PrometheusRangeQueryRequest{
-				Start: 1708502400 * 1e3,
-				End:   1708588800 * 1e3,
-				Step:  60 * 1e3,
-				Query: fmt.Sprintf("go_goroutines{} offset %s", offsetDurationStr),
-			},
-			expectedMinT: (1708502400 * 1e3) - offsetDurationMS,
-			expectedMaxT: (1708588800 * 1e3) - offsetDurationMS,
+			metricsQuery: makeRangeRequest(
+				"/api/v1/query_range",
+				startTime,
+				endTime,
+				stepDuration,
+				time.Duration(0),
+				fmt.Sprintf("go_goroutines{} offset %s", offsetDurationStr),
+			),
+			expectedMinT: startTime.UnixMilli() - offsetDurationMS,
+			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 			expectedErr:  nil,
 		},
 		{
 			name: "instant query: without range vector, with offset",
-			metricsQuery: &PrometheusInstantQueryRequest{
-				Time:  1708588800 * 1e3,
-				Query: fmt.Sprintf("go_goroutines{} offset %s", offsetDurationStr),
-			},
-			expectedMinT: (1708588800 * 1e3) - offsetDurationMS,
-			expectedMaxT: (1708588800 * 1e3) - offsetDurationMS,
+			metricsQuery: makeInstantRequest(
+				"/api/v1/query",
+				endTime,
+				time.Duration(0),
+				fmt.Sprintf("go_goroutines{} offset %s", offsetDurationStr),
+			),
+			expectedMinT: endTime.UnixMilli() - offsetDurationMS,
+			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 			expectedErr:  nil,
 		},
 		{
 			name: "range query: with range vector, with offset",
-			metricsQuery: &PrometheusRangeQueryRequest{
-				Start: 1708502400 * 1e3,
-				End:   1708588800 * 1e3,
-				Step:  60 * 1e3,
-				Query: fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr),
-			},
-			expectedMinT: (1708502400 * 1e3) - rangeVectorDurationMS - offsetDurationMS,
-			expectedMaxT: (1708588800 * 1e3) - offsetDurationMS,
+			metricsQuery: makeRangeRequest(
+				"/api/v1/query_range",
+				startTime,
+				endTime,
+				stepDuration,
+				time.Duration(0),
+				fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr),
+			),
+			expectedMinT: startTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
+			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 			expectedErr:  nil,
 		},
 		{
 			name: "instant query: with range vector, with offset",
-			metricsQuery: &PrometheusInstantQueryRequest{
-				Time:  1708588800 * 1e3,
-				Query: fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr),
-			},
-			expectedMinT: (1708588800 * 1e3) - rangeVectorDurationMS - offsetDurationMS,
-			expectedMaxT: (1708588800 * 1e3) - offsetDurationMS,
+			metricsQuery: makeInstantRequest(
+				"/api/v1/query",
+				endTime,
+				time.Duration(0),
+				fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr),
+			),
+			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
+			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 			expectedErr:  nil,
 		},
 	} {
@@ -453,7 +507,7 @@ func TestLabelsQueryRequest(t *testing.T) {
 func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
 	for _, queryResultPayloadFormat := range allFormats {
 		t.Run(queryResultPayloadFormat, func(t *testing.T) {
-			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), queryResultPayloadFormat)
+			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, queryResultPayloadFormat)
 			req := PrometheusInstantQueryRequest{}
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(context.Background(), &req)
 			require.NoError(t, err)
@@ -473,7 +527,7 @@ func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
 func TestPrometheusCodec_EncodeRequest_ReadConsistency(t *testing.T) {
 	for _, consistencyLevel := range api.ReadConsistencies {
 		t.Run(consistencyLevel, func(t *testing.T) {
-			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), formatProtobuf)
+			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf)
 			ctx := api.ContextWithReadConsistency(context.Background(), consistencyLevel)
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
 			require.NoError(t, err)
@@ -647,7 +701,7 @@ func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, formatJSON)
+			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON)
 
 			resp := prometheusAPIResponse{}
 			body, err := json.Marshal(resp)
@@ -1375,5 +1429,5 @@ func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
 }
 
 func newTestPrometheusCodec() Codec {
-	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), formatJSON)
+	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON)
 }

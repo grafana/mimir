@@ -63,6 +63,7 @@ type Config struct {
 
 	// These configuration options are injected internally.
 	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
+	LookBackDelta           time.Duration             `yaml:"-"`
 	QueryStoreAfter         time.Duration             `yaml:"-"`
 }
 

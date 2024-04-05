@@ -187,6 +187,7 @@ func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCode
 
 type prometheusCodec struct {
 	metrics                            *prometheusCodecMetrics
+	lookbackDelta                      time.Duration
 	preferredQueryResultResponseFormat string
 }
 
@@ -204,9 +205,14 @@ var knownFormats = []formatter{
 	protobufFormatter{},
 }
 
-func NewPrometheusCodec(registerer prometheus.Registerer, queryResultResponseFormat string) Codec {
+func NewPrometheusCodec(
+	registerer prometheus.Registerer,
+	lookbackDelta time.Duration,
+	queryResultResponseFormat string,
+) Codec {
 	return prometheusCodec{
 		metrics:                            newPrometheusCodecMetrics(registerer),
+		lookbackDelta:                      lookbackDelta,
 		preferredQueryResultResponseFormat: queryResultResponseFormat,
 	}
 }
@@ -265,11 +271,11 @@ func (c prometheusCodec) DecodeMetricsQueryRequest(_ context.Context, r *http.Re
 	}
 }
 
-func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
-	var reqValues url.Values
+func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
 	var result PrometheusRangeQueryRequest
-	var err error
-	reqValues, err = util.ParseRequestFormWithoutConsumingBody(r)
+	result.Path = r.URL.Path
+
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -279,17 +285,25 @@ func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryReq
 		return nil, err
 	}
 
-	result.Query = reqValues.Get("query")
-	result.Path = r.URL.Path
+	query := reqValues.Get("query")
+	queryExpr, err := parser.ParseExpr(query)
+	if err != nil {
+		return nil, err
+	}
+	result.Query = query
+	result.QueryExpr = queryExpr
+
+	result.LookbackDelta = c.lookbackDelta
+
 	decodeOptions(r, &result.Options)
 	return &result, nil
 }
 
 func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
-	var reqValues url.Values
 	var result PrometheusInstantQueryRequest
-	var err error
-	reqValues, err = util.ParseRequestFormWithoutConsumingBody(r)
+	result.Path = r.URL.Path
+
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -299,8 +313,16 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQuer
 		return nil, decorateWithParamName(err, "time")
 	}
 
-	result.Query = reqValues.Get("query")
-	result.Path = r.URL.Path
+	query := reqValues.Get("query")
+	queryExpr, err := parser.ParseExpr(query)
+	if err != nil {
+		return nil, err
+	}
+	result.Query = query
+	result.QueryExpr = queryExpr
+
+	result.LookbackDelta = c.lookbackDelta
+
 	decodeOptions(r, &result.Options)
 	return &result, nil
 }
@@ -439,18 +461,13 @@ func DecodeLabelsQueryTimeParams(reqValues *url.Values, usePromDefaults bool) (s
 	return start, end, err
 }
 
-func decodeQueryMinMaxTime(query string, start, end, step int64) (minTime, maxTime int64, err error) {
-	queryExpr, err := parser.ParseExpr(query)
-	if err != nil {
-		return 0, 0, err
-	}
-
+func decodeQueryMinMaxTime(queryExpr parser.Expr, start, end, step int64, lookbackDelta time.Duration) (minTime, maxTime int64, err error) {
 	evalStmt := &parser.EvalStmt{
 		Expr:          queryExpr,
 		Start:         util.TimeFromMillis(start),
 		End:           util.TimeFromMillis(end),
 		Interval:      time.Duration(step) * time.Millisecond,
-		LookbackDelta: 0, // TODO decide if we need to use lookbackDelta here
+		LookbackDelta: lookbackDelta,
 	}
 
 	minTime, maxTime = promql.FindMinMaxTime(evalStmt)
