@@ -59,66 +59,39 @@ type PrometheusRangeQueryRequest struct {
 }
 
 func (r *PrometheusRangeQueryRequest) GetPath() string {
-	if r != nil {
-		return r.Path
-	}
-	return ""
+	return r.Path
 }
 
 func (r *PrometheusRangeQueryRequest) GetStart() int64 {
-	if r != nil {
-		return r.Start
-	}
-	return 0
+	return r.Start
 }
 
 func (r *PrometheusRangeQueryRequest) GetEnd() int64 {
-	if r != nil {
-		return r.End
-	}
-	return 0
+	return r.End
 }
 
 func (r *PrometheusRangeQueryRequest) GetStep() int64 {
-	if r != nil {
-		return r.Step
-	}
-	return 0
+	return r.Step
 }
 
 func (r *PrometheusRangeQueryRequest) GetTimeout() time.Duration {
-	if r != nil {
-		return r.Timeout
-	}
-	return 0
+	return r.Timeout
 }
 
 func (r *PrometheusRangeQueryRequest) GetQuery() string {
-	if r != nil {
-		return r.Query
-	}
-	return ""
+	return r.Query
 }
 
 func (r *PrometheusRangeQueryRequest) GetOptions() Options {
-	if r != nil {
-		return r.Options
-	}
-	return Options{}
+	return r.Options
 }
 
 func (r *PrometheusRangeQueryRequest) GetID() int64 {
-	if r != nil {
-		return r.ID
-	}
-	return 0
+	return r.ID
 }
 
 func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
-	if r != nil {
-		return r.Hints
-	}
-	return nil
+	return r.Hints
 }
 
 type PrometheusInstantQueryRequest struct {
@@ -134,45 +107,27 @@ type PrometheusInstantQueryRequest struct {
 }
 
 func (r *PrometheusInstantQueryRequest) GetPath() string {
-	if r != nil {
-		return r.Path
-	}
-	return ""
+	return r.Path
 }
 
 func (r *PrometheusInstantQueryRequest) GetTime() int64 {
-	if r != nil {
-		return r.Time
-	}
-	return 0
+	return r.Time
 }
 
 func (r *PrometheusInstantQueryRequest) GetQuery() string {
-	if r != nil {
-		return r.Query
-	}
-	return ""
+	return r.Query
 }
 
 func (r *PrometheusInstantQueryRequest) GetOptions() Options {
-	if r != nil {
-		return r.Options
-	}
-	return Options{}
+	return r.Options
 }
 
 func (r *PrometheusInstantQueryRequest) GetID() int64 {
-	if r != nil {
-		return r.ID
-	}
-	return 0
+	return r.ID
 }
 
 func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
-	if r != nil {
-		return r.Hints
-	}
-	return nil
+	return r.Hints
 }
 
 type Hints struct {
@@ -390,38 +345,23 @@ type PrometheusLabelNamesQueryRequest struct {
 }
 
 func (r *PrometheusLabelNamesQueryRequest) GetPath() string {
-	if r != nil {
-		return r.Path
-	}
-	return ""
+	return r.Path
 }
 
 func (r *PrometheusLabelNamesQueryRequest) GetStart() int64 {
-	if r != nil {
-		return r.Start
-	}
-	return 0
+	return r.Start
 }
 
 func (r *PrometheusLabelNamesQueryRequest) GetEnd() int64 {
-	if r != nil {
-		return r.End
-	}
-	return 0
+	return r.End
 }
 
 func (r *PrometheusLabelNamesQueryRequest) GetLabelMatcherSets() []string {
-	if r != nil {
-		return r.LabelMatcherSets
-	}
-	return nil
+	return r.LabelMatcherSets
 }
 
 func (r *PrometheusLabelNamesQueryRequest) GetID() int64 {
-	if r != nil {
-		return r.ID
-	}
-	return 0
+	return r.ID
 }
 
 type PrometheusLabelValuesQueryRequest struct {
@@ -439,38 +379,24 @@ type PrometheusLabelValuesQueryRequest struct {
 }
 
 func (r *PrometheusLabelValuesQueryRequest) GetLabelName() string {
-	if r != nil {
-		return r.LabelName
-	}
-	return ""
+	return r.LabelName
+
 }
 
 func (r *PrometheusLabelValuesQueryRequest) GetStart() int64 {
-	if r != nil {
-		return r.Start
-	}
-	return 0
+	return r.Start
 }
 
 func (r *PrometheusLabelValuesQueryRequest) GetEnd() int64 {
-	if r != nil {
-		return r.End
-	}
-	return 0
+	return r.End
 }
 
 func (r *PrometheusLabelValuesQueryRequest) GetLabelMatcherSets() []string {
-	if r != nil {
-		return r.LabelMatcherSets
-	}
-	return nil
+	return r.LabelMatcherSets
 }
 
 func (r *PrometheusLabelValuesQueryRequest) GetID() int64 {
-	if r != nil {
-		return r.ID
-	}
-	return 0
+	return r.ID
 }
 
 func (d *PrometheusData) UnmarshalJSON(b []byte) error {
