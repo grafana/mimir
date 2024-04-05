@@ -138,17 +138,11 @@ type Hints struct {
 }
 
 func (h *Hints) GetCardinalityEstimate() *EstimatedSeriesCount {
-	if h != nil {
-		return h.CardinalityEstimate
-	}
-	return nil
+	return h.CardinalityEstimate
 }
 
 func (h *Hints) GetTotalQueries() int32 {
-	if h != nil {
-		return h.TotalQueries
-	}
-	return 0
+	return h.TotalQueries
 }
 
 func (h *Hints) GetEstimatedSeriesCount() uint64 {
