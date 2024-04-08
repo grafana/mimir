@@ -179,7 +179,7 @@ func (q *Query) IsInstant() bool {
 func (q *Query) Exec(ctx context.Context) *promql.Result {
 	defer q.root.Close()
 
-	series, err := q.root.Series(ctx)
+	series, err := q.root.SeriesMetadata(ctx)
 	if err != nil {
 		return &promql.Result{Err: err}
 	}

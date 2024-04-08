@@ -46,9 +46,9 @@ var groupPool = zeropool.New(func() *group {
 	return &group{}
 })
 
-func (a *Aggregation) Series(ctx context.Context) ([]SeriesMetadata, error) {
+func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
 	// Fetch the source series
-	innerSeries, err := a.Inner.Series(ctx)
+	innerSeries, err := a.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}

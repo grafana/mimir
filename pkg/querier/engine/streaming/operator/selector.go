@@ -42,9 +42,9 @@ var seriesBatchPool = sync.Pool{New: func() any {
 	}
 }}
 
-func (s *Selector) Series(ctx context.Context) ([]SeriesMetadata, error) {
+func (s *Selector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
 	if s.currentSeriesBatch != nil {
-		return nil, errors.New("should not call Selector.Series() multiple times")
+		return nil, errors.New("should not call Selector.SeriesMetadata() multiple times")
 	}
 
 	if s.LookbackDelta != 0 && s.Range != 0 {

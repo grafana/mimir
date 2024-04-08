@@ -53,9 +53,9 @@ flowchart TB
 ```
 
 Each of these operators satisfies the `InstantVectorOperator` interface, defined [here](./operator/operator.go).
-The two key methods of this interface are `Series()` and `Next()`:
+The two key methods of this interface are `SeriesMetadata()` and `Next()`:
 
-`Series()` returns the list of all series' labels that will be returned by the operator[^2].
+`SeriesMetadata()` returns the list of all series' labels that will be returned by the operator[^2].
 In our example, the instant vector selector operator would return all the matching `some_metric` series, and the `sum` aggregation operator would return one series for each unique value of `environment`.
 
 `Next()` is then called by the consuming operator to read each series' data, one series at a time.
@@ -68,9 +68,9 @@ Elaborating on the example from before, the overall query would proceed like thi
    1. engine converts AST produced by PromQL parser to query plan ([source](./query.go))
    1. engine returns created `Query` instance
 1. query HTTP API handler calls `Query.Exec()`
-   1. `Query.Exec()` calls `Series()` on `max` aggregation operator
-      1. `max` aggregation operator calls `Series()` on `sum` aggregation operator
-         1. `sum` aggregation operator calls `Series()` on instant vector selector operator
+   1. `Query.Exec()` calls `SeriesMetadata()` on `max` aggregation operator
+      1. `max` aggregation operator calls `SeriesMetadata()` on `sum` aggregation operator
+         1. `sum` aggregation operator calls `SeriesMetadata()` on instant vector selector operator
             - instant vector selector operator issues `Select()` call, which retrieves labels from ingesters and store-gateways
          1. `sum` aggregation operator computes output series (one per unique value of `environment`) based on input series from instant vector selector
       1. `max` aggregation operator computes output series based on input series from `sum` aggregation operator
@@ -89,9 +89,9 @@ Elaborating on the example from before, the overall query would proceed like thi
 1. query HTTP API handler calls `Query.Close()` to release remaining resources
 
 [^1]:
-    This isn't strictly correct, as chunks streaming will buffer chunks for some series in memory as they're received over the network, and it ignores the initial memory consumption caused by the non-streaming calls to `Series()`.
+    This isn't strictly correct, as chunks streaming will buffer chunks for some series in memory as they're received over the network, and it ignores the initial memory consumption caused by the non-streaming calls to `SeriesMetadata()`.
     But this applies equally to both engines when used in Mimir.
 
 [^2]:
     This isn't done in a streaming fashion: all series' labels are loaded into memory at once.
-    In a future iteration of the engine, `Series()` could be made streaming as well, but this is out of scope for now.
+    In a future iteration of the engine, `SeriesMetadata()` could be made streaming as well, but this is out of scope for now.

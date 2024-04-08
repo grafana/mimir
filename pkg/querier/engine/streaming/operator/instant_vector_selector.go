@@ -28,11 +28,11 @@ type InstantVectorSelector struct {
 
 var _ InstantVectorOperator = &InstantVectorSelector{}
 
-func (v *InstantVectorSelector) Series(ctx context.Context) ([]SeriesMetadata, error) {
+func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
 	// Compute value we need on every call to Next() once, here.
 	v.numSteps = stepCount(v.Selector.Start, v.Selector.End, v.Selector.Interval)
 
-	return v.Selector.Series(ctx)
+	return v.Selector.SeriesMetadata(ctx)
 }
 
 func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData, error) {
