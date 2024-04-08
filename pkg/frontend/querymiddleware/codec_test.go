@@ -170,7 +170,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		metricsQuery MetricsQueryRequest
 		expectedMinT int64
 		expectedMaxT int64
-		expectedErr  error
 	}{
 		// permutations with and without range vectors and offsets
 		{
@@ -185,7 +184,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: startTime.UnixMilli(),
 			expectedMaxT: endTime.UnixMilli(),
-			expectedErr:  nil,
 		},
 		{
 			name: "instant query: without range vector, without offset",
@@ -197,7 +195,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: endTime.UnixMilli(),
 			expectedMaxT: endTime.UnixMilli(),
-			expectedErr:  nil,
 		},
 		{
 			name: "range query: with range vector, without offset",
@@ -211,7 +208,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: startTime.UnixMilli() - rangeVectorDurationMS,
 			expectedMaxT: endTime.UnixMilli(),
-			expectedErr:  nil,
 		},
 		{
 			name: "instant query: with range vector, without offset",
@@ -223,7 +219,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS,
 			expectedMaxT: endTime.UnixMilli(),
-			expectedErr:  nil,
 		},
 		{
 			name: "range query: without range vector, with offset",
@@ -237,7 +232,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: startTime.UnixMilli() - offsetDurationMS,
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
-			expectedErr:  nil,
 		},
 		{
 			name: "instant query: without range vector, with offset",
@@ -249,7 +243,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: endTime.UnixMilli() - offsetDurationMS,
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
-			expectedErr:  nil,
 		},
 		{
 			name: "range query: with range vector, with offset",
@@ -263,7 +256,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: startTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
-			expectedErr:  nil,
 		},
 		{
 			name: "instant query: with range vector, with offset",
@@ -275,7 +267,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
-			expectedErr:  nil,
 		},
 		// permutations with and without range vectors and @ modifiers
 		{
@@ -290,7 +281,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: endTime.Add(-atModifierDuration).UnixMilli(),
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
-			expectedErr:  nil,
 		},
 		{
 			name: "instant query: with @ modifer",
@@ -302,7 +292,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: endTime.Add(-atModifierDuration).UnixMilli(),
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
-			expectedErr:  nil,
 		},
 		{
 			name: "range query: with range vector, with @ modifer",
@@ -316,7 +305,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: endTime.Add(-(atModifierDuration + rangeVectorDuration)).UnixMilli(),
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
-			expectedErr:  nil,
 		},
 		{
 			name: "instant query: with range vector, with @ modifer",
@@ -328,7 +316,6 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			),
 			expectedMinT: endTime.Add(-(atModifierDuration + rangeVectorDuration)).UnixMilli(),
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
-			expectedErr:  nil,
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -354,8 +341,6 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 	updatedEndTime, err := time.Parse(time.RFC3339, "2024-02-22T00:00:00Z")
 	require.NoError(t, err)
 
-	//atModifierDuration := 10 * time.Minute
-
 	stepDurationStr := "60s"
 	stepDuration, _ := time.ParseDuration(stepDurationStr)
 
@@ -377,7 +362,7 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 
 		expectedUpdatedMinT int64
 		expectedUpdatedMaxT int64
-		expectedErr         error
+		expectedErr         parser.ParseErrors
 	}{
 		{
 			name: "range query: transform with start and end changes minT and maxT",
@@ -447,6 +432,38 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 			expectedUpdatedMaxT: endTime.UnixMilli() - offsetDurationMS,
 			expectedErr:         nil,
 		},
+
+		// error cases
+		{
+			name: "range query: transform with malformed query returns error",
+			initialMetricsQuery: makeRangeRequest(t,
+				"/api/v1/query_range",
+				startTime,
+				endTime,
+				stepDuration,
+				time.Duration(0),
+				"go_goroutines{}",
+			),
+			updatedStartTime: nil,
+			updatedEndTime:   nil,
+			updatedQuery:     "go_goroutines{}[",
+
+			expectedErr: parser.ParseErrors{},
+		},
+		{
+			name: "instant query: transform with malformed query returns error",
+			initialMetricsQuery: makeInstantRequest(t,
+				"/api/v1/query_range",
+				endTime,
+				time.Duration(0),
+				"go_goroutines{}",
+			),
+			updatedStartTime: nil,
+			updatedEndTime:   nil,
+			updatedQuery:     "go_goroutines{} offset",
+
+			expectedErr: parser.ParseErrors{},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			start := testCase.initialMetricsQuery.GetStart()
@@ -462,13 +479,14 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 
 			if testCase.updatedQuery != "" {
 				updatedMetricsQuery, err = updatedMetricsQuery.WithQuery(testCase.updatedQuery)
-				if err != nil || testCase.expectedErr != nil {
-					require.EqualValues(t, testCase.expectedErr, err)
-				}
-			}
 
-			require.Equal(t, testCase.expectedUpdatedMinT, updatedMetricsQuery.GetMinT())
-			require.Equal(t, testCase.expectedUpdatedMaxT, updatedMetricsQuery.GetMaxT())
+			}
+			if err != nil || testCase.expectedErr != nil {
+				require.IsType(t, testCase.expectedErr, err)
+			} else {
+				require.Equal(t, testCase.expectedUpdatedMinT, updatedMetricsQuery.GetMinT())
+				require.Equal(t, testCase.expectedUpdatedMaxT, updatedMetricsQuery.GetMaxT())
+			}
 		})
 	}
 }
