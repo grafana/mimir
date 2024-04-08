@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
@@ -42,36 +43,149 @@ func newEmptyPrometheusResponse() *PrometheusResponse {
 	}
 }
 
+type PrometheusRangeQueryRequest struct {
+	Path    string
+	Start   int64
+	End     int64
+	Step    int64
+	Timeout time.Duration
+	Query   string
+	Options Options
+	// ID of the request used to correlate downstream requests and responses.
+	ID int64
+	// Hints that could be optionally attached to the request to pass down the stack.
+	// These hints can be used to optimize the query execution.
+	Hints *Hints
+}
+
+func (r *PrometheusRangeQueryRequest) GetPath() string {
+	return r.Path
+}
+
+func (r *PrometheusRangeQueryRequest) GetStart() int64 {
+	return r.Start
+}
+
+func (r *PrometheusRangeQueryRequest) GetEnd() int64 {
+	return r.End
+}
+
+func (r *PrometheusRangeQueryRequest) GetStep() int64 {
+	return r.Step
+}
+
+func (r *PrometheusRangeQueryRequest) GetTimeout() time.Duration {
+	return r.Timeout
+}
+
+func (r *PrometheusRangeQueryRequest) GetQuery() string {
+	return r.Query
+}
+
+func (r *PrometheusRangeQueryRequest) GetOptions() Options {
+	return r.Options
+}
+
+func (r *PrometheusRangeQueryRequest) GetID() int64 {
+	return r.ID
+}
+
+func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
+	return r.Hints
+}
+
+type PrometheusInstantQueryRequest struct {
+	Path    string
+	Time    int64
+	Query   string
+	Options Options
+	// ID of the request used to correlate downstream requests and responses.
+	ID int64
+	// Hints that could be optionally attached to the request to pass down the stack.
+	// These hints can be used to optimize the query execution.
+	Hints *Hints
+}
+
+func (r *PrometheusInstantQueryRequest) GetPath() string {
+	return r.Path
+}
+
+func (r *PrometheusInstantQueryRequest) GetTime() int64 {
+	return r.Time
+}
+
+func (r *PrometheusInstantQueryRequest) GetQuery() string {
+	return r.Query
+}
+
+func (r *PrometheusInstantQueryRequest) GetOptions() Options {
+	return r.Options
+}
+
+func (r *PrometheusInstantQueryRequest) GetID() int64 {
+	return r.ID
+}
+
+func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
+	return r.Hints
+}
+
+type Hints struct {
+	// Total number of queries that are expected to be executed to serve the original request.
+	TotalQueries int32
+	// Estimated total number of series that a request might return.
+	CardinalityEstimate *EstimatedSeriesCount
+}
+
+func (h *Hints) GetCardinalityEstimate() *EstimatedSeriesCount {
+	return h.CardinalityEstimate
+}
+
+func (h *Hints) GetTotalQueries() int32 {
+	return h.TotalQueries
+}
+
+func (h *Hints) GetEstimatedSeriesCount() uint64 {
+	if x := h.GetCardinalityEstimate(); x != nil {
+		return x.EstimatedSeriesCount
+	}
+	return 0
+}
+
+type EstimatedSeriesCount struct {
+	EstimatedSeriesCount uint64
+}
+
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
-func (q *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
-	newRequest := *q
-	newRequest.Id = id
+func (r *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.ID = id
 	return &newRequest
 }
 
 // WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
-func (q *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) MetricsQueryRequest {
-	newRequest := *q
+func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) MetricsQueryRequest {
+	newRequest := *r
 	newRequest.Start = start
 	newRequest.End = end
 	return &newRequest
 }
 
 // WithQuery clones the current `PrometheusRangeQueryRequest` with a new query.
-func (q *PrometheusRangeQueryRequest) WithQuery(query string) MetricsQueryRequest {
-	newRequest := *q
+func (r *PrometheusRangeQueryRequest) WithQuery(query string) MetricsQueryRequest {
+	newRequest := *r
 	newRequest.Query = query
 	return &newRequest
 }
 
 // WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
 // added Hint value for TotalQueries.
-func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
-	newRequest := *q
+func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
+	newRequest := *r
 	if newRequest.Hints == nil {
 		newRequest.Hints = &Hints{TotalQueries: totalQueries}
 	} else {
-		*newRequest.Hints = *(q.Hints)
+		*newRequest.Hints = *(r.Hints)
 		newRequest.Hints.TotalQueries = totalQueries
 	}
 	return &newRequest
@@ -79,26 +193,26 @@ func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) M
 
 // WithEstimatedSeriesCountHint clones the current `PrometheusRangeQueryRequest`
 // with an added Hint value for EstimatedCardinality.
-func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
-	newRequest := *q
+func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
+	newRequest := *r
 	if newRequest.Hints == nil {
 		newRequest.Hints = &Hints{
-			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
+			CardinalityEstimate: &EstimatedSeriesCount{count},
 		}
 	} else {
-		*newRequest.Hints = *(q.Hints)
-		newRequest.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
+		*newRequest.Hints = *(r.Hints)
+		newRequest.Hints.CardinalityEstimate = &EstimatedSeriesCount{count}
 	}
 	return &newRequest
 }
 
 // AddSpanTags writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
 // ("attributes" in OpenTelemetry parlance).
-func (q *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("query", q.GetQuery())
-	sp.SetTag("start", timestamp.Time(q.GetStart()).String())
-	sp.SetTag("end", timestamp.Time(q.GetEnd()).String())
-	sp.SetTag("step_ms", q.GetStep())
+func (r *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
+	sp.SetTag("query", r.GetQuery())
+	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
+	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+	sp.SetTag("step_ms", r.GetStep())
 }
 
 func (r *PrometheusInstantQueryRequest) GetStart() int64 {
@@ -115,7 +229,7 @@ func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 
 func (r *PrometheusInstantQueryRequest) WithID(id int64) MetricsQueryRequest {
 	newRequest := *r
-	newRequest.Id = id
+	newRequest.ID = id
 	return &newRequest
 }
 
@@ -146,11 +260,11 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 	newRequest := *r
 	if newRequest.Hints == nil {
 		newRequest.Hints = &Hints{
-			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
+			CardinalityEstimate: &EstimatedSeriesCount{count},
 		}
 	} else {
 		*newRequest.Hints = *(r.Hints)
-		newRequest.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
+		newRequest.Hints.CardinalityEstimate = &EstimatedSeriesCount{count}
 	}
 	return &newRequest
 }
@@ -209,6 +323,74 @@ func (r *PrometheusLabelValuesQueryRequest) AddSpanTags(sp opentracing.Span) {
 	sp.SetTag("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets()))
 	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
 	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+}
+
+type PrometheusLabelNamesQueryRequest struct {
+	Path  string
+	Start int64
+	End   int64
+	// labelMatcherSets is a repeated field here in order to enable the representation
+	// of labels queries which have not yet been split; the prometheus querier code
+	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
+	// into separate queries, one for each matcher set
+	LabelMatcherSets []string
+	// ID of the request used to correlate downstream requests and responses.
+	ID int64
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetPath() string {
+	return r.Path
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetStart() int64 {
+	return r.Start
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetEnd() int64 {
+	return r.End
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetLabelMatcherSets() []string {
+	return r.LabelMatcherSets
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetID() int64 {
+	return r.ID
+}
+
+type PrometheusLabelValuesQueryRequest struct {
+	Path      string
+	LabelName string
+	Start     int64
+	End       int64
+	// labelMatcherSets is a repeated field here in order to enable the representation
+	// of labels queries which have not yet been split; the prometheus querier code
+	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
+	// into separate queries, one for each matcher set
+	LabelMatcherSets []string
+	// ID of the request used to correlate downstream requests and responses.
+	ID int64
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetLabelName() string {
+	return r.LabelName
+
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetStart() int64 {
+	return r.Start
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetEnd() int64 {
+	return r.End
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetLabelMatcherSets() []string {
+	return r.LabelMatcherSets
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetID() int64 {
+	return r.ID
 }
 
 func (d *PrometheusData) UnmarshalJSON(b []byte) error {

@@ -555,19 +555,19 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 	// Map responses by (unique) request IDs.
 	for _, resp := range responses {
 		// Ensure doesn't exist (otherwise it's a bug).
-		if _, ok := execRespsByID[resp.Request.GetId()]; ok {
+		if _, ok := execRespsByID[resp.Request.GetID()]; ok {
 			// Should never happen unless a bug.
 			return errors.New("consistency check failed: conflicting downstream request ID")
 		}
 
-		execRespsByID[resp.Request.GetId()] = resp.Response
+		execRespsByID[resp.Request.GetID()] = resp.Response
 	}
 
 	mappedDownstreamRequests := 0
 
 	for _, splitReq := range *s {
 		for downstreamIdx, downstreamReq := range splitReq.downstreamRequests {
-			downstreamRes, ok := execRespsByID[downstreamReq.GetId()]
+			downstreamRes, ok := execRespsByID[downstreamReq.GetID()]
 			if !ok {
 				// Should never happen unless a bug.
 				return errors.New("consistency check failed: missing downstream response")
