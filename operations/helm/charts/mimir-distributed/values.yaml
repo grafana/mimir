@@ -790,6 +790,20 @@ distributor:
             type: Percent
             value: 10
 
+  # -- Alternative to KEDA autoscaling which doesn't need any additional setup.
+  horizontalPodAutoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 100
+    targetMemoryUtilizationPercentage: 100
+    behavior:
+      scaleDown:
+        policies:
+          - periodSeconds: 600
+            type: Percent
+            value: 10
+
   service:
     annotations: {}
     labels: {}

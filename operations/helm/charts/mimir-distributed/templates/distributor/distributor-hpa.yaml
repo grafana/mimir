@@ -1,0 +1,52 @@
+{{- $autoscalingv2 := .Capabilities.APIVersions.Has "autoscaling/v2" -}}
+{{- if and (.Values.distributor.horizontalPodAutoscaling.enabled) (not .Values.distributor.kedaAutoscaling.enabled) }}
+{{- if $autoscalingv2 }}
+apiVersion: autoscaling/v2
+{{- else }}
+apiVersion: autoscaling/v2beta1
+{{- end }}
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "distributor") }}
+  namespace : {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "distributor") | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.distributor.annotations | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "mimir.resourceName" (dict "ctx" . "component" "distributor") }}
+  minReplicas: {{ .Values.distributor.horizontalPodAutoscaling.minReplicas }}
+  maxReplicas: {{ .Values.distributor.horizontalPodAutoscaling.maxReplicas }}
+  {{- with .Values.distributor.horizontalPodAutoscaling.behavior }}
+  behavior:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  metrics:
+  {{- with .Values.distributor.horizontalPodAutoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        {{- if $autoscalingv2 }}
+        target:
+          type: Utilization
+          averageUtilization: {{ . }}
+        {{- else }}
+        targetAverageUtilization: {{ . }}
+        {{- end }}
+  {{- end }}
+  {{- with .Values.distributor.horizontalPodAutoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        {{- if $autoscalingv2 }}
+        target:
+          type: Utilization
+          averageUtilization: {{ . }}
+        {{- else }}
+        targetAverageUtilization: {{ . }}
+        {{- end }}
+  {{- end }}
+{{- end }}
