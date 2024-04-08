@@ -12,8 +12,8 @@ require (
 	github.com/failsafe-go/failsafe-go v0.6.1
 	github.com/felixge/fgprof v0.9.4
 	github.com/go-kit/log v0.2.1
-	github.com/go-openapi/strfmt v0.22.2
-	github.com/go-openapi/swag v0.22.9
+	github.com/go-openapi/strfmt v0.23.0
+	github.com/go-openapi/swag v0.23.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.1
 	github.com/golang/protobuf v1.5.4 // indirect
@@ -158,7 +158,7 @@ require (
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.22.2 // indirect
-	github.com/go-openapi/errors v0.21.1 // indirect
+	github.com/go-openapi/errors v0.22.0 // indirect
 	github.com/go-openapi/jsonpointer v0.20.2 // indirect
 	github.com/go-openapi/jsonreference v0.20.4 // indirect
 	github.com/go-openapi/loads v0.21.5 // indirect
