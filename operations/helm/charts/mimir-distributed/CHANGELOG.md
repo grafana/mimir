@@ -29,6 +29,19 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7361 #7364
+  * Alertmanager: changed from `60` to `900`
+  * Distributor: changed from `60` to `100`
+  * Ingester: changed from `240` to `1200`
+  * Overrides-exporter: changed from `60` to `30`
+  * Ruler: changed from `180` to `600`
+  * Store-gateway: changed from `240` to `120`
+  * Compactor: changed from `240` to `900`
+  * Chunks-cache: changed from `60` to `30`
+  * Index-cache: changed from `60` to `30`
+  * Metadata-cache: changed from `60` to `30`
+  * Results-cache: changed from `60` to `30`
+
 ## 5.3.0-rc.0
 
 * [CHANGE] Do not render resource blocks for `initContainers`, `nodeSelector`, `affinity` and `tolerations` if they are empty.
