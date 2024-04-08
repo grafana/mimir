@@ -288,7 +288,7 @@ func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryR
 	query := reqValues.Get("query")
 	queryExpr, err := parser.ParseExpr(query)
 	if err != nil {
-		return nil, err
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 	result.Query = query
 	result.QueryExpr = queryExpr
@@ -316,7 +316,7 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQuer
 	query := reqValues.Get("query")
 	queryExpr, err := parser.ParseExpr(query)
 	if err != nil {
-		return nil, err
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 	result.Query = query
 	result.QueryExpr = queryExpr
