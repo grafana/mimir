@@ -425,7 +425,7 @@ This API endpoint is usually used by scale down automations.
 GET,PUT,DELETE /ingester/ingester/unregister-on-shutdown
 ```
 
-This endpoint is used to control whether an ingester should unregister from the ring on its next termination (i.e., the next time it receives a `SIGINT` or `SIGTERM` signal).
+This endpoint controls whether an ingester should unregister from the ring on its next termination, that is, the next time it receives a `SIGINT` or `SIGTERM` signal.
 Via this endpoint, Mimir operators can dynamically control an ingester's `-ingester.ring.unregister-on-shutdown` state without having to restart the ingester.
 
 A `PUT` sets the ingester's unregister state. When invoked with the `PUT` method, the endpoint takes a request body:
