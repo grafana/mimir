@@ -37,7 +37,7 @@ func (v *InstantVectorSelector) Series(ctx context.Context) ([]SeriesMetadata, e
 
 func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData, error) {
 	if v.memoizedIterator == nil {
-		v.memoizedIterator = storage.NewMemoizedEmptyIterator(DurationMilliseconds(v.Selector.LookbackDelta))
+		v.memoizedIterator = storage.NewMemoizedEmptyIterator(v.Selector.LookbackDelta.Milliseconds())
 	}
 
 	var err error
@@ -82,7 +82,7 @@ func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData
 			if h != nil {
 				return InstantVectorSeriesData{}, errors.New("streaming PromQL engine doesn't support histograms yet")
 			}
-			if !ok || t < ts-DurationMilliseconds(v.Selector.LookbackDelta) {
+			if !ok || t < ts-v.Selector.LookbackDelta.Milliseconds() {
 				continue
 			}
 		}

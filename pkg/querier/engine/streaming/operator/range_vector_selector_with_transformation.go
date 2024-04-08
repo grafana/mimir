@@ -30,7 +30,7 @@ var _ InstantVectorOperator = &RangeVectorSelectorWithTransformation{}
 
 func (m *RangeVectorSelectorWithTransformation) Series(ctx context.Context) ([]SeriesMetadata, error) {
 	// Compute values we need on every call to Next() once, here.
-	m.rangeMilliseconds = DurationMilliseconds(m.Selector.Range)
+	m.rangeMilliseconds = m.Selector.Range.Milliseconds()
 	m.numSteps = stepCount(m.Selector.Start, m.Selector.End, m.Selector.Interval)
 
 	metadata, err := m.Selector.Series(ctx)

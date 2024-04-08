@@ -2,12 +2,6 @@
 
 package operator
 
-import "time"
-
 func stepCount(start, end, interval int64) int {
 	return int((end-start)/interval) + 1
-}
-
-func DurationMilliseconds(d time.Duration) int64 {
-	return int64(d / (time.Millisecond / time.Nanosecond))
 }

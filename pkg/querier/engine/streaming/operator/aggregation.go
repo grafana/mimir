@@ -115,7 +115,7 @@ func (a *Aggregation) Next(ctx context.Context) (InstantVectorSeriesData, error)
 
 	start := timestamp.FromTime(a.Start)
 	end := timestamp.FromTime(a.End)
-	interval := DurationMilliseconds(a.Interval)
+	interval := a.Interval.Milliseconds()
 	steps := stepCount(start, end, interval)
 
 	// Determine next group to return

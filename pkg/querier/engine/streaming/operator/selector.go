@@ -59,8 +59,8 @@ func (s *Selector) Series(ctx context.Context) ([]SeriesMetadata, error) {
 		endTimestamp = *s.Timestamp
 	}
 
-	rangeMilliseconds := DurationMilliseconds(s.Range)
-	start := startTimestamp - DurationMilliseconds(s.LookbackDelta) - rangeMilliseconds
+	rangeMilliseconds := s.Range.Milliseconds()
+	start := startTimestamp - s.LookbackDelta.Milliseconds() - rangeMilliseconds
 
 	hints := &storage.SelectHints{
 		Start: start,
