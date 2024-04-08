@@ -127,7 +127,7 @@ common:
     backend: azure
     azure:
       account_key: "${AZURE_ACCOUNT_KEY}" # This is a secret injected via an environment variable
-      account_name: mimir-prod
+      account_name: mimirprod
       endpoint_suffix: "blob.core.windows.net"
 
 blocks_storage:

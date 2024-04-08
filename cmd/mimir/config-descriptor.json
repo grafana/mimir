@@ -3037,10 +3037,10 @@
           "required": false,
           "desc": "Each error will be logged once in this many times. Use 0 to log all of them.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 10,
           "fieldFlag": "ingester.error-sample-rate",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",

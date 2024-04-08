@@ -73,13 +73,13 @@ metadata:
 spec:
   containers:
   - name: busybox
-    image: busybox
+    image: "docker.io/library/busybox:latest"
     command: ['wget']
     args:  ['grafana-agent-test-operated:8080/-/healthy']
   # Wait for GrafanaAgent CR
   initContainers:
   - name: sleep
-    image: busybox
+    image: "docker.io/library/busybox:latest"
     command: ['sleep', '60']
   restartPolicy: Never
 ---
