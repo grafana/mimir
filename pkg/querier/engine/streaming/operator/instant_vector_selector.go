@@ -73,14 +73,14 @@ func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData
 			t, val = v.memoizedIterator.At()
 		default:
 			// TODO: handle native histograms
-			return InstantVectorSeriesData{}, fmt.Errorf("unknown value type %s", valueType.String())
+			return InstantVectorSeriesData{}, fmt.Errorf("streaming PromQL engine: unknown value type %s", valueType.String())
 		}
 
 		if valueType == chunkenc.ValNone || t > ts {
 			var ok bool
 			t, val, h, ok = v.memoizedIterator.PeekPrev()
 			if h != nil {
-				return InstantVectorSeriesData{}, errors.New("don't support histograms")
+				return InstantVectorSeriesData{}, errors.New("streaming PromQL engine doesn't support histograms yet")
 			}
 			if !ok || t < ts-DurationMilliseconds(v.Selector.LookbackDelta) {
 				continue

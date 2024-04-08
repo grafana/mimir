@@ -847,7 +847,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 		queryable, _, eng, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 		if err != nil {
-			return nil, fmt.Errorf("could not create querier for ruler: %w", err)
+			return nil, fmt.Errorf("could not create queryable for ruler: %w", err)
 		}
 
 		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)

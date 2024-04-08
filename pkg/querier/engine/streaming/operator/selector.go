@@ -32,9 +32,12 @@ type Selector struct {
 	seriesIndexInCurrentBatch int
 }
 
+// There's not too much science behind this number: this is based on the batch size used for chunks streaming.
+const seriesBatchSize = 256
+
 var seriesBatchPool = sync.Pool{New: func() any {
 	return &seriesBatch{
-		series: make([]storage.Series, 0, 256), // There's not too much science behind this number: this is based on the batch size used for chunks streaming.
+		series: make([]storage.Series, 0, seriesBatchSize),
 		next:   nil,
 	}
 }}

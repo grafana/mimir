@@ -30,7 +30,9 @@ type Aggregation struct {
 }
 
 type group struct {
-	labels               labels.Labels
+	labels labels.Labels
+
+	// The number of input series that belong to this group that we haven't yet seen.
 	remainingSeriesCount uint
 
 	// Sum and presence for each step.
