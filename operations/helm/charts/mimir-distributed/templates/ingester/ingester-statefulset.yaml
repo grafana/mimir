@@ -176,7 +176,7 @@ spec:
           lifecycle:
             preStop:
               httpGet:
-                path: "/ingester/flush_shutdown"
+                path: "/ingester/flush"
                 port: http-metrics
           {{- end }}
           resources:
