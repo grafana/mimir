@@ -152,6 +152,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # CI workflow uses PUSH_MULTIARCH_TARGET="type=oci,dest=file.oci" to store images locally for next steps in the pipeline.
 PUSH_MULTIARCH_TARGET ?= type=registry
 PUSH_MULTIARCH_TARGET_DISTROLESS ?= type=registry
+PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST ?= type=registry
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
 # We don't do separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
@@ -168,7 +169,7 @@ push-multiarch-%/$(UPTODATE):
 	# Build Dockerfile.continuous-test
 	if [ -f $(DIR)/Dockerfile.continuous-test ]; then \
 		$(SUDO) docker buildx build -f $(DIR)/Dockerfile.continuous-test \
-			-o $(PUSH_MULTIARCH_TARGET) \
+			-o $(PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST) \
 			--platform linux/amd64,linux/arm64 \
 			--build-arg=revision=$(GIT_REVISION) \
 			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
