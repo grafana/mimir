@@ -873,6 +873,20 @@ ingester:
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
   replicas: 3
 
+  horizontalPodAutoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 95
+    targetMemoryUtilizationPercentage: 95
+    behavior:
+      scaleDown:
+        policies:
+          - type: Pods
+            value: 1
+            periodSeconds: 1800
+      stabilizationWindowSeconds: 3600
+
   statefulSet:
     enabled: true
 

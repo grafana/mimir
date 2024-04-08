@@ -172,6 +172,13 @@ spec:
             {{- toYaml .Values.ingester.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.ingester.readinessProbe | nindent 12 }}
+          {{- if .Values.ingester.horizontalPodAutoscaling.enabled }}
+          lifecycle:
+            preStop:
+              httpGet:
+                path: "/ingester/flush_shutdown"
+                port: http-metrics
+          {{- end }}
           resources:
             {{- toYaml .Values.ingester.resources | nindent 12 }}
           securityContext:
