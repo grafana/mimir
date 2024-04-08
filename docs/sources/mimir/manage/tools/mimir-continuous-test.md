@@ -56,7 +56,7 @@ Mimir-continuous-test requires the endpoints of the backend Grafana Mimir cluste
 - Set `-tests.smoke-test` to run the test once and immediately exit. In this mode, the process exit code is non-zero when the test fails.
 
 {{< admonition type="note" >}}
-You can run `mimir -help` to list all available configuration options. All configuration options for mimir-continuous-test will begin with `tests`.
+You can run `mimir -help` to list all available configuration options. All configuration options for mimir-continuous-test begin with `tests`.
 {{< /admonition >}}
 
 ## How it works
