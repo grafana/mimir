@@ -80,7 +80,7 @@ How to **fix** it:
       sum by (user, pod) ( # get in-memory series for each tenant on each pod
           cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}
       )
-      and on(user) # intersection with tenants that are exceeding 50% of their series limit (added acorss ingesters & accounting for replication)
+      and on(user) # intersection with tenants that are exceeding 50% of their series limit (added across ingesters & accounting for replication)
       (
           sum by (user) ( # total in-memory series for the tenant across ingesters
               cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}
@@ -294,7 +294,7 @@ How to **investigate**:
 - If the `route` label is `alertmanager`, check the logs for distributor errors containing `component=AlertmanagerDistributor`
   - Check if instances are starved for resources using the `Mimir / Alertmanager resources` dashboard
   - If the distributor errors are `context deadline exceeded` and the instances are not starved for resources, increase the distributor
-    timeout with `-alertmanager.alertmanager-client.remote-timeout=<timeout>`. The defaut is 2s if not specified.
+    timeout with `-alertmanager.alertmanager-client.remote-timeout=<timeout>`. The default is 2s if not specified.
 
 ### MimirIngesterUnhealthy
 
@@ -302,7 +302,7 @@ This alert goes off when one or more ingesters are marked as unhealthy. Check th
 
 ### MimirMemoryMapAreasTooHigh
 
-This alert fires when a Mimir process has a number of memory map areas close to the limit. The limit is a per-process limit imposed by the kernel and this issue is typically caused by a large number of mmap-ed failes.
+This alert fires when a Mimir process has a number of memory map areas close to the limit. The limit is a per-process limit imposed by the kernel and this issue is typically caused by a large number of mmap-ed failures.
 
 How to **fix** it:
 
