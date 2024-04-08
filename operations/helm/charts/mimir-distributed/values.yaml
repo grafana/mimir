@@ -875,7 +875,7 @@ ingester:
 
   horizontalPodAutoscaling:
     enabled: false
-    minReplicas: 1
+    minReplicas: 3
     maxReplicas: 10
     targetCPUUtilizationPercentage: 95
     targetMemoryUtilizationPercentage: 95
