@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kprom"
@@ -42,7 +44,6 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 	opts := []kgo.Opt{
 		kgo.ClientID(cfg.ClientID),
 		kgo.SeedBrokers(cfg.Address),
-		kgo.AllowAutoTopicCreation(),
 		kgo.DialTimeout(cfg.DialTimeout),
 
 		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and
@@ -77,6 +78,10 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 			// 30s is the default timeout in the Kafka client.
 			return 30 * time.Second
 		}),
+	}
+
+	if cfg.AutoCreateTopicEnabled {
+		opts = append(opts, kgo.AllowAutoTopicCreation())
 	}
 
 	if metrics != nil {
@@ -127,4 +132,35 @@ func shouldLog(ctx context.Context, err error) (bool, string) {
 	}
 
 	return optional.ShouldLog(ctx)
+}
+
+func setDefaultNumberOfPartitionsForAutocreatedTopics(cfg KafkaConfig, logger log.Logger) {
+	if cfg.DefaultPartitionsForAutocreatedTopics <= 0 {
+		return
+	}
+
+	cl, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, logger)...)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to create kafka client", "err", err)
+		return
+	}
+
+	adm := kadm.NewClient(cl)
+	defer adm.Close()
+
+	defaultNumberOfPartitions := fmt.Sprintf("%d", cfg.DefaultPartitionsForAutocreatedTopics)
+	_, err = adm.AlterBrokerConfigsState(context.Background(), []kadm.AlterConfig{
+		{
+			Op:    kadm.SetConfig,
+			Name:  "num.partitions",
+			Value: &defaultNumberOfPartitions,
+		},
+	})
+
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to alter default number of partitions", "err", err)
+		return
+	}
+
+	level.Info(logger).Log("msg", "configured Kafka-wide default number of partitions for auto-created topics (num.partitions)", "value", cfg.DefaultPartitionsForAutocreatedTopics)
 }

@@ -71,9 +71,16 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		}),
 	}
 
-	w.Service = services.NewIdleService(nil, w.stopping)
+	w.Service = services.NewIdleService(w.starting, w.stopping)
 
 	return w
+}
+
+func (w *Writer) starting(_ context.Context) error {
+	if w.kafkaCfg.DefaultPartitionsForAutocreatedTopics > 0 {
+		setDefaultNumberOfPartitionsForAutocreatedTopics(w.kafkaCfg, w.logger)
+	}
+	return nil
 }
 
 func (w *Writer) stopping(_ error) error {

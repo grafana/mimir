@@ -63,6 +63,9 @@ type KafkaConfig struct {
 
 	ConsumeFromPositionAtStartup string        `yaml:"consume_from_position_at_startup"`
 	MaxConsumerLagAtStartup      time.Duration `yaml:"max_consumer_lag_at_startup"`
+
+	AutoCreateTopicEnabled                bool `yaml:"auto_create_topic_enabled"`
+	DefaultPartitionsForAutocreatedTopics int  `yaml:"default_partitions_for_autocreated_topics"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -81,6 +84,8 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.StringVar(&cfg.ConsumeFromPositionAtStartup, prefix+".consume-from-position-at-startup", consumeFromLastOffset, fmt.Sprintf("From which position to start consuming the partition at startup. Supported options: %s.", strings.Join(consumeFromPositionOptions, ", ")))
 	f.DurationVar(&cfg.MaxConsumerLagAtStartup, prefix+".max-consumer-lag-at-startup", 15*time.Second, "The maximum tolerated lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set 0 to disable waiting for maximum consumer lag being honored at startup.")
+	f.BoolVar(&cfg.AutoCreateTopicEnabled, prefix+".auto-create-topic-enabled", true, "Enable auto-creation of Kafka topic if it doesn't exist.")
+	f.IntVar(&cfg.DefaultPartitionsForAutocreatedTopics, prefix+".default-partitions-for-autocreated-topics", 0, "When positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that Kafka broker will use for auto-created topics. Note that this is Kafka-cluster wide setting, and applies to any auto-created topic.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
