@@ -1601,153 +1601,160 @@ func TestNextIntervalBoundary(t *testing.T) {
 }
 
 func TestSplitQueryByInterval(t *testing.T) {
+	queryFoo := "foo"
+	queryFooExpr, _ := parser.ParseExpr(queryFoo)
+	queryFooAtStart := "foo @ start()"
+	queryFooAtStartExpr, _ := parser.ParseExpr(queryFooAtStart)
+	queryFooAtZero := "foo @ 0.000"
+	queryFooAtZeroExpr, _ := parser.ParseExpr(queryFooAtZero)
+
 	for i, tc := range []struct {
 		input    MetricsQueryRequest
 		expected []MetricsQueryRequest
 		interval time.Duration
 	}{
 		{
-			input: &PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 0, End: 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: 0, End: 24 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 0, End: 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: 0, End: 24 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 0, End: 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: 0, End: 3 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 0, End: 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: 0, End: 3 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 0, End: 2 * 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo @ start()"},
+			input: &PrometheusRangeQueryRequest{Start: 0, End: 2 * 24 * 3600 * seconds, Step: 15 * seconds, Query: queryFooAtStart, QueryExpr: queryFooAtStartExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 0, End: (24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo @ 0.000"},
-				&PrometheusRangeQueryRequest{Start: 24 * 3600 * seconds, End: 2 * 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo @ 0.000"},
+				&PrometheusRangeQueryRequest{Start: 0, End: (24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: queryFooAtZero, QueryExpr: queryFooAtZeroExpr},
+				&PrometheusRangeQueryRequest{Start: 24 * 3600 * seconds, End: 2 * 24 * 3600 * seconds, Step: 15 * seconds, Query: queryFooAtZero, QueryExpr: queryFooAtZeroExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 0, End: 2 * 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: 0, End: 2 * 3 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 0, End: (3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: 2 * 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: 0, End: (3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: 2 * 3 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: 3 * 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: 3 * 24 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: (24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: 24 * 3600 * seconds, End: (2 * 24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: 2 * 24 * 3600 * seconds, End: 3 * 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: (24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: 24 * 3600 * seconds, End: (2 * 24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: 2 * 24 * 3600 * seconds, End: 3 * 24 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 2 * 3600 * seconds, End: 3 * 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: 2 * 3600 * seconds, End: 3 * 3 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 2 * 3600 * seconds, End: (3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: (2 * 3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: 2 * 3 * 3600 * seconds, End: 3 * 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: 2 * 3600 * seconds, End: (3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: (2 * 3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: 2 * 3 * 3600 * seconds, End: 3 * 3 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:03:00Z"), Step: 5 * time.Minute.Milliseconds(), Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:03:00Z"), Step: 5 * time.Minute.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:03:00Z"), Step: 5 * time.Minute.Milliseconds(), Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:03:00Z"), Step: 5 * time.Minute.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-14T23:54:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-14T23:54:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T22:00:00Z"), End: timeToMillis(t, "2021-10-17T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T22:00:00Z"), End: timeToMillis(t, "2021-10-17T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T22:00:00Z"), End: timeToMillis(t, "2021-10-14T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-15T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T22:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T22:00:00Z"), End: timeToMillis(t, "2021-10-17T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T22:00:00Z"), End: timeToMillis(t, "2021-10-14T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-15T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T22:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T22:00:00Z"), End: timeToMillis(t, "2021-10-17T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-18T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-18T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T00:00:00Z"), End: timeToMillis(t, "2021-10-16T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T00:00:00Z"), End: timeToMillis(t, "2021-10-17T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-18T00:00:00Z"), End: timeToMillis(t, "2021-10-18T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T00:00:00Z"), End: timeToMillis(t, "2021-10-16T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T00:00:00Z"), End: timeToMillis(t, "2021-10-17T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-18T00:00:00Z"), End: timeToMillis(t, "2021-10-18T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-22T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-22T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-15T22:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T04:00:00Z"), End: timeToMillis(t, "2021-10-17T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-18T10:00:00Z"), End: timeToMillis(t, "2021-10-18T10:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-19T16:00:00Z"), End: timeToMillis(t, "2021-10-19T16:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-20T22:00:00Z"), End: timeToMillis(t, "2021-10-20T22:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-22T04:00:00Z"), End: timeToMillis(t, "2021-10-22T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-15T22:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T04:00:00Z"), End: timeToMillis(t, "2021-10-17T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-18T10:00:00Z"), End: timeToMillis(t, "2021-10-18T10:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-19T16:00:00Z"), End: timeToMillis(t, "2021-10-19T16:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-20T22:00:00Z"), End: timeToMillis(t, "2021-10-20T22:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-22T04:00:00Z"), End: timeToMillis(t, "2021-10-22T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T14:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T14:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T06:00:00Z"), End: timeToMillis(t, "2021-10-16T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T06:00:00Z"), End: timeToMillis(t, "2021-10-17T14:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T06:00:00Z"), End: timeToMillis(t, "2021-10-16T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T06:00:00Z"), End: timeToMillis(t, "2021-10-17T14:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T06:00:00Z"), End: timeToMillis(t, "2021-10-16T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T06:00:00Z"), End: timeToMillis(t, "2021-10-16T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T16:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T02:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T08:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T16:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T02:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T08:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T08:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
+			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T08:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T16:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T02:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T08:00:00Z"), End: timeToMillis(t, "2021-10-17T08:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T16:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T02:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T08:00:00Z"), End: timeToMillis(t, "2021-10-17T08:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
 			},
 			interval: day,
 		},

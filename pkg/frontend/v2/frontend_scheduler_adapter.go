@@ -72,14 +72,8 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 		if err != nil {
 			return nil, err
 		}
-		minT, err := decodedRequest.GetMinT()
-		if err != nil {
-			return nil, err
-		}
-		maxT, err := decodedRequest.GetMaxT()
-		if err != nil {
-			return nil, err
-		}
+		minT := decodedRequest.GetMinT()
+		maxT := decodedRequest.GetMaxT()
 
 		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, minT, maxT, now), nil
 	case querymiddleware.IsLabelsQuery(httpRequest.URL.Path):

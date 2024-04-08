@@ -332,17 +332,143 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			minT, err := testCase.metricsQuery.GetMinT()
-			if err != nil || testCase.expectedErr != nil {
-				require.EqualValues(t, testCase.expectedErr, err)
-			}
-			maxT, err := testCase.metricsQuery.GetMaxT()
-			if err != nil || testCase.expectedErr != nil {
-				require.EqualValues(t, testCase.expectedErr, err)
-			}
+			minT := testCase.metricsQuery.GetMinT()
+
+			maxT := testCase.metricsQuery.GetMaxT()
 
 			require.EqualValues(t, testCase.expectedMinT, minT)
 			require.EqualValues(t, testCase.expectedMaxT, maxT)
+		})
+	}
+}
+
+func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
+
+	startTime, err := time.Parse(time.RFC3339, "2024-02-21T00:00:00-08:00")
+	require.NoError(t, err)
+	endTime, err := time.Parse(time.RFC3339, "2024-02-22T00:00:00-08:00")
+	require.NoError(t, err)
+
+	updatedStartTime, err := time.Parse(time.RFC3339, "2024-02-21T00:00:00Z")
+	require.NoError(t, err)
+	updatedEndTime, err := time.Parse(time.RFC3339, "2024-02-22T00:00:00Z")
+	require.NoError(t, err)
+
+	//atModifierDuration := 10 * time.Minute
+
+	stepDurationStr := "60s"
+	stepDuration, _ := time.ParseDuration(stepDurationStr)
+
+	rangeVectorDurationStr := "5m"
+	rangeVectorDuration, _ := time.ParseDuration(rangeVectorDurationStr)
+	rangeVectorDurationMS := rangeVectorDuration.Milliseconds()
+
+	offsetDurationStr := "1h"
+	offsetDuration, _ := time.ParseDuration(offsetDurationStr)
+	offsetDurationMS := offsetDuration.Milliseconds()
+
+	for _, testCase := range []struct {
+		name                string
+		initialMetricsQuery MetricsQueryRequest
+
+		updatedStartTime *time.Time
+		updatedEndTime   *time.Time
+		updatedQuery     string
+
+		expectedUpdatedMinT int64
+		expectedUpdatedMaxT int64
+		expectedErr         error
+	}{
+		{
+			name: "range query: transform with start and end changes minT and maxT",
+			initialMetricsQuery: makeRangeRequest(t,
+				"/api/v1/query_range",
+				startTime,
+				endTime,
+				stepDuration,
+				time.Duration(0),
+				"go_goroutines{}",
+			),
+			updatedStartTime: &updatedStartTime,
+			updatedEndTime:   &updatedEndTime,
+			updatedQuery:     "",
+
+			expectedUpdatedMinT: updatedStartTime.UnixMilli(),
+			expectedUpdatedMaxT: updatedEndTime.UnixMilli(),
+			expectedErr:         nil,
+		},
+		{
+			name: "instant query: transform with start and end changes minT and maxT",
+			initialMetricsQuery: makeInstantRequest(t,
+				"/api/v1/query",
+				endTime,
+				time.Duration(0),
+				"go_goroutines{}",
+			),
+			updatedStartTime: &updatedEndTime,
+			updatedEndTime:   &updatedEndTime,
+			updatedQuery:     "",
+
+			expectedUpdatedMinT: updatedEndTime.UnixMilli(),
+			expectedUpdatedMaxT: updatedEndTime.UnixMilli(),
+			expectedErr:         nil,
+		},
+		{
+			name: "range query: transform with query changes minT and maxT",
+			initialMetricsQuery: makeRangeRequest(t,
+				"/api/v1/query_range",
+				startTime,
+				endTime,
+				stepDuration,
+				time.Duration(0),
+				"go_goroutines{}",
+			),
+			updatedStartTime: nil,
+			updatedEndTime:   nil,
+			updatedQuery:     fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr),
+
+			expectedUpdatedMinT: startTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
+			expectedUpdatedMaxT: endTime.UnixMilli() - offsetDurationMS,
+			expectedErr:         nil,
+		},
+		{
+			name: "instant query: transform with query changes minT and maxT",
+			initialMetricsQuery: makeInstantRequest(t,
+				"/api/v1/query",
+				endTime,
+				time.Duration(0),
+				"go_goroutines{}",
+			),
+			updatedStartTime: nil,
+			updatedEndTime:   nil,
+			updatedQuery:     fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr),
+
+			expectedUpdatedMinT: endTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
+			expectedUpdatedMaxT: endTime.UnixMilli() - offsetDurationMS,
+			expectedErr:         nil,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			start := testCase.initialMetricsQuery.GetStart()
+			end := testCase.initialMetricsQuery.GetEnd()
+			if testCase.updatedStartTime != nil {
+				start = testCase.updatedStartTime.UnixMilli()
+			}
+			if testCase.updatedEndTime != nil {
+				end = testCase.updatedEndTime.UnixMilli()
+			}
+
+			updatedMetricsQuery := testCase.initialMetricsQuery.WithStartEnd(start, end)
+
+			if testCase.updatedQuery != "" {
+				updatedMetricsQuery, err = updatedMetricsQuery.WithQuery(testCase.updatedQuery)
+				if err != nil || testCase.expectedErr != nil {
+					require.EqualValues(t, testCase.expectedErr, err)
+				}
+			}
+
+			require.Equal(t, testCase.expectedUpdatedMinT, updatedMetricsQuery.GetMinT())
+			require.Equal(t, testCase.expectedUpdatedMaxT, updatedMetricsQuery.GetMaxT())
 		})
 	}
 }

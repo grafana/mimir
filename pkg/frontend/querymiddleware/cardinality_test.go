@@ -247,6 +247,8 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 		End:   util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T10:00:00Z")),
 		Query: "up",
 	}
+	rangeQuerySum, _ := rangeQuery.WithQuery("sum(up)")
+
 	tests := []struct {
 		name          string
 		tenantA       string
@@ -315,8 +317,8 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 			name:     "same tenant, same query with start time less than a bucket width apart but in different buckets",
 			tenantA:  "1",
 			tenantB:  "1",
-			requestA: rangeQuery.WithQuery("sum(up)"),
-			requestB: rangeQuery.WithQuery("sum(up)").WithStartEnd(
+			requestA: rangeQuerySum,
+			requestB: rangeQuerySum.WithStartEnd(
 				rangeQuery.GetStart()+(cardinalityEstimateBucketSize/2).Milliseconds(),
 				rangeQuery.GetEnd()+(cardinalityEstimateBucketSize/2).Milliseconds(),
 			),
@@ -326,8 +328,8 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 			name:     "same tenant, same query with start time less than a bucket width apart and in the same bucket",
 			tenantA:  "1",
 			tenantB:  "1",
-			requestA: rangeQuery.WithQuery("up"),
-			requestB: rangeQuery.WithQuery("up").WithStartEnd(
+			requestA: rangeQuery,
+			requestB: rangeQuery.WithStartEnd(
 				rangeQuery.GetStart()+(cardinalityEstimateBucketSize/2).Milliseconds(),
 				rangeQuery.GetEnd()+(cardinalityEstimateBucketSize/2).Milliseconds(),
 			),

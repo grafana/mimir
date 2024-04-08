@@ -91,20 +91,20 @@ func (r *PrometheusRangeQueryRequest) GetQuery() string {
 
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 // as determined from the start timestamp and any range vector or offset in the query.
-func (r *PrometheusRangeQueryRequest) GetMinT() (int64, error) {
-	minT, _, err := decodeQueryMinMaxTime(
+func (r *PrometheusRangeQueryRequest) GetMinT() int64 {
+	minT, _ := decodeQueryMinMaxTime(
 		r.QueryExpr, r.GetStart(), r.GetEnd(), r.GetStep(), r.LookbackDelta,
 	)
-	return minT, err
+	return minT
 }
 
 // GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
 // as determined from the end timestamp and any offset in the query.
-func (r *PrometheusRangeQueryRequest) GetMaxT() (int64, error) {
-	_, maxT, err := decodeQueryMinMaxTime(
+func (r *PrometheusRangeQueryRequest) GetMaxT() int64 {
+	_, maxT := decodeQueryMinMaxTime(
 		r.QueryExpr, r.GetStart(), r.GetEnd(), r.GetStep(), r.LookbackDelta,
 	)
-	return maxT, err
+	return maxT
 }
 
 func (r *PrometheusRangeQueryRequest) GetOptions() Options {
@@ -131,10 +131,16 @@ func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) Metri
 }
 
 // WithQuery clones the current `PrometheusRangeQueryRequest` with a new query.
-func (r *PrometheusRangeQueryRequest) WithQuery(query string) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryRequest, error) {
+	queryExpr, err := parser.ParseExpr(query)
+	if err != nil {
+		return nil, err
+	}
+
 	newRequest := *r
 	newRequest.Query = query
-	return &newRequest
+	newRequest.QueryExpr = queryExpr
+	return &newRequest, nil
 }
 
 // WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
@@ -218,20 +224,20 @@ func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 // as determined from the start timestamp and any range vector or offset in the query.
-func (r *PrometheusInstantQueryRequest) GetMinT() (int64, error) {
-	minT, _, err := decodeQueryMinMaxTime(
+func (r *PrometheusInstantQueryRequest) GetMinT() int64 {
+	minT, _ := decodeQueryMinMaxTime(
 		r.QueryExpr, r.GetStart(), r.GetEnd(), r.GetStep(), r.LookbackDelta,
 	)
-	return minT, err
+	return minT
 }
 
 // GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
 // as determined from the end timestamp and any offset in the query.
-func (r *PrometheusInstantQueryRequest) GetMaxT() (int64, error) {
-	_, maxT, err := decodeQueryMinMaxTime(
+func (r *PrometheusInstantQueryRequest) GetMaxT() int64 {
+	_, maxT := decodeQueryMinMaxTime(
 		r.QueryExpr, r.GetStart(), r.GetEnd(), r.GetStep(), r.LookbackDelta,
 	)
-	return maxT, err
+	return maxT
 }
 
 func (r *PrometheusInstantQueryRequest) GetOptions() Options {
@@ -256,10 +262,16 @@ func (r *PrometheusInstantQueryRequest) WithStartEnd(time int64, _ int64) Metric
 }
 
 // WithQuery clones the current `PrometheusInstantQueryRequest` with a new query.
-func (r *PrometheusInstantQueryRequest) WithQuery(query string) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithQuery(query string) (MetricsQueryRequest, error) {
+	queryExpr, err := parser.ParseExpr(query)
+	if err != nil {
+		return nil, err
+	}
+
 	newRequest := *r
 	newRequest.Query = query
-	return &newRequest
+	newRequest.QueryExpr = queryExpr
+	return &newRequest, nil
 }
 
 func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {

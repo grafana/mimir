@@ -103,10 +103,10 @@ type MetricsQueryRequest interface {
 	GetQuery() string
 	// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 	// as determined from the start timestamp and any range vector or offset in the query.
-	GetMinT() (int64, error)
+	GetMinT() int64
 	// GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
 	// as determined from the end timestamp and any offset in the query.
-	GetMaxT() (int64, error)
+	GetMaxT() int64
 	// GetOptions returns the options for the given request.
 	GetOptions() Options
 	// GetHints returns hints that could be optionally attached to the request to pass down the stack.
@@ -117,7 +117,7 @@ type MetricsQueryRequest interface {
 	// WithStartEnd clone the current request with different start and end timestamp.
 	WithStartEnd(startTime int64, endTime int64) MetricsQueryRequest
 	// WithQuery clone the current request with a different query.
-	WithQuery(string) MetricsQueryRequest
+	WithQuery(string) (MetricsQueryRequest, error)
 	// WithTotalQueriesHint adds the number of total queries to this request's Hints.
 	WithTotalQueriesHint(int32) MetricsQueryRequest
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
@@ -461,7 +461,7 @@ func DecodeLabelsQueryTimeParams(reqValues *url.Values, usePromDefaults bool) (s
 	return start, end, err
 }
 
-func decodeQueryMinMaxTime(queryExpr parser.Expr, start, end, step int64, lookbackDelta time.Duration) (minTime, maxTime int64, err error) {
+func decodeQueryMinMaxTime(queryExpr parser.Expr, start, end, step int64, lookbackDelta time.Duration) (minTime, maxTime int64) {
 	evalStmt := &parser.EvalStmt{
 		Expr:          queryExpr,
 		Start:         util.TimeFromMillis(start),
@@ -471,7 +471,7 @@ func decodeQueryMinMaxTime(queryExpr parser.Expr, start, end, step int64, lookba
 	}
 
 	minTime, maxTime = promql.FindMinMaxTime(evalStmt)
-	return minTime, maxTime, nil
+	return minTime, maxTime
 }
 
 func decodeOptions(r *http.Request, opts *Options) {
