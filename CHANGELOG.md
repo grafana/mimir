@@ -43,6 +43,9 @@
 ### Query-tee
 
 * [ENHANCEMENT] Log queries that take longer than `proxy.log-slow-query-response-threshold` when compared to other backends. #7346
+* [ENHANCEMENT] Add two new metrics for measuring the relative duration between backends: #7782
+  * `cortex_querytee_backend_request_relative_duration_seconds`
+  * `cortex_querytee_backend_request_relative_duration_proportional`
 
 ### Documentation
 
