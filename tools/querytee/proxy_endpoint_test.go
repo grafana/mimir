@@ -780,17 +780,14 @@ func (b *mockProxyBackend) Preferred() bool {
 }
 
 func (b *mockProxyBackend) ForwardRequest(_ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
-	statusCode := 200
-	if b.responseIndex >= len(b.fakeResponseLatencies) {
-		statusCode = 500
-	}
 	resp := &http.Response{
-		StatusCode: statusCode,
+		StatusCode: 200,
 		Header:     make(http.Header),
 		Body:       io.NopCloser(bytes.NewBufferString(`{}`)),
 	}
 	resp.Header.Set("Content-Type", "application/json")
 	if b.responseIndex >= len(b.fakeResponseLatencies) {
+		resp.StatusCode = 500
 		return 0, 500, []byte("{}"), resp, errors.New("no more latencies available")
 	}
 	latency := b.fakeResponseLatencies[b.responseIndex]
