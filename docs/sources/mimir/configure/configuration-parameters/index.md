@@ -1325,7 +1325,7 @@ store_gateway_client:
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
 [minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
 
-# (experimental) PromQL engine to use
+# (experimental) PromQL engine to use, either 'standard' or 'streaming'
 # CLI flag: -querier.promql-engine
 [promql_engine: <string> | default = "standard"]
 

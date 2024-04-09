@@ -1880,7 +1880,7 @@
           "kind": "field",
           "name": "promql_engine",
           "required": false,
-          "desc": "PromQL engine to use",
+          "desc": "PromQL engine to use, either 'standard' or 'streaming'",
           "fieldValue": null,
           "fieldDefaultValue": "standard",
           "fieldFlag": "querier.promql-engine",
