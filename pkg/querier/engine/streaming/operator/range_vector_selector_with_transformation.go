@@ -16,6 +16,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
+// RangeVectorSelectorWithTransformation performs a rate calculation over a range vector selector.
+//
+// This will one day be split into two operators: the rate calculation operator and a range vector selector operator.
 type RangeVectorSelectorWithTransformation struct {
 	Selector *Selector
 
