@@ -26,10 +26,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/querier/engine/common"
-	"github.com/grafana/mimir/pkg/querier/engine/streaming"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -163,7 +163,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 	case streamingPromQLEngine:
 		var err error
 
-		eng, err = streaming.NewEngine(opts)
+		eng, err = streamingpromql.NewEngine(opts)
 		if err != nil {
 			return nil, nil, nil, err
 		}

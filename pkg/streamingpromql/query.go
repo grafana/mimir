@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package streaming
+package streamingpromql
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 	"golang.org/x/exp/slices"
 
-	"github.com/grafana/mimir/pkg/querier/engine/streaming/operator"
+	"github.com/grafana/mimir/pkg/streamingpromql/operator"
 )
 
 type Query struct {
