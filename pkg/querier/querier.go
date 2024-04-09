@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/querier/engine/common"
+	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
@@ -59,7 +59,7 @@ type Config struct {
 	PromQLEngine string `yaml:"promql_engine" category:"experimental"`
 
 	// PromQL engine config.
-	EngineConfig common.Config `yaml:",inline"`
+	EngineConfig engine.Config `yaml:",inline"`
 }
 
 const (
@@ -150,7 +150,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	opts, engineExperimentalFunctionsEnabled := common.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
+	opts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
 
 	// Experimental functions can only be enabled globally, and not on a per-engine basis.
 	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
