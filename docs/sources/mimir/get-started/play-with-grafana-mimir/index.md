@@ -1,4 +1,4 @@
----
+F---
 aliases:
   - /tutorials/play-with-grafana-mimir/
   - ../tutorials/play-with-grafana-mimir/
@@ -120,11 +120,13 @@ offered by Grafana.
 3. Configure the recording rule:
    1. Select `Mimir or Loki recording rule` in the top selector.
    2. Choose `Mimir` in the "Select data source" field.
-   3. Type `sum(up)` in the "Metrics browser" query field.
-   4. Type `sum:up` in the "Rule name" field.
-   5. Type `example-namespace` in the "Namespace" field.
-   6. Type `example-group` in the "Group" field.
-   7. From the upper-right corner, click the **Save and exit** button.
+   3. Type `sum:up` in the "Rule name" field.
+   4. Choose "Code" in the "Builder | Code" field on the right.
+   5. Type `sum(up)` in the "Metrics browser" query field.
+   6. Choose  "Data source-managed" in the "Grafana-managed | Data source-managed" in the "Rule Type" paragraph.
+   7. Type `example-namespace` in the "Namespace" field.
+   8. Type `example-group` in the "Group" field.
+   9. From the upper-right corner, click the **Save and exit** button.
 
 Your `sum:up` recording rule will show the number of Mimir instances that are `up`, meaning reachable to be scraped. The
 rule is now being created in Grafana Mimir ruler and will be soon available for querying:
