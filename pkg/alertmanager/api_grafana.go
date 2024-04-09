@@ -14,6 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -36,18 +37,18 @@ const (
 	statusError   = "error"
 )
 
+type PostableUserConfig struct {
+	TemplateFiles      map[string]string                    `json:"template_files"`
+	AlertmanagerConfig definition.PostableApiAlertingConfig `json:"alertmanager_config"`
+}
 type UserGrafanaConfig struct {
-	GrafanaAlertmanagerConfig string `json:"configuration"`
-	Hash                      string `json:"configuration_hash"`
-	CreatedAt                 int64  `json:"created"`
-	Default                   bool   `json:"default"`
+	GrafanaAlertmanagerConfig PostableUserConfig `json:"configuration"`
+	Hash                      string             `json:"configuration_hash"`
+	CreatedAt                 int64              `json:"created"`
+	Default                   bool               `json:"default"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
-	if gc.GrafanaAlertmanagerConfig == "" {
-		return errors.New("no Grafana Alertmanager config specified")
-	}
-
 	if gc.Hash == "" {
 		return errors.New("no hash specified")
 	}
@@ -56,7 +57,7 @@ func (gc *UserGrafanaConfig) Validate() error {
 		return errors.New("created must be non-zero")
 	}
 
-	return nil
+	return gc.GrafanaAlertmanagerConfig.AlertmanagerConfig.Validate()
 }
 
 func (gc *UserGrafanaConfig) UnmarshalJSON(data []byte) error {
@@ -264,10 +265,17 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
+	var postableConfig PostableUserConfig
+	if err := json.Unmarshal([]byte(cfg.RawConfig), &postableConfig); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
+		return
+	}
+
 	util.WriteJSONResponse(w, successResult{
 		Status: statusSuccess,
 		Data: &UserGrafanaConfig{
-			GrafanaAlertmanagerConfig: cfg.RawConfig,
+			GrafanaAlertmanagerConfig: postableConfig,
 			Hash:                      cfg.Hash,
 			CreatedAt:                 cfg.CreatedAtTimestamp,
 			Default:                   cfg.Default,
@@ -302,7 +310,15 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	cfgDesc := alertspb.ToGrafanaProto(cfg.GrafanaAlertmanagerConfig, userID, cfg.Hash, cfg.CreatedAt, cfg.Default)
+	rawCfg, err := json.Marshal(cfg.GrafanaAlertmanagerConfig)
+	if err != nil {
+		level.Error(logger).Log("msg", errMarshallingGrafanaConfigJSON, "err", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errStoringGrafanaConfig, err.Error())})
+		return
+	}
+
+	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default)
 	err = am.store.SetGrafanaAlertConfig(r.Context(), cfgDesc)
 	if err != nil {
 		level.Error(logger).Log("msg", errStoringGrafanaConfig, "err", err.Error())
