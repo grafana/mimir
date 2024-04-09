@@ -54,7 +54,7 @@ func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
 		proportionalDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace:                   queryTeeMetricsNamespace,
 			Name:                        "backend_request_relative_duration_proportional",
-			Help:                        "Proportional time (%) of preferred backend vs secondary backend.",
+			Help:                        "Response time of preferred backend, as a proportion of secondary backend response time.",
 			NativeHistogramBucketFactor: 2,
 		}, []string{"route"}),
 	}
