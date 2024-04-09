@@ -67,7 +67,15 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error)
 		End:   endTimestamp,
 		Step:  s.Interval,
 		Range: rangeMilliseconds,
-		// TODO: do we need to include other hints like Func, By, Grouping?
+
+		// Mimir doesn't use Grouping or By, so there's no need to include them here.
+		//
+		// Mimir does use Func to determine if it's a /series request, but this doesn't go
+		// through the PromQL engine, so we don't need to include it here either.
+		//
+		// Mimir does use ShardCount, ShardIndex and DisableTrimming, but not at this level:
+		// ShardCount and ShardIndex are set by ingesters and store-gateways when a sharding
+		// label matcher is present, and ingesters set DisableTrimming to true.
 	}
 
 	var err error

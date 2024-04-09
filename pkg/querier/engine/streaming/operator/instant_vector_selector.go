@@ -72,7 +72,6 @@ func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData
 		case chunkenc.ValFloat:
 			t, val = v.memoizedIterator.At()
 		default:
-			// TODO: handle native histograms
 			return InstantVectorSeriesData{}, fmt.Errorf("streaming PromQL engine: unknown value type %s", valueType.String())
 		}
 
