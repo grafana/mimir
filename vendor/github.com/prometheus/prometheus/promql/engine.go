@@ -1082,8 +1082,6 @@ type EvalNodeHelper struct {
 	Out Vector
 
 	// Caches.
-	// label_*.
-	Dmn map[uint64]labels.Labels
 	// funcHistogramQuantile for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
 
