@@ -163,6 +163,11 @@ cortex_querytee_responses_total{backend="<hostname>",method="<method>",route="<r
 cortex_querytee_responses_compared_total{route="<route>",result="<success|fail>"}
 ```
 
+Additionally, if backend results comparison is configured, two native-histograms are available:
+
+* `cortex_querytee_backend_request_relative_duration_seconds`: Time (in seconds) of preferred backend less secondary backend.
+* `cortex_querytee_backend_request_relative_duration_proportional`: Response time of preferred backend, as a proportion of secondary backend response time.
+
 ### Ruler remote operational mode test
 
 When the ruler is configured with the [remote evaluation mode]({{< relref "../../references/architecture/components/ruler" >}}) you can use the query-tee to compare rule evaluations too.
