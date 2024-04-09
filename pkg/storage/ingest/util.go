@@ -134,8 +134,10 @@ func shouldLog(ctx context.Context, err error) (bool, string) {
 	return optional.ShouldLog(ctx)
 }
 
+// setDefaultNumberOfPartitionsForAutocreatedTopics tries to set num.partitions config option on brokers.
+// This is best-effort, if setting the option fails, error is logged, but not returned.
 func setDefaultNumberOfPartitionsForAutocreatedTopics(cfg KafkaConfig, logger log.Logger) {
-	if cfg.DefaultPartitionsForAutocreatedTopics <= 0 {
+	if cfg.AutoCreateTopicDefaultPartitions <= 0 {
 		return
 	}
 
@@ -148,7 +150,7 @@ func setDefaultNumberOfPartitionsForAutocreatedTopics(cfg KafkaConfig, logger lo
 	adm := kadm.NewClient(cl)
 	defer adm.Close()
 
-	defaultNumberOfPartitions := fmt.Sprintf("%d", cfg.DefaultPartitionsForAutocreatedTopics)
+	defaultNumberOfPartitions := fmt.Sprintf("%d", cfg.AutoCreateTopicDefaultPartitions)
 	_, err = adm.AlterBrokerConfigsState(context.Background(), []kadm.AlterConfig{
 		{
 			Op:    kadm.SetConfig,
@@ -162,5 +164,5 @@ func setDefaultNumberOfPartitionsForAutocreatedTopics(cfg KafkaConfig, logger lo
 		return
 	}
 
-	level.Info(logger).Log("msg", "configured Kafka-wide default number of partitions for auto-created topics (num.partitions)", "value", cfg.DefaultPartitionsForAutocreatedTopics)
+	level.Info(logger).Log("msg", "configured Kafka-wide default number of partitions for auto-created topics (num.partitions)", "value", cfg.AutoCreateTopicDefaultPartitions)
 }

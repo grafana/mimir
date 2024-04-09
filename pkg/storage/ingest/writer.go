@@ -77,7 +77,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 }
 
 func (w *Writer) starting(_ context.Context) error {
-	if w.kafkaCfg.DefaultPartitionsForAutocreatedTopics > 0 {
+	if w.kafkaCfg.AutoCreateTopicEnabled {
 		setDefaultNumberOfPartitionsForAutocreatedTopics(w.kafkaCfg, w.logger)
 	}
 	return nil

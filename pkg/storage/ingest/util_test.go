@@ -137,8 +137,8 @@ func TestSetDefaultNumberOfPartitionsForAutocreatedTopics(t *testing.T) {
 	require.Len(t, addrs, 1)
 
 	cfg := KafkaConfig{
-		Address:                               addrs[0],
-		DefaultPartitionsForAutocreatedTopics: 100,
+		Address:                          addrs[0],
+		AutoCreateTopicDefaultPartitions: 100,
 	}
 
 	cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {

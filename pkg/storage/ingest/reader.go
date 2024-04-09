@@ -90,7 +90,7 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, consumerGroup s
 }
 
 func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
-	if r.kafkaCfg.DefaultPartitionsForAutocreatedTopics > 0 {
+	if r.kafkaCfg.AutoCreateTopicEnabled {
 		setDefaultNumberOfPartitionsForAutocreatedTopics(r.kafkaCfg, r.logger)
 	}
 
