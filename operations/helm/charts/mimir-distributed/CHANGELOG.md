@@ -29,7 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-## 5.3.0-rc.0
+## 5.3.0
 
 * [CHANGE] Do not render resource blocks for `initContainers`, `nodeSelector`, `affinity` and `tolerations` if they are empty. #7559
 * [CHANGE] Rollout-operator: remove default CPU limit. #7125
