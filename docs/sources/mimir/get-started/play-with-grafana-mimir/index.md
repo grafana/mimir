@@ -125,7 +125,7 @@ offered by Grafana.
    1. Type `sum(up)` in the **Metrics browser** query field.
    1. Choose  **Data source-managed** in the **Grafana-managed | Data source-managed** field in the **Rule Type** paragraph.
    1. Type `example-namespace` in the **Namespace** field.
-   8. Type `example-group` in the "Group" field.
+   1. Type `example-group` in the **Group** field.
    9. From the upper-right corner, click the **Save and exit** button.
 
 Your `sum:up` recording rule will show the number of Mimir instances that are `up`, meaning reachable to be scraped. The
