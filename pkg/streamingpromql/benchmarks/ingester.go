@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"path/filepath"
 	"strconv"
@@ -73,8 +74,14 @@ func startBenchmarkIngester(rootDataDir string) (*ingester.Ingester, string, fun
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "filesystem"
 	ingesterCfg.BlocksStorageConfig.Bucket.Filesystem.Directory = filepath.Join(rootDataDir, "bucket")
 
+	// Disable shipping, and retain blocks and TSDB forever.
+	ingesterCfg.BlocksStorageConfig.TSDB.ShipInterval = 0
+	ingesterCfg.BlocksStorageConfig.TSDB.Retention = time.Duration(math.MaxInt64)
+	ingesterCfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 0
+
 	// Disable TSDB head compaction jitter to have predictable tests.
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 0
 
 	ingestersRing, err := createAndStartRing(ingesterCfg.IngesterRing.ToRingConfig())
 	if err != nil {
