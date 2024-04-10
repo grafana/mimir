@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/mtime"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
@@ -86,6 +87,9 @@ const (
 	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
 	writeRequestSlabPoolSize = 512 * 1024
 )
+
+// sendToBackendInstanceFunc is the signature of a function sending a req to a specific backend instance (e.g. a specific ingester).
+type sendToBackendInstanceFunc func(ctx context.Context, userID string, partition ring.InstanceDesc, req *mimirpb.WriteRequest) error
 
 // Distributor forwards appends and queries to individual ingesters.
 type Distributor struct {
@@ -1324,47 +1328,125 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		ctx = ingester_client.WithSlabPool(ctx, slabPool)
 	}
 
-	// Use an independent context to make sure all ingesters get samples even if we return early.
-	// It will still take a while to calculate which ingester gets which series,
-	// so we'll start the remote timeout once the first callback is called.
-	remoteRequestContext := sync.OnceValues(func() (context.Context, context.CancelFunc) {
-		return context.WithTimeout(context.WithoutCancel(ctx), d.cfg.RemoteTimeout)
-	})
-
 	// Get both series and metadata keys in one slice.
 	keys, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
 
+	var (
+		ingestersSubring  ring.DoBatchRing
+		partitionsSubring ring.DoBatchRing
+	)
+
 	// Get the tenant's subring to use to either write to ingesters or partitions.
-	var tenantRing ring.DoBatchRing
 	if d.cfg.IngestStorageConfig.Enabled {
 		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.IngestionPartitionsTenantShardSize(userID))
 		if err != nil {
 			return err
 		}
 
-		tenantRing = ring.NewActivePartitionBatchRing(subring.PartitionRing())
-	} else {
-		tenantRing = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
+		partitionsSubring = ring.NewActivePartitionBatchRing(subring.PartitionRing())
 	}
 
-	// we must not re-use buffers now until all DoBatch goroutines have finished,
-	// so set this flag false and pass cleanup() to DoBatch.
+	if !d.cfg.IngestStorageConfig.Enabled || d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled {
+		ingestersSubring = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
+	}
+
+	// we must not re-use buffers now until all writes to backends (e.g. ingesters) have completed, which can happen
+	// even after this function returns. For this reason, it's unsafe to cleanup in the defer and we'll do the cleanup
+	// once all backend requests have completed (see cleanup function passed to sendWriteRequestToBackends()).
 	cleanupInDefer = false
 
-	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
+	return d.sendWriteRequestToBackends(ctx, userID, req, keys, initialMetadataIndex, ingestersSubring, partitionsSubring, func() {
+		// This cleanup function is called once all requests to all backends have been completed.
+		// At this point is safe to finally release the original pushReq resources back to the pool.
+		pushReq.CleanUp()
+	})
+}
+
+// sendWriteRequestToBackends sends the input req data to backends. The backends could be:
+// - Ingesters, when ingestersSubring is not nil
+// - Ingest storage partitions, when partitionsSubring is not nil
+//
+// The input cleanup function is guaranteed to be called after all requests to all backends have completed.
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring, partitionsSubring ring.DoBatchRing, cleanup func()) error {
+	var (
+		wg     = sync.WaitGroup{}
+		errs   = multierror.MultiError{}
+		errsMx = sync.Mutex{}
+	)
+
+	// Ensure at least one ring has been provided.
+	if ingestersSubring == nil && partitionsSubring == nil {
+		// It should never happen. If it happens, it's a logic bug.
+		panic("no tenant subring has been provided to sendWriteRequestToBackends()")
+	}
+
+	// Keep it easy if there's only 1 backend to write to.
+	if partitionsSubring == nil {
+		return d.sendWriteRequestToBackend(ctx, tenantID, ingestersSubring, req, keys, initialMetadataIndex, d.sendShardedWriteRequestToIngester, cleanup)
+	}
+	if ingestersSubring == nil {
+		return d.sendWriteRequestToBackend(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, d.sendShardedWriteRequestToPartition, cleanup)
+	}
+
+	// Prepare a callback function that will call the input cleanup callback function only after
+	// the cleanup has been done for all backends.
+	cleanupWaitBackends := atomic.NewInt64(2)
+	cleanupAfterAllBackends := func() {
+		if cleanupWaitBackends.Dec() == 0 {
+			cleanup()
+		}
+	}
+
+	// Write both to ingesters and partitions.
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+
+		if err := d.sendWriteRequestToBackend(ctx, tenantID, ingestersSubring, req, keys, initialMetadataIndex, d.sendShardedWriteRequestToIngester, cleanupAfterAllBackends); err != nil {
+			errsMx.Lock()
+			errs.Add(err)
+			errsMx.Unlock()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		if err := d.sendWriteRequestToBackend(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, d.sendShardedWriteRequestToPartition, cleanupAfterAllBackends); err != nil {
+			errsMx.Lock()
+			errs.Add(err)
+			errsMx.Unlock()
+		}
+	}()
+
+	// Wait until all backends have done.
+	wg.Wait()
+
+	return errs.Err()
+}
+
+// sendWriteRequestToBackend shards the input req based on tenantRing and concurrently send it to all tenantRing instances
+// (e.g. ingester instances).
+//
+// The input cleanup function is guaranteed to be called after all requests to all instances have completed.
+func (d *Distributor) sendWriteRequestToBackend(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, send sendToBackendInstanceFunc, cleanup func()) error {
+	// Use an independent context to make sure all backend instances (e.g. ingesters) get samples even if we return early.
+	// It will still take a while to lookup the ring and calculate which instance gets which series,
+	// so we'll start the remote timeout once the first callback is called.
+	remoteRequestContext := sync.OnceValues(func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(context.WithoutCancel(ctx), d.cfg.RemoteTimeout)
+	})
+
+	return ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(instance ring.InstanceDesc, indexes []int) error {
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			// Do not cancel the remoteRequestContext in this callback:
 			// there are more callbacks using it at the same time.
 			localCtx, _ := remoteRequestContext()
-			var err error
-			if d.cfg.IngestStorageConfig.Enabled {
-				err = d.sendToStorage(localCtx, userID, instance, req)
-			} else {
-				err = d.sendToIngester(localCtx, instance, req)
-			}
 
+			err := send(localCtx, tenantID, instance, req)
 			if errors.Is(err, context.DeadlineExceeded) {
 				return errors.Wrap(err, deadlineExceededWrapMessage)
 			}
@@ -1372,7 +1454,11 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		},
 		ring.DoBatchOptions{
 			Cleanup: func() {
-				pushReq.CleanUp()
+				// Notify the provided callback that it's now safe to run the cleanup because there are no
+				// more in-flight requests to the backend.
+				cleanup()
+
+				// All requests have completed, so it's not safe to cancel the requests context to release resources.
 				_, cancel := remoteRequestContext()
 				cancel()
 			},
@@ -1380,8 +1466,6 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 			Go:            d.doBatchPushWorkers,
 		},
 	)
-
-	return err
 }
 
 // getSeriesAndMetadataTokens returns a slice of tokens for the series and metadata from the request in this specific order.
@@ -1443,8 +1527,9 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
 }
 
-// sendToIngester sends received data to a specific ingester. This function is used when ingest storage is disabled.
-func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.InstanceDesc, req *mimirpb.WriteRequest) error {
+// sendShardedWriteRequestToIngester sends req to a specific ingester. The req must contain only the data (e.g. series) that belong to the
+// input ingester. This function is used when ingest storage is disabled.
+func (d *Distributor) sendShardedWriteRequestToIngester(ctx context.Context, _ string, ingester ring.InstanceDesc, req *mimirpb.WriteRequest) error {
 	h, err := d.ingesterPool.GetClientForInstance(ingester)
 	if err != nil {
 		return err
@@ -1456,8 +1541,9 @@ func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.Instance
 	return wrapIngesterPushError(err, ingester.Id)
 }
 
-// sendToStorage sends received data to the configured ingest storage. This function is used when ingest storage is enabled.
-func (d *Distributor) sendToStorage(ctx context.Context, userID string, partition ring.InstanceDesc, req *mimirpb.WriteRequest) error {
+// sendShardedWriteRequestToPartition sends req to a specific partition. The req must contain only the data (e.g. series) that belong to the
+// input partition. This function is used when ingest storage is enabled.
+func (d *Distributor) sendShardedWriteRequestToPartition(ctx context.Context, userID string, partition ring.InstanceDesc, req *mimirpb.WriteRequest) error {
 	// The partition ID is stored in the ring.InstanceDesc Id.
 	partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
 	if err != nil {
