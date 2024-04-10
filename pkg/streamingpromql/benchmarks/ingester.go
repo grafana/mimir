@@ -165,10 +165,12 @@ func createAndStartRing(ringConfig ring.Config) (*ring.Ring, error) {
 }
 
 func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
+	const histogramBuckets = 5
+
 	totalMetrics := 0
 
 	for _, size := range metricSizes {
-		totalMetrics += 13 * size // 2 non-histogram metrics + 11 metrics for histogram buckets
+		totalMetrics += (2 + histogramBuckets + 1) * size // 2 non-histogram metrics + 5 metrics for histogram buckets + 1 metric for +Inf histogram bucket
 	}
 
 	metrics := make([]labels.Labels, 0, totalMetrics)
@@ -182,7 +184,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 			// We don't want a "l" label on metrics with one series (some test cases rely on this label not being present).
 			metrics = append(metrics, labels.FromStrings("__name__", aName))
 			metrics = append(metrics, labels.FromStrings("__name__", bName))
-			for le := 0; le < 10; le++ {
+			for le := 0; le < histogramBuckets; le++ {
 				metrics = append(metrics, labels.FromStrings("__name__", histogramName, "le", strconv.Itoa(le)))
 			}
 			metrics = append(metrics, labels.FromStrings("__name__", histogramName, "le", "+Inf"))
@@ -190,7 +192,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 			for i := 0; i < size; i++ {
 				metrics = append(metrics, labels.FromStrings("__name__", aName, "l", strconv.Itoa(i)))
 				metrics = append(metrics, labels.FromStrings("__name__", bName, "l", strconv.Itoa(i)))
-				for le := 0; le < 10; le++ {
+				for le := 0; le < histogramBuckets; le++ {
 					metrics = append(metrics, labels.FromStrings("__name__", histogramName, "l", strconv.Itoa(i), "le", strconv.Itoa(le)))
 				}
 				metrics = append(metrics, labels.FromStrings("__name__", histogramName, "l", strconv.Itoa(i), "le", "+Inf"))
