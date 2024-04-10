@@ -59,9 +59,8 @@ func BenchmarkQuery(b *testing.B) {
 	skipCompareResults := os.Getenv("STREAMING_PROMQL_ENGINE_BENCHMARK_SKIP_COMPARE_RESULTS") == "true"
 
 	for _, c := range cases {
-		start := time.Unix(int64((NumIntervals-c.Steps)*10), 0)
-		end := time.Unix(int64(NumIntervals*10), 0)
-		interval := time.Second * 10
+		start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)
+		end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
 		b.Run(c.Name(), func(b *testing.B) {
 			if !skipCompareResults {
@@ -104,9 +103,8 @@ func TestBenchmarkQueries(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.Name(), func(t *testing.T) {
-			start := time.Unix(int64((NumIntervals-c.Steps)*10), 0)
-			end := time.Unix(int64(NumIntervals*10), 0)
-			interval := time.Second * 10
+			start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)
+			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
 			standardResult, standardClose := c.Run(ctx, t, start, end, interval, standardEngine, q)
 			streamingResult, streamingClose := c.Run(ctx, t, start, end, interval, streamingEngine, q)
@@ -117,6 +115,54 @@ func TestBenchmarkQueries(t *testing.T) {
 			streamingClose()
 		})
 	}
+}
+
+// This test checks that the way we set up the ingester and PromQL engine does what we expect
+// (ie. that we can query the data we write to the ingester)
+func TestBenchmarkSetup(t *testing.T) {
+	q := createBenchmarkQueryable(t, []int{1})
+
+	opts := streamingpromql.NewTestEngineOpts()
+	streamingEngine, err := streamingpromql.NewEngine(opts)
+	require.NoError(t, err)
+
+	ctx := user.InjectOrgID(context.Background(), UserID)
+	query, err := streamingEngine.NewRangeQuery(ctx, q, nil, "a_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
+	require.NoError(t, err)
+
+	t.Cleanup(query.Close)
+	result := query.Exec(ctx)
+	require.NoError(t, result.Err)
+
+	matrix, err := result.Matrix()
+	require.NoError(t, err)
+
+	require.Len(t, matrix, 1)
+	series := matrix[0]
+	require.Equal(t, labels.FromStrings("__name__", "a_1"), series.Metric)
+	require.Len(t, series.Histograms, 0)
+
+	intervalMilliseconds := interval.Milliseconds()
+	expectedPoints := []promql.FPoint{
+		{T: 0, F: 0},
+		{T: 1 * intervalMilliseconds, F: 1},
+		{T: 2 * intervalMilliseconds, F: 2},
+		{T: 3 * intervalMilliseconds, F: 3},
+		{T: 4 * intervalMilliseconds, F: 4},
+		{T: 5 * intervalMilliseconds, F: 5},
+		{T: 6 * intervalMilliseconds, F: 6},
+		{T: 7 * intervalMilliseconds, F: 7},
+		{T: 8 * intervalMilliseconds, F: 8},
+		{T: 9 * intervalMilliseconds, F: 9},
+		{T: 10 * intervalMilliseconds, F: 10},
+		{T: 11 * intervalMilliseconds, F: 11},
+		{T: 12 * intervalMilliseconds, F: 12},
+		{T: 13 * intervalMilliseconds, F: 13},
+		{T: 14 * intervalMilliseconds, F: 14},
+		{T: 15 * intervalMilliseconds, F: 15},
+	}
+
+	require.Equal(t, expectedPoints, series.Floats)
 }
 
 // Why do we do this rather than require.Equal(t, expected, actual)?

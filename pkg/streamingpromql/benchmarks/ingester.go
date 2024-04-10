@@ -31,7 +31,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const interval = 10 * time.Second
+const intervalSeconds = 10
+const interval = intervalSeconds * time.Second
 
 const NumIntervals = 10000 + int(time.Minute/interval) + 1 // The longest-range test we run has 10000 steps with a 1m range selector, so make sure we have slightly more data than that.
 
