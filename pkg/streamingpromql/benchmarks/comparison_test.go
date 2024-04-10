@@ -226,7 +226,12 @@ func createIngesterQueryable(t testing.TB, address string) storage.Queryable {
 
 	distributorCfg := distributor.Config{}
 	clientCfg := client.Config{}
-	flagext.DefaultValues(&distributorCfg, &clientCfg)
+	querierCfg := querier.Config{}
+	flagext.DefaultValues(&distributorCfg, &clientCfg, &querierCfg)
+
+	// The default value for this option is defined in the querier config and applied to the distributor config struct,
+	// so we have to copy it over ourselves.
+	distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = querierCfg.StreamingChunksPerIngesterSeriesBufferSize
 
 	limits := defaultLimitsTestConfig()
 	limits.NativeHistogramsIngestionEnabled = true
