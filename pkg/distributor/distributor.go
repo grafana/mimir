@@ -1523,11 +1523,12 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 
 			ctx := remoteRequestContext()
 			ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
+
 			_, err = c.Push(ctx, req)
-			if errors.Is(err, context.DeadlineExceeded) {
-				return errors.Wrap(err, deadlineExceededWrapMessage)
-			}
-			return wrapIngesterPushError(err, ingester.Id)
+			err = wrapIngesterPushError(err, ingester.Id)
+			err = wrapDeadlineExceededPushError(err)
+
+			return err
 		}, batchOptions)
 }
 
@@ -1544,10 +1545,10 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 
 			ctx := remoteRequestContext()
 			err = d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), tenantID, req)
-			if errors.Is(err, context.DeadlineExceeded) {
-				return errors.Wrap(err, deadlineExceededWrapMessage)
-			}
-			return wrapPartitionPushError(err, int32(partitionID))
+			err = wrapPartitionPushError(err, int32(partitionID))
+			err = wrapDeadlineExceededPushError(err)
+
+			return err
 		}, batchOptions,
 	)
 }
