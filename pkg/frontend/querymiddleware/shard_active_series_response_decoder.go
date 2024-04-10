@@ -129,9 +129,7 @@ func (d *shardActiveSeriesResponseDecoder) decode() error {
 
 func (d *shardActiveSeriesResponseDecoder) readData() {
 	defer func() {
-		if err := d.ctx.Err(); err != nil {
-			d.stickError(err)
-		}
+		d.checkContextCanceled()
 	}()
 
 	if c := d.nextToken(); c != ':' {
@@ -149,9 +147,7 @@ func (d *shardActiveSeriesResponseDecoder) readData() {
 
 func (d *shardActiveSeriesResponseDecoder) readError() {
 	defer func() {
-		if err := d.ctx.Err(); err != nil {
-			d.stickError(err)
-		}
+		d.checkContextCanceled()
 	}()
 
 	if c := d.nextToken(); c != ':' {
