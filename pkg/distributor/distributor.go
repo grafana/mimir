@@ -1359,6 +1359,65 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	})
 }
 
+// getSeriesAndMetadataTokens returns a slice of tokens for the series and metadata from the request in this specific order.
+// Metadata tokens start at initialMetadataIndex.
+func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest) (keys []uint32, initialMetadataIndex int) {
+	seriesKeys := getTokensForSeries(userID, req.Timeseries)
+	metadataKeys := getTokensForMetadata(userID, req.Metadata)
+
+	// All tokens, stored in order: series, metadata.
+	keys = make([]uint32, len(seriesKeys)+len(metadataKeys))
+	initialMetadataIndex = len(seriesKeys)
+	copy(keys, seriesKeys)
+	copy(keys[initialMetadataIndex:], metadataKeys)
+	return keys, initialMetadataIndex
+}
+
+func getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {
+	if len(series) == 0 {
+		return nil
+	}
+
+	result := make([]uint32, 0, len(series))
+	for _, ts := range series {
+		result = append(result, tokenForLabels(userID, ts.Labels))
+	}
+	return result
+}
+
+func getTokensForMetadata(userID string, metadata []*mimirpb.MetricMetadata) []uint32 {
+	if len(metadata) == 0 {
+		return nil
+	}
+	metadataKeys := make([]uint32, 0, len(metadata))
+
+	for _, m := range metadata {
+		metadataKeys = append(metadataKeys, tokenForMetadata(userID, m.MetricFamilyName))
+	}
+	return metadataKeys
+}
+
+func tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
+	return mimirpb.ShardByAllLabelAdapters(userID, labels)
+}
+
+func tokenForMetadata(userID string, metricName string) uint32 {
+	return mimirpb.ShardByMetricName(userID, metricName)
+}
+
+func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
+	var receivedSamples, receivedExemplars, receivedMetadata int
+	for _, ts := range req.Timeseries {
+		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
+		receivedExemplars += len(ts.TimeSeries.Exemplars)
+	}
+	receivedMetadata = len(req.Metadata)
+
+	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
+	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
+	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
+}
+
 // sendWriteRequestToBackends sends the input req data to backends. The backends could be:
 // - Ingesters, when ingestersSubring is not nil
 // - Ingest storage partitions, when partitionsSubring is not nil
@@ -1449,65 +1508,6 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	wg.Wait()
 
 	return errs.Err()
-}
-
-// getSeriesAndMetadataTokens returns a slice of tokens for the series and metadata from the request in this specific order.
-// Metadata tokens start at initialMetadataIndex.
-func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest) (keys []uint32, initialMetadataIndex int) {
-	seriesKeys := getTokensForSeries(userID, req.Timeseries)
-	metadataKeys := getTokensForMetadata(userID, req.Metadata)
-
-	// All tokens, stored in order: series, metadata.
-	keys = make([]uint32, len(seriesKeys)+len(metadataKeys))
-	initialMetadataIndex = len(seriesKeys)
-	copy(keys, seriesKeys)
-	copy(keys[initialMetadataIndex:], metadataKeys)
-	return keys, initialMetadataIndex
-}
-
-func getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {
-	if len(series) == 0 {
-		return nil
-	}
-
-	result := make([]uint32, 0, len(series))
-	for _, ts := range series {
-		result = append(result, tokenForLabels(userID, ts.Labels))
-	}
-	return result
-}
-
-func getTokensForMetadata(userID string, metadata []*mimirpb.MetricMetadata) []uint32 {
-	if len(metadata) == 0 {
-		return nil
-	}
-	metadataKeys := make([]uint32, 0, len(metadata))
-
-	for _, m := range metadata {
-		metadataKeys = append(metadataKeys, tokenForMetadata(userID, m.MetricFamilyName))
-	}
-	return metadataKeys
-}
-
-func tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	return mimirpb.ShardByAllLabelAdapters(userID, labels)
-}
-
-func tokenForMetadata(userID string, metricName string) uint32 {
-	return mimirpb.ShardByMetricName(userID, metricName)
-}
-
-func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
-	var receivedSamples, receivedExemplars, receivedMetadata int
-	for _, ts := range req.Timeseries {
-		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
-		receivedExemplars += len(ts.TimeSeries.Exemplars)
-	}
-	receivedMetadata = len(req.Metadata)
-
-	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
-	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
-	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
 }
 
 func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
