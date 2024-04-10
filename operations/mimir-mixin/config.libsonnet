@@ -197,6 +197,9 @@
     // Used to add extra annotations to all alerts, Careful: takes precedence over default annotations.
     alert_extra_annotations: {},
 
+    // Whether alerts for experimental ingest storage are enabled.
+    ingest_storage_enabled: true,
+
     cortex_p99_latency_threshold_seconds: 2.5,
 
     // Whether resources dashboards are enabled (based on cAdvisor metrics).
