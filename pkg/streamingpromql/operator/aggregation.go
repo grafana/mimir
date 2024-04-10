@@ -67,6 +67,9 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, err
 	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries))
 
 	for _, series := range innerSeries {
+		// Note that this doesn't handle potential hash collisions between groups.
+		// This is something we should likely fix, but at present, Prometheus' PromQL engine doesn't handle collisions either,
+		// so at least both engines will be incorrect in the same way.
 		var groupingKey uint64
 		groupingKey, buf = series.Labels.HashForLabels(buf, a.Grouping...)
 		g, groupExists := groups[groupingKey]
