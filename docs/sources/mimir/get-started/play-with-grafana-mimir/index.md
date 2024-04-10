@@ -126,7 +126,7 @@ offered by Grafana.
    1. Choose  **Data source-managed** in the **Grafana-managed | Data source-managed** field in the **Rule Type** paragraph.
    1. Type `example-namespace` in the **Namespace** field.
    1. Type `example-group` in the **Group** field.
-   9. From the upper-right corner, click the **Save and exit** button.
+   1. From the upper-right corner, click the **Save and exit** button.
 
 Your `sum:up` recording rule will show the number of Mimir instances that are `up`, meaning reachable to be scraped. The
 rule is now being created in Grafana Mimir ruler and will be soon available for querying:
