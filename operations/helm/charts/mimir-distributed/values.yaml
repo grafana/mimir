@@ -1305,7 +1305,7 @@ querier:
             type: Pods
             value: 15
         stabilizationWindowSeconds: 60
-  
+
   # -- Alternative to KEDA autoscaling which doesn't need any additional setup.
   horizontalPodAutoscaling:
     enabled: false
