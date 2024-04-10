@@ -8,8 +8,8 @@ Results from `benchmark-query-engine` can be summarised with `benchstat`, as wel
 
 Usage:
 
-* `go run .`: run all benchmarks once and capture peak memory utilisation
-* `go run . -list`: print all available benchmarks
-* `go run . -bench=abc`: run all benchmarks with names matching regex `abc`
-* `go run . -count=X`: run all benchmarks X times
-* `go run . -bench=abc -count=X`: run all benchmarks with names matching regex `abc` X times
+- `go run .`: run all benchmarks once and capture peak memory utilisation
+- `go run . -list`: print all available benchmarks
+- `go run . -bench=abc`: run all benchmarks with names matching regex `abc`
+- `go run . -count=X`: run all benchmarks X times
+- `go run . -bench=abc -count=X`: run all benchmarks with names matching regex `abc` X times
