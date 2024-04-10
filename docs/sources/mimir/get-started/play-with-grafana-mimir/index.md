@@ -119,7 +119,7 @@ offered by Grafana.
 2. Click "New alert rule", which also allows you to configure recording rules.
 3. Configure the recording rule:
    1. Select **Mimir or Loki recording rule** in the top selector.
-   2. Choose `Mimir` in the "Select data source" field.
+   1. Choose **Mimir** in the **Select data source** field.
    3. Type `sum:up` in the "Rule name" field.
    4. Choose "Code" in the "Builder | Code" field on the right.
    5. Type `sum(up)` in the "Metrics browser" query field.
