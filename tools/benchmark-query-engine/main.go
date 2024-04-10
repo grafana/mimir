@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/regexp"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/benchmarks"
@@ -100,10 +101,9 @@ func (a *app) parseArgs() {
 	flag.UintVar(&a.count, "count", 1, "run each benchmark n times")
 	flag.StringVar(&a.testFilter, "bench", ".", "only run benchmarks matching regexp")
 	flag.BoolVar(&a.listTests, "list", false, "list known benchmarks and exit")
-	flag.Parse()
 
-	if len(flag.Args()) > 0 {
-		fmt.Printf("Received unexpected arguments: %v\n", flag.Args())
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		fmt.Printf("%v\n", err)
 		flag.Usage()
 		os.Exit(1)
 	}
