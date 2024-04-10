@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net"
 	"path/filepath"
@@ -57,7 +58,7 @@ func startBenchmarkIngester(rootDataDir string) (*ingester.Ingester, string, fun
 	var cleanupFuncs []func() error
 	cleanup := func() {
 		for i := len(cleanupFuncs) - 1; i >= 0; i-- {
-			cleanupFuncs[i]()
+			_ = cleanupFuncs[i]()
 		}
 	}
 
@@ -122,7 +123,9 @@ func startBenchmarkIngester(rootDataDir string) (*ingester.Ingester, string, fun
 	}
 
 	go func() {
-		serv.Serve(listener)
+		if err := serv.Serve(listener); err != nil {
+			slog.Error("gRPC server failed", "err", err)
+		}
 	}()
 
 	return ing, listener.Addr().String(), cleanup, nil
