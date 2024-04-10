@@ -92,8 +92,9 @@ func (a *app) run() error {
 		}
 	}
 
-	return nil
+	slog.Info("benchmarks completed successfully, cleaning up...")
 
+	return nil
 }
 
 func (a *app) parseArgs() {
