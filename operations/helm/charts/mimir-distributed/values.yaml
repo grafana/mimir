@@ -1305,6 +1305,28 @@ querier:
             type: Pods
             value: 15
         stabilizationWindowSeconds: 60
+  
+  # -- Alternative to KEDA autoscaling which doesn't need any additional setup.
+  horizontalPodAutoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 10
+    behavior:
+      scaleDown:
+        policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 10
+        stabilizationWindowSeconds: 600
+      scaleUp:
+        policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 50
+          - periodSeconds: 120
+            type: Pods
+            value: 15
+        stabilizationWindowSeconds: 60
 
   service:
     annotations: {}
