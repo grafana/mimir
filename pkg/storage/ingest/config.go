@@ -26,14 +26,16 @@ var (
 )
 
 type Config struct {
-	Enabled     bool        `yaml:"enabled"`
-	KafkaConfig KafkaConfig `yaml:"kafka"`
+	Enabled     bool            `yaml:"enabled"`
+	KafkaConfig KafkaConfig     `yaml:"kafka"`
+	Migration   MigrationConfig `yaml:"migration"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka", f)
+	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration", f)
 }
 
 // Validate the config.
@@ -100,4 +102,18 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// MigrationConfig holds the configuration used to migrate Mimir to ingest storage. This config shouldn't be
+// set for any other reason.
+type MigrationConfig struct {
+	DistributorSendToIngestersEnabled bool `yaml:"distributor_send_to_ingesters_enabled"`
+}
+
+func (cfg *MigrationConfig) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix("", f)
+}
+
+func (cfg *MigrationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.BoolVar(&cfg.DistributorSendToIngestersEnabled, prefix+".distributor-send-to-ingesters-enabled", false, "When both this option and ingest storage is enabled, distributors will both write to Kafka and ingesters. A write request will be considered successful only when written to both backends.")
 }

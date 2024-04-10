@@ -61,6 +61,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -4798,6 +4799,13 @@ type ingesterZoneState struct {
 	ringStates []ring.InstanceState
 }
 
+type ingesterIngestionType string
+
+const (
+	ingesterIngestionTypeGRPC  = "grpc"
+	ingesterIngestionTypeKafka = "kafka"
+)
+
 type prepConfig struct {
 	// numIngesters, happyIngesters, and ingesterZones are superseded by ingesterStateByZone
 	numIngesters, happyIngesters int
@@ -4815,6 +4823,10 @@ type prepConfig struct {
 
 	// ingesterDataTenantID is the tenant under which ingesterDataByZone is pushed
 	ingesterDataTenantID string
+
+	// ingesterIngestionType allows to override how the ingester is expected to receive data.
+	// If empty, it defaults to the ingestion storage type configured in the test.
+	ingesterIngestionType ingesterIngestionType
 
 	queryDelay       time.Duration
 	pushDelay        time.Duration
@@ -4890,6 +4902,15 @@ func (c prepConfig) ingesterRingState(zone string, id int) ring.InstanceState {
 		return ring.ACTIVE
 	}
 	return c.ingesterStateByZone[zone].ringStates[id]
+}
+
+func (c prepConfig) ingesterShouldConsumeFromKafka() bool {
+	if c.ingesterIngestionType == "" {
+		// If the ingestion type has not been overridden then consume from Kafka when ingest storage is enabled.
+		return c.ingestStorageEnabled
+	}
+
+	return c.ingesterIngestionType == ingesterIngestionTypeKafka
 }
 
 func (c prepConfig) validate(t testing.TB) {
@@ -4982,9 +5003,9 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			disableStreamingResponse:      cfg.disableStreamingResponse,
 		}
 
-		// Init the partition reader if the ingest storage is enabled.
+		// Init the partition reader if the ingester should consume from Kafka.
 		// This is required to let each mocked ingester to consume their own partition.
-		if cfg.ingestStorageEnabled {
+		if cfg.ingesterShouldConsumeFromKafka() {
 			var err error
 
 			kafkaCfg := ingest.KafkaConfig{}
@@ -5010,7 +5031,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 	}
 
 	// Wait until all partition readers have started.
-	if cfg.ingestStorageEnabled {
+	if cfg.ingesterShouldConsumeFromKafka() {
 		for _, ingester := range ingesters {
 			require.NoError(t, ingester.partitionReader.AwaitRunning(context.Background()))
 		}
@@ -5594,7 +5615,11 @@ func (i *mockIngester) getBeforePushHook() func(ctx context.Context, req *mimirp
 }
 
 func (i *mockIngester) instanceID() string {
-	return fmt.Sprintf("ingester-%s-%d", i.zone, i.id)
+	if i.zone != "" {
+		return fmt.Sprintf("ingester-%s-%d", i.zone, i.id)
+	}
+
+	return fmt.Sprintf("ingester-%d", i.id)
 }
 
 // partitionID returns the partition ID owned by this ingester when ingest storage is used.
@@ -5620,6 +5645,24 @@ func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
 		result[k] = v
 	}
 	return result
+}
+
+// metricNames return a sorted list of ingested metric names.
+func (i *mockIngester) metricNames() []string {
+	i.Lock()
+	defer i.Unlock()
+
+	var out []string
+
+	for _, series := range i.timeseries {
+		if metricName, err := extract.UnsafeMetricNameFromLabelAdapters(series.Labels); err == nil && !slices.Contains(out, metricName) {
+			out = append(out, metricName)
+		}
+	}
+
+	slices.Sort(out)
+
+	return out
 }
 
 func (i *mockIngester) Check(context.Context, *grpc_health_v1.HealthCheckRequest, ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
