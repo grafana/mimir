@@ -124,7 +124,7 @@ offered by Grafana.
    1. Choose **Code** in the **Builder | Code** field on the right.
    1. Type `sum(up)` in the **Metrics browser** query field.
    1. Choose  **Data source-managed** in the **Grafana-managed | Data source-managed** field in the **Rule Type** paragraph.
-   7. Type `example-namespace` in the "Namespace" field.
+   1. Type `example-namespace` in the **Namespace** field.
    8. Type `example-group` in the "Group" field.
    9. From the upper-right corner, click the **Save and exit** button.
 
