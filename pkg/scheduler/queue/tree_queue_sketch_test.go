@@ -1,7 +1,6 @@
 package queue
 
 import (
-	"fmt"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -207,7 +206,6 @@ func Test_RoundRobinDequeue(t *testing.T) {
 			var finalValue any
 			for i := 0; i < tt.numDequeuesToExpected; i++ {
 				_, finalValue = tree.Dequeue()
-				fmt.Println("v: ", finalValue)
 			}
 			v, ok := finalValue.(string)
 			require.True(t, ok)
@@ -322,5 +320,46 @@ func Test_ShuffleShardDequeue(t *testing.T) {
 			}
 		})
 	}
+
+}
+
+// This test is a little messy; I can clean it up, but it's meant to illustrate that we can update a state
+// in tenantQuerierAssignments, and the tree dequeue behavior will adjust accordingly.
+func Test_ChangeShuffleShardState(t *testing.T) {
+	tqa := tenantQuerierAssignments{
+		tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}, "tenant-2": {"querier-2": {}}},
+	}
+
+	state := &ShuffleShardState{
+		tenantQuerierMap: tqa.tenantQuerierIDs,
+		currentQuerier:   nil,
+	}
+
+	tree, err := NewTree([]NodeType{shuffleShard, roundRobin, roundRobin}, state)
+	require.NoError(t, err)
+	err = tree.EnqueueBackByPath(QueuePath{"tenant-1", "query-component-1"}, "query-1")
+	err = tree.EnqueueBackByPath(QueuePath{"tenant-2", "query-component-1"}, "query-2")
+	err = tree.EnqueueBackByPath(QueuePath{"tenant-2", "query-component-1"}, "query-3")
+	require.NoError(t, err)
+
+	querier1 := QuerierID("querier-1")
+	querier2 := QuerierID("querier-2")
+	querier3 := QuerierID("querier-3")
+
+	// set state to querier-2 should dequeue query-2
+	state.currentQuerier = &querier2
+	_, v := tree.Dequeue()
+	require.Equal(t, "query-2", v)
+
+	// set state to querier-1 should dequeue query-1
+	state.currentQuerier = &querier1
+	_, v = tree.Dequeue()
+	require.Equal(t, "query-1", v)
+
+	// update tqa map to assign querier-3 to tenant-2, then set state to querier-3 should dequeue query-3
+	tqa.tenantQuerierIDs["tenant-2"]["querier-3"] = struct{}{}
+	state.currentQuerier = &querier3
+	_, v = tree.Dequeue()
+	require.Equal(t, "query-3", v)
 
 }

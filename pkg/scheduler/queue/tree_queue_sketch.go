@@ -89,12 +89,12 @@ func (t *Tree) newNode(name string, depth int) TreeNodeIFace {
 		}
 	case shuffleShard:
 		return &ShuffleShardNode{
-			name:            name,
-			localQueue:      list.New(),
-			queueOrder:      make([]string, 0),
-			queueMap:        make(map[string]TreeNodeIFace, 1),
-			depth:           depth,
-			stateUpdateInfo: t.ShuffleShardState,
+			name:              name,
+			localQueue:        list.New(),
+			queueOrder:        make([]string, 0),
+			queueMap:          make(map[string]TreeNodeIFace, 1),
+			depth:             depth,
+			ShuffleShardState: t.ShuffleShardState,
 		}
 	default:
 		panic("no defined node type at provided depth")
@@ -218,13 +218,13 @@ func (rrn *RoundRobinNode) IsEmpty() bool {
 }
 
 type ShuffleShardNode struct {
-	name            string
-	localQueue      *list.List // should never be populated
-	queuePosition   int
-	queueOrder      []string // will be a slice of tenants (+ self?)
-	queueMap        map[string]TreeNodeIFace
-	depth           int
-	stateUpdateInfo *ShuffleShardState
+	name          string
+	localQueue    *list.List // should never be populated
+	queuePosition int
+	queueOrder    []string // will be a slice of tenants (+ self?)
+	queueMap      map[string]TreeNodeIFace
+	depth         int
+	*ShuffleShardState
 }
 
 func (ssn *ShuffleShardNode) Name() string {
@@ -239,6 +239,11 @@ func (ssn *ShuffleShardNode) dequeue() (path QueuePath, v any) {
 	// nothing here to dequeue
 	path = QueuePath{ssn.name}
 	if ssn.IsEmpty() {
+		return path, nil
+	}
+
+	// can't get a tenant if no querier set
+	if ssn.currentQuerier == nil {
 		return path, nil
 	}
 
@@ -274,8 +279,8 @@ func (ssn *ShuffleShardNode) dequeueGetNode() (string, TreeNodeIFace) {
 			checkIndex = 0
 		}
 		tenantName := ssn.queueOrder[checkIndex]
-		if tenantQuerierSet, ok := ssn.stateUpdateInfo.tenantQuerierMap[TenantID(tenantName)]; ok {
-			if _, ok := tenantQuerierSet[*ssn.stateUpdateInfo.currentQuerier]; ok {
+		if tenantQuerierSet, ok := ssn.tenantQuerierMap[TenantID(tenantName)]; ok {
+			if _, ok := tenantQuerierSet[*ssn.currentQuerier]; ok {
 				return tenantName, ssn.queueMap[tenantName]
 			}
 		}
