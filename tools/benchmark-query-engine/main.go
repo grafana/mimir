@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -242,7 +241,8 @@ func (a *app) filteredTestCaseNames() ([]string, error) {
 
 func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 	cmd := exec.Command(a.binaryPath, "-test.bench="+regexp.QuoteMeta(name), "-test.benchmem")
-	cmd.Stdout = &goBenchOutputFilteringWriter{printBenchmarkHeader: printBenchmarkHeader, destination: os.Stdout}
+	buf := &bytes.Buffer{}
+	cmd.Stdout = buf
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(cmd.Env, "STREAMING_PROMQL_ENGINE_BENCHMARK_INGESTER_ADDR="+a.ingesterAddress)
 	cmd.Env = append(cmd.Env, "STREAMING_PROMQL_ENGINE_BENCHMARK_SKIP_COMPARE_RESULTS=true")
@@ -252,55 +252,24 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 	}
 
 	usage := cmd.ProcessState.SysUsage().(*syscall.Rusage)
+	outputLines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 
-	fmt.Printf("     %v B\n", usage.Maxrss)
-
-	return nil
-}
-
-type goBenchOutputFilteringWriter struct {
-	printBenchmarkHeader bool
-	destination          io.Writer
-	buf                  bytes.Buffer
-}
-
-func (g *goBenchOutputFilteringWriter) Write(p []byte) (int, error) {
-	if _, err := g.buf.Write(p); err != nil {
-		return 0, err
-	}
-
-	if g.buf.Len() == 0 {
-		return 0, nil
-	}
-
-	// This isn't particularly efficient, but it's good enough for this scenario.
-	s := g.buf.String()
-	lines := strings.Split(s, "\n")
-	lines = lines[:len(lines)-1] // Drop the incomplete line.
-
-	for _, l := range lines {
-		b := g.buf.Next(len(l) + 1) // +1 for newline character
-
+	for _, l := range outputLines {
 		isBenchmarkHeaderLine := strings.HasPrefix(l, "goos") || strings.HasPrefix(l, "goarch") || strings.HasPrefix(l, "pkg")
 		isBenchmarkLine := strings.HasPrefix(l, benchmarkName)
 		isPassLine := l == "PASS"
-		shouldWrite := !isPassLine
 
 		if isBenchmarkHeaderLine {
-			shouldWrite = g.printBenchmarkHeader
-		}
-
-		if isBenchmarkLine {
-			// Drop the trailing newline character so we can append the RSS on the same line in runTestCase above.
-			b = b[:len(b)-1]
-		}
-
-		if shouldWrite {
-			if _, err := g.destination.Write(b); err != nil {
-				return 0, err
+			if printBenchmarkHeader {
+				fmt.Println(l)
 			}
+		} else if isBenchmarkLine {
+			fmt.Print(l)
+			fmt.Printf("     %v B\n", usage.Maxrss)
+		} else if !isPassLine {
+			fmt.Println(l)
 		}
 	}
 
-	return len(p), nil
+	return nil
 }
