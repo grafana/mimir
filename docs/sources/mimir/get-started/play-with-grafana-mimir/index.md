@@ -1,4 +1,4 @@
-F---
+---
 aliases:
   - /tutorials/play-with-grafana-mimir/
   - ../tutorials/play-with-grafana-mimir/
