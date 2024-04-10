@@ -43,3 +43,6 @@ compose
 compose-simple
 .DS_Store
 coverage.txt
+
+tools/listblocks/testbucket/
+tools/listblocks/thanos

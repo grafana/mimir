@@ -1,0 +1,23 @@
+# Start a new stage from alpine
+FROM alpine:latest
+
+ENV THANOS_VERSION=0.34.1
+ENV THANOS_URL=https://github.com/thanos-io/thanos/releases/download/v${THANOS_VERSION}/thanos-${THANOS_VERSION}.linux-amd64.tar.gz
+
+RUN apk add --update python3
+
+# Download and extract Thanos
+RUN wget -O thanos.tar.gz ${THANOS_URL} && \
+    tar -xvf thanos.tar.gz && \
+    cp thanos-${THANOS_VERSION}.linux-amd64/thanos /usr/local/bin/ && \
+    chmod +x /usr/local/bin/thanos && \
+    rm -rf thanos.tar.gz thanos-${THANOS_VERSION}.linux-amd64
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy the executable from the builder stage
+COPY rewriteblock .
+COPY ./config ./config
+# Define the entrypoint command to run when the container starts
+CMD ["./rewriteblock", "--backend=gcs", "--gcs.bucket-name=dev-us-central1-cortex-tsdb-dev-rewrite-test", "--user=9960"]

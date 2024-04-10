@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
+	"regexp"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -26,20 +29,20 @@ import (
 )
 
 type config struct {
-	bucket              bucket.Config
-	userID              string
-	showDeleted         bool
-	showLabels          bool
-	showUlidTime        bool
-	showSources         bool
-	showParents         bool
-	showCompactionLevel bool
-	showBlockSize       bool
-	showStats           bool
-	splitCount          int
-	minTime             flagext.Time
-	maxTime             flagext.Time
-
+	bucket                     bucket.Config
+	userID                     string
+	showDeleted                bool
+	showLabels                 bool
+	showUlidTime               bool
+	showSources                bool
+	showParents                bool
+	showCompactionLevel        bool
+	showBlockSize              bool
+	showStats                  bool
+	splitCount                 int
+	minTime                    flagext.Time
+	maxTime                    flagext.Time
+	dataFolder                 string
 	useUlidTimeForMinTimeCheck bool
 }
 
@@ -51,6 +54,7 @@ func main() {
 	cfg := config{}
 	cfg.bucket.RegisterFlags(flag.CommandLine)
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
+	flag.StringVar(&cfg.dataFolder, "data-folder", "./testbucket", "Writing temperary files to")
 	flag.BoolVar(&cfg.showDeleted, "show-deleted", false, "Show deleted blocks")
 	flag.BoolVar(&cfg.showLabels, "show-labels", false, "Show block labels")
 	flag.BoolVar(&cfg.showUlidTime, "show-ulid-time", false, "Show time from ULID")
@@ -91,13 +95,13 @@ func main() {
 		log.Fatalln("failed to read block metadata:", err)
 	}
 
-	printMetas(metas, deleteMarkerDetails, noCompactMarkerDetails, cfg)
+	printMetas(metas, deleteMarkerDetails, noCompactMarkerDetails, cfg, bkt)
 }
 
 // nolint:errcheck
 //
 //goland:noinspection GoUnhandledErrorResult
-func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.ULID]block.DeletionMark, noCompactMarkerDetails map[ulid.ULID]block.NoCompactMark, cfg config) {
+func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.ULID]block.DeletionMark, noCompactMarkerDetails map[ulid.ULID]block.NoCompactMark, cfg config, bkt objstore.InstrumentedBucket) {
 	blocks := listblocks.SortBlocks(metas)
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)
@@ -140,6 +144,7 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.UL
 	}
 	fmt.Fprintln(tabber)
 
+	var rewrite_block_total_time time.Time
 	for _, b := range blocks {
 		if !cfg.showDeleted && deleteMarkerDetails[b.ULID].DeletionTime != 0 {
 			continue
@@ -216,5 +221,44 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.UL
 		}
 
 		fmt.Fprintln(tabber)
+
+		// rewrite block with filter
+
+		startTime := time.Now()
+		new_block_uid, err := rewriteBlock(b.ULID.String(), cfg.dataFolder)
+		if err != nil {
+			log.Println("Failed to write new block, the block_uid is ", b.ULID.String(), err.Error())
+			continue
+		}
+		endTime := time.Now()
+		rewrite_block_total_time = rewrite_block_total_time.Add(endTime.Sub(startTime))
+		log.Printf("Execution time of rewrite block %s to %s : %v, total time for rewrite %v", b.ULID.String(), new_block_uid, endTime.Sub(startTime), rewrite_block_total_time)
 	}
+}
+
+func rewriteBlock(block_uid string, data_folder string) (string, error) {
+	log.Printf("the block_uid is %s, and data_folder is: %s", block_uid, data_folder)
+	cmd := exec.Command("thanos", "tools", "bucket", "rewrite", "--no-dry-run", "--delete-blocks",
+		"--id", block_uid,
+		"--objstore.config-file", "./config/objstore_config.yml",
+		"--rewrite.to-delete-config-file", "./config/matchers.yml",
+		"--tmp.dir", "./testbucket",
+	)
+	// Run the command and capture its output
+	output, err := cmd.CombinedOutput()
+
+	log.Println(string(output))
+
+	if err != nil {
+		fmt.Println("COMMAND is", cmd.String(), "Error:", err.Error())
+		return "", err
+	}
+
+	re := regexp.MustCompile(`new=([^ ]+)`)
+	match := re.FindSubmatch(output)
+	if len(match) > 1 {
+		block_uid := match[1]
+		return string(block_uid), nil
+	}
+	return "", fmt.Errorf("can't read new block id from the log")
 }
