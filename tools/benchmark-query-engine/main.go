@@ -240,7 +240,7 @@ func (a *app) filteredTestCaseNames() ([]string, error) {
 }
 
 func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
-	cmd := exec.Command(a.binaryPath, "-test.bench="+regexp.QuoteMeta(name), "-test.benchmem")
+	cmd := exec.Command(a.binaryPath, "-test.bench="+regexp.QuoteMeta(name), "-test.run=NoTestsWillMatchThisPattern", "-test.benchmem")
 	buf := &bytes.Buffer{}
 	cmd.Stdout = buf
 	cmd.Stderr = os.Stderr
