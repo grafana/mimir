@@ -7417,6 +7417,8 @@ func TestStartFinishRequest(t *testing.T) {
 }
 
 func TestSendMessageMetadata(t *testing.T) {
+	const userID = "test"
+
 	var distributorCfg Config
 	var clientConfig client.Config
 	var ringConfig ring.Config
@@ -7439,7 +7441,7 @@ func TestSendMessageMetadata(t *testing.T) {
 	require.NotNil(t, d)
 
 	ctx := context.Background()
-	ctx = user.InjectOrgID(ctx, "test")
+	ctx = user.InjectOrgID(ctx, userID)
 
 	req := &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
@@ -7451,10 +7453,10 @@ func TestSendMessageMetadata(t *testing.T) {
 		Source: mimirpb.API,
 	}
 
-	err = d.sendToIngester(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req)
+	err = d.sendShardedWriteRequestToIngester(ctx, userID, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req)
 	require.NoError(t, err)
 
-	// Verify that d.sendToIngester added message size to metadata.
+	// Verify that d.sendShardedWriteRequestToIngester added message size to metadata.
 	require.Equal(t, []string{strconv.Itoa(req.Size())}, mock.md[grpcutil.MetadataMessageSize])
 }
 
