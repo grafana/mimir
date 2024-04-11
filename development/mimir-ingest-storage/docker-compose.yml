@@ -167,6 +167,8 @@
       - "-target=write"
       - "-activity-tracker.filepath=/activity/mimir-write-zone-a-1"
       - "-ingester.ring.instance-availability-zone=zone-a"
+      - "-ingester.ring.token-generation-strategy=spread-minimizing"
+      - "-ingester.ring.spread-minimizing-zones=zone-a"
     "depends_on":
       "kafka":
         "condition": "service_healthy"
@@ -191,6 +193,8 @@
       - "-target=write"
       - "-activity-tracker.filepath=/activity/mimir-write-zone-a-2"
       - "-ingester.ring.instance-availability-zone=zone-a"
+      - "-ingester.ring.token-generation-strategy=spread-minimizing"
+      - "-ingester.ring.spread-minimizing-zones=zone-a"
     "depends_on":
       "kafka":
         "condition": "service_healthy"
@@ -215,6 +219,8 @@
       - "-target=write"
       - "-activity-tracker.filepath=/activity/mimir-write-zone-a-3"
       - "-ingester.ring.instance-availability-zone=zone-a"
+      - "-ingester.ring.token-generation-strategy=spread-minimizing"
+      - "-ingester.ring.spread-minimizing-zones=zone-a"
     "depends_on":
       "kafka":
         "condition": "service_healthy"

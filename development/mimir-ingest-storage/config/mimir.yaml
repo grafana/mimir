@@ -24,7 +24,7 @@ ingester:
 
   partition_ring:
     min_partition_owners_count:       1
-    min_partition_owners_duration:    10s
+    min_partition_owners_duration:    0s
     delete_inactive_partition_after:  1m
 
 blocks_storage:
