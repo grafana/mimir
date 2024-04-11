@@ -775,7 +775,7 @@ groups:
         }}.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirbucketindexnotupdated
     expr: |
-      min by(cluster, namespace, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 7200
+      min by(cluster, namespace, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 2100
     labels:
       severity: critical
 - name: mimir_compactor_alerts
