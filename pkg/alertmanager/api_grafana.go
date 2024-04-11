@@ -37,15 +37,15 @@ const (
 	statusError   = "error"
 )
 
-type PostableUserConfig struct {
-	TemplateFiles      map[string]string                    `json:"template_files"`
+type GrafanaAlertmanagerConfig struct {
+	Templates          map[string]string                    `json:"template_files"`
 	AlertmanagerConfig definition.PostableApiAlertingConfig `json:"alertmanager_config"`
 }
 type UserGrafanaConfig struct {
-	GrafanaAlertmanagerConfig PostableUserConfig `json:"configuration"`
-	Hash                      string             `json:"configuration_hash"`
-	CreatedAt                 int64              `json:"created"`
-	Default                   bool               `json:"default"`
+	GrafanaAlertmanagerConfig GrafanaAlertmanagerConfig `json:"configuration"`
+	Hash                      string                    `json:"configuration_hash"`
+	CreatedAt                 int64                     `json:"created"`
+	Default                   bool                      `json:"default"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
@@ -265,8 +265,8 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	var postableConfig PostableUserConfig
-	if err := json.Unmarshal([]byte(cfg.RawConfig), &postableConfig); err != nil {
+	var grafanaConfig GrafanaAlertmanagerConfig
+	if err := json.Unmarshal([]byte(cfg.RawConfig), &grafanaConfig); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
 		return
@@ -275,7 +275,7 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 	util.WriteJSONResponse(w, successResult{
 		Status: statusSuccess,
 		Data: &UserGrafanaConfig{
-			GrafanaAlertmanagerConfig: postableConfig,
+			GrafanaAlertmanagerConfig: grafanaConfig,
 			Hash:                      cfg.Hash,
 			CreatedAt:                 cfg.CreatedAtTimestamp,
 			Default:                   cfg.Default,
