@@ -1370,7 +1370,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		// more in-flight requests to the backend.
 		cleanup()
 
-		// All requests have completed, so it's not safe to cancel the requests context to release resources.
+		// All requests have completed, so it's now safe to cancel the requests context to release resources.
 		_, cancel := remoteRequestContextAndCancel()
 		cancel()
 	}
