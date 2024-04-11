@@ -300,11 +300,11 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 
 	step := int64(120 * 1000)
 	req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
-		Path:  "/api/v1/query_range",
-		Start: parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
-		End:   parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
-		Step:  step,
-		Query: `{__name__=~".+"}`,
+		path:      "/api/v1/query_range",
+		start:     parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
+		end:       parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
+		step:      step,
+		queryExpr: parseQuery(t, `{__name__=~".+"}`),
 	})
 
 	_, ctx := stats.ContextWithEmptyStats(context.Background())
@@ -431,11 +431,11 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 	}))
 
 	req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
-		Path:  "/api/v1/query_range",
-		Start: parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
-		End:   parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
-		Step:  13 * 1000, // Not aligned to start/end.
-		Query: `{__name__=~".+"}`,
+		path:      "/api/v1/query_range",
+		start:     parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
+		end:       parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
+		step:      13 * 1000, // Not aligned to start/end.
+		queryExpr: parseQuery(t, `{__name__=~".+"}`),
 	})
 
 	_, ctx := stats.ContextWithEmptyStats(context.Background())
@@ -524,11 +524,11 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 	}))
 
 	req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
-		Path:  "/api/v1/query_range",
-		Start: parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
-		End:   parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
-		Step:  13 * 1000, // Not aligned to start/end.
-		Query: `{__name__=~".+"}`,
+		path:      "/api/v1/query_range",
+		start:     parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
+		end:       parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
+		step:      13 * 1000, // Not aligned to start/end.
+		queryExpr: parseQuery(t, `{__name__=~".+"}`),
 	})
 
 	_, ctx := stats.ContextWithEmptyStats(context.Background())
@@ -676,11 +676,11 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			ctx := user.InjectOrgID(context.Background(), userID)
 
 			req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
-				Path:  "/api/v1/query_range",
-				Start: testData.queryStartTime.Unix() * 1000,
-				End:   testData.queryEndTime.Unix() * 1000,
-				Step:  1000, // 1s step so it's guaranteed to be aligned.
-				Query: `{__name__=~".+"}`,
+				path:      "/api/v1/query_range",
+				start:     testData.queryStartTime.Unix() * 1000,
+				end:       testData.queryEndTime.Unix() * 1000,
+				step:      1000, // 1s step so it's guaranteed to be aligned.
+				queryExpr: parseQuery(t, `{__name__=~".+"}`),
 			})
 
 			// MetricsQueryRequest should result in a query.
@@ -820,12 +820,12 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 		endTime := startTime.Add(time.Duration(rnd.Int63n(maxTime.Sub(startTime).Milliseconds())) * time.Millisecond)
 
 		reqs = append(reqs, &PrometheusRangeQueryRequest{
-			ID:    int64(q),
-			Path:  "/api/v1/query_range",
-			Start: startTime.Unix() * 1000,
-			End:   endTime.Unix() * 1000,
-			Step:  120 * 1000,
-			Query: fmt.Sprintf(`sum by(group_2) (rate({__name__=~".+"}[%s]))`, (2 * step).String()),
+			id:        int64(q),
+			path:      "/api/v1/query_range",
+			start:     startTime.Unix() * 1000,
+			end:       endTime.Unix() * 1000,
+			step:      120 * 1000,
+			queryExpr: parseQuery(t, fmt.Sprintf(`sum by(group_2) (rate({__name__=~".+"}[%s]))`, (2*step).String())),
 		})
 	}
 
@@ -896,9 +896,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 	}{
 		"Should drop tiny extent that overlaps with non-tiny request only": {
 			req: &PrometheusRangeQueryRequest{
-				Start: 100,
-				End:   120,
-				Step:  5,
+				start:     100,
+				end:       120,
+				step:      5,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(0, 50, 5, now),
@@ -917,9 +918,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		},
 		"Should replace tiny extents that are covered by bigger request": {
 			req: &PrometheusRangeQueryRequest{
-				Start: 100,
-				End:   200,
-				Step:  5,
+				start:     100,
+				end:       200,
+				step:      5,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(0, 50, 5, now-10),
@@ -941,9 +943,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		},
 		"Should not drop tiny extent that completely overlaps with tiny request": {
 			req: &PrometheusRangeQueryRequest{
-				Start: 100,
-				End:   105,
-				Step:  5,
+				start:     100,
+				end:       105,
+				step:      5,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(0, 50, 5, now),
@@ -963,9 +966,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		},
 		"Should not drop tiny extent that partially center-overlaps with tiny request": {
 			req: &PrometheusRangeQueryRequest{
-				Start: 106,
-				End:   108,
-				Step:  2,
+				start:     106,
+				end:       108,
+				step:      2,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(60, 64, 2, now),
@@ -983,9 +987,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		},
 		"Should not drop tiny extent that partially left-overlaps with tiny request": {
 			req: &PrometheusRangeQueryRequest{
-				Start: 100,
-				End:   106,
-				Step:  2,
+				start:     100,
+				end:       106,
+				step:      2,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(60, 64, 2, now),
@@ -1001,9 +1006,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		},
 		"Should not drop tiny extent that partially right-overlaps with tiny request": {
 			req: &PrometheusRangeQueryRequest{
-				Start: 100,
-				End:   106,
-				Step:  2,
+				start:     100,
+				end:       106,
+				step:      2,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(60, 64, 2, now),
@@ -1019,9 +1025,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		},
 		"Should merge fragmented extents if request fills the hole": {
 			req: &PrometheusRangeQueryRequest{
-				Start: 40,
-				End:   80,
-				Step:  20,
+				start:     40,
+				end:       80,
+				step:      20,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(0, 20, 20, now-100),
@@ -1034,9 +1041,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		},
 		"Should left-extend extent if request starts earlier than extent in cache": {
 			req: &PrometheusRangeQueryRequest{
-				Start: 40,
-				End:   80,
-				Step:  20,
+				start:     40,
+				end:       80,
+				step:      20,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(60, 160, 20, now-100),
@@ -1048,9 +1056,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		},
 		"Should left-extend extent if request starts earlier than extent in cache, but keep oldest time": {
 			req: &PrometheusRangeQueryRequest{
-				Start: 40,
-				End:   80,
-				Step:  20,
+				start:     40,
+				end:       80,
+				step:      20,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(60, 160, 20, now+100),
@@ -1063,9 +1072,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		},
 		"Should left-extend extent with zero query timestamp if request starts earlier than extent in cache and use recent query timestamp": {
 			req: &PrometheusRangeQueryRequest{
-				Start: 40,
-				End:   80,
-				Step:  20,
+				start:     40,
+				end:       80,
+				step:      20,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(60, 160, 20, 0),
@@ -1077,9 +1087,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		},
 		"Should right-extend extent if request ends later than extent in cache": {
 			req: &PrometheusRangeQueryRequest{
-				Start: 100,
-				End:   180,
-				Step:  20,
+				start:     100,
+				end:       180,
+				step:      20,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(60, 160, 20, now-100),
@@ -1091,9 +1102,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		},
 		"Should right-extend extent with zero query timestamp if request ends later than extent in cache": {
 			req: &PrometheusRangeQueryRequest{
-				Start: 100,
-				End:   180,
-				Step:  20,
+				start:     100,
+				end:       180,
+				step:      20,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(60, 160, 20, 0),
@@ -1107,9 +1119,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			req: &PrometheusRangeQueryRequest{
 				// This request is carefully crafted such that cachedEntry is not used to fulfill
 				// the request.
-				Start: 160,
-				End:   180,
-				Step:  20,
+				start:     160,
+				end:       180,
+				step:      20,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			cachedExtents: []Extent{
 				{
@@ -1297,14 +1310,14 @@ func TestSplitRequests_prepareDownstreamRequests(t *testing.T) {
 		},
 		"should inject ID and hints on downstream requests and return them": {
 			input: splitRequests{
-				{downstreamRequests: []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 1}, &PrometheusRangeQueryRequest{Start: 2}}},
+				{downstreamRequests: []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 1}, &PrometheusRangeQueryRequest{start: 2}}},
 				{downstreamRequests: []MetricsQueryRequest{}},
-				{downstreamRequests: []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 3}}},
+				{downstreamRequests: []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3}}},
 			},
 			expected: []MetricsQueryRequest{
-				(&PrometheusRangeQueryRequest{Start: 1}).WithID(1).WithTotalQueriesHint(3),
-				(&PrometheusRangeQueryRequest{Start: 2}).WithID(2).WithTotalQueriesHint(3),
-				(&PrometheusRangeQueryRequest{Start: 3}).WithID(3).WithTotalQueriesHint(3),
+				(&PrometheusRangeQueryRequest{start: 1}).WithID(1).WithTotalQueriesHint(3),
+				(&PrometheusRangeQueryRequest{start: 2}).WithID(2).WithTotalQueriesHint(3),
+				(&PrometheusRangeQueryRequest{start: 3}).WithID(3).WithTotalQueriesHint(3),
 			},
 		},
 	}
@@ -1346,89 +1359,89 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 		},
 		"should associate downstream responses to requests": {
 			requests: splitRequests{{
-				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 1, ID: 1}, &PrometheusRangeQueryRequest{Start: 2, ID: 2}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 1, id: 1}, &PrometheusRangeQueryRequest{start: 2, id: 2}},
 				downstreamResponses: []Response{nil, nil},
 			}, {
 				downstreamRequests:  []MetricsQueryRequest{},
 				downstreamResponses: []Response{},
 			}, {
-				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 3, ID: 3}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3, id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
 			responses: []requestResponse{{
-				Request:  &PrometheusRangeQueryRequest{Start: 3, ID: 3},
+				Request:  &PrometheusRangeQueryRequest{start: 3, id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
 			}, {
-				Request:  &PrometheusRangeQueryRequest{Start: 1, ID: 1},
+				Request:  &PrometheusRangeQueryRequest{start: 1, id: 1},
 				Response: &PrometheusResponse{Status: "response-1"},
 			}, {
-				Request:  &PrometheusRangeQueryRequest{Start: 2, ID: 2},
+				Request:  &PrometheusRangeQueryRequest{start: 2, id: 2},
 				Response: &PrometheusResponse{Status: "response-2"},
 			}},
 			expected: splitRequests{{
-				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 1, ID: 1}, &PrometheusRangeQueryRequest{Start: 2, ID: 2}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 1, id: 1}, &PrometheusRangeQueryRequest{start: 2, id: 2}},
 				downstreamResponses: []Response{&PrometheusResponse{Status: "response-1"}, &PrometheusResponse{Status: "response-2"}},
 			}, {
 				downstreamRequests:  []MetricsQueryRequest{},
 				downstreamResponses: []Response{},
 			}, {
-				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 3, ID: 3}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3, id: 3}},
 				downstreamResponses: []Response{&PrometheusResponse{Status: "response-3"}},
 			}},
 		},
 		"should return error if a downstream response is missing": {
 			requests: splitRequests{{
-				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 1, ID: 1}, &PrometheusRangeQueryRequest{Start: 2, ID: 2}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 1, id: 1}, &PrometheusRangeQueryRequest{start: 2, id: 2}},
 				downstreamResponses: []Response{nil, nil},
 			}, {
-				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 3, ID: 3}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3, id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
 			responses: []requestResponse{{
-				Request:  &PrometheusRangeQueryRequest{Start: 3, ID: 3},
+				Request:  &PrometheusRangeQueryRequest{start: 3, id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
 			}, {
-				Request:  &PrometheusRangeQueryRequest{Start: 2, ID: 2},
+				Request:  &PrometheusRangeQueryRequest{start: 2, id: 2},
 				Response: &PrometheusResponse{Status: "response-2"},
 			}},
 			expectedErr: "consistency check failed: missing downstream response",
 		},
 		"should return error if multiple downstream responses have the same ID": {
 			requests: splitRequests{{
-				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 1, ID: 1}, &PrometheusRangeQueryRequest{Start: 2, ID: 2}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 1, id: 1}, &PrometheusRangeQueryRequest{start: 2, id: 2}},
 				downstreamResponses: []Response{nil, nil},
 			}, {
-				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 3, ID: 3}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3, id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
 			responses: []requestResponse{{
-				Request:  &PrometheusRangeQueryRequest{Start: 3, ID: 3},
+				Request:  &PrometheusRangeQueryRequest{start: 3, id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
 			}, {
-				Request:  &PrometheusRangeQueryRequest{Start: 2, ID: 3},
+				Request:  &PrometheusRangeQueryRequest{start: 2, id: 3},
 				Response: &PrometheusResponse{Status: "response-2"},
 			}},
 			expectedErr: "consistency check failed: conflicting downstream request ID",
 		},
 		"should return error if extra downstream responses are requested to be stored": {
 			requests: splitRequests{{
-				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 1, ID: 1}, &PrometheusRangeQueryRequest{Start: 2, ID: 2}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 1, id: 1}, &PrometheusRangeQueryRequest{start: 2, id: 2}},
 				downstreamResponses: []Response{nil, nil},
 			}, {
-				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{Start: 3, ID: 3}},
+				downstreamRequests:  []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3, id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
 			responses: []requestResponse{{
-				Request:  &PrometheusRangeQueryRequest{Start: 3, ID: 3},
+				Request:  &PrometheusRangeQueryRequest{start: 3, id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
 			}, {
-				Request:  &PrometheusRangeQueryRequest{Start: 2, ID: 2},
+				Request:  &PrometheusRangeQueryRequest{start: 2, id: 2},
 				Response: &PrometheusResponse{Status: "response-2"},
 			}, {
-				Request:  &PrometheusRangeQueryRequest{Start: 1, ID: 1},
+				Request:  &PrometheusRangeQueryRequest{start: 1, id: 1},
 				Response: &PrometheusResponse{Status: "response-1"},
 			}, {
-				Request:  &PrometheusRangeQueryRequest{Start: 4, ID: 4},
+				Request:  &PrometheusRangeQueryRequest{start: 4, id: 4},
 				Response: &PrometheusResponse{Status: "response-4"},
 			}},
 			expectedErr: "consistency check failed: received more responses than expected (expected: 3, got: 4)",
@@ -1614,147 +1627,147 @@ func TestSplitQueryByInterval(t *testing.T) {
 		interval time.Duration
 	}{
 		{
-			input: &PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 0, end: 60 * 60 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 0, end: 60 * 60 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 0, end: 60 * 60 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 0, end: 60 * 60 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 0, End: 24 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 0, end: 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 0, End: 24 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 0, end: 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 0, End: 3 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 0, end: 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 0, End: 3 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 0, end: 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 0, End: 2 * 24 * 3600 * seconds, Step: 15 * seconds, Query: queryFooAtStart, QueryExpr: queryFooAtStartExpr},
+			input: &PrometheusRangeQueryRequest{start: 0, end: 2 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooAtStartExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 0, End: (24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: queryFooAtZero, QueryExpr: queryFooAtZeroExpr},
-				&PrometheusRangeQueryRequest{Start: 24 * 3600 * seconds, End: 2 * 24 * 3600 * seconds, Step: 15 * seconds, Query: queryFooAtZero, QueryExpr: queryFooAtZeroExpr},
+				&PrometheusRangeQueryRequest{start: 0, end: (24 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooAtZeroExpr},
+				&PrometheusRangeQueryRequest{start: 24 * 3600 * seconds, end: 2 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooAtZeroExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 0, End: 2 * 3 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 0, end: 2 * 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 0, End: (3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: 2 * 3 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 0, end: (3 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 3 * 3600 * seconds, end: 2 * 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: 3 * 24 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 3 * 3600 * seconds, end: 3 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: (24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: 24 * 3600 * seconds, End: (2 * 24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: 2 * 24 * 3600 * seconds, End: 3 * 24 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 3 * 3600 * seconds, end: (24 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 24 * 3600 * seconds, end: (2 * 24 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 2 * 24 * 3600 * seconds, end: 3 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: 2 * 3600 * seconds, End: 3 * 3 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 2 * 3600 * seconds, end: 3 * 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: 2 * 3600 * seconds, End: (3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: 3 * 3600 * seconds, End: (2 * 3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: 2 * 3 * 3600 * seconds, End: 3 * 3 * 3600 * seconds, Step: 15 * seconds, Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 2 * 3600 * seconds, end: (3 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 3 * 3600 * seconds, end: (2 * 3 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 2 * 3 * 3600 * seconds, end: 3 * 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:03:00Z"), Step: 5 * time.Minute.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T23:48:00Z"), end: timeToMillis(t, "2021-10-15T00:03:00Z"), step: 5 * time.Minute.Milliseconds(), queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:03:00Z"), Step: 5 * time.Minute.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T23:48:00Z"), end: timeToMillis(t, "2021-10-15T00:03:00Z"), step: 5 * time.Minute.Milliseconds(), queryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T23:48:00Z"), end: timeToMillis(t, "2021-10-15T00:00:00Z"), step: 6 * time.Minute.Milliseconds(), queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-14T23:54:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T23:48:00Z"), end: timeToMillis(t, "2021-10-14T23:54:00Z"), step: 6 * time.Minute.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T00:00:00Z"), end: timeToMillis(t, "2021-10-15T00:00:00Z"), step: 6 * time.Minute.Milliseconds(), queryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T22:00:00Z"), End: timeToMillis(t, "2021-10-17T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T22:00:00Z"), end: timeToMillis(t, "2021-10-17T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-14T22:00:00Z"), End: timeToMillis(t, "2021-10-14T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-15T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T22:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T22:00:00Z"), End: timeToMillis(t, "2021-10-17T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T22:00:00Z"), end: timeToMillis(t, "2021-10-14T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T22:00:00Z"), end: timeToMillis(t, "2021-10-15T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T22:00:00Z"), end: timeToMillis(t, "2021-10-16T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T22:00:00Z"), end: timeToMillis(t, "2021-10-17T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-18T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T00:00:00Z"), end: timeToMillis(t, "2021-10-18T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T00:00:00Z"), End: timeToMillis(t, "2021-10-16T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T00:00:00Z"), End: timeToMillis(t, "2021-10-17T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-18T00:00:00Z"), End: timeToMillis(t, "2021-10-18T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T00:00:00Z"), end: timeToMillis(t, "2021-10-15T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T00:00:00Z"), end: timeToMillis(t, "2021-10-16T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T00:00:00Z"), end: timeToMillis(t, "2021-10-17T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-18T00:00:00Z"), end: timeToMillis(t, "2021-10-18T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-22T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T22:00:00Z"), end: timeToMillis(t, "2021-10-22T04:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-15T22:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T04:00:00Z"), End: timeToMillis(t, "2021-10-17T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-18T10:00:00Z"), End: timeToMillis(t, "2021-10-18T10:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-19T16:00:00Z"), End: timeToMillis(t, "2021-10-19T16:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-20T22:00:00Z"), End: timeToMillis(t, "2021-10-20T22:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-22T04:00:00Z"), End: timeToMillis(t, "2021-10-22T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T22:00:00Z"), end: timeToMillis(t, "2021-10-15T22:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T04:00:00Z"), end: timeToMillis(t, "2021-10-17T04:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-18T10:00:00Z"), end: timeToMillis(t, "2021-10-18T10:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-19T16:00:00Z"), end: timeToMillis(t, "2021-10-19T16:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-20T22:00:00Z"), end: timeToMillis(t, "2021-10-20T22:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-22T04:00:00Z"), end: timeToMillis(t, "2021-10-22T04:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T14:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-17T14:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T06:00:00Z"), End: timeToMillis(t, "2021-10-16T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T06:00:00Z"), End: timeToMillis(t, "2021-10-17T14:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-15T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T06:00:00Z"), end: timeToMillis(t, "2021-10-16T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T06:00:00Z"), end: timeToMillis(t, "2021-10-17T14:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-17T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T06:00:00Z"), End: timeToMillis(t, "2021-10-16T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-15T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T06:00:00Z"), end: timeToMillis(t, "2021-10-16T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T06:00:00Z"), end: timeToMillis(t, "2021-10-17T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-17T18:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T16:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T02:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T08:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-15T16:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T02:00:00Z"), end: timeToMillis(t, "2021-10-16T22:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T08:00:00Z"), end: timeToMillis(t, "2021-10-17T18:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T08:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-17T08:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T16:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-16T02:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{Start: timeToMillis(t, "2021-10-17T08:00:00Z"), End: timeToMillis(t, "2021-10-17T08:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: queryFoo, QueryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-15T16:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T02:00:00Z"), end: timeToMillis(t, "2021-10-16T22:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T08:00:00Z"), end: timeToMillis(t, "2021-10-17T08:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
 			},
 			interval: day,
 		},

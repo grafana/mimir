@@ -45,88 +45,113 @@ func newEmptyPrometheusResponse() *PrometheusResponse {
 }
 
 type PrometheusRangeQueryRequest struct {
-	Path          string
-	Start         int64
-	End           int64
-	Step          int64
-	Timeout       time.Duration
-	Query         string
-	QueryExpr     parser.Expr
-	LookbackDelta time.Duration
-	Options       Options
+	path          string
+	start         int64
+	end           int64
+	step          int64
+	timeout       time.Duration
+	lookbackDelta time.Duration
+	queryExpr     parser.Expr
+	minT          int64
+	maxT          int64
+
 	// ID of the request used to correlate downstream requests and responses.
-	ID int64
-	// Hints that could be optionally attached to the request to pass down the stack.
+	id      int64
+	options Options
+	// hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
-	Hints *Hints
+	hints *Hints
+}
+
+func NewPrometheusRangeQueryRequest(
+	urlPath string,
+	start, end, step int64,
+	lookbackDelta time.Duration,
+	queryExpr parser.Expr,
+	options Options,
+	hints *Hints,
+) *PrometheusRangeQueryRequest {
+	minT, maxT := decodeQueryMinMaxTime(
+		queryExpr, start, end, step, lookbackDelta,
+	)
+
+	return &PrometheusRangeQueryRequest{
+		path:          urlPath,
+		start:         start,
+		end:           end,
+		step:          step,
+		lookbackDelta: lookbackDelta,
+		queryExpr:     queryExpr,
+		minT:          minT,
+		maxT:          maxT,
+		options:       options,
+		hints:         hints,
+	}
 }
 
 func (r *PrometheusRangeQueryRequest) GetID() int64 {
-	return r.ID
+	return r.id
 }
 
 func (r *PrometheusRangeQueryRequest) GetPath() string {
-	return r.Path
+	return r.path
 }
 
 func (r *PrometheusRangeQueryRequest) GetStart() int64 {
-	return r.Start
+	return r.start
 }
 
 func (r *PrometheusRangeQueryRequest) GetEnd() int64 {
-	return r.End
+	return r.end
 }
 
 func (r *PrometheusRangeQueryRequest) GetStep() int64 {
-	return r.Step
+	return r.step
 }
 
 func (r *PrometheusRangeQueryRequest) GetTimeout() time.Duration {
-	return r.Timeout
+	return r.timeout
 }
 
 func (r *PrometheusRangeQueryRequest) GetQuery() string {
-	return r.Query
+	return r.queryExpr.String()
 }
 
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 // as determined from the start timestamp and any range vector or offset in the query.
 func (r *PrometheusRangeQueryRequest) GetMinT() int64 {
-	minT, _ := decodeQueryMinMaxTime(
-		r.QueryExpr, r.GetStart(), r.GetEnd(), r.GetStep(), r.LookbackDelta,
-	)
-	return minT
+	return r.minT
 }
 
 // GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
 // as determined from the end timestamp and any offset in the query.
 func (r *PrometheusRangeQueryRequest) GetMaxT() int64 {
-	_, maxT := decodeQueryMinMaxTime(
-		r.QueryExpr, r.GetStart(), r.GetEnd(), r.GetStep(), r.LookbackDelta,
-	)
-	return maxT
+	return r.maxT
 }
 
 func (r *PrometheusRangeQueryRequest) GetOptions() Options {
-	return r.Options
+	return r.options
 }
 
 func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
-	return r.Hints
+	return r.hints
 }
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
 func (r *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
 	newRequest := *r
-	newRequest.ID = id
+	newRequest.id = id
 	return &newRequest
 }
 
 // WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
 func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) MetricsQueryRequest {
 	newRequest := *r
-	newRequest.Start = start
-	newRequest.End = end
+	newRequest.start = start
+	newRequest.end = end
+	newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
+		newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
+	)
 	return &newRequest
 }
 
@@ -138,8 +163,10 @@ func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryReque
 	}
 
 	newRequest := *r
-	newRequest.Query = query
-	newRequest.QueryExpr = queryExpr
+	newRequest.queryExpr = queryExpr
+	newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
+		newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
+	)
 	return &newRequest, nil
 }
 
@@ -147,11 +174,11 @@ func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryReque
 // added Hint value for TotalQueries.
 func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
 	newRequest := *r
-	if newRequest.Hints == nil {
-		newRequest.Hints = &Hints{TotalQueries: totalQueries}
+	if newRequest.hints == nil {
+		newRequest.hints = &Hints{TotalQueries: totalQueries}
 	} else {
-		*newRequest.Hints = *(r.Hints)
-		newRequest.Hints.TotalQueries = totalQueries
+		*newRequest.hints = *(r.hints)
+		newRequest.hints.TotalQueries = totalQueries
 	}
 	return &newRequest
 }
@@ -160,13 +187,13 @@ func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) M
 // with an added Hint value for EstimatedCardinality.
 func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
 	newRequest := *r
-	if newRequest.Hints == nil {
-		newRequest.Hints = &Hints{
+	if newRequest.hints == nil {
+		newRequest.hints = &Hints{
 			CardinalityEstimate: &EstimatedSeriesCount{count},
 		}
 	} else {
-		*newRequest.Hints = *(r.Hints)
-		newRequest.Hints.CardinalityEstimate = &EstimatedSeriesCount{count}
+		*newRequest.hints = *(r.hints)
+		newRequest.hints.CardinalityEstimate = &EstimatedSeriesCount{count}
 	}
 	return &newRequest
 }

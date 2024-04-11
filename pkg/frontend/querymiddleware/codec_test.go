@@ -40,7 +40,7 @@ var (
 	matrix = model.ValMatrix.String()
 )
 
-func parseQuery(t *testing.T, query string) parser.Expr {
+func parseQuery(t require.TestingT, query string) parser.Expr {
 	queryExpr, err := parser.ParseExpr(query)
 	require.NoError(t, err)
 	return queryExpr
@@ -50,15 +50,30 @@ func makeRangeRequest(
 	t *testing.T, path string, start, end time.Time, step, lookbackDelta time.Duration, query string,
 ) *PrometheusRangeQueryRequest {
 	return &PrometheusRangeQueryRequest{
-		Path:          path,
-		Start:         start.UnixMilli(),
-		End:           end.UnixMilli(),
-		Step:          step.Milliseconds(),
-		LookbackDelta: lookbackDelta,
-		Query:         query,
-		QueryExpr:     parseQuery(t, query),
+		path:          path,
+		start:         start.UnixMilli(),
+		end:           end.UnixMilli(),
+		step:          step.Milliseconds(),
+		lookbackDelta: lookbackDelta,
+		queryExpr:     parseQuery(t, query),
 	}
 }
+
+// requireEqualMetricsQueryRequest solves for the fact that testify assert equals do not always
+// recognize the Prometheus parser.Parsed times for two equivalent queries as equal;
+// the string-formatted representation of the parsed query is used instead as this is stable.
+func requireEqualMetricsQueryRequest(t *testing.T, expected, actual MetricsQueryRequest) {
+	require.Equal(t, expected.GetPath(), actual.GetPath())
+	require.Equal(t, expected.GetStart(), actual.GetStart())
+	require.Equal(t, expected.GetEnd(), actual.GetEnd())
+	require.Equal(t, expected.GetStep(), actual.GetStep())
+	require.Equal(t, expected.GetQuery(), actual.GetQuery())
+	require.Equal(t, expected.GetMinT(), actual.GetMinT())
+	require.Equal(t, expected.GetMaxT(), actual.GetMaxT())
+	require.Equal(t, expected.GetOptions(), actual.GetOptions())
+	require.Equal(t, expected.GetHints(), actual.GetHints())
+}
+
 func makeInstantRequest(
 	t *testing.T, path string, start time.Time, lookbackDelta time.Duration, query string,
 ) *PrometheusInstantQueryRequest {
@@ -80,14 +95,16 @@ func TestMetricsQueryRequest(t *testing.T) {
 		expectedErr error
 	}{
 		{
-			url: "/api/v1/query_range?end=1536716880&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120",
-			expected: makeRangeRequest(t,
+			url: "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120",
+			expected: NewPrometheusRangeQueryRequest(
 				"/api/v1/query_range",
-				time.UnixMilli(1536673680*1e3),
-				time.UnixMilli(1536716880*1e3),
-				2*time.Minute,
-				0*time.Minute,
-				"sum(container_memory_rss) by (namespace)",
+				1536673680*1e3,
+				1536716880*1e3,
+				(2 * time.Minute).Milliseconds(),
+				0,
+				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
+				Options{},
+				nil,
 			),
 		},
 		{
@@ -133,14 +150,14 @@ func TestMetricsQueryRequest(t *testing.T) {
 
 			req, err := codec.DecodeMetricsQueryRequest(ctx, r)
 			if err != nil || tc.expectedErr != nil {
-				require.EqualValues(t, tc.expectedErr, err)
+				require.Equal(t, tc.expectedErr, err)
 				return
 			}
-			require.EqualValues(t, tc.expected, req)
+			requireEqualMetricsQueryRequest(t, tc.expected, req)
 
 			rdash, err := codec.EncodeMetricsQueryRequest(context.Background(), req)
 			require.NoError(t, err)
-			require.EqualValues(t, tc.url, rdash.RequestURI)
+			require.Equal(t, tc.url, rdash.RequestURI)
 		})
 	}
 }

@@ -93,6 +93,8 @@ type Merger interface {
 type MetricsQueryRequest interface {
 	// GetID returns the ID of the request used to correlate downstream requests and responses.
 	GetID() int64
+	// GetPath returns the URL Path of the request
+	GetPath() string
 	// GetStart returns the start timestamp of the request in milliseconds.
 	GetStart() int64
 	// GetEnd returns the end timestamp of the request in milliseconds.
@@ -272,15 +274,12 @@ func (c prometheusCodec) DecodeMetricsQueryRequest(_ context.Context, r *http.Re
 }
 
 func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
-	var result PrometheusRangeQueryRequest
-	result.Path = r.URL.Path
-
 	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	result.Start, result.End, result.Step, err = DecodeRangeQueryTimeParams(&reqValues)
+	start, end, step, err := DecodeRangeQueryTimeParams(&reqValues)
 	if err != nil {
 		return nil, err
 	}
@@ -290,13 +289,14 @@ func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryR
 	if err != nil {
 		return nil, decorateWithParamName(err, "query")
 	}
-	result.Query = query
-	result.QueryExpr = queryExpr
 
-	result.LookbackDelta = c.lookbackDelta
+	var options Options
+	decodeOptions(r, &options)
 
-	decodeOptions(r, &result.Options)
-	return &result, nil
+	req := NewPrometheusRangeQueryRequest(
+		r.URL.Path, start, end, step, c.lookbackDelta, queryExpr, options, nil,
+	)
+	return req, nil
 }
 
 func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
@@ -516,12 +516,12 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		u = &url.URL{
-			Path: r.Path,
+			Path: r.path,
 			RawQuery: url.Values{
-				"start": []string{encodeTime(r.Start)},
-				"end":   []string{encodeTime(r.End)},
-				"step":  []string{encodeDurationMs(r.Step)},
-				"query": []string{r.Query},
+				"start": []string{encodeTime(r.GetStart())},
+				"end":   []string{encodeTime(r.GetEnd())},
+				"step":  []string{encodeDurationMs(r.GetStep())},
+				"query": []string{r.GetQuery()},
 			}.Encode(),
 		}
 	case *PrometheusInstantQueryRequest:

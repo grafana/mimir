@@ -45,9 +45,9 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 			name:   "range query",
 			userID: "tenant-b",
 			r: &PrometheusRangeQueryRequest{
-				Start: requestTime.UnixMilli(),
-				End:   requestTime.Add(2 * time.Hour).UnixMilli(),
-				Query: "up",
+				start:     requestTime.UnixMilli(),
+				end:       requestTime.Add(2 * time.Hour).UnixMilli(),
+				queryExpr: parseQuery(t, "up"),
 			},
 			expected: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
 		},
@@ -55,10 +55,10 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 			name:   "range query with large range",
 			userID: "tenant-b",
 			r: &PrometheusRangeQueryRequest{
-				Start: requestTime.UnixMilli(),
+				start: requestTime.UnixMilli(),
 				// Over 24 hours, range part should be 1
-				End:   requestTime.Add(25 * time.Hour).UnixMilli(),
-				Query: "up",
+				end:       requestTime.Add(25 * time.Hour).UnixMilli(),
+				queryExpr: parseQuery(t, "up"),
 			},
 			expected: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 1),
 		},
@@ -128,9 +128,9 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 func Test_cardinalityEstimation_Do(t *testing.T) {
 	const numSeries = uint64(25)
 	request := &PrometheusRangeQueryRequest{
-		Start: parseTimeRFC3339(t, "2023-01-31T09:00:00Z").Unix() * 1000,
-		End:   parseTimeRFC3339(t, "2023-01-31T10:00:00Z").Unix() * 1000,
-		Query: "up",
+		start:     parseTimeRFC3339(t, "2023-01-31T09:00:00Z").Unix() * 1000,
+		end:       parseTimeRFC3339(t, "2023-01-31T10:00:00Z").Unix() * 1000,
+		queryExpr: parseQuery(t, "up"),
 	}
 	addSeriesHandler := func(estimate, actual uint64) HandlerFunc {
 		return func(ctx context.Context, request MetricsQueryRequest) (Response, error) {
@@ -243,9 +243,9 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 
 func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 	rangeQuery := &PrometheusRangeQueryRequest{
-		Start: util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T09:00:00Z")),
-		End:   util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T10:00:00Z")),
-		Query: "up",
+		start:     util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T09:00:00Z")),
+		end:       util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T10:00:00Z")),
+		queryExpr: parseQuery(t, "up"),
 	}
 	rangeQuerySum, _ := rangeQuery.WithQuery("sum(up)")
 
@@ -352,7 +352,16 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 }
 
 func Test_newCardinalityEstimationMiddleware_canWrapMoreThanOnce(t *testing.T) {
-	req := &PrometheusRangeQueryRequest{}
+	req := NewPrometheusRangeQueryRequest(
+		"/api/v1/query_range",
+		0,
+		0,
+		0,
+		0,
+		parseQuery(t, "sum(container_memory_rss) by (namespace)"),
+		Options{},
+		nil,
+	)
 
 	mw := newCardinalityEstimationMiddleware(nil, log.NewNopLogger(), prometheus.NewRegistry())
 
