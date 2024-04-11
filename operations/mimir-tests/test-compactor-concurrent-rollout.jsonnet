@@ -12,5 +12,5 @@ mimir {
   },
 
   compactor_statefulset+:
-    $.apps.v1.statefulSet.mixin.spec.withReplicas(16),
+    $.apps.v1.statefulSet.mixin.spec.withReplicas(15),
 }

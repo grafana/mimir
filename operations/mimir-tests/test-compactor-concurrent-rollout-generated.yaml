@@ -860,7 +860,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "8"
+    rollout-max-unavailable: "7"
   labels:
     name: compactor
     rollout-group: compactor
@@ -868,7 +868,7 @@ metadata:
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 16
+  replicas: 15
   selector:
     matchLabels:
       name: compactor
