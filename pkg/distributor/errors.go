@@ -3,6 +3,7 @@
 package distributor
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -293,6 +294,14 @@ func wrapPartitionPushError(err error, partitionID int32) error {
 	}
 
 	return errors.Wrap(err, fmt.Sprintf("%s %d", failedPushingToPartitionMessage, partitionID))
+}
+
+func wrapDeadlineExceededPushError(err error) error {
+	if err != nil && errors.Is(err, context.DeadlineExceeded) {
+		return errors.Wrap(err, deadlineExceededWrapMessage)
+	}
+
+	return err
 }
 
 func isIngesterClientError(err error) bool {
