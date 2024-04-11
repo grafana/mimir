@@ -1511,7 +1511,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 }
 
 func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
-	return ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
+	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
@@ -1530,10 +1530,13 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 
 			return err
 		}, batchOptions)
+
+	// Since data may be written to different backends it may be helpful to clearly identify which backend failed.
+	return errors.Wrap(err, "send data to ingesters")
 }
 
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
-	return ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
+	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
@@ -1551,6 +1554,9 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 			return err
 		}, batchOptions,
 	)
+
+	// Since data may be written to different backends it may be helpful to clearly identify which backend failed.
+	return errors.Wrap(err, "send data to partitions")
 }
 
 // forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.

@@ -115,5 +115,5 @@ func (cfg *MigrationConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *MigrationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.DistributorSendToIngestersEnabled, prefix+".distributor-send-to-ingesters-enabled", true, "When both this option and ingest storage is enabled, distributors will both write to Kafka and ingesters. A write request will be considered successful only when written to both backends.")
+	f.BoolVar(&cfg.DistributorSendToIngestersEnabled, prefix+".distributor-send-to-ingesters-enabled", false, "When both this option and ingest storage is enabled, distributors will both write to Kafka and ingesters. A write request will be considered successful only when written to both backends.")
 }
