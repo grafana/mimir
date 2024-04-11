@@ -1345,13 +1345,12 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	// once all backend requests have completed (see cleanup function passed to sendWriteRequestToBackends()).
 	cleanupInDefer = false
 
-	return d.sendWriteRequestToBackends(ctx, userID, req, keys, initialMetadataIndex, tenantRing, func() {
-		// This cleanup function is called once all requests to all backends have been completed.
-		// At this point is safe to finally release the original pushReq resources back to the pool.
-		pushReq.CleanUp()
-	})
+	return d.sendWriteRequestToBackends(ctx, userID, req, keys, initialMetadataIndex, tenantRing, pushReq.CleanUp)
 }
 
+// sendWriteRequestToBackends sends the input req data to backends (i.e. ingesters or partitions).
+//
+// The input cleanup function is guaranteed to be called after all requests to all backends have completed.
 func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, tenantRing ring.DoBatchRing, cleanup func()) error {
 	// Use an independent context to make sure all backend instances (e.g. ingesters) get samples even if we return early.
 	// It will still take a while to lookup the ring and calculate which instance gets which series,
