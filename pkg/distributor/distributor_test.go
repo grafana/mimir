@@ -4906,7 +4906,7 @@ func (c prepConfig) ingesterRingState(zone string, id int) ring.InstanceState {
 
 func (c prepConfig) ingesterShouldConsumeFromKafka() bool {
 	if c.ingesterIngestionType == "" {
-		// If the ingestion type has not been overridden then use the ingest storage only when enabled.
+		// If the ingestion type has not been overridden then consume from Kafka when ingest storage is enabled.
 		return c.ingestStorageEnabled
 	}
 
@@ -7717,21 +7717,6 @@ func uniqueZones(instances []ring.InstanceDesc) []string {
 	})
 
 	return zones
-}
-
-type mockInstanceClient struct {
-	client.HealthAndIngesterClient
-
-	md metadata.MD
-}
-
-func (m *mockInstanceClient) Check(_ context.Context, _ *grpc_health_v1.HealthCheckRequest, _ ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
-	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
-}
-
-func (m *mockInstanceClient) Push(ctx context.Context, _ *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
-	m.md, _ = metadata.FromOutgoingContext(ctx)
-	return nil, nil
 }
 
 func cloneTimeseries(orig *mimirpb.TimeSeries) (*mimirpb.TimeSeries, error) {
