@@ -7481,50 +7481,44 @@ func TestStartFinishRequest(t *testing.T) {
 	}
 }
 
-// TODO
-//func TestSendMessageMetadata(t *testing.T) {
-//	const userID = "test"
-//
-//	var distributorCfg Config
-//	var clientConfig client.Config
-//	var ringConfig ring.Config
-//	flagext.DefaultValues(&distributorCfg, &clientConfig, &ringConfig)
-//
-//	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-//	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-//
-//	ringConfig.KVStore.Mock = kvStore
-//	ingestersRing, err := ring.New(ringConfig, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
-//	require.NoError(t, err)
-//
-//	mock := &mockInstanceClient{}
-//	distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
-//		return mock, nil
-//	})
-//
-//	d, err := New(distributorCfg, clientConfig, validation.MockDefaultOverrides(), nil, ingestersRing, nil, false, nil, log.NewNopLogger())
-//	require.NoError(t, err)
-//	require.NotNil(t, d)
-//
-//	ctx := context.Background()
-//	ctx = user.InjectOrgID(ctx, userID)
-//
-//	req := &mimirpb.WriteRequest{
-//		Timeseries: []mimirpb.PreallocTimeseries{
-//			{TimeSeries: &mimirpb.TimeSeries{
-//				Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test1"}},
-//				Exemplars: []mimirpb.Exemplar{},
-//			}},
-//		},
-//		Source: mimirpb.API,
-//	}
-//
-//	err = d.sendShardedWriteRequestToIngester(ctx, userID, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req)
-//	require.NoError(t, err)
-//
-//	// Verify that d.sendShardedWriteRequestToIngester added message size to metadata.
-//	require.Equal(t, []string{strconv.Itoa(req.Size())}, mock.md[grpcutil.MetadataMessageSize])
-//}
+func TestDistributor_Push_SendMessageMetadata(t *testing.T) {
+	const userID = "test"
+
+	distributors, ingesters, _, _ := prepare(t, prepConfig{
+		numIngesters:      1,
+		happyIngesters:    1,
+		numDistributors:   1,
+		replicationFactor: 1,
+	})
+
+	require.Len(t, distributors, 1)
+	require.Len(t, ingesters, 1)
+
+	ctx := context.Background()
+	ctx = user.InjectOrgID(ctx, userID)
+
+	req := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			makeTimeseries([]string{model.MetricNameLabel, "test1"}, makeSamples(time.Now().UnixMilli(), 1), nil),
+		},
+		Source: mimirpb.API,
+	}
+
+	// Register a hook in the ingester's Push() to check whether the context contains the expected gRPC metadata.
+	ingesters[0].registerBeforePushHook(func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool) {
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		require.Equal(t, []string{strconv.Itoa(req.Size())}, md[grpcutil.MetadataMessageSize])
+
+		return nil, nil, false
+	})
+
+	_, err := distributors[0].Push(ctx, req)
+	require.NoError(t, err)
+
+	// Ensure the ingester's Push() has been called.
+	require.Equal(t, 1, ingesters[0].countCalls("Push"))
+}
 
 func TestQueryIngestersRingZoneSorter(t *testing.T) {
 	testCases := map[string]struct {
