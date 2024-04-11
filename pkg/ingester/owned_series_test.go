@@ -1270,7 +1270,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 
 			c.cfg = defaultIngesterTestConfig(t)
 			c.cfg.IngesterRing.InstanceID = fmt.Sprintf("ingester-%d", tc.registerPartitionID) // Ingester owns partition based on instance ID.
-			c.cfg.IngesterPartitionRing.kvMock = c.kvStore                                     // Set ring with our in-memory KV, that we will use for watching.
+			c.cfg.IngesterPartitionRing.KVStore.Mock = c.kvStore                               // Set ring with our in-memory KV, that we will use for watching.
 			c.cfg.BlocksStorageConfig.TSDB.Dir = ""                                            // Don't use default value, otherwise
 
 			var err error

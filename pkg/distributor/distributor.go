@@ -28,7 +28,6 @@ import (
 	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/mtime"
-	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
@@ -1425,9 +1424,9 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
 func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring, partitionsSubring ring.DoBatchRing, cleanup func()) error {
 	var (
-		wg     = sync.WaitGroup{}
-		errs   = multierror.MultiError{}
-		errsMx = sync.Mutex{}
+		wg            = sync.WaitGroup{}
+		partitionsErr error
+		ingestersErr  error
 	)
 
 	// Ensure at least one ring has been provided.
@@ -1487,27 +1486,25 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		if err := d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions); err != nil {
-			errsMx.Lock()
-			errs.Add(err)
-			errsMx.Unlock()
-		}
+		ingestersErr = d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}()
 
 	go func() {
 		defer wg.Done()
 
-		if err := d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions); err != nil {
-			errsMx.Lock()
-			errs.Add(err)
-			errsMx.Unlock()
-		}
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}()
 
 	// Wait until all backends have done.
 	wg.Wait()
 
-	return errs.Err()
+	// Ingester errors could be soft (e.g. 4xx) or hard errors (e.g. 5xx) errors, while partition errors are always hard
+	// errors. For this reason, it's important to give precedence to partition errors, otherwise the distributor may return
+	// a 4xx (ingester error) when it should actually be a 5xx (partition error).
+	if partitionsErr != nil {
+		return partitionsErr
+	}
+	return ingestersErr
 }
 
 func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {

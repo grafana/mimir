@@ -1,3 +1,21 @@
+prometheus.scrape "metrics_local_mimir_read_write_mode_distributor" {
+        targets = concat(
+                [{
+                        __address__ = "distributor:8080",
+                        cluster     = "docker-compose",
+                        container   = "distributor",
+                        namespace   = "mimir-read-write-mode",
+                }],
+        )
+        forward_to      = [prometheus.remote_write.metrics_local.receiver]
+        job_name        = "mimir-read-write-mode/distributor"
+        scrape_interval = "5s"
+        scrape_timeout  = "5s"
+
+        enable_protobuf_negotiation = true
+        scrape_classic_histograms = true
+}
+
 prometheus.scrape "metrics_local_mimir_read_write_mode_mimir_write" {
         targets = concat(
                 [{
@@ -97,7 +115,7 @@ prometheus.scrape "metrics_local_mimir_read_write_mode_mimir_backend" {
 prometheus.remote_write "metrics_local" {
         endpoint {
                 name                   = "local"
-                url                    = "http://mimir-write-zone-a-1:8080/api/v1/push"
+                url                    = "http://nginx:8080/api/v1/push"
                 send_native_histograms = true
 
                 queue_config { }

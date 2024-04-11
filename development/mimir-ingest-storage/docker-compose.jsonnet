@@ -1,6 +1,7 @@
 std.manifestYamlDoc({
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
   services:
+    self.distributor +
     self.write +
     self.read +
     self.backend +
@@ -13,8 +14,17 @@ std.manifestYamlDoc({
     self.kafka +
     {},
 
+  distributor:: {
+    distributor: mimirService({
+      name: 'distributor',
+      target: 'distributor',
+      publishedHttpPort: 8030,
+      extraArguments: ['-ingest-storage.enabled=true'],
+    }),
+  },
+
   write:: {
-    // Zone-a.
+    // Zone-a (classic ingesters).
     'mimir-write-zone-a-1': mimirService({
       name: 'mimir-write-zone-a-1',
       target: 'write',
@@ -37,26 +47,26 @@ std.manifestYamlDoc({
       extraVolumes: ['.data-mimir-write-zone-a-3:/data:delegated'],
     }),
 
-    // Zone-b.
+    // Zone-b (partition-based ingesters).
     'mimir-write-zone-b-1': mimirService({
       name: 'mimir-write-zone-b-1',
       target: 'write',
       publishedHttpPort: 8011,
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b', '-ingester.ring.prefix=sigyn-ingesters/', '-ingest-storage.enabled=true', '-ingester.push-grpc-method-enabled=false'],
       extraVolumes: ['.data-mimir-write-zone-b-1:/data:delegated'],
     }),
     'mimir-write-zone-b-2': mimirService({
       name: 'mimir-write-zone-b-2',
       target: 'write',
       publishedHttpPort: 8012,
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b', '-ingester.ring.prefix=sigyn-ingesters/', '-ingest-storage.enabled=true', '-ingester.push-grpc-method-enabled=false'],
       extraVolumes: ['.data-mimir-write-zone-b-2:/data:delegated'],
     }),
     'mimir-write-zone-b-3': mimirService({
       name: 'mimir-write-zone-b-3',
       target: 'write',
       publishedHttpPort: 8013,
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b', '-ingester.ring.prefix=sigyn-ingesters/', '-ingest-storage.enabled=true', '-ingester.push-grpc-method-enabled=false'],
       extraVolumes: ['.data-mimir-write-zone-b-3:/data:delegated'],
     }),
   },
@@ -93,7 +103,7 @@ std.manifestYamlDoc({
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
       environment: [
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
-        'DISTRIBUTOR_HOST=mimir-write-1:8080',
+        'DISTRIBUTOR_HOST=distributor:8080',
         'ALERT_MANAGER_HOST=mimir-backend-1:8080',
         'RULER_HOST=mimir-backend-1:8080',
         'QUERY_FRONTEND_HOST=mimir-read-1:8080',

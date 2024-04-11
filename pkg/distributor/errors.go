@@ -181,6 +181,7 @@ func newIngesterPushError(stat *status.Status, ingesterID string) ingesterPushEr
 			errorCause = errorDetails.GetCause()
 		}
 	}
+
 	message := fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, stat.Message())
 	return ingesterPushError{
 		message: message,

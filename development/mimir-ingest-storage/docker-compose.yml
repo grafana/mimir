@@ -1,4 +1,27 @@
 "services":
+  "distributor":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=distributor"
+      - "-activity-tracker.filepath=/activity/distributor"
+      - "-ingest-storage.enabled=true"
+    "depends_on":
+      "kafka":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment": []
+    "hostname": "distributor"
+    "image": "mimir"
+    "ports":
+      - "8030:8080"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   "grafana":
     "environment":
       - "GF_AUTH_ANONYMOUS_ENABLED=true"
@@ -216,6 +239,9 @@
       - "-target=write"
       - "-activity-tracker.filepath=/activity/mimir-write-zone-b-1"
       - "-ingester.ring.instance-availability-zone=zone-b"
+      - "-ingester.ring.prefix=sigyn-ingesters/"
+      - "-ingest-storage.enabled=true"
+      - "-ingester.push-grpc-method-enabled=false"
     "depends_on":
       "kafka":
         "condition": "service_healthy"
@@ -240,6 +266,9 @@
       - "-target=write"
       - "-activity-tracker.filepath=/activity/mimir-write-zone-b-2"
       - "-ingester.ring.instance-availability-zone=zone-b"
+      - "-ingester.ring.prefix=sigyn-ingesters/"
+      - "-ingest-storage.enabled=true"
+      - "-ingester.push-grpc-method-enabled=false"
     "depends_on":
       "kafka":
         "condition": "service_healthy"
@@ -264,6 +293,9 @@
       - "-target=write"
       - "-activity-tracker.filepath=/activity/mimir-write-zone-b-3"
       - "-ingester.ring.instance-availability-zone=zone-b"
+      - "-ingester.ring.prefix=sigyn-ingesters/"
+      - "-ingest-storage.enabled=true"
+      - "-ingester.push-grpc-method-enabled=false"
     "depends_on":
       "kafka":
         "condition": "service_healthy"
@@ -296,7 +328,7 @@
   "nginx":
     "environment":
       - "NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx"
-      - "DISTRIBUTOR_HOST=mimir-write-1:8080"
+      - "DISTRIBUTOR_HOST=distributor:8080"
       - "ALERT_MANAGER_HOST=mimir-backend-1:8080"
       - "RULER_HOST=mimir-backend-1:8080"
       - "QUERY_FRONTEND_HOST=mimir-read-1:8080"

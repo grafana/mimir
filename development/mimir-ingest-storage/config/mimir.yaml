@@ -10,17 +10,20 @@ common:
       insecure:          true
 
 ingest_storage:
-  enabled:       true
+  enabled:       false
   kafka:
     address: kafka:9092
     topic:   mimir-ingest
+
+  migration:
+    distributor_send_to_ingesters_enabled: true
 
 ingester:
   return_only_grpc_errors:     true
   track_ingester_owned_series: true
 
   partition_ring:
-    min_partition_owners_count:       2
+    min_partition_owners_count:       1
     min_partition_owners_duration:    10s
     delete_inactive_partition_after:  1m
 
