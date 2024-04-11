@@ -74,7 +74,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.")
 	f.BoolVar(&cfg.EnableOtelMetadataStorage, "distributor.enable-otlp-metadata-storage", true, "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.")
-	f.BoolVar(&cfg.GETRequestForIngesterShutdownEnabled, "get-request-for-ingester-shutdown-enabled", false, "Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.")
+	f.BoolVar(&cfg.GETRequestForIngesterShutdownEnabled, "api.get-request-for-ingester-shutdown-enabled", false, "Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.")
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
