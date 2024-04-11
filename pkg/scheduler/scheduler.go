@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -63,6 +64,10 @@ type Scheduler struct {
 	pendingRequestsMu sync.Mutex
 	pendingRequests   map[requestKey]*queue.SchedulerRequest // request is kept in this map even after being dispatched to querier. It can still be canceled at that time.
 
+	queryComponentInflightRequestsMu *sync.RWMutex
+	queryComponentInflightRequests   map[QueryComponent]int
+	totalInflightRequests            int
+
 	// The ring is used to let other components discover query-scheduler replicas.
 	// The ring is optional.
 	schedulerLifecycler *ring.BasicLifecycler
@@ -84,6 +89,124 @@ type Scheduler struct {
 type requestKey struct {
 	frontendAddr string
 	queryID      uint64
+}
+
+type QueryComponent int
+
+const (
+	Ingester QueryComponent = iota
+	StoreGateway
+)
+const ingesterQueueDimension = "ingester"
+const storeGatewayQueueDimension = "store-gateway"
+const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
+
+func queryComponents(req *queue.SchedulerRequest) (isIngester, isStoreGateway bool) {
+	var expectedQueryComponent string
+	if len(req.AdditionalQueueDimensions) > 0 {
+		expectedQueryComponent = req.AdditionalQueueDimensions[0]
+	}
+
+	isIngester, isStoreGateway = true, true
+	switch expectedQueryComponent {
+	case ingesterQueueDimension:
+		isStoreGateway = false
+	case storeGatewayQueueDimension:
+		isIngester = false
+	}
+	return isIngester, isStoreGateway
+}
+
+func isOverLoaded(
+	mu *sync.RWMutex,
+	queryComponentInflightReqs map[QueryComponent]int,
+	overloadThreshold int,
+	req *queue.SchedulerRequest,
+) bool {
+	isIngester, isStoreGateway := queryComponents(req)
+
+	mu.RLock()
+	defer mu.RUnlock()
+
+	if isIngester {
+		if queryComponentInflightReqs[Ingester] >= overloadThreshold {
+			return true
+		}
+	}
+	if isStoreGateway {
+		if queryComponentInflightReqs[StoreGateway] >= overloadThreshold {
+			return true
+		}
+	}
+	return false
+}
+
+func getOverloadThreshold(
+	mu *sync.RWMutex,
+	queryComponentInflightReqs map[QueryComponent]int,
+	totalInflightReqs int,
+	overloadedFactor float64,
+) int {
+	// Overload factor is expected to be > 1.
+	if overloadedFactor <= 1 {
+		return 0
+	}
+
+	mu.RLock()
+	defer mu.RUnlock()
+
+	// No overloaded connection if there are no connections or no inflight requests at all.
+	if totalInflightReqs == 0 {
+		return 0
+	}
+
+	// Compute the average number of inflight requests per connection.
+	avg := float64(totalInflightReqs) / float64(len(queryComponentInflightReqs))
+
+	// Compute the overload threshold.
+	return int(math.Ceil(avg * overloadedFactor))
+}
+
+func incrementQueryComponentInflightRequests(
+	mu *sync.RWMutex,
+	queryComponentInflightReqs map[QueryComponent]int,
+	totalInflightReqs int,
+	req *queue.SchedulerRequest,
+) {
+	updateQueryComponentInflightRequests(
+		mu, queryComponentInflightReqs, totalInflightReqs, req, 1,
+	)
+}
+
+func decrementQueryComponentInflightRequests(
+	mu *sync.RWMutex,
+	queryComponentInflightReqs map[QueryComponent]int,
+	totalInflightReqs int,
+	req *queue.SchedulerRequest,
+) {
+	updateQueryComponentInflightRequests(
+		mu, queryComponentInflightReqs, totalInflightReqs, req, 1,
+	)
+}
+
+func updateQueryComponentInflightRequests(
+	mu *sync.RWMutex,
+	queryComponentInflightReqs map[QueryComponent]int,
+	totalInflightReqs int,
+	req *queue.SchedulerRequest,
+	updateIncrement int,
+) {
+	isIngester, isStoreGateway := queryComponents(req)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if isIngester {
+		queryComponentInflightReqs[Ingester] += updateIncrement
+	}
+	if isStoreGateway {
+		queryComponentInflightReqs[StoreGateway] += updateIncrement
+	}
+	totalInflightReqs += updateIncrement
 }
 
 type connectedFrontend struct {
@@ -419,15 +542,33 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		  If this tenant meanwhile continued to queue requests,
 		  it's possible that its own queue would perpetually contain only expired requests.
 		*/
+		threshold := getOverloadThreshold(
+			s.queryComponentInflightRequestsMu,
+			s.queryComponentInflightRequests,
+			s.totalInflightRequests,
+			2.0,
+		)
+		if isOverLoaded(
+			s.queryComponentInflightRequestsMu,
+			s.queryComponentInflightRequests,
+			threshold,
+			r,
+		) {
+			// TODO do other stuff to increment or decrement
+			return errors.New("dropped")
+		}
 
 		if r.Ctx.Err() != nil {
 			// Remove from pending requests.
 			s.cancelRequestAndRemoveFromPending(r.FrontendAddress, r.QueryID, "request cancelled")
 
+			// TODO do other stuff to increment or decrement
+
 			lastUserIndex = lastUserIndex.ReuseLastUser()
 			continue
 		}
 
+		// TODO do other stuff to increment or decrement
 		if err := s.forwardRequestToQuerier(querier, r, queueTime); err != nil {
 			return err
 		}

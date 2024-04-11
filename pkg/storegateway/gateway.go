@@ -331,6 +331,7 @@ func (g *StoreGateway) syncStores(ctx context.Context, reason string) {
 
 // Series implements the storegatewaypb.StoreGatewayServer interface.
 func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+	time.Sleep(1 * time.Minute)
 	ix := g.tracker.Insert(func() string {
 		return requestActivity(srv.Context(), "StoreGateway/Series", req)
 	})
