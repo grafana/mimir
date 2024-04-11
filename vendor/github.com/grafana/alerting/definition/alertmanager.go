@@ -255,19 +255,17 @@ func (c *PostableApiAlertingConfig) Validate() error {
 		return fmt.Errorf("cannot mix Alertmanager & Grafana receiver types")
 	}
 
-	if hasGrafReceivers {
-		// Taken from https://github.com/prometheus/alertmanager/blob/14cbe6301c732658d6fe877ec55ad5b738abcf06/config/config.go#L171-L192
-		// Check if we have a root route. We cannot check for it in the
-		// UnmarshalYAML method because it won't be called if the input is empty
-		// (e.g. the config file is empty or only contains whitespace).
-		if c.Route == nil {
-			return fmt.Errorf("no route provided in config")
-		}
+	// Taken from https://github.com/prometheus/alertmanager/blob/14cbe6301c732658d6fe877ec55ad5b738abcf06/config/config.go#L171-L192
+	// Check if we have a root route. We cannot check for it in the
+	// UnmarshalYAML method because it won't be called if the input is empty
+	// (e.g. the config file is empty or only contains whitespace).
+	if c.Route == nil {
+		return fmt.Errorf("no route provided in config")
+	}
 
-		// Check if continue in root route.
-		if c.Route.Continue {
-			return fmt.Errorf("cannot have continue in root route")
-		}
+	// Check if continue in root route.
+	if c.Route.Continue {
+		return fmt.Errorf("cannot have continue in root route")
 	}
 
 	for _, receiver := range AllReceivers(c.Route.AsAMRoute()) {
