@@ -37,9 +37,7 @@
 ### Mixin
 
 * [CHANGE] Alerts: Removed obsolete `MimirQueriesIncorrect` alert that used test-exporter metrics. Test-exporter support was however removed in Mimir 2.0 release. #7774
-* [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7364
-  * Querier: changed from `30` to `180`
-  * Query-scheduler: changed from `30` to `180`
+* [CHANGE] Alerts: Change threshold for `MimirBucketIndexNotUpdated` alert to fire before queries begin to fail due to bucket index age. #7879
 * [FEATURE] Dashboards: added 'Remote ruler reads networking' dashboard. #7751
 * [ENHANCEMENT] Alerts: allow configuring alerts range interval via `_config.base_alerts_range_interval_minutes`. #7591
 * [ENHANCEMENT] Dashboards: Add panels for monitoring distributor and ingester when using ingest-storage. These panels are disabled by default, but can be enabled using `show_ingest_storage_panels: true` config option. Similarly existing panels used when distributors and ingesters use gRPC for forwarding requests can be disabled by setting `show_grpc_ingestion_panels: false`. #7670 #7699
@@ -61,6 +59,9 @@
 ### Jsonnet
 
 * [CHANGE] Memcached: Change default read timeout for chunks and index caches to `750ms` from `450ms`. #7778
+* [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7364
+  * Querier: changed from `30` to `180`
+  * Query-scheduler: changed from `30` to `180`
 * [ENHANCEMENT] Compactor: add `$._config.cortex_compactor_concurrent_rollout_enabled` option (disabled by default) that makes use of rollout-operator to speed up the rollout of compactors. #7783 #7878
 * [ENHANCEMENT] Shuffle-sharding: add `$._config.shuffle_sharding.ingest_storage_partitions_enabled` and `$._config.shuffle_sharding.ingester_partitions_shard_size` options, that allow configuring partitions shard size in ingest-storage mode. #7804
 * [BUGFIX] Guard against missing samples in KEDA queries. #7691
