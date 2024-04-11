@@ -1,5 +1,5 @@
 ---
-description: Learn about the key benefits and features of Grafana Mimir.
+description: A guide to different sections of the documentation for Grafana Mimir.
 labels:
   products:
     - OSS
