@@ -67,18 +67,6 @@ func requireEqualMetricsQueryRequest(t *testing.T, expected, actual MetricsQuery
 	require.Equal(t, expected.GetHints(), actual.GetHints())
 }
 
-func makeInstantRequest(
-	t *testing.T, path string, start time.Time, lookbackDelta time.Duration, query string,
-) *PrometheusInstantQueryRequest {
-	return &PrometheusInstantQueryRequest{
-		Path:          path,
-		Time:          start.UnixMilli(),
-		LookbackDelta: lookbackDelta,
-		Query:         query,
-		QueryExpr:     parseQuery(t, query),
-	}
-}
-
 func TestMetricsQueryRequest(t *testing.T) {
 	codec := newTestPrometheusCodec()
 
@@ -101,12 +89,14 @@ func TestMetricsQueryRequest(t *testing.T) {
 			),
 		},
 		{
-			url: "/api/v1/query?query=sum%28container_memory_rss%29+by+%28namespace%29&time=1536716880",
-			expected: makeInstantRequest(t,
+			url: "/api/v1/query?query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1536716880",
+			expected: NewPrometheusInstantQueryRequest(
 				"/api/v1/query",
-				time.UnixMilli(1536716880*1e3),
+				1536716880*1e3,
 				0*time.Minute,
-				"sum(container_memory_rss) by (namespace)",
+				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
+				Options{},
+				nil,
 			),
 		},
 		{
@@ -185,6 +175,14 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		Options{},
 		nil,
 	)
+	instantRequest := NewPrometheusInstantQueryRequest(
+		"/api/v1/query",
+		endTime.UnixMilli(),
+		time.Duration(0),
+		parseQuery(t, "go_goroutines{}"),
+		Options{},
+		nil,
+	)
 
 	for _, testCase := range []struct {
 		name         string
@@ -200,13 +198,8 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			expectedMaxT: endTime.UnixMilli(),
 		},
 		{
-			name: "instant query: without range vector, without offset",
-			metricsQuery: makeInstantRequest(t,
-				"/api/v1/query",
-				endTime,
-				time.Duration(0),
-				"go_goroutines{}",
-			),
+			name:         "instant query: without range vector, without offset",
+			metricsQuery: instantRequest,
 			expectedMinT: endTime.UnixMilli(),
 			expectedMaxT: endTime.UnixMilli(),
 		},
@@ -217,13 +210,8 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			expectedMaxT: endTime.UnixMilli(),
 		},
 		{
-			name: "instant query: with range vector, without offset",
-			metricsQuery: makeInstantRequest(t,
-				"/api/v1/query",
-				endTime,
-				time.Duration(0),
-				fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr),
-			),
+			name:         "instant query: with range vector, without offset",
+			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr)),
 			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS,
 			expectedMaxT: endTime.UnixMilli(),
 		},
@@ -234,13 +222,8 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 		},
 		{
-			name: "instant query: without range vector, with offset",
-			metricsQuery: makeInstantRequest(t,
-				"/api/v1/query",
-				endTime,
-				time.Duration(0),
-				fmt.Sprintf("go_goroutines{} offset %s", offsetDurationStr),
-			),
+			name:         "instant query: without range vector, with offset",
+			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("go_goroutines{} offset %s", offsetDurationStr)),
 			expectedMinT: endTime.UnixMilli() - offsetDurationMS,
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 		},
@@ -251,13 +234,8 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 		},
 		{
-			name: "instant query: with range vector, with offset",
-			metricsQuery: makeInstantRequest(t,
-				"/api/v1/query",
-				endTime,
-				time.Duration(0),
-				fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr),
-			),
+			name:         "instant query: with range vector, with offset",
+			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr)),
 			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 		},
@@ -269,13 +247,8 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
 		},
 		{
-			name: "instant query: with @ modifer",
-			metricsQuery: makeInstantRequest(t,
-				"/api/v1/query",
-				endTime,
-				time.Duration(0),
-				fmt.Sprintf("go_goroutines{} @ %d", endTime.Add(-atModifierDuration).Unix()),
-			),
+			name:         "instant query: with @ modifer",
+			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("go_goroutines{} @ %d", endTime.Add(-atModifierDuration).Unix())),
 			expectedMinT: endTime.Add(-atModifierDuration).UnixMilli(),
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
 		},
@@ -286,13 +259,8 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
 		},
 		{
-			name: "instant query: with range vector, with @ modifer",
-			metricsQuery: makeInstantRequest(t,
-				"/api/v1/query",
-				endTime,
-				stepDuration,
-				fmt.Sprintf("go_goroutines{}[%s] @ %d", rangeVectorDurationStr, endTime.Add(-atModifierDuration).Unix()),
-			),
+			name:         "instant query: with range vector, with @ modifer",
+			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("go_goroutines{}[%s] @ %d", rangeVectorDurationStr, endTime.Add(-atModifierDuration).Unix())),
 			expectedMinT: endTime.Add(-(atModifierDuration + rangeVectorDuration)).UnixMilli(),
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
 		},
@@ -341,6 +309,14 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 		Options{},
 		nil,
 	)
+	instantRequest := NewPrometheusInstantQueryRequest(
+		"/api/v1/query",
+		endTime.UnixMilli(),
+		time.Duration(0),
+		parseQuery(t, "go_goroutines{}"),
+		Options{},
+		nil,
+	)
 
 	for _, testCase := range []struct {
 		name                string
@@ -366,16 +342,11 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 			expectedErr:         nil,
 		},
 		{
-			name: "instant query: transform with start and end changes minT and maxT",
-			initialMetricsQuery: makeInstantRequest(t,
-				"/api/v1/query",
-				endTime,
-				time.Duration(0),
-				"go_goroutines{}",
-			),
-			updatedStartTime: &updatedEndTime,
-			updatedEndTime:   &updatedEndTime,
-			updatedQuery:     "",
+			name:                "instant query: transform with start and end changes minT and maxT",
+			initialMetricsQuery: instantRequest,
+			updatedStartTime:    &updatedEndTime,
+			updatedEndTime:      &updatedEndTime,
+			updatedQuery:        "",
 
 			expectedUpdatedMinT: updatedEndTime.UnixMilli(),
 			expectedUpdatedMaxT: updatedEndTime.UnixMilli(),
@@ -393,16 +364,11 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 			expectedErr:         nil,
 		},
 		{
-			name: "instant query: transform with query changes minT and maxT",
-			initialMetricsQuery: makeInstantRequest(t,
-				"/api/v1/query",
-				endTime,
-				time.Duration(0),
-				"go_goroutines{}",
-			),
-			updatedStartTime: nil,
-			updatedEndTime:   nil,
-			updatedQuery:     fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr),
+			name:                "instant query: transform with query changes minT and maxT",
+			initialMetricsQuery: instantRequest,
+			updatedStartTime:    nil,
+			updatedEndTime:      nil,
+			updatedQuery:        fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr),
 
 			expectedUpdatedMinT: endTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
 			expectedUpdatedMaxT: endTime.UnixMilli() - offsetDurationMS,
@@ -420,16 +386,11 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 			expectedErr: parser.ParseErrors{},
 		},
 		{
-			name: "instant query: transform with malformed query returns error",
-			initialMetricsQuery: makeInstantRequest(t,
-				"/api/v1/query_range",
-				endTime,
-				time.Duration(0),
-				"go_goroutines{}",
-			),
-			updatedStartTime: nil,
-			updatedEndTime:   nil,
-			updatedQuery:     "go_goroutines{} offset",
+			name:                "instant query: transform with malformed query returns error",
+			initialMetricsQuery: instantRequest,
+			updatedStartTime:    nil,
+			updatedEndTime:      nil,
+			updatedQuery:        "go_goroutines{} offset",
 
 			expectedErr: parser.ParseErrors{},
 		},
@@ -1522,7 +1483,7 @@ func TestPrometheusCodec_DecodeEncode(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			queryURL := "/api/v1/query?query=sum%28container_memory_rss%29+by+%28namespace%29&time=1704270202.066"
+			queryURL := "/api/v1/query?query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1704270202.066"
 			expected, err := http.NewRequest("GET", queryURL, nil)
 			require.NoError(t, err)
 			expected.Body = http.NoBody

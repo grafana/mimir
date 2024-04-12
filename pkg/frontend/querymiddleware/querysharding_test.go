@@ -683,9 +683,9 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			t.Parallel()
 			reqs := []MetricsQueryRequest{
 				&PrometheusInstantQueryRequest{
-					Path:  "/query",
-					Time:  util.TimeToMillis(end),
-					Query: testData.query,
+					path:      "/query",
+					time:      util.TimeToMillis(end),
+					queryExpr: parseQuery(t, testData.query),
 				},
 			}
 			if !testData.noRangeQuery {
@@ -906,9 +906,9 @@ func TestQueryshardingDeterminism(t *testing.T) {
 	downstream := &downstreamHandler{engine: newEngine(), queryable: storageSeriesQueryable(storageSeries)}
 
 	req := &PrometheusInstantQueryRequest{
-		Path:  "/query",
-		Time:  to.UnixMilli(),
-		Query: `sum(metric)`,
+		path:      "/query",
+		time:      to.UnixMilli(),
+		queryExpr: parseQuery(t, `sum(metric)`),
 	}
 
 	var lastVal float64
@@ -1675,8 +1675,8 @@ func TestQuerySharding_WrapMultipleTime(t *testing.T) {
 
 func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 	req := &PrometheusInstantQueryRequest{
-		Time:  util.TimeToMillis(start),
-		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
+		time:      util.TimeToMillis(start),
+		queryExpr: parseQuery(t, "sum by (foo) (rate(bar{}[1m]))"), // shardable query.
 	}
 
 	tests := []struct {

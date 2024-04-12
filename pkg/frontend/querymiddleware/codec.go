@@ -300,15 +300,12 @@ func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryR
 }
 
 func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
-	var result PrometheusInstantQueryRequest
-	result.Path = r.URL.Path
-
 	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	result.Time, err = DecodeInstantQueryTimeParams(&reqValues, time.Now)
+	time, err := DecodeInstantQueryTimeParams(&reqValues, time.Now)
 	if err != nil {
 		return nil, decorateWithParamName(err, "time")
 	}
@@ -318,13 +315,14 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQuer
 	if err != nil {
 		return nil, decorateWithParamName(err, "query")
 	}
-	result.Query = query
-	result.QueryExpr = queryExpr
 
-	result.LookbackDelta = c.lookbackDelta
+	var options Options
+	decodeOptions(r, &options)
 
-	decodeOptions(r, &result.Options)
-	return &result, nil
+	req := NewPrometheusInstantQueryRequest(
+		r.URL.Path, time, c.lookbackDelta, queryExpr, options, nil,
+	)
+	return req, nil
 }
 
 func (prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Request) (LabelsQueryRequest, error) {

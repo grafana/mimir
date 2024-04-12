@@ -36,8 +36,8 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 			name:   "instant query",
 			userID: "tenant-a",
 			r: &PrometheusInstantQueryRequest{
-				Time:  requestTime.UnixMilli(),
-				Query: "up",
+				time:      requestTime.UnixMilli(),
+				queryExpr: parseQuery(t, "up"),
 			},
 			expected: fmt.Sprintf("QS:tenant-a:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
 		},
