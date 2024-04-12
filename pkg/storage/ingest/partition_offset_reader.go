@@ -161,7 +161,7 @@ func (p *partitionOffsetReader) FetchLastProducedOffset(ctx context.Context) (_ 
 		}
 	}()
 
-	offset, err := p.fetchPartitionOffset(ctx, kafkaEndOffset)
+	offset, err := p.fetchPartitionOffset(ctx, kafkaOffsetEnd)
 	if err != nil {
 		return 0, err
 	}
@@ -188,7 +188,7 @@ func (p *partitionOffsetReader) FetchPartitionStartOffset(ctx context.Context) (
 		}
 	}()
 
-	return p.fetchPartitionOffset(ctx, kafkaStartOffset)
+	return p.fetchPartitionOffset(ctx, kafkaOffsetStart)
 }
 
 func (p *partitionOffsetReader) fetchPartitionOffset(ctx context.Context, position int64) (int64, error) {
