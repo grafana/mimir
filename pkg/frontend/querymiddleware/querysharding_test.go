@@ -1905,7 +1905,6 @@ func BenchmarkQuerySharding(b *testing.B) {
 				start:     start,
 				end:       end,
 				step:      step,
-				timeout:   time.Minute,
 				queryExpr: parseQuery(b, tc.query),
 			}
 

@@ -45,11 +45,11 @@ func newEmptyPrometheusResponse() *PrometheusResponse {
 }
 
 type PrometheusRangeQueryRequest struct {
-	path          string
-	start         int64
-	end           int64
-	step          int64
-	timeout       time.Duration
+	path  string
+	start int64
+	end   int64
+	step  int64
+	// lookback is set at query engine level rather than per request, but required to know minT and maxT
 	lookbackDelta time.Duration
 	queryExpr     parser.Expr
 	minT          int64
@@ -113,10 +113,6 @@ func (r *PrometheusRangeQueryRequest) GetStep() int64 {
 	return r.step
 }
 
-func (r *PrometheusRangeQueryRequest) GetTimeout() time.Duration {
-	return r.timeout
-}
-
 func (r *PrometheusRangeQueryRequest) GetQuery() string {
 	if r.queryExpr != nil {
 		return r.queryExpr.String()
@@ -164,7 +160,7 @@ func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) Metri
 	return &newRequest
 }
 
-// WithQuery clones the current `PrometheusRangeQueryRequest` with a new query.
+// WithQuery clones the current `PrometheusRangeQueryRequest` with a new query; returns error if query parse fails.
 func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryRequest, error) {
 	queryExpr, err := parser.ParseExpr(query)
 	if err != nil {
@@ -219,8 +215,9 @@ func (r *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
 }
 
 type PrometheusInstantQueryRequest struct {
-	path          string
-	time          int64
+	path string
+	time int64
+	// lookback is set at query engine level rather than per request, but required to know minT and maxT
 	lookbackDelta time.Duration
 	queryExpr     parser.Expr
 	minT          int64
@@ -336,7 +333,7 @@ func (r *PrometheusInstantQueryRequest) WithStartEnd(time int64, _ int64) Metric
 	return &newRequest
 }
 
-// WithQuery clones the current `PrometheusInstantQueryRequest` with a new query.
+// WithQuery clones the current `PrometheusInstantQueryRequest` with a new query; returns error if query parse fails.
 func (r *PrometheusInstantQueryRequest) WithQuery(query string) (MetricsQueryRequest, error) {
 	queryExpr, err := parser.ParseExpr(query)
 	if err != nil {

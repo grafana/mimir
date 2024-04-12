@@ -117,8 +117,10 @@ type MetricsQueryRequest interface {
 	// WithID clones the current request with the provided ID.
 	WithID(id int64) MetricsQueryRequest
 	// WithStartEnd clone the current request with different start and end timestamp.
+	// Implementations must ensure minT and maxT are recalculated when the start and end timestamp change.
 	WithStartEnd(startTime int64, endTime int64) MetricsQueryRequest
-	// WithQuery clone the current request with a different query.
+	// WithQuery clones the current request with a different query; returns error if query parse fails.
+	// Implementations must ensure minT and maxT are recalculated when the query changes.
 	WithQuery(string) (MetricsQueryRequest, error)
 	// WithTotalQueriesHint adds the number of total queries to this request's Hints.
 	WithTotalQueriesHint(int32) MetricsQueryRequest
