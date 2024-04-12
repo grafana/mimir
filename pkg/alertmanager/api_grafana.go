@@ -10,28 +10,28 @@ import (
 	"net/http"
 
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/tenant"
-	"github.com/pkg/errors"
-	"github.com/prometheus/alertmanager/cluster/clusterpb"
-
 	"github.com/grafana/alerting/definition"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/pkg/errors"
+	"github.com/prometheus/alertmanager/cluster/clusterpb"
 )
 
 const (
-	errMarshallingState             = "error marshalling Grafana Alertmanager state"
-	errMarshallingStateJSON         = "error marshalling JSON Grafana Alertmanager state"
-	errMarshallingGrafanaConfigJSON = "error marshalling JSON Grafana Alertmanager config"
-	errReadingState                 = "unable to read the Grafana Alertmanager state"
-	errDeletingState                = "unable to delete the Grafana Alertmanager State"
-	errStoringState                 = "unable to store the Grafana Alertmanager state"
-	errReadingGrafanaConfig         = "unable to read the Grafana Alertmanager config"
-	errDeletingGrafanaConfig        = "unable to delete the Grafana Alertmanager config"
-	errStoringGrafanaConfig         = "unable to store the Grafana Alertmanager config"
-	errBase64DecodeState            = "unable to base64 decode Grafana Alertmanager state"
-	errUnmarshalProtoState          = "unable to unmarshal protobuf for Grafana Alertmanager state"
+	errMalformedGrafanaConfigInStore = "error unmarshalling Grafana configuration from storage"
+	errMarshallingState              = "error marshalling Grafana Alertmanager state"
+	errMarshallingStateJSON          = "error marshalling JSON Grafana Alertmanager state"
+	errMarshallingGrafanaConfigJSON  = "error marshalling JSON Grafana Alertmanager config"
+	errReadingState                  = "unable to read the Grafana Alertmanager state"
+	errDeletingState                 = "unable to delete the Grafana Alertmanager State"
+	errStoringState                  = "unable to store the Grafana Alertmanager state"
+	errReadingGrafanaConfig          = "unable to read the Grafana Alertmanager config"
+	errDeletingGrafanaConfig         = "unable to delete the Grafana Alertmanager config"
+	errStoringGrafanaConfig          = "unable to store the Grafana Alertmanager config"
+	errBase64DecodeState             = "unable to base64 decode Grafana Alertmanager state"
+	errUnmarshalProtoState           = "unable to unmarshal protobuf for Grafana Alertmanager state"
 
 	statusSuccess = "success"
 	statusError   = "error"
@@ -57,7 +57,10 @@ func (gc *UserGrafanaConfig) Validate() error {
 		return errors.New("created must be non-zero")
 	}
 
-	return gc.GrafanaAlertmanagerConfig.AlertmanagerConfig.Validate()
+	if err := gc.GrafanaAlertmanagerConfig.AlertmanagerConfig.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (gc *UserGrafanaConfig) UnmarshalJSON(data []byte) error {
@@ -267,6 +270,7 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 
 	var grafanaConfig GrafanaAlertmanagerConfig
 	if err := json.Unmarshal([]byte(cfg.RawConfig), &grafanaConfig); err != nil {
+		level.Error(logger).Log("msg", errMalformedGrafanaConfigInStore, "err", err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
 		return
