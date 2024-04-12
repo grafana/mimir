@@ -455,6 +455,43 @@ var _ ingesterError = perMetricMetadataLimitReachedError{}
 // Ensure that perMetricMetadataLimitReachedError is an softError.
 var _ softError = perMetricMetadataLimitReachedError{}
 
+// nativeHistogramValidationError indicates that native histogram bucket counts did not add up to the overall count.
+type nativeHistogramValidationError struct {
+	id           globalerror.ID
+	originalErr  error
+	seriesLabels []mimirpb.LabelAdapter
+	timestamp    model.Time
+}
+
+func newNativeHistogramValidationError(id globalerror.ID, originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) nativeHistogramValidationError {
+	return nativeHistogramValidationError{
+		id:           id,
+		originalErr:  originalErr,
+		seriesLabels: seriesLabels,
+		timestamp:    timestamp,
+	}
+}
+
+func (e nativeHistogramValidationError) Error() string {
+	return e.id.Message(fmt.Sprintf("err: %v. timestamp=%s, series=%s",
+		e.originalErr,
+		e.timestamp.Time().UTC().Format(time.RFC3339Nano),
+		e.seriesLabels,
+	))
+}
+
+func (e nativeHistogramValidationError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.BAD_DATA
+}
+
+func (e nativeHistogramValidationError) soft() {}
+
+// Ensure that histogramBucketCountMismatchError is an ingesterError.
+var _ ingesterError = nativeHistogramValidationError{}
+
+// Ensure that histogramBucketCountMismatchError is an softError.
+var _ softError = nativeHistogramValidationError{}
+
 // unavailableError is an ingesterError indicating that the ingester is unavailable.
 type unavailableError struct {
 	state services.State
@@ -550,10 +587,12 @@ type ingesterErrSamplers struct {
 	maxMetadataPerMetricLimitExceeded *log.Sampler
 	maxSeriesPerUserLimitExceeded     *log.Sampler
 	maxMetadataPerUserLimitExceeded   *log.Sampler
+	nativeHistogramValidationError    *log.Sampler
 }
 
 func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 	return ingesterErrSamplers{
+		log.NewSampler(freq),
 		log.NewSampler(freq),
 		log.NewSampler(freq),
 		log.NewSampler(freq),
@@ -584,6 +623,8 @@ func mapPushErrorToErrorWithStatus(err error) error {
 			wrappedErr = middleware.DoNotLogError{Err: err}
 		case mimirpb.TSDB_UNAVAILABLE:
 			errCode = codes.Internal
+		case mimirpb.METHOD_NOT_ALLOWED:
+			errCode = codes.Unimplemented
 		}
 	}
 	return newErrorWithStatus(wrappedErr, errCode)
@@ -603,6 +644,8 @@ func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 			return newErrorWithStatus(middleware.DoNotLogError{Err: err}, codes.Unavailable)
 		case mimirpb.TSDB_UNAVAILABLE:
 			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
+		case mimirpb.METHOD_NOT_ALLOWED:
+			return newErrorWithStatus(err, codes.Unimplemented)
 		}
 	}
 	return err
@@ -620,6 +663,8 @@ func mapReadErrorToErrorWithStatus(err error) error {
 			errCode = codes.ResourceExhausted
 		case mimirpb.SERVICE_UNAVAILABLE:
 			errCode = codes.Unavailable
+		case mimirpb.METHOD_NOT_ALLOWED:
+			return newErrorWithStatus(err, codes.Unimplemented)
 		}
 	}
 	return newErrorWithStatus(err, errCode)
@@ -637,6 +682,8 @@ func mapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
 		case mimirpb.SERVICE_UNAVAILABLE:
 			return newErrorWithStatus(err, codes.Unavailable)
+		case mimirpb.METHOD_NOT_ALLOWED:
+			return newErrorWithStatus(err, codes.Unimplemented)
 		}
 	}
 	return err

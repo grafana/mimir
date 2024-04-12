@@ -64,7 +64,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-store-gateway
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           secret:
@@ -197,7 +197,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-store-gateway
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           secret:
@@ -330,7 +330,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-store-gateway
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           secret:

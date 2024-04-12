@@ -284,7 +284,7 @@ func TestOverridesExporter_withRing(t *testing.T) {
 
 	// Create an empty ring.
 	ctx := context.Background()
-	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(interface{}) (out interface{}, retry bool, err error) {
 		return ring.NewDesc(), true, nil
 	}))
 

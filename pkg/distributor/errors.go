@@ -3,6 +3,7 @@
 package distributor
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -248,6 +249,8 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 			errCode = codes.FailedPrecondition
 		case mimirpb.CIRCUIT_BREAKER_OPEN:
 			errCode = codes.Unavailable
+		case mimirpb.METHOD_NOT_ALLOWED:
+			errCode = codes.Unimplemented
 		}
 	}
 	stat := status.New(errCode, pushErr.Error())
@@ -291,6 +294,14 @@ func wrapPartitionPushError(err error, partitionID int32) error {
 	}
 
 	return errors.Wrap(err, fmt.Sprintf("%s %d", failedPushingToPartitionMessage, partitionID))
+}
+
+func wrapDeadlineExceededPushError(err error) error {
+	if err != nil && errors.Is(err, context.DeadlineExceeded) {
+		return errors.Wrap(err, deadlineExceededWrapMessage)
+	}
+
+	return err
 }
 
 func isIngesterClientError(err error) bool {

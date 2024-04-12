@@ -132,7 +132,7 @@ func TestRuntimeConfigLoader_RunsValidation(t *testing.T) {
 	}{
 		{
 			name: "successful validate doesn't return error",
-			validate: func(limits validation.Limits) error {
+			validate: func(validation.Limits) error {
 				return nil
 			},
 		},
@@ -141,7 +141,7 @@ func TestRuntimeConfigLoader_RunsValidation(t *testing.T) {
 		},
 		{
 			name: "unsuccessful validate returns error",
-			validate: func(limits validation.Limits) error {
+			validate: func(validation.Limits) error {
 				return errors.New("validation failed")
 			},
 			hasError: true,

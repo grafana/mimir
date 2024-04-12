@@ -95,8 +95,10 @@ func NewDistributor(name string, consulAddress string, flags map[string]string, 
 			"-ingester.ring.replication-factor": "1",
 			"-distributor.remote-timeout":       "2s", // Fail fast in integration tests.
 			// Configure the ingesters ring backend
-			"-ingester.ring.store":           "consul",
-			"-ingester.ring.consul.hostname": consulAddress,
+			"-ingester.ring.store":                     "consul",
+			"-ingester.ring.consul.hostname":           consulAddress,
+			"-ingester.partition-ring.store":           "consul",
+			"-ingester.partition-ring.consul.hostname": consulAddress,
 			// Configure the distributor ring backend
 			"-distributor.ring.store": "memberlist",
 		},
@@ -113,8 +115,10 @@ func NewQuerier(name string, consulAddress string, flags map[string]string, opti
 			"-log.level":                        "warn",
 			"-ingester.ring.replication-factor": "1",
 			// Ingesters ring backend.
-			"-ingester.ring.store":           "consul",
-			"-ingester.ring.consul.hostname": consulAddress,
+			"-ingester.ring.store":                     "consul",
+			"-ingester.ring.consul.hostname":           consulAddress,
+			"-ingester.partition-ring.store":           "consul",
+			"-ingester.partition-ring.consul.hostname": consulAddress,
 			// Query-frontend worker.
 			"-querier.frontend-client.backoff-min-period": "100ms",
 			"-querier.frontend-client.backoff-max-period": "100ms",
@@ -156,8 +160,10 @@ func NewIngester(name string, consulAddress string, flags map[string]string, opt
 			"-log.level":                "warn",
 			"-ingester.ring.num-tokens": "512",
 			// Configure the ingesters ring backend
-			"-ingester.ring.store":           "consul",
-			"-ingester.ring.consul.hostname": consulAddress,
+			"-ingester.ring.store":                     "consul",
+			"-ingester.ring.consul.hostname":           consulAddress,
+			"-ingester.partition-ring.store":           "consul",
+			"-ingester.partition-ring.consul.hostname": consulAddress,
 			// Speed up the startup.
 			"-ingester.ring.min-ready-duration": "0s",
 			// Enable native histograms
@@ -317,8 +323,10 @@ func NewRuler(name string, consulAddress string, flags map[string]string, option
 			"-target":    "ruler",
 			"-log.level": "warn",
 			// Configure the ingesters ring backend
-			"-ingester.ring.store":           "consul",
-			"-ingester.ring.consul.hostname": consulAddress,
+			"-ingester.ring.store":                     "consul",
+			"-ingester.ring.consul.hostname":           consulAddress,
+			"-ingester.partition-ring.store":           "consul",
+			"-ingester.partition-ring.consul.hostname": consulAddress,
 		},
 		flags,
 		options...,
@@ -407,7 +415,7 @@ func WithConfigFile(configFile string) Option {
 }
 
 // WithNoopOption returns an option that doesn't change anything.
-func WithNoopOption() Option { return func(options *Options) {} }
+func WithNoopOption() Option { return func(*Options) {} }
 
 // FlagMapper is the type of function that maps flags, just to reduce some verbosity.
 type FlagMapper func(flags map[string]string) map[string]string

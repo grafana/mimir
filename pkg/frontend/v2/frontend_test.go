@@ -227,7 +227,7 @@ func TestFrontendRetryEnqueue(t *testing.T) {
 }
 
 func TestFrontendTooManyRequests(t *testing.T) {
-	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+	f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	})
 
@@ -240,7 +240,7 @@ func TestFrontendTooManyRequests(t *testing.T) {
 }
 
 func TestFrontendEnqueueFailure(t *testing.T) {
-	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+	f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 	})
 
@@ -630,7 +630,7 @@ func TestConfig_Validate(t *testing.T) {
 		expectedErr string
 	}{
 		"should pass with default config": {
-			setup: func(cfg *Config) {},
+			setup: func(*Config) {},
 		},
 		"should pass if scheduler address is configured, and query-scheduler discovery mode is the default one": {
 			setup: func(cfg *Config) {
@@ -668,7 +668,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 	const frontendConcurrency = 1
 	const userID = "test"
 
-	f, _ := setupFrontendWithConcurrencyAndServerOptions(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+	f, _ := setupFrontendWithConcurrencyAndServerOptions(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	}, frontendConcurrency, grpc.KeepaliveParams(keepalive.ServerParameters{
 		MaxConnectionIdle:     100 * time.Millisecond,

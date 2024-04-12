@@ -193,7 +193,6 @@ type Config struct {
 
 	// This config is dynamically injected because it is defined in the querier config.
 	ShuffleShardingLookbackPeriod              time.Duration `yaml:"-"`
-	PreferStreamingChunksFromIngesters         bool          `yaml:"-"`
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
@@ -707,12 +706,8 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -725,7 +720,6 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
-			cleanupInDefer = false
 			return next(ctx, pushReq)
 		}
 
@@ -772,19 +766,14 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
 		}
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
 }
 
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -792,7 +781,6 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		}
 
 		if !d.limits.MetricRelabelingEnabled(userID) {
-			cleanupInDefer = false
 			return next(ctx, pushReq)
 		}
 
@@ -835,7 +823,6 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
 }
@@ -844,12 +831,8 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 // filtering empty values. This is a protection mechanism for ingesters.
 func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -885,19 +868,14 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
 }
 
 func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -1021,7 +999,6 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
 		d.ingestionRate.Add(int64(totalN))
 
-		cleanupInDefer = false
 		err = next(ctx, pushReq)
 		if err != nil {
 			// Errors resulting from the pushing to the ingesters have priority over validation errors.
@@ -1036,12 +1013,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 // including data that later gets modified or dropped.
 func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -1072,7 +1045,6 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
 		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
 }
@@ -1229,12 +1201,8 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			d.cleanupAfterPushFinished(rs)
 		})
 
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -1260,9 +1228,23 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
+}
+
+// nextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
+// The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
+func nextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
+	cleanupInDefer := true
+	return func(ctx context.Context, req *Request) error {
+			cleanupInDefer = false
+			return next(ctx, req)
+		},
+		func() {
+			if cleanupInDefer {
+				pushReq.CleanUp()
+			}
+		}
 }
 
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
@@ -1342,13 +1324,6 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		ctx = ingester_client.WithSlabPool(ctx, slabPool)
 	}
 
-	// Use an independent context to make sure all ingesters get samples even if we return early.
-	// It will still take a while to calculate which ingester gets which series,
-	// so we'll start the remote timeout once the first callback is called.
-	remoteRequestContext := sync.OnceValues(func() (context.Context, context.CancelFunc) {
-		return context.WithTimeout(context.WithoutCancel(ctx), d.cfg.RemoteTimeout)
-	})
-
 	// Get both series and metadata keys in one slice.
 	keys, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
 
@@ -1365,41 +1340,93 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		tenantRing = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 	}
 
-	// we must not re-use buffers now until all DoBatch goroutines have finished,
-	// so set this flag false and pass cleanup() to DoBatch.
+	// we must not re-use buffers now until all writes to backends (e.g. ingesters) have completed, which can happen
+	// even after this function returns. For this reason, it's unsafe to cleanup in the defer and we'll do the cleanup
+	// once all backend requests have completed (see cleanup function passed to sendWriteRequestToBackends()).
 	cleanupInDefer = false
 
-	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
-		func(instance ring.InstanceDesc, indexes []int) error {
+	return d.sendWriteRequestToBackends(ctx, userID, req, keys, initialMetadataIndex, tenantRing, pushReq.CleanUp)
+}
+
+// sendWriteRequestToBackends sends the input req data to backends (i.e. ingesters or partitions).
+//
+// The input cleanup function is guaranteed to be called after all requests to all backends have completed.
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, tenantRing ring.DoBatchRing, cleanup func()) error {
+	// Use an independent context to make sure all backend instances (e.g. ingesters) get samples even if we return early.
+	// It will still take a while to lookup the ring and calculate which instance gets which series,
+	// so we'll start the remote timeout once the first callback is called.
+	remoteRequestContextAndCancel := sync.OnceValues(func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(context.WithoutCancel(ctx), d.cfg.RemoteTimeout)
+	})
+
+	remoteRequestContext := func() context.Context {
+		ctx, _ := remoteRequestContextAndCancel()
+		return ctx
+	}
+
+	batchCleanup := func() {
+		// Notify the provided callback that it's now safe to run the cleanup because there are no
+		// more in-flight requests to the backend.
+		cleanup()
+
+		// All requests have completed, so it's now safe to cancel the requests context to release resources.
+		_, cancel := remoteRequestContextAndCancel()
+		cancel()
+	}
+
+	batchOptions := ring.DoBatchOptions{
+		Cleanup:       batchCleanup,
+		IsClientError: isIngesterClientError,
+		Go:            d.doBatchPushWorkers,
+	}
+
+	if d.cfg.IngestStorageConfig.Enabled {
+		return d.sendWriteRequestToPartitions(ctx, tenantID, tenantRing, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
+	}
+	return d.sendWriteRequestToIngesters(ctx, tenantRing, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
+}
+
+func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
+	return ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
+		func(ingester ring.InstanceDesc, indexes []int) error {
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
-			// Do not cancel the remoteRequestContext in this callback:
-			// there are more callbacks using it at the same time.
-			localCtx, _ := remoteRequestContext()
-			var err error
-			if d.cfg.IngestStorageConfig.Enabled {
-				err = d.sendToStorage(localCtx, userID, instance, req)
-			} else {
-				err = d.sendToIngester(localCtx, instance, req)
+			h, err := d.ingesterPool.GetClientForInstance(ingester)
+			if err != nil {
+				return err
 			}
+			c := h.(ingester_client.IngesterClient)
 
-			if errors.Is(err, context.DeadlineExceeded) {
-				return errors.Wrap(err, deadlineExceededWrapMessage)
-			}
+			ctx := remoteRequestContext()
+			ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
+
+			_, err = c.Push(ctx, req)
+			err = wrapIngesterPushError(err, ingester.Id)
+			err = wrapDeadlineExceededPushError(err)
+
 			return err
-		},
-		ring.DoBatchOptions{
-			Cleanup: func() {
-				pushReq.CleanUp()
-				_, cancel := remoteRequestContext()
-				cancel()
-			},
-			IsClientError: isIngesterClientError,
-			Go:            d.doBatchPushWorkers,
-		},
-	)
+		}, batchOptions)
+}
 
-	return err
+func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
+	return ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
+		func(partition ring.InstanceDesc, indexes []int) error {
+			req := req.ForIndexes(indexes, initialMetadataIndex)
+
+			// The partition ID is stored in the ring.InstanceDesc Id.
+			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
+			if err != nil {
+				return err
+			}
+
+			ctx := remoteRequestContext()
+			err = d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), tenantID, req)
+			err = wrapPartitionPushError(err, int32(partitionID))
+			err = wrapDeadlineExceededPushError(err)
+
+			return err
+		}, batchOptions,
+	)
 }
 
 // getSeriesAndMetadataTokens returns a slice of tokens for the series and metadata from the request in this specific order.
@@ -1459,31 +1486,6 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
-}
-
-// sendToIngester sends received data to a specific ingester. This function is used when ingest storage is disabled.
-func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.InstanceDesc, req *mimirpb.WriteRequest) error {
-	h, err := d.ingesterPool.GetClientForInstance(ingester)
-	if err != nil {
-		return err
-	}
-	c := h.(ingester_client.IngesterClient)
-
-	ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
-	_, err = c.Push(ctx, req)
-	return wrapIngesterPushError(err, ingester.Id)
-}
-
-// sendToStorage sends received data to the configured ingest storage. This function is used when ingest storage is enabled.
-func (d *Distributor) sendToStorage(ctx context.Context, userID string, partition ring.InstanceDesc, req *mimirpb.WriteRequest) error {
-	// The partition ID is stored in the ring.InstanceDesc Id.
-	partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
-	if err != nil {
-		return err
-	}
-
-	err = d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), userID, req)
-	return wrapPartitionPushError(err, int32(partitionID))
 }
 
 // forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.

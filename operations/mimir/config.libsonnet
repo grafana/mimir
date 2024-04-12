@@ -92,6 +92,12 @@
     // While this is the default value, we want to pass the same to the -blocks-storage.bucket-store.sync-interval
     compactor_cleanup_interval: '15m',
 
+    // Enable concurrent rollout of compactor through the usage of the rollout operator.
+    // This feature modifies the compactor StatefulSet which cannot be altered, so if it already exists it has to be deleted and re-applied again in order to be enabled.
+    cortex_compactor_concurrent_rollout_enabled: false,
+    // Maximum number of unavailable replicas during a compactor rollout when using cortex_compactor_concurrent_rollout_enabled feature.
+    cortex_compactor_max_unavailable: std.max(std.floor($.compactor_statefulset.spec.replicas / 2), 1),
+
     // Enable use of bucket index by querier, ruler and store-gateway.
     bucket_index_enabled: true,
 
@@ -699,7 +705,7 @@
             'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+%(cache_index_queries_backend)s-index-queries.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
             'blocks-storage.bucket-store.index-cache.memcached.max-item-size': $._config.cache_index_queries_max_item_size_mb * 1024 * 1024,
             'blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': 50,
-            'blocks-storage.bucket-store.index-cache.memcached.timeout': '450ms',
+            'blocks-storage.bucket-store.index-cache.memcached.timeout': '750ms',
           } + if $._config.memcached_index_queries_mtls_enabled then {
             'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+%(cache_index_queries_backend)s-index-queries.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
             'blocks-storage.bucket-store.index-cache.memcached.connect-timeout': '1s',
@@ -724,7 +730,7 @@
             'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+%(cache_chunks_backend)s.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
             'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.cache_chunks_max_item_size_mb * 1024 * 1024,
             'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': 50,
-            'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '450ms',
+            'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '750ms',
           } + if $._config.memcached_chunks_mtls_enabled then {
             'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+%(cache_chunks_backend)s.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
             'blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout': '1s',

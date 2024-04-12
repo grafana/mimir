@@ -264,6 +264,9 @@ type TSDBConfig struct {
 	// HeadCompactionIntervalJitterEnabled is enabled by default, but allows to disable it in tests.
 	HeadCompactionIntervalJitterEnabled bool `yaml:"-"`
 
+	// HeadCompactionIntervalWhileStarting setting is hardcoded, but allowed to overwrite it in tests.
+	HeadCompactionIntervalWhileStarting time.Duration `yaml:"-"`
+
 	// TimelyHeadCompaction allows head compaction to happen when min block range can no longer be appended,
 	// without requiring 1.5x the chunk range worth of data in the head.
 	TimelyHeadCompaction bool `yaml:"timely_head_compaction_enabled" category:"experimental"`
@@ -314,6 +317,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.TimelyHeadCompaction, "blocks-storage.tsdb.timely-head-compaction-enabled", false, "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
+	cfg.HeadCompactionIntervalWhileStarting = 30 * time.Second
 }
 
 // Validate the config.

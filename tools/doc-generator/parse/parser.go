@@ -21,10 +21,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/thanos-io/objstore/providers/s3"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/util/fieldcategory"
+	"github.com/grafana/mimir/pkg/util/configdoc"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -154,7 +155,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 		fieldValue := v.FieldByIndex(field.Index)
 
 		// Skip fields explicitly marked as "hidden" in the doc
-		if isFieldHidden(field) {
+		if isFieldHidden(field, "") {
 			continue
 		}
 
@@ -289,6 +290,12 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 				FieldCategory: getFieldCategory(field, ""),
 				Element:       element,
 			})
+			continue
+		}
+
+		// The config field has a CLI flag registered. We should check again if the field is hidden,
+		// to ensure any CLI flag override is honored too.
+		if isFieldHidden(field, fieldFlag.Name) {
 			continue
 		}
 
@@ -583,12 +590,29 @@ func getCustomFieldEntry(cfg interface{}, field reflect.StructField, fieldValue 
 			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
+	if field.Type == reflect.TypeOf(s3.BucketLookupType(0)) {
+		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
+		if err != nil || fieldFlag == nil {
+			return nil, err
+		}
+
+		return &ConfigEntry{
+			Kind:          KindField,
+			Name:          getFieldName(field),
+			Required:      isFieldRequired(field),
+			FieldFlag:     fieldFlag.Name,
+			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
+			FieldType:     "string",
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
+		}, nil
+	}
 
 	return nil, nil
 }
 
 func getFieldCategory(field reflect.StructField, name string) string {
-	if category, ok := fieldcategory.GetOverride(name); ok {
+	if category, ok := configdoc.GetCategoryOverride(name); ok {
 		return category.String()
 	}
 	return field.Tag.Get("category")
@@ -602,7 +626,10 @@ func getFieldDefault(field reflect.StructField, fallback string) string {
 	return fallback
 }
 
-func isFieldHidden(f reflect.StructField) bool {
+func isFieldHidden(f reflect.StructField, name string) bool {
+	if hidden, ok := configdoc.GetHiddenOverride(name); ok {
+		return hidden
+	}
 	return getDocTagFlag(f, "hidden")
 }
 

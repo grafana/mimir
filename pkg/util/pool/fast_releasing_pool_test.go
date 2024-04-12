@@ -151,7 +151,7 @@ func TestFastReleasingSlabPool(t *testing.T) {
 		require.Greater(t, int(delegatePool.Gets.Load()), 0)
 	})
 
-	t.Run("releasing slabID 0", func(t *testing.T) {
+	t.Run("releasing slabID 0", func(*testing.T) {
 		delegatePool := &TrackedPool{Parent: &sync.Pool{}}
 		slabPool := NewFastReleasingSlabPool[byte](delegatePool, 10)
 

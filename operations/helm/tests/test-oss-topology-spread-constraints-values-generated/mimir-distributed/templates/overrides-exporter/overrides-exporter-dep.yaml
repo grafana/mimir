@@ -98,7 +98,7 @@ spec:
         labelSelector:
           matchLabels:
             foo: bar
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 30
       volumes:
         - name: config
           configMap:

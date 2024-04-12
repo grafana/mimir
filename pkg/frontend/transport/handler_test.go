@@ -334,7 +334,7 @@ func TestHandler_Stop(t *testing.T) {
 	)
 	inProgress := make(chan int32)
 	var reqID atomic.Int32
-	roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+	roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
 		id := reqID.Inc()
 		t.Logf("request %d sending its ID", id)
 		inProgress <- id
@@ -464,7 +464,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			// the details aren't set by the query stats middleware if the request isn't a query
 			name:                         "not a query request",
 			requestFormFields:            []string{},
-			setQueryDetails:              func(d *querymiddleware.QueryDetails) {},
+			setQueryDetails:              func(*querymiddleware.QueryDetails) {},
 			expectedLoggedFields:         map[string]string{},
 			expectedApproximateDurations: map[string]time.Duration{},
 			expectedMissingFields:        []string{"length", "param_time", "time_since_param_start", "time_since_param_end"},

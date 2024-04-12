@@ -41,7 +41,7 @@ type Writer struct {
 	writers   map[int32]*kgo.Client
 
 	// Metrics.
-	writeLatency    prometheus.Summary
+	writeLatency    prometheus.Histogram
 	writeBytesTotal prometheus.Counter
 
 	// The following settings can only be overridden in tests.
@@ -57,12 +57,13 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		maxInflightProduceRequests: 20,
 
 		// Metrics.
-		writeLatency: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
-			Name:       "cortex_ingest_storage_writer_latency_seconds",
-			Help:       "Latency to write an incoming request to the ingest storage.",
-			Objectives: latencySummaryObjectives,
-			MaxAge:     time.Minute,
-			AgeBuckets: 10,
+		writeLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_ingest_storage_writer_latency_seconds",
+			Help:                            "Latency to write an incoming request to the ingest storage.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+			Buckets:                         prometheus.DefBuckets,
 		}),
 		writeBytesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_writer_sent_bytes_total",
@@ -70,9 +71,16 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		}),
 	}
 
-	w.Service = services.NewIdleService(nil, w.stopping)
+	w.Service = services.NewIdleService(w.starting, w.stopping)
 
 	return w
+}
+
+func (w *Writer) starting(_ context.Context) error {
+	if w.kafkaCfg.AutoCreateTopicEnabled {
+		setDefaultNumberOfPartitionsForAutocreatedTopics(w.kafkaCfg, w.logger)
+	}
+	return nil
 }
 
 func (w *Writer) stopping(_ error) error {

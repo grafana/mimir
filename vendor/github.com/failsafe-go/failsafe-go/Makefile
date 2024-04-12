@@ -10,7 +10,7 @@ build: ## Build Failsafe-go
 
 .PHONY: test
 test: ## Test Failsafe-go
-	go run gotest.tools/gotestsum@latest
+	go run gotest.tools/gotestsum@latest `go list ./... | grep -vE 'examples|policytesting|testutil'`
 
 .PHONY: test-with-race
 test-with-race: ## Test Failsafe-go

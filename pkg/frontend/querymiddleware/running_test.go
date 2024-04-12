@@ -28,7 +28,7 @@ func TestAwaitQueryFrontendServiceRunning_ServiceIsReady(t *testing.T) {
 
 func TestAwaitQueryFrontendServiceRunning_ServiceIsNotReadyWaitDisabled(t *testing.T) {
 	startChan := make(chan struct{})
-	start := func(ctx context.Context) error {
+	start := func(context.Context) error {
 		<-startChan
 		return nil
 	}
@@ -45,7 +45,7 @@ func TestAwaitQueryFrontendServiceRunning_ServiceIsNotReadyWaitDisabled(t *testi
 
 func TestAwaitQueryFrontendServiceRunning_ServiceIsNotReadyInitially(t *testing.T) {
 	startChan := make(chan struct{})
-	start := func(ctx context.Context) error {
+	start := func(context.Context) error {
 		<-startChan
 		return nil
 	}
@@ -69,7 +69,7 @@ func TestAwaitQueryFrontendServiceRunning_ServiceIsNotReadyInitially(t *testing.
 
 func TestAwaitQueryFrontendServiceRunning_ServiceIsNotReadyAfterTimeout(t *testing.T) {
 	serviceChan := make(chan struct{})
-	start := func(ctx context.Context) error {
+	start := func(context.Context) error {
 		<-serviceChan
 		return nil
 	}

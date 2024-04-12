@@ -132,7 +132,7 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 		expected error
 	}{
 		"should pass with default config": {
-			setup:    func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {},
+			setup:    func(*testing.T, *MultitenantAlertmanagerConfig) {},
 			expected: nil,
 		},
 		"should fail with empty external URL": {
@@ -142,13 +142,13 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			expected: errEmptyExternalURL,
 		},
 		"should fail if persistent interval is 0": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+			setup: func(_ *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.Persister.Interval = 0
 			},
 			expected: errInvalidPersistInterval,
 		},
 		"should fail if persistent interval is negative": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+			setup: func(_ *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.Persister.Interval = -1
 			},
 			expected: errInvalidPersistInterval,
@@ -178,7 +178,7 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			expected: errInvalidExternalURLMissingHostname,
 		},
 		"should fail if zone aware is enabled but zone is not set": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+			setup: func(_ *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.ShardingRing.ZoneAwarenessEnabled = true
 			},
 			expected: errZoneAwarenessEnabledWithoutZoneInfo,
@@ -624,7 +624,7 @@ receivers:
 				serverInvoked := atomic.NewBool(false)
 
 				// Create a local HTTP server to test whether the request is received.
-				server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 					serverInvoked.Store(true)
 					writer.WriteHeader(http.StatusOK)
 				}))
