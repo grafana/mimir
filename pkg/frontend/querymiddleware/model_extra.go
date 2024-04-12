@@ -336,6 +336,8 @@ type PrometheusLabelNamesQueryRequest struct {
 	LabelMatcherSets []string
 	// ID of the request used to correlate downstream requests and responses.
 	ID int64
+	// Limit the number of label names returned. A value of 0 means no limit
+	Limit uint64
 }
 
 func (r *PrometheusLabelNamesQueryRequest) GetPath() string {
@@ -358,6 +360,10 @@ func (r *PrometheusLabelNamesQueryRequest) GetID() int64 {
 	return r.ID
 }
 
+func (r *PrometheusLabelNamesQueryRequest) GetLimit() uint64 {
+	return r.Limit
+}
+
 type PrometheusLabelValuesQueryRequest struct {
 	Path      string
 	LabelName string
@@ -370,6 +376,8 @@ type PrometheusLabelValuesQueryRequest struct {
 	LabelMatcherSets []string
 	// ID of the request used to correlate downstream requests and responses.
 	ID int64
+	// Limit the number of label values returned. A value of 0 means no limit.
+	Limit uint64
 }
 
 func (r *PrometheusLabelValuesQueryRequest) GetLabelName() string {
@@ -391,6 +399,10 @@ func (r *PrometheusLabelValuesQueryRequest) GetLabelMatcherSets() []string {
 
 func (r *PrometheusLabelValuesQueryRequest) GetID() int64 {
 	return r.ID
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetLimit() uint64 {
+	return r.Limit
 }
 
 func (d *PrometheusData) UnmarshalJSON(b []byte) error {
