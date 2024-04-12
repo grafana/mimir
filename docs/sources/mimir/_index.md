@@ -27,11 +27,11 @@ cards:
   items:
     - title: Get started
       href: ./get-started/
-      description: Get started quickly with Grafana Mimir's extensive documentation, tutorials, and deployment tooling. Use the monolithic mode to get up and running with just one binary and no added dependencies.  
+      description: Get started quickly with Grafana Mimir's extensive documentation, tutorials, and deployment tooling. Use the monolithic mode to get up and running with just one binary and no added dependencies.
       height: 24
     - title: Set up and configure
       href: ./configure/about-configurations/
-      description: Set up Grafana Mimir with Helm, Puppet, or Jsonnet and Tanka. Migrate to Grafana Mimir from Cortex, Thanos, or Prometheus. Configure Grafana Mimir through the use of a YAML-based configuration file or CLI flags and learn about the common configurations. 
+      description: Set up Grafana Mimir with Helm, Puppet, or Jsonnet and Tanka. Migrate to Grafana Mimir from Cortex, Thanos, or Prometheus. Configure Grafana Mimir through the use of a YAML-based configuration file or CLI flags and learn about the common configurations.
       height: 24
     - title: Send metric data
       href: ./send/
@@ -46,7 +46,7 @@ cards:
       height: 24
     - title: Visualize data
       href: ./visualize/
-      description: Grafana is an open platform for metrics visualization. It supports multiple data stores including Prometheus. Grafana allows you to query, visualize, and understand your metrics. You can also visualize native histograms through Grafana Mimir since they are a Prometheuse data type. 
+      description: Grafana is an open platform for metrics visualization. It supports multiple data stores including Prometheus. Grafana allows you to query, visualize, and understand your metrics. You can also visualize native histograms through Grafana Mimir since they are a Prometheuse data type.
       height: 24
 ---
 
