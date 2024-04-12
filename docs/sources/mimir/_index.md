@@ -15,8 +15,6 @@ keywords:
   - observability
 menuTitle: Grafana Mimir
 title: Grafana Mimir documentation
-
-
 hero:
   title: Grafana Mimir
   level: 1
