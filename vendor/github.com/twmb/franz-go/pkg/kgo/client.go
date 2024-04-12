@@ -215,11 +215,11 @@ func (cl *Client) OptValue(opt any) any {
 //			InstanceID("foo"),
 //			ConsumeTopics("foo", "bar"),
 //		)
-//		idValues = cl.OptValues(InstanceID)          // idValues is []any{"foo", true}
-//		tValues  = cl.OptValues(SessionTimeout)      // tValues is []any{45 * time.Second}
-//		topics   = cl.OptValues(ConsumeTopics)       // topics is []any{[]string{"foo", "bar"}
+//		idValues = cl.OptValues(InstanceID)           // idValues is []any{"foo", true}
+//		tValues  = cl.OptValues(SessionTimeout)       // tValues is []any{45 * time.Second}
+//		topics   = cl.OptValues(ConsumeTopics)        // topics is []any{[]string{"foo", "bar"}
 //		bpoll    = cl.OptValues(BlockRebalanceOnPoll) // bpoll is []any{false}
-//		unknown  = cl.OptValues("Unknown")           // unknown is nil
+//		unknown  = cl.OptValues("Unknown")            // unknown is nil
 //	)
 func (cl *Client) OptValues(opt any) []any {
 	name := namefn(opt)
@@ -237,7 +237,7 @@ func (cl *Client) OptValues(opt any) []any {
 	case namefn(SoftwareNameAndVersion):
 		return []any{cfg.softwareName, cfg.softwareVersion}
 	case namefn(WithLogger):
-		if cfg.logger != nil {
+		if _, wrapped := cfg.logger.(*wrappedLogger); wrapped {
 			return []any{cfg.logger.(*wrappedLogger).inner}
 		}
 		return []any{nil}
@@ -524,7 +524,7 @@ func NewClient(opts ...Opt) (*Client, error) {
 // Opts returns the options that were used to create this client. This can be
 // as a base to generate a new client, where you can add override options to
 // the end of the original input list. If you want to know a specific option
-// value, you can use ConfigValue or ConfigValues.
+// value, you can use OptValue or OptValues.
 func (cl *Client) Opts() []Opt {
 	return cl.opts
 }
@@ -2250,8 +2250,12 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 				}
 
 				resp, err := broker.waitResp(ctx, myIssue.req)
+				var errIsFromResp bool
 				if err == nil {
 					err = sharder.onResp(myUnderlyingReq, resp) // perform some potential cleanup, and potentially receive an error to retry
+					if ke := (*kerr.Error)(nil); errors.As(err, &ke) {
+						errIsFromResp = true
+					}
 				}
 
 				// If we failed to issue the request, we *maybe* will retry.
@@ -2279,6 +2283,14 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 					return
 				}
 
+				// If we pulled an error out of the response body in an attempt
+				// to possibly retry, the request was NOT an error that we want
+				// to bubble as a shard error. The request was successful, we
+				// have a response. Before we add the shard, strip the error.
+				// The end user can parse the response ErrorCode.
+				if errIsFromResp {
+					err = nil
+				}
 				addShard(shard(broker, myUnderlyingReq, resp, err)) // the error was not retryable
 			}()
 		}
@@ -2404,6 +2416,7 @@ func (cl *Client) cachedMappedMetadata(ts ...string) (map[string]mappedMetadataT
 			cached[t] = tcached
 		} else {
 			needed = append(needed, t)
+			delete(cl.mappedMeta, t)
 		}
 	}
 	return cached, needed
@@ -2451,6 +2464,16 @@ func (cl *Client) fetchMappedMetadata(ctx context.Context, topics []string, useC
 		r[*topic.Topic] = t
 		for _, partition := range topic.Partitions {
 			t.ps[partition.Partition] = partition
+		}
+	}
+	if len(meta.Topics) != len(cl.mappedMeta) {
+		for topic, mapped := range cl.mappedMeta {
+			if mapped.when.Equal(when) {
+				continue
+			}
+			if time.Since(mapped.when) > cl.cfg.metadataMinAge {
+				delete(cl.mappedMeta, topic)
+			}
 		}
 	}
 	return r, nil

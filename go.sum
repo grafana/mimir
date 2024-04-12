@@ -885,12 +885,12 @@ github.com/tencentyun/cos-go-sdk-v5 v0.7.40/go.mod h1:4dCEtLHGh8QPxHEkgq+nFaky7y
 github.com/thanos-io/objstore v0.0.0-20240128223450-bdadaefbfe03 h1:VEu81Atmor2RVr5iGzlLc7E8X9jd1ux0ze4Ie5Qw8n0=
 github.com/thanos-io/objstore v0.0.0-20240128223450-bdadaefbfe03/go.mod h1:RMvJQnpB4QQiYGg1gF8mnPJg6IkIPY28Buh8f6b+F0c=
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=
-github.com/twmb/franz-go v1.15.4 h1:qBCkHaiutetnrXjAUWA99D9FEcZVMt2AYwkH3vWEQTw=
-github.com/twmb/franz-go v1.15.4/go.mod h1:rC18hqNmfo8TMc1kz7CQmHL74PLNF8KVvhflxiiJZCU=
+github.com/twmb/franz-go v1.16.1 h1:rpWc7fB9jd7TgmCyfxzenBI+QbgS8ZfJOUQE+tzPtbE=
+github.com/twmb/franz-go v1.16.1/go.mod h1:/pER254UPPGp/4WfGqRi+SIRGE50RSQzVubQp6+N4FA=
 github.com/twmb/franz-go/pkg/kadm v1.10.0 h1:3oYKNP+e3HGo4GYadrDeRxOaAIsOXmX6LBVMz9PxpCU=
 github.com/twmb/franz-go/pkg/kadm v1.10.0/go.mod h1:hUMoV4SRho+2ij/S9cL39JaLsr+XINjn0ZkCdBY2DXc=
-github.com/twmb/franz-go/pkg/kfake v0.0.0-20231206062516-c09dc92d2db1 h1:xbSGm02av1df+hkaY+2jGfkuj/XwGaDnUpLo0VvOrY0=
-github.com/twmb/franz-go/pkg/kfake v0.0.0-20231206062516-c09dc92d2db1/go.mod h1:n45fs28DdNx7PRAiYwBTwOORJGUMGqHzmFlr0pcW+BY=
+github.com/twmb/franz-go/pkg/kfake v0.0.0-20240412162337-6a58760afaa7 h1:ehifEfv6+joNOFrOZ7vRDcgeAJsOIrav2MrZbGhK2MA=
+github.com/twmb/franz-go/pkg/kfake v0.0.0-20240412162337-6a58760afaa7/go.mod h1:DCMFat7WCZfk946rqd9aVAcAmB6/rIcdMTslJSjJZgk=
 github.com/twmb/franz-go/pkg/kmsg v1.7.0 h1:a457IbvezYfA5UkiBvyV3zj0Is3y1i8EJgqjJYoij2E=
 github.com/twmb/franz-go/pkg/kmsg v1.7.0/go.mod h1:se9Mjdt0Nwzc9lnjJ0HyDtLyBnaBDAd7pCje47OhSyw=
 github.com/twmb/franz-go/plugin/kprom v1.1.0 h1:grGeIJbm4llUBF8jkDjTb/b8rKllWSXjMwIqeCCcNYQ=

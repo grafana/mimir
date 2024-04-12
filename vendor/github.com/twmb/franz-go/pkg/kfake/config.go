@@ -34,6 +34,8 @@ type cfg struct {
 	enableSASL bool
 	sasls      map[struct{ m, u string }]string // cleared after client initialization
 	tls        *tls.Config
+
+	sleepOutOfOrder bool
 }
 
 // NumBrokers sets the number of brokers to start in the fake cluster.
@@ -112,4 +114,13 @@ func TLS(c *tls.Config) Opt {
 // options, the last specification wins.
 func SeedTopics(partitions int32, ts ...string) Opt {
 	return opt{func(cfg *cfg) { cfg.seedTopics = append(cfg.seedTopics, seedTopics{partitions, ts}) }}
+}
+
+// SleepOutOfOrder allows functions to be handled out of order when control
+// functions are sleeping. The functions are be handled internally out of
+// order, but responses still wait for the sleeping requests to finish. This
+// can be used to set up complicated chains of control where functions only
+// advance when you know another request is actively being handled.
+func SleepOutOfOrder() Opt {
+	return opt{func(cfg *cfg) { cfg.sleepOutOfOrder = true }}
 }

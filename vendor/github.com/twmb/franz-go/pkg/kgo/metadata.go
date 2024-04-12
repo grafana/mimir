@@ -695,6 +695,8 @@ func (cl *Client) mergeTopicPartitions(
 			for _, topicPartition := range lv.partitions {
 				topicPartition.records.bumpRepeatedLoadErr(lv.loadErr)
 			}
+		} else if !kerr.IsRetriable(r.loadErr) || cl.cfg.keepRetryableFetchErrors {
+			cl.consumer.addFakeReadyForDraining(topic, -1, r.loadErr, "metadata refresh has a load error on this entire topic")
 		}
 		retryWhy.add(topic, -1, r.loadErr)
 		return
@@ -753,7 +755,7 @@ func (cl *Client) mergeTopicPartitions(
 		}
 		newTP := r.partitions[part]
 
-		// Like above for the entire topic, an individual partittion
+		// Like above for the entire topic, an individual partition
 		// can have a load error. Unlike for the topic, individual
 		// partition errors are always retryable.
 		//
@@ -765,6 +767,8 @@ func (cl *Client) mergeTopicPartitions(
 			newTP.loadErr = err
 			if isProduce {
 				newTP.records.bumpRepeatedLoadErr(newTP.loadErr)
+			} else if !kerr.IsRetriable(newTP.loadErr) || cl.cfg.keepRetryableFetchErrors {
+				cl.consumer.addFakeReadyForDraining(topic, int32(part), newTP.loadErr, "metadata refresh has a load error on this partition")
 			}
 			retryWhy.add(topic, int32(part), newTP.loadErr)
 			continue
