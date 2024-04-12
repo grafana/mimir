@@ -268,7 +268,7 @@ func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryReq
 		return nil, err
 	}
 
-	result.Query = r.FormValue("query")
+	result.Query = reqValues.Get("query")
 	result.Path = r.URL.Path
 	decodeOptions(r, &result.Options)
 	return &result, nil

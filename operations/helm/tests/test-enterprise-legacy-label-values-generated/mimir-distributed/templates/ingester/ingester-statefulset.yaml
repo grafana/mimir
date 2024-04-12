@@ -64,7 +64,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-ingester
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
@@ -193,7 +193,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-ingester
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
@@ -322,7 +322,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-ingester
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
