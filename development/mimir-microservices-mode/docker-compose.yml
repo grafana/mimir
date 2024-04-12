@@ -307,7 +307,7 @@
       - "--config.file=/etc/prometheus/prometheus.yaml"
       - "--enable-feature=exemplar-storage"
       - "--enable-feature=native-histograms"
-    "image": "prom/prometheus:v2.47.2"
+    "image": "prom/prometheus:v2.51.1"
     "ports":
       - "9090:9090"
     "volumes":

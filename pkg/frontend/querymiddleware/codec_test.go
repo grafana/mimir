@@ -1198,6 +1198,58 @@ func TestPrometheusCodec_DecodeEncode(t *testing.T) {
 	}
 }
 
+func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
+	const query = "sum by (namespace) (container_memory_rss)"
+	t.Run("instant query", func(t *testing.T) {
+		params := url.Values{
+			"query": []string{query},
+			"time":  []string{"1000000000.011"},
+		}
+		req, err := http.NewRequest("POST", "/api/v1/query?", strings.NewReader(params.Encode()))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
+
+		ctx := context.Background()
+		codec := newTestPrometheusCodec()
+		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, query, decoded.GetQuery())
+
+		// Decode the same request again.
+		decoded2, err := codec.DecodeMetricsQueryRequest(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, query, decoded2.GetQuery())
+
+		require.Equal(t, decoded, decoded2)
+	})
+	t.Run("range query", func(t *testing.T) {
+		params := url.Values{
+			"query": []string{query},
+			"start": []string{"1000000000.011"},
+			"end":   []string{"1000000010.022"},
+			"step":  []string{"1s"},
+		}
+		req, err := http.NewRequest("POST", "/api/v1/query_range?", strings.NewReader(params.Encode()))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
+
+		ctx := context.Background()
+		codec := newTestPrometheusCodec()
+		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, query, decoded.GetQuery())
+
+		// Decode the same request again.
+		decoded2, err := codec.DecodeMetricsQueryRequest(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, query, decoded2.GetQuery())
+
+		require.Equal(t, decoded, decoded2)
+	})
+}
+
 func newTestPrometheusCodec() Codec {
 	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), formatJSON)
 }

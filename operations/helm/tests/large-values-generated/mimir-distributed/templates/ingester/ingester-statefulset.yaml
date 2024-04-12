@@ -83,7 +83,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: large-values
             app.kubernetes.io/component: ingester
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -231,7 +231,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: large-values
             app.kubernetes.io/component: ingester
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -379,7 +379,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: large-values
             app.kubernetes.io/component: ingester
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:

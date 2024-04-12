@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Most cases for selector operators are covered already in the upstream test cases.
+# These test cases cover scenarios not covered by the upstream test cases, such as range queries, or edge cases that are uniquely likely to cause issues in the streaming engine.
+
+load 1m
+  some_metric{env="prod", cluster="eu"} 0+1x4
+  some_metric{env="prod", cluster="us"} 0+2x4
+  some_metric{env="test", cluster="eu"} 0+3x4
+  some_metric{env="test", cluster="us"} 0+4x4
+
+# Range query with instant vector selector.
+eval range from 0 to 4m step 1m some_metric
+  some_metric{env="prod", cluster="eu"} 0 1 2 3 4
+  some_metric{env="prod", cluster="us"} 0 2 4 6 8
+  some_metric{env="test", cluster="eu"} 0 3 6 9 12
+  some_metric{env="test", cluster="us"} 0 4 8 12 16
+
+# If no series are matched, we shouldn't return any results.
+eval range from 0 to 4m step 1m some_nonexistent_metric
+  # Should return no results.

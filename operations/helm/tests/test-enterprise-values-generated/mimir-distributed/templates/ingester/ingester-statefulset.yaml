@@ -69,7 +69,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-values
             app.kubernetes.io/component: ingester
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
@@ -203,7 +203,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-values
             app.kubernetes.io/component: ingester
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
@@ -337,7 +337,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-values
             app.kubernetes.io/component: ingester
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:

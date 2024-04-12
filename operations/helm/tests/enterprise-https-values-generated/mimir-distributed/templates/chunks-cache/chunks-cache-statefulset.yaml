@@ -43,14 +43,14 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 30
       volumes:
         - name: tls-certs
           secret:
             secretName: tls-certs
       containers:
         - name: memcached
-          image: memcached:1.6.25-alpine
+          image: memcached:1.6.26-alpine
           imagePullPolicy: IfNotPresent
           resources:
             limits:

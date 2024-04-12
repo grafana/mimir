@@ -109,7 +109,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: enterprise-https-values
             app.kubernetes.io/component: ruler
-      terminationGracePeriodSeconds: 180
+      terminationGracePeriodSeconds: 600
       volumes:
         - name: config
           configMap:

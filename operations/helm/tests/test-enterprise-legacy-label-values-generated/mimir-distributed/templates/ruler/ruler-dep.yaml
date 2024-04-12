@@ -100,7 +100,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-ruler
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 180
+      terminationGracePeriodSeconds: 600
       volumes:
         - name: config
           secret:

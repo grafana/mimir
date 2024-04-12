@@ -43,10 +43,10 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 30
       containers:
         - name: memcached
-          image: memcached:1.6.25-alpine
+          image: memcached:1.6.26-alpine
           imagePullPolicy: IfNotPresent
           resources:
             limits:

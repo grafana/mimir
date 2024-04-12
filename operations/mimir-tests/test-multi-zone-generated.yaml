@@ -835,6 +835,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -985,6 +986,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       volumes:
       - configMap:
           name: overrides
@@ -1014,7 +1016,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.13.0
+        image: grafana/rollout-operator:v0.14.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:

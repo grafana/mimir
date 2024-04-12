@@ -45,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -161,6 +162,9 @@ func TestMimir(t *testing.T) {
 			ReplicationFactor:      1,
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},
+		Querier: querier.Config{
+			PromQLEngine: "standard",
+		},
 	}
 	require.NoError(t, cfg.Server.LogLevel.Set("info"))
 

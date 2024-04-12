@@ -53,7 +53,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-configmap-values
             app.kubernetes.io/component: compactor
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
