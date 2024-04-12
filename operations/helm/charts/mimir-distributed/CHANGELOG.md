@@ -58,6 +58,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Make the PSP template configurable via `rbac.podSecurityPolicy`. #7190
 * [ENHANCEMENT] Recording rules: add native histogram recording rules to `cortex_request_duration_seconds`. #7528
 * [ENHANCEMENT] Make the port used in ServiceMonitor for kube-state-metrics configurable. #7507
+* [ENHANCEMENT] The new value `metaMonitoring.grafanaAgent.logs.clusterLabel` controls whether to add a `cluster` label and with what content to PodLogs logs. #7764
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
 * [BUGFIX] Recording rules: drop rules for metrics removed in 2.0: `cortex_memcache_request_duration_seconds` and `cortex_cache_request_duration_seconds`. #7514
 * [BUGFIX] Store-gateway: setting "resources.requests.memory" with a quantity that used power-of-ten SI suffix, caused an error. #7506
