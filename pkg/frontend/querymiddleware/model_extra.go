@@ -114,7 +114,10 @@ func (r *PrometheusRangeQueryRequest) GetTimeout() time.Duration {
 }
 
 func (r *PrometheusRangeQueryRequest) GetQuery() string {
-	return r.queryExpr.String()
+	if r.queryExpr != nil {
+		return r.queryExpr.String()
+	}
+	return ""
 }
 
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,

@@ -93,9 +93,8 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				start:     util.TimeToMillis(testData.reqStartTime),
-				end:       util.TimeToMillis(testData.reqEndTime),
-				queryExpr: parseQuery(t, "foo"),
+				start: util.TimeToMillis(testData.reqStartTime),
+				end:   util.TimeToMillis(testData.reqEndTime),
 			}
 
 			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback, compactorBlocksRetentionPeriod: testData.blocksRetentionPeriod}
@@ -323,9 +322,8 @@ func TestLimitsMiddleware_CreationGracePeriod(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				start:     util.TimeToMillis(testData.reqStartTime),
-				end:       util.TimeToMillis(testData.reqEndTime),
-				queryExpr: parseQuery(t, "foo"),
+				start: util.TimeToMillis(testData.reqStartTime),
+				end:   util.TimeToMillis(testData.reqEndTime),
 			}
 
 			limits := mockLimits{creationGracePeriod: testData.creationGracePeriod}
@@ -609,13 +607,13 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 
 	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
-			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
+			return HandlerFunc(func(c context.Context, req MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
 				for i := 0; i < maxQueryParallelism+20; i++ {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						_, _ = next.Do(c, &PrometheusRangeQueryRequest{queryExpr: parseQuery(t, `foo`)})
+						_, _ = next.Do(c, req)
 					}()
 				}
 				wg.Wait()
@@ -653,11 +651,11 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 
 	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
-			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
+			return HandlerFunc(func(c context.Context, req MetricsQueryRequest) (Response, error) {
 				// fire up work and we don't wait.
 				for i := 0; i < 10; i++ {
 					go func() {
-						_, _ = next.Do(c, &PrometheusRangeQueryRequest{queryExpr: parseQuery(t, `foo`)})
+						_, _ = next.Do(c, req)
 					}()
 				}
 				return newEmptyPrometheusResponse(), nil
@@ -694,7 +692,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 
 	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
-			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
+			return HandlerFunc(func(c context.Context, req MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
 
 				// Fire up some work. Each sub-request will either be blocked in the sleep or in the queue
@@ -703,7 +701,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						_, _ = next.Do(c, &PrometheusRangeQueryRequest{queryExpr: parseQuery(t, `foo`)})
+						_, _ = next.Do(c, req)
 					}()
 				}
 

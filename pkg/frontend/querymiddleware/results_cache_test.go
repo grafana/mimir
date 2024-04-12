@@ -381,9 +381,10 @@ func TestPartitionCacheExtents(t *testing.T) {
 		{
 			name: "Test a complete hit.",
 			input: &PrometheusRangeQueryRequest{
-				start: 0,
-				end:   100,
-				step:  10,
+				start:     0,
+				end:       100,
+				step:      10,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(0, 100),
@@ -396,9 +397,10 @@ func TestPartitionCacheExtents(t *testing.T) {
 		{
 			name: "Test with a complete miss.",
 			input: &PrometheusRangeQueryRequest{
-				start: 0,
-				end:   100,
-				step:  10,
+				start:     0,
+				end:       100,
+				step:      10,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(110, 210),
@@ -414,9 +416,10 @@ func TestPartitionCacheExtents(t *testing.T) {
 		{
 			name: "Test a partial hit.",
 			input: &PrometheusRangeQueryRequest{
-				start: 0,
-				end:   100,
-				step:  10,
+				start:     0,
+				end:       100,
+				step:      10,
+				queryExpr: parseQuery(t, "foo"),
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 100),
