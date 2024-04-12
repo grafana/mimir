@@ -979,9 +979,7 @@ func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	// Append to the list of codecs instead of overwriting the value to allow third parties to inject their own codecs.
 	t.Cfg.MemberlistKV.Codecs = append(t.Cfg.MemberlistKV.Codecs, ring.GetCodec())
-	if t.Cfg.IngestStorage.Enabled {
-		t.Cfg.MemberlistKV.Codecs = append(t.Cfg.MemberlistKV.Codecs, ring.GetPartitionRingCodec())
-	}
+	t.Cfg.MemberlistKV.Codecs = append(t.Cfg.MemberlistKV.Codecs, ring.GetPartitionRingCodec())
 
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
 		"cortex_",
