@@ -36,7 +36,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             # The following 5xx errors considered as non-error:
             # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
-            # - 598: used by GEM gateway when the client is very slow to send write request and the gateway times out reading the request body
+            # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
             (
               sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",status_code!~"529|598",route!~"%(excluded_routes)s"}[%(range_interval)s]))
               /
