@@ -7676,21 +7676,6 @@ func uniqueZones(instances []ring.InstanceDesc) []string {
 	return zones
 }
 
-type mockInstanceClient struct {
-	client.HealthAndIngesterClient
-
-	md metadata.MD
-}
-
-func (m *mockInstanceClient) Check(_ context.Context, _ *grpc_health_v1.HealthCheckRequest, _ ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
-	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
-}
-
-func (m *mockInstanceClient) Push(ctx context.Context, _ *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
-	m.md, _ = metadata.FromOutgoingContext(ctx)
-	return nil, nil
-}
-
 func cloneTimeseries(orig *mimirpb.TimeSeries) (*mimirpb.TimeSeries, error) {
 	data, err := orig.Marshal()
 	if err != nil {
