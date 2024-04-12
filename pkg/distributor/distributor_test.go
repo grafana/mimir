@@ -5575,6 +5575,22 @@ type mockIngester struct {
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
 	partitionReader *ingest.PartitionReader
+
+	// Hooks.
+	hooksMx        sync.Mutex
+	beforePushHook func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool)
+}
+
+func (i *mockIngester) registerBeforePushHook(fn func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool)) {
+	i.hooksMx.Lock()
+	defer i.hooksMx.Unlock()
+	i.beforePushHook = fn
+}
+
+func (i *mockIngester) getBeforePushHook() func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool) {
+	i.hooksMx.Lock()
+	defer i.hooksMx.Unlock()
+	return i.beforePushHook
 }
 
 func (i *mockIngester) instanceID() string {
@@ -5620,6 +5636,12 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 	i.trackCall("Push")
 
 	time.Sleep(i.pushDelay)
+
+	if hook := i.getBeforePushHook(); hook != nil {
+		if res, err, handled := hook(ctx, req); handled {
+			return res, err
+		}
+	}
 
 	i.Lock()
 	defer i.Unlock()
@@ -7416,46 +7438,43 @@ func TestStartFinishRequest(t *testing.T) {
 	}
 }
 
-func TestSendMessageMetadata(t *testing.T) {
-	var distributorCfg Config
-	var clientConfig client.Config
-	var ringConfig ring.Config
-	flagext.DefaultValues(&distributorCfg, &clientConfig, &ringConfig)
+func TestDistributor_Push_SendMessageMetadata(t *testing.T) {
+	const userID = "test"
 
-	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-	ringConfig.KVStore.Mock = kvStore
-	ingestersRing, err := ring.New(ringConfig, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-
-	mock := &mockInstanceClient{}
-	distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
-		return mock, nil
+	distributors, ingesters, _, _ := prepare(t, prepConfig{
+		numIngesters:      1,
+		happyIngesters:    1,
+		numDistributors:   1,
+		replicationFactor: 1,
 	})
 
-	d, err := New(distributorCfg, clientConfig, validation.MockDefaultOverrides(), nil, ingestersRing, nil, false, nil, log.NewNopLogger())
-	require.NoError(t, err)
-	require.NotNil(t, d)
+	require.Len(t, distributors, 1)
+	require.Len(t, ingesters, 1)
 
 	ctx := context.Background()
-	ctx = user.InjectOrgID(ctx, "test")
+	ctx = user.InjectOrgID(ctx, userID)
 
 	req := &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
-			{TimeSeries: &mimirpb.TimeSeries{
-				Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test1"}},
-				Exemplars: []mimirpb.Exemplar{},
-			}},
+			makeTimeseries([]string{model.MetricNameLabel, "test1"}, makeSamples(time.Now().UnixMilli(), 1), nil),
 		},
 		Source: mimirpb.API,
 	}
 
-	err = d.sendToIngester(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req)
+	// Register a hook in the ingester's Push() to check whether the context contains the expected gRPC metadata.
+	ingesters[0].registerBeforePushHook(func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool) {
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		require.Equal(t, []string{strconv.Itoa(req.Size())}, md[grpcutil.MetadataMessageSize])
+
+		return nil, nil, false
+	})
+
+	_, err := distributors[0].Push(ctx, req)
 	require.NoError(t, err)
 
-	// Verify that d.sendToIngester added message size to metadata.
-	require.Equal(t, []string{strconv.Itoa(req.Size())}, mock.md[grpcutil.MetadataMessageSize])
+	// Ensure the ingester's Push() has been called.
+	require.Equal(t, 1, ingesters[0].countCalls("Push"))
 }
 
 func TestQueryIngestersRingZoneSorter(t *testing.T) {
@@ -7655,21 +7674,6 @@ func uniqueZones(instances []ring.InstanceDesc) []string {
 	})
 
 	return zones
-}
-
-type mockInstanceClient struct {
-	client.HealthAndIngesterClient
-
-	md metadata.MD
-}
-
-func (m *mockInstanceClient) Check(_ context.Context, _ *grpc_health_v1.HealthCheckRequest, _ ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
-	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
-}
-
-func (m *mockInstanceClient) Push(ctx context.Context, _ *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
-	m.md, _ = metadata.FromOutgoingContext(ctx)
-	return nil, nil
 }
 
 func cloneTimeseries(orig *mimirpb.TimeSeries) (*mimirpb.TimeSeries, error) {

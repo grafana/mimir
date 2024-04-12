@@ -64,7 +64,7 @@ type Compactor interface {
 
 	// Write persists a Block into a directory.
 	// No Block is written when resulting Block has 0 samples, and returns empty ulid.ULID{}.
-	Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error)
+	Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) (ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
@@ -105,7 +105,8 @@ type CompactorMetrics struct {
 	ChunkRange        prometheus.Histogram
 }
 
-func newCompactorMetrics(r prometheus.Registerer) *CompactorMetrics {
+// NewCompactorMetrics initializes metrics for Compactor.
+func NewCompactorMetrics(r prometheus.Registerer) *CompactorMetrics {
 	m := &CompactorMetrics{}
 
 	m.Ran = prometheus.NewCounter(prometheus.CounterOpts{
@@ -212,7 +213,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		ranges:                      ranges,
 		chunkPool:                   pool,
 		logger:                      l,
-		metrics:                     newCompactorMetrics(r),
+		metrics:                     NewCompactorMetrics(r),
 		ctx:                         ctx,
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
 		mergeFunc:                   mergeFunc,
@@ -715,7 +716,7 @@ func (c *LeveledCompactor) compactOOO(dest string, oooHead *OOOCompactionHead, s
 	return ulids, nil
 }
 
-func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
+func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) (ulid.ULID, error) {
 	start := time.Now()
 
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
@@ -728,9 +729,12 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 	meta.Compaction.Level = 1
 	meta.Compaction.Sources = []ulid.ULID{uid}
 
-	if parent != nil {
+	if base != nil {
 		meta.Compaction.Parents = []BlockDesc{
-			{ULID: parent.ULID, MinTime: parent.MinTime, MaxTime: parent.MaxTime},
+			{ULID: base.ULID, MinTime: base.MinTime, MaxTime: base.MaxTime},
+		}
+		if base.Compaction.FromOutOfOrder() {
+			meta.Compaction.SetOutOfOrder()
 		}
 	}
 
@@ -755,6 +759,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 		"maxt", meta.MaxTime,
 		"ulid", meta.ULID,
 		"duration", time.Since(start),
+		"ooo", meta.Compaction.FromOutOfOrder(),
 	)
 	return uid, nil
 }

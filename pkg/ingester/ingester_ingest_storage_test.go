@@ -146,7 +146,7 @@ func TestIngester_Start(t *testing.T) {
 		}))
 
 		// Add the partition and owner in the ring, in order to simulate an ingester restart.
-		require.NoError(t, cfg.IngesterPartitionRing.kvMock.CAS(context.Background(), PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		require.NoError(t, cfg.IngesterPartitionRing.KVStore.Mock.CAS(context.Background(), PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
 			if err != nil {
 				return nil, false, err
@@ -413,7 +413,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 		})
 
 		// Wait until it's healthy
-		test.Poll(t, 1*time.Second, 1, func() interface{} {
+		test.Poll(t, 5*time.Second, 1, func() interface{} {
 			return ingester.lifecycler.HealthyInstancesCount()
 		})
 
@@ -426,18 +426,18 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 		ingester, watcher := setup(t, defaultIngesterTestConfig(t))
 
 		// Pre-condition: the partition is ACTIVE.
-		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().ActivePartitionIDs(), []int32{0})
-		}, time.Second, 10*time.Millisecond)
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().ActivePartitionIDs()
+		})
 
 		res := httptest.NewRecorder()
 		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
 		require.Equal(t, http.StatusOK, res.Code)
 
 		// We expect the partition to switch to INACTIVE.
-		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().InactivePartitionIDs(), []int32{0})
-		}, time.Second, 10*time.Millisecond)
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().InactivePartitionIDs()
+		})
 	})
 
 	t.Run("DELETE request after a POST request should switch the partition back to ACTIVE state", func(t *testing.T) {
@@ -446,27 +446,27 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 		ingester, watcher := setup(t, defaultIngesterTestConfig(t))
 
 		// Pre-condition: the partition is ACTIVE.
-		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().ActivePartitionIDs(), []int32{0})
-		}, time.Second, 10*time.Millisecond)
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().ActivePartitionIDs()
+		})
 
 		res := httptest.NewRecorder()
 		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
 		require.Equal(t, http.StatusOK, res.Code)
 
 		// We expect the partition to switch to INACTIVE.
-		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().InactivePartitionIDs(), []int32{0})
-		}, time.Second, 10*time.Millisecond)
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().InactivePartitionIDs()
+		})
 
 		res = httptest.NewRecorder()
 		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-partition-downscale", nil))
 		require.Equal(t, http.StatusOK, res.Code)
 
 		// We expect the partition to switch to ACTIVE.
-		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().ActivePartitionIDs(), []int32{0})
-		}, time.Second, 10*time.Millisecond)
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().ActivePartitionIDs()
+		})
 	})
 
 	t.Run("POST request should be rejected if the partition is in PENDING state", func(t *testing.T) {
@@ -480,18 +480,18 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 		ingester, watcher := setup(t, cfg)
 
 		// Pre-condition: the partition is PENDING.
-		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().PendingPartitionIDs(), []int32{0})
-		}, time.Second, 10*time.Millisecond)
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().PendingPartitionIDs()
+		})
 
 		res := httptest.NewRecorder()
 		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
 		require.Equal(t, http.StatusConflict, res.Code)
 
 		// We expect the partition to be in PENDING state.
-		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().PendingPartitionIDs(), []int32{0})
-		}, time.Second, 10*time.Millisecond)
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().PendingPartitionIDs()
+		})
 	})
 
 	t.Run("DELETE is ignored if the partition is in PENDING state", func(t *testing.T) {
@@ -505,18 +505,18 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 		ingester, watcher := setup(t, cfg)
 
 		// Pre-condition: the partition is PENDING.
-		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().PendingPartitionIDs(), []int32{0})
-		}, time.Second, 10*time.Millisecond)
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().PendingPartitionIDs()
+		})
 
 		res := httptest.NewRecorder()
 		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-partition-downscale", nil))
 		require.Equal(t, http.StatusOK, res.Code)
 
 		// We expect the partition to be in PENDING state.
-		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().PendingPartitionIDs(), []int32{0})
-		}, time.Second, 10*time.Millisecond)
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().PendingPartitionIDs()
+		})
 	})
 }
 
@@ -585,12 +585,12 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 	ingesterCfg.IngestStorageConfig.KafkaConfig.LastProducedOffsetPollInterval = 100 * time.Millisecond
 
 	// Create the partition ring store.
-	kv := ingesterCfg.IngesterPartitionRing.kvMock
+	kv := ingesterCfg.IngesterPartitionRing.KVStore.Mock
 	if kv == nil {
 		var closer io.Closer
 		kv, closer = consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
 		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-		ingesterCfg.IngesterPartitionRing.kvMock = kv
+		ingesterCfg.IngesterPartitionRing.KVStore.Mock = kv
 	}
 
 	ingesterCfg.IngesterPartitionRing.MinOwnersDuration = 0
