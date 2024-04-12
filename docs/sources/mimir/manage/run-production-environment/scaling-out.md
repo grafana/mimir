@@ -115,7 +115,7 @@ Complete the following steps to scale down ingesters deployed in a single zone.
 
 1. Scale down one ingester at a time:
 
-   a. Invoke the `/ingester/shutdown` API endpoint on the ingester to terminate.
+   a. Send a POST request to the `/ingester/shutdown` API endpoint on the ingester to terminate.
 
    b. Wait until the API endpoint call has successfully returned and the ingester logged "finished flushing and shipping TSDB blocks".
 
@@ -134,7 +134,7 @@ To simplify the scale down process, you can leverage ingesters deployed in multi
 
 For each zone, complete the following steps:
 
-1. Invoke the `/ingester/shutdown` API endpoint on all ingesters that you want to terminate.
+1. Send a POST request to the `/ingester/shutdown` API endpoint on all ingesters that you want to terminate.
 1. Wait until the API endpoint calls have successfully returned and the ingester has logged "finished flushing and shipping TSDB blocks".
 1. Send a `SIGINT` or `SIGTERM` signal to the processes of the ingesters that you want to terminate.
 1. Wait until the blocks uploaded by terminated ingesters are available for querying before proceeding with the next zone.
