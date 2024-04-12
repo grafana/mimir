@@ -516,7 +516,7 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		u = &url.URL{
-			Path: r.path,
+			Path: r.GetPath(),
 			RawQuery: url.Values{
 				"start": []string{encodeTime(r.GetStart())},
 				"end":   []string{encodeTime(r.GetEnd())},
@@ -526,10 +526,10 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		}
 	case *PrometheusInstantQueryRequest:
 		u = &url.URL{
-			Path: r.Path,
+			Path: r.GetPath(),
 			RawQuery: url.Values{
-				"time":  []string{encodeTime(r.Time)},
-				"query": []string{r.Query},
+				"time":  []string{encodeTime(r.GetTime())},
+				"query": []string{r.GetQuery()},
 			}.Encode(),
 		}
 

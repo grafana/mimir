@@ -352,16 +352,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 }
 
 func Test_newCardinalityEstimationMiddleware_canWrapMoreThanOnce(t *testing.T) {
-	req := NewPrometheusRangeQueryRequest(
-		"/api/v1/query_range",
-		0,
-		0,
-		0,
-		0,
-		parseQuery(t, "sum(container_memory_rss) by (namespace)"),
-		Options{},
-		nil,
-	)
+	req := &PrometheusRangeQueryRequest{}
 
 	mw := newCardinalityEstimationMiddleware(nil, log.NewNopLogger(), prometheus.NewRegistry())
 

@@ -71,9 +71,13 @@ func NewPrometheusRangeQueryRequest(
 	options Options,
 	hints *Hints,
 ) *PrometheusRangeQueryRequest {
-	minT, maxT := decodeQueryMinMaxTime(
-		queryExpr, start, end, step, lookbackDelta,
-	)
+	minT, maxT := start, end
+	if queryExpr != nil {
+		// protect against panics
+		minT, maxT = decodeQueryMinMaxTime(
+			queryExpr, start, end, step, lookbackDelta,
+		)
+	}
 
 	return &PrometheusRangeQueryRequest{
 		path:          urlPath,
@@ -152,9 +156,12 @@ func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) Metri
 	newRequest := *r
 	newRequest.start = start
 	newRequest.end = end
-	newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
-		newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
-	)
+	if newRequest.queryExpr != nil {
+		// protect against panics in tests when queryExpr not set
+		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
+			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
+		)
+	}
 	return &newRequest
 }
 
@@ -167,9 +174,12 @@ func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryReque
 
 	newRequest := *r
 	newRequest.queryExpr = queryExpr
-	newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
-		newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
-	)
+	if newRequest.queryExpr != nil {
+		// protect against panics in tests when queryExpr not set
+		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
+			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
+		)
+	}
 	return &newRequest, nil
 }
 
