@@ -1438,7 +1438,6 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	// Ingester errors could be soft (e.g. 4xx) or hard errors (e.g. 5xx) errors, while partition errors are always hard
 	// errors. For this reason, it's important to give precedence to partition errors, otherwise the distributor may return
 	// a 4xx (ingester error) when it should actually be a 5xx (partition error).
-	// TODO unit test
 	if partitionsErr != nil {
 		return partitionsErr
 	}

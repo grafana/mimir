@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/mtime"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/test"
@@ -422,15 +424,6 @@ func TestDistributor_Push_ShouldCleanupWriteRequestAfterWritingBothToIngestersAn
 	ctx := user.InjectOrgID(context.Background(), "user")
 	now := time.Now()
 
-	// To keep assertions simple, all tests send the same request.
-	createRequest := func() *mimirpb.WriteRequest {
-		return &mimirpb.WriteRequest{
-			Timeseries: []mimirpb.PreallocTimeseries{
-				makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil),
-			},
-		}
-	}
-
 	testConfig := prepConfig{
 		numDistributors:         1,
 		numIngesters:            3,
@@ -471,7 +464,11 @@ func TestDistributor_Push_ShouldCleanupWriteRequestAfterWritingBothToIngestersAn
 	}
 
 	// Send write request.
-	_, err := distributors[0].Push(ctx, createRequest())
+	_, err := distributors[0].Push(ctx, &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil),
+		},
+	})
 	require.NoError(t, err)
 
 	// Since there's still 1 ingester in-flight request, we expect the cleanup function not being called yet.
@@ -495,6 +492,67 @@ func TestDistributor_Push_ShouldCleanupWriteRequestAfterWritingBothToIngestersAn
 	for _, ingester := range ingesters {
 		assert.Equal(t, []string{"series_one"}, ingester.metricNames(), "ingester ID: %s", ingester.instanceID())
 	}
+}
+
+func TestDistributor_Push_ShouldGivePrecedenceToPartitionsErrorWhenWritingBothToIngestersAndPartitions(t *testing.T) {
+	t.Parallel()
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+	now := time.Now()
+
+	testConfig := prepConfig{
+		numDistributors:         1,
+		numIngesters:            1,
+		happyIngesters:          1,
+		replicationFactor:       1,
+		ingesterIngestionType:   ingesterIngestionTypeGRPC, // Do not consume from Kafka in this test.
+		ingestStorageEnabled:    true,
+		ingestStoragePartitions: 1,
+		limits:                  prepareDefaultLimits(),
+		configure: func(cfg *Config) {
+			cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
+		},
+	}
+
+	distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig)
+	require.Len(t, distributors, 1)
+	require.Len(t, ingesters, 1)
+	require.Len(t, regs, 1)
+
+	// Mock Kafka to return an hard error.
+	releaseProduceRequest := make(chan struct{})
+	kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCluster.KeepControl()
+
+		// Wait until released, then add an extra sleep to increase the likelihood this error
+		// will be returned after the ingester one.
+		<-releaseProduceRequest
+		time.Sleep(time.Second)
+
+		partitionID := req.(*kmsg.ProduceRequest).Topics[0].Partitions[0].Partition
+		res := testkafka.CreateProduceResponseError(req.GetVersion(), kafkaTopic, partitionID, kerr.InvalidTopicException)
+
+		return res, nil, true
+	})
+
+	// Mock ingester to return a soft error.
+	ingesters[0].registerBeforePushHook(func(_ context.Context, _ *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool) {
+		// Release the Kafka produce request once the push to ingester has been received.
+		close(releaseProduceRequest)
+
+		ingesterErr := httpgrpc.Errorf(http.StatusBadRequest, "ingester error")
+		return &mimirpb.WriteResponse{}, ingesterErr, true
+	})
+
+	// Send write request.
+	_, err := distributors[0].Push(ctx, &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil),
+		},
+	})
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "send data to partitions")
 }
 
 func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
