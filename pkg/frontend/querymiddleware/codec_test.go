@@ -121,7 +121,8 @@ func TestLabelsQueryRequest(t *testing.T) {
 		expectedGetLabelName      string
 		expectedGetStartOrDefault int64
 		expectedGetEndOrDefault   int64
-		expectedErr               error
+		expectedErr               string
+		expectedLimit             uint64
 	}{
 		{
 			name: "label names with start and end timestamps, no matcher sets",
@@ -205,7 +206,7 @@ func TestLabelsQueryRequest(t *testing.T) {
 			expectedGetEndOrDefault:   1708588800 * 1e3,
 		},
 		{
-			name: "label names with start timestamp, no end timestamp, multiple matcher sets",
+			name: "label names with start and end timestamp, multiple matcher sets",
 			url:  "/api/v1/labels?end=1708588800&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
 			expectedStruct: &PrometheusLabelNamesQueryRequest{
 				Path:  "/api/v1/labels",
@@ -221,7 +222,7 @@ func TestLabelsQueryRequest(t *testing.T) {
 			expectedGetEndOrDefault:   1708588800 * 1e3,
 		},
 		{
-			name: "label values with start timestamp, no end timestamp, multiple matcher sets",
+			name: "label values with start and end timestamp, multiple matcher sets",
 			url:  "/api/v1/label/job/values?end=1708588800&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
 			expectedStruct: &PrometheusLabelValuesQueryRequest{
 				Path:      "/api/v1/label/job/values",
@@ -236,6 +237,53 @@ func TestLabelsQueryRequest(t *testing.T) {
 			expectedGetLabelName:      "job",
 			expectedGetStartOrDefault: 1708502400 * 1e3,
 			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+		{
+			name: "label names with start and end timestamp, multiple matcher sets, limit",
+			url:  "/api/v1/labels?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			expectedStruct: &PrometheusLabelNamesQueryRequest{
+				Path:  "/api/v1/labels",
+				Start: 1708502400 * 1e3,
+				End:   1708588800 * 1e3,
+				Limit: 10,
+				LabelMatcherSets: []string{
+					"go_goroutines{container=~\"quer.*\"}",
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+			},
+			expectedGetLabelName:      "",
+			expectedLimit:             10,
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+		{
+			name: "label values with start and end timestamp, multiple matcher sets, limit",
+			url:  "/api/v1/label/job/values?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			expectedStruct: &PrometheusLabelValuesQueryRequest{
+				Path:      "/api/v1/label/job/values",
+				LabelName: "job",
+				Start:     1708502400 * 1e3,
+				End:       1708588800 * 1e3,
+				Limit:     10,
+				LabelMatcherSets: []string{
+					"go_goroutines{container=~\"quer.*\"}",
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+			},
+			expectedGetLabelName:      "job",
+			expectedLimit:             10,
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+		{
+			name:        "zero limit is not allowed",
+			url:         "/api/v1/label/job/values?limit=0",
+			expectedErr: "limit parameter must be a positive number: 0",
+		},
+		{
+			name:        "negative limit is not allowed",
+			url:         "/api/v1/label/job/values?limit=-1",
+			expectedErr: "limit parameter must be a positive number: -1",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -261,13 +309,14 @@ func TestLabelsQueryRequest(t *testing.T) {
 				r = r.WithContext(ctx)
 
 				reqDecoded, err := codec.DecodeLabelsQueryRequest(ctx, r)
-				if err != nil || testCase.expectedErr != nil {
-					require.EqualValues(t, testCase.expectedErr, err)
+				if err != nil || testCase.expectedErr != "" {
+					require.EqualError(t, err, testCase.expectedErr)
 					return
 				}
 				require.EqualValues(t, testCase.expectedStruct, reqDecoded)
 				require.EqualValues(t, testCase.expectedGetStartOrDefault, reqDecoded.GetStartOrDefault())
 				require.EqualValues(t, testCase.expectedGetEndOrDefault, reqDecoded.GetEndOrDefault())
+				require.EqualValues(t, testCase.expectedLimit, reqDecoded.GetLimit())
 
 				reqEncoded, err := codec.EncodeLabelsQueryRequest(context.Background(), reqDecoded)
 				require.NoError(t, err)
