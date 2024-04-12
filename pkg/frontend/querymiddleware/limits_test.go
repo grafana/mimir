@@ -657,7 +657,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 				// fire up work and we don't wait.
 				for i := 0; i < 10; i++ {
 					go func() {
-						_, _ = next.Do(c, &PrometheusRangeQueryRequest{})
+						_, _ = next.Do(c, &PrometheusRangeQueryRequest{queryExpr: parseQuery(t, `foo`)})
 					}()
 				}
 				return newEmptyPrometheusResponse(), nil
