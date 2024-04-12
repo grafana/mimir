@@ -12,11 +12,12 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/tenant"
+	"github.com/pkg/errors"
+	"github.com/prometheus/alertmanager/cluster/clusterpb"
+
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/pkg/errors"
-	"github.com/prometheus/alertmanager/cluster/clusterpb"
 )
 
 const (
