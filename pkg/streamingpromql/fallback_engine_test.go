@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql"
@@ -20,6 +21,7 @@ import (
 
 func TestEngineWithFallback(t *testing.T) {
 	ctx := context.Background()
+	logger := log.NewNopLogger()
 
 	generators := map[string]func(engine promql.QueryEngine, expr string) (promql.Query, error){
 		"instant query": func(engine promql.QueryEngine, expr string) (promql.Query, error) {
@@ -36,7 +38,7 @@ func TestEngineWithFallback(t *testing.T) {
 				reg := prometheus.NewPedanticRegistry()
 				preferredEngine := newFakeEngineThatSupportsLimitedQueries()
 				fallbackEngine := newFakeEngineThatSupportsAllQueries()
-				engineWithFallback := NewEngineWithFallback(preferredEngine, fallbackEngine, reg)
+				engineWithFallback := NewEngineWithFallback(preferredEngine, fallbackEngine, reg, logger)
 
 				query, err := createQuery(engineWithFallback, "a_supported_expression")
 				require.NoError(t, err)
@@ -54,7 +56,7 @@ func TestEngineWithFallback(t *testing.T) {
 				reg := prometheus.NewPedanticRegistry()
 				preferredEngine := newFakeEngineThatSupportsLimitedQueries()
 				fallbackEngine := newFakeEngineThatSupportsAllQueries()
-				engineWithFallback := NewEngineWithFallback(preferredEngine, fallbackEngine, reg)
+				engineWithFallback := NewEngineWithFallback(preferredEngine, fallbackEngine, reg, logger)
 
 				query, err := createQuery(engineWithFallback, "a_non_supported_expression")
 				require.NoError(t, err)
@@ -74,7 +76,7 @@ func TestEngineWithFallback(t *testing.T) {
 				reg := prometheus.NewPedanticRegistry()
 				preferredEngine := newFakeEngineThatSupportsLimitedQueries()
 				fallbackEngine := newFakeEngineThatSupportsAllQueries()
-				engineWithFallback := NewEngineWithFallback(preferredEngine, fallbackEngine, reg)
+				engineWithFallback := NewEngineWithFallback(preferredEngine, fallbackEngine, reg, logger)
 
 				_, err := createQuery(engineWithFallback, "an_invalid_expression")
 				require.EqualError(t, err, "the query is invalid")

@@ -7,10 +7,14 @@ import (
 	"errors"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type EngineWithFallback struct {
@@ -19,9 +23,11 @@ type EngineWithFallback struct {
 
 	supportedQueries   prometheus.Counter
 	unsupportedQueries *prometheus.CounterVec
+
+	logger log.Logger
 }
 
-func NewEngineWithFallback(preferred, fallback promql.QueryEngine, reg prometheus.Registerer) promql.QueryEngine {
+func NewEngineWithFallback(preferred, fallback promql.QueryEngine, reg prometheus.Registerer, logger log.Logger) promql.QueryEngine {
 	return &EngineWithFallback{
 		preferred: preferred,
 		fallback:  fallback,
@@ -34,6 +40,8 @@ func NewEngineWithFallback(preferred, fallback promql.QueryEngine, reg prometheu
 			Name: "cortex_querier_streaming_promql_engine_unsupported_queries_total",
 			Help: "Total number of queries that were not supported by the streaming engine and so fell back to Prometheus' engine.",
 		}, []string{"reason"}),
+
+		logger: logger,
 	}
 }
 
@@ -51,7 +59,10 @@ func (e EngineWithFallback) NewInstantQuery(ctx context.Context, q storage.Query
 		return nil, err
 	}
 
+	logger := spanlogger.FromContext(ctx, e.logger)
+	level.Info(logger).Log("msg", "falling back to Prometheus' PromQL engine", "reason", notSupportedErr.reason, "expr", qs)
 	e.unsupportedQueries.WithLabelValues(notSupportedErr.reason).Inc()
+
 	return e.fallback.NewInstantQuery(ctx, q, opts, qs, ts)
 }
 
@@ -69,6 +80,9 @@ func (e EngineWithFallback) NewRangeQuery(ctx context.Context, q storage.Queryab
 		return nil, err
 	}
 
+	logger := spanlogger.FromContext(ctx, e.logger)
+	level.Info(logger).Log("msg", "falling back to Prometheus' PromQL engine", "reason", notSupportedErr.reason, "expr", qs)
 	e.unsupportedQueries.WithLabelValues(notSupportedErr.reason).Inc()
+
 	return e.fallback.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
 }
