@@ -85,13 +85,13 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error)
 	}
 
 	ss := s.querier.Select(ctx, true, hints, s.Matchers...)
-	s.currentSeriesBatch = seriesBatchPool.Get().(*seriesBatch)
+	s.currentSeriesBatch = getSeriesBatch()
 	incompleteBatch := s.currentSeriesBatch
 	totalSeries := 0
 
 	for ss.Next() {
 		if len(incompleteBatch.series) == cap(incompleteBatch.series) {
-			nextBatch := seriesBatchPool.Get().(*seriesBatch)
+			nextBatch := getSeriesBatch()
 			incompleteBatch.next = nextBatch
 			incompleteBatch = nextBatch
 		}
@@ -147,6 +147,10 @@ func (s *Selector) Close() {
 type seriesBatch struct {
 	series []storage.Series
 	next   *seriesBatch
+}
+
+func getSeriesBatch() *seriesBatch {
+	return seriesBatchPool.Get().(*seriesBatch)
 }
 
 func putSeriesBatch(b *seriesBatch) {
