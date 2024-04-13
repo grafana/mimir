@@ -40,13 +40,13 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		t.Run(expression, func(t *testing.T) {
 			qry, err := engine.NewRangeQuery(ctx, db, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
 			require.Error(t, err)
-			require.ErrorIs(t, err, ErrNotSupported)
+			require.ErrorIs(t, err, NotSupportedError{})
 			require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
 			require.Nil(t, qry)
 
 			qry, err = engine.NewInstantQuery(ctx, db, nil, expression, time.Now())
 			require.Error(t, err)
-			require.ErrorIs(t, err, ErrNotSupported)
+			require.ErrorIs(t, err, NotSupportedError{})
 			require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
 			require.Nil(t, qry)
 		})
@@ -67,7 +67,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		t.Run(expression, func(t *testing.T) {
 			qry, err := engine.NewInstantQuery(ctx, db, nil, expression, time.Now())
 			require.Error(t, err)
-			require.ErrorIs(t, err, ErrNotSupported)
+			require.ErrorIs(t, err, NotSupportedError{})
 			require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
 			require.Nil(t, qry)
 		})
