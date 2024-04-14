@@ -289,7 +289,7 @@ to desired output location which is defaulted to the current directory. The outp
 format required by `mimirtool rules load`.
 
 ```bash
-mimirtool rules get <namespace> <rule_group_name> --save-file --output-dir="rules"
+mimirtool rules get <namespace> <rule_group_name> --output-dir="rules"
 ```
 
 #### Delete rule group
