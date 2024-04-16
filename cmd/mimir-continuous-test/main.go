@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -75,7 +76,7 @@ func main() {
 	m := continuoustest.NewManager(cfg.Manager, logger)
 	m.AddTest(continuoustest.NewWriteReadSeriesTest(cfg.WriteReadSeriesTest, client, logger, registry))
 	if err := m.Run(context.Background()); err != nil {
-		if err != modules.ErrStopProcess {
+		if !errors.Is(err, modules.ErrStopProcess) {
 			level.Error(logger).Log("msg", "Failed to run continuous test", "err", err.Error())
 			util_log.Flush()
 			os.Exit(1)
