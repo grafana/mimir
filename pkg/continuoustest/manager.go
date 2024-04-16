@@ -5,10 +5,12 @@ package continuoustest
 import (
 	"context"
 	"flag"
+	"os"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -71,8 +73,12 @@ func (m *Manager) Run(ctx context.Context) error {
 			if m.cfg.SmokeTest {
 				if err != nil {
 					level.Info(m.logger).Log("msg", "Test failed", "test", t.Name(), "err", err)
+					util_log.Flush()
+					os.Exit(1)
 				} else {
 					level.Info(m.logger).Log("msg", "Test passed", "test", t.Name())
+					util_log.Flush()
+					os.Exit(0)
 				}
 				return err
 			}
