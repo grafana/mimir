@@ -75,12 +75,10 @@ func (m *Manager) Run(ctx context.Context) error {
 					level.Info(m.logger).Log("msg", "Test failed", "test", t.Name(), "err", err)
 					util_log.Flush()
 					os.Exit(1)
-				} else {
-					level.Info(m.logger).Log("msg", "Test passed", "test", t.Name())
-					util_log.Flush()
-					os.Exit(0)
 				}
-				return err
+				level.Info(m.logger).Log("msg", "Test passed", "test", t.Name())
+				util_log.Flush()
+				os.Exit(0)
 			}
 
 			ticker := time.NewTicker(m.cfg.RunInterval)
