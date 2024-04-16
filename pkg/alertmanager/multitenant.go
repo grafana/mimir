@@ -677,12 +677,13 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	var userTemplateDir = filepath.Join(am.getTenantDirectory(cfg.User), templatesDir)
 	var pathsToRemove = make(map[string]struct{})
 
-	// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
+	// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "check".
 	// The reason for this that the config.Load function uses the origin "config",
-	// which is correct, but Mimir uses config.Load to validate both API requests and tenant
-	// configurations. This means metrics from API requests are confused with metrics from
-	// tenant configurations. To avoid this confusion, we use a different origin.
-	validateMatchersInConfigDesc(am.logger, "tenant", cfg)
+	// which is correct, and we want to be able to see the logs from validateMatchersInConfigDesc
+	// without also seeing the logs from config.Load.
+	if err := validateMatchersInConfigDesc(am.logger, "check", cfg); err != nil {
+		level.Warn(am.logger).Log("msg", "Alertmanager configuration is incompatible with UTF-8", "user", cfg.User, "err", err)
+	}
 
 	// List existing files to keep track of the ones to be removed
 	if oldTemplateFiles, err := os.ReadDir(userTemplateDir); err == nil {
