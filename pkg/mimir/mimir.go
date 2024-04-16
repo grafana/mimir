@@ -939,6 +939,7 @@ func (t *Mimir) Run() error {
 			}
 		}
 	}
+	util_log.Flush()
 	return err
 }
 
