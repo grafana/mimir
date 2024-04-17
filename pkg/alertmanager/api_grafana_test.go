@@ -20,7 +20,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
-	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 const (
@@ -57,7 +57,7 @@ func TestMultitenantAlertmanager_DeleteUserGrafanaConfig(t *testing.T) {
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
-		logger: util_log.Logger,
+		logger: test.NewTestingLogger(t),
 	}
 
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
@@ -115,7 +115,7 @@ func TestMultitenantAlertmanager_DeleteUserGrafanaState(t *testing.T) {
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
-		logger: util_log.Logger,
+		logger: test.NewTestingLogger(t),
 	}
 
 	require.NoError(t, alertstore.SetFullGrafanaState(context.Background(), "test_user", alertspb.FullStateDesc{
@@ -177,7 +177,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
-		logger: util_log.Logger,
+		logger: test.NewTestingLogger(t),
 	}
 
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
@@ -229,7 +229,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaState(t *testing.T) {
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
-		logger: util_log.Logger,
+		logger: test.NewTestingLogger(t),
 	}
 
 	require.NoError(t, alertstore.SetFullGrafanaState(context.Background(), "test_user", alertspb.FullStateDesc{
@@ -281,7 +281,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
-		logger: util_log.Logger,
+		logger: test.NewTestingLogger(t),
 	}
 
 	require.Len(t, storage.Objects(), 0)
@@ -350,7 +350,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaState(t *testing.T) {
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
-		logger: util_log.Logger,
+		logger: test.NewTestingLogger(t),
 	}
 
 	require.Len(t, storage.Objects(), 0)

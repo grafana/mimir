@@ -196,7 +196,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 	})
 
 	// Ensure this route is registered before the prefixed AM route
-	a.RegisterRoute("/multitenant_alertmanager/status", am.GetStatusHandler(), false, true, "GET")
+	a.RegisterRoute("/multitenant_alertmanager/status", http.HandlerFunc(am.StatusHandler), false, true, "GET")
 	a.RegisterRoute("/multitenant_alertmanager/configs", http.HandlerFunc(am.ListAllConfigs), false, true, "GET")
 	a.RegisterRoute("/multitenant_alertmanager/ring", http.HandlerFunc(am.RingHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/multitenant_alertmanager/delete_tenant_config", http.HandlerFunc(am.DeleteUserConfig), true, true, "POST")

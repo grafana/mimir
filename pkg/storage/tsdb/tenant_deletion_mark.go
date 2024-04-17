@@ -12,13 +12,13 @@ import (
 	"path"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // Relative to user-specific prefix.
@@ -36,14 +36,14 @@ func NewTenantDeletionMark(deletionTime time.Time) *TenantDeletionMark {
 	return &TenantDeletionMark{DeletionTime: util.UnixSecondsFromTime(deletionTime)}
 }
 
-// Checks for deletion mark for tenant. Errors other than "object not found" are returned.
+// TenantDeletionMarkExists checks for deletion mark for tenant. Errors other than "object not found" are returned.
 func TenantDeletionMarkExists(ctx context.Context, bkt objstore.BucketReader, userID string) (bool, error) {
 	markerFile := path.Join(userID, TenantDeletionMarkPath)
 
 	return bkt.Exists(ctx, markerFile)
 }
 
-// Uploads deletion mark to the tenant location in the bucket.
+// WriteTenantDeletionMark uploads deletion mark to the tenant location in the bucket.
 func WriteTenantDeletionMark(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, mark *TenantDeletionMark) error {
 	bkt = bucket.NewUserBucketClient(userID, bkt, cfgProvider)
 
@@ -55,8 +55,8 @@ func WriteTenantDeletionMark(ctx context.Context, bkt objstore.Bucket, userID st
 	return errors.Wrap(bkt.Upload(ctx, TenantDeletionMarkPath, bytes.NewReader(data)), "upload tenant deletion mark")
 }
 
-// Returns tenant deletion mark for given user, if it exists. If it doesn't exist, returns nil mark, and no error.
-func ReadTenantDeletionMark(ctx context.Context, bkt objstore.BucketReader, userID string) (*TenantDeletionMark, error) {
+// ReadTenantDeletionMark returns tenant deletion mark for given user, if it exists. If it doesn't exist, returns nil mark, and no error.
+func ReadTenantDeletionMark(ctx context.Context, bkt objstore.BucketReader, userID string, logger log.Logger) (*TenantDeletionMark, error) {
 	markerFile := path.Join(userID, TenantDeletionMarkPath)
 
 	r, err := bkt.Get(ctx, markerFile)
@@ -73,7 +73,7 @@ func ReadTenantDeletionMark(ctx context.Context, bkt objstore.BucketReader, user
 
 	// Close reader before dealing with decode error.
 	if closeErr := r.Close(); closeErr != nil {
-		level.Warn(util_log.Logger).Log("msg", "failed to close bucket reader", "err", closeErr)
+		level.Warn(logger).Log("msg", "failed to close bucket reader", "err", closeErr)
 	}
 
 	if err != nil {
