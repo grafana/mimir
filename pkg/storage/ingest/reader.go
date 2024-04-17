@@ -430,37 +430,35 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 	}
 	defer cl.Close()
 
-	// lastConsumedOffset is unknown until (and only if) we successfully fetch its value below.
-	lastConsumedOffset = -1
-
-	fetchOffset := func(ctx context.Context) (offset int64, err error) {
+	fetchOffset := func(ctx context.Context) (offset, lastConsumedOffset int64, err error) {
 		if r.kafkaCfg.ConsumeFromPositionAtStartup == consumeFromTimestamp {
 			ts := time.UnixMilli(r.kafkaCfg.ConsumeFromTimestampAtStartup)
 			offset, exists, err := r.fetchFirstOffsetAfterTime(ctx, cl, ts)
 			if err != nil {
-				return 0, err
+				return 0, -1, err
 			}
 			if exists {
+				lastConsumedOffset = offset - 1 // Offset before the one we'll start the consumption from
 				level.Info(r.logger).Log("msg", "starting consumption from timestamp", "timestamp", ts.UnixMilli(), "start_offset", offset, "consumer_group", r.consumerGroup)
-				return offset, nil
+				return offset, lastConsumedOffset, nil
 			}
 		} else {
 			offset, exists, err := r.fetchLastCommittedOffset(ctx, cl)
 			if err != nil {
-				return 0, err
+				return 0, -1, err
 			}
 			if exists {
 				lastConsumedOffset = offset
-				offset = lastConsumedOffset + 1 // We'll have to start consuming from the next offset (included).
+				offset = lastConsumedOffset + 1 // We'll start consuming from the next offset after the last consumed.
 				level.Info(r.logger).Log("msg", "starting consumption from last consumed offset", "last_consumed_offset", offset, "start_offset", offset, "consumer_group", r.consumerGroup)
-				return offset, nil
+				return offset, lastConsumedOffset, nil
 			}
 		}
 
 		offset = kafkaOffsetStart
 		level.Info(r.logger).Log("msg", "starting consumption from partition start because no offset has been found", "start_offset", offset, "consumer_group", r.consumerGroup)
 
-		return offset, err
+		return offset, -1, err
 	}
 
 	retry := backoff.New(ctx, backoff.Config{
@@ -469,7 +467,7 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 		MaxRetries: 10,
 	})
 	for retry.Ongoing() {
-		startOffset, err = fetchOffset(ctx)
+		startOffset, lastConsumedOffset, err = fetchOffset(ctx)
 		if err == nil {
 			return startOffset, lastConsumedOffset, nil
 		}
