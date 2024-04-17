@@ -94,7 +94,7 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 
 	err := group.Wait()
-	if m.cfg.SmokeTest {
+	if err == nil && m.cfg.SmokeTest {
 		err = modules.ErrStopProcess
 	}
 	return err
