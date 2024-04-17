@@ -730,10 +730,10 @@ func (c *MultitenantCompactor) compactUserWithRetries(ctx context.Context, userI
 
 func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) error {
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
-	reg := prometheus.NewRegistry()
-	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg)
-
 	userLogger := util_log.WithUserID(userID, c.logger)
+
+	reg := prometheus.NewRegistry()
+	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
 	// Filters out duplicate blocks that can be formed from two or more overlapping
 	// blocks that fully submatch the source blocks of the older blocks.

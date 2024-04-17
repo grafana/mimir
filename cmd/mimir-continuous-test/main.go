@@ -55,7 +55,7 @@ func main() {
 	registry.MustRegister(version.NewCollector("mimir_continuous_test"))
 	registry.MustRegister(collectors.NewGoCollector())
 
-	i := instrumentation.NewMetricsServer(serverMetricsPort, registry)
+	i := instrumentation.NewMetricsServer(serverMetricsPort, registry, util_log.Logger)
 	if err := i.Start(); err != nil {
 		level.Error(logger).Log("msg", "Unable to start instrumentation server", "err", err.Error())
 		util_log.Flush()
