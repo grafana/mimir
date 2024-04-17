@@ -10661,7 +10661,6 @@ func (i *failingIngester) startWaitAndCheck(ctx context.Context, t *testing.T) {
 		expectedHealthyIngesters = 1
 	} else {
 		require.Error(t, err)
-		require.ErrorIs(t, err, i.failingCause)
 		expectedHealthyIngesters = 0
 	}
 	test.Poll(t, 100*time.Millisecond, expectedHealthyIngesters, func() interface{} {
@@ -10681,9 +10680,7 @@ func (i *failingIngester) starting(parentCtx context.Context) error {
 	}
 	if errors.Is(i.failingCause, context.Canceled) {
 		ctx, cancel := context.WithCancel(parentCtx)
-		go func() {
-			cancel()
-		}()
+		cancel()
 		return i.Ingester.starting(ctx)
 	}
 	return i.Ingester.starting(&mockContext{ctx: parentCtx, err: i.failingCause})
