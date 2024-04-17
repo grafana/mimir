@@ -820,6 +820,7 @@ func (t *Mimir) setupObjstoreTracing() {
 // Run starts Mimir running, and blocks until a Mimir stops.
 func (t *Mimir) Run() error {
 	mimirpb.TimeseriesUnmarshalCachingEnabled = t.Cfg.TimeseriesUnmarshalCachingOptimizationEnabled
+	defer util_log.Flush()
 
 	// Register custom process metrics.
 	if c, err := process.NewProcessCollector(); err == nil {

@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -74,8 +76,11 @@ func main() {
 	m := continuoustest.NewManager(cfg.Manager, logger)
 	m.AddTest(continuoustest.NewWriteReadSeriesTest(cfg.WriteReadSeriesTest, client, logger, registry))
 	if err := m.Run(context.Background()); err != nil {
-		level.Error(logger).Log("msg", "Failed to run continuous test", "err", err.Error())
+		if !errors.Is(err, modules.ErrStopProcess) {
+			level.Error(logger).Log("msg", "Failed to run continuous test", "err", err.Error())
+			util_log.Flush()
+			os.Exit(1)
+		}
 		util_log.Flush()
-		os.Exit(1)
 	}
 }
