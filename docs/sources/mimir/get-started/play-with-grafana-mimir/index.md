@@ -123,7 +123,7 @@ offered by Grafana.
    1. Type `sum:up` in the **Rule name** field.
    1. Choose **Code** in the **Builder | Code** field on the right.
    1. Type `sum(up)` in the **Metrics browser** query field.
-   1. Choose  **Data source-managed** in the **Grafana-managed | Data source-managed** field in the **Rule Type** paragraph.
+   1. Choose **Data source-managed** in the **Grafana-managed | Data source-managed** field in the **Rule Type** paragraph.
    1. Type `example-namespace` in the **Namespace** field.
    1. Type `example-group` in the **Group** field.
    1. From the upper-right corner, click the **Save and exit** button.
