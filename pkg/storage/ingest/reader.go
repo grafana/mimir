@@ -439,7 +439,7 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 			}
 			if exists {
 				lastConsumedOffset = offset - 1 // Offset before the one we'll start the consumption from
-				level.Info(r.logger).Log("msg", "starting consumption from timestamp", "timestamp", ts.UnixMilli(), "start_offset", offset, "consumer_group", r.consumerGroup)
+				level.Info(r.logger).Log("msg", "starting consumption from timestamp", "timestamp", ts.UnixMilli(), "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
 				return offset, lastConsumedOffset, nil
 			}
 		} else {
@@ -450,7 +450,7 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 			if exists {
 				lastConsumedOffset = offset
 				offset = lastConsumedOffset + 1 // We'll start consuming from the next offset after the last consumed.
-				level.Info(r.logger).Log("msg", "starting consumption from last consumed offset", "last_consumed_offset", offset, "start_offset", offset, "consumer_group", r.consumerGroup)
+				level.Info(r.logger).Log("msg", "starting consumption from last consumed offset", "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
 				return offset, lastConsumedOffset, nil
 			}
 		}
