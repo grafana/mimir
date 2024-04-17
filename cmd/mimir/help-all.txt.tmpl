@@ -1644,7 +1644,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.dns-lookup-period duration
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
   -querier.enable-promql-engine-fallback
-    	[experimental] If true, fall back to Prometheus' PromQL engine if the streaming engine is in use and it does not support a query. (default true)
+    	[experimental] If set to true and the streaming engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the streaming engine. (default true)
   -querier.frontend-address string
     	Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.
   -querier.frontend-client.backoff-max-period duration

@@ -1329,8 +1329,9 @@ store_gateway_client:
 # CLI flag: -querier.promql-engine
 [promql_engine: <string> | default = "standard"]
 
-# (experimental) If true, fall back to Prometheus' PromQL engine if the
-# streaming engine is in use and it does not support a query.
+# (experimental) If set to true and the streaming engine is in use, fall back to
+# using the Prometheus PromQL engine for any queries not supported by the
+# streaming engine.
 # CLI flag: -querier.enable-promql-engine-fallback
 [enable_promql_engine_fallback: <boolean> | default = true]
 

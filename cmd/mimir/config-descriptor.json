@@ -1891,7 +1891,7 @@
           "kind": "field",
           "name": "enable_promql_engine_fallback",
           "required": false,
-          "desc": "If true, fall back to Prometheus' PromQL engine if the streaming engine is in use and it does not support a query.",
+          "desc": "If set to true and the streaming engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the streaming engine.",
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "querier.enable-promql-engine-fallback",
