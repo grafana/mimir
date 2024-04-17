@@ -29,7 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	mimir_test "github.com/grafana/mimir/pkg/util/test"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
 func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, user, cluster, replica string, expected time.Time) {
@@ -724,7 +724,7 @@ func TestCheckReplicaCleanup(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	reg := prometheus.NewPedanticRegistry()
-	logger := mimir_test.NewTestingLogger(t)
+	logger := utiltest.NewTestingLogger(t)
 
 	kvStore, closer := consul.NewInMemoryClient(GetReplicaDescCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
