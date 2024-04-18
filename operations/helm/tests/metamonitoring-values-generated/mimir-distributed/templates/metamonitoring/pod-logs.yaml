@@ -26,7 +26,7 @@ spec:
         - __meta_kubernetes_pod_container_name
       targetLabel: name
     - targetLabel: cluster
-      replacement: metamonitoring-values
+      replacement: "metamonitoring-values"
 
   namespaceSelector:
     matchNames:

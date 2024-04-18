@@ -6,10 +6,9 @@
 package alertmanager
 
 import (
+	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // This struct aggregates metrics exported by Alertmanager
@@ -81,9 +80,9 @@ type alertmanagerMetrics struct {
 	alertsLimiterAlertsSize  *prometheus.Desc
 }
 
-func newAlertmanagerMetrics() *alertmanagerMetrics {
+func newAlertmanagerMetrics(logger log.Logger) *alertmanagerMetrics {
 	return &alertmanagerMetrics{
-		regs: dskit_metrics.NewTenantRegistries(util_log.Logger),
+		regs: dskit_metrics.NewTenantRegistries(logger),
 		alertsReceived: prometheus.NewDesc(
 			"cortex_alertmanager_alerts_received_total",
 			"The total number of received alerts.",

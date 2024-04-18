@@ -48,7 +48,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [HA tracker status](#ha-tracker-status) | Distributor | `GET /distributor/ha_tracker` |
 | [Flush chunks / blocks](#flush-chunks--blocks) | Ingester | `GET,POST /ingester/flush` |
 | [Prepare for Shutdown](#prepare-for-shutdown) | Ingester | `GET,POST,DELETE /ingester/prepare-shutdown` |
-| [Shutdown](#shutdown) | Ingester | `GET,POST /ingester/shutdown` |
+| [Shutdown](#shutdown) | Ingester | `POST /ingester/shutdown` |
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
 | [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
@@ -409,7 +409,7 @@ This API endpoint is usually used by Kubernetes-specific scale down automations 
 ### Shutdown
 
 ```
-GET,POST /ingester/shutdown
+POST /ingester/shutdown
 ```
 
 This endpoint flushes in-memory time series data from ingesters to the long-term storage, and then shuts down the ingester service.

@@ -43,6 +43,9 @@ Entries should include a reference to the Pull Request that introduced the chang
   * Results-cache: changed from `60` to `30`
 * [ENHANCEMENT] Dashboards: allow switching between using classic of native histograms in dashboards. #7627
   * Overview dashboard, Status panel, `cortex_request_duration_seconds` metric.
+* [ENHANCEMENT] Rollout-operator: upgrade to v0.14.0. #7886
+* [ENHANCEMENT] Alerts: exclude `529` and `598` status codes from failure codes in `MimirRequestsError`. #7889
+* [ENHANCEMENT] The new value `metaMonitoring.grafanaAgent.logs.clusterLabel` controls whether to add a `cluster` label and with what content to PodLogs logs. #7764
 
 ## 5.3.0
 

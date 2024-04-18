@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 var integrations = []string{
@@ -33,7 +35,7 @@ var integrations = []string{
 func TestAlertmanagerMetricsStore(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	alertmanangerMetrics := newAlertmanagerMetrics()
+	alertmanangerMetrics := newAlertmanagerMetrics(test.NewTestingLogger(t))
 	mainReg.MustRegister(alertmanangerMetrics)
 	alertmanangerMetrics.addUserRegistry("user1", populateAlertmanager(1))
 	alertmanangerMetrics.addUserRegistry("user2", populateAlertmanager(10))
@@ -353,7 +355,7 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 func TestAlertmanagerMetricsRemoval(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	alertmanagerMetrics := newAlertmanagerMetrics()
+	alertmanagerMetrics := newAlertmanagerMetrics(test.NewTestingLogger(t))
 	mainReg.MustRegister(alertmanagerMetrics)
 	alertmanagerMetrics.addUserRegistry("user1", populateAlertmanager(1))
 	alertmanagerMetrics.addUserRegistry("user2", populateAlertmanager(10))

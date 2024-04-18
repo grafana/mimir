@@ -29,7 +29,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
-	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestAMConfigValidationAPI(t *testing.T) {
@@ -882,7 +882,7 @@ alertmanager_config: |
 	limits := &mockAlertManagerLimits{}
 	am := &MultitenantAlertmanager{
 		store:  prepareInMemoryAlertStore(),
-		logger: util_log.Logger,
+		logger: test.NewTestingLogger(t),
 		limits: limits,
 	}
 	for _, tc := range testCases {
@@ -917,7 +917,7 @@ func TestMultitenantAlertmanager_DeleteUserConfig(t *testing.T) {
 
 	am := &MultitenantAlertmanager{
 		store:  alertStore,
-		logger: util_log.Logger,
+		logger: test.NewTestingLogger(t),
 	}
 
 	require.NoError(t, alertStore.SetAlertConfig(context.Background(), alertspb.AlertConfigDesc{

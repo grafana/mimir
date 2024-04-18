@@ -459,8 +459,8 @@ github.com/golang/protobuf/ptypes/timestamp
 # github.com/golang/snappy v0.0.4
 ## explicit
 github.com/golang/snappy
-# github.com/google/btree v1.0.1
-## explicit; go 1.12
+# github.com/google/btree v1.1.2
+## explicit; go 1.18
 github.com/google/btree
 # github.com/google/gnostic-models v0.6.8
 ## explicit; go 1.18
@@ -537,6 +537,9 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
+# github.com/grafana/alerting v0.0.0-20240411150018-adfb25200d3e
+## explicit; go 1.21
+github.com/grafana/alerting/definition
 # github.com/grafana/dskit v0.0.0-20240411153331-40cf812a9efe
 ## explicit; go 1.20
 github.com/grafana/dskit/backoff

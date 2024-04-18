@@ -34,10 +34,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
           // Note if alert_aggregation_labels is "job", this will repeat the label. But
           // prometheus seems to tolerate that.
           expr: |||
-            100 * sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",route!~"%(excluded_routes)s"}[%(range_interval)s]))
+            # The following 5xx errors considered as non-error:
+            # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
+            # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
+            (
+              sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",status_code!~"529|598",route!~"%(excluded_routes)s"}[%(range_interval)s]))
               /
-            sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{route!~"%(excluded_routes)s"}[%(range_interval)s]))
-              > 1
+              sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{route!~"%(excluded_routes)s"}[%(range_interval)s]))
+            ) * 100 > 1
           ||| % {
             group_by: $._config.alert_aggregation_labels,
             job_label: $._config.per_job_label,

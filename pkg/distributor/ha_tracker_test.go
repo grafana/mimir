@@ -29,7 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	util_log "github.com/grafana/mimir/pkg/util/log"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
 func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, user, cluster, replica string, expected time.Time) {
@@ -724,6 +724,7 @@ func TestCheckReplicaCleanup(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	reg := prometheus.NewPedanticRegistry()
+	logger := utiltest.NewTestingLogger(t)
 
 	kvStore, closer := consul.NewInMemoryClient(GetReplicaDescCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -735,7 +736,7 @@ func TestCheckReplicaCleanup(t *testing.T) {
 		UpdateTimeout:          1 * time.Second,
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        time.Second,
-	}, trackerLimits{maxClusters: 100}, reg, util_log.Logger)
+	}, trackerLimits{maxClusters: 100}, reg, logger)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck

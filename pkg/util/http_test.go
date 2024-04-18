@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestRenderHTTPResponse(t *testing.T) {
@@ -132,7 +132,7 @@ func TestStreamWriteYAMLResponse(t *testing.T) {
 	done := make(chan struct{})
 	iter := make(chan interface{})
 	go func() {
-		StreamWriteYAMLResponse(w, iter, util_log.Logger)
+		StreamWriteYAMLResponse(w, iter, test.NewTestingLogger(t))
 		close(done)
 	}()
 	for k, v := range tt.value {
