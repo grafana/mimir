@@ -126,6 +126,7 @@ func newSingleBinary(name string, servername string, join string, testFlags map[
 		"-ingester.ring.min-ready-duration":  "0s",
 		"-ingester.ring.num-tokens":          "512",
 		"-ingester.ring.store":               "memberlist",
+		"-ingester.partition-ring.store":     "memberlist",
 		"-memberlist.bind-port":              "8000",
 		"-memberlist.left-ingesters-timeout": "600s", // effectively disable
 	}

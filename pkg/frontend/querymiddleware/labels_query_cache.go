@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,6 +79,7 @@ func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCac
 		labelValuesReq.GetEndOrDefault(),
 		labelValuesReq.GetLabelName(),
 		labelMatcherSets,
+		labelValuesReq.GetLimit(),
 	)
 
 	return &GenericQueryCacheKey{
@@ -86,7 +88,7 @@ func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCac
 	}, nil
 }
 
-func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName string, matcherSets [][]*labels.Matcher) string {
+func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName string, matcherSets [][]*labels.Matcher, limit uint64) string {
 	var (
 		twoHoursMillis = (2 * time.Hour).Milliseconds()
 		b              = strings.Builder{}
@@ -120,6 +122,12 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 	// Add matcher sets.
 	b.WriteRune(stringParamSeparator)
 	b.WriteString(util.MultiMatchersStringer(matcherSets).String())
+
+	// if limit is set, then it will be a positive number
+	if limit > 0 {
+		b.WriteRune(stringParamSeparator)
+		b.WriteString(strconv.Itoa(int(limit)))
+	}
 
 	return b.String()
 }

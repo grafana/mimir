@@ -449,9 +449,9 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}
 
-		partitionRingKV := cfg.IngesterPartitionRing.kvMock
+		partitionRingKV := cfg.IngesterPartitionRing.KVStore.Mock
 		if partitionRingKV == nil {
-			partitionRingKV, err = kv.NewClient(cfg.IngesterRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, PartitionRingName+"-lifecycler"), logger)
+			partitionRingKV, err = kv.NewClient(cfg.IngesterPartitionRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, PartitionRingName+"-lifecycler"), logger)
 			if err != nil {
 				return nil, errors.Wrap(err, "creating KV store for ingester partition ring")
 			}

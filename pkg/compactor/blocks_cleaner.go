@@ -357,7 +357,7 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 		level.Info(userLogger).Log("msg", "deleted blocks for tenant marked for deletion", "deletedBlocks", deletedBlocks)
 	}
 
-	mark, err := mimir_tsdb.ReadTenantDeletionMark(ctx, c.bucketClient, userID)
+	mark, err := mimir_tsdb.ReadTenantDeletionMark(ctx, c.bucketClient, userID, c.logger)
 	if err != nil {
 		return errors.Wrap(err, "failed to read tenant deletion mark")
 	}

@@ -146,7 +146,7 @@ func TestIngester_Start(t *testing.T) {
 		}))
 
 		// Add the partition and owner in the ring, in order to simulate an ingester restart.
-		require.NoError(t, cfg.IngesterPartitionRing.kvMock.CAS(context.Background(), PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		require.NoError(t, cfg.IngesterPartitionRing.KVStore.Mock.CAS(context.Background(), PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
 			if err != nil {
 				return nil, false, err
@@ -585,12 +585,12 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 	ingesterCfg.IngestStorageConfig.KafkaConfig.LastProducedOffsetPollInterval = 100 * time.Millisecond
 
 	// Create the partition ring store.
-	kv := ingesterCfg.IngesterPartitionRing.kvMock
+	kv := ingesterCfg.IngesterPartitionRing.KVStore.Mock
 	if kv == nil {
 		var closer io.Closer
 		kv, closer = consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
 		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-		ingesterCfg.IngesterPartitionRing.kvMock = kv
+		ingesterCfg.IngesterPartitionRing.KVStore.Mock = kv
 	}
 
 	ingesterCfg.IngesterPartitionRing.MinOwnersDuration = 0
