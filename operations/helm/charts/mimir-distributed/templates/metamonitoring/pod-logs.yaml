@@ -29,8 +29,10 @@ spec:
       sourceLabels:
         - __meta_kubernetes_pod_container_name
       targetLabel: name
+    {{- if kindIs "string" .logs.clusterLabel }}
     - targetLabel: cluster
-      replacement: {{ include "mimir.clusterName" $ }}
+      replacement: "{{ .logs.clusterLabel | default (include "mimir.clusterName" $) }}"
+    {{- end }}
 
   namespaceSelector:
     matchNames:

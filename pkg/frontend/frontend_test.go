@@ -105,7 +105,7 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 	require.NoError(t, err)
 
 	downstreamServer := http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, err := w.Write([]byte(responseBody))
 			require.NoError(t, err)
 		}),
@@ -167,7 +167,7 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 	require.NoError(t, err)
 
 	downstreamServer := http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, err := w.Write([]byte(responseBody))
 			require.NoError(t, err)
 		}),

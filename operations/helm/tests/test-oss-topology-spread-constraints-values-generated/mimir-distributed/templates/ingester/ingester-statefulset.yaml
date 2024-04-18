@@ -60,12 +60,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -81,9 +75,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -211,12 +203,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -232,9 +218,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -362,12 +346,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -383,9 +361,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:

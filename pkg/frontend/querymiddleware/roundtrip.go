@@ -63,6 +63,7 @@ type Config struct {
 	ShardedQueries                 bool          `yaml:"parallelize_shardable_queries"`
 	TargetSeriesPerShard           uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 	ShardActiveSeriesQueries       bool          `yaml:"shard_active_series_queries" category:"experimental"`
+	UseActiveSeriesDecoder         bool          `yaml:"use_active_series_decoder" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -81,6 +82,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
+	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 
 	// The query-frontend.align-queries-with-step flag has been moved to the limits.go file
@@ -115,36 +117,36 @@ func (cfg *Config) cardinalityBasedShardingEnabled() bool {
 	return cfg.TargetSeriesPerShard > 0
 }
 
-// HandlerFunc is like http.HandlerFunc, but for Handler.
-type HandlerFunc func(context.Context, Request) (Response, error)
+// HandlerFunc is like http.HandlerFunc, but for MetricsQueryHandler.
+type HandlerFunc func(context.Context, MetricsQueryRequest) (Response, error)
 
-// Do implements Handler.
-func (q HandlerFunc) Do(ctx context.Context, req Request) (Response, error) {
+// Do implements MetricsQueryHandler.
+func (q HandlerFunc) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	return q(ctx, req)
 }
 
-// Handler is like http.Handle, but specifically for Prometheus query_range calls.
-type Handler interface {
-	Do(context.Context, Request) (Response, error)
+// MetricsQueryHandler is like http.Handle, but specifically for Prometheus query and query_range calls.
+type MetricsQueryHandler interface {
+	Do(context.Context, MetricsQueryRequest) (Response, error)
 }
 
-// MiddlewareFunc is like http.HandlerFunc, but for Middleware.
-type MiddlewareFunc func(Handler) Handler
+// MetricsQueryMiddlewareFunc is like http.HandlerFunc, but for MetricsQueryMiddleware.
+type MetricsQueryMiddlewareFunc func(MetricsQueryHandler) MetricsQueryHandler
 
-// Wrap implements Middleware.
-func (q MiddlewareFunc) Wrap(h Handler) Handler {
+// Wrap implements MetricsQueryMiddleware.
+func (q MetricsQueryMiddlewareFunc) Wrap(h MetricsQueryHandler) MetricsQueryHandler {
 	return q(h)
 }
 
-// Middleware is a higher order Handler.
-type Middleware interface {
-	Wrap(Handler) Handler
+// MetricsQueryMiddleware is a higher order MetricsQueryHandler.
+type MetricsQueryMiddleware interface {
+	Wrap(MetricsQueryHandler) MetricsQueryHandler
 }
 
-// MergeMiddlewares produces a middleware that applies multiple middleware in turn;
+// MergeMetricsQueryMiddlewares produces a middleware that applies multiple middleware in turn;
 // ie Merge(f,g,h).Wrap(handler) == f.Wrap(g.Wrap(h.Wrap(handler)))
-func MergeMiddlewares(middleware ...Middleware) Middleware {
-	return MiddlewareFunc(func(next Handler) Handler {
+func MergeMetricsQueryMiddlewares(middleware ...MetricsQueryMiddleware) MetricsQueryMiddleware {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		for i := len(middleware) - 1; i >= 0; i-- {
 			next = middleware[i].Wrap(next)
 		}
@@ -217,7 +219,7 @@ func newQueryTripperware(
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 
-	queryRangeMiddleware := []Middleware{
+	queryRangeMiddleware := []MetricsQueryMiddleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
@@ -239,12 +241,12 @@ func newQueryTripperware(
 
 	cacheKeyGenerator := cfg.CacheKeyGenerator
 	if cacheKeyGenerator == nil {
-		cacheKeyGenerator = DefaultCacheKeyGenerator{Interval: cfg.SplitQueriesByInterval}
+		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
 
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-		shouldCache := func(r Request) bool {
+		shouldCache := func(r MetricsQueryRequest) bool {
 			return !r.GetOptions().CacheDisabled
 		}
 
@@ -263,7 +265,7 @@ func newQueryTripperware(
 		))
 	}
 
-	queryInstantMiddleware := []Middleware{
+	queryInstantMiddleware := []MetricsQueryMiddleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
@@ -334,7 +336,7 @@ func newQueryTripperware(
 		}
 
 		if cfg.ShardActiveSeriesQueries {
-			activeSeries = newShardActiveSeriesMiddleware(activeSeries, limits, log)
+			activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.UseActiveSeriesDecoder, limits, log)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -431,8 +433,16 @@ func IsCardinalityQuery(path string) bool {
 		strings.HasSuffix(path, cardinalityLabelValuesPathSuffix)
 }
 
+func IsLabelNamesQuery(path string) bool {
+	return strings.HasSuffix(path, labelNamesPathSuffix)
+}
+
+func IsLabelValuesQuery(path string) bool {
+	return labelValuesPathSuffix.MatchString(path)
+}
+
 func IsLabelsQuery(path string) bool {
-	return strings.HasSuffix(path, labelNamesPathSuffix) || labelValuesPathSuffix.MatchString(path)
+	return IsLabelNamesQuery(path) || IsLabelValuesQuery(path)
 }
 
 func IsActiveSeriesQuery(path string) bool {

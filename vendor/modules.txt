@@ -256,7 +256,7 @@ github.com/benbjohnson/clock
 # github.com/beorn7/perks v1.0.1
 ## explicit; go 1.11
 github.com/beorn7/perks/quantile
-# github.com/bits-and-blooms/bitset v1.8.0
+# github.com/bits-and-blooms/bitset v1.13.0
 ## explicit; go 1.16
 github.com/bits-and-blooms/bitset
 # github.com/cenkalti/backoff/v3 v3.2.2
@@ -320,7 +320,7 @@ github.com/efficientgo/core/testutil/internal
 # github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 ## explicit
 github.com/facette/natsort
-# github.com/failsafe-go/failsafe-go v0.4.4
+# github.com/failsafe-go/failsafe-go v0.6.2
 ## explicit; go 1.21
 github.com/failsafe-go/failsafe-go
 github.com/failsafe-go/failsafe-go/circuitbreaker
@@ -372,8 +372,8 @@ github.com/go-openapi/analysis/internal/flatten/operations
 github.com/go-openapi/analysis/internal/flatten/replace
 github.com/go-openapi/analysis/internal/flatten/schutils
 github.com/go-openapi/analysis/internal/flatten/sortref
-# github.com/go-openapi/errors v0.21.1
-## explicit; go 1.19
+# github.com/go-openapi/errors v0.22.0
+## explicit; go 1.20
 github.com/go-openapi/errors
 # github.com/go-openapi/jsonpointer v0.20.2
 ## explicit; go 1.19
@@ -398,11 +398,11 @@ github.com/go-openapi/runtime/security
 # github.com/go-openapi/spec v0.20.14
 ## explicit; go 1.19
 github.com/go-openapi/spec
-# github.com/go-openapi/strfmt v0.22.2
-## explicit; go 1.19
+# github.com/go-openapi/strfmt v0.23.0
+## explicit; go 1.20
 github.com/go-openapi/strfmt
-# github.com/go-openapi/swag v0.22.9
-## explicit; go 1.19
+# github.com/go-openapi/swag v0.23.0
+## explicit; go 1.20
 github.com/go-openapi/swag
 # github.com/go-openapi/validate v0.23.0
 ## explicit; go 1.19
@@ -448,8 +448,8 @@ github.com/golang/glog/internal/stackdump
 ## explicit
 github.com/golang/groupcache/lru
 github.com/golang/groupcache/singleflight
-# github.com/golang/protobuf v1.5.3
-## explicit; go 1.9
+# github.com/golang/protobuf v1.5.4
+## explicit; go 1.17
 github.com/golang/protobuf/proto
 github.com/golang/protobuf/ptypes
 github.com/golang/protobuf/ptypes/any
@@ -459,8 +459,8 @@ github.com/golang/protobuf/ptypes/timestamp
 # github.com/golang/snappy v0.0.4
 ## explicit
 github.com/golang/snappy
-# github.com/google/btree v1.0.1
-## explicit; go 1.12
+# github.com/google/btree v1.1.2
+## explicit; go 1.18
 github.com/google/btree
 # github.com/google/gnostic-models v0.6.8
 ## explicit; go 1.18
@@ -537,7 +537,10 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20240306142309-0e1c99b54ea7
+# github.com/grafana/alerting v0.0.0-20240411150018-adfb25200d3e
+## explicit; go 1.21
+github.com/grafana/alerting/definition
+# github.com/grafana/dskit v0.0.0-20240411153331-40cf812a9efe
 ## explicit; go 1.20
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -814,6 +817,9 @@ github.com/pierrec/lz4/v4/internal/lz4block
 github.com/pierrec/lz4/v4/internal/lz4errors
 github.com/pierrec/lz4/v4/internal/lz4stream
 github.com/pierrec/lz4/v4/internal/xxh32
+# github.com/pires/go-proxyproto v0.7.0
+## explicit; go 1.18
+github.com/pires/go-proxyproto
 # github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 ## explicit; go 1.14
 github.com/pkg/browser
@@ -884,7 +890,7 @@ github.com/prometheus/client_golang/prometheus/push
 github.com/prometheus/client_golang/prometheus/testutil
 github.com/prometheus/client_golang/prometheus/testutil/promlint
 github.com/prometheus/client_golang/prometheus/testutil/promlint/validations
-# github.com/prometheus/client_model v0.6.0
+# github.com/prometheus/client_model v0.6.1
 ## explicit; go 1.19
 github.com/prometheus/client_model/go
 # github.com/prometheus/common v0.49.1-0.20240306132007-4199f18c3e92
@@ -906,7 +912,7 @@ github.com/prometheus/exporter-toolkit/web
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v0.0.0-20240312132807-2b3d9c010123
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v0.0.0-20240409141911-efedd715bc31
 ## explicit; go 1.21
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1123,10 +1129,10 @@ go.opencensus.io/trace
 go.opencensus.io/trace/internal
 go.opencensus.io/trace/propagation
 go.opencensus.io/trace/tracestate
-# go.opentelemetry.io/collector/featuregate v1.3.0
+# go.opentelemetry.io/collector/featuregate v1.4.0
 ## explicit; go 1.21
 go.opentelemetry.io/collector/featuregate
-# go.opentelemetry.io/collector/pdata v1.3.0
+# go.opentelemetry.io/collector/pdata v1.4.0
 ## explicit; go 1.21
 go.opentelemetry.io/collector/pdata/internal
 go.opentelemetry.io/collector/pdata/internal/data
@@ -1143,7 +1149,7 @@ go.opentelemetry.io/collector/pdata/internal/otlp
 go.opentelemetry.io/collector/pdata/pcommon
 go.opentelemetry.io/collector/pdata/pmetric
 go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp
-# go.opentelemetry.io/collector/semconv v0.96.0
+# go.opentelemetry.io/collector/semconv v0.97.0
 ## explicit; go 1.21
 go.opentelemetry.io/collector/semconv/v1.6.1
 # go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0
@@ -1197,7 +1203,7 @@ go.uber.org/zap/internal/color
 go.uber.org/zap/internal/exit
 go.uber.org/zap/zapcore
 go.uber.org/zap/zapgrpc
-# golang.org/x/crypto v0.21.0
+# golang.org/x/crypto v0.22.0
 ## explicit; go 1.18
 golang.org/x/crypto/argon2
 golang.org/x/crypto/bcrypt
@@ -1213,14 +1219,14 @@ golang.org/x/crypto/internal/poly1305
 golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/pkcs12
 golang.org/x/crypto/pkcs12/internal/rc2
-# golang.org/x/exp v0.0.0-20240222234643-814bf88cf225
+# golang.org/x/exp v0.0.0-20240404231335-c0f41cb1a7a0
 ## explicit; go 1.20
 golang.org/x/exp/constraints
 golang.org/x/exp/slices
-# golang.org/x/mod v0.16.0
+# golang.org/x/mod v0.17.0
 ## explicit; go 1.18
 golang.org/x/mod/semver
-# golang.org/x/net v0.22.0
+# golang.org/x/net v0.24.0
 ## explicit; go 1.18
 golang.org/x/net/bpf
 golang.org/x/net/context/ctxhttp
@@ -1250,11 +1256,11 @@ golang.org/x/oauth2/google/internal/stsexchange
 golang.org/x/oauth2/internal
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
-# golang.org/x/sync v0.6.0
+# golang.org/x/sync v0.7.0
 ## explicit; go 1.18
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
-# golang.org/x/sys v0.18.0
+# golang.org/x/sys v0.19.0
 ## explicit; go 1.18
 golang.org/x/sys/cpu
 golang.org/x/sys/unix
@@ -1275,7 +1281,7 @@ golang.org/x/text/unicode/norm
 # golang.org/x/time v0.5.0
 ## explicit; go 1.18
 golang.org/x/time/rate
-# golang.org/x/tools v0.19.0
+# golang.org/x/tools v0.20.0
 ## explicit; go 1.19
 golang.org/x/tools/go/gcexportdata
 golang.org/x/tools/go/internal/packagesdriver
@@ -1291,8 +1297,8 @@ golang.org/x/tools/internal/gcimporter
 golang.org/x/tools/internal/gocommand
 golang.org/x/tools/internal/packagesinternal
 golang.org/x/tools/internal/pkgbits
+golang.org/x/tools/internal/stdlib
 golang.org/x/tools/internal/tokeninternal
-golang.org/x/tools/internal/typeparams
 golang.org/x/tools/internal/typesinternal
 golang.org/x/tools/internal/versions
 # google.golang.org/api v0.168.0
@@ -1367,6 +1373,7 @@ google.golang.org/grpc/credentials/oauth
 google.golang.org/grpc/encoding
 google.golang.org/grpc/encoding/gzip
 google.golang.org/grpc/encoding/proto
+google.golang.org/grpc/experimental
 google.golang.org/grpc/grpclog
 google.golang.org/grpc/health/grpc_health_v1
 google.golang.org/grpc/internal
@@ -1459,10 +1466,10 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.1 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 ## explicit
 gopkg.in/yaml.v3
-# k8s.io/apimachinery v0.29.2
+# k8s.io/apimachinery v0.29.3
 ## explicit; go 1.21
 k8s.io/apimachinery/pkg/util/runtime
-# k8s.io/client-go v0.29.2
+# k8s.io/client-go v0.29.3
 ## explicit; go 1.21
 k8s.io/client-go/tools/metrics
 k8s.io/client-go/util/workqueue
@@ -1527,7 +1534,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/goyaml.v3
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240312132807-2b3d9c010123
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240409141911-efedd715bc31
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6

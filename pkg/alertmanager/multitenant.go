@@ -356,7 +356,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		fallbackConfig:      string(fallbackConfig),
 		cfgs:                map[string]alertspb.AlertConfigDesc{},
 		alertmanagers:       map[string]*Alertmanager{},
-		alertmanagerMetrics: newAlertmanagerMetrics(),
+		alertmanagerMetrics: newAlertmanagerMetrics(logger),
 		multitenantMetrics:  newMultitenantAlertmanagerMetrics(registerer),
 		store:               store,
 		logger:              log.With(logger, "component", "MultiTenantAlertmanager"),

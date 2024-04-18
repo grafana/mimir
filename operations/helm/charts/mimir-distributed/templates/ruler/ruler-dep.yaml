@@ -9,7 +9,7 @@ metadata:
     {{- toYaml .Values.ruler.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.ruler.kedaAutoscaling.enabled }}
+  {{- if or (not .Values.ruler.kedaAutoscaling.enabled) (.Values.ruler.kedaAutoscaling.preserveReplicas) }}
   replicas: {{ .Values.ruler.replicas }}
   {{- end }}
   selector:
@@ -31,8 +31,10 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "ruler") | nindent 8 }}
+      {{- with .Values.ruler.initContainers }}
       initContainers:
-        {{- toYaml .Values.ruler.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -122,13 +124,19 @@ spec:
 {{- if .Values.ruler.extraContainers }}
 {{ toYaml .Values.ruler.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.ruler.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.ruler.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ruler.affinity }}
       affinity:
-        {{- toYaml .Values.ruler.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ruler") | nindent 6 }}
+      {{- with .Values.ruler.tolerations }}
       tolerations:
-        {{- toYaml .Values.ruler.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.ruler.terminationGracePeriodSeconds }}
       volumes:
         - name: config

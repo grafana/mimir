@@ -8,7 +8,7 @@ metadata:
     {{- toYaml .Values.querier.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.querier.kedaAutoscaling.enabled }}
+  {{- if or (not .Values.querier.kedaAutoscaling.enabled) (.Values.querier.kedaAutoscaling.preserveReplicas) }}
   # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
   {{- if or (or (kindIs "int64" .Values.querier.replicas) (kindIs "float64" .Values.querier.replicas)) (.Values.querier.replicas) }}
   replicas: {{ .Values.querier.replicas }}
@@ -32,8 +32,10 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "querier") | nindent 8 }}
+      {{- with .Values.querier.initContainers }}
       initContainers:
-        {{- toYaml .Values.querier.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -126,13 +128,19 @@ spec:
 {{- if .Values.querier.extraContainers }}
 {{ toYaml .Values.querier.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.querier.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.querier.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.querier.affinity}}
       affinity:
-        {{- toYaml .Values.querier.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "querier") | nindent 6 }}
+      {{- with .Values.querier.tolerations }}
       tolerations:
-        {{- toYaml .Values.querier.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.querier.terminationGracePeriodSeconds }}
       volumes:
         - name: config

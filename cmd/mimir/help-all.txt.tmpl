@@ -29,6 +29,8 @@ Usage of ./cmd/mimir/mimir:
     	Path at which alertmanager configurations are stored.
   -alertmanager-storage.s3.access-key-id string
     	S3 access key ID
+  -alertmanager-storage.s3.bucket-lookup-type value
+    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -alertmanager-storage.s3.bucket-name string
     	S3 bucket name
   -alertmanager-storage.s3.endpoint string
@@ -277,6 +279,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended to check both alertmanager_matchers_disagree_total and alertmanager_matchers_incompatible_total metrics before using this mode as otherwise some tenant configurations might fail to load.
   -alertmanager.web.external-url string
     	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
+  -api.get-request-for-ingester-shutdown-enabled
+    	[deprecated] Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.
   -api.skip-label-name-validation-header-enabled
     	Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.
   -auth.multitenancy-enabled
@@ -667,6 +671,8 @@ Usage of ./cmd/mimir/mimir:
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -blocks-storage.s3.access-key-id string
     	S3 access key ID
+  -blocks-storage.s3.bucket-lookup-type value
+    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -blocks-storage.s3.bucket-name string
     	S3 bucket name
   -blocks-storage.s3.endpoint string
@@ -835,6 +841,8 @@ Usage of ./cmd/mimir/mimir:
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -common.storage.s3.access-key-id string
     	S3 access key ID
+  -common.storage.s3.bucket-lookup-type value
+    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -common.storage.s3.bucket-name string
     	S3 bucket name
   -common.storage.s3.endpoint string
@@ -1318,7 +1326,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
   -ingester.error-sample-rate int
-    	[experimental] Each error will be logged once in this many times. Use 0 to log all of them.
+    	Each error will be logged once in this many times. Use 0 to log all of them. (default 10)
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int
@@ -1694,13 +1702,13 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-concurrent int
     	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. (default 20)
   -querier.max-estimated-fetched-chunks-per-query-multiplier float
-    	[experimental] Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.
+    	[experimental] Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.
   -querier.max-fetched-chunk-bytes-per-query int
-    	The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.
+    	The maximum size of all chunks in bytes that a query can fetch from ingesters and store-gateways. This limit is enforced in the querier and ruler. 0 to disable.
   -querier.max-fetched-chunks-per-query int
-    	Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable. (default 2000000)
+    	Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable. (default 2000000)
   -querier.max-fetched-series-per-query int
-    	The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable
+    	The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable
   -querier.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429. (default 100)
   -querier.max-partial-query-length duration
@@ -1714,13 +1722,13 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.minimize-ingester-requests
-    	[experimental] If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
+    	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
     	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
-  -querier.prefer-streaming-chunks-from-ingesters
-    	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this. (default true)
   -querier.prefer-streaming-chunks-from-store-gateways
     	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
+  -querier.promql-engine string
+    	[experimental] PromQL engine to use, either 'standard' or 'streaming' (default "standard")
   -querier.promql-experimental-functions-enabled
     	[experimental] Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.
   -querier.query-ingesters-within duration
@@ -2013,6 +2021,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Split instant queries by an interval and execute in parallel. 0 to disable it.
   -query-frontend.split-queries-by-interval duration
     	Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
+  -query-frontend.use-active-series-decoder
+    	[experimental] Set to true to use the zero-allocation response decoder for active series queries.
   -query-scheduler.additional-query-queue-dimensions-enabled
     	[experimental] Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
   -query-scheduler.grpc-client-config.backoff-max-period duration
@@ -2253,6 +2263,8 @@ Usage of ./cmd/mimir/mimir:
     	Directory to scan for rules
   -ruler-storage.s3.access-key-id string
     	S3 access key ID
+  -ruler-storage.s3.bucket-lookup-type value
+    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -ruler-storage.s3.bucket-name string
     	S3 bucket name
   -ruler-storage.s3.endpoint string
@@ -2649,6 +2661,8 @@ Usage of ./cmd/mimir/mimir:
     	Regex for matching the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used
   -server.path-prefix string
     	Base path to serve all API routes from (e.g. /v1/)
+  -server.proxy-protocol-enabled
+    	[experimental] Enables PROXY protocol.
   -server.register-instrumentation
     	Register the intrumentation handlers (/metrics etc). (default true)
   -server.report-grpc-codes-in-instrumentation-label-enabled
@@ -2659,6 +2673,10 @@ Usage of ./cmd/mimir/mimir:
     	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
   -shutdown-delay duration
     	How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
+  -store-gateway.disabled-tenants comma-separated-list-of-strings
+    	Comma separated list of tenants that cannot be loaded by the store-gateway. If specified, and the store-gateway would normally load a given tenant for (via -store-gateway.enabled-tenants or sharding), it will be ignored instead.
+  -store-gateway.enabled-tenants comma-separated-list-of-strings
+    	Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.
   -store-gateway.sharding-ring.auto-forget-enabled
     	When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout. (default true)
   -store-gateway.sharding-ring.consul.acl-token string
@@ -2755,6 +2773,38 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The number of workers used for each tenant federated query. This setting limits the maximum number of per-tenant queries executed at a time for a tenant federated query. (default 16)
   -tenant-federation.max-tenants int
     	[experimental] The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.
+  -tests.basic-auth-password string
+    	The password to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
+  -tests.basic-auth-user string
+    	The username to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
+  -tests.bearer-token string
+    	The bearer token to use for HTTP bearer authentication. (mutually exclusive with tenant-id flag or basic-auth flags)
+  -tests.read-endpoint string
+    	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
+  -tests.read-timeout duration
+    	The timeout for a single read request. (default 1m0s)
+  -tests.run-interval duration
+    	How frequently tests should run. (default 5m0s)
+  -tests.smoke-test
+    	Run a smoke test, i.e. run all tests once and exit.
+  -tests.tenant-id string
+    	The tenant ID to use to write and read metrics in tests. (mutually exclusive with basic-auth or bearer-token flags) (default "anonymous")
+  -tests.write-batch-size int
+    	The maximum number of series to write in a single request. (default 1000)
+  -tests.write-endpoint string
+    	The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.
+  -tests.write-protocol string
+    	The protocol to use to write series data. Supported values are: prometheus, otlp-http (default "prometheus")
+  -tests.write-read-series-test.float-samples-enabled
+    	Set to true to use float samples (default true)
+  -tests.write-read-series-test.histogram-samples-enabled
+    	Set to true to use native histogram samples
+  -tests.write-read-series-test.max-query-age duration
+    	How back in the past metrics can be queried at most. (default 168h0m0s)
+  -tests.write-read-series-test.num-series int
+    	Number of series used for the test. (default 10000)
+  -tests.write-timeout duration
+    	The timeout for a single write request. (default 5s)
   -timeseries-unmarshal-caching-optimization-enabled
     	[experimental] Enables optimized marshaling of timeseries. (default true)
   -usage-stats.enabled

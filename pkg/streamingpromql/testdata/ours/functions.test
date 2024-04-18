@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Most cases for functions are covered already in the upstream test cases.
+# These test cases cover scenarios not covered by the upstream test cases, such as range queries, or edge cases that are uniquely likely to cause issues in the streaming engine.
+
+load 1m
+  some_metric{env="prod", cluster="eu"} 0+60x4
+  some_metric{env="prod", cluster="us"} 0+120x4
+  some_metric{env="test", cluster="eu"} 0+180x4
+  some_metric{env="test", cluster="us"} 0+240x4
+
+# Range query with rate.
+eval range from 0 to 4m step 1m rate(some_metric[1m])
+  {env="prod", cluster="eu"} _ 1 1 1 1
+  {env="prod", cluster="us"} _ 2 2 2 2
+  {env="test", cluster="eu"} _ 3 3 3 3
+  {env="test", cluster="us"} _ 4 4 4 4
+
+# If no series are matched, we shouldn't return any results.
+eval range from 0 to 4m step 1m rate(some_nonexistent_metric[1m])
+  # Should return no results.

@@ -144,6 +144,12 @@ std.manifestYamlDoc({
         'KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,ORBSTACK:PLAINTEXT',
         'KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT',
         'KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1',
+        'KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000',
+
+        // Decomment the following config to keep a short retentino of records in Kafka.
+        // This is useful to test the behaviour when Kafka records are deleted.
+        // 'KAFKA_LOG_RETENTION_MINUTES=1',
+        // 'KAFKA_LOG_SEGMENT_BYTES=1000000',
       ],
       ports: [
         '29092:29092',
@@ -184,10 +190,13 @@ std.manifestYamlDoc({
     // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
     // until metadata remote write is not supported by Prometheus).
     'grafana-agent': {
-      image: 'grafana/agent:v0.37.3',
-      command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-metrics.wal-directory=/tmp', '-server.http.address=127.0.0.1:9091'],
+      image: 'grafana/agent:v0.40.0',
+      command: ['run', '--storage.path=/tmp', '--server.http.listen-addr=127.0.0.1:9091', '/etc/agent-config/grafana-agent.flow'],
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],
+      environment: {
+        AGENT_MODE: 'flow',
+      },
     },
   },
 

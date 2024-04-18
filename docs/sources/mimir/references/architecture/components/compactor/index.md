@@ -126,11 +126,23 @@ The storage retention is disabled by default, and no data will be deleted from t
 
 For more information, refer to [Configure metrics storage retention]({{< relref "../../../../configure/configure-metrics-storage-retention" >}}).
 
+## Compactor scratch storage volume
+
+Each compactor uses a storage device mounted at `-compactor.data-dir` to temporarily store:
+
+- files downloaded from object storage used as input to compaction
+- block files produced by the compactor to be uploaded to object storage
+
+{{% admonition type="note" %}}
+While the compactor is a stateless service, it's recommended that you configure the compactor to store its temporary files somewhere other than the root volume. This avoids I/O contention with other workloads running on the system.
+Common volume types include a local SSD or a cloud provider's block storage service.
+
+In Kubernetes, run compactors as a StatefulSet so that each Pod has a dedicated volume.
+{{% /admonition %}}
+
 ## Compactor disk utilization
 
-The compactor needs to download blocks from the bucket to the local disk, and the compactor needs to store compacted blocks to the local disk before uploading them to the bucket. The largest tenants may need a lot of disk space.
-
-Assuming `max_compaction_range_blocks_size` is the total block size for the largest tenant during the longest `-compactor.block-ranges` period, the expression that estimates the minimum disk space required is:
+Large tenants may require a lot of disk space. Assuming `max_compaction_range_blocks_size` is the total block size for the largest tenant during the longest `-compactor.block-ranges` period, the expression that estimates the minimum disk space required is:
 
 ```
 compactor.compaction-concurrency * max_compaction_range_blocks_size * 2

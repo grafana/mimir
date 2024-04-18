@@ -319,6 +319,12 @@ groups:
         expr: sum by (job) (http_inprogress_requests)
 ```
 
+This command, like the other `rules` subcommands, can load multiple rule groups at once:
+
+```bash
+mimirtool rules load ./example_rules_one.yaml ./example_rules_two.yaml
+```
+
 #### Delete a namespace
 
 The following command deletes all of the rule groups in a namespace, including the namespace itself:

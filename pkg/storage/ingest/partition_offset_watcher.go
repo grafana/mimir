@@ -163,6 +163,14 @@ func (w *partitionOffsetWatcher) Wait(ctx context.Context, waitForOffset int64) 
 	}
 }
 
+// LastConsumedOffset returns the last consumed offset.
+func (w *partitionOffsetWatcher) LastConsumedOffset() int64 {
+	w.mx.Lock()
+	defer w.mx.Unlock()
+
+	return w.lastConsumedOffset
+}
+
 // waitingGoroutinesCount returns the number of active watch groups (an active group has at least
 // 1 goroutine waiting). This function is useful for testing.
 func (w *partitionOffsetWatcher) watchGroupsCount() int {

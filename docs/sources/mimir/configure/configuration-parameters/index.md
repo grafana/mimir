@@ -146,6 +146,12 @@ api:
   # CLI flag: -distributor.enable-otlp-metadata-storage
   [enable_otel_metadata_translation: <boolean> | default = true]
 
+  # (deprecated) Enable GET requests to the /ingester/shutdown endpoint to
+  # trigger an ingester shutdown. This is a potentially dangerous operation and
+  # should only be enabled consciously.
+  # CLI flag: -api.get-request-for-ingester-shutdown-enabled
+  [get_request_for_ingester_shutdown_enabled: <boolean> | default = false]
+
   # (advanced) HTTP URL path under which the Alertmanager ui and api will be
   # served.
   # CLI flag: -http.alertmanager-http-prefix
@@ -523,6 +529,10 @@ The `server` block configures the HTTP and gRPC server of the launched service(s
 # (advanced) Maximum number of simultaneous grpc connections, <=0 to disable
 # CLI flag: -server.grpc-conn-limit
 [grpc_listen_conn_limit: <int> | default = 0]
+
+# (experimental) Enables PROXY protocol.
+# CLI flag: -server.proxy-protocol-enabled
+[proxy_protocol_enabled: <boolean> | default = false]
 
 # Comma-separated list of cipher suites to use. If blank, the default Go cipher
 # suites is used.
@@ -1173,10 +1183,10 @@ instance_limits:
 # CLI flag: -ingester.limit-inflight-requests-using-grpc-method-limiter
 [limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = true]
 
-# (experimental) Each error will be logged once in this many times. Use 0 to log
-# all of them.
+# (advanced) Each error will be logged once in this many times. Use 0 to log all
+# of them.
 # CLI flag: -ingester.error-sample-rate
-[error_sample_rate: <int> | default = 0]
+[error_sample_rate: <int> | default = 10]
 
 # (deprecated) When enabled only gRPC errors will be returned by the ingester.
 # CLI flag: -ingester.return-only-grpc-errors
@@ -1248,10 +1258,6 @@ store_gateway_client:
   # Allowed values:
   #
   # Secure Ciphers:
-  # - TLS_RSA_WITH_AES_128_CBC_SHA
-  # - TLS_RSA_WITH_AES_256_CBC_SHA
-  # - TLS_RSA_WITH_AES_128_GCM_SHA256
-  # - TLS_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
   # - TLS_CHACHA20_POLY1305_SHA256
@@ -1269,7 +1275,11 @@ store_gateway_client:
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
   # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
   # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
   # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -1291,12 +1301,6 @@ store_gateway_client:
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
-# (experimental) Request ingesters stream chunks. Ingesters will only respond
-# with a stream of chunks if the target ingester supports this, and this
-# preference will be ignored by ingesters that do not support this.
-# CLI flag: -querier.prefer-streaming-chunks-from-ingesters
-[prefer_streaming_chunks_from_ingesters: <boolean> | default = true]
-
 # (experimental) Request store-gateways stream chunks. Store-gateways will only
 # respond with a stream of chunks if the target store-gateway supports this, and
 # this preference will be ignored by store-gateways that do not support this.
@@ -1313,7 +1317,7 @@ store_gateway_client:
 # CLI flag: -querier.streaming-chunks-per-store-gateway-buffer-size
 [streaming_chunks_per_store_gateway_series_buffer_size: <int> | default = 256]
 
-# (experimental) If true, when querying ingesters, only the minimum required
+# (advanced) If true, when querying ingesters, only the minimum required
 # ingesters required to reach quorum will be queried initially, with other
 # ingesters queried only if needed due to failures from the initial set of
 # ingesters. Enabling this option reduces resource consumption for the happy
@@ -1326,6 +1330,10 @@ store_gateway_client:
 # all responded. Ignored if -querier.minimize-ingester-requests is not enabled.
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
 [minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
+
+# (experimental) PromQL engine to use, either 'standard' or 'streaming'
+# CLI flag: -querier.promql-engine
+[promql_engine: <string> | default = "standard"]
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
@@ -1509,6 +1517,11 @@ results_cache:
 # (experimental) True to enable sharding of active series queries.
 # CLI flag: -query-frontend.shard-active-series-queries
 [shard_active_series_queries: <boolean> | default = false]
+
+# (experimental) Set to true to use the zero-allocation response decoder for
+# active series queries.
+# CLI flag: -query-frontend.use-active-series-decoder
+[use_active_series_decoder: <boolean> | default = false]
 
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
@@ -1722,10 +1735,6 @@ alertmanager_client:
   # Allowed values:
   #
   # Secure Ciphers:
-  # - TLS_RSA_WITH_AES_128_CBC_SHA
-  # - TLS_RSA_WITH_AES_256_CBC_SHA
-  # - TLS_RSA_WITH_AES_128_GCM_SHA256
-  # - TLS_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
   # - TLS_CHACHA20_POLY1305_SHA256
@@ -1743,7 +1752,11 @@ alertmanager_client:
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
   # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
   # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
   # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2199,10 +2212,6 @@ alertmanager_client:
   # Allowed values:
   #
   # Secure Ciphers:
-  # - TLS_RSA_WITH_AES_128_CBC_SHA
-  # - TLS_RSA_WITH_AES_256_CBC_SHA
-  # - TLS_RSA_WITH_AES_128_GCM_SHA256
-  # - TLS_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
   # - TLS_CHACHA20_POLY1305_SHA256
@@ -2220,7 +2229,11 @@ alertmanager_client:
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
   # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
   # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
   # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2470,10 +2483,6 @@ backoff_config:
 # Allowed values:
 #
 # Secure Ciphers:
-# - TLS_RSA_WITH_AES_128_CBC_SHA
-# - TLS_RSA_WITH_AES_256_CBC_SHA
-# - TLS_RSA_WITH_AES_128_GCM_SHA256
-# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
 # - TLS_CHACHA20_POLY1305_SHA256
@@ -2491,7 +2500,11 @@ backoff_config:
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_RSA_WITH_AES_128_CBC_SHA
+# - TLS_RSA_WITH_AES_256_CBC_SHA
 # - TLS_RSA_WITH_AES_128_CBC_SHA256
+# - TLS_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2627,10 +2640,6 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 # Allowed values:
 #
 # Secure Ciphers:
-# - TLS_RSA_WITH_AES_128_CBC_SHA
-# - TLS_RSA_WITH_AES_256_CBC_SHA
-# - TLS_RSA_WITH_AES_128_GCM_SHA256
-# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
 # - TLS_CHACHA20_POLY1305_SHA256
@@ -2648,7 +2657,11 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_RSA_WITH_AES_128_CBC_SHA
+# - TLS_RSA_WITH_AES_256_CBC_SHA
 # - TLS_RSA_WITH_AES_128_CBC_SHA256
+# - TLS_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2884,10 +2897,6 @@ The `memberlist` block configures the Gossip memberlist.
 # Allowed values:
 #
 # Secure Ciphers:
-# - TLS_RSA_WITH_AES_128_CBC_SHA
-# - TLS_RSA_WITH_AES_256_CBC_SHA
-# - TLS_RSA_WITH_AES_128_GCM_SHA256
-# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
 # - TLS_CHACHA20_POLY1305_SHA256
@@ -2905,7 +2914,11 @@ The `memberlist` block configures the Gossip memberlist.
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_RSA_WITH_AES_128_CBC_SHA
+# - TLS_RSA_WITH_AES_256_CBC_SHA
 # - TLS_RSA_WITH_AES_128_CBC_SHA256
+# - TLS_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -3112,26 +3125,26 @@ The `limits` block configures default and per-tenant limits imposed by component
 [separate_metrics_group_label: <string> | default = ""]
 
 # Maximum number of chunks that can be fetched in a single query from ingesters
-# and long-term storage. This limit is enforced in the querier, ruler and
+# and store-gateways. This limit is enforced in the querier, ruler and
 # store-gateway. 0 to disable.
 # CLI flag: -querier.max-fetched-chunks-per-query
 [max_fetched_chunks_per_query: <int> | default = 2000000]
 
 # (experimental) Maximum number of chunks estimated to be fetched in a single
-# query from ingesters and long-term storage, as a multiple of
+# query from ingesters and store-gateways, as a multiple of
 # -querier.max-fetched-chunks-per-query. This limit is enforced in the querier.
 # Must be greater than or equal to 1, or 0 to disable.
 # CLI flag: -querier.max-estimated-fetched-chunks-per-query-multiplier
 [max_estimated_fetched_chunks_per_query_multiplier: <float> | default = 0]
 
 # The maximum number of unique series for which a query can fetch samples from
-# each ingesters and storage. This limit is enforced in the querier, ruler and
+# ingesters and store-gateways. This limit is enforced in the querier, ruler and
 # store-gateway. 0 to disable
 # CLI flag: -querier.max-fetched-series-per-query
 [max_fetched_series_per_query: <int> | default = 0]
 
-# The maximum size of all chunks in bytes that a query can fetch from each
-# ingester and storage. This limit is enforced in the querier and ruler. 0 to
+# The maximum size of all chunks in bytes that a query can fetch from ingesters
+# and store-gateways. This limit is enforced in the querier and ruler. 0 to
 # disable.
 # CLI flag: -querier.max-fetched-chunk-bytes-per-query
 [max_fetched_chunk_bytes_per_query: <int> | default = 0]
@@ -4262,6 +4275,19 @@ sharding_ring:
   # Unregister from the ring upon clean shutdown.
   # CLI flag: -store-gateway.sharding-ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
+
+# (advanced) Comma separated list of tenants that can be loaded by the
+# store-gateway. If specified, only blocks for these tenants will be loaded by
+# the store-gateway, otherwise all tenants can be loaded. Subject to sharding.
+# CLI flag: -store-gateway.enabled-tenants
+[enabled_tenants: <string> | default = ""]
+
+# (advanced) Comma separated list of tenants that cannot be loaded by the
+# store-gateway. If specified, and the store-gateway would normally load a given
+# tenant for (via -store-gateway.enabled-tenants or sharding), it will be
+# ignored instead.
+# CLI flag: -store-gateway.disabled-tenants
+[disabled_tenants: <string> | default = ""]
 ```
 
 ### memcached
@@ -4367,10 +4393,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # Allowed values:
 #
 # Secure Ciphers:
-# - TLS_RSA_WITH_AES_128_CBC_SHA
-# - TLS_RSA_WITH_AES_256_CBC_SHA
-# - TLS_RSA_WITH_AES_128_GCM_SHA256
-# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
 # - TLS_CHACHA20_POLY1305_SHA256
@@ -4388,7 +4410,11 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_RSA_WITH_AES_128_CBC_SHA
+# - TLS_RSA_WITH_AES_256_CBC_SHA
 # - TLS_RSA_WITH_AES_128_CBC_SHA256
+# - TLS_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -4524,10 +4550,6 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 # Allowed values:
 #
 # Secure Ciphers:
-# - TLS_RSA_WITH_AES_128_CBC_SHA
-# - TLS_RSA_WITH_AES_256_CBC_SHA
-# - TLS_RSA_WITH_AES_128_GCM_SHA256
-# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
 # - TLS_CHACHA20_POLY1305_SHA256
@@ -4545,7 +4567,11 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_RSA_WITH_AES_128_CBC_SHA
+# - TLS_RSA_WITH_AES_256_CBC_SHA
 # - TLS_RSA_WITH_AES_128_CBC_SHA256
+# - TLS_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
 # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
@@ -4610,6 +4636,11 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # are v1 or v2. Default is unset.
 # CLI flag: -<prefix>.s3.list-objects-version
 [list_objects_version: <string> | default = ""]
+
+# (advanced) Bucket lookup style type, used to access bucket in S3-compatible
+# service. Default is auto. Supported values are: auto, path, virtual-hosted.
+# CLI flag: -<prefix>.s3.bucket-lookup-type
+[bucket_lookup_type: <string> | default = "auto"]
 
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:

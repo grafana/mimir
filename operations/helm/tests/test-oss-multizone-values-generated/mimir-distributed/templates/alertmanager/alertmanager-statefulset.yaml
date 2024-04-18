@@ -59,10 +59,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -86,9 +82,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-multizone-values
             app.kubernetes.io/component: alertmanager
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -217,10 +211,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -244,9 +234,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-multizone-values
             app.kubernetes.io/component: alertmanager
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -375,10 +363,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -402,9 +386,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-multizone-values
             app.kubernetes.io/component: alertmanager
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:

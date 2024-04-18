@@ -341,7 +341,7 @@
   // Rollout operator.
   //
 
-  local rollout_operator_enabled = $._config.multi_zone_ingester_enabled || $._config.multi_zone_store_gateway_enabled,
+  local rollout_operator_enabled = $._config.multi_zone_ingester_enabled || $._config.multi_zone_store_gateway_enabled || $._config.cortex_compactor_concurrent_rollout_enabled,
 
   rollout_operator_args:: {
     'kubernetes.namespace': $._config.namespace,

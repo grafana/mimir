@@ -83,7 +83,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(mock.Arguments) {
 			// Cancel the worker context while the query execution is in progress.
 			workerCancel()
 
@@ -405,7 +405,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 
 			requestHandler.On("Handle", mock.Anything, mock.Anything).Run(
-				func(arguments mock.Arguments) { cancel() },
+				func(mock.Arguments) { cancel() },
 			).Return(returnResponses(responses)())
 
 			reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")

@@ -135,6 +135,14 @@ This prevents false positives due to racing with ingestion, and, if the query se
 If either Mimir cluster is running with a non-default value of `-ruler.evaluation-delay-duration`, you should set `-proxy.compare-skip-recent-samples` to one minute more than the value of `-ruler.evaluation-delay-duration`.
 {{< /admonition >}}
 
+### Slow query log
+
+You can configure query-tee to log requests that take longer than the fastest backend by setting the flag `-proxy.log-slow-query-response-threshold`.
+
+The default value is `10s` which logs requests that are ten seconds slower than the fastest backend.
+
+To disable slow query logging, set `-proxy.log-slow-query-response-threshold` to `0`.
+
 ### Exported metrics
 
 The query-tee exposes the following Prometheus metrics at the `/metrics` endpoint listening on the port configured via the flag `-server.metrics-port`:
