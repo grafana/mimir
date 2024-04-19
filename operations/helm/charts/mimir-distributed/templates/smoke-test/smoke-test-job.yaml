@@ -37,20 +37,24 @@ spec:
         {{- toYaml .Values.smoke_test.initContainers | nindent 8 }}
       containers:
         - name: smoke-test
-          image: "{{ .Values.smoke_test.image.repository }}:{{ .Values.smoke_test.image.tag }}"
-          imagePullPolicy: {{ .Values.smoke_test.image.pullPolicy }}
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
+            - "-target=continuous-test"
+            - "-activity-tracker.filepath=/active-query-tracker/activity.log"
             - "-tests.smoke-test"
             - "-tests.write-endpoint={{ template "mimir.gatewayUrl" . }}"
             - "-tests.read-endpoint={{ template "mimir.gatewayUrl" . }}/prometheus"
             - "-tests.tenant-id={{ .Values.smoke_test.tenantId }}"
             - "-tests.write-read-series-test.num-series=1000"
             - "-tests.write-read-series-test.max-query-age=48h"
-            - "-server.metrics-port={{ include "mimir.serverHttpListenPort" . }}"
+            - "-server.http-listen-port={{ include "mimir.serverHttpListenPort" . }}"
             {{- range $key, $value := .Values.smoke_test.extraArgs }}
             - "-{{ $key }}={{ $value }}"
             {{- end }}
           volumeMounts:
+            - name: active-queries
+              mountPath: /active-query-tracker
             {{- if .Values.smoke_test.extraVolumeMounts }}
               {{ toYaml .Values.smoke_test.extraVolumeMounts | nindent 12 }}
             {{- end }}
@@ -70,6 +74,8 @@ spec:
             {{- end }}
       restartPolicy: OnFailure
       volumes:
+        - name: active-queries
+          emptyDir: {}
         {{- if .Values.smoke_test.extraVolumes }}
         {{ toYaml .Values.smoke_test.extraVolumes | nindent 8 }}
         {{- end }}
