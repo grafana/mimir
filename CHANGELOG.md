@@ -35,6 +35,7 @@
 * [BUGFIX] Do not wrap error message with `sampled 1/<frequency>` if it's not actually sampled. #7784
 * [BUGFIX] Store-gateway: do not track cortex_querier_blocks_consistency_checks_failed_total metric if query has been canceled or interrued due to any error not related to blocks consistency check failed. #7752
 * [BUGFIX] Ingester: ignore instances with no tokens when calculating local limits to prevent discards during ingester scale-up #7881
+* [ENHANCEMENT] Expose TLS configiration for the S3 backend client. #2652
 
 ### Mixin
 
