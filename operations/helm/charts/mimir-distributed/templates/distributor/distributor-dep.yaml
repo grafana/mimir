@@ -161,10 +161,10 @@ spec:
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
         {{- if .Values.distributor.extraVolumes }}
-        {{ toYaml .Values.distributor.extraVolumes | indent 8}}
+        {{- toYaml .Values.distributor.extraVolumes | nindent 8}}
         {{- end }}
         {{- if .Values.global.extraVolumes }}
-        {{ toYaml .Values.global.extraVolumes | indent 8}}
+        {{- toYaml .Values.global.extraVolumes | nindent 8}}
         {{- end }}
         - name: storage
           emptyDir: {}
