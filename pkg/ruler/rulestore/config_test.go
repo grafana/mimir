@@ -24,7 +24,7 @@ func TestIsDefaults(t *testing.T) {
 			expected: true,
 		},
 		"should return false if the config contains zero values": {
-			setup:    func(cfg *Config) {},
+			setup:    func(*Config) {},
 			expected: false,
 		},
 		"should return false if the config contains default values and some overrides": {
@@ -33,6 +33,13 @@ func TestIsDefaults(t *testing.T) {
 				cfg.Backend = "local"
 			},
 			expected: false,
+		},
+		"should return true if only a non-config field has changed": {
+			setup: func(cfg *Config) {
+				flagext.DefaultValues(cfg)
+				cfg.Middlewares = append(cfg.Middlewares, nil)
+			},
+			expected: true,
 		},
 	}
 

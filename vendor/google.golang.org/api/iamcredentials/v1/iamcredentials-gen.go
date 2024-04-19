@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC.
+// Copyright 2024 Google LLC.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -8,33 +8,46 @@
 //
 // For product documentation, see: https://cloud.google.com/iam/docs/creating-short-lived-service-account-credentials
 //
-// Creating a client
+// # Library status
+//
+// These client libraries are officially supported by Google. However, this
+// library is considered complete and is in maintenance mode. This means
+// that we will address critical bugs and security issues but will not add
+// any new features.
+//
+// When possible, we recommend using our newer
+// [Cloud Client Libraries for Go](https://pkg.go.dev/cloud.google.com/go)
+// that are still actively being worked and iterated on.
+//
+// # Creating a client
 //
 // Usage example:
 //
-//   import "google.golang.org/api/iamcredentials/v1"
-//   ...
-//   ctx := context.Background()
-//   iamcredentialsService, err := iamcredentials.NewService(ctx)
+//	import "google.golang.org/api/iamcredentials/v1"
+//	...
+//	ctx := context.Background()
+//	iamcredentialsService, err := iamcredentials.NewService(ctx)
 //
-// In this example, Google Application Default Credentials are used for authentication.
+// In this example, Google Application Default Credentials are used for
+// authentication. For information on how to create and obtain Application
+// Default Credentials, see https://developers.google.com/identity/protocols/application-default-credentials.
 //
-// For information on how to create and obtain Application Default Credentials, see https://developers.google.com/identity/protocols/application-default-credentials.
+// # Other authentication options
 //
-// Other authentication options
+// To use an API key for authentication (note: some APIs do not support API
+// keys), use [google.golang.org/api/option.WithAPIKey]:
 //
-// To use an API key for authentication (note: some APIs do not support API keys), use option.WithAPIKey:
+//	iamcredentialsService, err := iamcredentials.NewService(ctx, option.WithAPIKey("AIza..."))
 //
-//   iamcredentialsService, err := iamcredentials.NewService(ctx, option.WithAPIKey("AIza..."))
+// To use an OAuth token (e.g., a user token obtained via a three-legged OAuth
+// flow, use [google.golang.org/api/option.WithTokenSource]:
 //
-// To use an OAuth token (e.g., a user token obtained via a three-legged OAuth flow), use option.WithTokenSource:
+//	config := &oauth2.Config{...}
+//	// ...
+//	token, err := config.Exchange(ctx, ...)
+//	iamcredentialsService, err := iamcredentials.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx, token)))
 //
-//   config := &oauth2.Config{...}
-//   // ...
-//   token, err := config.Exchange(ctx, ...)
-//   iamcredentialsService, err := iamcredentials.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx, token)))
-//
-// See https://godoc.org/google.golang.org/api/option/ for details on options.
+// See [google.golang.org/api/option.ClientOption] for details on options.
 package iamcredentials // import "google.golang.org/api/iamcredentials/v1"
 
 import (
@@ -71,12 +84,15 @@ var _ = errors.New
 var _ = strings.Replace
 var _ = context.Canceled
 var _ = internaloption.WithDefaultEndpoint
+var _ = internal.Version
 
 const apiId = "iamcredentials:v1"
 const apiName = "iamcredentials"
 const apiVersion = "v1"
 const basePath = "https://iamcredentials.googleapis.com/"
+const basePathTemplate = "https://iamcredentials.UNIVERSE_DOMAIN/"
 const mtlsBasePath = "https://iamcredentials.mtls.googleapis.com/"
+const defaultUniverseDomain = "googleapis.com"
 
 // OAuth2 scopes used by this API.
 const (
@@ -93,7 +109,9 @@ func NewService(ctx context.Context, opts ...option.ClientOption) (*Service, err
 	// NOTE: prepend, so we don't override user-specified scopes.
 	opts = append([]option.ClientOption{scopesOption}, opts...)
 	opts = append(opts, internaloption.WithDefaultEndpoint(basePath))
+	opts = append(opts, internaloption.WithDefaultEndpointTemplate(basePathTemplate))
 	opts = append(opts, internaloption.WithDefaultMTLSEndpoint(mtlsBasePath))
+	opts = append(opts, internaloption.WithDefaultUniverseDomain(defaultUniverseDomain))
 	client, endpoint, err := htransport.NewClient(ctx, opts...)
 	if err != nil {
 		return nil, err
@@ -519,11 +537,11 @@ type ProjectsServiceAccountsGenerateAccessTokenCall struct {
 // GenerateAccessToken: Generates an OAuth 2.0 access token for a
 // service account.
 //
-// - name: The resource name of the service account for which the
-//   credentials are requested, in the following format:
-//   `projects/-/serviceAccounts/{ACCOUNT_EMAIL_OR_UNIQUEID}`. The `-`
-//   wildcard character is required; replacing it with a project ID is
-//   invalid.
+//   - name: The resource name of the service account for which the
+//     credentials are requested, in the following format:
+//     `projects/-/serviceAccounts/{ACCOUNT_EMAIL_OR_UNIQUEID}`. The `-`
+//     wildcard character is required; replacing it with a project ID is
+//     invalid.
 func (r *ProjectsServiceAccountsService) GenerateAccessToken(name string, generateaccesstokenrequest *GenerateAccessTokenRequest) *ProjectsServiceAccountsGenerateAccessTokenCall {
 	c := &ProjectsServiceAccountsGenerateAccessTokenCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -598,17 +616,17 @@ func (c *ProjectsServiceAccountsGenerateAccessTokenCall) Do(opts ...googleapi.Ca
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &GenerateAccessTokenResponse{
 		ServerResponse: googleapi.ServerResponse{
@@ -666,11 +684,11 @@ type ProjectsServiceAccountsGenerateIdTokenCall struct {
 // GenerateIdToken: Generates an OpenID Connect ID token for a service
 // account.
 //
-// - name: The resource name of the service account for which the
-//   credentials are requested, in the following format:
-//   `projects/-/serviceAccounts/{ACCOUNT_EMAIL_OR_UNIQUEID}`. The `-`
-//   wildcard character is required; replacing it with a project ID is
-//   invalid.
+//   - name: The resource name of the service account for which the
+//     credentials are requested, in the following format:
+//     `projects/-/serviceAccounts/{ACCOUNT_EMAIL_OR_UNIQUEID}`. The `-`
+//     wildcard character is required; replacing it with a project ID is
+//     invalid.
 func (r *ProjectsServiceAccountsService) GenerateIdToken(name string, generateidtokenrequest *GenerateIdTokenRequest) *ProjectsServiceAccountsGenerateIdTokenCall {
 	c := &ProjectsServiceAccountsGenerateIdTokenCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -745,17 +763,17 @@ func (c *ProjectsServiceAccountsGenerateIdTokenCall) Do(opts ...googleapi.CallOp
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &GenerateIdTokenResponse{
 		ServerResponse: googleapi.ServerResponse{
@@ -813,11 +831,11 @@ type ProjectsServiceAccountsSignBlobCall struct {
 // SignBlob: Signs a blob using a service account's system-managed
 // private key.
 //
-// - name: The resource name of the service account for which the
-//   credentials are requested, in the following format:
-//   `projects/-/serviceAccounts/{ACCOUNT_EMAIL_OR_UNIQUEID}`. The `-`
-//   wildcard character is required; replacing it with a project ID is
-//   invalid.
+//   - name: The resource name of the service account for which the
+//     credentials are requested, in the following format:
+//     `projects/-/serviceAccounts/{ACCOUNT_EMAIL_OR_UNIQUEID}`. The `-`
+//     wildcard character is required; replacing it with a project ID is
+//     invalid.
 func (r *ProjectsServiceAccountsService) SignBlob(name string, signblobrequest *SignBlobRequest) *ProjectsServiceAccountsSignBlobCall {
 	c := &ProjectsServiceAccountsSignBlobCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -892,17 +910,17 @@ func (c *ProjectsServiceAccountsSignBlobCall) Do(opts ...googleapi.CallOption) (
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &SignBlobResponse{
 		ServerResponse: googleapi.ServerResponse{
@@ -960,11 +978,11 @@ type ProjectsServiceAccountsSignJwtCall struct {
 // SignJwt: Signs a JWT using a service account's system-managed private
 // key.
 //
-// - name: The resource name of the service account for which the
-//   credentials are requested, in the following format:
-//   `projects/-/serviceAccounts/{ACCOUNT_EMAIL_OR_UNIQUEID}`. The `-`
-//   wildcard character is required; replacing it with a project ID is
-//   invalid.
+//   - name: The resource name of the service account for which the
+//     credentials are requested, in the following format:
+//     `projects/-/serviceAccounts/{ACCOUNT_EMAIL_OR_UNIQUEID}`. The `-`
+//     wildcard character is required; replacing it with a project ID is
+//     invalid.
 func (r *ProjectsServiceAccountsService) SignJwt(name string, signjwtrequest *SignJwtRequest) *ProjectsServiceAccountsSignJwtCall {
 	c := &ProjectsServiceAccountsSignJwtCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -1039,17 +1057,17 @@ func (c *ProjectsServiceAccountsSignJwtCall) Do(opts ...googleapi.CallOption) (*
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &SignJwtResponse{
 		ServerResponse: googleapi.ServerResponse{

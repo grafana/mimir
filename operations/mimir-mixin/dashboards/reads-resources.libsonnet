@@ -3,125 +3,144 @@ local filename = 'mimir-reads-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == 'cc86fd5aa9301c6528986572ad974db9' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Reads resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
+    .addRow(
+      $.row('Summary')
+      .addPanel(
+        $.timeseriesPanel('CPU') +
+        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
+        $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Memory (workingset)') +
+        $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
+        $.stack +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('read') +
+        $.stack,
+      )
+    )
     .addRowIf(
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', $._config.job_names.gateway),
+        $.containerCPUUsagePanelByComponent('gateway'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', $._config.job_names.gateway),
+        $.containerMemoryWorkingSetPanelByComponent('gateway'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.gateway),
+        $.containerGoHeapInUsePanelByComponent('gateway'),
       )
     )
     .addRow(
       $.row('Query-frontend')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'query-frontend'),
+        $.containerCPUUsagePanelByComponent('query_frontend'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'query-frontend'),
+        $.containerMemoryWorkingSetPanelByComponent('query_frontend'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.query_frontend),
+        $.containerGoHeapInUsePanelByComponent('query_frontend'),
       )
     )
     .addRow(
       $.row('Query-scheduler')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'query-scheduler'),
+        $.containerCPUUsagePanelByComponent('query_scheduler'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'query-scheduler'),
+        $.containerMemoryWorkingSetPanelByComponent('query_scheduler'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.query_scheduler),
+        $.containerGoHeapInUsePanelByComponent('query_scheduler'),
       )
     )
     .addRow(
       $.row('Querier')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'querier'),
+        $.containerCPUUsagePanelByComponent('querier'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'querier'),
+        $.containerMemoryWorkingSetPanelByComponent('querier'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.querier),
+        $.containerGoHeapInUsePanelByComponent('querier'),
       )
     )
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'ingester'),
+        $.containerCPUUsagePanelByComponent('ingester'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ingester),
+        $.containerGoHeapInUsePanelByComponent('ingester'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerMemoryRSSPanel('Memory (RSS)', 'ingester'),
+        $.containerMemoryRSSPanelByComponent('ingester'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ingester'),
+        $.containerMemoryWorkingSetPanelByComponent('ingester'),
       )
     )
     .addRow(
       $.row('Ruler')
       .addPanel(
-        $.panel('Rules') +
+        $.timeseriesPanel('Rules') +
         $.queryPanel(
           'sum by(%s) (cortex_prometheus_rule_group_rules{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler)],
           '{{%s}}' % $._config.per_instance_label
         ),
       )
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'ruler'),
+        $.containerCPUUsagePanelByComponent('ruler'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ruler'),
+        $.containerMemoryWorkingSetPanelByComponent('ruler'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ruler),
+        $.containerGoHeapInUsePanelByComponent('ruler'),
       )
     )
     .addRow(
       $.row('Store-gateway')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'store-gateway'),
+        $.containerCPUUsagePanelByComponent('store_gateway'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.store_gateway),
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.containerMemoryRSSPanel('Memory (RSS)', 'store-gateway'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'store-gateway'),
+        $.containerGoHeapInUsePanelByComponent('store_gateway'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel('Disk writes', 'store-gateway'),
+        $.containerMemoryRSSPanelByComponent('store_gateway'),
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk reads', 'store-gateway'),
+        $.containerMemoryWorkingSetPanelByComponent('store_gateway'),
+      )
+    )
+    .addRow(
+      $.row('')
+      .addPanel(
+        $.containerDiskWritesPanelByComponent('store_gateway'),
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', 'store-gateway'),
+        $.containerDiskReadsPanelByComponent('store_gateway'),
+      )
+      .addPanel(
+        $.containerDiskSpaceUtilizationPanelByComponent('store_gateway'),
       )
     ) + {
       templating+: {

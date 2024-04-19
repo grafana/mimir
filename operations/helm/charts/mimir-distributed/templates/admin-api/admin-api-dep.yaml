@@ -19,9 +19,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "admin-api" "memberlist" true) | nindent 8 }}
-        {{- with .Values.admin_api.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "admin-api") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
@@ -31,11 +28,11 @@ spec:
       priorityClassName: {{ .Values.admin_api.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.admin_api.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "admin-api") | nindent 8 }}
+      {{- with .Values.admin_api.initContainers }}
       initContainers:
-        {{- with .Values.admin_api.initContainers }}
         {{- toYaml . | nindent 8 }}
-        {{- end }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -66,6 +63,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.admin_api.persistence.subPath }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -91,6 +90,11 @@ spec:
             {{- with .Values.admin_api.env }}
               {{ toYaml . | nindent 12 }}
             {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.admin_api }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
+            {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -101,12 +105,19 @@ spec:
         {{- with .Values.admin_api.extraContainers }}
         {{ toYaml . | nindent 8 }}
         {{- end }}
+      {{- with .Values.admin_api.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.admin_api.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.admin_api.affinity }}
       affinity:
-        {{- toYaml .Values.admin_api.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "admin-api") | nindent 6 }}
+      {{- with .Values.admin_api.tolerations }}
       tolerations:
-        {{- toYaml .Values.admin_api.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.admin_api.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -121,5 +132,7 @@ spec:
           secret:
             secretName: {{ tpl .Values.license.secretName . }}
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
 {{- end -}}

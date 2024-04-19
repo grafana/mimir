@@ -19,18 +19,17 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
-	"github.com/pkg/errors"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
-	util_log "github.com/grafana/mimir/pkg/util/log"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
 func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, user, cluster, replica string, expected time.Time) {
@@ -252,11 +251,11 @@ func TestCheckReplicaMultiCluster(t *testing.T) {
 	metrics, err := reg.Gather()
 	require.NoError(t, err)
 
-	assert.Equal(t, uint64(0), util.GetSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
+	assert.Equal(t, uint64(0), getSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "5.*"),
 	}))
-	assert.Greater(t, util.GetSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
+	assert.Greater(t, getSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "2.*"),
 	}), uint64(0))
@@ -326,11 +325,11 @@ func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
 	metrics, err := reg.Gather()
 	require.NoError(t, err)
 
-	assert.Equal(t, uint64(0), util.GetSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
+	assert.Equal(t, uint64(0), getSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "5.*"),
 	}))
-	assert.Greater(t, util.GetSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
+	assert.Greater(t, getSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "2.*"),
 	}), uint64(0))
@@ -602,7 +601,8 @@ func TestHAClustersLimit(t *testing.T) {
 	assert.NoError(t, t1.checkReplica(context.Background(), userID, "b", "b1", now))
 	waitForClustersUpdate(t, 2, t1, userID)
 
-	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "c", "c1", now), tooManyClustersError{limit: 2}.Error())
+	expectedErr := newTooManyClustersError(2)
+	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "c", "c1", now), expectedErr.Error())
 
 	// Move time forward, and make sure that checkReplica for existing cluster works fine.
 	now = now.Add(5 * time.Second) // higher than "update timeout"
@@ -627,7 +627,8 @@ func TestHAClustersLimit(t *testing.T) {
 	waitForClustersUpdate(t, 2, t1, userID)
 
 	// But yet another cluster doesn't.
-	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "a", "a2", now), tooManyClustersError{limit: 2}.Error())
+	expectedErr = newTooManyClustersError(2)
+	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "a", "a2", now), expectedErr.Error())
 
 	now = now.Add(5 * time.Second)
 
@@ -648,34 +649,6 @@ func waitForClustersUpdate(t *testing.T, expected int, tr *haTracker, userID str
 
 		return len(tr.clusters[userID])
 	})
-}
-
-func TestTooManyClustersError(t *testing.T) {
-	var err error = tooManyClustersError{limit: 10}
-	assert.True(t, errors.Is(err, tooManyClustersError{}))
-	assert.True(t, errors.Is(err, &tooManyClustersError{}))
-
-	err = &tooManyClustersError{limit: 20}
-	assert.True(t, errors.Is(err, tooManyClustersError{}))
-	assert.True(t, errors.Is(err, &tooManyClustersError{}))
-
-	err = replicasNotMatchError{replica: "a", elected: "b"}
-	assert.False(t, errors.Is(err, tooManyClustersError{}))
-	assert.False(t, errors.Is(err, &tooManyClustersError{}))
-}
-
-func TestReplicasNotMatchError(t *testing.T) {
-	var err error = replicasNotMatchError{replica: "a", elected: "b"}
-	assert.True(t, errors.Is(err, replicasNotMatchError{}))
-	assert.True(t, errors.Is(err, &replicasNotMatchError{}))
-
-	err = &replicasNotMatchError{replica: "a", elected: "b"}
-	assert.True(t, errors.Is(err, replicasNotMatchError{}))
-	assert.True(t, errors.Is(err, &replicasNotMatchError{}))
-
-	err = tooManyClustersError{limit: 10}
-	assert.False(t, errors.Is(err, replicasNotMatchError{}))
-	assert.False(t, errors.Is(err, &replicasNotMatchError{}))
 }
 
 type trackerLimits struct {
@@ -751,6 +724,7 @@ func TestCheckReplicaCleanup(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	reg := prometheus.NewPedanticRegistry()
+	logger := utiltest.NewTestingLogger(t)
 
 	kvStore, closer := consul.NewInMemoryClient(GetReplicaDescCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -762,7 +736,7 @@ func TestCheckReplicaCleanup(t *testing.T) {
 		UpdateTimeout:          1 * time.Second,
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        time.Second,
-	}, trackerLimits{maxClusters: 100}, reg, util_log.Logger)
+	}, trackerLimits{maxClusters: 100}, reg, logger)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -859,4 +833,41 @@ func checkReplicaDeletionState(t *testing.T, duration time.Duration, c *haTracke
 		markedForDeletion := val.(*ReplicaDesc).DeletedAt > 0
 		require.Equal(t, expectedMarkedForDeletion, markedForDeletion, "KV entry marked for deletion")
 	}
+}
+
+// fromLabelPairsToLabels converts dto.LabelPair into labels.Labels.
+func fromLabelPairsToLabels(pairs []*dto.LabelPair) labels.Labels {
+	builder := labels.NewScratchBuilder(len(pairs))
+	for _, pair := range pairs {
+		builder.Add(pair.GetName(), pair.GetValue())
+	}
+	builder.Sort()
+	return builder.Labels()
+}
+
+// getSumOfHistogramSampleCount returns the sum of samples count of histograms matching the provided metric name
+// and optional label matchers. Returns 0 if no metric matches.
+func getSumOfHistogramSampleCount(families []*dto.MetricFamily, metricName string, matchers labels.Selector) uint64 {
+	sum := uint64(0)
+
+	for _, metric := range families {
+		if metric.GetName() != metricName {
+			continue
+		}
+
+		if metric.GetType() != dto.MetricType_HISTOGRAM {
+			continue
+		}
+
+		for _, series := range metric.GetMetric() {
+			if !matchers.Matches(fromLabelPairsToLabels(series.GetLabel())) {
+				continue
+			}
+
+			histogram := series.GetHistogram()
+			sum += histogram.GetSampleCount()
+		}
+	}
+
+	return sum
 }

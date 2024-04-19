@@ -1,0 +1,3 @@
+{{- if .Values.continuous_test.enabled -}}
+{{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "continuous-test") }}
+{{- end -}}

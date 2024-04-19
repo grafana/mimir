@@ -1,0 +1,35 @@
+---
+# Source: mimir-distributed/templates/query-scheduler/query-scheduler-servmon.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: metamonitoring-values-mimir-query-scheduler
+  namespace: "citestns"
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/component: query-scheduler
+    app.kubernetes.io/managed-by: Helm
+spec:
+  namespaceSelector:
+    matchNames:
+    - citestns
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: metamonitoring-values
+      app.kubernetes.io/component: query-scheduler
+    matchExpressions:
+      - key: prometheus.io/service-monitor
+        operator: NotIn
+        values:
+          - "false"
+  endpoints:
+    - port: http-metrics
+      relabelings:
+        - sourceLabels: [job]
+          replacement: "citestns/query-scheduler"
+          targetLabel: job
+        - replacement: "metamonitoring-values"
+          targetLabel: cluster
+      scheme: http

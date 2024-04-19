@@ -6,12 +6,14 @@
 package analyze
 
 type MetricsInPrometheus struct {
-	TotalActiveSeries      int `json:"total_active_series"`
-	InUseActiveSeries      int `json:"in_use_active_series"`
-	AdditionalActiveSeries int `json:"additional_active_series"`
+	TotalActiveSeries      uint64 `json:"total_active_series"`
+	InUseActiveSeries      uint64 `json:"in_use_active_series"`
+	AdditionalActiveSeries uint64 `json:"additional_active_series"`
 
 	InUseMetricCounts      []MetricCount `json:"in_use_metric_counts"`
 	AdditionalMetricCounts []MetricCount `json:"additional_metric_counts"`
+
+	Errors []string `json:"errors"`
 }
 
 type MetricCount struct {

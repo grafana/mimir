@@ -15,11 +15,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
@@ -30,6 +30,7 @@ func setupFrontend(t *testing.T, config Config) (*Frontend, error) {
 
 	frontend, err := New(config, limits{queriers: 3}, logger, nil)
 	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), frontend))
 
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), frontend))
@@ -170,7 +171,7 @@ func (p *processServerMock) Recv() (*frontendv1pb.ClientToFrontend, error) {
 
 func (p *processServerMock) SetHeader(_ metadata.MD) error  { return nil }
 func (p *processServerMock) SendHeader(_ metadata.MD) error { return nil }
-func (p *processServerMock) SetTrailer(md metadata.MD)      {}
+func (p *processServerMock) SetTrailer(_ metadata.MD)       {}
 func (p *processServerMock) Context() context.Context       { return p.ctx }
-func (p *processServerMock) SendMsg(m interface{}) error    { return nil }
-func (p *processServerMock) RecvMsg(m interface{}) error    { return nil }
+func (p *processServerMock) SendMsg(_ interface{}) error    { return nil }
+func (p *processServerMock) RecvMsg(_ interface{}) error    { return nil }

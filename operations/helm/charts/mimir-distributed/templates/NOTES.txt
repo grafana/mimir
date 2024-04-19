@@ -1,11 +1,12 @@
-{{- $gateway := .Values.nginx }}
-{{- if .Values.enterprise.enabled }}
-{{- $gateway = .Values.gateway }}
+{{ if .Values.enterprise.enabled }}
 Welcome to Grafana Enterprise Metrics!
 {{- else }}
 Welcome to Grafana Mimir!
 {{- end }}
-
+{{- $gateway := .Values.nginx }}
+{{- if eq (include "mimir.gateway.isEnabled" .) "true" }}
+{{- $gateway = .Values.gateway }}
+{{- end }}
 Remote write endpoints for Prometheus or Grafana Agent:
 {{ with $gateway.ingress -}}
 {{- if .enabled -}}
@@ -13,11 +14,11 @@ From outside the cluster via ingress:
 {{ range .hosts }}  http{{ if .tls }}s{{ end }}://{{ .host }}/api/v1/push
 {{ end }}
 {{- else -}}
-Ingress is not enabled, see the {{ if $.Values.enterprise.enabled }}gateway{{ else }}nginx{{ end }}.ingress values.
+Ingress is not enabled, see the {{ if eq (include "mimir.gateway.isEnabled" $) "true" }}gateway{{ else }}nginx{{ end }}.ingress values.
 {{- end -}}
 {{- end }}
 From inside the cluster:
-  http://{{ include "mimir.fullname" $ }}-{{ if .Values.enterprise.enabled }}gateway{{ else }}nginx{{ end }}.{{ .Release.Namespace }}.svc:{{ $gateway.service.port | default "80" }}/api/v1/push
+  {{ include "mimir.remoteWriteUrl.inCluster" $ }}
 
 Read address, Grafana data source (Prometheus) URL:
 {{ with $gateway.ingress -}}
@@ -26,8 +27,10 @@ From outside the cluster via ingress:
 {{ range .hosts }}  http{{ if .tls }}s{{ end }}://{{ .host }}{{ template "mimir.prometheusHttpPrefix" $ }}
 {{ end }}
 {{- else -}}
-Ingress is not enabled, see the {{ if $.Values.enterprise.enabled }}gateway{{ else }}nginx{{ end }}.ingress values.
+Ingress is not enabled, see the {{ if eq (include "mimir.gateway.isEnabled" $) "true" }}gateway{{ else }}nginx{{ end }}.ingress values.
 {{- end -}}
 {{- end }}
 From inside the cluster:
-  http://{{ include "mimir.fullname" $ }}-{{ if .Values.enterprise.enabled }}gateway{{ else }}nginx{{ end }}.{{ .Release.Namespace }}.svc:{{ $gateway.service.port | default "80" }}{{ template "mimir.prometheusHttpPrefix" $ }}
+  {{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
+
+**IMPORTANT**: Always consult CHANGELOG.md file at https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md and the deprecation list there to learn about breaking changes that require action during upgrade.

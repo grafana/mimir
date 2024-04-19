@@ -1,0 +1,8 @@
+alertmanager:
+  zoneAwareReplication:
+    enabled: true
+    migration:
+      enabled: true
+
+rollout_operator:
+  enabled: true

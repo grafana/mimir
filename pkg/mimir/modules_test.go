@@ -6,6 +6,7 @@
 package mimir
 
 import (
+	"context"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -13,9 +14,14 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/server"
+	hashivault "github.com/hashicorp/vault/api"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/server"
+
+	"github.com/grafana/mimir/pkg/vault"
 )
 
 func changeTargetConfig(c *Config) {
@@ -26,7 +32,7 @@ func TestAPIConfig(t *testing.T) {
 	actualCfg := newDefaultConfig()
 
 	mimir := &Mimir{
-		Server: &server.Server{},
+		Server: &server.Server{Registerer: prometheus.NewPedanticRegistry()},
 	}
 
 	for _, tc := range []struct {
@@ -145,7 +151,7 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			mimir := &Mimir{
-				Server: &server.Server{},
+				Server: &server.Server{Registerer: prometheus.NewPedanticRegistry()},
 				Cfg:    *testData.config,
 			}
 
@@ -153,9 +159,11 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 			require.NoError(t, err)
 
 			if testData.expectedInit {
-				assert.NotNil(t, mimir.RulerStorage)
+				assert.NotNil(t, mimir.RulerDirectStorage)
+				assert.NotNil(t, mimir.RulerCachedStorage)
 			} else {
-				assert.Nil(t, mimir.RulerStorage)
+				assert.Nil(t, mimir.RulerDirectStorage)
+				assert.Nil(t, mimir.RulerCachedStorage)
 			}
 		})
 	}
@@ -166,30 +174,34 @@ func TestMultiKVSetup(t *testing.T) {
 
 	for target, checkFn := range map[string]func(t *testing.T, c Config){
 		All: func(t *testing.T, c Config) {
-			require.NotNil(t, c.Distributor.DistributorRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.Compactor.ShardingRing.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.Ruler.Ring.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Compactor.ShardingRing.Common.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ruler.Ring.Common.KVStore.Multi.ConfigProvider)
 		},
 
 		Ruler: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.Ruler.Ring.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ruler.Ring.Common.KVStore.Multi.ConfigProvider)
 		},
 
 		AlertManager: func(t *testing.T, c Config) {
-			require.NotNil(t, c.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Alertmanager.ShardingRing.Common.KVStore.Multi.ConfigProvider)
 		},
 
 		Distributor: func(t *testing.T, c Config) {
-			require.NotNil(t, c.Distributor.DistributorRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider)
 		},
 
 		Ingester: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider)
 		},
 
 		StoreGateway: func(t *testing.T, c Config) {
@@ -199,15 +211,26 @@ func TestMultiKVSetup(t *testing.T) {
 		Querier: func(t *testing.T, c Config) {
 			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider)
 		},
 
 		Compactor: func(t *testing.T, c Config) {
-			require.NotNil(t, c.Compactor.ShardingRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Compactor.ShardingRing.Common.KVStore.Multi.ConfigProvider)
+		},
+
+		QueryScheduler: func(t *testing.T, c Config) {
+			require.NotNil(t, c.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider)
+		},
+
+		Backend: func(t *testing.T, c Config) {
+			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Compactor.ShardingRing.Common.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ruler.Ring.Common.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.OverridesExporter.Ring.Common.KVStore.Multi.ConfigProvider)
 		},
 	} {
 		t.Run(target, func(t *testing.T) {
-			prepareGlobalMetricsRegistry(t)
-
 			cfg := Config{}
 			flagext.DefaultValues(&cfg)
 			// Set to 0 to find any free port.
@@ -216,9 +239,9 @@ func TestMultiKVSetup(t *testing.T) {
 			cfg.Target = []string{target}
 
 			// Must be set, otherwise MultiKV config provider will not be set.
-			cfg.RuntimeConfig.LoadPath = filepath.Join(dir, "config.yaml")
+			cfg.RuntimeConfig.LoadPath = []string{filepath.Join(dir, "config.yaml")}
 
-			c, err := New(cfg)
+			c, err := New(cfg, prometheus.NewPedanticRegistry())
 			require.NoError(t, err)
 
 			_, err = c.ModuleManager.InitModuleServices(cfg.Target...)
@@ -228,4 +251,125 @@ func TestMultiKVSetup(t *testing.T) {
 			checkFn(t, c.Cfg)
 		})
 	}
+}
+
+type mockKVStore struct {
+	values map[string]mockValue
+}
+
+type mockValue struct {
+	secret *hashivault.KVSecret
+	err    error
+}
+
+func newMockKVStore() *mockKVStore {
+	return &mockKVStore{
+		values: map[string]mockValue{
+			"test/secret1": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo1",
+					},
+				},
+				err: nil,
+			},
+			"test/secret2": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo2",
+					},
+				},
+				err: nil,
+			},
+			"test/secret3": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo3",
+					},
+				},
+				err: nil,
+			},
+		},
+	}
+}
+
+func (m *mockKVStore) Get(_ context.Context, path string) (*hashivault.KVSecret, error) {
+	return m.values[path].secret, m.values[path].err
+}
+
+func TestInitVault(t *testing.T) {
+	cfg := Config{
+		Server: server.Config{
+			HTTPTLSConfig: server.TLSConfig{
+				TLSCertPath: "test/secret1",
+				TLSKeyPath:  "test/secret2",
+				ClientCAs:   "test/secret3",
+			},
+			GRPCTLSConfig: server.TLSConfig{
+				TLSCertPath: "test/secret1",
+				TLSKeyPath:  "test/secret2",
+				ClientCAs:   "test/secret3",
+			},
+		},
+		Vault: vault.Config{
+			Enabled: true,
+			Mock:    newMockKVStore(),
+		},
+	}
+
+	mimir := &Mimir{
+		Server: &server.Server{Registerer: prometheus.NewPedanticRegistry()},
+		Cfg:    cfg,
+	}
+
+	_, err := mimir.initVault()
+	require.NoError(t, err)
+
+	// Check KVStore
+	require.NotNil(t, mimir.Cfg.MemberlistKV.TCPTransport.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Distributor.HATrackerConfig.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Alertmanager.ShardingRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Compactor.ShardingRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Distributor.DistributorRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ingester.IngesterRing.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ingester.IngesterPartitionRing.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ruler.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.StoreGateway.ShardingRing.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.OverridesExporter.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
+
+	// Check Redis Clients
+	require.NotNil(t, mimir.Cfg.BlocksStorage.BucketStore.IndexCache.BackendConfig.Redis.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.BlocksStorage.BucketStore.ChunksCache.BackendConfig.Redis.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.BlocksStorage.BucketStore.MetadataCache.BackendConfig.Redis.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Frontend.QueryMiddleware.ResultsCacheConfig.BackendConfig.Redis.TLS.Reader)
+
+	// Check GRPC Clients
+	require.NotNil(t, mimir.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Worker.QueryFrontendGRPCClientConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Worker.QuerySchedulerGRPCClientConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Querier.StoreGatewayClient.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ruler.ClientTLSConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ruler.Notifier.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ruler.QueryFrontend.GRPCClientConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader)
+
+	// Check Server
+	require.Empty(t, mimir.Cfg.Server.HTTPTLSConfig.TLSCertPath)
+	require.Empty(t, mimir.Cfg.Server.HTTPTLSConfig.TLSKeyPath)
+	require.Empty(t, mimir.Cfg.Server.HTTPTLSConfig.ClientCAs)
+
+	require.Empty(t, mimir.Cfg.Server.GRPCTLSConfig.TLSCertPath)
+	require.Empty(t, mimir.Cfg.Server.GRPCTLSConfig.TLSKeyPath)
+	require.Empty(t, mimir.Cfg.Server.HTTPTLSConfig.ClientCAs)
+
+	require.Equal(t, "foo1", mimir.Cfg.Server.HTTPTLSConfig.TLSCert)
+	require.Equal(t, config.Secret("foo2"), mimir.Cfg.Server.HTTPTLSConfig.TLSKey)
+	require.Equal(t, "foo3", mimir.Cfg.Server.HTTPTLSConfig.ClientCAsText)
+
+	require.Equal(t, "foo1", mimir.Cfg.Server.GRPCTLSConfig.TLSCert)
+	require.Equal(t, config.Secret("foo2"), mimir.Cfg.Server.GRPCTLSConfig.TLSKey)
+	require.Equal(t, "foo3", mimir.Cfg.Server.GRPCTLSConfig.ClientCAsText)
 }

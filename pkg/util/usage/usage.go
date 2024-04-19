@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
-	"github.com/grafana/mimir/pkg/util/fieldcategory"
+	"github.com/grafana/mimir/pkg/util/configdoc"
 )
 
 // Usage prints command-line usage.
@@ -30,31 +30,41 @@ func Usage(printAll bool, configs ...interface{}) error {
 	fmt.Fprintf(fs.Output(), "Usage of %s:\n", os.Args[0])
 	fs.VisitAll(func(fl *flag.Flag) {
 		v := reflect.ValueOf(fl.Value)
-		fieldCat := fieldcategory.Basic
+		fieldCat := configdoc.Basic
 		var field reflect.StructField
+		var hasField bool
 
 		// Do not print usage for deprecated flags.
 		if fl.Value.String() == "deprecated" {
 			return
 		}
-
-		if override, ok := fieldcategory.GetOverride(fl.Name); ok {
-			fieldCat = override
-		} else if v.Kind() == reflect.Ptr {
+		if v.Kind() == reflect.Ptr {
 			ptr := v.Pointer()
-			field, ok = fields[ptr]
-			if ok {
-				catStr := field.Tag.Get("category")
-				switch catStr {
-				case "advanced":
-					fieldCat = fieldcategory.Advanced
-				case "experimental":
-					fieldCat = fieldcategory.Experimental
-				}
+			field, hasField = fields[ptr]
+			if hasField && isFieldHidden(field, fl.Name) {
+				// Don't print help for this flag since it's hidden
+				return
 			}
 		}
 
-		if fieldCat != fieldcategory.Basic && !printAll {
+		if override, ok := configdoc.GetCategoryOverride(fl.Name); ok {
+			fieldCat = override
+		} else if hasField {
+			catStr := field.Tag.Get("category")
+			switch catStr {
+			case "advanced":
+				fieldCat = configdoc.Advanced
+			case "experimental":
+				fieldCat = configdoc.Experimental
+			case "deprecated":
+				fieldCat = configdoc.Deprecated
+			}
+		} else {
+			// The field is neither an override nor has been parsed, so we'll skip it.
+			return
+		}
+
+		if fieldCat != configdoc.Basic && !printAll {
 			// Don't print help for this flag since we're supposed to print only basic flags
 			return
 		}
@@ -65,13 +75,16 @@ func Usage(printAll bool, configs ...interface{}) error {
 		name := getFlagName(fl)
 		if len(name) > 0 {
 			b.WriteString(" ")
-			b.WriteString(name)
+			b.WriteString(strings.ReplaceAll(name, " ", "-"))
 		}
 		// Four spaces before the tab triggers good alignment
 		// for both 4- and 8-space tab stops.
 		b.WriteString("\n    \t")
-		if fieldCat == fieldcategory.Experimental {
+		switch fieldCat {
+		case configdoc.Experimental:
 			b.WriteString("[experimental] ")
+		case configdoc.Deprecated:
+			b.WriteString("[deprecated] ")
 		}
 		b.WriteString(strings.ReplaceAll(fl.Usage, "\n", "\n    \t"))
 
@@ -139,7 +152,7 @@ func parseStructure(structure interface{}, fields map[uintptr]reflect.StructFiel
 		fields[fieldValue.Addr().Pointer()] = field
 
 		// Recurse if a struct
-		if field.Type.Kind() != reflect.Struct || ignoreStructType(field.Type) || !field.IsExported() {
+		if field.Type.Kind() != reflect.Struct || isFieldHidden(field, "") || ignoreStructType(field.Type) || !field.IsExported() {
 			continue
 		}
 
@@ -198,10 +211,38 @@ func getFlagName(fl *flag.Flag) string {
 		switch v.Type().String() {
 		case "*flagext.Secret":
 			return "string"
+		case "*flagext.StringSlice":
+			return "string"
+		case "*flagext.StringSliceCSV":
+			return "comma-separated list of strings"
+		case "*flagext.CIDRSliceCSV":
+			return "comma-separated list of strings"
+		case "*flagext.URLValue":
+			return "string"
+		case "*url.URL":
+			return "string"
+		case "*model.Duration":
+			return "duration"
+		case "*tsdb.DurationList":
+			return "comma-separated list of durations"
 		}
 	}
 
 	return "value"
+}
+
+func isFieldHidden(f reflect.StructField, name string) bool {
+	if hidden, ok := configdoc.GetHiddenOverride(name); ok {
+		return hidden
+	}
+
+	return getDocTagFlag(f, "hidden")
+}
+
+func getDocTagFlag(f reflect.StructField, name string) bool {
+	cfg := parseDocTag(f)
+	_, ok := cfg[name]
+	return ok
 }
 
 func getFlagDefault(fl *flag.Flag, field reflect.StructField) string {

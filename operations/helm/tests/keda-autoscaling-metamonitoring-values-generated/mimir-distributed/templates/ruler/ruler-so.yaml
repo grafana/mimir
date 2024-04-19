@@ -1,0 +1,43 @@
+---
+# Source: mimir-distributed/templates/ruler/ruler-so.yaml
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: keda-autoscaling-metamonitoring-values-mimir-ruler
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-metamonitoring-values
+    app.kubernetes.io/component: ruler
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          policies:
+          - periodSeconds: 600
+            type: Percent
+            value: 10
+  maxReplicaCount: 10
+  minReplicaCount: 1
+  pollingInterval: 10
+  scaleTargetRef:
+    name: keda-autoscaling-metamonitoring-values-mimir-ruler
+    apiVersion: apps/v1
+    kind: Deployment
+  triggers:
+  - metadata:
+      query: max_over_time(sum(sum by (pod) (rate(container_cpu_usage_seconds_total{container="ruler",namespace="citestns"}[5m])) and max by (pod) (up{container="ruler",namespace="citestns"}) > 0)[15m:]) * 1000
+      serverAddress: https://mimir.example.com/prometheus
+      threshold: "80"
+      customHeaders: "X-Scope-OrgID=tenant-1"
+    type: prometheus
+  - metadata:
+      query: max_over_time(sum((sum by (pod) (container_memory_working_set_bytes{container="ruler",namespace="citestns"}) and max by (pod) (up{container="ruler",namespace="citestns"}) > 0) or vector(0))[15m:]) + sum(sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="ruler",namespace="citestns", resource="memory"}[15m])) and max by (pod) (changes(kube_pod_container_status_restarts_total{container="ruler",namespace="citestns"}[15m]) > 0) and max by (pod) (kube_pod_container_status_last_terminated_reason{container="ruler",namespace="citestns", reason="OOMKilled"}) or vector(0))
+      serverAddress: https://mimir.example.com/prometheus
+      threshold: "107374182"
+      customHeaders: "X-Scope-OrgID=tenant-1"
+    type: prometheus

@@ -676,7 +676,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "distributor.ha-tracker.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -1016,7 +1016,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "distributor.ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -1217,7 +1217,7 @@
                 "en0"
               ],
               "fieldFlag": "distributor.ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -1915,7 +1915,7 @@
                           "fieldValue": null,
                           "fieldDefaultValue": [],
                           "fieldFlag": "etcd.endpoints",
-                          "fieldType": "list of string"
+                          "fieldType": "list of strings"
                         },
                         {
                           "kind": "field",
@@ -2180,7 +2180,7 @@
                 "en0"
               ],
               "fieldFlag": "ingester.lifecycler.interface",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -3500,7 +3500,7 @@
               "fieldValue": null,
               "fieldDefaultValue": [],
               "fieldFlag": "cassandra.custom-authenticator",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -5411,7 +5411,7 @@
           "fieldValue": null,
           "fieldDefaultValue": [],
           "fieldFlag": "distributor.drop-label",
-          "fieldType": "list of string"
+          "fieldType": "list of strings"
         },
         {
           "kind": "field",
@@ -6510,7 +6510,7 @@
             "en0"
           ],
           "fieldFlag": "frontend.instance-interface-names",
-          "fieldType": "list of string"
+          "fieldType": "list of strings"
         },
         {
           "kind": "field",
@@ -9195,7 +9195,7 @@
               "fieldValue": null,
               "fieldDefaultValue": [],
               "fieldFlag": "blocks-storage.tsdb.block-ranges-period",
-              "fieldType": "list of duration"
+              "fieldType": "list of durations"
             },
             {
               "kind": "field",
@@ -9389,7 +9389,7 @@
           "fieldValue": null,
           "fieldDefaultValue": [],
           "fieldFlag": "compactor.block-ranges",
-          "fieldType": "list of duration"
+          "fieldType": "list of durations"
         },
         {
           "kind": "field",
@@ -9647,7 +9647,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "compactor.ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -9868,7 +9868,7 @@
                 "en0"
               ],
               "fieldFlag": "compactor.ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -10070,7 +10070,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "store-gateway.sharding-ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -10321,7 +10321,7 @@
                 "en0"
               ],
               "fieldFlag": "store-gateway.sharding-ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -11563,7 +11563,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "ruler.ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -11764,7 +11764,7 @@
                 "en0"
               ],
               "fieldFlag": "ruler.ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -12646,7 +12646,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "alertmanager.sharding-ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -12867,7 +12867,7 @@
                 "en0"
               ],
               "fieldFlag": "alertmanager.sharding-ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -14211,7 +14211,7 @@
           "fieldValue": null,
           "fieldDefaultValue": [],
           "fieldFlag": "memberlist.join",
-          "fieldType": "list of string"
+          "fieldType": "list of strings"
         },
         {
           "kind": "field",
@@ -14301,7 +14301,7 @@
           "fieldValue": null,
           "fieldDefaultValue": [],
           "fieldFlag": "memberlist.bind-addr",
-          "fieldType": "list of string"
+          "fieldType": "list of strings"
         },
         {
           "kind": "field",
@@ -14745,7 +14745,7 @@
                           "fieldValue": null,
                           "fieldDefaultValue": [],
                           "fieldFlag": "admin-api.leader-election.ring.etcd.endpoints",
-                          "fieldType": "list of string"
+                          "fieldType": "list of strings"
                         },
                         {
                           "kind": "field",
@@ -14956,7 +14956,7 @@
                     "en0"
                   ],
                   "fieldFlag": "admin-api.leader-election.ring.instance-interface-names",
-                  "fieldType": "list of string"
+                  "fieldType": "list of strings"
                 },
                 {
                   "kind": "field",

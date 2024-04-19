@@ -9,38 +9,91 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
-	"io/ioutil"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/golang/snappy"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/cache"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
+
+type contextKey int
 
 const (
 	originCache  = "cache"
 	originBucket = "bucket"
+
+	memoryPoolContextKey         contextKey = 0
+	cacheLookupEnabledContextKey contextKey = 1
 )
 
 var errObjNotFound = errors.Errorf("object not found")
+
+// WithMemoryPool returns a new context with a slab pool to be used as a cache.Allocator
+// implementation by the underlying cache client. Slabs are released back to p when the
+// io.ReadCloser associated with the Get or GetRange call is closed.
+func WithMemoryPool(ctx context.Context, p pool.Interface, slabSize int) context.Context {
+	return context.WithValue(ctx, memoryPoolContextKey, pool.NewSafeSlabPool[byte](p, slabSize))
+}
+
+// WithCacheLookupEnabled returns a new context which will explicitly enable/disable the cache lookup but keep
+// storing the result to the cache. The cache lookup is enabled by default.
+func WithCacheLookupEnabled(ctx context.Context, enabled bool) context.Context {
+	return context.WithValue(ctx, cacheLookupEnabledContextKey, enabled)
+}
+
+func getMemoryPool(ctx context.Context) *pool.SafeSlabPool[byte] {
+	val := ctx.Value(memoryPoolContextKey)
+	if val == nil {
+		return nil
+	}
+
+	slabs, ok := val.(*pool.SafeSlabPool[byte])
+	if !ok {
+		return nil
+	}
+
+	return slabs
+}
+
+func isCacheLookupEnabled(ctx context.Context) bool {
+	val := ctx.Value(cacheLookupEnabledContextKey)
+	if val == nil {
+		return true
+	}
+
+	return val.(bool)
+}
+
+func getCacheOptions(slabs *pool.SafeSlabPool[byte]) []cache.Option {
+	var opts []cache.Option
+
+	if slabs != nil {
+		opts = append(opts, cache.WithAllocator(pool.NewSafeSlabPoolAllocator(slabs)))
+	}
+
+	return opts
+}
 
 // CachingBucket implementation that provides some caching features, based on passed configuration.
 type CachingBucket struct {
 	objstore.Bucket
 
-	cfg    *CachingBucketConfig
-	logger log.Logger
+	bucketID string
+	cfg      *CachingBucketConfig
+	logger   log.Logger
 
 	requestedGetRangeBytes *prometheus.CounterVec
 	fetchedGetRangeBytes   *prometheus.CounterVec
@@ -53,15 +106,16 @@ type CachingBucket struct {
 
 // NewCachingBucket creates new caching bucket with provided configuration. Configuration should not be
 // changed after creating caching bucket.
-func NewCachingBucket(b objstore.Bucket, cfg *CachingBucketConfig, logger log.Logger, reg prometheus.Registerer) (*CachingBucket, error) {
-	if b == nil {
+func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *CachingBucketConfig, logger log.Logger, reg prometheus.Registerer) (*CachingBucket, error) {
+	if bucketClient == nil {
 		return nil, errors.New("bucket is nil")
 	}
 
 	cb := &CachingBucket{
-		Bucket: b,
-		cfg:    cfg,
-		logger: logger,
+		Bucket:   bucketClient,
+		bucketID: bucketID,
+		cfg:      cfg,
+		logger:   logger,
 
 		operationConfigs: map[string][]*operationConfig{},
 
@@ -80,7 +134,7 @@ func NewCachingBucket(b objstore.Bucket, cfg *CachingBucketConfig, logger log.Lo
 
 		operationRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "thanos_store_bucket_cache_operation_requests_total",
-			Help: "Number of requested operations matching given config.",
+			Help: "Number of requested operations matching given config which triggered a cache lookup.",
 		}, []string{"operation", "config"}),
 		operationHits: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "thanos_store_bucket_cache_operation_hits_total",
@@ -131,26 +185,30 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 		return cb.Bucket.Iter(ctx, dir, f, options...)
 	}
 
-	cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName).Inc()
+	key := cachingKeyIter(cb.bucketID, dir, options...)
 
-	key := cachingKeyIter(dir)
-	data := cfg.cache.Fetch(ctx, []string{key})
-	if data[key] != nil {
-		list, err := cfg.codec.Decode(data[key])
-		if err == nil {
-			cb.operationHits.WithLabelValues(objstore.OpIter, cfgName).Inc()
-			for _, n := range list {
-				if err := f(n); err != nil {
-					return err
+	// Lookup the cache.
+	if isCacheLookupEnabled(ctx) {
+		cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName).Inc()
+
+		data := cfg.cache.Fetch(ctx, []string{key})
+		if data[key] != nil {
+			list, err := cfg.codec.Decode(data[key])
+			if err == nil {
+				cb.operationHits.WithLabelValues(objstore.OpIter, cfgName).Inc()
+				for _, n := range list {
+					if err := f(n); err != nil {
+						return err
+					}
 				}
+				return nil
 			}
-			return nil
+			level.Warn(cb.logger).Log("msg", "failed to decode cached Iter result", "key", key, "err", err)
 		}
-		level.Warn(cb.logger).Log("msg", "failed to decode cached Iter result", "key", key, "err", err)
 	}
 
 	// Iteration can take a while (esp. since it calls function), and iterTTL is generally low.
-	// We will compute TTL based time when iteration started.
+	// We will compute TTL based on time when iteration started.
 	iterTime := time.Now()
 	var list []string
 	err := cb.Bucket.Iter(ctx, dir, func(s string) error {
@@ -162,7 +220,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	if err == nil && remainingTTL > 0 {
 		data, encErr := cfg.codec.Encode(list)
 		if encErr == nil {
-			cfg.cache.Store(ctx, map[string][]byte{key: data}, remainingTTL)
+			cfg.cache.StoreAsync(map[string][]byte{key: data}, remainingTTL)
 			return nil
 		}
 		level.Warn(cb.logger).Log("msg", "failed to encode Iter result", "key", key, "err", encErr)
@@ -176,30 +234,34 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 		return cb.Bucket.Exists(ctx, name)
 	}
 
-	cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName).Inc()
+	key := cachingKeyExists(cb.bucketID, name)
 
-	key := cachingKeyExists(name)
-	hits := cfg.cache.Fetch(ctx, []string{key})
+	// Lookup the cache.
+	if isCacheLookupEnabled(ctx) {
+		cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName).Inc()
 
-	if ex := hits[key]; ex != nil {
-		exists, err := strconv.ParseBool(string(ex))
-		if err == nil {
-			cb.operationHits.WithLabelValues(objstore.OpExists, cfgName).Inc()
-			return exists, nil
+		hits := cfg.cache.Fetch(ctx, []string{key})
+
+		if ex := hits[key]; ex != nil {
+			exists, err := strconv.ParseBool(string(ex))
+			if err == nil {
+				cb.operationHits.WithLabelValues(objstore.OpExists, cfgName).Inc()
+				return exists, nil
+			}
+			level.Warn(cb.logger).Log("msg", "unexpected cached 'exists' value", "key", key, "val", string(ex))
 		}
-		level.Warn(cb.logger).Log("msg", "unexpected cached 'exists' value", "key", key, "val", string(ex))
 	}
 
 	existsTime := time.Now()
 	ok, err := cb.Bucket.Exists(ctx, name)
 	if err == nil {
-		storeExistsCacheEntry(ctx, key, ok, existsTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
+		storeExistsCacheEntry(key, ok, existsTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
 	}
 
 	return ok, err
 }
 
-func storeExistsCacheEntry(ctx context.Context, cachingKey string, exists bool, ts time.Time, cache cache.Cache, existsTTL, doesntExistTTL time.Duration) {
+func storeExistsCacheEntry(cachingKey string, exists bool, ts time.Time, cache cache.Cache, existsTTL, doesntExistTTL time.Duration) {
 	var ttl time.Duration
 	if exists {
 		ttl = existsTTL - time.Since(ts)
@@ -208,7 +270,7 @@ func storeExistsCacheEntry(ctx context.Context, cachingKey string, exists bool, 
 	}
 
 	if ttl > 0 {
-		cache.Store(ctx, map[string][]byte{cachingKey: []byte(strconv.FormatBool(exists))}, ttl)
+		cache.StoreAsync(map[string][]byte{cachingKey: []byte(strconv.FormatBool(exists))}, ttl)
 	}
 }
 
@@ -218,22 +280,48 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 		return cb.Bucket.Get(ctx, name)
 	}
 
-	cb.operationRequests.WithLabelValues(objstore.OpGet, cfgName).Inc()
+	contentKey := cachingKeyContent(cb.bucketID, name)
+	existsKey := cachingKeyExists(cb.bucketID, name)
 
-	contentKey := cachingKeyContent(name)
-	existsKey := cachingKeyExists(name)
+	// Lookup the cache.
+	if isCacheLookupEnabled(ctx) {
+		slabs := getMemoryPool(ctx)
+		cacheOpts := getCacheOptions(slabs)
+		releaseSlabs := true
 
-	hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey})
-	if hits[contentKey] != nil {
-		cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
-		return objstore.NopCloserWithSize(bytes.NewBuffer(hits[contentKey])), nil
-	}
+		// On cache hit, the returned reader is responsible for freeing any allocated
+		// slabs. However, if the content key isn't a hit the client still might have
+		// allocated memory for the exists key, and we need to free it in that case.
+		if slabs != nil {
+			defer func() {
+				if releaseSlabs {
+					slabs.Release()
+				}
+			}()
+		}
 
-	// If we know that file doesn't exist, we can return that. Useful for deletion marks.
-	if ex := hits[existsKey]; ex != nil {
-		if exists, err := strconv.ParseBool(string(ex)); err == nil && !exists {
+		cb.operationRequests.WithLabelValues(objstore.OpGet, cfgName).Inc()
+
+		hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey}, cacheOpts...)
+
+		// If we know that file doesn't exist, we can return that. Useful for deletion marks.
+		//
+		// Non-existence is updated in the cache on each Get() going through the object storage
+		// and not finding the object, while the object content is not updated, so it's safer
+		// to check this before the actual cached content (if any).
+		if ex := hits[existsKey]; ex != nil {
+			if exists, err := strconv.ParseBool(string(ex)); err == nil && !exists {
+				cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
+				return nil, errObjNotFound
+			}
+		}
+
+		// Check if the content was cached.
+		if hits[contentKey] != nil {
 			cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
-			return nil, errObjNotFound
+
+			releaseSlabs = false
+			return &sizedSlabGetReader{bytes.NewBuffer(hits[contentKey]), slabs}, nil
 		}
 	}
 
@@ -242,16 +330,15 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 	if err != nil {
 		if cb.Bucket.IsObjNotFoundErr(err) {
 			// Cache that object doesn't exist.
-			storeExistsCacheEntry(ctx, existsKey, false, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
+			storeExistsCacheEntry(existsKey, false, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
 		}
 
 		return nil, err
 	}
 
-	storeExistsCacheEntry(ctx, existsKey, true, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
+	storeExistsCacheEntry(existsKey, true, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
 	return &getReader{
 		c:         cfg.cache,
-		ctx:       ctx,
 		r:         reader,
 		buf:       new(bytes.Buffer),
 		startTime: getTime,
@@ -262,7 +349,7 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 }
 
 func (cb *CachingBucket) IsObjNotFoundErr(err error) bool {
-	return err == errObjNotFound || cb.Bucket.IsObjNotFoundErr(err)
+	return errors.Is(err, errObjNotFound) || cb.Bucket.IsObjNotFoundErr(err)
 }
 
 func (cb *CachingBucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
@@ -288,20 +375,23 @@ func (cb *CachingBucket) Attributes(ctx context.Context, name string) (objstore.
 }
 
 func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName string, cache cache.Cache, ttl time.Duration) (objstore.ObjectAttributes, error) {
-	key := cachingKeyAttributes(name)
+	key := cachingKeyAttributes(cb.bucketID, name)
 
-	cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
+	// Lookup the cache.
+	if isCacheLookupEnabled(ctx) {
+		cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
 
-	hits := cache.Fetch(ctx, []string{key})
-	if raw, ok := hits[key]; ok {
-		var attrs objstore.ObjectAttributes
-		err := json.Unmarshal(raw, &attrs)
-		if err == nil {
-			cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
-			return attrs, nil
+		hits := cache.Fetch(ctx, []string{key})
+		if raw, ok := hits[key]; ok {
+			var attrs objstore.ObjectAttributes
+			err := json.Unmarshal(raw, &attrs)
+			if err == nil {
+				cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
+				return attrs, nil
+			}
+
+			level.Warn(cb.logger).Log("msg", "failed to decode cached Attributes result", "key", key, "err", err)
 		}
-
-		level.Warn(cb.logger).Log("msg", "failed to decode cached Attributes result", "key", key, "err", err)
 	}
 
 	attrs, err := cb.Bucket.Attributes(ctx, name)
@@ -310,7 +400,7 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 	}
 
 	if raw, err := json.Marshal(attrs); err == nil {
-		cache.Store(ctx, map[string][]byte{key: raw}, ttl)
+		cache.StoreAsync(map[string][]byte{key: raw}, ttl)
 	} else {
 		level.Warn(cb.logger).Log("msg", "failed to encode cached Attributes result", "key", key, "err", err)
 	}
@@ -319,9 +409,6 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 }
 
 func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset, length int64, cfgName string, cfg *getRangeConfig) (io.ReadCloser, error) {
-	cb.operationRequests.WithLabelValues(objstore.OpGetRange, cfgName).Inc()
-	cb.requestedGetRangeBytes.WithLabelValues(cfgName).Add(float64(length))
-
 	attrs, err := cb.cachedAttributes(ctx, name, cfgName, cfg.attributes.cache, cfg.attributes.ttl)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get object attributes: %s", name)
@@ -360,19 +447,44 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 		}
 		totalRequestedBytes += (end - off)
 
-		k := cachingKeyObjectSubrange(name, off, end)
+		k := cachingKeyObjectSubrange(cb.bucketID, name, off, end)
 		keys = append(keys, k)
 		offsetKeys[off] = k
 	}
 
-	// Try to get all subranges from the cache.
-	totalCachedBytes := int64(0)
-	hits := cfg.cache.Fetch(ctx, keys)
-	for _, b := range hits {
-		totalCachedBytes += int64(len(b))
+	var (
+		hits         map[string][]byte
+		slabs        = getMemoryPool(ctx)
+		releaseSlabs = true
+	)
+
+	cb.requestedGetRangeBytes.WithLabelValues(cfgName).Add(float64(length))
+
+	// Lookup the cache.
+	if isCacheLookupEnabled(ctx) {
+		cacheOpts := getCacheOptions(slabs)
+
+		// If there's an error after fetching things from cache but before we return the subrange
+		// reader we're responsible for releasing any memory used by the slab pool.
+		if slabs != nil {
+			defer func() {
+				if releaseSlabs {
+					slabs.Release()
+				}
+			}()
+		}
+
+		// Try to get all subranges from the cache.
+		totalCachedBytes := int64(0)
+		hits = cfg.cache.Fetch(ctx, keys, cacheOpts...)
+		for _, b := range hits {
+			totalCachedBytes += int64(len(b))
+		}
+
+		cb.fetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(totalCachedBytes))
+		cb.operationRequests.WithLabelValues(objstore.OpGetRange, cfgName).Inc()
+		cb.operationHits.WithLabelValues(objstore.OpGetRange, cfgName).Add(float64(len(hits)) / float64(len(keys)))
 	}
-	cb.fetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(totalCachedBytes))
-	cb.operationHits.WithLabelValues(objstore.OpGetRange, cfgName).Add(float64(len(hits)) / float64(len(keys)))
 
 	if len(hits) < len(keys) {
 		if hits == nil {
@@ -385,7 +497,8 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 		}
 	}
 
-	return ioutil.NopCloser(newSubrangesReader(cfg.subrangeSize, offsetKeys, hits, offset, length)), nil
+	releaseSlabs = false
+	return newSubrangesReader(cfg.subrangeSize, offsetKeys, hits, offset, length, slabs), nil
 }
 
 type rng struct {
@@ -453,7 +566,7 @@ func (cb *CachingBucket) fetchMissingSubranges(ctx context.Context, name string,
 
 				if storeToCache {
 					cb.fetchedGetRangeBytes.WithLabelValues(originBucket, cfgName).Add(float64(len(subrangeData)))
-					cfg.cache.Store(gctx, map[string][]byte{key: subrangeData}, cfg.subrangeTTL)
+					cfg.cache.StoreAsync(map[string][]byte{key: subrangeData}, cfg.subrangeTTL)
 				} else {
 					cb.refetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(len(subrangeData)))
 				}
@@ -484,24 +597,55 @@ func mergeRanges(input []rng, limit int64) []rng {
 	return input[:last+1]
 }
 
-func cachingKeyAttributes(name string) string {
-	return fmt.Sprintf("attrs:%s", name)
+func cachingKeyAttributes(bucketID, name string) string {
+	return composeCachingKey("attrs", bucketID, name)
 }
 
-func cachingKeyObjectSubrange(name string, start, end int64) string {
-	return fmt.Sprintf("subrange:%s:%d:%d", name, start, end)
+func cachingKeyObjectSubrange(bucketID, name string, start, end int64) string {
+	return composeCachingKey("subrange", bucketID, name, strconv.FormatInt(start, 10), strconv.FormatInt(end, 10))
 }
 
-func cachingKeyIter(name string) string {
-	return fmt.Sprintf("iter:%s", name)
+func cachingKeyIter(bucketID, name string, options ...objstore.IterOption) string {
+	// Ensure the caching key is different for the same request but different
+	// recursive config.
+	if params := objstore.ApplyIterOptions(options...); params.Recursive {
+		return composeCachingKey("iter", bucketID, name, "recursive")
+	}
+
+	return composeCachingKey("iter", bucketID, name)
 }
 
-func cachingKeyExists(name string) string {
-	return fmt.Sprintf("exists:%s", name)
+func cachingKeyExists(bucketID, name string) string {
+	return composeCachingKey("exists", bucketID, name)
 }
 
-func cachingKeyContent(name string) string {
-	return fmt.Sprintf("content:%s", name)
+func cachingKeyContent(bucketID, name string) string {
+	return composeCachingKey("content", bucketID, name)
+}
+
+func composeCachingKey(op, bucketID string, values ...string) string {
+	// Estimate size.
+	estimatedSize := len(op) + len(bucketID) + (2 + len(values))
+	for _, value := range values {
+		estimatedSize += len(value)
+	}
+
+	b := strings.Builder{}
+	b.Grow(estimatedSize)
+
+	if bucketID != "" {
+		b.WriteString(bucketID)
+		b.WriteRune(':')
+	}
+
+	b.WriteString(op)
+
+	for _, value := range values {
+		b.WriteRune(':')
+		b.WriteString(value)
+	}
+
+	return b.String()
 }
 
 // Reader implementation that uses in-memory subranges.
@@ -517,9 +661,12 @@ type subrangesReader struct {
 
 	// Remaining data to return from this reader. Once zero, this reader reports EOF.
 	remaining int64
+
+	// Pool of bytes used for cache results
+	slabs *pool.SafeSlabPool[byte]
 }
 
-func newSubrangesReader(subrangeSize int64, offsetsKeys map[int64]string, subranges map[string][]byte, readOffset, remaining int64) *subrangesReader {
+func newSubrangesReader(subrangeSize int64, offsetsKeys map[int64]string, subranges map[string][]byte, readOffset, remaining int64, slabs *pool.SafeSlabPool[byte]) *subrangesReader {
 	return &subrangesReader{
 		subrangeSize: subrangeSize,
 		offsetsKeys:  offsetsKeys,
@@ -527,7 +674,17 @@ func newSubrangesReader(subrangeSize int64, offsetsKeys map[int64]string, subran
 
 		readOffset: readOffset,
 		remaining:  remaining,
+
+		slabs: slabs,
 	}
+}
+
+func (c *subrangesReader) Close() error {
+	if c.slabs != nil {
+		c.slabs.Release()
+	}
+
+	return nil
 }
 
 func (c *subrangesReader) Read(p []byte) (n int, err error) {
@@ -572,7 +729,6 @@ func (c *subrangesReader) subrangeAt(offset int64) ([]byte, error) {
 
 type getReader struct {
 	c         cache.Cache
-	ctx       context.Context
 	r         io.ReadCloser
 	buf       *bytes.Buffer
 	startTime time.Time
@@ -598,16 +754,35 @@ func (g *getReader) Read(p []byte) (n int, err error) {
 		}
 	}
 
-	if err == io.EOF && g.buf != nil {
+	if errors.Is(err, io.EOF) && g.buf != nil {
 		remainingTTL := g.ttl - time.Since(g.startTime)
 		if remainingTTL > 0 {
-			g.c.Store(g.ctx, map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)
+			g.c.StoreAsync(map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)
 		}
 		// Clear reference, to avoid doing another Store on next read.
 		g.buf = nil
 	}
 
 	return n, err
+}
+
+// sizedSlabGetReader wraps an existing io.Reader with a cleanup method to release
+// any allocated slabs back to a pool.SafeSlabPool when closed.
+type sizedSlabGetReader struct {
+	io.Reader
+	slabs *pool.SafeSlabPool[byte]
+}
+
+func (s *sizedSlabGetReader) Close() error {
+	if s.slabs != nil {
+		s.slabs.Release()
+	}
+
+	return nil
+}
+
+func (s *sizedSlabGetReader) ObjectSize() (int64, error) {
+	return objstore.TryToGetSize(s.Reader)
 }
 
 // JSONIterCodec encodes iter results into JSON. Suitable for root dir.
@@ -621,4 +796,24 @@ func (jic JSONIterCodec) Decode(data []byte) ([]string, error) {
 	var list []string
 	err := json.Unmarshal(data, &list)
 	return list, err
+}
+
+type SnappyIterCodec struct {
+	IterCodec
+}
+
+func (i SnappyIterCodec) Encode(files []string) ([]byte, error) {
+	b, err := i.IterCodec.Encode(files)
+	if err != nil {
+		return nil, err
+	}
+	return snappy.Encode(nil, b), nil
+}
+
+func (i SnappyIterCodec) Decode(cachedData []byte) ([]string, error) {
+	b, err := snappy.Decode(nil, cachedData)
+	if err != nil {
+		return nil, errors.Wrap(err, "SnappyIterCodec")
+	}
+	return i.IterCodec.Decode(b)
 }

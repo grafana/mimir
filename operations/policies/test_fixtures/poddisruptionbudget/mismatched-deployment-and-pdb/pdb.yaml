@@ -1,0 +1,9 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: test-pdb
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      rollout-group: another-group

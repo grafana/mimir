@@ -8,10 +8,9 @@ package tsdb
 import (
 	"testing"
 
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/grafana/mimir/pkg/cache"
 )
 
 func TestIndexCacheConfig_Validate(t *testing.T) {
@@ -27,29 +26,69 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 			}(),
 		},
 		"unsupported backend should fail": {
-			cfg: IndexCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: "xxx",
-				},
-			},
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = "xxx"
+
+				return cfg
+			}(),
 			expected: errUnsupportedIndexCacheBackend,
 		},
 		"no memcached addresses should fail": {
-			cfg: IndexCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: IndexCacheBackendMemcached,
-				},
-			},
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = IndexCacheBackendMemcached
+
+				return cfg
+			}(),
 			expected: cache.ErrNoMemcachedAddresses,
 		},
 		"one memcached address should pass": {
-			cfg: IndexCacheConfig{
-				BackendConfig: cache.BackendConfig{Backend: IndexCacheBackendMemcached,
-					Memcached: cache.MemcachedConfig{
-						Addresses: "dns+localhost:11211",
-					},
-				},
-			},
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = IndexCacheBackendMemcached
+				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
+
+				return cfg
+			}(),
+		},
+		"no redis address should fail": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = IndexCacheBackendRedis
+
+				return cfg
+			}(),
+			expected: cache.ErrRedisConfigNoEndpoint,
+		},
+		"one redis address should pass": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = IndexCacheBackendRedis
+				cfg.Redis.Endpoint = []string{"localhost:6379"}
+
+				return cfg
+			}(),
+		},
+		"inmemory should pass": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = IndexCacheBackendInMemory
+
+				return cfg
+			}(),
 		},
 	}
 

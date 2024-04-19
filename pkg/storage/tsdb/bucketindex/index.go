@@ -7,16 +7,16 @@ package bucketindex
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -91,6 +91,16 @@ type Block struct {
 
 	// Block's compactor shard ID, copied from tsdb.CompactorShardIDExternalLabel label.
 	CompactorShardID string `json:"compactor_shard_id,omitempty"`
+
+	// Source is the real upload source of the block
+	Source          string `json:"source,omitempty"`
+	CompactionLevel int    `json:"compaction_level,omitempty"`
+
+	// Whether the block was from out of order samples
+	OutOfOrder bool `json:"out_of_order,omitempty"`
+
+	// Labels contains the external labels from the block's metadata.
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // Within returns whether the block contains samples within the provided range.
@@ -107,17 +117,28 @@ func (m *Block) GetUploadedAt() time.Time {
 // ThanosMeta returns a block meta based on the known information in the index.
 // The returned meta doesn't include all original meta.json data but only a subset
 // of it.
-func (m *Block) ThanosMeta() *metadata.Meta {
-	return &metadata.Meta{
+func (m *Block) ThanosMeta() *block.Meta {
+	var compactionHints []string
+	if m.OutOfOrder {
+		compactionHints = []string{tsdb.CompactionHintFromOutOfOrder}
+	}
+
+	return &block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    m.ID,
 			MinTime: m.MinTime,
 			MaxTime: m.MaxTime,
-			Version: metadata.TSDBVersion1,
+			Version: block.TSDBVersion1,
+			Compaction: tsdb.BlockMetaCompaction{
+				Level: m.CompactionLevel,
+				Hints: compactionHints,
+			},
 		},
-		Thanos: metadata.Thanos{
-			Version:      metadata.ThanosVersion1,
+		Thanos: block.ThanosMeta{
+			Version:      block.ThanosVersion1,
 			SegmentFiles: m.thanosMetaSegmentFiles(),
+			Source:       block.SourceType(m.Source),
+			Labels:       maps.Clone(m.Labels),
 		},
 	}
 }
@@ -144,7 +165,7 @@ func (m *Block) String() string {
 	return fmt.Sprintf("%s (min time: %s max time: %s, compactor shard: %s)", m.ID, minT.String(), maxT.String(), shard)
 }
 
-func BlockFromThanosMeta(meta metadata.Meta) *Block {
+func BlockFromThanosMeta(meta block.Meta) *Block {
 	segmentsFormat, segmentsNum := detectBlockSegmentsFormat(meta)
 
 	return &Block{
@@ -154,10 +175,14 @@ func BlockFromThanosMeta(meta metadata.Meta) *Block {
 		SegmentsFormat:   segmentsFormat,
 		SegmentsNum:      segmentsNum,
 		CompactorShardID: meta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel],
+		Source:           string(meta.Thanos.Source),
+		CompactionLevel:  meta.Compaction.Level,
+		OutOfOrder:       meta.Compaction.FromOutOfOrder(),
+		Labels:           maps.Clone(meta.Thanos.Labels),
 	}
 }
 
-func detectBlockSegmentsFormat(meta metadata.Meta) (string, int) {
+func detectBlockSegmentsFormat(meta block.Meta) (string, int) {
 	if num, ok := detectBlockSegmentsFormat1Based6Digits(meta); ok {
 		return SegmentsFormat1Based6Digits, num
 	}
@@ -165,7 +190,7 @@ func detectBlockSegmentsFormat(meta metadata.Meta) (string, int) {
 	return "", 0
 }
 
-func detectBlockSegmentsFormat1Based6Digits(meta metadata.Meta) (int, bool) {
+func detectBlockSegmentsFormat1Based6Digits(meta block.Meta) (int, bool) {
 	// Check the (deprecated) SegmentFiles.
 	if len(meta.Thanos.SegmentFiles) > 0 {
 		for i, f := range meta.Thanos.SegmentFiles {
@@ -210,16 +235,16 @@ func (m *BlockDeletionMark) GetDeletionTime() time.Time {
 	return time.Unix(m.DeletionTime, 0)
 }
 
-// ThanosMeta returns the Thanos deletion mark.
-func (m *BlockDeletionMark) ThanosDeletionMark() *metadata.DeletionMark {
-	return &metadata.DeletionMark{
+// ThanosDeletionMark returns the Thanos deletion mark.
+func (m *BlockDeletionMark) ThanosDeletionMark() *block.DeletionMark {
+	return &block.DeletionMark{
 		ID:           m.ID,
-		Version:      metadata.DeletionMarkVersion1,
+		Version:      block.DeletionMarkVersion1,
 		DeletionTime: m.DeletionTime,
 	}
 }
 
-func BlockDeletionMarkFromThanosMarker(mark *metadata.DeletionMark) *BlockDeletionMark {
+func BlockDeletionMarkFromThanosMarker(mark *block.DeletionMark) *BlockDeletionMark {
 	return &BlockDeletionMark{
 		ID:           mark.ID,
 		DeletionTime: mark.DeletionTime,

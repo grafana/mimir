@@ -85,19 +85,17 @@ func ToMetricsForLabelMatchersRequest(from, to model.Time, matchers []*labels.Ma
 	}, nil
 }
 
-// FromMetricsForLabelMatchersRequest unpacks a MetricsForLabelMatchersRequest proto
-func FromMetricsForLabelMatchersRequest(req *MetricsForLabelMatchersRequest) (model.Time, model.Time, [][]*labels.Matcher, error) {
+// FromMetricsForLabelMatchersRequest unpacks a MetricsForLabelMatchersRequest proto.
+func FromMetricsForLabelMatchersRequest(req *MetricsForLabelMatchersRequest) ([][]*labels.Matcher, error) {
 	matchersSet := make([][]*labels.Matcher, 0, len(req.MatchersSet))
 	for _, matchers := range req.MatchersSet {
 		matchers, err := FromLabelMatchers(matchers.Matchers)
 		if err != nil {
-			return 0, 0, nil, err
+			return nil, err
 		}
 		matchersSet = append(matchersSet, matchers)
 	}
-	from := model.Time(req.StartTimestampMs)
-	to := model.Time(req.EndTimestampMs)
-	return from, to, matchersSet, nil
+	return matchersSet, nil
 }
 
 // FromMetricsForLabelMatchersResponse unpacks a MetricsForLabelMatchersResponse proto
@@ -168,6 +166,14 @@ func FromLabelNamesRequest(req *LabelNamesRequest) (int64, int64, []*labels.Matc
 	return req.StartTimestampMs, req.EndTimestampMs, matchers, nil
 }
 
+func ToActiveSeriesRequest(matchers []*labels.Matcher) (*ActiveSeriesRequest, error) {
+	ms, err := ToLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+	return &ActiveSeriesRequest{Matchers: ms}, nil
+}
+
 func ToLabelMatchers(matchers []*labels.Matcher) ([]*LabelMatcher, error) {
 	result := make([]*LabelMatcher, 0, len(matchers))
 	for _, matcher := range matchers {
@@ -216,35 +222,6 @@ func FromLabelMatchers(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
 		result = append(result, matcher)
 	}
 	return result, nil
-}
-
-// FastFingerprint runs the same algorithm as Prometheus labelSetToFastFingerprint()
-func FastFingerprint(ls []mimirpb.LabelAdapter) model.Fingerprint {
-	if len(ls) == 0 {
-		return model.Metric(nil).FastFingerprint()
-	}
-
-	var result uint64
-	for _, l := range ls {
-		sum := hashNew()
-		sum = hashAdd(sum, l.Name)
-		sum = hashAddByte(sum, model.SeparatorByte)
-		sum = hashAdd(sum, l.Value)
-		result ^= sum
-	}
-	return model.Fingerprint(result)
-}
-
-// Fingerprint runs the same algorithm as Prometheus labelSetToFingerprint()
-func Fingerprint(labels labels.Labels) model.Fingerprint {
-	sum := hashNew()
-	for _, label := range labels {
-		sum = hashAddString(sum, label.Name)
-		sum = hashAddByte(sum, model.SeparatorByte)
-		sum = hashAddString(sum, label.Value)
-		sum = hashAddByte(sum, model.SeparatorByte)
-	}
-	return model.Fingerprint(sum)
 }
 
 // LabelsToKeyString is used to form a string to be used as

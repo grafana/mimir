@@ -6,15 +6,15 @@
 package alertmanager
 
 import (
+	"github.com/go-kit/log"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // This struct aggregates metrics exported by Alertmanager
 // and re-exports those aggregates as Mimir metrics.
 type alertmanagerMetrics struct {
-	regs *util.UserRegistries
+	regs *dskit_metrics.TenantRegistries
 
 	// exported metrics, gathered from Alertmanager API
 	alertsReceived *prometheus.Desc
@@ -25,12 +25,15 @@ type alertmanagerMetrics struct {
 	numFailedNotifications             *prometheus.Desc
 	numNotificationRequestsTotal       *prometheus.Desc
 	numNotificationRequestsFailedTotal *prometheus.Desc
+	numNotificationSuppressedTotal     *prometheus.Desc
 	notificationLatencySeconds         *prometheus.Desc
 
 	// exported metrics, gathered from Alertmanager nflog
 	nflogGCDuration              *prometheus.Desc
 	nflogSnapshotDuration        *prometheus.Desc
 	nflogSnapshotSize            *prometheus.Desc
+	nflogMaintenanceTotal        *prometheus.Desc
+	nflogMaintenanceErrorsTotal  *prometheus.Desc
 	nflogQueriesTotal            *prometheus.Desc
 	nflogQueryErrorsTotal        *prometheus.Desc
 	nflogQueryDuration           *prometheus.Desc
@@ -41,6 +44,8 @@ type alertmanagerMetrics struct {
 
 	// exported metrics, gathered from Alertmanager Silences
 	silencesGCDuration              *prometheus.Desc
+	silencesMaintenanceTotal        *prometheus.Desc
+	silencesMaintenanceErrorsTotal  *prometheus.Desc
 	silencesSnapshotDuration        *prometheus.Desc
 	silencesSnapshotSize            *prometheus.Desc
 	silencesQueriesTotal            *prometheus.Desc
@@ -64,16 +69,20 @@ type alertmanagerMetrics struct {
 	persistTotal            *prometheus.Desc
 	persistFailed           *prometheus.Desc
 
-	notificationRateLimited                 *prometheus.Desc
+	// exported metrics, gathered from Alertmanager Dispatcher
+	dispatcherAggrGroups                    *prometheus.Desc
+	dispatcherProcessingDuration            *prometheus.Desc
 	dispatcherAggregationGroupsLimitReached *prometheus.Desc
-	insertAlertFailures                     *prometheus.Desc
-	alertsLimiterAlertsCount                *prometheus.Desc
-	alertsLimiterAlertsSize                 *prometheus.Desc
+
+	notificationRateLimited  *prometheus.Desc
+	insertAlertFailures      *prometheus.Desc
+	alertsLimiterAlertsCount *prometheus.Desc
+	alertsLimiterAlertsSize  *prometheus.Desc
 }
 
-func newAlertmanagerMetrics() *alertmanagerMetrics {
+func newAlertmanagerMetrics(logger log.Logger) *alertmanagerMetrics {
 	return &alertmanagerMetrics{
-		regs: util.NewUserRegistries(),
+		regs: dskit_metrics.NewTenantRegistries(logger),
 		alertsReceived: prometheus.NewDesc(
 			"cortex_alertmanager_alerts_received_total",
 			"The total number of received alerts.",
@@ -89,7 +98,7 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 		numFailedNotifications: prometheus.NewDesc(
 			"cortex_alertmanager_notifications_failed_total",
 			"The total number of failed notifications.",
-			[]string{"user", "integration"}, nil),
+			[]string{"user", "integration", "reason"}, nil),
 		numNotificationRequestsTotal: prometheus.NewDesc(
 			"cortex_alertmanager_notification_requests_total",
 			"The total number of attempted notification requests.",
@@ -98,6 +107,10 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 			"cortex_alertmanager_notification_requests_failed_total",
 			"The total number of failed notification requests.",
 			[]string{"user", "integration"}, nil),
+		numNotificationSuppressedTotal: prometheus.NewDesc(
+			"cortex_alertmanager_notifications_suppressed_total",
+			"The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.",
+			[]string{"user", "reason"}, nil),
 		notificationLatencySeconds: prometheus.NewDesc(
 			"cortex_alertmanager_notification_latency_seconds",
 			"The latency of notifications in seconds.",
@@ -113,6 +126,14 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 		nflogSnapshotSize: prometheus.NewDesc(
 			"cortex_alertmanager_nflog_snapshot_size_bytes",
 			"Size of the last notification log snapshot in bytes.",
+			nil, nil),
+		nflogMaintenanceTotal: prometheus.NewDesc(
+			"cortex_alertmanager_nflog_maintenance_total",
+			"How many maintenances were executed for the notification log.",
+			nil, nil),
+		nflogMaintenanceErrorsTotal: prometheus.NewDesc(
+			"cortex_alertmanager_nflog_maintenance_errors_total",
+			"How many maintenances were executed for the notification log that failed.",
 			nil, nil),
 		nflogQueriesTotal: prometheus.NewDesc(
 			"cortex_alertmanager_nflog_queries_total",
@@ -137,6 +158,14 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 		silencesGCDuration: prometheus.NewDesc(
 			"cortex_alertmanager_silences_gc_duration_seconds",
 			"Duration of the last silence garbage collection cycle.",
+			nil, nil),
+		silencesMaintenanceTotal: prometheus.NewDesc(
+			"cortex_alertmanager_silences_maintenance_total",
+			"How many maintenances were executed for silences.",
+			nil, nil),
+		silencesMaintenanceErrorsTotal: prometheus.NewDesc(
+			"cortex_alertmanager_silences_maintenance_errors_total",
+			"How many maintenances were executed for silences that failed.",
 			nil, nil),
 		silencesSnapshotDuration: prometheus.NewDesc(
 			"cortex_alertmanager_silences_snapshot_duration_seconds",
@@ -214,14 +243,22 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 			"cortex_alertmanager_state_persist_failed_total",
 			"Number of times we have failed to persist the running state to storage.",
 			nil, nil),
-		notificationRateLimited: prometheus.NewDesc(
-			"cortex_alertmanager_notification_rate_limited_total",
-			"Total number of rate-limited notifications per integration.",
-			[]string{"user", "integration"}, nil),
+		dispatcherAggrGroups: prometheus.NewDesc(
+			"cortex_alertmanager_dispatcher_aggregation_groups",
+			"Number of active aggregation groups",
+			nil, nil),
+		dispatcherProcessingDuration: prometheus.NewDesc(
+			"cortex_alertmanager_dispatcher_alert_processing_duration_seconds",
+			"Summary of latencies for the processing of alerts.",
+			nil, nil),
 		dispatcherAggregationGroupsLimitReached: prometheus.NewDesc(
 			"cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total",
 			"Number of times when dispatcher failed to create new aggregation group due to limit.",
 			[]string{"user"}, nil),
+		notificationRateLimited: prometheus.NewDesc(
+			"cortex_alertmanager_notification_rate_limited_total",
+			"Total number of rate-limited notifications per integration.",
+			[]string{"user", "integration"}, nil),
 		insertAlertFailures: prometheus.NewDesc(
 			"cortex_alertmanager_alerts_insert_limited_total",
 			"Total number of failures to store alert due to hitting alertmanager limits.",
@@ -238,13 +275,13 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 }
 
 func (m *alertmanagerMetrics) addUserRegistry(user string, reg *prometheus.Registry) {
-	m.regs.AddUserRegistry(user, reg)
+	m.regs.AddTenantRegistry(user, reg)
 }
 
 func (m *alertmanagerMetrics) removeUserRegistry(user string) {
 	// We need to go for a soft deletion here, as hard deletion requires
 	// that _all_ metrics except gauges are per-user.
-	m.regs.RemoveUserRegistry(user, false)
+	m.regs.RemoveTenantRegistry(user, false)
 }
 
 func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
@@ -254,16 +291,21 @@ func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.numFailedNotifications
 	out <- m.numNotificationRequestsTotal
 	out <- m.numNotificationRequestsFailedTotal
+	out <- m.numNotificationSuppressedTotal
 	out <- m.notificationLatencySeconds
 	out <- m.markerAlerts
 	out <- m.nflogGCDuration
 	out <- m.nflogSnapshotDuration
 	out <- m.nflogSnapshotSize
+	out <- m.nflogMaintenanceTotal
+	out <- m.nflogMaintenanceErrorsTotal
 	out <- m.nflogQueriesTotal
 	out <- m.nflogQueryErrorsTotal
 	out <- m.nflogQueryDuration
 	out <- m.nflogPropagatedMessagesTotal
 	out <- m.silencesGCDuration
+	out <- m.silencesMaintenanceTotal
+	out <- m.silencesMaintenanceErrorsTotal
 	out <- m.silencesSnapshotDuration
 	out <- m.silencesSnapshotSize
 	out <- m.silencesQueriesTotal
@@ -283,49 +325,56 @@ func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.initialSyncDuration
 	out <- m.persistTotal
 	out <- m.persistFailed
-	out <- m.notificationRateLimited
+	out <- m.dispatcherAggrGroups
+	out <- m.dispatcherProcessingDuration
 	out <- m.dispatcherAggregationGroupsLimitReached
+	out <- m.notificationRateLimited
 	out <- m.insertAlertFailures
 	out <- m.alertsLimiterAlertsCount
 	out <- m.alertsLimiterAlertsSize
 }
 
 func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
-	data := m.regs.BuildMetricFamiliesPerUser()
+	data := m.regs.BuildMetricFamiliesPerTenant()
 
-	data.SendSumOfCountersPerUser(out, m.alertsReceived, "alertmanager_alerts_received_total")
-	data.SendSumOfCountersPerUser(out, m.alertsInvalid, "alertmanager_alerts_invalid_total")
+	data.SendSumOfCountersPerTenant(out, m.alertsReceived, "alertmanager_alerts_received_total")
+	data.SendSumOfCountersPerTenant(out, m.alertsInvalid, "alertmanager_alerts_invalid_total")
 
-	data.SendSumOfCountersPerUser(out, m.numNotifications, "alertmanager_notifications_total", util.WithLabels("integration"), util.WithSkipZeroValueMetrics)
-	data.SendSumOfCountersPerUser(out, m.numFailedNotifications, "alertmanager_notifications_failed_total", util.WithLabels("integration"), util.WithSkipZeroValueMetrics)
-	data.SendSumOfCountersPerUser(out, m.numNotificationRequestsTotal, "alertmanager_notification_requests_total", util.WithLabels("integration"), util.WithSkipZeroValueMetrics)
-	data.SendSumOfCountersPerUser(out, m.numNotificationRequestsFailedTotal, "alertmanager_notification_requests_failed_total", util.WithLabels("integration"), util.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.numNotifications, "alertmanager_notifications_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.numFailedNotifications, "alertmanager_notifications_failed_total", dskit_metrics.WithLabels("integration", "reason"), dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.numNotificationRequestsTotal, "alertmanager_notification_requests_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.numNotificationRequestsFailedTotal, "alertmanager_notification_requests_failed_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.numNotificationSuppressedTotal, "alertmanager_notifications_suppressed_total", dskit_metrics.WithLabels("reason"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfHistograms(out, m.notificationLatencySeconds, "alertmanager_notification_latency_seconds")
-	data.SendSumOfGaugesPerUserWithLabels(out, m.markerAlerts, "alertmanager_alerts", "state")
+	data.SendSumOfGaugesPerTenantWithLabels(out, m.markerAlerts, "alertmanager_alerts", "state")
 
 	data.SendSumOfSummaries(out, m.nflogGCDuration, "alertmanager_nflog_gc_duration_seconds")
 	data.SendSumOfSummaries(out, m.nflogSnapshotDuration, "alertmanager_nflog_snapshot_duration_seconds")
 	data.SendSumOfGauges(out, m.nflogSnapshotSize, "alertmanager_nflog_snapshot_size_bytes")
+	data.SendSumOfCounters(out, m.nflogMaintenanceTotal, "alertmanager_nflog_maintenance_total")
+	data.SendSumOfCounters(out, m.nflogMaintenanceErrorsTotal, "alertmanager_nflog_maintenance_errors_total")
 	data.SendSumOfCounters(out, m.nflogQueriesTotal, "alertmanager_nflog_queries_total")
 	data.SendSumOfCounters(out, m.nflogQueryErrorsTotal, "alertmanager_nflog_query_errors_total")
 	data.SendSumOfHistograms(out, m.nflogQueryDuration, "alertmanager_nflog_query_duration_seconds")
 	data.SendSumOfCounters(out, m.nflogPropagatedMessagesTotal, "alertmanager_nflog_gossip_messages_propagated_total")
 
 	data.SendSumOfSummaries(out, m.silencesGCDuration, "alertmanager_silences_gc_duration_seconds")
+	data.SendSumOfCounters(out, m.silencesMaintenanceTotal, "alertmanager_silences_maintenance_total")
+	data.SendSumOfCounters(out, m.silencesMaintenanceErrorsTotal, "alertmanager_silences_maintenance_errors_total")
 	data.SendSumOfSummaries(out, m.silencesSnapshotDuration, "alertmanager_silences_snapshot_duration_seconds")
 	data.SendSumOfGauges(out, m.silencesSnapshotSize, "alertmanager_silences_snapshot_size_bytes")
 	data.SendSumOfCounters(out, m.silencesQueriesTotal, "alertmanager_silences_queries_total")
 	data.SendSumOfCounters(out, m.silencesQueryErrorsTotal, "alertmanager_silences_query_errors_total")
 	data.SendSumOfHistograms(out, m.silencesQueryDuration, "alertmanager_silences_query_duration_seconds")
 	data.SendSumOfCounters(out, m.silencesPropagatedMessagesTotal, "alertmanager_silences_gossip_messages_propagated_total")
-	data.SendSumOfGaugesPerUserWithLabels(out, m.silences, "alertmanager_silences", "state")
+	data.SendSumOfGaugesPerTenantWithLabels(out, m.silences, "alertmanager_silences", "state")
 
-	data.SendMaxOfGaugesPerUser(out, m.configHashValue, "alertmanager_config_hash")
+	data.SendMaxOfGaugesPerTenant(out, m.configHashValue, "alertmanager_config_hash")
 
-	data.SendSumOfCountersPerUser(out, m.partialMerges, "alertmanager_partial_state_merges_total")
-	data.SendSumOfCountersPerUser(out, m.partialMergesFailed, "alertmanager_partial_state_merges_failed_total")
-	data.SendSumOfCountersPerUser(out, m.replicationTotal, "alertmanager_state_replication_total")
-	data.SendSumOfCountersPerUser(out, m.replicationFailed, "alertmanager_state_replication_failed_total")
+	data.SendSumOfCountersPerTenant(out, m.partialMerges, "alertmanager_partial_state_merges_total")
+	data.SendSumOfCountersPerTenant(out, m.partialMergesFailed, "alertmanager_partial_state_merges_failed_total")
+	data.SendSumOfCountersPerTenant(out, m.replicationTotal, "alertmanager_state_replication_total")
+	data.SendSumOfCountersPerTenant(out, m.replicationFailed, "alertmanager_state_replication_failed_total")
 	data.SendSumOfCounters(out, m.fetchReplicaStateTotal, "alertmanager_state_fetch_replica_state_total")
 	data.SendSumOfCounters(out, m.fetchReplicaStateFailed, "alertmanager_state_fetch_replica_state_failed_total")
 	data.SendSumOfCounters(out, m.initialSyncTotal, "alertmanager_state_initial_sync_total")
@@ -334,9 +383,12 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, m.persistTotal, "alertmanager_state_persist_total")
 	data.SendSumOfCounters(out, m.persistFailed, "alertmanager_state_persist_failed_total")
 
-	data.SendSumOfCountersPerUser(out, m.notificationRateLimited, "alertmanager_notification_rate_limited_total", util.WithLabels("integration"), util.WithSkipZeroValueMetrics)
-	data.SendSumOfCountersPerUser(out, m.dispatcherAggregationGroupsLimitReached, "alertmanager_dispatcher_aggregation_group_limit_reached_total")
-	data.SendSumOfCountersPerUser(out, m.insertAlertFailures, "alertmanager_alerts_insert_limited_total")
-	data.SendSumOfGaugesPerUser(out, m.alertsLimiterAlertsCount, "alertmanager_alerts_limiter_current_alerts")
-	data.SendSumOfGaugesPerUser(out, m.alertsLimiterAlertsSize, "alertmanager_alerts_limiter_current_alerts_size_bytes")
+	data.SendSumOfGauges(out, m.dispatcherAggrGroups, "alertmanager_dispatcher_aggregation_groups")
+	data.SendSumOfSummaries(out, m.dispatcherProcessingDuration, "alertmanager_dispatcher_alert_processing_duration_seconds")
+	data.SendSumOfCountersPerTenant(out, m.dispatcherAggregationGroupsLimitReached, "alertmanager_dispatcher_aggregation_group_limit_reached_total")
+
+	data.SendSumOfCountersPerTenant(out, m.notificationRateLimited, "alertmanager_notification_rate_limited_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.insertAlertFailures, "alertmanager_alerts_insert_limited_total")
+	data.SendSumOfGaugesPerTenant(out, m.alertsLimiterAlertsCount, "alertmanager_alerts_limiter_current_alerts")
+	data.SendSumOfGaugesPerTenant(out, m.alertsLimiterAlertsSize, "alertmanager_alerts_limiter_current_alerts_size_bytes")
 }

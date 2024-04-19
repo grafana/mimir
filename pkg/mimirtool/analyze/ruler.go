@@ -6,17 +6,17 @@
 package analyze
 
 import (
-	"sort"
-
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
 
 type MetricsInRuler struct {
-	MetricsUsed    []string            `json:"metricsUsed"`
+	MetricsUsed    model.LabelValues   `json:"metricsUsed"`
 	OverallMetrics map[string]struct{} `json:"-"`
 	RuleGroups     []RuleGroupMetrics  `json:"ruleGroups"`
 }
@@ -48,7 +48,7 @@ func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns 
 			continue
 		}
 
-		parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 			if n, ok := node.(*parser.VectorSelector); ok {
 				refMetrics[n.Name] = struct{}{}
 			}
@@ -72,7 +72,7 @@ func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns 
 		metricsInGroup = append(metricsInGroup, metric)
 		mir.OverallMetrics[metric] = struct{}{}
 	}
-	sort.Strings(metricsInGroup)
+	slices.Sort(metricsInGroup)
 
 	for _, err := range parseErrors {
 		parseErrs = append(parseErrs, err.Error())

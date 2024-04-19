@@ -1,0 +1,108 @@
+---
+# Source: mimir-distributed/templates/query-scheduler/query-scheduler-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-query-scheduler
+  namespace: "citestns"
+  labels:
+    app: enterprise-metrics-query-scheduler
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  annotations:
+    {}
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: enterprise-metrics-query-scheduler
+      release: test-enterprise-legacy-label-values
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: enterprise-metrics-query-scheduler
+        name: query-scheduler
+        target: query-scheduler
+        release: test-enterprise-legacy-label-values
+      annotations:
+    spec:
+      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: query-scheduler
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=query-scheduler"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: license
+              mountPath: /license
+            - name: config
+              mountPath: /etc/mimir
+            - name: storage
+              mountPath: /data
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-query-scheduler
+            release: test-enterprise-legacy-label-values
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-config
+        - name: license
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-license
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-legacy-label-values-enterprise-metrics-runtime
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

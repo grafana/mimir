@@ -1,0 +1,82 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-nginx-values-minio
+  labels:
+    app: minio
+    chart: minio-5.0.14
+    release: gateway-nginx-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: gateway-nginx-values
+  template:
+    metadata:
+      name: gateway-nginx-values-minio
+      labels:
+        app: minio
+        release: gateway-nginx-values
+      annotations:
+        checksum/secrets: abcaf9b2c4ea7db35628be51996fd0c48ea9e5f15de12b8a220c77f76c9aa1d0
+        checksum/config: 2f4416d7866c8963263db9d235c3a966fea9c994614ef33264474adba1e27def
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-nginx-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-nginx-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: gateway-nginx-values-minio
+        - name: minio-user
+          secret:
+            secretName: gateway-nginx-values-minio

@@ -323,7 +323,7 @@ func TestConvert_Cortex(t *testing.T) {
 				flags:              loadFlags(t, tc.inFlagsFile),
 			}
 
-			assertion := func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+			assertion := func(t *testing.T, outYAML []byte, outFlags []string, _ ConversionNotices, err error) {
 				assert.NoError(t, err)
 				assert.ElementsMatch(t, expectedOutFlags, outFlags)
 				assert.YAMLEq(t, string(expectedOut), string(outYAML))
@@ -396,7 +396,7 @@ func TestConvert_GEM(t *testing.T) {
 				flags:              loadFlags(t, tc.inFlagsFile),
 			}
 
-			testConvertGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+			testConvertGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, _ ConversionNotices, err error) {
 				assert.NoError(t, err)
 				assert.ElementsMatch(t, expectedOutFlags, outFlags)
 				assert.YAMLEq(t, string(expectedOut), string(outYAML))
@@ -434,7 +434,7 @@ func TestConvert_InvalidConfigs(t *testing.T) {
 				yaml:               loadFile(t, tc.inFile),
 				dontLoadCommonOpts: true,
 			}
-			testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+			testConvertCortexAndGEM(t, in, func(t *testing.T, _ []byte, _ []string, _ ConversionNotices, err error) {
 				assert.EqualError(t, err, tc.expectedErr)
 			})
 		})
@@ -530,7 +530,6 @@ var changedCortexDefaults = []ChangedDefault{
 	{Path: "compactor.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 	{Path: "compactor.sharding_ring.wait_stability_min_duration", OldDefault: "1m0s", NewDefault: "0s"},
 	{Path: "distributor.instance_limits.max_inflight_push_requests", OldDefault: "0", NewDefault: "2000"},
-	{Path: "distributor.remote_timeout", OldDefault: "2s", NewDefault: "20s"},
 	{Path: "distributor.ring.instance_interface_names", OldDefault: "eth0,en0", NewDefault: "<nil>"},
 	{Path: "distributor.ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 	{Path: "frontend.grpc_client_config.max_send_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
@@ -557,7 +556,6 @@ var changedCortexDefaults = []ChangedDefault{
 	{Path: "ingester_client.grpc_client_config.max_send_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
 	{Path: "limits.ingestion_burst_size", OldDefault: "50000", NewDefault: "200000"},
 	{Path: "limits.ingestion_rate", OldDefault: "25000", NewDefault: "10000"},
-	{Path: "limits.max_global_series_per_metric", OldDefault: "0", NewDefault: "20000"},
 	{Path: "limits.max_global_series_per_user", OldDefault: "0", NewDefault: "150000"},
 	{Path: "limits.ruler_max_rule_groups_per_tenant", OldDefault: "0", NewDefault: "70"},
 	{Path: "limits.ruler_max_rules_per_rule_group", OldDefault: "0", NewDefault: "20"},
@@ -578,6 +576,17 @@ var changedCortexDefaults = []ChangedDefault{
 	{Path: "querier.query_store_after", OldDefault: "0s", NewDefault: "12h0m0s"},
 	{Path: "server.grpc_server_max_recv_msg_size", OldDefault: "4194304", NewDefault: "104857600"},
 	{Path: "server.grpc_server_max_send_msg_size", OldDefault: "4194304", NewDefault: "104857600"},
+	{Path: "memberlist.leave_timeout", OldDefault: "5s", NewDefault: "20s"},
+	{Path: "memberlist.packet_dial_timeout", OldDefault: "5s", NewDefault: "2s"},
+
+	// Changed in 2.4, 2.5, 2.6
+	{Path: "server.http_server_write_timeout", OldDefault: "30s", NewDefault: "2m0s"},
+	{Path: "distributor.ring.heartbeat_period", OldDefault: "5s", NewDefault: "15s"},
+	{Path: "ingester.ring.heartbeat_period", OldDefault: "5s", NewDefault: "15s"},
+	{Path: "blocks_storage.tsdb.head_compaction_concurrency", OldDefault: "5", NewDefault: "1"},
+	{Path: "compactor.sharding_ring.heartbeat_period", OldDefault: "5s", NewDefault: "15s"},
+	{Path: "ruler.for_grace_period", OldDefault: "10m0s", NewDefault: "2m0s"},
+	{Path: "ruler.ring.heartbeat_period", OldDefault: "5s", NewDefault: "15s"},
 }
 
 func TestChangedCortexDefaults(t *testing.T) {
@@ -595,7 +604,7 @@ func TestChangedCortexDefaults(t *testing.T) {
 		yaml:           config,
 	}
 
-	testConvertCortex(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+	testConvertCortex(t, in, func(t *testing.T, _ []byte, _ []string, notices ConversionNotices, err error) {
 		require.NoError(t, err)
 		assert.ElementsMatch(t, changedCortexDefaults, notices.ChangedDefaults)
 	})
@@ -627,6 +636,9 @@ func TestChangedGEMDefaults(t *testing.T) {
 
 		// Changed in 2.1
 		{Path: "blocks_storage.bucket_store.chunks_cache.attributes_in_memory_max_items", OldDefault: "0", NewDefault: "50000"},
+
+		// Changed in 2.5 (not in GEM changelog)
+		{Path: "graphite.querier.query_handling_concurrency", OldDefault: "8", NewDefault: "32"},
 	}
 
 	// These slipped through from Mimir into GEM 1.7.0
@@ -658,7 +670,7 @@ func TestChangedGEMDefaults(t *testing.T) {
 		yaml:           config,
 	}
 
-	testConvertGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+	testConvertGEM(t, in, func(t *testing.T, _ []byte, _ []string, notices ConversionNotices, err error) {
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expectedChangedDefaults, notices.ChangedDefaults)
 	})
@@ -666,9 +678,9 @@ func TestChangedGEMDefaults(t *testing.T) {
 
 func TestConvert_UseNewDefaults(t *testing.T) {
 	distributorTimeoutNotice := ChangedDefault{
-		Path:       "distributor.remote_timeout",
-		OldDefault: "2s",
-		NewDefault: "20s",
+		Path:       "blocks_storage.tsdb.close_idle_tsdb_timeout",
+		OldDefault: "0s",
+		NewDefault: "13h0m0s",
 	}
 
 	testCases := []struct {
@@ -682,24 +694,24 @@ func TestConvert_UseNewDefaults(t *testing.T) {
 		{
 			name:                 "replaces explicitly set old defaults when useNewDefaults=true",
 			useNewDefaults:       true,
-			inYAML:               []byte("distributor: { remote_timeout: 2s }"),
-			expectedYAML:         []byte("distributor: { remote_timeout: 20s }"),
+			inYAML:               []byte("blocks_storage: { tsdb: { close_idle_tsdb_timeout: 0s } }"),
+			expectedYAML:         []byte("blocks_storage: { tsdb: { close_idle_tsdb_timeout: 13h0m0s } }"),
 			expectedNotice:       distributorTimeoutNotice,
 			valueShouldBeChanged: true,
 		},
 		{
 			name:                 "keeps explicitly set old defaults useNewDefaults=false",
 			useNewDefaults:       false,
-			inYAML:               []byte("distributor: { remote_timeout: 2s }"),
-			expectedYAML:         []byte("distributor: { remote_timeout: 2s }"),
+			inYAML:               []byte("blocks_storage: { tsdb: { close_idle_tsdb_timeout: 0s } }"),
+			expectedYAML:         []byte("blocks_storage: { tsdb: { close_idle_tsdb_timeout: 0s } }"),
 			expectedNotice:       distributorTimeoutNotice,
 			valueShouldBeChanged: false,
 		},
 		{
 			name:                 "keeps explicitly set old non-default value when useNewDefaults=true",
 			useNewDefaults:       true,
-			inYAML:               []byte("distributor: { remote_timeout: 15s }"),
-			expectedYAML:         []byte("distributor: { remote_timeout: 15s }"),
+			inYAML:               []byte("blocks_storage: { tsdb: { close_idle_tsdb_timeout: 1h0m0s } }"),
+			expectedYAML:         []byte("blocks_storage: { tsdb: { close_idle_tsdb_timeout: 1h0m0s } }"),
 			expectedNotice:       distributorTimeoutNotice,
 			valueShouldBeChanged: false,
 		},
@@ -714,7 +726,7 @@ func TestConvert_UseNewDefaults(t *testing.T) {
 				useNewDefaults: tc.useNewDefaults,
 			}
 
-			testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+			testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, _ []string, notices ConversionNotices, err error) {
 				require.NoError(t, err)
 
 				assert.YAMLEq(t, string(tc.expectedYAML), string(outYAML))
@@ -741,7 +753,7 @@ func TestConvert_NotInYAMLIsNotPrinted(t *testing.T) {
 					outputDefaults:     showDefaults,
 					dontLoadCommonOpts: true,
 				}
-				testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+				testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, _ []string, _ ConversionNotices, err error) {
 					assert.NoError(t, err)
 					assert.NotContains(t, string(outYAML), notInYaml)
 				})
@@ -758,7 +770,7 @@ func TestConvert_PassingOnlyYAMLReturnsOnlyYAML(t *testing.T) {
 		yaml: inYAML,
 	}
 
-	testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+	testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, _ ConversionNotices, err error) {
 		assert.NoError(t, err)
 		assert.YAMLEq(t, string(expectedOutYAML), string(outYAML))
 		assert.Empty(t, outFlags)
@@ -773,7 +785,7 @@ func TestConvert_PassingOnlyFlagsReturnsOnlyFlags(t *testing.T) {
 		flags: inFlags,
 	}
 
-	testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+	testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, _ ConversionNotices, err error) {
 		assert.NoError(t, err)
 		assert.Empty(t, outYAML)
 		assert.ElementsMatch(t, expectedOutFlags, outFlags)
@@ -797,7 +809,7 @@ func TestRemovedParamsAndFlagsAreCorrect(t *testing.T) {
 
 	allCLIFlagsNames := func(p Parameters) map[string]bool {
 		flags := map[string]bool{}
-		assert.NoError(t, p.Walk(func(path string, v Value) error {
+		assert.NoError(t, p.Walk(func(path string, _ Value) error {
 			flagName, err := p.GetFlag(path)
 			assert.NoError(t, err)
 			flags[flagName] = true

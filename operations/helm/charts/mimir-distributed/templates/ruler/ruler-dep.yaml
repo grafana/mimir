@@ -9,7 +9,9 @@ metadata:
     {{- toYaml .Values.ruler.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  {{- if or (not .Values.ruler.kedaAutoscaling.enabled) (.Values.ruler.kedaAutoscaling.preserveReplicas) }}
   replicas: {{ .Values.ruler.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 6 }}
@@ -19,21 +21,20 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 8 }}
-        {{- with .Values.ruler.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "ruler") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
-      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
-    {{- if .Values.ruler.priorityClassName }}
+      serviceAccountName: {{ template "mimir.ruler.serviceAccountName" . }}
+      {{- if .Values.ruler.priorityClassName }}
       priorityClassName: {{ .Values.ruler.priorityClassName }}
-    {{- end }}
+      {{- end }}
       securityContext:
-        {{- toYaml .Values.ruler.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "ruler") | nindent 8 }}
+      {{- with .Values.ruler.initContainers }}
       initContainers:
-        {{- toYaml .Values.ruler.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -48,6 +49,21 @@ spec:
             - "-target=ruler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-distributor.remote-timeout=10s"
+          {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}
+            {{- if not .Values.ingester.zoneAwareReplication.migration.writePath }}
+            - "-ingester.ring.zone-awareness-enabled=false"
+            {{- end }}
+            {{- if .Values.ingester.zoneAwareReplication.migration.excludeDefaultZone }}
+            - "-ingester.ring.excluded-zones=zone-default"
+            {{- end }}
+          {{- end }}
+          {{- if .Values.store_gateway.zoneAwareReplication.migration.enabled }}
+            {{- if not .Values.store_gateway.zoneAwareReplication.migration.readPath }}
+            - "-store-gateway.sharding-ring.prefix=collectors/"
+            - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
+            {{- end }}
+          {{- end }}
           {{- range $key, $value := .Values.ruler.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}
@@ -66,6 +82,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.ruler.persistence.subPath }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -91,6 +109,11 @@ spec:
             {{- with .Values.ruler.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.ruler }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
+            {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -101,12 +124,19 @@ spec:
 {{- if .Values.ruler.extraContainers }}
 {{ toYaml .Values.ruler.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.ruler.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.ruler.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ruler.affinity }}
       affinity:
-        {{- toYaml .Values.ruler.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ruler") | nindent 6 }}
+      {{- with .Values.ruler.tolerations }}
       tolerations:
-        {{- toYaml .Values.ruler.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.ruler.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -123,5 +153,7 @@ spec:
 {{ toYaml .Values.ruler.extraVolumes | indent 8}}
 {{- end }}
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
 {{- end -}}

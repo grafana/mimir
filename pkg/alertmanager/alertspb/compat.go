@@ -11,7 +11,7 @@ var (
 	ErrNotFound = errors.New("alertmanager storage object not found")
 )
 
-// ToProto transforms a yaml Alertmanager config and map of template files to an AlertConfigDesc
+// ToProto transforms a yaml Alertmanager config and map of template files to an AlertConfigDesc.
 func ToProto(cfg string, templates map[string]string, user string) AlertConfigDesc {
 	tmpls := []*TemplateDesc{}
 	for fn, body := range templates {
@@ -27,7 +27,18 @@ func ToProto(cfg string, templates map[string]string, user string) AlertConfigDe
 	}
 }
 
-// ParseTemplates returns a alertmanager config object
+// ToGrafanaProto transforms a Grafana Alertmanager config to a GrafanaAlertConfigDesc.
+func ToGrafanaProto(cfg, user, hash string, createdAtTimestamp int64, isDefault bool) GrafanaAlertConfigDesc {
+	return GrafanaAlertConfigDesc{
+		User:               user,
+		RawConfig:          cfg,
+		Hash:               hash,
+		CreatedAtTimestamp: createdAtTimestamp,
+		Default:            isDefault,
+	}
+}
+
+// ParseTemplates returns an Alertmanager config object.
 func ParseTemplates(cfg AlertConfigDesc) map[string]string {
 	templates := map[string]string{}
 	for _, t := range cfg.Templates {

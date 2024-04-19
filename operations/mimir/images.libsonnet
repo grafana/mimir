@@ -1,11 +1,11 @@
 {
   _images+:: {
     // Various third-party images.
-    memcached: 'memcached:1.6.9-alpine',
-    memcachedExporter: 'prom/memcached-exporter:v0.6.0',
+    memcached: 'memcached:1.6.22-alpine',
+    memcachedExporter: 'prom/memcached-exporter:v0.14.3',
 
     // Our services.
-    mimir: 'grafana/mimir:2.2.0',
+    mimir: 'grafana/mimir:2.12.0',
 
     alertmanager: self.mimir,
     distributor: self.mimir,
@@ -19,10 +19,15 @@
     query_scheduler: self.mimir,
     overrides_exporter: self.mimir,
 
-    query_tee: 'grafana/query-tee:2.2.0',
-    continuous_test: 'grafana/mimir-continuous-test:main-8a8648e81',
+    query_tee: 'grafana/query-tee:2.12.0',
+    continuous_test: 'grafana/mimir-continuous-test:2.12.0',
+
+    // Read-write deployment mode.
+    mimir_write: self.mimir,
+    mimir_read: self.mimir,
+    mimir_backend: self.mimir,
 
     // See: https://github.com/grafana/rollout-operator
-    rollout_operator: 'grafana/rollout-operator:v0.1.1',
+    rollout_operator: 'grafana/rollout-operator:v0.14.0',
   },
 }

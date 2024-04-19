@@ -3,7 +3,6 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
-// +build requires_docker
 
 package integration
 
@@ -18,6 +17,8 @@ import (
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -58,14 +59,17 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	require.NoError(t, err)
 	defer s.Close()
 
-	flagTSDBPath := map[string]string{
-		"-blocks-storage.tsdb.dir": e2e.ContainerSharedDir + "/tsdb-shared",
-	}
+	const blockRangePeriod = 5 * time.Second
 
 	flags := mergeFlags(
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
-		flagTSDBPath,
+		map[string]string{
+			"-blocks-storage.tsdb.dir":                 e2e.ContainerSharedDir + "/tsdb-shared",
+			"-blocks-storage.tsdb.block-ranges-period": blockRangePeriod.String(),
+			"-blocks-storage.tsdb.ship-interval":       "1s",
+			"-blocks-storage.tsdb.retention-period":    ((blockRangePeriod * 2) - 1).String(),
+		},
 	)
 
 	// Start dependencies.
@@ -83,15 +87,40 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
 	// Push some series to Mimir.
-	now := time.Now()
-	series, expectedVector := generateSeries("series_1", now)
+	series1Timestamp := time.Now()
+	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
+	series1, expectedVector1, _ := generateFloatSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
+	series2, expectedVector2, _ := generateFloatSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
 
-	res, err := c.Push(series)
+	res, err := c.Push(series1)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
+
+	res, err = c.Push(series2)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_shipper_uploads_total"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_created_total"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series_removed_total"))
+
+	// Push another series to further compact another block and delete the first block
+	// due to expired retention.
+	series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
+	series3, expectedVector3, _ := generateFloatSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
+
+	res, err = c.Push(series3)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_shipper_uploads_total"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(3), "cortex_ingester_memory_series_created_total"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_removed_total"))
 
 	// Stop ingester on old version
 	require.NoError(t, s.Stop(ingester))
@@ -103,16 +132,23 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
-	checkQueries(t,
-		consul,
-		expectedVector,
-		previousImage,
-		flags,
-		oldFlagsMapper,
-		now,
-		s,
-		1,
-	)
+	// Start the compactor to have the bucket index created before querying.
+	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(compactor))
+
+	checkQueries(t, consul, previousImage, flags, oldFlagsMapper, s, 1, instantQueryTest{
+		expr:           "series_1",
+		time:           series1Timestamp,
+		expectedVector: expectedVector1,
+	}, instantQueryTest{
+		expr:           "series_2",
+		time:           series2Timestamp,
+		expectedVector: expectedVector2,
+	}, instantQueryTest{
+		expr:           "series_3",
+		time:           series3Timestamp,
+		expectedVector: expectedVector3,
+	})
 }
 
 // Check for issues like https://github.com/cortexproject/cortex/issues/2356
@@ -147,7 +183,7 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector := generateSeries("series_1", now)
+	series, expectedVector, _ := generateFloatSeries("series_1", now)
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
@@ -156,40 +192,42 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	checkQueries(t, consul,
-		expectedVector,
-		previousImage,
-		flags,
-		oldFlagsMapper,
-		now,
-		s,
-		3,
-	)
+	checkQueries(t, consul, previousImage, flags, oldFlagsMapper, s, 3, instantQueryTest{
+		time:           now,
+		expr:           "series_1",
+		expectedVector: expectedVector,
+	})
 }
 
 func checkQueries(
 	t *testing.T,
 	consul *e2e.HTTPService,
-	expectedVector model.Vector,
 	previousImage string,
 	flags map[string]string,
 	oldFlagsMapper e2emimir.FlagMapper,
-	now time.Time,
 	s *e2e.Scenario,
 	numIngesters int,
+	instantQueries ...instantQueryTest,
 ) {
 	cases := map[string]struct {
 		queryFrontendOptions []e2emimir.Option
 		querierOptions       []e2emimir.Option
+		storeGatewayOptions  []e2emimir.Option
 	}{
-		"old query-frontend, new querier": {
+		"old query-frontend, new querier and store-gateway": {
 			queryFrontendOptions: []e2emimir.Option{
 				e2emimir.WithImage(previousImage),
 				e2emimir.WithFlagMapper(oldFlagsMapper),
 			},
 		},
-		"new query-frontend, old querier": {
+		"new query-frontend and store-gateway, old querier": {
 			querierOptions: []e2emimir.Option{
+				e2emimir.WithImage(previousImage),
+				e2emimir.WithFlagMapper(oldFlagsMapper),
+			},
+		},
+		"new query-frontend and querier, old store-gateway": {
+			storeGatewayOptions: []e2emimir.Option{
 				e2emimir.WithImage(previousImage),
 				e2emimir.WithFlagMapper(oldFlagsMapper),
 			},
@@ -205,43 +243,59 @@ func checkQueries(
 				require.NoError(t, s.Stop(queryFrontend))
 			}()
 
-			// Start querier.
+			// Start querier and store-gateway.
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), e2e.MergeFlagsWithoutRemovingEmpty(flags, map[string]string{
 				"-querier.frontend-address": queryFrontend.NetworkGRPCEndpoint(),
 			}), c.querierOptions...)
+			storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), flags, c.storeGatewayOptions...)
 
-			require.NoError(t, s.Start(querier))
+			require.NoError(t, s.Start(querier, storeGateway))
 			defer func() {
-				require.NoError(t, s.Stop(querier))
+				require.NoError(t, s.Stop(querier, storeGateway))
 			}()
 
-			// Wait until querier and query-frontend are ready, and the querier has updated the ring.
-			require.NoError(t, s.WaitReady(querier, queryFrontend))
-			require.NoError(t, querier.WaitSumMetrics(e2e.Equals(float64(numIngesters*512)), "cortex_ring_tokens_total"))
+			// Wait until querier, query-frontend and store-gateway are ready, and the querier has updated the ring.
+			require.NoError(t, s.WaitReady(querier, queryFrontend, storeGateway))
+			require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(float64(numIngesters)), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+			require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "store-gateway-client"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 			// Query the series.
 			for _, endpoint := range []string{queryFrontend.HTTPEndpoint(), querier.HTTPEndpoint()} {
 				c, err := e2emimir.NewClient("", endpoint, "", "", "user-1")
 				require.NoError(t, err)
 
-				result, err := c.Query("series_1", now)
-				require.NoError(t, err)
-				require.Equal(t, model.ValVector, result.Type())
-				assert.Equal(t, expectedVector, result.(model.Vector))
+				for _, query := range instantQueries {
+					t.Run(fmt.Sprintf("%s: %s", endpoint, query.expr), func(t *testing.T) {
+						result, err := c.Query(query.expr, query.time)
+						require.NoError(t, err)
+						require.Equal(t, model.ValVector, result.Type())
+						assert.Equal(t, query.expectedVector, result.(model.Vector))
+					})
+				}
 			}
 		})
 	}
 }
 
+type instantQueryTest struct {
+	expr           string
+	time           time.Time
+	expectedVector model.Vector
+}
+
 type testingLogger interface{ Logf(string, ...interface{}) }
 
 func previousImageVersionOverrides(t *testing.T) map[string]e2emimir.FlagMapper {
-	overrides, err := parsePrevioiusImageVersionOverrides(os.Getenv("MIMIR_PREVIOUS_IMAGES"), t)
+	overrides, err := parsePreviousImageVersionOverrides(os.Getenv("MIMIR_PREVIOUS_IMAGES"), t)
 	require.NoError(t, err)
 	return overrides
 }
 
-func parsePrevioiusImageVersionOverrides(env string, logger testingLogger) (map[string]e2emimir.FlagMapper, error) {
+func parsePreviousImageVersionOverrides(env string, logger testingLogger) (map[string]e2emimir.FlagMapper, error) {
 	if env == "" {
 		return nil, nil
 	}
@@ -264,20 +318,20 @@ func parsePrevioiusImageVersionOverrides(env string, logger testingLogger) (map[
 
 func TestParsePreviousImageVersionOverrides(t *testing.T) {
 	t.Run("empty overrides", func(t *testing.T) {
-		overrides, err := parsePrevioiusImageVersionOverrides("", t)
+		overrides, err := parsePreviousImageVersionOverrides("", t)
 		require.NoError(t, err)
 		require.Empty(t, overrides)
 	})
 
 	t.Run("one version override", func(t *testing.T) {
-		overrides, err := parsePrevioiusImageVersionOverrides("first", t)
+		overrides, err := parsePreviousImageVersionOverrides("first", t)
 		require.NoError(t, err)
 		require.Len(t, overrides, 1)
 		require.NotNil(t, overrides["first"])
 	})
 
 	t.Run("comma separated overrides", func(t *testing.T) {
-		overrides, err := parsePrevioiusImageVersionOverrides("first,second", t)
+		overrides, err := parsePreviousImageVersionOverrides("first,second", t)
 		require.NoError(t, err)
 		require.Len(t, overrides, 2)
 		require.NotNil(t, overrides["first"])
@@ -309,7 +363,7 @@ func TestParsePreviousImageVersionOverrides(t *testing.T) {
 				"second": []
 			}`
 
-		overrides, err := parsePrevioiusImageVersionOverrides(jsonOverrides, t)
+		overrides, err := parsePreviousImageVersionOverrides(jsonOverrides, t)
 		require.NoError(t, err)
 		require.Len(t, overrides, 2)
 

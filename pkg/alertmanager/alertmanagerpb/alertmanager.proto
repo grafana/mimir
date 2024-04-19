@@ -10,7 +10,7 @@ import "gogoproto/gogo.proto";
 
 option go_package = "alertmanagerpb";
 
-import "github.com/weaveworks/common/httpgrpc/httpgrpc.proto";
+import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
 import "github.com/prometheus/alertmanager/cluster/clusterpb/cluster.proto";
 
 // Alertmanager interface exposed to the Alertmanager Distributor and other Alertmanagers

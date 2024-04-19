@@ -3,67 +3,69 @@ local filename = 'mimir-alertmanager-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == 'a6883fb22799ac74479c7db872451092' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Alertmanager resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRowIf(
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', $._config.job_names.gateway),
+        $.containerCPUUsagePanelByComponent('gateway'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', $._config.job_names.gateway),
+        $.containerMemoryWorkingSetPanelByComponent('gateway'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.gateway),
+        $.containerGoHeapInUsePanelByComponent('gateway'),
       )
     )
     .addRow(
       $.row('Alertmanager')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'alertmanager'),
+        $.containerCPUUsagePanelByComponent('alertmanager'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'alertmanager'),
+        $.containerMemoryWorkingSetPanelByComponent('alertmanager'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'alertmanager'),
+        $.containerGoHeapInUsePanelByComponent('alertmanager'),
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.alertmanager_im_enabled,
       $.row('Instance mapper')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'alertmanager-im'),
+        $.containerCPUUsagePanelByComponent('alertmanager_im'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'alertmanager-im'),
+        $.containerMemoryWorkingSetPanelByComponent('alertmanager_im'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'alertmanager-im'),
+        $.containerGoHeapInUsePanelByComponent('alertmanager_im'),
       )
     )
     .addRow(
       $.row('Network')
       .addPanel(
-        $.containerNetworkReceiveBytesPanel($._config.instance_names.alertmanager),
+        $.containerNetworkReceiveBytesPanelByComponent('alertmanager'),
       )
       .addPanel(
-        $.containerNetworkTransmitBytesPanel($._config.instance_names.alertmanager),
+        $.containerNetworkTransmitBytesPanelByComponent('alertmanager'),
       )
     )
     .addRow(
       $.row('Disk')
       .addPanel(
-        $.containerDiskWritesPanel('Writes', 'alertmanager'),
+        $.containerDiskWritesPanelByComponent('alertmanager'),
       )
       .addPanel(
-        $.containerDiskReadsPanel('Reads', 'alertmanager'),
+        $.containerDiskReadsPanelByComponent('alertmanager'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', 'alertmanager'),
+        $.containerDiskSpaceUtilizationPanelByComponent('alertmanager'),
       )
     ),
 }

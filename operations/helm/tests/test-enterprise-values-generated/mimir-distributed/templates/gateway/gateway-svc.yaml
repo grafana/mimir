@@ -15,9 +15,13 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - port: 8080
+    - port: 80
       protocol: TCP
       name: http-metrics
+      targetPort: http-metrics
+    - port: 8080
+      protocol: TCP
+      name: legacy-http-metrics
       targetPort: http-metrics
   selector:
     app.kubernetes.io/name: mimir

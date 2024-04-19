@@ -8,7 +8,12 @@ metadata:
     {{- toYaml .Values.query_frontend.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  {{- if or (not .Values.query_frontend.kedaAutoscaling.enabled) (.Values.query_frontend.kedaAutoscaling.preserveReplicas) }}
+  # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
+  {{- if or (or (kindIs "int64" .Values.query_frontend.replicas) (kindIs "float64" .Values.query_frontend.replicas)) (.Values.query_frontend.replicas) }}
   replicas: {{ .Values.query_frontend.replicas }}
+  {{- end }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "query-frontend") | nindent 6 }}
@@ -18,21 +23,20 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "query-frontend") | nindent 8 }}
-        {{- with .Values.query_frontend.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "query-frontend") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
-    {{- if .Values.query_frontend.priorityClassName }}
+      {{- if .Values.query_frontend.priorityClassName }}
       priorityClassName: {{ .Values.query_frontend.priorityClassName }}
-    {{- end }}
+      {{- end }}
       securityContext:
-        {{- toYaml .Values.query_frontend.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "query-frontend") | nindent 8 }}
+      {{- with .Values.query_frontend.initContainers }}
       initContainers:
-        {{- toYaml .Values.query_frontend.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -47,6 +51,9 @@ spec:
             - "-target=query-frontend"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Reduce the likelihood of queries hitting terminated query-frontends.
+            - "-server.grpc.keepalive.max-connection-age=30s"
+            - "-shutdown-delay=90s"
           {{- range $key, $value := .Values.query_frontend.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}
@@ -67,6 +74,8 @@ spec:
               {{- if .Values.query_frontend.persistence.subPath }}
               subPath: {{ .Values.query_frontend.persistence.subPath }}
               {{- end }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -89,6 +98,11 @@ spec:
             {{- with .Values.query_frontend.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.query_frontend }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
+            {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -99,12 +113,19 @@ spec:
 {{- if .Values.query_frontend.extraContainers }}
 {{ toYaml .Values.query_frontend.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.query_frontend.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.query_frontend.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.query_frontend.affinity }}
       affinity:
-        {{- toYaml .Values.query_frontend.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "query-frontend") | nindent 6 }}
+      {{- with .Values.query_frontend.tolerations }}
       tolerations:
-        {{- toYaml .Values.query_frontend.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.query_frontend.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -121,4 +142,6 @@ spec:
 {{ toYaml .Values.query_frontend.extraVolumes | indent 8}}
 {{- end }}
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}

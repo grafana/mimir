@@ -8,17 +8,21 @@ package v1
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
+	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/user"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
@@ -28,16 +32,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-client-go/config"
-	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
-	"github.com/weaveworks/common/middleware"
-	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
-	"github.com/grafana/mimir/pkg/scheduler/queue"
 )
 
 const (
@@ -46,7 +47,7 @@ const (
 )
 
 func TestFrontend(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World"))
 		require.NoError(t, err)
 	})
@@ -60,7 +61,7 @@ func TestFrontend(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 200, resp.StatusCode)
 
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
 		assert.Equal(t, "Hello World", string(body))
@@ -109,7 +110,7 @@ func TestFrontendPropagateTrace(t *testing.T) {
 		require.Equal(t, 200, resp.StatusCode)
 
 		defer resp.Body.Close()
-		_, err = ioutil.ReadAll(resp.Body)
+		_, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
 		// Query should do one call.
@@ -129,17 +130,22 @@ func TestFrontendCheckReady(t *testing.T) {
 		{"no url, no clients is not ready", 0, "not ready: number of queriers connected to query-frontend is 0", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			f := &Frontend{
-				log: log.NewNopLogger(),
-				requestQueue: queue.NewRequestQueue(5, 0,
-					prometheus.NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-					prometheus.NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-				),
+			cfg := Config{
+				MaxOutstandingPerTenant: 5,
+				QuerierForgetDelay:      0,
 			}
+
+			f, err := New(cfg, limits{}, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), f))
+			defer func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), f))
+			}()
+
 			for i := 0; i < tt.connectedClients; i++ {
 				f.requestQueue.RegisterQuerierConnection("test")
 			}
-			err := f.CheckReady(context.Background())
+			err = f.CheckReady(context.Background())
 			errMsg := ""
 
 			if err != nil {
@@ -155,7 +161,7 @@ func TestFrontendCheckReady(t *testing.T) {
 // the underlying query is correctly cancelled _and not retried_.
 func TestFrontendCancel(t *testing.T) {
 	var tries atomic.Int32
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 		tries.Inc()
 	})
@@ -183,7 +189,7 @@ func TestFrontendCancel(t *testing.T) {
 }
 
 func TestFrontendMetricsCleanup(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World"))
 		require.NoError(t, err)
 	})
@@ -201,7 +207,7 @@ func TestFrontendMetricsCleanup(t *testing.T) {
 		require.Equal(t, 200, resp.StatusCode)
 		defer resp.Body.Close()
 
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
 		assert.Equal(t, "Hello World", string(body))
@@ -221,6 +227,75 @@ func TestFrontendMetricsCleanup(t *testing.T) {
 	}
 
 	testFrontend(t, defaultFrontendConfig(), handler, test, nil, reg)
+}
+
+func TestFrontendStats(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s := stats.FromContext(r.Context())
+		s.AddQueueTime(5 * time.Second)
+		w.WriteHeader(200)
+	})
+
+	tl := testLogger{}
+
+	test := func(addr string, _ *Frontend) {
+		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/", addr), nil)
+		require.NoError(t, err)
+		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(context.Background(), "1"), req)
+		require.NoError(t, err)
+
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, 200, resp.StatusCode)
+		defer resp.Body.Close()
+		_, err = io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		queryStatsFound := false
+		for _, le := range tl.getLogMessages() {
+			if le["msg"] == "query stats" {
+				require.False(t, queryStatsFound)
+				queryStatsFound = true
+				require.GreaterOrEqual(t, le["queue_time_seconds"], 5.0)
+			}
+		}
+		require.True(t, queryStatsFound)
+	}
+
+	testFrontend(t, defaultFrontendConfig(), handler, test, &tl, nil)
+}
+
+type testLogger struct {
+	mu          sync.Mutex
+	logMessages []map[string]interface{}
+}
+
+func (t *testLogger) Log(keyvals ...interface{}) error {
+	if len(keyvals)%2 != 0 {
+		panic("received uneven number of key/value pairs for log line")
+	}
+
+	entryCount := len(keyvals) / 2
+	msg := make(map[string]interface{}, entryCount)
+
+	for i := 0; i < entryCount; i++ {
+		name := keyvals[2*i].(string)
+		value := keyvals[2*i+1]
+
+		msg[name] = value
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.logMessages = append(t.logMessages, msg)
+	return nil
+}
+
+func (t *testLogger) getLogMessages() []map[string]interface{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]map[string]interface{}(nil), t.logMessages...)
 }
 
 func testFrontend(t *testing.T, config Config, handler http.Handler, test func(addr string, frontend *Frontend), l log.Logger, reg prometheus.Registerer) {
@@ -257,7 +332,7 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	frontendv1pb.RegisterFrontendServer(grpcServer, v1)
 
 	// Default HTTP handler config.
-	handlerCfg := transport.HandlerConfig{}
+	handlerCfg := transport.HandlerConfig{QueryStatsEnabled: true}
 	flagext.DefaultValues(&handlerCfg)
 
 	rt := transport.AdaptGrpcRoundTripperToHTTPRoundTripper(v1)
@@ -265,7 +340,7 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	r.PathPrefix("/").Handler(middleware.Merge(
 		middleware.AuthenticateUser,
 		middleware.Tracer{},
-	).Wrap(transport.NewHandler(handlerCfg, rt, logger, nil)))
+	).Wrap(transport.NewHandler(handlerCfg, rt, logger, nil, nil)))
 
 	httpServer := http.Server{
 		Handler: r,
@@ -276,7 +351,7 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	go grpcServer.Serve(grpcListen) //nolint:errcheck
 
 	var worker services.Service
-	worker, err = querier_worker.NewQuerierWorker(workerConfig, httpgrpc_server.NewServer(handler), logger, nil)
+	worker, err = querier_worker.NewQuerierWorker(workerConfig, httpgrpc_server.NewServer(handler, httpgrpc_server.WithReturn4XXErrors), logger, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), worker))
 

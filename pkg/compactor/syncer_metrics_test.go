@@ -10,24 +10,24 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestSyncerMetrics(t *testing.T) {
+	logger := test.NewTestingLogger(t)
 	reg := prometheus.NewPedanticRegistry()
 
 	sm := newAggregatedSyncerMetrics(reg)
-	sm.gatherThanosSyncerMetrics(generateTestData(12345))
-	sm.gatherThanosSyncerMetrics(generateTestData(76543))
-	sm.gatherThanosSyncerMetrics(generateTestData(22222))
+	sm.gatherThanosSyncerMetrics(generateTestData(12345), logger)
+	sm.gatherThanosSyncerMetrics(generateTestData(76543), logger)
+	sm.gatherThanosSyncerMetrics(generateTestData(22222), logger)
 	// total base = 111110
 
 	err := testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-			# HELP cortex_compactor_meta_sync_consistency_delay_seconds Configured consistency delay in seconds.
-			# TYPE cortex_compactor_meta_sync_consistency_delay_seconds gauge
-			cortex_compactor_meta_sync_consistency_delay_seconds 300
-
 			# HELP cortex_compactor_meta_syncs_total Total blocks metadata synchronization attempts.
 			# TYPE cortex_compactor_meta_syncs_total counter
 			cortex_compactor_meta_syncs_total 111110
@@ -100,7 +100,6 @@ func generateTestData(base float64) *prometheus.Registry {
 	m.metaSync.Add(1 * base)
 	m.metaSyncFailures.Add(2 * base)
 	m.metaSyncDuration.Observe(3 * base / 10000)
-	m.metaSyncConsistencyDelay.Set(300)
 	m.garbageCollections.Add(5 * base)
 	m.garbageCollectionFailures.Add(6 * base)
 	m.garbageCollectionDuration.Observe(7 * base / 10000)
@@ -112,7 +111,6 @@ type testSyncerMetrics struct {
 	metaSync                  prometheus.Counter
 	metaSyncFailures          prometheus.Counter
 	metaSyncDuration          prometheus.Histogram
-	metaSyncConsistencyDelay  prometheus.Gauge
 	garbageCollections        prometheus.Counter
 	garbageCollectionFailures prometheus.Counter
 	garbageCollectionDuration prometheus.Histogram
@@ -121,48 +119,33 @@ type testSyncerMetrics struct {
 func newTestSyncerMetrics(reg prometheus.Registerer) *testSyncerMetrics {
 	var m testSyncerMetrics
 
-	m.metaSync = prometheus.NewCounter(prometheus.CounterOpts{
+	m.metaSync = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_syncs_total",
 		Help: "Total blocks metadata synchronization attempts.",
 	})
-	m.metaSyncFailures = prometheus.NewCounter(prometheus.CounterOpts{
+	m.metaSyncFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_sync_failures_total",
 		Help: "Total blocks metadata synchronization failures.",
 	})
-	m.metaSyncDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+	m.metaSyncDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "blocks_meta_sync_duration_seconds",
 		Help:    "Duration of the blocks metadata synchronization in seconds.",
 		Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
 	})
-	m.metaSyncConsistencyDelay = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "consistency_delay_seconds",
-		Help: "Configured consistency delay in seconds.",
-	})
 
-	m.garbageCollections = prometheus.NewCounter(prometheus.CounterOpts{
+	m.garbageCollections = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "thanos_compact_garbage_collection_total",
 		Help: "Total number of garbage collection operations.",
 	})
-	m.garbageCollectionFailures = prometheus.NewCounter(prometheus.CounterOpts{
+	m.garbageCollectionFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "thanos_compact_garbage_collection_failures_total",
 		Help: "Total number of failed garbage collection operations.",
 	})
-	m.garbageCollectionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+	m.garbageCollectionDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "thanos_compact_garbage_collection_duration_seconds",
 		Help:    "Time it took to perform garbage collection iteration.",
 		Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
 	})
 
-	if reg != nil {
-		reg.MustRegister(
-			m.metaSync,
-			m.metaSyncFailures,
-			m.metaSyncDuration,
-			m.metaSyncConsistencyDelay,
-			m.garbageCollections,
-			m.garbageCollectionFailures,
-			m.garbageCollectionDuration,
-		)
-	}
 	return &m
 }

@@ -6,6 +6,8 @@
 package querytee
 
 import (
+	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +19,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -30,24 +34,24 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 	backendURL3, err := url.Parse("http://backend-3/")
 	require.NoError(t, err)
 
-	backendPref := NewProxyBackend("backend-1", backendURL1, time.Second, true)
-	backendOther1 := NewProxyBackend("backend-2", backendURL2, time.Second, false)
-	backendOther2 := NewProxyBackend("backend-3", backendURL3, time.Second, false)
+	backendPref := NewProxyBackend("backend-1", backendURL1, time.Second, true, false)
+	backendOther1 := NewProxyBackend("backend-2", backendURL2, time.Second, false, false)
+	backendOther2 := NewProxyBackend("backend-3", backendURL3, time.Second, false, false)
 
 	tests := map[string]struct {
-		backends  []*ProxyBackend
+		backends  []ProxyBackendInterface
 		responses []*backendResponse
-		expected  *ProxyBackend
+		expected  ProxyBackendInterface
 	}{
 		"the preferred backend is the 1st response received": {
-			backends: []*ProxyBackend{backendPref, backendOther1},
+			backends: []ProxyBackendInterface{backendPref, backendOther1},
 			responses: []*backendResponse{
 				{backend: backendPref, status: 200},
 			},
 			expected: backendPref,
 		},
 		"the preferred backend is the last response received": {
-			backends: []*ProxyBackend{backendPref, backendOther1},
+			backends: []ProxyBackendInterface{backendPref, backendOther1},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 200},
 				{backend: backendPref, status: 200},
@@ -55,7 +59,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			expected: backendPref,
 		},
 		"the preferred backend is the last response received but it's not successful": {
-			backends: []*ProxyBackend{backendPref, backendOther1},
+			backends: []ProxyBackendInterface{backendPref, backendOther1},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 200},
 				{backend: backendPref, status: 500},
@@ -63,7 +67,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			expected: backendOther1,
 		},
 		"the preferred backend is the 2nd response received but only the last one is successful": {
-			backends: []*ProxyBackend{backendPref, backendOther1, backendOther2},
+			backends: []ProxyBackendInterface{backendPref, backendOther1, backendOther2},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 500},
 				{backend: backendPref, status: 500},
@@ -72,14 +76,14 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			expected: backendOther2,
 		},
 		"there's no preferred backend configured and the 1st response is successful": {
-			backends: []*ProxyBackend{backendOther1, backendOther2},
+			backends: []ProxyBackendInterface{backendOther1, backendOther2},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 200},
 			},
 			expected: backendOther1,
 		},
 		"there's no preferred backend configured and the last response is successful": {
-			backends: []*ProxyBackend{backendOther1, backendOther2},
+			backends: []ProxyBackendInterface{backendOther1, backendOther2},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 500},
 				{backend: backendOther2, status: 200},
@@ -87,7 +91,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			expected: backendOther2,
 		},
 		"no received response is successful": {
-			backends: []*ProxyBackend{backendPref, backendOther1},
+			backends: []ProxyBackendInterface{backendPref, backendOther1},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 500},
 				{backend: backendPref, status: 500},
@@ -100,7 +104,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			endpoint := NewProxyEndpoint(testData.backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil)
+			endpoint := NewProxyEndpoint(testData.backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
 
 			// Send the responses from a dedicated goroutine.
 			resCh := make(chan *backendResponse)
@@ -140,11 +144,11 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 	backendURL2, err := url.Parse(backend2.URL)
 	require.NoError(t, err)
 
-	backends := []*ProxyBackend{
-		NewProxyBackend("backend-1", backendURL1, time.Second, true),
-		NewProxyBackend("backend-2", backendURL2, time.Second, false),
+	backends := []ProxyBackendInterface{
+		NewProxyBackend("backend-1", backendURL1, time.Second, true, false),
+		NewProxyBackend("backend-2", backendURL2, time.Second, false, false),
 	}
-	endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil)
+	endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
 
 	for _, tc := range []struct {
 		name    string
@@ -208,7 +212,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 			wg.Add(2)
 
 			if tc.handler == nil {
-				testHandler = func(w http.ResponseWriter, r *http.Request) {
+				testHandler = func(w http.ResponseWriter, _ *http.Request) {
 					_, _ = w.Write([]byte("ok"))
 				}
 
@@ -225,6 +229,289 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 			require.Equal(t, uint64(2), requestCount.Load())
 		})
 	}
+}
+
+func Test_ProxyEndpoint_Comparison(t *testing.T) {
+	scenarios := map[string]struct {
+		preferredResponseStatusCode  int
+		secondaryResponseStatusCode  int
+		preferredResponseContentType string
+		secondaryResponseContentType string
+		comparatorResult             ComparisonResult
+		comparatorError              error
+		expectedComparisonResult     ComparisonResult
+		expectedComparisonError      string
+	}{
+		"responses are the same": {
+			preferredResponseStatusCode:  http.StatusOK,
+			secondaryResponseStatusCode:  http.StatusOK,
+			preferredResponseContentType: "application/json",
+			secondaryResponseContentType: "application/json",
+			comparatorResult:             ComparisonSuccess,
+			expectedComparisonResult:     ComparisonSuccess,
+		},
+		"responses are not the same": {
+			preferredResponseStatusCode:  http.StatusOK,
+			secondaryResponseStatusCode:  http.StatusOK,
+			preferredResponseContentType: "application/json",
+			secondaryResponseContentType: "application/json",
+			comparatorResult:             ComparisonFailed,
+			comparatorError:              errors.New("the responses are different"),
+			expectedComparisonError:      "the responses are different",
+			expectedComparisonResult:     ComparisonFailed,
+		},
+		"responses have different status codes": {
+			preferredResponseStatusCode:  http.StatusOK,
+			secondaryResponseStatusCode:  http.StatusTeapot,
+			preferredResponseContentType: "application/json",
+			secondaryResponseContentType: "application/json",
+			expectedComparisonError:      "expected status code 200 (returned by preferred backend) but got 418 from secondary backend",
+			expectedComparisonResult:     ComparisonFailed,
+		},
+		"preferred backend response has non-JSON content type": {
+			preferredResponseStatusCode:  http.StatusOK,
+			secondaryResponseStatusCode:  http.StatusOK,
+			preferredResponseContentType: "text/plain",
+			secondaryResponseContentType: "application/json",
+			expectedComparisonError:      "skipped comparison of response because the response from the preferred backend contained an unexpected content type 'text/plain', expected 'application/json'",
+			expectedComparisonResult:     ComparisonSkipped,
+		},
+		"secondary backend response has non-JSON content type": {
+			preferredResponseStatusCode:  http.StatusOK,
+			secondaryResponseStatusCode:  http.StatusOK,
+			preferredResponseContentType: "application/json",
+			secondaryResponseContentType: "text/plain",
+			expectedComparisonError:      "skipped comparison of response because the response from the secondary backend contained an unexpected content type 'text/plain', expected 'application/json'",
+			expectedComparisonResult:     ComparisonSkipped,
+		},
+	}
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			preferredBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", scenario.preferredResponseContentType)
+				w.WriteHeader(scenario.preferredResponseStatusCode)
+				_, err := w.Write([]byte("preferred response"))
+				require.NoError(t, err)
+			}))
+
+			defer preferredBackend.Close()
+			preferredBackendURL, err := url.Parse(preferredBackend.URL)
+			require.NoError(t, err)
+
+			secondaryBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", scenario.secondaryResponseContentType)
+				w.WriteHeader(scenario.secondaryResponseStatusCode)
+				_, err := w.Write([]byte("secondary response"))
+				require.NoError(t, err)
+			}))
+
+			defer secondaryBackend.Close()
+			secondaryBackendURL, err := url.Parse(secondaryBackend.URL)
+			require.NoError(t, err)
+
+			backends := []ProxyBackendInterface{
+				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true, false),
+				NewProxyBackend("secondary-backend", secondaryBackendURL, time.Second, false, false),
+			}
+
+			logger := newMockLogger()
+			reg := prometheus.NewPedanticRegistry()
+			comparator := &mockComparator{
+				comparisonResult: scenario.comparatorResult,
+				comparisonError:  scenario.comparatorError,
+			}
+
+			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator, 0)
+
+			resp := httptest.NewRecorder()
+			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
+			require.NoError(t, err)
+			endpoint.ServeHTTP(resp, req)
+			require.Equal(t, "preferred response", resp.Body.String())
+			require.Equal(t, scenario.preferredResponseStatusCode, resp.Code)
+			require.Equal(t, scenario.preferredResponseContentType, resp.Header().Get("Content-Type"))
+
+			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
+			// Wait for the response comparison to complete before checking the logged messages.
+			waitForResponseComparisonMetric(t, reg, scenario.expectedComparisonResult)
+
+			switch scenario.expectedComparisonResult {
+			case ComparisonSuccess:
+				requireNoLogMessages(t, logger.messages, "response comparison failed", "response comparison skipped")
+
+			case ComparisonFailed:
+				requireLogMessageWithError(t, logger.messages, "response comparison failed", scenario.expectedComparisonError)
+
+			case ComparisonSkipped:
+				requireLogMessageWithError(t, logger.messages, "response comparison skipped", scenario.expectedComparisonError)
+			}
+		})
+	}
+}
+
+func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
+	scenarios := map[string]struct {
+		slowResponseThreshold         time.Duration
+		preferredResponseLatency      time.Duration
+		secondaryResponseLatency      time.Duration
+		expectLatencyExceedsThreshold bool
+		fastestBackend                string
+		slowestBackend                string
+	}{
+		"responses are below threshold": {
+			slowResponseThreshold:         100 * time.Millisecond,
+			preferredResponseLatency:      1 * time.Millisecond,
+			secondaryResponseLatency:      1 * time.Millisecond,
+			expectLatencyExceedsThreshold: false,
+		},
+		"one response above threshold": {
+			slowResponseThreshold:         50 * time.Millisecond,
+			preferredResponseLatency:      1 * time.Millisecond,
+			secondaryResponseLatency:      70 * time.Millisecond,
+			expectLatencyExceedsThreshold: true,
+			fastestBackend:                "preferred-backend",
+			slowestBackend:                "secondary-backend",
+		},
+		"responses are both above threshold, but lower than threshold between themselves": {
+			slowResponseThreshold:         50 * time.Millisecond,
+			preferredResponseLatency:      51 * time.Millisecond,
+			secondaryResponseLatency:      62 * time.Millisecond,
+			expectLatencyExceedsThreshold: false,
+		},
+		"responses are both above threshold, and above threshold between themselves": {
+			slowResponseThreshold:         10 * time.Millisecond,
+			preferredResponseLatency:      11 * time.Millisecond,
+			secondaryResponseLatency:      52 * time.Millisecond,
+			expectLatencyExceedsThreshold: true,
+			fastestBackend:                "preferred-backend",
+			slowestBackend:                "secondary-backend",
+		},
+		"secondary latency is faster than primary, and difference is below threshold": {
+			slowResponseThreshold:         50 * time.Millisecond,
+			preferredResponseLatency:      10 * time.Millisecond,
+			secondaryResponseLatency:      1 * time.Millisecond,
+			expectLatencyExceedsThreshold: false,
+		},
+		"secondary latency is faster than primary, and difference is above threshold": {
+			slowResponseThreshold:         50 * time.Millisecond,
+			preferredResponseLatency:      71 * time.Millisecond,
+			secondaryResponseLatency:      1 * time.Millisecond,
+			expectLatencyExceedsThreshold: true,
+			fastestBackend:                "secondary-backend",
+			slowestBackend:                "preferred-backend",
+		},
+		"slowest response threshold is disabled (0)": {
+			slowResponseThreshold:         0 * time.Millisecond,
+			preferredResponseLatency:      200 * time.Millisecond,
+			secondaryResponseLatency:      100 * time.Millisecond,
+			expectLatencyExceedsThreshold: false,
+		},
+	}
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			backends := []ProxyBackendInterface{
+				newMockProxyBackend("preferred-backend", time.Second, true, scenario.preferredResponseLatency),
+				newMockProxyBackend("secondary-backend", time.Second, false, scenario.secondaryResponseLatency),
+			}
+
+			logger := newMockLogger()
+			reg := prometheus.NewPedanticRegistry()
+			comparator := &mockComparator{
+				comparisonResult: ComparisonSuccess,
+			}
+
+			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold)
+
+			resp := httptest.NewRecorder()
+			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
+			require.NoError(t, err)
+			endpoint.ServeHTTP(resp, req)
+
+			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
+			// Wait for the response comparison to complete before checking the logged messages.
+			waitForResponseComparisonMetric(t, reg, ComparisonSuccess)
+
+			if scenario.expectLatencyExceedsThreshold {
+				requireLogKeyValues(t, logger.messages, map[string]string{
+					"msg":             "response time difference between backends exceeded threshold",
+					"slowest_backend": scenario.slowestBackend,
+					"fastest_backend": scenario.fastestBackend,
+				})
+			} else {
+				requireNoLogMessages(t, logger.messages, "response time difference between backends exceeded threshold")
+			}
+		})
+	}
+}
+
+func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expectedResult ComparisonResult) {
+	started := time.Now()
+	timeoutAt := started.Add(2 * time.Second)
+
+	for {
+		expected := fmt.Sprintf(`
+			# HELP cortex_querytee_responses_compared_total Total number of responses compared per route name by result.
+			# TYPE cortex_querytee_responses_compared_total counter
+			cortex_querytee_responses_compared_total{result="%v",route="test"} 1
+`, expectedResult)
+		err := testutil.GatherAndCompare(g, bytes.NewBufferString(expected), "cortex_querytee_responses_compared_total")
+
+		if err == nil {
+			return
+		}
+
+		if time.Now().After(timeoutAt) {
+			require.NoError(t, err, "timed out waiting for comparison result to be reported, last metrics comparison failed with error")
+		} else {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+}
+
+func requireLogKeyValues(t *testing.T, messages []map[string]interface{}, targetKeyValues map[string]string) {
+	allKeyValuesMatch := false
+	for _, m := range messages {
+		allKeyValuesMatch = true
+		for targetKey, targetValue := range targetKeyValues {
+			if value, exists := m[targetKey]; !exists || value != targetValue {
+				// Key does not exist or value does not match
+				allKeyValuesMatch = false
+				break
+			}
+		}
+		if allKeyValuesMatch {
+			break
+		}
+	}
+
+	require.True(t, allKeyValuesMatch, "expected to find a message logged with specific key-values: %s, but only these messages were logged: %v", targetKeyValues, messages)
+}
+
+func requireNoLogMessages(t *testing.T, messages []map[string]interface{}, forbiddenMessages ...string) {
+	for _, m := range messages {
+		msg := m["msg"]
+
+		for _, forbiddenMessage := range forbiddenMessages {
+			if msg == forbiddenMessage {
+				require.Fail(t, "unexpected message logged", "expected to find no log lines with the message '%s', but these messages were logged: %v", forbiddenMessage, messages)
+			}
+		}
+	}
+}
+
+func requireLogMessageWithError(t *testing.T, messages []map[string]interface{}, expectedMessage string, expectedError string) {
+	sawMessage := false
+
+	for _, m := range messages {
+		if m["msg"] == expectedMessage {
+			sawMessage = true
+			require.EqualError(t, m["err"].(error), expectedError)
+		}
+	}
+
+	require.True(t, sawMessage, "expected to find a '%s' message logged, but only these messages were logged: %v", expectedMessage, messages)
 }
 
 func Test_backendResponse_succeeded(t *testing.T) {
@@ -305,4 +592,80 @@ func Test_backendResponse_statusCode(t *testing.T) {
 			assert.Equal(t, testData.expected, res.statusCode())
 		})
 	}
+}
+
+type mockComparator struct {
+	comparisonResult ComparisonResult
+	comparisonError  error
+}
+
+func (m *mockComparator) Compare(_, _ []byte) (ComparisonResult, error) {
+	return m.comparisonResult, m.comparisonError
+}
+
+type mockLogger struct {
+	messages []map[string]interface{}
+	lock     sync.Mutex
+}
+
+func newMockLogger() *mockLogger {
+	return &mockLogger{
+		lock: sync.Mutex{},
+	}
+}
+
+func (m *mockLogger) Log(keyvals ...interface{}) error {
+	if len(keyvals)%2 != 0 {
+		panic("invalid log message")
+	}
+
+	message := map[string]interface{}{}
+
+	for keyIndex := 0; keyIndex < len(keyvals); keyIndex += 2 {
+		message[keyvals[keyIndex].(string)] = keyvals[keyIndex+1]
+	}
+
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	m.messages = append(m.messages, message)
+
+	return nil
+}
+
+type mockProxyBackend struct {
+	name                string
+	timeout             time.Duration
+	preferred           bool
+	fakeResponseLatency time.Duration
+}
+
+func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fakeResponseLatency time.Duration) ProxyBackendInterface {
+	return &mockProxyBackend{
+		name:                name,
+		timeout:             timeout,
+		preferred:           preferred,
+		fakeResponseLatency: fakeResponseLatency,
+	}
+}
+
+func (b *mockProxyBackend) Name() string {
+	return b.name
+}
+
+func (b *mockProxyBackend) Endpoint() *url.URL {
+	return nil
+}
+
+func (b *mockProxyBackend) Preferred() bool {
+	return b.preferred
+}
+
+func (b *mockProxyBackend) ForwardRequest(_ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
+	resp := &http.Response{
+		StatusCode: 200,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(bytes.NewBufferString(`{}`)),
+	}
+	resp.Header.Set("Content-Type", "application/json")
+	return time.Duration(b.fakeResponseLatency), 200, []byte("{}"), resp, nil
 }

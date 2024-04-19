@@ -3,7 +3,6 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
-// +build requires_docker
 
 package integration
 
@@ -25,7 +24,7 @@ import (
 
 func TestIngesterSharding(t *testing.T) {
 	const numSeriesToPush = 1000
-	const queryIngestersWithinSecs = 5
+	const ingesterTSDBRetention = 5
 
 	tests := map[string]struct {
 		tenantShardSize             int
@@ -52,12 +51,11 @@ func TestIngesterSharding(t *testing.T) {
 				BlocksStorageS3Flags(),
 			)
 			flags["-distributor.ingestion-tenant-shard-size"] = strconv.Itoa(testData.tenantShardSize)
-			// We're verifying that shuffle sharding on the read path works so we need to set `query-ingesters-within`
+			// We're verifying that shuffle sharding on the read path works so we need to set `blocks-storage.tsdb.retention-period`
 			// to a small enough value that they'll have been part of the ring for long enough by the time we attempt
 			// to query back the values we wrote to them. If they _haven't_ been part of the ring for long enough, the
 			// query would be sent to all ingesters and our test wouldn't really be testing anything.
-			flags["-querier.query-store-after"] = "0"
-			flags["-querier.query-ingesters-within"] = fmt.Sprintf("%ds", queryIngestersWithinSecs)
+			flags["-blocks-storage.tsdb.retention-period"] = fmt.Sprintf("%ds", ingesterTSDBRetention)
 			flags["-ingester.ring.heartbeat-period"] = "1s"
 
 			// Start dependencies.
@@ -86,7 +84,7 @@ func TestIngesterSharding(t *testing.T) {
 			// Yes, we're sleeping in this test. We need to make sure that the ingesters have been part
 			// of the ring long enough before writing metrics to them to ensure that only the shuffle
 			// sharded ingesters will be queried for them when we go to verify the series written.
-			time.Sleep((queryIngestersWithinSecs + 1) * time.Second)
+			time.Sleep((ingesterTSDBRetention + 1) * time.Second)
 
 			// Push series.
 			now := time.Now()
@@ -97,7 +95,7 @@ func TestIngesterSharding(t *testing.T) {
 
 			for i := 1; i <= numSeriesToPush; i++ {
 				metricName := fmt.Sprintf("series_%d", i)
-				series, expectedVector := generateSeries(metricName, now)
+				series, expectedVector, _ := generateAlternatingSeries(i)(metricName, now)
 				res, err := client.Push(series)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)

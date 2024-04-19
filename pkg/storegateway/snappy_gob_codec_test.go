@@ -5,21 +5,21 @@ package storegateway
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
+	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 )
 
 func TestSnappyGobSeriesCacheEntryCodec(t *testing.T) {
 	type testType struct {
-		LabelSets   []labels.Labels
+		LabelSets   [][]labels.Label
 		MatchersKey indexcache.LabelMatchersKey
 	}
 
 	entry := testType{
-		LabelSets: []labels.Labels{
+		LabelSets: [][]labels.Label{
 			{{Name: "foo", Value: "bar"}},
 			{{Name: "baz", Value: "boo"}},
 		},
@@ -56,5 +56,15 @@ func TestSnappyGobSeriesCacheEntryCodec(t *testing.T) {
 		var decoded testType
 		err = decodeSnappyGob(data, &decoded)
 		require.Error(t, err)
+	})
+
+	t.Run("series data too large", func(t *testing.T) {
+		snappyEncodingCheckFn = func(_ int) int {
+			return -1
+		}
+		defer func() { snappyEncodingCheckFn = snappy.MaxEncodedLen }()
+		_, err := encodeSnappyGob(entry)
+		require.Error(t, err)
+
 	})
 }

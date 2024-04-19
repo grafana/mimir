@@ -1,0 +1,20 @@
+---
+# Source: mimir-distributed/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openshift-values-mimir
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: openshift-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+rules:
+- apiGroups:
+    - security.openshift.io
+  resources:
+    - securitycontextconstraints
+  verbs:
+    - use
+  resourceNames:
+    - openshift-values-mimir

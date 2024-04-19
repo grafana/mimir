@@ -19,18 +19,6 @@ patches:
       kind: ConfigMap
     patch: *deletePatch
 
-  # TODO: Helm does not create a query scheduler
-  - target:
-      name: 'mimir-query-scheduler(-discovery)?'
-      kind: (Service|Deployment)
-    patch: *deletePatch
-
-  # TODO: Helm does not create an alertmanager pdb
-  - target:
-      name: 'mimir-alertmanager-pdb'
-      kind: PodDisruptionBudget
-    patch: *deletePatch
-
   - target:
       name: 'mimir-consul(-sidekick)?'
     patch: *deletePatch

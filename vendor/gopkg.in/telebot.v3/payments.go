@@ -3,6 +3,7 @@ package telebot
 import (
 	"encoding/json"
 	"math"
+	"strconv"
 )
 
 // ShippingQuery contains information about an incoming shipping query.
@@ -93,6 +94,54 @@ type Invoice struct {
 	Flexible            bool `json:"is_flexible"`
 }
 
+func (i Invoice) params() map[string]string {
+	params := map[string]string{
+		"title":                         i.Title,
+		"description":                   i.Description,
+		"start_parameter":               i.Start,
+		"payload":                       i.Payload,
+		"provider_token":                i.Token,
+		"provider_data":                 i.Data,
+		"currency":                      i.Currency,
+		"max_tip_amount":                strconv.Itoa(i.MaxTipAmount),
+		"need_name":                     strconv.FormatBool(i.NeedName),
+		"need_phone_number":             strconv.FormatBool(i.NeedPhoneNumber),
+		"need_email":                    strconv.FormatBool(i.NeedEmail),
+		"need_shipping_address":         strconv.FormatBool(i.NeedShippingAddress),
+		"send_phone_number_to_provider": strconv.FormatBool(i.SendPhoneNumber),
+		"send_email_to_provider":        strconv.FormatBool(i.SendEmail),
+		"is_flexible":                   strconv.FormatBool(i.Flexible),
+	}
+	if i.Photo != nil {
+		if i.Photo.FileURL != "" {
+			params["photo_url"] = i.Photo.FileURL
+		}
+		if i.PhotoSize > 0 {
+			params["photo_size"] = strconv.Itoa(i.PhotoSize)
+		}
+		if i.Photo.Width > 0 {
+			params["photo_width"] = strconv.Itoa(i.Photo.Width)
+		}
+		if i.Photo.Height > 0 {
+			params["photo_height"] = strconv.Itoa(i.Photo.Height)
+		}
+	}
+	if len(i.Prices) > 0 {
+		data, _ := json.Marshal(i.Prices)
+		params["prices"] = string(data)
+	}
+	if len(i.SuggestedTipAmounts) > 0 {
+		var amounts []string
+		for _, n := range i.SuggestedTipAmounts {
+			amounts = append(amounts, strconv.Itoa(n))
+		}
+
+		data, _ := json.Marshal(amounts)
+		params["suggested_tip_amounts"] = string(data)
+	}
+	return params
+}
+
 // Price represents a portion of the price for goods or services.
 type Price struct {
 	Label  string `json:"label"`
@@ -122,11 +171,18 @@ func (c Currency) ToTotal(total float64) int {
 	return int(total) * int(math.Pow(10, float64(c.Exp)))
 }
 
-var SupportedCurrencies = make(map[string]Currency)
-
-func init() {
-	err := json.Unmarshal([]byte(dataCurrencies), &SupportedCurrencies)
+// CreateInvoiceLink creates a link for a payment invoice.
+func (b *Bot) CreateInvoiceLink(i Invoice) (string, error) {
+	data, err := b.Raw("createInvoiceLink", i.params())
 	if err != nil {
-		panic(err)
+		return "", err
 	}
+
+	var resp struct {
+		Result string
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return "", wrapError(err)
+	}
+	return resp.Result, nil
 }

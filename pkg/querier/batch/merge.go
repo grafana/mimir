@@ -9,6 +9,10 @@ import (
 	"container/heap"
 	"sort"
 
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/zeropool"
+
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
@@ -17,31 +21,40 @@ type mergeIterator struct {
 	h   iteratorHeap
 
 	// Store the current sorted batchStream
-	batches batchStream
+	batches *batchStream
 
-	// Buffers to merge in.
-	batchesBuf   batchStream
-	nextBatchBuf [1]chunk.Batch
+	hPool  zeropool.Pool[*histogram.Histogram]
+	fhPool zeropool.Pool[*histogram.FloatHistogram]
 
 	currErr error
 }
 
-func newMergeIterator(cs []GenericChunk) *mergeIterator {
-	css := partitionChunks(cs)
-	its := make([]*nonOverlappingIterator, 0, len(css))
-	for _, cs := range css {
-		its = append(its, newNonOverlappingIterator(cs))
+func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
+	c, ok := it.(*mergeIterator)
+	if ok {
+		c.currErr = nil
+	} else {
+		c = &mergeIterator{}
+		c.hPool = zeropool.New(func() *histogram.Histogram { return &histogram.Histogram{} })
+		c.fhPool = zeropool.New(func() *histogram.FloatHistogram { return &histogram.FloatHistogram{} })
 	}
 
-	c := &mergeIterator{
-		its:        its,
-		h:          make(iteratorHeap, 0, len(its)),
-		batches:    make(batchStream, 0, len(its)),
-		batchesBuf: make(batchStream, len(its)),
+	css := partitionChunks(cs)
+	if cap(c.its) >= len(css) {
+		c.its = c.its[:len(css)]
+		c.h = c.h[:0]
+		c.batches.empty()
+	} else {
+		c.its = make([]*nonOverlappingIterator, len(css))
+		c.h = make(iteratorHeap, 0, len(c.its))
+		c.batches = newBatchStream(len(c.its), &c.hPool, &c.fhPool)
+	}
+	for i, cs := range css {
+		c.its[i] = newNonOverlappingIterator(c.its[i], cs, &c.hPool, &c.fhPool)
 	}
 
 	for _, iter := range c.its {
-		if iter.Next(1) {
+		if iter.Next(1) != chunkenc.ValNone {
 			c.h = append(c.h, iter)
 			continue
 		}
@@ -55,12 +68,12 @@ func newMergeIterator(cs []GenericChunk) *mergeIterator {
 	return c
 }
 
-func (c *mergeIterator) Seek(t int64, size int) bool {
+func (c *mergeIterator) Seek(t int64, size int) chunkenc.ValueType {
 
 	// Optimisation to see if the seek is within our current caches batches.
 found:
-	for len(c.batches) > 0 {
-		batch := &c.batches[0]
+	for c.batches.len() > 0 {
+		batch := c.batches.curr()
 		if t >= batch.Timestamps[0] && t <= batch.Timestamps[batch.Length-1] {
 			batch.Index = 0
 			for batch.Index < batch.Length && t > batch.Timestamps[batch.Index] {
@@ -68,25 +81,24 @@ found:
 			}
 			break found
 		}
-		copy(c.batches, c.batches[1:])
-		c.batches = c.batches[:len(c.batches)-1]
+		// The first batch is not needed anymore, so we remove it.
+		c.batches.removeFirst()
 	}
 
 	// If we didn't find anything in the current set of batches, reset the heap
 	// and seek.
-	if len(c.batches) == 0 {
+	if c.batches.len() == 0 {
 		c.h = c.h[:0]
-		c.batches = c.batches[:0]
 
 		for _, iter := range c.its {
-			if iter.Seek(t, size) {
+			if iter.Seek(t, size) != chunkenc.ValNone {
 				c.h = append(c.h, iter)
 				continue
 			}
 
 			if err := iter.Err(); err != nil {
 				c.currErr = err
-				return false
+				return chunkenc.ValNone
 			}
 		}
 
@@ -96,45 +108,47 @@ found:
 	return c.buildNextBatch(size)
 }
 
-func (c *mergeIterator) Next(size int) bool {
+func (c *mergeIterator) Next(size int) chunkenc.ValueType {
 	// Pop the last built batch in a way that doesn't extend the slice.
-	if len(c.batches) > 0 {
-		copy(c.batches, c.batches[1:])
-		c.batches = c.batches[:len(c.batches)-1]
+	if c.batches.len() > 0 {
+		// The first batch is not needed anymore, so we remove it.
+		c.batches.removeFirst()
 	}
 
 	return c.buildNextBatch(size)
 }
 
 func (c *mergeIterator) nextBatchEndTime() int64 {
-	batch := &c.batches[0]
+	batch := c.batches.curr()
 	return batch.Timestamps[batch.Length-1]
 }
 
-func (c *mergeIterator) buildNextBatch(size int) bool {
+func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	// All we need to do is get enough batches that our first batch's last entry
 	// is before all iterators next entry.
-	for len(c.h) > 0 && (len(c.batches) == 0 || c.nextBatchEndTime() >= c.h[0].AtTime()) {
-		c.nextBatchBuf[0] = c.h[0].Batch()
-		c.batchesBuf = mergeStreams(c.batches, c.nextBatchBuf[:], c.batchesBuf, size)
-		c.batches = append(c.batches[:0], c.batchesBuf...)
+	for len(c.h) > 0 && (c.batches.len() == 0 || c.nextBatchEndTime() >= c.h[0].AtTime()) {
+		batch := c.h[0].Batch()
+		c.batches.merge(&batch, size)
 
-		if c.h[0].Next(size) {
+		if c.h[0].Next(size) != chunkenc.ValNone {
 			heap.Fix(&c.h, 0)
 		} else {
 			heap.Pop(&c.h)
 		}
 	}
 
-	return len(c.batches) > 0
+	if c.batches.len() > 0 {
+		return c.batches.curr().ValueType
+	}
+	return chunkenc.ValNone
 }
 
 func (c *mergeIterator) AtTime() int64 {
-	return c.batches[0].Timestamps[0]
+	return c.batches.curr().Timestamps[0]
 }
 
 func (c *mergeIterator) Batch() chunk.Batch {
-	return c.batches[0]
+	return *c.batches.curr()
 }
 
 func (c *mergeIterator) Err() error {

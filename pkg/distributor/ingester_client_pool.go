@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+//lint:ignore faillint It's non-trivial to remove this global variable.
 var clients = promauto.NewGauge(prometheus.GaugeOpts{
 	Namespace: "cortex",
 	Name:      "distributor_ingester_clients",

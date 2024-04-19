@@ -1,0 +1,118 @@
+{{- if .Values.continuous_test.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    {{- toYaml .Values.continuous_test.annotations | nindent 4 }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "continuous-test") | nindent 4 }}
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "continuous-test") }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  replicas: {{ .Values.continuous_test.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "continuous-test") | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.continuous_test.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "continuous-test") | nindent 8 }}
+      annotations:
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "continuous-test") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- if .Values.continuous_test.priorityClassName }}
+      priorityClassName: {{ .Values.continuous_test.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "continuous-test") | nindent 8 }}
+      {{- with .Values.continuous_test.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      containers:
+        - name: continuous-test
+          image: {{ .Values.continuous_test.image.repository }}:{{ .Values.continuous_test.image.tag }}
+          imagePullPolicy: {{ .Values.continuous_test.image.pullPolicy }}
+          args:
+            - "-server.metrics-port={{ include "mimir.serverHttpListenPort" . }}"
+            - "-tests.write-read-series-test.num-series={{ .Values.continuous_test.numSeries }}"
+            - "-tests.write-read-series-test.max-query-age={{ .Values.continuous_test.maxQueryAge }}"
+            - "-tests.write-endpoint={{ template "mimir.gatewayUrl" . }}"
+            - "-tests.read-endpoint={{ template "mimir.gatewayUrl" . }}/prometheus"
+            - "-tests.run-interval={{ .Values.continuous_test.runInterval }}"
+            {{- if eq .Values.continuous_test.auth.type "tenantId" }}
+            - "-tests.tenant-id={{ .Values.continuous_test.auth.tenant }}"
+            {{- end }}
+            {{- if eq .Values.continuous_test.auth.type "basicAuth" }}
+            - "-tests.basic-auth-password={{ .Values.continuous_test.auth.password }}"
+            - "-tests.basic-auth-user={{ .Values.continuous_test.auth.tenant }}"
+            {{- end }}
+            {{- if eq .Values.continuous_test.auth.type "bearerToken" }}
+            - "-tests.bearer-token={{ .Values.continuous_test.auth.bearerToken }}"
+            {{- end }}
+            {{- range $key, $value := .Values.continuous_test.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.continuous_test.extraVolumeMounts }}
+              {{ toYaml .Values.continuous_test.extraVolumeMounts | nindent 12}}
+            {{- end }}
+          ports:
+            - name: http-metrics
+              containerPort: {{ include "mimir.serverHttpListenPort" . }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.continuous_test.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.continuous_test.containerSecurityContext | nindent 12 }}
+          env:
+            {{- with .Values.global.extraEnv }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.continuous_test.env }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.continuous_test }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.continuous_test.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- with .Values.continuous_test.extraContainers }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.continuous_test.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.continuous_test.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "continuous-test") | nindent 6 }}
+      {{- with .Values.continuous_test.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.continuous_test.terminationGracePeriodSeconds }}
+      volumes:
+        {{- if .Values.continuous_test.extraVolumes }}
+        {{ toYaml .Values.continuous_test.extraVolumes | nindent 8}}
+        {{- end }}
+{{- end -}}

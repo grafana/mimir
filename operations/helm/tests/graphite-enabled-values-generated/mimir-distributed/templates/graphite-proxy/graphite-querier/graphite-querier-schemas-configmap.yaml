@@ -1,0 +1,23 @@
+---
+# Source: mimir-distributed/templates/graphite-proxy/graphite-querier/graphite-querier-schemas-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: graphite-enabled-values-mimir-graphite-schemas
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: graphite-enabled-values
+    app.kubernetes.io/component: graphite-schemas
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+data:
+  storage-schemas.conf: |
+    [default]
+    pattern = .*
+    intervals = 0:1s
+    retentions = 10s:8d,10min:1y
+  storage-aggregations.conf: |
+    [default]
+    aggregationMethod = avg
+    pattern = .*
+    xFilesFactor = 0.1

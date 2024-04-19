@@ -1,9 +1,18 @@
+{{- $args := dict "ctx" . "component" "ingester" "memberlist" true -}}
+{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
+{{- range $zoneName, $rolloutZone := $zonesMap }}
+{{- with $ -}}
+{{- $_ := set $args "rolloutZoneName" $zoneName -}}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ingester") }}
+  name: {{ include "mimir.resourceName" $args }}
   labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 4 }}
+    {{- include "mimir.labels" $args | nindent 4 }}
+    {{- if and $zoneName .Values.ingester.zoneAwareReplication.migration.enabled }}
+    # Prevent scraping PODs via this service during migration as the original non zone-aware service already scrapes all PODs and you get duplicate metrics.
+    prometheus.io/service-monitor: "false"
+    {{- end }}
     {{- with .Values.ingester.service.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -22,4 +31,8 @@ spec:
       name: grpc
       targetPort: grpc
   selector:
-    {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 4 }}
+    {{- include "mimir.selectorLabels" $args | nindent 4 }}
+
+---
+{{ end }}
+{{ end }}

@@ -3,7 +3,9 @@
 package activeseries
 
 import (
+	"bytes"
 	"flag"
+	"fmt"
 	"testing"
 
 	"github.com/pkg/errors"
@@ -12,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func mustNewCustomTrackersConfigFromMap(t *testing.T, source map[string]string) CustomTrackersConfig {
+func mustNewCustomTrackersConfigFromMap(t require.TestingT, source map[string]string) CustomTrackersConfig {
 	m, err := NewCustomTrackersConfig(source)
 	require.NoError(t, err)
 	return m
@@ -75,8 +77,8 @@ func TestCustomTrackersConfigs(t *testing.T) {
 			expected: mustNewCustomTrackersConfigFromMap(t, map[string]string{`foo`: `{foo="bar"}`}),
 		},
 		{
-			name: "whitespaces are trimmed from name and matcher",
-			flags: []string{`-ingester.active-series-custom-trackers= foo :	{foo="bar"}` + "\n "},
+			name:     "whitespaces are trimmed from name and matcher",
+			flags:    []string{`-ingester.active-series-custom-trackers= foo :      {foo="bar"}` + "\n "},
 			expected: mustNewCustomTrackersConfigFromMap(t, map[string]string{`foo`: `{foo="bar"}`}),
 		},
 		{
@@ -123,6 +125,34 @@ func TestCustomTrackersConfigs(t *testing.T) {
 			require.Equal(t, tc.expected, configAgain)
 		})
 	}
+}
+
+func TestMaximumNumberOfTrackers(t *testing.T) {
+	t.Run("Flag based setup", func(t *testing.T) {
+		var flagToSet bytes.Buffer
+		numberOfTrackers := maxNumberOfTrackers + 1
+		for i := 0; i < numberOfTrackers; i++ {
+			flagToSet.WriteString(fmt.Sprintf("name%d:{__name__=%d}", i, i))
+			if i < numberOfTrackers-1 {
+				flagToSet.WriteString(";")
+			}
+		}
+
+		c := CustomTrackersConfig{}
+		err := c.Set(flagToSet.String())
+		require.Error(t, err, "custom tracker config should not accept more than %d trackers", maxNumberOfTrackers)
+	})
+
+	t.Run("Map based setup", func(t *testing.T) {
+		configMap := map[string]string{}
+		numberOfTrackers := maxNumberOfTrackers + 1
+		for i := 0; i < numberOfTrackers; i++ {
+			configMap[fmt.Sprintf("name%d", i)] = fmt.Sprintf("{__name__=%d}", i)
+		}
+
+		_, err := NewCustomTrackersConfig(configMap)
+		require.Error(t, err, "custom tracker config should not accept more than %d trackers", maxNumberOfTrackers)
+	})
 }
 
 func TestCustomTrackerConfig_Equality(t *testing.T) {

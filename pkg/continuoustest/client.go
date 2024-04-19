@@ -3,17 +3,13 @@
 package continuoustest
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
@@ -21,6 +17,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
@@ -43,38 +40,54 @@ type MimirClient interface {
 }
 
 type ClientConfig struct {
-	TenantID string
+	TenantID          string
+	BasicAuthUser     string
+	BasicAuthPassword string
+	BearerToken       string
 
 	WriteBaseEndpoint flagext.URLValue
 	WriteBatchSize    int
 	WriteTimeout      time.Duration
+	WriteProtocol     string
 
 	ReadBaseEndpoint flagext.URLValue
 	ReadTimeout      time.Duration
 }
 
 func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.TenantID, "tests.tenant-id", "anonymous", "The tenant ID to use to write and read metrics in tests.")
+	f.StringVar(&cfg.TenantID, "tests.tenant-id", "anonymous", "The tenant ID to use to write and read metrics in tests. (mutually exclusive with basic-auth or bearer-token flags)")
+	f.StringVar(&cfg.BasicAuthUser, "tests.basic-auth-user", "", "The username to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)")
+	f.StringVar(&cfg.BasicAuthPassword, "tests.basic-auth-password", "", "The password to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)")
+	f.StringVar(&cfg.BearerToken, "tests.bearer-token", "", "The bearer token to use for HTTP bearer authentication. (mutually exclusive with tenant-id flag or basic-auth flags)")
 
 	f.Var(&cfg.WriteBaseEndpoint, "tests.write-endpoint", "The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.")
 	f.IntVar(&cfg.WriteBatchSize, "tests.write-batch-size", 1000, "The maximum number of series to write in a single request.")
 	f.DurationVar(&cfg.WriteTimeout, "tests.write-timeout", 5*time.Second, "The timeout for a single write request.")
+	f.StringVar(&cfg.WriteProtocol, "tests.write-protocol", "prometheus", "The protocol to use to write series data. Supported values are: prometheus, otlp-http")
 
 	f.Var(&cfg.ReadBaseEndpoint, "tests.read-endpoint", "The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.")
 	f.DurationVar(&cfg.ReadTimeout, "tests.read-timeout", 60*time.Second, "The timeout for a single read request.")
+
 }
 
 type Client struct {
-	writeClient *http.Client
+	writeClient clientWriter
 	readClient  v1.API
 	cfg         ClientConfig
 	logger      log.Logger
 }
 
+type clientWriter interface {
+	sendWriteRequest(ctx context.Context, req *prompb.WriteRequest) (int, error)
+}
+
 func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 	rt := &clientRoundTripper{
-		tenantID: cfg.TenantID,
-		rt:       instrumentation.TracerTransport{},
+		tenantID:          cfg.TenantID,
+		basicAuthUser:     cfg.BasicAuthUser,
+		basicAuthPassword: cfg.BasicAuthPassword,
+		bearerToken:       cfg.BearerToken,
+		rt:                instrumentation.TracerTransport{},
 	}
 
 	// Ensure the required config has been set.
@@ -83,6 +96,15 @@ func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 	}
 	if cfg.ReadBaseEndpoint.URL == nil {
 		return nil, errors.New("the read endpoint has not been set")
+	}
+	if cfg.WriteProtocol != "prometheus" && cfg.WriteProtocol != "otlp-http" {
+		return nil, fmt.Errorf("the only supported write protocols are \"prometheus\" or \"otlp-http\"")
+	}
+	// Ensure not both tenant-id and basic-auth are used at the same time
+	// anonymous is the default value for TenantID.
+	if (cfg.TenantID != "anonymous" && cfg.BasicAuthUser != "" && cfg.BasicAuthPassword != "" && cfg.BearerToken != "") || // all authentication at once
+		(cfg.BasicAuthUser != "" && cfg.BasicAuthPassword != "" && cfg.BearerToken != "") { // basic auth and bearer token
+		return nil, errors.New("either set tests.tenant-id or tests.basic-auth-user/tests.basic-auth-password or tests.bearer-token")
 	}
 
 	apiCfg := api.Config{
@@ -95,8 +117,29 @@ func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 		return nil, errors.Wrap(err, "failed to create read client")
 	}
 
+	var writeClient clientWriter
+
+	switch cfg.WriteProtocol {
+
+	case "prometheus":
+		writeClient = &prometheusWriter{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeBatchSize:    cfg.WriteBatchSize,
+			writeTimeout:      cfg.WriteTimeout,
+		}
+
+	case "otlp-http":
+		writeClient = &otlpHTTPWriter{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeBatchSize:    cfg.WriteBatchSize,
+			writeTimeout:      cfg.WriteTimeout,
+		}
+	}
+
 	return &Client{
-		writeClient: &http.Client{Transport: rt},
+		writeClient: writeClient,
 		readClient:  v1.NewAPI(readClient),
 		cfg:         cfg,
 		logger:      logger,
@@ -108,6 +151,8 @@ func (c *Client) QueryRange(ctx context.Context, query string, start, end time.T
 	ctx = contextWithRequestOptions(ctx, options...)
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
 	defer cancel()
+
+	ctx = querierapi.ContextWithReadConsistency(ctx, querierapi.ReadConsistencyStrong)
 
 	value, _, err := c.readClient.QueryRange(ctx, query, v1.Range{
 		Start: start,
@@ -135,6 +180,8 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time, options 
 	ctx = contextWithRequestOptions(ctx, options...)
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
 	defer cancel()
+
+	ctx = querierapi.ContextWithReadConsistency(ctx, querierapi.ReadConsistencyStrong)
 
 	value, _, err := c.readClient.Query(ctx, query, ts)
 	if err != nil {
@@ -164,52 +211,13 @@ func (c *Client) WriteSeries(ctx context.Context, series []prompb.TimeSeries) (i
 		series = series[end:]
 
 		var err error
-		lastStatusCode, err = c.sendWriteRequest(ctx, &prompb.WriteRequest{Timeseries: batch})
+		lastStatusCode, err = c.writeClient.sendWriteRequest(ctx, &prompb.WriteRequest{Timeseries: batch})
 		if err != nil {
 			return lastStatusCode, err
 		}
 	}
 
 	return lastStatusCode, nil
-}
-
-func (c *Client) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest) (int, error) {
-	data, err := proto.Marshal(req)
-	if err != nil {
-		return 0, err
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, c.cfg.WriteTimeout)
-	defer cancel()
-
-	compressed := snappy.Encode(nil, data)
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.cfg.WriteBaseEndpoint.String()+"/api/v1/push", bytes.NewReader(compressed))
-	if err != nil {
-		// Errors from NewRequest are from unparseable URLs, so are not
-		// recoverable.
-		return 0, err
-	}
-	httpReq.Header.Add("Content-Encoding", "snappy")
-	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", "mimir-continuous-test")
-	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
-
-	httpResp, err := c.writeClient.Do(httpReq)
-	if err != nil {
-		return 0, err
-	}
-	defer httpResp.Body.Close()
-
-	if httpResp.StatusCode/100 != 2 {
-		truncatedBody, err := io.ReadAll(io.LimitReader(httpResp.Body, maxErrMsgLen))
-		if err != nil {
-			return httpResp.StatusCode, errors.Wrapf(err, "server returned HTTP status %s and client failed to read response body", httpResp.Status)
-		}
-
-		return httpResp.StatusCode, fmt.Errorf("server returned HTTP status %s and body %q (truncated to %d bytes)", httpResp.Status, string(truncatedBody), maxErrMsgLen)
-	}
-
-	return httpResp.StatusCode, nil
 }
 
 // RequestOption defines a functional-style request option.
@@ -242,8 +250,11 @@ type key int
 var requestOptionsKey key
 
 type clientRoundTripper struct {
-	tenantID string
-	rt       http.RoundTripper
+	tenantID          string
+	basicAuthUser     string
+	basicAuthPassword string
+	bearerToken       string
+	rt                http.RoundTripper
 }
 
 // RoundTrip add the tenant ID header required by Mimir.
@@ -254,6 +265,19 @@ func (rt *clientRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 		req.Header.Set("Cache-Control", "no-store")
 	}
 
-	req.Header.Set("X-Scope-OrgID", rt.tenantID)
+	if rt.bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+rt.bearerToken)
+	} else if rt.basicAuthUser != "" && rt.basicAuthPassword != "" {
+		req.SetBasicAuth(rt.basicAuthUser, rt.basicAuthPassword)
+	} else {
+		req.Header.Set("X-Scope-OrgID", rt.tenantID)
+	}
+
+	req.Header.Set("User-Agent", "mimir-continuous-test")
+
+	if lvl, ok := querierapi.ReadConsistencyFromContext(req.Context()); ok {
+		req.Header.Add(querierapi.ReadConsistencyHeader, lvl)
+	}
+
 	return rt.rt.RoundTrip(req)
 }

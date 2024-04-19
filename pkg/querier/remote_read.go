@@ -7,6 +7,7 @@ package querier
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -14,13 +15,18 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -31,6 +37,8 @@ const (
 	// Google's recommendation is to keep protobuf message not larger than 1MB.
 	// https://developers.google.com/protocol-buffers/docs/techniques#large-data
 	maxRemoteReadFrameBytes = 1024 * 1024
+
+	statusClientClosedRequest = 499
 )
 
 // RemoteReadHandler handles Prometheus remote read requests.
@@ -43,7 +51,7 @@ func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, l
 		ctx := r.Context()
 		var req client.ReadRequest
 		logger := util_log.WithContext(r.Context(), lg)
-		if _, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRemoteReadQuerySize, nil, &req, util.RawSnappy); err != nil {
+		if err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRemoteReadQuerySize, nil, &req, util.RawSnappy); err != nil {
 			level.Error(logger).Log("msg", "failed to parse proto", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -85,7 +93,7 @@ func remoteReadSamples(
 				return
 			}
 
-			querier, err := q.Querier(ctx, int64(from), int64(to))
+			querier, err := q.Querier(int64(from), int64(to))
 			if err != nil {
 				errCh <- err
 				return
@@ -95,7 +103,7 @@ func remoteReadSamples(
 				Start: int64(from),
 				End:   int64(to),
 			}
-			seriesSet := querier.Select(false, params, matchers...)
+			seriesSet := querier.Select(ctx, false, params, matchers...)
 			resp.Results[i], err = seriesSetToQueryResponse(seriesSet)
 			errCh <- err
 		}(i, qr)
@@ -109,7 +117,11 @@ func remoteReadSamples(
 		}
 	}
 	if lastErr != nil {
-		http.Error(w, lastErr.Error(), http.StatusBadRequest)
+		code := remoteReadErrorStatusCode(lastErr)
+		if code/100 != 4 {
+			level.Error(logger).Log("msg", "error while processing remote read request", "err", lastErr)
+		}
+		http.Error(w, lastErr.Error(), code) // change the Content-Type to text/plain and return a human-readable error message
 		return
 	}
 	w.Header().Add("Content-Type", "application/x-protobuf")
@@ -133,17 +145,34 @@ func remoteReadStreamedXORChunks(
 		http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusBadRequest)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+	w.Header().Set("Content-Type", api.ContentTypeRemoteReadStreamedChunks)
 
 	for i, qr := range req.Queries {
 		if err := processReadStreamedQueryRequest(ctx, i, qr, q, w, f, maxBytesInFrame); err != nil {
-			level.Error(logger).Log("msg", "error streaming remote read response", "err", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			code := remoteReadErrorStatusCode(err)
+			if code/100 != 4 {
+				level.Error(logger).Log("msg", "error while processing remote read request", "err", err)
+			}
+			http.Error(w, err.Error(), code)
 			return
 		}
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func remoteReadErrorStatusCode(err error) int {
+	switch {
+	case errors.Is(err, context.Canceled):
+		// The premise is that the client closed the connection and will not read the response.
+		// We want to differentiate between the client aborting the request and the server aborting the request.
+		return statusClientClosedRequest
+	case validation.IsLimitError(err):
+		return http.StatusBadRequest
+	case errors.As(err, &promql.ErrStorage{}):
+		return http.StatusInternalServerError
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 func processReadStreamedQueryRequest(
@@ -160,7 +189,7 @@ func processReadStreamedQueryRequest(
 		return err
 	}
 
-	querier, err := q.ChunkQuerier(ctx, int64(from), int64(to))
+	querier, err := q.ChunkQuerier(int64(from), int64(to))
 	if err != nil {
 		return err
 	}
@@ -173,7 +202,7 @@ func processReadStreamedQueryRequest(
 	return streamChunkedReadResponses(
 		prom_remote.NewChunkedWriter(w, f),
 		// The streaming API has to provide the series sorted.
-		querier.Select(true, params, matchers...),
+		querier.Select(ctx, true, params, matchers...),
 		idx,
 		maxBytesInFrame,
 	)
@@ -182,24 +211,42 @@ func processReadStreamedQueryRequest(
 func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error) {
 	result := &client.QueryResponse{}
 
+	var it chunkenc.Iterator
 	for s.Next() {
 		series := s.At()
 		samples := []mimirpb.Sample{}
-		it := series.Iterator()
-		for it.Next() {
-			t, v := it.At()
-			samples = append(samples, mimirpb.Sample{
-				TimestampMs: t,
-				Value:       v,
-			})
+		histograms := []mimirpb.Histogram{}
+		it = series.Iterator(it)
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			switch valType {
+			case chunkenc.ValFloat:
+				t, v := it.At()
+				samples = append(samples, mimirpb.Sample{
+					TimestampMs: t,
+					Value:       v,
+				})
+			case chunkenc.ValHistogram:
+				t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(t, h))
+			case chunkenc.ValFloatHistogram:
+				t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(t, h))
+			default:
+				return nil, fmt.Errorf("unsupported value type: %v", valType)
+			}
 		}
+
 		if err := it.Err(); err != nil {
 			return nil, err
 		}
-		result.Timeseries = append(result.Timeseries, mimirpb.TimeSeries{
-			Labels:  mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-			Samples: samples,
-		})
+
+		ts := mimirpb.TimeSeries{
+			Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+			Samples:    samples,
+			Histograms: histograms,
+		}
+
+		result.Timeseries = append(result.Timeseries, ts)
 	}
 
 	return result, s.Err()
@@ -229,16 +276,13 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 		lbls []mimirpb.LabelAdapter
 	)
 
+	var iter chunks.Iterator
 	for ss.Next() {
 		series := ss.At()
-		iter := series.Iterator()
+		iter = series.Iterator(iter)
 		lbls = mimirpb.FromLabelsToLabelAdapters(series.Labels())
 
-		frameBytesLeft := maxBytesInFrame
-		for _, lbl := range lbls {
-			frameBytesLeft -= lbl.Size()
-		}
-
+		frameBytesRemaining := initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		isNext := iter.Next()
 
 		for isNext {
@@ -255,11 +299,11 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				Type:      client.StreamChunk_Encoding(chk.Chunk.Encoding()),
 				Data:      chk.Chunk.Bytes(),
 			})
-			frameBytesLeft -= chks[len(chks)-1].Size()
+			frameBytesRemaining -= chks[len(chks)-1].Size()
 
 			// We are fine with minor inaccuracy of max bytes per frame. The inaccuracy will be max of full chunk size.
 			isNext = iter.Next()
-			if frameBytesLeft > 0 && isNext {
+			if frameBytesRemaining > 0 && isNext {
 				continue
 			}
 
@@ -280,10 +324,19 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				return errors.Wrap(err, "write to stream")
 			}
 			chks = chks[:0]
+			frameBytesRemaining = initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		}
 		if err := iter.Err(); err != nil {
 			return err
 		}
 	}
 	return ss.Err()
+}
+
+func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []mimirpb.LabelAdapter) int {
+	frameBytesLeft := maxBytesInFrame
+	for _, lbl := range lbls {
+		frameBytesLeft -= lbl.Size()
+	}
+	return frameBytesLeft
 }

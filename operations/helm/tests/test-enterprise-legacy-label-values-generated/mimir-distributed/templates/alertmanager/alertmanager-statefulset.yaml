@@ -1,0 +1,127 @@
+---
+# Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-alertmanager
+  labels:
+    app: enterprise-metrics-alertmanager
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-metrics-alertmanager
+      release: test-enterprise-legacy-label-values
+  updateStrategy:
+    type: RollingUpdate
+  serviceName: test-enterprise-legacy-label-values-enterprise-metrics-alertmanager
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "1Gi"
+  template:
+    metadata:
+      labels:
+        app: enterprise-metrics-alertmanager
+        name: alertmanager
+        gossip_ring_member: "true"
+        target: alertmanager
+        release: test-enterprise-legacy-label-values
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-alertmanager
+            release: test-enterprise-legacy-label-values
+      terminationGracePeriodSeconds: 900
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-config
+        - name: license
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-license
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-legacy-label-values-enterprise-metrics-runtime
+        - name: tmp
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: test-enterprise-legacy-label-values-enterprise-metrics-alertmanager-fallback-config
+      containers:
+        - name: alertmanager
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=alertmanager"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: storage
+              mountPath: "/data"
+            - name: alertmanager-fallback-config
+              mountPath: /configs/
+            - name: tmp
+              mountPath: /tmp
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:

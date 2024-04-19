@@ -20,21 +20,23 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 8 }}
-        {{- with .Values.alertmanager.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
+        {{- if .Values.alertmanager.fallbackConfig }}
+        checksum/alertmanager-fallback-config: {{ include (print .Template.BasePath "/alertmanager/alertmanager-config.yaml") . | sha256sum }}
+        {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
-    {{- if .Values.alertmanager.priorityClassName }}
+      {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.query_frontend.priorityClassName }}
-    {{- end }}
+      {{- end }}
       securityContext:
-        {{- toYaml .Values.alertmanager.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
+      {{- with .Values.alertmanager.initContainers }}
       initContainers:
-        {{- toYaml .Values.alertmanager.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -67,8 +69,14 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.alertmanager.persistence.subPath }}
+            {{- if .Values.alertmanager.fallbackConfig }}
+            - name: alertmanager-fallback-config
+              mountPath: /configs/
+            {{- end }}
             - name: tmp
               mountPath: /tmp
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -104,12 +112,19 @@ spec:
 {{- if .Values.alertmanager.extraContainers }}
 {{ toYaml .Values.alertmanager.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.alertmanager.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.alertmanager.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.alertmanager.affinity }}
       affinity:
-        {{- toYaml .Values.alertmanager.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "alertmanager") | nindent 6 }}
+      {{- with .Values.alertmanager.tolerations }}
       tolerations:
-        {{- toYaml .Values.alertmanager.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.alertmanager.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -129,5 +144,12 @@ spec:
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+        {{- if .Values.alertmanager.fallbackConfig }}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}-fallback-config
+        {{- end }}
 {{- end -}}
 {{- end -}}

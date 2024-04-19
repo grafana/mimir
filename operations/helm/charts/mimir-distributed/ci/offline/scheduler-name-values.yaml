@@ -1,0 +1,18 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.20"
+
+alertmanager:
+  schedulerName: my-scheduler
+
+compactor:
+  schedulerName: my-scheduler
+
+ingester:
+  schedulerName: my-scheduler
+
+store-gateway:
+  schedulerName: my-scheduler
+
+# Reduce scope:
+minio:
+  enabled: false

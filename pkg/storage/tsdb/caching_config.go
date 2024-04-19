@@ -13,23 +13,26 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/golang/snappy"
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/cache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 )
+
+// subrangeSize is the size of each subrange that bucket objects are split into for better caching
+const subrangeSize int64 = 16000
+
+var supportedCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
 
 type ChunksCacheConfig struct {
 	cache.BackendConfig `yaml:",inline"`
 
-	SubrangeSize               int64         `yaml:"subrange_size" category:"advanced"`
 	MaxGetRangeRequests        int           `yaml:"max_get_range_requests" category:"advanced"`
 	AttributesTTL              time.Duration `yaml:"attributes_ttl" category:"advanced"`
 	AttributesInMemoryMaxItems int           `yaml:"attributes_in_memory_max_items" category:"advanced"`
@@ -37,11 +40,11 @@ type ChunksCacheConfig struct {
 }
 
 func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", cache.BackendMemcached))
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
 
-	cfg.Memcached.RegisterFlagsWithPrefix(f, prefix+"memcached.")
+	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+	cfg.Redis.RegisterFlagsWithPrefix(prefix+"redis.", f)
 
-	f.Int64Var(&cfg.SubrangeSize, prefix+"subrange-size", 16000, "Size of each subrange that bucket object is split into for better caching.")
 	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests.")
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend.")
 	f.IntVar(&cfg.AttributesInMemoryMaxItems, prefix+"attributes-in-memory-max-items", 50000, "Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
@@ -69,9 +72,10 @@ type MetadataCacheConfig struct {
 }
 
 func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for metadata cache, if not empty. Supported values: %s.", cache.BackendMemcached))
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for metadata cache, if not empty. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
 
-	cfg.Memcached.RegisterFlagsWithPrefix(f, prefix+"memcached.")
+	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+	cfg.Redis.RegisterFlagsWithPrefix(prefix+"redis.", f)
 
 	f.DurationVar(&cfg.TenantsListTTL, prefix+"tenants-list-ttl", 15*time.Minute, "How long to cache list of tenants in the bucket.")
 	f.DurationVar(&cfg.TenantBlocksListTTL, prefix+"tenant-blocks-list-ttl", 5*time.Minute, "How long to cache list of blocks for each tenant.")
@@ -90,22 +94,17 @@ func (cfg *MetadataCacheConfig) Validate() error {
 	return cfg.BackendConfig.Validate()
 }
 
-func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
+func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
 	cfg := bucketcache.NewCachingBucketConfig()
 	cachingConfigured := false
 
-	chunksCache, err := cache.CreateClient("chunks-cache", chunksConfig.BackendConfig, logger, reg)
-	if err != nil {
-		return nil, errors.Wrapf(err, "chunks-cache")
-	}
-
-	metadataCache, err := cache.CreateClient("metadata-cache", metadataConfig.BackendConfig, logger, reg)
+	metadataCache, err := cache.CreateClient("metadata-cache", metadataConfig.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, errors.Wrapf(err, "metadata-cache")
 	}
 	if metadataCache != nil {
 		cachingConfigured = true
-		metadataCache = cache.NewSpanlessTracingCache(metadataCache, logger)
+		metadataCache = cache.NewSpanlessTracingCache(metadataCache, logger, tenant.NewMultiResolver())
 
 		cfg.CacheExists("metafile", metadataCache, isMetaFile, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
 		cfg.CacheGet("metafile", metadataCache, isMetaFile, metadataConfig.MetafileMaxSize, metadataConfig.MetafileContentTTL, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
@@ -113,15 +112,17 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		cfg.CacheAttributes("block-index", metadataCache, isBlockIndexFile, metadataConfig.BlockIndexAttributesTTL)
 		cfg.CacheGet("bucket-index", metadataCache, isBucketIndexFile, metadataConfig.BucketIndexMaxSize, metadataConfig.BucketIndexContentTTL /* do not cache exist / not exist: */, 0, 0)
 
-		codec := snappyIterCodec{bucketcache.JSONIterCodec{}}
+		codec := bucketcache.SnappyIterCodec{IterCodec: bucketcache.JSONIterCodec{}}
 		cfg.CacheIter("tenants-iter", metadataCache, isTenantsDir, metadataConfig.TenantsListTTL, codec)
 		cfg.CacheIter("tenant-blocks-iter", metadataCache, isTenantBlocksDir, metadataConfig.TenantBlocksListTTL, codec)
 		cfg.CacheIter("chunks-iter", metadataCache, isChunksDir, metadataConfig.ChunksListTTL, codec)
 	}
 
 	if chunksCache != nil {
+		// If the chunks cache is configured, we will use it for the attributes of chunk files instead of
+		// the metadata cache.
 		cachingConfigured = true
-		chunksCache = cache.NewSpanlessTracingCache(chunksCache, logger)
+		chunksCache = cache.NewSpanlessTracingCache(chunksCache, logger, tenant.NewMultiResolver())
 
 		// Use the metadata cache for attributes if configured, otherwise fallback to chunks cache.
 		// If in-memory cache is enabled, wrap the attributes cache with the in-memory LRU cache.
@@ -130,14 +131,12 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 			attributesCache = metadataCache
 		}
 		if chunksConfig.AttributesInMemoryMaxItems > 0 {
-			var err error
-			attributesCache, err = cache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", reg, chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
+			attributesCache, err = cache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", prometheus.WrapRegistererWithPrefix("cortex_", reg), chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
 			if err != nil {
 				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
 			}
 		}
-
-		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, chunksConfig.SubrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
+		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 	}
 
 	if !cachingConfigured {
@@ -145,7 +144,11 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		return bkt, nil
 	}
 
-	return bucketcache.NewCachingBucket(bkt, cfg, logger, reg)
+	// NOTE: the bucket ID should be "blocks" but we're passing an empty string to not cause
+	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
+	// ID. This is still fine, as far as all other caching bucket implementations specify their
+	// own unique ID.
+	return bucketcache.NewCachingBucket("", bkt, cfg, logger, reg)
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)
@@ -153,7 +156,7 @@ var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)
 func isTSDBChunkFile(name string) bool { return chunksMatcher.MatchString(name) }
 
 func isMetaFile(name string) bool {
-	return strings.HasSuffix(name, "/"+metadata.MetaFilename) || strings.HasSuffix(name, "/"+metadata.DeletionMarkFilename) || strings.HasSuffix(name, "/"+TenantDeletionMarkPath)
+	return strings.HasSuffix(name, "/"+block.MetaFilename) || strings.HasSuffix(name, "/"+block.DeletionMarkFilename) || strings.HasSuffix(name, "/"+TenantDeletionMarkPath)
 }
 
 func isBlockIndexFile(name string) bool {
@@ -183,24 +186,4 @@ func isTenantBlocksDir(name string) bool {
 
 func isChunksDir(name string) bool {
 	return strings.HasSuffix(name, "/chunks")
-}
-
-type snappyIterCodec struct {
-	bucketcache.IterCodec
-}
-
-func (i snappyIterCodec) Encode(files []string) ([]byte, error) {
-	b, err := i.IterCodec.Encode(files)
-	if err != nil {
-		return nil, err
-	}
-	return snappy.Encode(nil, b), nil
-}
-
-func (i snappyIterCodec) Decode(cachedData []byte) ([]string, error) {
-	b, err := snappy.Decode(nil, cachedData)
-	if err != nil {
-		return nil, errors.Wrap(err, "snappyIterCodec")
-	}
-	return i.IterCodec.Decode(b)
 }

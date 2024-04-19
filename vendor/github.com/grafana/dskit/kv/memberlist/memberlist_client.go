@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/hashicorp/memberlist"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
@@ -71,7 +72,7 @@ func (c *Client) Get(ctx context.Context, key string) (interface{}, error) {
 }
 
 // Delete is part of kv.Client interface.
-func (c *Client) Delete(ctx context.Context, key string) error {
+func (c *Client) Delete(_ context.Context, _ string) error {
 	return errors.New("memberlist does not support Delete")
 }
 
@@ -141,8 +142,8 @@ type KVConfig struct {
 	AdvertiseAddr string `yaml:"advertise_addr"`
 	AdvertisePort int    `yaml:"advertise_port"`
 
-	ClusterLabel                     string `yaml:"cluster_label" category:"experimental"`
-	ClusterLabelVerificationDisabled bool   `yaml:"cluster_label_verification_disabled" category:"experimental"`
+	ClusterLabel                     string `yaml:"cluster_label" category:"advanced"`
+	ClusterLabelVerificationDisabled bool   `yaml:"cluster_label_verification_disabled" category:"advanced"`
 
 	// List of members to join
 	JoinMembers      flagext.StringSlice `yaml:"join_members"`
@@ -163,9 +164,7 @@ type KVConfig struct {
 
 	TCPTransport TCPTransportConfig `yaml:",inline"`
 
-	// Where to put custom metrics. Metrics are not registered, if this is nil.
-	MetricsRegisterer prometheus.Registerer `yaml:"-"`
-	MetricsNamespace  string                `yaml:"-"`
+	MetricsNamespace string `yaml:"-"`
 
 	// Codecs to register. Codecs need to be registered before joining other members.
 	Codecs []codec.Codec `yaml:"-"`
@@ -178,7 +177,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	// "Defaults to hostname" -- memberlist sets it to hostname by default.
 	f.StringVar(&cfg.NodeName, prefix+"memberlist.nodename", "", "Name of the node in memberlist cluster. Defaults to hostname.") // memberlist.DefaultLANConfig will put hostname here.
 	f.BoolVar(&cfg.RandomizeNodeName, prefix+"memberlist.randomize-node-name", true, "Add random suffix to the node name.")
-	f.DurationVar(&cfg.StreamTimeout, prefix+"memberlist.stream-timeout", mlDefaults.TCPTimeout, "The timeout for establishing a connection with a remote node, and for read/write operations.")
+	f.DurationVar(&cfg.StreamTimeout, prefix+"memberlist.stream-timeout", 2*time.Second, "The timeout for establishing a connection with a remote node, and for read/write operations.")
 	f.IntVar(&cfg.RetransmitMult, prefix+"memberlist.retransmit-factor", mlDefaults.RetransmitMult, "Multiplication factor used when sending out messages (factor * log(N+1)).")
 	f.Var(&cfg.JoinMembers, prefix+"memberlist.join", "Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.")
 	f.DurationVar(&cfg.MinJoinBackoff, prefix+"memberlist.min-join-backoff", 1*time.Second, "Min backoff duration to join other cluster members.")
@@ -187,7 +186,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.AbortIfJoinFails, prefix+"memberlist.abort-if-join-fails", cfg.AbortIfJoinFails, "If this node fails to join memberlist cluster, abort.")
 	f.DurationVar(&cfg.RejoinInterval, prefix+"memberlist.rejoin-interval", 0, "If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.")
 	f.DurationVar(&cfg.LeftIngestersTimeout, prefix+"memberlist.left-ingesters-timeout", 5*time.Minute, "How long to keep LEFT ingesters in the ring.")
-	f.DurationVar(&cfg.LeaveTimeout, prefix+"memberlist.leave-timeout", 5*time.Second, "Timeout for leaving memberlist cluster.")
+	f.DurationVar(&cfg.LeaveTimeout, prefix+"memberlist.leave-timeout", 20*time.Second, "Timeout for leaving memberlist cluster.")
 	f.DurationVar(&cfg.GossipInterval, prefix+"memberlist.gossip-interval", mlDefaults.GossipInterval, "How often to gossip.")
 	f.IntVar(&cfg.GossipNodes, prefix+"memberlist.gossip-nodes", mlDefaults.GossipNodes, "How many nodes to gossip to.")
 	f.DurationVar(&cfg.PushPullInterval, prefix+"memberlist.pullpush-interval", mlDefaults.PushPullInterval, "How often to use pull/push sync.")
@@ -223,7 +222,7 @@ func generateRandomSuffix(logger log.Logger) string {
 // If joining of the cluster if configured, it is done in Running state, and if join fails and Abort flag is set, service
 // fails.
 type KV struct {
-	services.Service
+	services.NamedService
 
 	cfg        KVConfig
 	logger     log.Logger
@@ -233,9 +232,9 @@ type KV struct {
 	provider DNSProvider
 
 	// Protects access to memberlist and broadcasts fields.
-	initWG     sync.WaitGroup
-	memberlist *memberlist.Memberlist
-	broadcasts *memberlist.TransmitLimitedQueue
+	delegateReady atomic.Bool
+	memberlist    *memberlist.Memberlist
+	broadcasts    *memberlist.TransmitLimitedQueue
 
 	// KV Store.
 	storeMu sync.Mutex
@@ -353,7 +352,6 @@ var (
 // trigger connecting to the existing memberlist cluster. If that fails and AbortIfJoinFails is true, error is returned
 // and service enters Failed state.
 func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer prometheus.Registerer) *KV {
-	cfg.TCPTransport.MetricsRegisterer = cfg.MetricsRegisterer
 	cfg.TCPTransport.MetricsNamespace = cfg.MetricsNamespace
 
 	mlkv := &KV{
@@ -376,7 +374,8 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer 
 		mlkv.codecs[c.CodecID()] = c
 	}
 
-	mlkv.Service = services.NewBasicService(mlkv.starting, mlkv.running, mlkv.stopping)
+	mlkv.NamedService = services.NewBasicService(mlkv.starting, mlkv.running, mlkv.stopping).WithName("memberlist_kv")
+
 	return mlkv
 }
 
@@ -385,7 +384,7 @@ func defaultMemberlistConfig() *memberlist.Config {
 }
 
 func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
-	tr, err := NewTCPTransport(m.cfg.TCPTransport, m.logger)
+	tr, err := NewTCPTransport(m.cfg.TCPTransport, m.logger, m.registerer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create transport: %v", err)
 	}
@@ -451,7 +450,6 @@ func (m *KV) starting(ctx context.Context) error {
 	//
 	// Note: We cannot check for Starting state, as we want to use delegate during cluster joining process
 	// that happens in Starting state.
-	m.initWG.Add(1)
 	list, err := memberlist.Create(mlCfg)
 	if err != nil {
 		return fmt.Errorf("failed to create memberlist: %v", err)
@@ -462,7 +460,7 @@ func (m *KV) starting(ctx context.Context) error {
 		NumNodes:       list.NumMembers,
 		RetransmitMult: mlCfg.RetransmitMult,
 	}
-	m.initWG.Done()
+	m.delegateReady.Store(true)
 
 	// Try to fast-join memberlist cluster in Starting state, so that we don't start with empty KV store.
 	if len(m.cfg.JoinMembers) > 0 {
@@ -475,11 +473,9 @@ func (m *KV) starting(ctx context.Context) error {
 var errFailedToJoinCluster = errors.New("failed to join memberlist cluster on startup")
 
 func (m *KV) running(ctx context.Context) error {
-	if len(m.cfg.JoinMembers) > 0 {
-		ok := m.joinMembersOnStartup(ctx)
-		if !ok && m.cfg.AbortIfJoinFails {
-			return errFailedToJoinCluster
-		}
+	ok := m.joinMembersOnStartup(ctx)
+	if !ok && m.cfg.AbortIfJoinFails {
+		return errFailedToJoinCluster
 	}
 
 	var tickerChan <-chan time.Time
@@ -490,17 +486,17 @@ func (m *KV) running(ctx context.Context) error {
 		tickerChan = t.C
 	}
 
+	logger := log.With(m.logger, "phase", "periodic_rejoin")
 	for {
 		select {
 		case <-tickerChan:
-			members := m.discoverMembers(ctx, m.cfg.JoinMembers)
-
-			reached, err := m.memberlist.Join(members)
+			const numAttempts = 1 // don't retry if resolution fails, we will try again next time
+			reached, err := m.joinMembersWithRetries(ctx, numAttempts, logger)
 			if err == nil {
-				level.Info(m.logger).Log("msg", "re-joined memberlist cluster", "reached_nodes", reached)
+				level.Info(logger).Log("msg", "re-joined memberlist cluster", "reached_nodes", reached)
 			} else {
 				// Don't report error from rejoin, otherwise KV service would be stopped completely.
-				level.Warn(m.logger).Log("msg", "re-joining memberlist cluster failed", "err", err)
+				level.Warn(logger).Log("msg", "re-joining memberlist cluster failed", "err", err, "next_try_in", m.cfg.RejoinInterval)
 			}
 
 		case <-ctx.Done():
@@ -545,7 +541,7 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
 	level.Info(m.logger).Log("msg", "memberlist fast-join starting", "nodes_found", len(nodes), "to_join", toJoin)
 
 	totalJoined := 0
-	for toJoin > 0 && len(nodes) > 0 {
+	for toJoin > 0 && len(nodes) > 0 && ctx.Err() == nil {
 		reached, err := m.memberlist.Join(nodes[0:1]) // Try to join single node only.
 		if err != nil {
 			level.Debug(m.logger).Log("msg", "fast-joining node failed", "node", nodes[0], "err", err)
@@ -565,39 +561,130 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
 	l.Log("msg", "memberlist fast-join finished", "joined_nodes", totalJoined, "elapsed_time", time.Since(startTime))
 }
 
+// The joinMembersOnStartup method resolves the addresses of the given join_members hosts and asks memberlist to join to them.
+// This method cannot be called before KV.running state as it may wait for K8S DNS to resolve the service addresses of members
+// running this very method. Which means the service needs to be READY for K8S to add it to DNS.
 func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
-	startTime := time.Now()
-
-	level.Info(m.logger).Log("msg", "joining memberlist cluster", "join_members", []string(m.cfg.JoinMembers))
-
-	cfg := backoff.Config{
-		MinBackoff: m.cfg.MinJoinBackoff,
-		MaxBackoff: m.cfg.MaxJoinBackoff,
-		MaxRetries: m.cfg.MaxJoinRetries,
+	if len(m.cfg.JoinMembers) == 0 {
+		return true
 	}
 
-	boff := backoff.New(ctx, cfg)
-	var lastErr error
+	logger := log.With(m.logger, "phase", "startup")
+	level.Info(logger).Log("msg", "joining memberlist cluster", "join_members", strings.Join(m.cfg.JoinMembers, ","))
+	startTime := time.Now()
+	reached, err := m.joinMembersWithRetries(ctx, m.cfg.MaxJoinRetries, logger)
+	if err != nil {
+		level.Error(logger).Log("msg", "joining memberlist cluster failed", "err", err, "elapsed_time", time.Since(startTime))
+		return false
+	}
+	level.Info(logger).Log("msg", "joining memberlist cluster succeeded", "reached_nodes", reached, "elapsed_time", time.Since(startTime))
+	return true
+}
 
-	for boff.Ongoing() {
-		// We rejoin all nodes, including those that were joined during "fast-join".
-		// This is harmless and simpler.
-		nodes := m.discoverMembers(ctx, m.cfg.JoinMembers)
+// joinMembersWithRetries joins m.cfg.JoinMembers 100 at a time. After each batch of 100 it rediscoveres the members.
+// This helps when the list of members is big and by the time we reach the end the originally resolved addresses may be obsolete.
+// joinMembersWithRetries returns an error iff it couldn't successfully join any node OR the context was cancelled.
+func (m *KV) joinMembersWithRetries(ctx context.Context, numAttempts int, logger log.Logger) (int, error) {
+	var (
+		cfg = backoff.Config{
+			MinBackoff: m.cfg.MinJoinBackoff,
+			MaxBackoff: m.cfg.MaxJoinBackoff,
+			MaxRetries: numAttempts,
+		}
+		boff               = backoff.New(ctx, cfg)
+		err                error
+		successfullyJoined = 0
+	)
 
-		reached, err := m.memberlist.Join(nodes) // err is only returned if reached==0.
-		if err == nil {
-			level.Info(m.logger).Log("msg", "joining memberlist cluster succeeded", "reached_nodes", reached, "elapsed_time", time.Since(startTime))
-			return true
+	for ; boff.Ongoing(); boff.Wait() {
+		successfullyJoined, err = m.joinMembersInBatches(ctx)
+		if successfullyJoined > 0 {
+			// If there are _some_ successful joins, then we can consider the join done.
+			// Mimicking the Join semantics we return an error only when we couldn't join any node at all
+			err = nil
+			break
+		}
+		level.Warn(logger).Log("msg", "joining memberlist cluster", "attempts", boff.NumRetries()+1, "max_attempts", numAttempts, "err", err)
+	}
+	if err == nil && boff.Err() != nil {
+		err = fmt.Errorf("joining memberlist: %w", boff.Err())
+	}
+
+	return successfullyJoined, err
+}
+
+// joinMembersInBatches joins m.cfg.JoinMembers and re-resolves the address of m.cfg.JoinMembers after joining 100 nodes.
+// joinMembersInBatches returns the number of nodes joined. joinMembersInBatches returns an error only when the
+// number of joined nodes is 0.
+func (m *KV) joinMembersInBatches(ctx context.Context) (int, error) {
+	const batchSize = 100
+	var (
+		attemptedNodes     = make(map[string]bool)
+		successfullyJoined = 0
+		lastErr            error
+		batch              = make([]string, batchSize)
+		nodes              []string
+	)
+	for moreAvailableNodes := true; ctx.Err() == nil && moreAvailableNodes; {
+		// Rediscover nodes and try to join a subset of them with each batch.
+		// When the list of nodes is large by the time we reach the end of the list some of the
+		// IPs can be unreachable.
+		newlyResolved := m.discoverMembers(ctx, m.cfg.JoinMembers)
+		if len(newlyResolved) > 0 {
+			// If the resolution fails we keep using the nodes list from the last resolution.
+			// If that failed too, then we fail the join attempt.
+			nodes = newlyResolved
 		}
 
-		level.Warn(m.logger).Log("msg", "joining memberlist cluster: failed to reach any nodes", "retries", boff.NumRetries(), "err", err)
-		lastErr = err
+		// Prepare batch
+		batch = batch[:0]
+		moreAvailableNodes = false
+		for _, n := range nodes {
+			if attemptedNodes[n] {
+				continue
+			}
+			if len(batch) >= batchSize {
+				moreAvailableNodes = true
+				break
+			}
+			batch = append(batch, n)
+			attemptedNodes[n] = true
+		}
 
-		boff.Wait()
+		// Join batch
+		joinedInBatch, err := m.joinMembersBatch(ctx, batch)
+		if err != nil {
+			lastErr = err
+		}
+		successfullyJoined += joinedInBatch
 	}
+	if successfullyJoined > 0 {
+		return successfullyJoined, nil
+	}
+	if successfullyJoined == 0 && lastErr == nil {
+		return 0, errors.New("found no nodes to join")
+	}
+	return 0, lastErr
+}
 
-	level.Error(m.logger).Log("msg", "joining memberlist cluster failed", "last_error", lastErr, "elapsed_time", time.Since(startTime))
-	return false
+// joinMembersBatch returns an error only if it couldn't successfully join any nodes or if ctx is cancelled.
+func (m *KV) joinMembersBatch(ctx context.Context, nodes []string) (successfullyJoined int, lastErr error) {
+	for nodeIdx := range nodes {
+		if ctx.Err() != nil {
+			return successfullyJoined, fmt.Errorf("joining batch: %w", context.Cause(ctx))
+		}
+		// Attempt to join a single node.
+		// The cost of calling Join shouldn't be different between passing all nodes in one invocation versus passing a single node per invocation.
+		reached, err := m.memberlist.Join(nodes[nodeIdx : nodeIdx+1])
+		successfullyJoined += reached
+		if err != nil {
+			lastErr = err
+		}
+	}
+	if successfullyJoined > 0 {
+		lastErr = nil
+	}
+	return successfullyJoined, lastErr
 }
 
 // Provides a dns-based member disovery to join a memberlist cluster w/o knowning members' addresses upfront.
@@ -619,7 +706,7 @@ func (m *KV) discoverMembers(ctx context.Context, members []string) []string {
 
 	err := m.provider.Resolve(ctx, resolve)
 	if err != nil {
-		level.Error(m.logger).Log("msg", "failed to resolve members", "addrs", strings.Join(resolve, ","))
+		level.Error(m.logger).Log("msg", "failed to resolve members", "addrs", strings.Join(resolve, ","), "err", err)
 	}
 
 	ms = append(ms, m.provider.Addresses()...)
@@ -685,7 +772,7 @@ func (m *KV) Get(key string, codec codec.Codec) (interface{}, error) {
 }
 
 // Returns current value with removed tombstones.
-func (m *KV) get(key string, codec codec.Codec) (out interface{}, version uint, err error) {
+func (m *KV) get(key string, _ codec.Codec) (out interface{}, version uint, err error) {
 	m.storeMu.Lock()
 	v := m.store[key].Clone()
 	m.storeMu.Unlock()
@@ -975,7 +1062,7 @@ func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec
 }
 
 // NodeMeta is method from Memberlist Delegate interface
-func (m *KV) NodeMeta(limit int) []byte {
+func (m *KV) NodeMeta(_ int) []byte {
 	// we can send local state from here (512 bytes only)
 	// if state is updated, we need to tell memberlist to distribute it.
 	return nil
@@ -984,6 +1071,10 @@ func (m *KV) NodeMeta(limit int) []byte {
 // NotifyMsg is method from Memberlist Delegate interface
 // Called when single message is received, i.e. what our broadcastNewValue has sent.
 func (m *KV) NotifyMsg(msg []byte) {
+	if !m.delegateReady.Load() {
+		return
+	}
+
 	m.numberOfReceivedMessages.Inc()
 	m.totalSizeOfReceivedMessages.Add(float64(len(msg)))
 
@@ -1093,7 +1184,9 @@ func (m *KV) queueBroadcast(key string, content []string, version uint, message 
 // GetBroadcasts is method from Memberlist Delegate interface
 // It returns all pending broadcasts (within the size limit)
 func (m *KV) GetBroadcasts(overhead, limit int) [][]byte {
-	m.initWG.Wait()
+	if !m.delegateReady.Load() {
+		return nil
+	}
 
 	return m.broadcasts.GetBroadcasts(overhead, limit)
 }
@@ -1103,8 +1196,10 @@ func (m *KV) GetBroadcasts(overhead, limit int) [][]byte {
 // This is "pull" part of push/pull sync (either periodic, or when new node joins the cluster).
 // Here we dump our entire state -- all keys and their values. There is no limit on message size here,
 // as Memberlist uses 'stream' operations for transferring this state.
-func (m *KV) LocalState(join bool) []byte {
-	m.initWG.Wait()
+func (m *KV) LocalState(_ bool) []byte {
+	if !m.delegateReady.Load() {
+		return nil
+	}
 
 	m.numberOfPulls.Inc()
 
@@ -1170,15 +1265,17 @@ func (m *KV) LocalState(join bool) []byte {
 	return buf.Bytes()
 }
 
-// MergeRemoteState is method from Memberlist Delegate interface
+// MergeRemoteState is a method from the Memberlist Delegate interface.
 //
 // This is 'push' part of push/pull sync. We merge incoming KV store (all keys and values) with ours.
 //
 // Data is full state of remote KV store, as generated by LocalState method (run on another node).
-func (m *KV) MergeRemoteState(data []byte, join bool) {
-	received := time.Now()
+func (m *KV) MergeRemoteState(data []byte, _ bool) {
+	if !m.delegateReady.Load() {
+		return
+	}
 
-	m.initWG.Wait()
+	received := time.Now()
 
 	m.numberOfPushes.Inc()
 	m.totalSizeOfPushes.Add(float64(len(data)))

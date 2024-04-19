@@ -3,13 +3,13 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
-// +build requires_docker
 
 package integration
 
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
@@ -125,6 +126,213 @@ func TestAlertmanager(t *testing.T) {
 	require.Equal(t, "Accept-Encoding", res.Header.Get("Vary"))
 }
 
+// This test asserts that in classic mode it is not possible to upload configurations,
+// create silences, or post alerts that contain UTF-8 on the left hand side of label
+// matchers or label names. It can be deleted when the -alertmanager.utf8-strict-mode-enabled
+// flag is removed.
+func TestAlertmanagerClassicMode(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	require.NoError(t, uploadAlertmanagerConfig(minio, alertsBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
+
+	alertmanager := e2emimir.NewAlertmanager(
+		"alertmanager",
+		mergeFlags(
+			AlertmanagerFlags(),
+			AlertmanagerS3Flags(),
+			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+			map[string]string{"-alertmanager.utf8-strict-mode-enabled": "false"},
+		),
+	)
+	require.NoError(t, s.StartAndWaitReady(alertmanager))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Equals(1), "cortex_alertmanager_config_last_reload_successful"))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Greater(0), "cortex_alertmanager_config_hash"))
+
+	c, err := e2emimir.NewClient("", "", alertmanager.HTTPEndpoint(), "", "user-1")
+	require.NoError(t, err)
+
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelFunc()
+
+	// Should be able to use classic config, but not UTF-8 configuration.
+	require.NoError(t, c.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserClassicConfigYaml, nil))
+	require.EqualError(t, c.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserUTF8ConfigYaml, nil), "setting config failed with status 400 and error error validating Alertmanager config: bad matcher format: bar🙂=baz\n")
+
+	// Should be able to create a silence with classic matchers, but not UTF-8 matchers.
+	silenceID, err := c.CreateSilence(ctx, types.Silence{
+		Matchers: amlabels.Matchers{
+			{Name: "foo", Value: "bar"},
+		},
+		Comment:  "This is a test silence.",
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, silenceID)
+
+	silenceID, err = c.CreateSilence(ctx, types.Silence{
+		Matchers: amlabels.Matchers{
+			{Name: "bar🙂", Value: "baz"},
+		},
+		Comment:  "This is a test silence.",
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	})
+	require.EqualError(t, err, "creating the silence failed with status 400 and error \"silence invalid: invalid label matcher 0: invalid label name \\\"bar🙂\\\"\"\n")
+	require.Empty(t, silenceID)
+
+	// Should be able to post alerts with classic labels but not UTF-8 labels.
+	require.NoError(t, c.SendAlertToAlermanager(ctx, &model.Alert{
+		Labels: model.LabelSet{
+			"foo": "bar",
+		},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	}))
+	require.EqualError(t, c.SendAlertToAlermanager(ctx, &model.Alert{
+		Labels: model.LabelSet{
+			"bar🙂": "baz",
+		},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	}), "sending alert failed with status 400 and error \"invalid label set: invalid name \\\"bar🙂\\\"\"\n")
+}
+
+// This test asserts that in UTF-8 strict mode it is possible to upload configurations,
+// create silences, and post alerts that contain UTF-8 on the left hand side of label
+// matchers and label names. It is the opposite of TestAlertmanagerClassicMode. It should
+// be merged with the TestAlertmanager test when the -alertmanager.utf8-strict-mode-enabled flag
+// is removed.
+func TestAlertmanagerUTF8StrictMode(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	require.NoError(t, uploadAlertmanagerConfig(minio, alertsBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
+
+	alertmanager := e2emimir.NewAlertmanager(
+		"alertmanager",
+		mergeFlags(
+			AlertmanagerFlags(),
+			AlertmanagerS3Flags(),
+			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+			map[string]string{"-alertmanager.utf8-strict-mode-enabled": "true"},
+		),
+	)
+	require.NoError(t, s.StartAndWaitReady(alertmanager))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Equals(1), "cortex_alertmanager_config_last_reload_successful"))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Greater(0), "cortex_alertmanager_config_hash"))
+
+	c, err := e2emimir.NewClient("", "", alertmanager.HTTPEndpoint(), "", "user-1")
+	require.NoError(t, err)
+
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelFunc()
+
+	// Should be able to use classic and UTF-8 configurations without error.
+	require.NoError(t, c.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserClassicConfigYaml, nil))
+	require.NoError(t, c.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserUTF8ConfigYaml, nil))
+
+	// Should be able to create a silence with both classic matchers and UTF-8 matchers.
+	silenceID, err := c.CreateSilence(ctx, types.Silence{
+		Matchers: amlabels.Matchers{
+			{Name: "foo", Value: "bar"},
+		},
+		Comment:  "This is a test silence.",
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, silenceID)
+
+	silenceID, err = c.CreateSilence(ctx, types.Silence{
+		Matchers: amlabels.Matchers{
+			{Name: "bar🙂", Value: "baz"},
+		},
+		Comment:  "This is a test silence.",
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, silenceID)
+
+	// Should be able to post alerts with both classic labels and UTF-8 labels.
+	require.NoError(t, c.SendAlertToAlermanager(ctx, &model.Alert{
+		Labels: model.LabelSet{
+			"foo": "bar",
+		},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	}))
+	require.NoError(t, c.SendAlertToAlermanager(ctx, &model.Alert{
+		Labels: model.LabelSet{
+			"bar🙂": "baz",
+		},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	}))
+}
+
+func TestAlertmanagerV1Deprecated(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	require.NoError(t, s.StartAndWaitReady(consul))
+
+	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(mimirAlertmanagerUserConfigYaml)))
+
+	alertmanager := e2emimir.NewAlertmanager(
+		"alertmanager",
+		mergeFlags(
+			AlertmanagerFlags(),
+			AlertmanagerLocalFlags(),
+			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+		),
+	)
+	require.NoError(t, s.StartAndWaitReady(alertmanager))
+
+	endpoints := []string{
+		"alerts",
+		"receivers",
+		"silence/id",
+		"silences",
+		"status",
+	}
+	for _, endpoint := range endpoints {
+		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/alertmanager/api/v1/%s", alertmanager.HTTPEndpoint(), endpoint), nil)
+		require.NoError(t, err)
+		req.Header.Set("X-Scope-OrgID", "user-1")
+		req.Header.Set("Accept-Encoding", "gzip")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		// Execute HTTP request
+		res, err := http.DefaultClient.Do(req.WithContext(ctx))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusGone, res.StatusCode)
+
+		var response = struct {
+			Status string `json:"status"`
+			Error  string `json:"error"`
+		}{}
+		require.NoError(t, json.NewDecoder(res.Body).Decode(&response))
+		require.Equal(t, "deprecated", response.Status)
+		require.Equal(t, "The Alertmanager v1 API was deprecated in version 0.16.0 and is removed as of version 0.28.0 - please use the equivalent route in the v2 API", response.Error)
+	}
+}
+
 func TestAlertmanagerLocalStore(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -185,9 +393,12 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
 	require.NoError(t, err)
 
-	_, err = c.GetAlertmanagerConfig(context.Background())
-	require.Error(t, err)
-	require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+	// When no config is set yet it should use the default fallback config.
+	cfg, err := c.GetAlertmanagerConfig(context.Background())
+	require.NoError(t, err)
+	require.Len(t, cfg.Receivers, 1)
+	require.Equal(t, "empty-receiver", cfg.Route.Receiver)
+	require.Equal(t, "empty-receiver", cfg.Receivers[0].Name)
 
 	err = c.SetAlertmanagerConfig(context.Background(), mimirAlertmanagerUserConfigYaml, map[string]string{})
 	require.NoError(t, err)
@@ -199,7 +410,7 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "user", "user-1")),
 		e2e.WaitMissingMetrics))
 
-	cfg, err := c.GetAlertmanagerConfig(context.Background())
+	cfg, err = c.GetAlertmanagerConfig(context.Background())
 	require.NoError(t, err)
 
 	// Ensure the returned status config matches the loaded config
@@ -227,10 +438,12 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	require.NoError(t, am.WaitRemovedMetric("cortex_alertmanager_config_last_reload_successful_seconds", e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
+	// Getting the config after the delete call should return the fallback config.
 	cfg, err = c.GetAlertmanagerConfig(context.Background())
-	require.Error(t, err)
-	require.Nil(t, cfg)
-	require.EqualError(t, err, "not found")
+	require.NoError(t, err)
+	require.Len(t, cfg.Receivers, 1)
+	require.Equal(t, "empty-receiver", cfg.Route.Receiver)
+	require.Equal(t, "empty-receiver", cfg.Receivers[0].Name)
 }
 
 func TestAlertmanagerSharding(t *testing.T) {
@@ -382,58 +595,29 @@ func TestAlertmanagerSharding(t *testing.T) {
 				assert.Equal(t, s3, ids[id3].Status.State)
 			}
 
-			// Endpoint: GET /v1/silences
-			{
-				for _, c := range clients {
-					list, err := c.GetSilencesV1(context.Background())
-					require.NoError(t, err)
-					assertSilences(list, types.SilenceStateActive, types.SilenceStateActive, types.SilenceStateActive)
-				}
-			}
-
 			// Endpoint: GET /v2/silences
 			{
 				for _, c := range clients {
-					list, err := c.GetSilencesV2(context.Background())
+					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
 					assertSilences(list, types.SilenceStateActive, types.SilenceStateActive, types.SilenceStateActive)
-				}
-			}
-
-			// Endpoint: GET /v1/silence/{id}
-			{
-				for _, c := range clients {
-					sil1, err := c.GetSilenceV1(context.Background(), id1)
-					require.NoError(t, err)
-					assert.Equal(t, comment(1), sil1.Comment)
-					assert.Equal(t, types.SilenceStateActive, sil1.Status.State)
-
-					sil2, err := c.GetSilenceV1(context.Background(), id2)
-					require.NoError(t, err)
-					assert.Equal(t, comment(2), sil2.Comment)
-					assert.Equal(t, types.SilenceStateActive, sil2.Status.State)
-
-					sil3, err := c.GetSilenceV1(context.Background(), id3)
-					require.NoError(t, err)
-					assert.Equal(t, comment(3), sil3.Comment)
-					assert.Equal(t, types.SilenceStateActive, sil3.Status.State)
 				}
 			}
 
 			// Endpoint: GET /v2/silence/{id}
 			{
 				for _, c := range clients {
-					sil1, err := c.GetSilenceV2(context.Background(), id1)
+					sil1, err := c.GetSilence(context.Background(), id1)
 					require.NoError(t, err)
 					assert.Equal(t, comment(1), sil1.Comment)
 					assert.Equal(t, types.SilenceStateActive, sil1.Status.State)
 
-					sil2, err := c.GetSilenceV2(context.Background(), id2)
+					sil2, err := c.GetSilence(context.Background(), id2)
 					require.NoError(t, err)
 					assert.Equal(t, comment(2), sil2.Comment)
 					assert.Equal(t, types.SilenceStateActive, sil2.Status.State)
 
-					sil3, err := c.GetSilenceV2(context.Background(), id3)
+					sil3, err := c.GetSilence(context.Background(), id3)
 					require.NoError(t, err)
 					assert.Equal(t, comment(3), sil3.Comment)
 					assert.Equal(t, types.SilenceStateActive, sil3.Status.State)
@@ -478,7 +662,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				require.NoError(t, waitForSilences("expired", 1*testCfg.replicationFactor))
 
 				for _, c := range clients {
-					list, err := c.GetSilencesV2(context.Background())
+					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
 					assertSilences(list, types.SilenceStateActive, types.SilenceStateExpired, types.SilenceStateActive)
 				}
@@ -488,7 +672,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				require.NoError(t, waitForSilences("expired", 2*testCfg.replicationFactor))
 
 				for _, c := range clients {
-					list, err := c.GetSilencesV2(context.Background())
+					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
 					assertSilences(list, types.SilenceStateActive, types.SilenceStateExpired, types.SilenceStateExpired)
 				}
@@ -498,7 +682,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				require.NoError(t, waitForSilences("expired", 3*testCfg.replicationFactor))
 
 				for _, c := range clients {
-					list, err := c.GetSilencesV2(context.Background())
+					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
 					assertSilences(list, types.SilenceStateExpired, types.SilenceStateExpired, types.SilenceStateExpired)
 				}
@@ -538,22 +722,10 @@ func TestAlertmanagerSharding(t *testing.T) {
 					e2e.SkipMissingMetrics))
 			}
 
-			// Endpoint: GET /v1/alerts
-			{
-				// Reads will query at least two replicas and merge the results.
-				// Therefore, the alerts we posted should always be visible.
-
-				for _, c := range clients {
-					list, err := c.GetAlertsV1(context.Background())
-					require.NoError(t, err)
-					assert.ElementsMatch(t, []string{"alert_1", "alert_2", "alert_3"}, alertNames(list))
-				}
-			}
-
 			// Endpoint: GET /v2/alerts
 			{
 				for _, c := range clients {
-					list, err := c.GetAlertsV2(context.Background())
+					list, err := c.GetAlerts(context.Background())
 					require.NoError(t, err)
 					assert.ElementsMatch(t, []string{"alert_1", "alert_2", "alert_3"}, alertNames(list))
 				}
@@ -576,8 +748,6 @@ func TestAlertmanagerSharding(t *testing.T) {
 					require.Contains(t, groups, "group_2")
 					assert.ElementsMatch(t, []string{"alert_3"}, alertNames(groups["group_2"]))
 				}
-
-				// Note: /v1/alerts/groups does not exist.
 			}
 
 			// Check the alerts were eventually written to every replica.
@@ -805,5 +975,154 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 				validateMetrics(0)
 			}
 		})
+	}
+}
+
+func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
+	testGrafanaConfig := `{
+		"template_files": {},
+		"alertmanager_config": {
+			"route": {
+				"receiver": "test_receiver",
+				"group_by": ["alertname"]
+			},
+			"receivers": [{
+				"name": "test_receiver",
+				"grafana_managed_receiver_configs": [{
+					"uid": "",
+					"name": "email test",
+					"type": "email",
+					"disableResolveMessage": true,
+					"settings": {
+						"addresses": "test@test.com"
+					},
+					"secureSettings": null
+				}]
+			}],
+			"templates": null
+		}
+	}`
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	flags := mergeFlags(AlertmanagerFlags(),
+		AlertmanagerS3Flags(),
+		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+		map[string]string{"-alertmanager.grafana-alertmanager-compatibility-enabled": "true"})
+
+	am := e2emimir.NewAlertmanager(
+		"alertmanager",
+		flags,
+	)
+	require.NoError(t, s.StartAndWaitReady(am))
+
+	// For Grafana Alertmanager configuration.
+	{
+		c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
+		require.NoError(t, err)
+		{
+			var cfg *alertmanager.UserGrafanaConfig
+			// When no config is set yet, it should not return anything.
+			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, cfg)
+
+			// Now, let's set a config.
+			now := time.Now().UnixMilli()
+			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", false)
+			require.NoError(t, err)
+
+			// With that set, let's get it back.
+			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, now, cfg.CreatedAt)
+		}
+
+		// Let's store config for a different user as well.
+		c, err = e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-5")
+		require.NoError(t, err)
+		{
+			var cfg *alertmanager.UserGrafanaConfig
+			// When no config is set yet, it should not return anything.
+			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, cfg)
+
+			// Now, let's set a config.
+			now := time.Now().UnixMilli()
+			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", false)
+			require.NoError(t, err)
+
+			// With that set, let's get it back.
+			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, now, cfg.CreatedAt)
+
+			// Now, let's delete it.
+			err = c.DeleteGrafanaAlertmanagerConfig(context.Background())
+			require.NoError(t, err)
+
+			// Now that the config is deleted, it should not return anything again.
+			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, cfg)
+		}
+	}
+
+	// For Grafana Alertmanager state.
+	{
+		c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
+		require.NoError(t, err)
+		{
+			var state *alertmanager.UserGrafanaState
+			// When no state is set yet, it should not return anything.
+			state, err = c.GetGrafanaAlertmanagerState(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, state)
+
+			// Now, let's set the state.
+			err = c.SetGrafanaAlertmanagerState(context.Background(), "ChEKBW5mbG9nEghzb21lZGF0YQ==")
+			require.NoError(t, err)
+
+			// With a state now set, let's get it back.
+			state, err = c.GetGrafanaAlertmanagerState(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, "ChEKBW5mbG9nEghzb21lZGF0YQ==", state.State)
+		}
+
+		// Let's store state for a different user as well.
+		c, err = e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-5")
+		require.NoError(t, err)
+		{
+			var state *alertmanager.UserGrafanaState
+			// When no state is set yet, it should not return anything.
+			state, err = c.GetGrafanaAlertmanagerState(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, state)
+
+			// Now, let's set the state.
+			err = c.SetGrafanaAlertmanagerState(context.Background(), "ChEKBW5mbG9nEghzb21lZGF0YQ==")
+			require.NoError(t, err)
+
+			// With a state now set, let's get it back.
+			state, err = c.GetGrafanaAlertmanagerState(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, "ChEKBW5mbG9nEghzb21lZGF0YQ==", state.State)
+
+			// Now, let's delete it.
+			err = c.DeleteGrafanaAlertmanagerState(context.Background())
+			require.NoError(t, err)
+
+			// Now that the state is deleted, it should not return anything again.
+			state, err = c.GetGrafanaAlertmanagerState(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, state)
+		}
+
 	}
 }

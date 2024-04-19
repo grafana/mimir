@@ -7,11 +7,12 @@ import (
 	"flag"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/weaveworks/common/user"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )
@@ -20,8 +21,10 @@ type TenantFederationConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
+const TenantFederationFlag = "ruler.tenant-federation.enabled"
+
 func (cfg *TenantFederationConfig) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, "ruler.tenant-federation.enabled", false, "Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are already created federated rule groups, then these rules groups will be skipped during evaluations.")
+	f.BoolVar(&cfg.Enabled, TenantFederationFlag, false, "Enable rule groups to query against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are federated rule groups that already exist, then these rules groups will be skipped during evaluations.")
 }
 
 type contextKey int
@@ -55,11 +58,20 @@ func TenantFederationQueryFunc(regularQueryable, federatedQueryable rules.QueryF
 	}
 }
 
-func RemoveFederatedRuleGroups(groups map[string]rulespb.RuleGroupList) {
+func removeFederatedRuleGroups(groups map[string]rulespb.RuleGroupList, logger log.Logger) {
 	for userID, groupList := range groups {
 		amended := make(rulespb.RuleGroupList, 0, len(groupList))
 		for _, group := range groupList {
 			if len(group.GetSourceTenants()) > 0 {
+				level.Warn(logger).Log(
+					"msg", "skipping federated rule group because rule federation is disabled; "+
+						"to enable the feature, configure the Mimir or GEM ruler instance with the following parameter "+
+						"or contact your service administrator: set -"+TenantFederationFlag+"=true as a CLI argument, "+
+						"ruler.tenant_federation.enabled: true in YAML",
+					"namespace", group.Namespace,
+					"group_name", group.Name,
+					"user", userID,
+				)
 				continue
 			}
 			amended = append(amended, group)

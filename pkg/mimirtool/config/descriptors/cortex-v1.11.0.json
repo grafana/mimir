@@ -596,7 +596,7 @@
                       "desc": "The etcd endpoints to connect to.",
                       "fieldDefaultValue": [],
                       "fieldFlag": "distributor.ha-tracker.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -897,7 +897,7 @@
                       "desc": "The etcd endpoints to connect to.",
                       "fieldDefaultValue": [],
                       "fieldFlag": "distributor.ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -1074,7 +1074,7 @@
                 "en0"
               ],
               "fieldFlag": "distributor.ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -1694,7 +1694,7 @@
                           "desc": "The etcd endpoints to connect to.",
                           "fieldDefaultValue": [],
                           "fieldFlag": "etcd.endpoints",
-                          "fieldType": "list of string"
+                          "fieldType": "list of strings"
                         },
                         {
                           "kind": "field",
@@ -1918,7 +1918,7 @@
                 "en0"
               ],
               "fieldFlag": "ingester.lifecycler.interface",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -3064,7 +3064,7 @@
               "desc": "If set, when authenticating with cassandra a custom authenticator will be expected during the handshake. This flag can be set multiple times.",
               "fieldDefaultValue": [],
               "fieldFlag": "cassandra.custom-authenticator",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -4754,7 +4754,7 @@
           "desc": "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.",
           "fieldDefaultValue": [],
           "fieldFlag": "distributor.drop-label",
-          "fieldType": "list of string"
+          "fieldType": "list of strings"
         },
         {
           "kind": "field",
@@ -5665,7 +5665,7 @@
             "en0"
           ],
           "fieldFlag": "frontend.instance-interface-names",
-          "fieldType": "list of string"
+          "fieldType": "list of strings"
         },
         {
           "kind": "field",
@@ -8037,7 +8037,7 @@
               "desc": "TSDB blocks range period.",
               "fieldDefaultValue": [],
               "fieldFlag": "blocks-storage.tsdb.block-ranges-period",
-              "fieldType": "list of duration"
+              "fieldType": "list of durations"
             },
             {
               "kind": "field",
@@ -8182,7 +8182,7 @@
           "desc": "List of compaction time ranges.",
           "fieldDefaultValue": [],
           "fieldFlag": "compactor.block-ranges",
-          "fieldType": "list of duration"
+          "fieldType": "list of durations"
         },
         {
           "kind": "field",
@@ -8424,7 +8424,7 @@
                       "desc": "The etcd endpoints to connect to.",
                       "fieldDefaultValue": [],
                       "fieldFlag": "compactor.ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -8619,7 +8619,7 @@
                 "en0"
               ],
               "fieldFlag": "compactor.ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -8772,7 +8772,7 @@
                       "desc": "The etcd endpoints to connect to.",
                       "fieldDefaultValue": [],
                       "fieldFlag": "store-gateway.sharding-ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -8994,7 +8994,7 @@
                 "en0"
               ],
               "fieldFlag": "store-gateway.sharding-ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -10168,7 +10168,7 @@
                       "desc": "The etcd endpoints to connect to.",
                       "fieldDefaultValue": [],
                       "fieldFlag": "ruler.ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -10345,7 +10345,7 @@
                 "en0"
               ],
               "fieldFlag": "ruler.ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -11222,7 +11222,7 @@
                       "desc": "The etcd endpoints to connect to.",
                       "fieldDefaultValue": [],
                       "fieldFlag": "alertmanager.sharding-ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -11417,7 +11417,7 @@
                 "en0"
               ],
               "fieldFlag": "alertmanager.sharding-ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -12729,7 +12729,7 @@
           "desc": "Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.",
           "fieldDefaultValue": [],
           "fieldFlag": "memberlist.join",
-          "fieldType": "list of string"
+          "fieldType": "list of strings"
         },
         {
           "kind": "field",
@@ -12810,7 +12810,7 @@
           "desc": "IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0",
           "fieldDefaultValue": [],
           "fieldFlag": "memberlist.bind-addr",
-          "fieldType": "list of string"
+          "fieldType": "list of strings"
         },
         {
           "kind": "field",

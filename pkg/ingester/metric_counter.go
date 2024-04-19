@@ -12,12 +12,6 @@ import (
 	"github.com/segmentio/fasthash/fnv1a"
 )
 
-// DiscardedSamples metric labels
-const (
-	perUserSeriesLimit   = "per_user_series_limit"
-	perMetricSeriesLimit = "per_metric_series_limit"
-)
-
 const numMetricCounterShards = 128
 
 type metricCounterShard struct {
@@ -63,16 +57,16 @@ func (m *metricCounter) getShard(metricName string) *metricCounterShard {
 	return shard
 }
 
-func (m *metricCounter) canAddSeriesFor(userID, metric string) error {
+func (m *metricCounter) canAddSeriesFor(userID, metric string) bool {
 	if _, ok := m.ignoredMetrics[metric]; ok {
-		return nil
+		return true
 	}
 
 	shard := m.getShard(metric)
 	shard.mtx.Lock()
 	defer shard.mtx.Unlock()
 
-	return m.limiter.AssertMaxSeriesPerMetric(userID, shard.m[metric])
+	return m.limiter.IsWithinMaxSeriesPerMetric(userID, shard.m[metric])
 }
 
 func (m *metricCounter) increaseSeriesForMetric(metric string) {

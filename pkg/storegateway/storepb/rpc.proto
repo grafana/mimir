@@ -1,0 +1,178 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/storepb/rpc.proto
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
+
+syntax = "proto3";
+package thanos;
+
+import "types.proto";
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "google/protobuf/any.proto";
+
+option go_package = "storepb";
+
+option (gogoproto.sizer_all) = true;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_getters_all) = false;
+
+// Do not generate XXX fields to reduce memory footprint and opening a door
+// for zero-copy casts to/from prometheus data types.
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+
+message SeriesRequest {
+  int64 min_time = 1;
+  int64 max_time = 2;
+  repeated LabelMatcher matchers = 3 [(gogoproto.nullable) = false];
+
+  // Thanos max_resolution_window.
+  reserved 4;
+
+  // Thanos aggregates.
+  reserved 5;
+
+  // Thanos partial_response_disabled.
+  reserved 6;
+
+  // Thanos partial_response_strategy.
+  reserved 7;
+
+  // skip_chunks controls whether sending chunks or not in series responses.
+  bool skip_chunks = 8;
+
+  // hints is an opaque data structure that can be used to carry additional information.
+  // The content of this field and whether it's supported depends on the
+  // implementation of a specific store.
+  google.protobuf.Any hints = 9;
+
+  // Thanos step.
+  reserved 10;
+
+  // Thanos range.
+  reserved 11;
+
+  // Thanos query_hints.
+  reserved 12;
+
+  // Thanos shard_info.
+  reserved 13;
+
+  // If streaming_chunks_batch_size=0, the response must only contain one 'series' at a time
+  // with the series labels and chunks data sent together.
+  // If streaming_chunks_batch_size > 0
+  // - The store may choose to send the streaming_series/streaming_chunks OR behave as
+  //   if streaming_chunks_batch_size=0 if it does not support streaming series.
+  // - The store must not send a mix of 'series' and streaming_series/streaming_chunks for a single request.
+  // - If the store chooses to send streaming series, all the streaming_series must be sent before
+  //   sending any streaming_chunks, with the last streaming_series response containing is_end_of_series_stream=true.
+  //   The order of series in both streaming_series/streaming_chunks must match and the size of the batch must not
+  //   cross streaming_chunks_batch_size, although it can be lower than that.
+  // The proto field ID is 100 so that we have an option to bring back compatibility with Thanos' storage API.
+  uint64 streaming_chunks_batch_size = 100;
+}
+
+message Stats {
+  // This is the sum of all fetched index bytes (postings + series) for a series request.
+  uint64 fetched_index_bytes = 1;
+}
+
+message SeriesResponse {
+  oneof result {
+    /// series contains 1 response series. The series labels are sorted by name.
+    Series series = 1;
+
+    /// warning is considered an information piece in place of series for warning purposes.
+    /// It is used to warn store API user about suspicious cases or partial response (if enabled).
+    string warning = 2;
+
+    /// hints is an opaque data structure that can be used to carry additional information from
+    /// the store. The content of this field and whether it's supported depends on the
+    /// implementation of a specific store. It's also implementation specific if it's allowed that
+    /// multiple SeriesResponse frames contain hints for a single Series() request and how should they
+    /// be handled in such case (ie. merged vs keep the first/last one).
+    google.protobuf.Any hints = 3;
+
+    /// stats is a object containing stats for a series response from the store-gateways so that we can collect stats
+    /// related to the processing the series response on store-gateways did available to the querier and query-frontends.
+    Stats stats = 4;
+
+    /// streaming_series is a list of series labels sent as part of a streaming Series call.
+    /// These are populated only when streaming_chunks_batch_size > 0 in the series request.
+    /// Series are sent in batches because sending one at a time has additional CPU overhead for not much memory gains.
+    StreamingSeriesBatch streaming_series = 5;
+
+    /// streaming_chunks is a list of chunks sent as part of a streaming Series request.
+    /// They are associated with series labels sent as streaming_series earlier in the same Series request.
+    /// These are populated only when streaming_chunks_batch_size > 0 in the series request.
+    /// Chunks are sent in batches because sending one series' chunks at a time has additional
+    /// CPU overhead for not much memory gains.
+    StreamingChunksBatch streaming_chunks = 6;
+
+    /// streaming_chunks_estimate contains an estimate of the number of chunks expected to be sent as part a streaming
+    /// Series call.
+    StreamingChunksEstimate streaming_chunks_estimate = 7;
+  }
+}
+
+message LabelNamesRequest {
+  // Thanos partial_response_disabled.
+  reserved 1;
+
+  // Thanos partial_response_strategy.
+  reserved 2;
+
+  int64 start = 3;
+
+  int64 end = 4;
+
+  // hints is an opaque data structure that can be used to carry additional information.
+  // The content of this field and whether it's supported depends on the
+  // implementation of a specific store.
+  google.protobuf.Any hints = 5;
+
+  repeated LabelMatcher matchers = 6 [(gogoproto.nullable) = false];
+}
+
+message LabelNamesResponse {
+  repeated string names = 1;
+  repeated string warnings = 2;
+
+  /// hints is an opaque data structure that can be used to carry additional information from
+  /// the store. The content of this field and whether it's supported depends on the
+  /// implementation of a specific store.
+  google.protobuf.Any hints = 3;
+}
+
+message LabelValuesRequest {
+  string label = 1;
+
+  // Thanos partial_response_disabled.
+  reserved 2;
+
+  // Thanos partial_response_strategy.
+  reserved 3;
+
+  int64 start = 4;
+
+  int64 end = 5;
+
+  // hints is an opaque data structure that can be used to carry additional information.
+  // The content of this field and whether it's supported depends on the
+  // implementation of a specific store.
+  google.protobuf.Any hints = 6;
+
+  repeated LabelMatcher matchers = 7 [(gogoproto.nullable) = false];
+}
+
+message LabelValuesResponse {
+  repeated string values = 1;
+  repeated string warnings = 2;
+
+  /// hints is an opaque data structure that can be used to carry additional information from
+  /// the store. The content of this field and whether it's supported depends on the
+  /// implementation of a specific store.
+  google.protobuf.Any hints = 3;
+}

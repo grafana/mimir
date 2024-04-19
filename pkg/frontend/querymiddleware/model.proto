@@ -11,43 +11,11 @@ package queryrange;
 option go_package = "querymiddleware";
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "google/protobuf/duration.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "google/protobuf/any.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
-
-message PrometheusRangeQueryRequest {
-  string path = 1;
-  int64 start = 2;
-  int64 end = 3;
-  int64 step = 4;
-  google.protobuf.Duration timeout = 5 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
-  string query = 6;
-  Options options = 7 [(gogoproto.nullable) = false];
-
-  // ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
-  int64 id = 8;
-
-  // Hints that could be optionally attached to the request to pass down the stack.
-  // These hints can be used to optimize the query execution.
-  Hints hints = 9 [(gogoproto.nullable) = true];
-}
-
-message PrometheusInstantQueryRequest {
-  string path = 1;
-  int64 time = 2;
-  string query = 3;
-  Options options = 4 [(gogoproto.nullable) = false];
-
-  // ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
-  int64 id = 5;
-
-  // Hints that could be optionally attached to the request to pass down the stack.
-  // These hints can be used to optimize the query execution.
-  Hints hints = 6 [(gogoproto.nullable) = true];
-}
 
 message PrometheusResponseHeader {
   string Name = 1 [(gogoproto.jsontag) = "-"];
@@ -60,6 +28,7 @@ message PrometheusResponse {
   string ErrorType = 3 [(gogoproto.jsontag) = "errorType,omitempty"];
   string Error = 4 [(gogoproto.jsontag) = "error,omitempty"];
   repeated PrometheusResponseHeader Headers = 5 [(gogoproto.jsontag) = "-"];
+  repeated string Warnings = 6 [(gogoproto.jsontag) = "warnings,omitempty"];
 }
 
 message PrometheusData {
@@ -70,22 +39,27 @@ message PrometheusData {
 message SampleStream {
   repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "metric", (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   repeated cortexpb.Sample samples = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "values"];
+  repeated cortexpb.FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "histograms"];
 }
 
 message CachedResponse  {
-	string key = 1 [(gogoproto.jsontag) = "key"];
+  string key = 1 [(gogoproto.jsontag) = "key"];
 
-	// List of cached responses; non-overlapping and in order.
-	repeated Extent extents = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "extents"];
+  // List of cached responses; non-overlapping and in order.
+  repeated Extent extents = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "extents"];
 }
 
 message Extent  {
-	int64 start = 1 [(gogoproto.jsontag) = "start"];
+  int64 start = 1 [(gogoproto.jsontag) = "start"];
   int64 end = 2 [(gogoproto.jsontag) = "end"];
   // reserved the previous key to ensure cache transition
   reserved 3;
   string trace_id = 4 [(gogoproto.jsontag) = "-"];
   google.protobuf.Any response = 5 [(gogoproto.jsontag) = "response"];
+  // Unix timestamp when the query with this response was executed.
+  // If the response is combination of multiple queries over time, all of which had timestamp set, this is the timestamp of oldest query.
+  // When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
+  int64 query_timestamp_ms = 6;
 }
 
 message Options {
@@ -97,7 +71,28 @@ message Options {
   int64 InstantSplitInterval = 5;
 }
 
-message Hints {
-  // Total number of queries that are expected to to be executed to serve the original request.
-  int32 TotalQueries = 1;
+message QueryStatistics {
+  uint64 EstimatedSeriesCount = 1;
+}
+
+// CachedHTTPResponse holds a generic HTTP response in the query results cache.
+message CachedHTTPResponse  {
+  // cacheKey contains the non-hashed cache key, used to guarantee there haven't
+  // been any hashed cache key collision.
+  string cache_key = 1;
+
+  // statusCode contains the HTTP response status code.
+  int32 status_code = 2;
+
+  // headers contains the HTTP response headers.
+  repeated CachedHTTPHeader headers = 3;
+
+  // body contains the HTTP response body.
+  bytes body = 4;
+}
+
+// CachedHTTPHeader holds a HTTP header.
+message CachedHTTPHeader {
+  string name = 1;
+  string value = 2;
 }

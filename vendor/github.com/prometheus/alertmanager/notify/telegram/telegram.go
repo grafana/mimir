@@ -15,19 +15,24 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	commoncfg "github.com/prometheus/common/config"
 	"gopkg.in/telebot.v3"
 
-	"github.com/prometheus/alertmanager/template"
-
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/notify"
+	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
-	commoncfg "github.com/prometheus/common/config"
 )
+
+// Telegram supports 4096 chars max - from https://limits.tginfo.me/en.
+const maxMessageLenRunes = 4096
 
 // Notifier implements a Notifier for telegram notifications.
 type Notifier struct {
@@ -45,7 +50,7 @@ func New(conf *config.TelegramConfig, t *template.Template, l log.Logger, httpOp
 		return nil, err
 	}
 
-	client, err := createTelegramClient(conf.BotToken, conf.APIUrl.String(), conf.ParseMode, httpclient)
+	client, err := createTelegramClient(conf.APIUrl.String(), conf.ParseMode, httpclient)
 	if err != nil {
 		return nil, err
 	}
@@ -66,10 +71,23 @@ func (n *Notifier) Notify(ctx context.Context, alert ...*types.Alert) (bool, err
 		tmpl = notify.TmplText(n.tmpl, data, &err)
 	)
 
-	// Telegram supports 4096 chars max
-	messageText, truncated := notify.Truncate(tmpl(n.conf.Message), 4096)
+	if n.conf.ParseMode == "HTML" {
+		tmpl = notify.TmplHTML(n.tmpl, data, &err)
+	}
+
+	key, ok := notify.GroupKey(ctx)
+	if !ok {
+		return false, fmt.Errorf("group key missing")
+	}
+
+	messageText, truncated := notify.TruncateInRunes(tmpl(n.conf.Message), maxMessageLenRunes)
 	if truncated {
-		level.Debug(n.logger).Log("msg", "truncated message", "truncated_message", messageText)
+		level.Warn(n.logger).Log("msg", "Truncated message", "alert", key, "max_runes", maxMessageLenRunes)
+	}
+
+	n.client.Token, err = n.getBotToken()
+	if err != nil {
+		return true, err
 	}
 
 	message, err := n.client.Send(telebot.ChatID(n.conf.ChatID), messageText, &telebot.SendOptions{
@@ -84,19 +102,27 @@ func (n *Notifier) Notify(ctx context.Context, alert ...*types.Alert) (bool, err
 	return false, nil
 }
 
-func createTelegramClient(token config.Secret, apiUrl, parseMode string, httpClient *http.Client) (*telebot.Bot, error) {
-	secret := string(token)
+func createTelegramClient(apiURL, parseMode string, httpClient *http.Client) (*telebot.Bot, error) {
 	bot, err := telebot.NewBot(telebot.Settings{
-		Token:     secret,
-		URL:       apiUrl,
+		URL:       apiURL,
 		ParseMode: parseMode,
 		Client:    httpClient,
 		Offline:   true,
 	})
-
 	if err != nil {
 		return nil, err
 	}
 
 	return bot, nil
+}
+
+func (n *Notifier) getBotToken() (string, error) {
+	if len(n.conf.BotTokenFile) > 0 {
+		content, err := os.ReadFile(n.conf.BotTokenFile)
+		if err != nil {
+			return "", fmt.Errorf("could not read %s: %w", n.conf.BotTokenFile, err)
+		}
+		return strings.TrimSpace(string(content)), nil
+	}
+	return string(n.conf.BotToken), nil
 }

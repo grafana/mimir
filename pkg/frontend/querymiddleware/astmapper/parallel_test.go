@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,6 +26,21 @@ func TestCanParallel(t *testing.T) {
 		{
 			&parser.AggregateExpr{
 				Op:      parser.SUM,
+				Without: true,
+				Expr: &parser.VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					},
+				},
+				Grouping: []string{"foo"},
+			},
+			true,
+		},
+		// simple group
+		{
+			&parser.AggregateExpr{
+				Op:      parser.GROUP,
 				Without: true,
 				Expr: &parser.VectorSelector{
 					Name: "some_metric",
@@ -211,9 +227,45 @@ func TestFunctionsWithDefaultsIsUpToDate(t *testing.T) {
 				// round has a default value for the second scalar value, which is not relevant for sharding purposes.
 				return
 			}
+			if f.Name == "sort_by_label" || f.Name == "sort_by_label_desc" {
+				// sort by label functions are variadic but no parameter is a timestamp, so they're not relevant for sharding purposes.
+				return
+			}
 
 			// Rest of the functions with known defaults are functions with a default time() argument.
 			require.Containsf(t, FuncsWithDefaultTimeArg, name, "Function %q has variable arguments, and it's not in the list of functions with default time() argument.")
+		})
+	}
+}
+
+func TestCountVectorSelectors(t *testing.T) {
+	tests := map[string]struct {
+		expr     string
+		expected int
+	}{
+		"no vector selectors": {
+			expr:     "1",
+			expected: 0,
+		},
+		"input is a vector selector": {
+			expr:     "metric",
+			expected: 1,
+		},
+		"input expr contains a vector selector": {
+			expr:     "1 + metric",
+			expected: 1,
+		},
+		"input expr contains multiple vector selectors": {
+			expr:     "1 + metric + sum(metric) + sum(rate(metric[1m]))",
+			expected: 3,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			expr, err := parser.ParseExpr(testData.expr)
+			require.Nil(t, err)
+			assert.Equal(t, testData.expected, countVectorSelectors(expr))
 		})
 	}
 }

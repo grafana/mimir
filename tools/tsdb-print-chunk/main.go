@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
@@ -24,37 +26,61 @@ func main() {
 		return
 	}
 
-	b, err := tsdb.OpenBlock(logger, args[1], nil)
+	printChunks(args[1], args[2:])
+}
+
+func printChunks(blockDir string, chunkRefs []string) {
+	b, err := tsdb.OpenBlock(logger, blockDir, nil)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open TSDB block", args[1], "due to error:", err)
+		fmt.Fprintln(os.Stderr, "Failed to open TSDB block", blockDir, "due to error:", err)
 		os.Exit(1)
 	}
 
 	cr, err := b.Chunks()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to get chunks reader for block", args[1], "due to error:", err)
+		fmt.Fprintln(os.Stderr, "Failed to get chunks reader for block", blockDir, "due to error:", err)
 		os.Exit(1)
 	}
 
-	for _, ref := range args[2:] {
+	for _, ref := range chunkRefs {
 		val, err := strconv.ParseUint(ref, 10, 64)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to parse chunk ref:", ref)
 			continue
 		}
 
-		ch, err := cr.Chunk(chunks.Meta{Ref: chunks.ChunkRef(val)})
+		ch, iter, err := cr.ChunkOrIterable(chunks.Meta{Ref: chunks.ChunkRef(val)})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to open chunk", val, "due to error:", err)
+			continue
+		}
+		if iter != nil {
+			fmt.Fprintln(os.Stderr, "Failed to open chunk", val, "got iterable")
 			continue
 		}
 
 		fmt.Println("Chunk ref:", ref, "samples:", ch.NumSamples(), "bytes:", len(ch.Bytes()))
 
 		it := ch.Iterator(nil)
-		for it.Err() == nil && it.Next() {
-			ts, val := it.At()
-			fmt.Printf("%g\t%d (%s)\n", val, ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+		var (
+			h  *histogram.Histogram      // reused in iteration as we just dump the value and move on
+			fh *histogram.FloatHistogram // reused in iteration as we just dump the value and move on
+			ts int64                     // we declare ts here to prevent shadowing of h and fh within the loop
+		)
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			switch valType {
+			case chunkenc.ValFloat:
+				ts, v := it.At()
+				fmt.Printf("%g\t%d (%s)\n", v, ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+			case chunkenc.ValHistogram:
+				ts, h = it.AtHistogram(h)
+				fmt.Printf("%s\t%d (%s)\n", h.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+			case chunkenc.ValFloatHistogram:
+				ts, fh = it.AtFloatHistogram(fh)
+				fmt.Printf("%s\t%d (%s)\n", fh.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+			default:
+				fmt.Printf("skipping unsupported value type %v\n", valType)
+			}
 		}
 		if e := it.Err(); e != nil {
 			fmt.Fprintln(os.Stderr, "Failed to iterate chunk", val, "due to error:", err)

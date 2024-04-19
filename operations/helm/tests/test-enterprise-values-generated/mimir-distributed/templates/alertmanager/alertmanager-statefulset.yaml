@@ -23,6 +23,15 @@ spec:
   updateStrategy:
     type: RollingUpdate
   serviceName: test-enterprise-values-mimir-alertmanager
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "1Gi"
   template:
     metadata:
       labels:
@@ -36,16 +45,22 @@ spec:
     spec:
       serviceAccountName: test-enterprise-values-mimir
       securityContext:
-        {}
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-values
+            app.kubernetes.io/component: alertmanager
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           secret:
@@ -56,10 +71,13 @@ spec:
         - name: runtime-config
           configMap:
             name: test-enterprise-values-mimir-runtime
-        - name: storage
-          emptyDir: {}
         - name: tmp
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: test-enterprise-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
           imagePullPolicy: IfNotPresent
@@ -76,8 +94,12 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: alertmanager-fallback-config
+              mountPath: /configs/
             - name: tmp
               mountPath: /tmp
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -100,6 +122,10 @@ spec:
               cpu: 10m
               memory: 32Mi
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
           envFrom:

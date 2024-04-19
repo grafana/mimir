@@ -10,12 +10,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"text/tabwriter"
 
-	"github.com/alecthomas/chroma/quick"
+	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/mitchellh/colorstring"
+	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
@@ -192,7 +192,7 @@ func (p *Printer) PrintRuleSet(rules map[string][]rwrulefmt.RuleGroup, format st
 	for k := range rules {
 		nsKeys = append(nsKeys, k)
 	}
-	sort.Strings(nsKeys)
+	slices.Sort(nsKeys)
 
 	type namespaceAndRuleGroup struct {
 		Namespace string `json:"namespace" yaml:"namespace"`

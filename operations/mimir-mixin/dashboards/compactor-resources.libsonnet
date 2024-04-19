@@ -3,45 +3,46 @@ local filename = 'mimir-compactor-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == '09a5c49e9cdb2f2b24c6d184574a07fd' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Compactor resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('CPU and memory')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'compactor'),
+        $.containerCPUUsagePanelByComponent('compactor'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.compactor),
+        $.containerGoHeapInUsePanelByComponent('compactor'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerMemoryRSSPanel('Memory (RSS)', 'compactor'),
+        $.containerMemoryRSSPanelByComponent('compactor'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'compactor'),
+        $.containerMemoryWorkingSetPanelByComponent('compactor'),
       )
     )
     .addRow(
       $.row('Network')
       .addPanel(
-        $.containerNetworkReceiveBytesPanel($._config.instance_names.compactor),
+        $.containerNetworkReceiveBytesPanelByComponent('compactor'),
       )
       .addPanel(
-        $.containerNetworkTransmitBytesPanel($._config.instance_names.compactor),
+        $.containerNetworkTransmitBytesPanelByComponent('compactor'),
       )
     )
     .addRow(
       $.row('Disk')
       .addPanel(
-        $.containerDiskWritesPanel('Disk writes', 'compactor'),
+        $.containerDiskWritesPanelByComponent('compactor'),
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk reads', 'compactor'),
+        $.containerDiskReadsPanelByComponent('compactor'),
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', 'compactor'),
+        $.containerDiskSpaceUtilizationPanelByComponent('compactor'),
       )
     ) + {
       templating+: {

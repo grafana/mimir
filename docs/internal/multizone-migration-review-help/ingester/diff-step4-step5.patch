@@ -1,0 +1,26 @@
+diff -c -r step4/mimir-distributed/templates/distributor/distributor-dep.yaml step5/mimir-distributed/templates/distributor/distributor-dep.yaml
+*** step4/mimir-distributed/templates/distributor/distributor-dep.yaml
+--- step5/mimir-distributed/templates/distributor/distributor-dep.yaml
+***************
+*** 48,53 ****
+--- 48,54 ----
+              - "-target=distributor"
+              - "-config.expand-env=true"
+              - "-config.file=/etc/mimir/mimir.yaml"
++             - "-ingester.ring.excluded-zones=zone-default"
+            volumeMounts:
+              - name: config
+                mountPath: /etc/mimir
+diff -c -r step4/mimir-distributed/templates/ruler/ruler-dep.yaml step5/mimir-distributed/templates/ruler/ruler-dep.yaml
+*** step4/mimir-distributed/templates/ruler/ruler-dep.yaml
+--- step5/mimir-distributed/templates/ruler/ruler-dep.yaml
+***************
+*** 48,53 ****
+--- 48,54 ----
+              - "-target=ruler"
+              - "-config.expand-env=true"
+              - "-config.file=/etc/mimir/mimir.yaml"
++             - "-ingester.ring.excluded-zones=zone-default"
+            volumeMounts:
+              - name: config
+                mountPath: /etc/mimir

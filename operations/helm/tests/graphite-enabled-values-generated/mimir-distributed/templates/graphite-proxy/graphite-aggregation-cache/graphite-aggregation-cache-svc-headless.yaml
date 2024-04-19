@@ -1,0 +1,30 @@
+---
+# Source: mimir-distributed/templates/graphite-proxy/graphite-aggregation-cache/graphite-aggregation-cache-svc-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: graphite-enabled-values-mimir-gr-aggr-cache
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: graphite-enabled-values
+    app.kubernetes.io/component: gr-aggr-cache
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: memcached-client
+      port: 11211
+      targetPort: 11211
+    
+    - name: http-metrics
+      port: 9150
+      targetPort: 9150
+    
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: graphite-enabled-values
+    app.kubernetes.io/component: gr-aggr-cache

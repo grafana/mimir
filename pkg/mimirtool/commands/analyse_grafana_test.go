@@ -22,11 +22,16 @@ var dashboardMetrics = []string{
 	"cluster_quantile:apiserver_request_duration_seconds:histogram_quantile",
 	"code_resource:apiserver_request_total:rate5m",
 	"go_goroutines",
+	"kube_pod_info",
 	"process_cpu_seconds_total",
 	"process_resident_memory_bytes",
 	"workqueue_adds_total",
 	"workqueue_depth",
 	"workqueue_queue_duration_seconds_bucket",
+}
+
+var expectedParseErrors = []string{
+	"unsupported panel type: \"text\"",
 }
 
 func TestParseMetricsInBoard(t *testing.T) {
@@ -42,6 +47,29 @@ func TestParseMetricsInBoard(t *testing.T) {
 
 	analyze.ParseMetricsInBoard(output, board)
 	assert.Equal(t, dashboardMetrics, output.Dashboards[0].Metrics)
+	assert.Equal(t, expectedParseErrors, output.Dashboards[0].ParseErrors)
+}
+
+func BenchmarkParseMetricsInBoard(b *testing.B) {
+	var board minisdk.Board
+	output := &analyze.MetricsInGrafana{}
+	output.OverallMetrics = make(map[string]struct{})
+
+	buf, err := loadFile("testdata/apiserver.json")
+	if err != nil {
+		b.FailNow()
+	}
+
+	err = json.Unmarshal(buf, &board)
+	if err != nil {
+		b.FailNow()
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		analyze.ParseMetricsInBoard(output, board)
+	}
 }
 
 func TestParseMetricsInBoardWithTimeseriesPanel(t *testing.T) {

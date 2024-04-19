@@ -10,6 +10,8 @@ import (
 	"github.com/opentracing/opentracing-go/ext"
 )
 
+var responseSizeKey = "http.response_size"
+
 type mwOptions struct {
 	opNameFunc    func(r *http.Request) string
 	spanFilter    func(r *http.Request) bool
@@ -126,22 +128,25 @@ func MiddlewareFunc(tr opentracing.Tracer, h http.HandlerFunc, options ...MWOpti
 		ext.Component.Set(sp, componentName)
 		opts.spanObserver(sp, r)
 
-		sct := &statusCodeTracker{ResponseWriter: w}
+		mt := &metricsTracker{ResponseWriter: w}
 		r = r.WithContext(opentracing.ContextWithSpan(r.Context(), sp))
 
 		defer func() {
 			panicErr := recover()
 			didPanic := panicErr != nil
 
-			if sct.status == 0 && !didPanic {
+			if mt.status == 0 && !didPanic {
 				// Standard behavior of http.Server is to assume status code 200 if one was not written by a handler that returned successfully.
 				// https://github.com/golang/go/blob/fca286bed3ed0e12336532cc711875ae5b3cb02a/src/net/http/server.go#L120
-				sct.status = 200
+				mt.status = 200
 			}
-			if sct.status > 0 {
-				ext.HTTPStatusCode.Set(sp, uint16(sct.status))
+			if mt.status > 0 {
+				ext.HTTPStatusCode.Set(sp, uint16(mt.status))
 			}
-			if sct.status >= http.StatusInternalServerError || didPanic {
+			if mt.size > 0 {
+				sp.SetTag(responseSizeKey, mt.size)
+			}
+			if mt.status >= http.StatusInternalServerError || didPanic {
 				ext.Error.Set(sp, true)
 			}
 			sp.Finish()
@@ -151,7 +156,7 @@ func MiddlewareFunc(tr opentracing.Tracer, h http.HandlerFunc, options ...MWOpti
 			}
 		}()
 
-		h(sct.wrappedResponseWriter(), r)
+		h(mt.wrappedResponseWriter(), r)
 	}
 	return http.HandlerFunc(fn)
 }

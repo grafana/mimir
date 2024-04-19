@@ -1,0 +1,33 @@
+---
+# Source: mimir-distributed/templates/alertmanager/alertmanager-svc-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-alertmanager-headless
+  labels:
+    app: enterprise-metrics-alertmanager
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+    prometheus.io/service-monitor: "false"
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+    - port: 9094
+      protocol: TCP
+      name: cluster
+  selector:
+    app: enterprise-metrics-alertmanager
+    release: test-enterprise-legacy-label-values

@@ -1,0 +1,25 @@
+{{- if .Values.nginx.route.enabled }}
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "nginx") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "nginx") | nindent 4 }}
+  {{- with .Values.nginx.route.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  host: {{ .Values.nginx.route.host }}
+  to:
+    kind: Service
+    name: {{ include "mimir.resourceName" (dict "ctx" . "component" "nginx") }}
+    weight: 100
+  port:
+    targetPort: http-metric
+{{- if .Values.nginx.route.tls }}
+  tls:
+    {{- toYaml .Values.nginx.route.tls | nindent 4 }}
+{{- end }}
+{{- end }}

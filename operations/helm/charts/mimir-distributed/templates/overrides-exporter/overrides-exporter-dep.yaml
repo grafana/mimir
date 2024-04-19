@@ -19,9 +19,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "overrides-exporter") | nindent 8 }}
-        {{- with .Values.overrides_exporter.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "overrides-exporter") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
@@ -31,15 +28,17 @@ spec:
       priorityClassName: {{ .Values.overrides_exporter.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.overrides_exporter.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "overrides-exporter") | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
         - name: {{ . }}
       {{- end }}
       {{- end }}
+      {{- with .Values.overrides_exporter.initContainers }}
       initContainers:
-        {{- toYaml .Values.overrides_exporter.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: overrides-exporter
           image: "{{ include "mimir.imageReference" . }}"
@@ -66,6 +65,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.overrides_exporter.persistence.subPath }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -83,10 +84,15 @@ spec:
             {{- toYaml .Values.overrides_exporter.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
-              {{ toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- with .Values.overrides_exporter.env }}
-              {{ toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.overrides_exporter }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
@@ -98,12 +104,19 @@ spec:
         {{- with .Values.overrides_exporter.extraContainers }}
         {{ toYaml . | nindent 8 }}
         {{- end }}
+      {{- with .Values.overrides_exporter.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.overrides_exporter.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.overrides_exporter.affinity }}
       affinity:
-        {{- toYaml .Values.overrides_exporter.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "overrides-exporter") | nindent 6 }}
+      {{- with .Values.overrides_exporter.tolerations }}
       tolerations:
-        {{- toYaml .Values.overrides_exporter.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.overrides_exporter.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -120,5 +133,7 @@ spec:
         {{ toYaml .Values.overrides_exporter.extraVolumes | nindent 8}}
         {{- end }}
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
 {{- end -}}

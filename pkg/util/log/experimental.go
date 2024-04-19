@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+//lint:ignore faillint It's non-trivial to remove this global variable.
 var experimentalFeaturesInUse = promauto.NewCounterVec(
 	prometheus.CounterOpts{
 		Namespace: "cortex",

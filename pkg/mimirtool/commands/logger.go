@@ -8,15 +8,15 @@ package commands
 import (
 	"fmt"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 type LoggerConfig struct {
 	Level string
 }
 
-func (l *LoggerConfig) registerLogLevel(pc *kingpin.ParseContext) error {
+func (l *LoggerConfig) registerLogLevel(_ *kingpin.ParseContext) error {
 	var logLevel logrus.Level
 	switch l.Level {
 	case "debug":

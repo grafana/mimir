@@ -16,7 +16,6 @@ package runtime
 
 import (
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"time"
@@ -38,8 +37,8 @@ type ClientRequestWriter interface {
 }
 
 // ClientRequest is an interface for things that know how to
-// add information to a swagger client request
-type ClientRequest interface {
+// add information to a swagger client request.
+type ClientRequest interface { //nolint:interfacebloat // a swagger-capable request is quite rich, hence the many getter/setters
 	SetHeaderParam(string, ...string) error
 
 	GetHeaderParams() http.Header
@@ -79,7 +78,7 @@ type NamedReadCloser interface {
 func NamedReader(name string, rdr io.Reader) NamedReadCloser {
 	rc, ok := rdr.(io.ReadCloser)
 	if !ok {
-		rc = ioutil.NopCloser(rdr)
+		rc = io.NopCloser(rdr)
 	}
 	return &namedReadCloser{
 		name: name,

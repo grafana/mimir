@@ -8,7 +8,7 @@ package alertmanager
 import (
 	"context"
 	"hash/fnv"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net/http"
 	"path"
@@ -17,16 +17,15 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/alertmanager/merger"
 	"github.com/grafana/mimir/pkg/util"
@@ -84,20 +83,11 @@ func (d *Distributor) isUnaryDeletePath(p string) bool {
 }
 
 func (d *Distributor) isQuorumReadPath(p string) (bool, merger.Merger) {
-	if strings.HasSuffix(p, "/v1/alerts") {
-		return true, merger.V1Alerts{}
-	}
 	if strings.HasSuffix(p, "/v2/alerts") {
 		return true, merger.V2Alerts{}
 	}
 	if strings.HasSuffix(p, "/v2/alerts/groups") {
 		return true, merger.V2AlertGroups{}
-	}
-	if strings.HasSuffix(p, "/v1/silences") {
-		return true, merger.V1Silences{}
-	}
-	if strings.HasSuffix(path.Dir(p), "/v1/silence") {
-		return true, merger.V1SilenceID{}
 	}
 	if strings.HasSuffix(p, "/v2/silences") {
 		return true, merger.V2Silences{}
@@ -157,7 +147,7 @@ func (d *Distributor) doQuorum(userID string, w http.ResponseWriter, r *http.Req
 	var body []byte
 	var err error
 	if r.Body != nil {
-		body, err = ioutil.ReadAll(http.MaxBytesReader(w, r.Body, d.maxRecvMsgSize))
+		body, err = io.ReadAll(http.MaxBytesReader(w, r.Body, d.maxRecvMsgSize))
 		if err != nil {
 			if util.IsRequestBodyTooLarge(err) {
 				http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
@@ -172,7 +162,7 @@ func (d *Distributor) doQuorum(userID string, w http.ResponseWriter, r *http.Req
 	var responses []*httpgrpc.HTTPResponse
 	var responsesMtx sync.Mutex
 	grpcHeaders := httpToHttpgrpcHeaders(r.Header)
-	err = ring.DoBatch(r.Context(), RingOp, d.alertmanagerRing, []uint32{shardByUser(userID)}, func(am ring.InstanceDesc, _ []int) error {
+	err = ring.DoBatchWithOptions(r.Context(), RingOp, d.alertmanagerRing, []uint32{shardByUser(userID)}, func(am ring.InstanceDesc, _ []int) error {
 		// Use a background context to make sure all alertmanagers get the request even if we return early.
 		localCtx := user.InjectOrgID(context.Background(), userID)
 		sp, localCtx := opentracing.StartSpanFromContext(localCtx, "Distributor.doQuorum")
@@ -197,7 +187,7 @@ func (d *Distributor) doQuorum(userID string, w http.ResponseWriter, r *http.Req
 		responsesMtx.Unlock()
 
 		return nil
-	}, func() {})
+	}, ring.DoBatchOptions{})
 
 	if err != nil {
 		respondFromError(err, w, logger)
@@ -226,7 +216,7 @@ func (d *Distributor) doUnary(userID string, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	body, err := ioutil.ReadAll(http.MaxBytesReader(w, r.Body, d.maxRecvMsgSize))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, d.maxRecvMsgSize))
 	if err != nil {
 		if util.IsRequestBodyTooLarge(err) {
 			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
@@ -258,7 +248,7 @@ func (d *Distributor) doUnary(userID string, w http.ResponseWriter, r *http.Requ
 }
 
 func respondFromError(err error, w http.ResponseWriter, logger log.Logger) {
-	httpResp, ok := httpgrpc.HTTPResponseFromError(errors.Cause(err))
+	httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 	if !ok {
 		level.Error(logger).Log("msg", "failed to process the request to the alertmanager", "err", err)
 		http.Error(w, "Failed to process the request to the alertmanager", http.StatusInternalServerError)

@@ -20,6 +20,8 @@ local k = import 'ksonnet-util/kausal.libsonnet';
     'tests.write-read-series-test.max-query-age': '48h',
   },
 
+  continuous_test_node_affinity_matchers:: [],
+
   continuous_test_container::
     container.new('continuous-test', $._images.continuous_test) +
     container.withArgsMixin(k.util.mapToFlags($.continuous_test_args)) +
@@ -31,7 +33,12 @@ local k = import 'ksonnet-util/kausal.libsonnet';
     $.jaeger_mixin,
 
   continuous_test_deployment: if !$._config.continuous_test_enabled then null else
-    deployment.new('continuous-test', 1, [
-      $.continuous_test_container,
-    ]),
+    deployment.new('continuous-test', 1, [$.continuous_test_container]) +
+    $.newMimirNodeAffinityMatchers($.continuous_test_node_affinity_matchers) +
+    // It doesn't make sense to run multiple continuous-test instances at the same time.
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
+
+  continuous_test_pdb: if !$._config.continuous_test_enabled then null else
+    $.newMimirPdb('continuous-test'),
 }

@@ -28,5 +28,11 @@ func goLeakOptions() []goleak.Option {
 		// it gets closed when we close the BucketStore. However, we currently don't close BucketStore
 		// on store-gateway termination so it never gets terminated.
 		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/storegateway/indexheader.NewReaderPool.func1"),
+
+		// The FastRegexMatcher uses a global instance of ristretto.Cache which is never stopped,
+		// so we ignore its gouroutines and then ones from glog which is a ristretto dependency.
+		goleak.IgnoreTopFunction("github.com/dgraph-io/ristretto.(*defaultPolicy).processItems"),
+		goleak.IgnoreTopFunction("github.com/dgraph-io/ristretto.(*Cache).processItems"),
+		goleak.IgnoreTopFunction("github.com/golang/glog.(*fileSink).flushDaemon"),
 	}
 }

@@ -78,7 +78,7 @@ func checkActivitiesInFile(t *testing.T, file string, expectedActivities []strin
 
 func TestNilActivityTracker(t *testing.T) {
 	// Test that nil activity tracker doesn't cause panics.
-	var tr *ActivityTracker = nil
+	var tr *ActivityTracker
 
 	ix := tr.InsertStatic("test")
 	tr.Delete(ix)

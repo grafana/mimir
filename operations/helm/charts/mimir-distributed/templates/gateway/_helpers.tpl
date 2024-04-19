@@ -1,33 +1,21 @@
 {{/*
-Return the appropriate apiVersion for ingress.
+nginx auth Secret name
 */}}
-{{- define "mimir.ingress.apiVersion" -}}
-  {{- if and (.Capabilities.APIVersions.Has "networking.k8s.io/v1") (semverCompare ">= 1.19-0" .Capabilities.KubeVersion.Version) -}}
-      {{- print "networking.k8s.io/v1" -}}
-  {{- else if .Capabilities.APIVersions.Has "networking.k8s.io/v1beta1" -}}
-    {{- print "networking.k8s.io/v1beta1" -}}
-  {{- else -}}
-    {{- print "extensions/v1beta1" -}}
-  {{- end -}}
-{{- end -}}
+{{- define "mimir.gateway.nginx.authSecret" -}}
+{{ .Values.gateway.nginx.basicAuth.existingSecret | default (include "mimir.resourceName" (dict "ctx" . "component" "gateway-nginx") ) }}
+{{- end }}
 
 {{/*
-Return if ingress is stable.
+Name of the gateway Service resource
 */}}
-{{- define "mimir.ingress.isStable" -}}
-  {{- eq (include "mimir.ingress.apiVersion" .) "networking.k8s.io/v1" -}}
-{{- end -}}
+{{- define "mimir.gateway.service.name" -}}
+{{ .Values.gateway.service.nameOverride | default (include "mimir.resourceName" (dict "ctx" . "component" "gateway") ) }}
+{{- end }}
+
 
 {{/*
-Return if ingress supports ingressClassName.
+Returns "true" or "false" strings if the gateway component (nginx or GEM gateway) should be deployed
 */}}
-{{- define "mimir.ingress.supportsIngressClassName" -}}
-  {{- or (eq (include "mimir.ingress.isStable" .) "true") (and (eq (include "mimir.ingress.apiVersion" .) "networking.k8s.io/v1beta1") (semverCompare ">= 1.18-0" .Capabilities.KubeVersion.Version)) -}}
-{{- end -}}
-
-{{/*
-Return if ingress supports pathType.
-*/}}
-{{- define "mimir.ingress.supportsPathType" -}}
-  {{- or (eq (include "mimir.ingress.isStable" .) "true") (and (eq (include "mimir.ingress.apiVersion" .) "networking.k8s.io/v1beta1") (semverCompare ">= 1.18-0" .Capabilities.KubeVersion.Version)) -}}
-{{- end -}}
+{{- define "mimir.gateway.isEnabled" -}}
+{{- or .Values.gateway.enabledNonEnterprise .Values.enterprise.enabled -}}
+{{- end }}

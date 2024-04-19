@@ -15,6 +15,7 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -80,7 +81,6 @@ type Dispatcher struct {
 	metrics *DispatcherMetrics
 	limits  Limits
 
-	marker  types.Marker
 	timeout func(time.Duration) time.Duration
 
 	mtx                sync.RWMutex
@@ -121,7 +121,6 @@ func NewDispatcher(
 		alerts:  ap,
 		stage:   s,
 		route:   r,
-		marker:  mk,
 		timeout: to,
 		logger:  log.With(l, "component", "dispatcher"),
 		metrics: m,
@@ -345,7 +344,7 @@ func (d *Dispatcher) processAlert(alert *types.Alert, route *Route) {
 		_, _, err := d.stage.Exec(ctx, d.logger, alerts...)
 		if err != nil {
 			lvl := level.Error(d.logger)
-			if ctx.Err() == context.Canceled {
+			if errors.Is(ctx.Err(), context.Canceled) {
 				// It is expected for the context to be canceled on
 				// configuration reload or shutdown. In this case, the
 				// message should only be logged at the debug level.

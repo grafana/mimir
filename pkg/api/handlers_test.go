@@ -6,7 +6,7 @@
 package api
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -157,7 +157,7 @@ func TestConfigDiffHandler(t *testing.T) {
 				actualCfg = newDefaultDiffConfigMock()
 			}
 
-			req := httptest.NewRequest("GET", "http://test.com/config?mode=diff", nil)
+			req := httptest.NewRequest("GET", "http://localhost/config?mode=diff", nil)
 			w := httptest.NewRecorder()
 
 			h := DefaultConfigHandler(actualCfg, defaultCfg)
@@ -165,25 +165,24 @@ func TestConfigDiffHandler(t *testing.T) {
 			resp := w.Result()
 			assert.Equal(t, tc.expectedStatusCode, resp.StatusCode)
 
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedBody, string(body))
 		})
 	}
-
 }
 
 func TestConfigOverrideHandler(t *testing.T) {
 	cfg := &Config{
 		CustomConfigHandler: func(_ interface{}, _ interface{}) http.HandlerFunc {
-			return func(w http.ResponseWriter, r *http.Request) {
+			return func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte("config"))
 				assert.NoError(t, err)
 			}
 		},
 	}
 
-	req := httptest.NewRequest("GET", "http://test.com/config", nil)
+	req := httptest.NewRequest("GET", "http://localhost/config", nil)
 	w := httptest.NewRecorder()
 
 	h := cfg.configHandler(
@@ -194,7 +193,7 @@ func TestConfigOverrideHandler(t *testing.T) {
 	resp := w.Result()
 	assert.Equal(t, 200, resp.StatusCode)
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("config"), body)
 }

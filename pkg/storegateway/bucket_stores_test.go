@@ -10,11 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,33 +22,32 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	thanos_metadata "github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/objstore"
-	filesystemstore "github.com/thanos-io/thanos/pkg/objstore/filesystem"
-	"github.com/thanos-io/thanos/pkg/store/labelpb"
-	"github.com/thanos-io/thanos/pkg/store/storepb"
-	"github.com/weaveworks/common/logging"
+	"github.com/thanos-io/objstore"
+	filesystemstore "github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
-	"google.golang.org/grpc/metadata"
+	"golang.org/x/exp/slices"
+	grpc_metadata "google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestBucketStores_InitialSync(t *testing.T) {
@@ -73,31 +70,34 @@ func TestBucketStores_InitialSync(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Query series before the initial sync.
 	for userID, metricName := range userToMetric {
-		seriesSet, warnings, err := querySeries(stores, userID, metricName, 20, 40)
+		seriesSet, warnings, err := querySeries(t, stores, userID, metricName, 20, 40)
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		assert.Empty(t, seriesSet)
 	}
-
+	for userID := range userToMetric {
+		createBucketIndex(t, bucket, userID)
+	}
 	require.NoError(t, stores.InitialSync(ctx))
 
 	// Query series after the initial sync.
 	for userID, metricName := range userToMetric {
-		seriesSet, warnings, err := querySeries(stores, userID, metricName, 20, 40)
+		seriesSet, warnings, err := querySeries(t, stores, userID, metricName, 20, 40)
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		require.Len(t, seriesSet, 1)
-		assert.Equal(t, []labelpb.ZLabel{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
+		assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
 	}
 
 	// Query series of another user.
-	seriesSet, warnings, err := querySeries(stores, "user-1", "series_2", 20, 40)
+	seriesSet, warnings, err := querySeries(t, stores, "user-1", "series_2", 20, 40)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	assert.Empty(t, seriesSet)
@@ -117,11 +117,13 @@ func TestBucketStores_InitialSync(t *testing.T) {
 
 			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
-			cortex_bucket_stores_gate_queries_concurrent_max 100
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 100
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="index_header"} 4
 
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE cortex_bucket_stores_gate_queries_in_flight gauge
-			cortex_bucket_stores_gate_queries_in_flight 0
+			cortex_bucket_stores_gate_queries_in_flight{gate="query"} 0
+			cortex_bucket_stores_gate_queries_in_flight{gate="index_header"} 0
 	`),
 		"cortex_bucket_store_blocks_loaded",
 		"cortex_bucket_store_block_loads_total",
@@ -136,33 +138,35 @@ func TestBucketStores_InitialSync(t *testing.T) {
 func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	test.VerifyNoLeak(t)
 
+	const tenantID = "user-1"
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
 
 	storageDir := t.TempDir()
 
 	// Generate a block for the user in the storage.
-	generateStorageBlock(t, storageDir, "user-1", "series_1", 10, 100, 15)
-
+	generateStorageBlock(t, storageDir, tenantID, "series_1", 10, 100, 15)
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
+	createBucketIndex(t, bucket, tenantID)
 
 	// Wrap the bucket to fail the 1st Get() request.
 	bucket = &failFirstGetBucket{Bucket: bucket}
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Initial sync should succeed even if a transient error occurs.
 	require.NoError(t, stores.InitialSync(ctx))
 
 	// Query series after the initial sync.
-	seriesSet, warnings, err := querySeries(stores, "user-1", "series_1", 20, 40)
+	seriesSet, warnings, err := querySeries(t, stores, tenantID, "series_1", 20, 40)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	require.Len(t, seriesSet, 1)
-	assert.Equal(t, []labelpb.ZLabel{{Name: labels.MetricName, Value: "series_1"}}, seriesSet[0].Labels)
+	assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "series_1"}}, seriesSet[0].Labels)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_blocks_meta_syncs_total Total blocks metadata synchronization attempts
@@ -211,29 +215,32 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Run an initial sync to discover 1 block.
 	generateStorageBlock(t, storageDir, userID, metricName, 10, 100, 15)
+	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.InitialSync(ctx))
 
 	// Query a range for which we have no samples.
-	seriesSet, warnings, err := querySeries(stores, userID, metricName, 150, 180)
+	seriesSet, warnings, err := querySeries(t, stores, userID, metricName, 150, 180)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	assert.Empty(t, seriesSet)
 
 	// Generate another block and sync blocks again.
 	generateStorageBlock(t, storageDir, userID, metricName, 100, 200, 15)
+	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.SyncBlocks(ctx))
 
-	seriesSet, warnings, err = querySeries(stores, userID, metricName, 150, 180)
+	seriesSet, warnings, err = querySeries(t, stores, userID, metricName, 150, 180)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	assert.Len(t, seriesSet, 1)
-	assert.Equal(t, []labelpb.ZLabel{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
+	assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
@@ -250,11 +257,13 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 
 			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
-			cortex_bucket_stores_gate_queries_concurrent_max 100
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 100
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="index_header"} 4
 
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE cortex_bucket_stores_gate_queries_in_flight gauge
-			cortex_bucket_stores_gate_queries_in_flight 0
+			cortex_bucket_stores_gate_queries_in_flight{gate="query"} 0
+			cortex_bucket_stores_gate_queries_in_flight{gate="index_header"} 0
 	`),
 		"cortex_bucket_store_blocks_loaded",
 		"cortex_bucket_store_block_loads_total",
@@ -273,6 +282,7 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 
 	tests := map[string]struct {
 		shardingStrategy ShardingStrategy
+		allowedTenants   *util.AllowedTenants
 		expectedStores   int32
 	}{
 		"when sharding is disabled all users should be synced": {
@@ -287,6 +297,17 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 			}(),
 			expectedStores: 2,
 		},
+		"when user is disabled, their stores should not be created": {
+			shardingStrategy: newNoShardingStrategy(),
+			allowedTenants:   util.NewAllowedTenants(nil, []string{"user-2"}),
+			expectedStores:   2,
+		},
+
+		"when single user is enabled, only their stores should be created": {
+			shardingStrategy: newNoShardingStrategy(),
+			allowedTenants:   util.NewAllowedTenants([]string{"user-3"}, nil),
+			expectedStores:   1,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -297,19 +318,19 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", allUsers, nil)
 
-			stores, err := NewBucketStores(cfg, testData.shardingStrategy, bucketClient, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil)
+			stores, err := NewBucketStores(cfg, testData.shardingStrategy, bucketClient, testData.allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// Sync user stores and count the number of times the callback is called.
 			var storesCount atomic.Int32
-			err = stores.syncUsersBlocks(context.Background(), func(ctx context.Context, bs *BucketStore) error {
+			err = stores.syncUsersBlocks(context.Background(), func(context.Context, *BucketStore) error {
 				storesCount.Inc()
 				return nil
 			})
 
 			assert.NoError(t, err)
 			bucketClient.AssertNumberOfCalls(t, "Iter", 1)
-			assert.Equal(t, storesCount.Load(), testData.expectedStores)
+			assert.Equal(t, testData.expectedStores, storesCount.Load())
 		})
 	}
 }
@@ -322,6 +343,82 @@ func TestBucketStores_Series_ShouldCorrectlyQuerySeriesSpanningMultipleChunks(t 
 	}
 }
 
+func TestBucketStores_ChunksAndSeriesLimiterFactoriesInitializedByEnforcedLimits(t *testing.T) {
+	test.VerifyNoLeak(t)
+
+	const (
+		userID                = "user-1"
+		overriddenChunksLimit = 1000000
+		overriddenSeriesLimit = 2000
+	)
+
+	defaultLimits := defaultLimitsConfig()
+
+	tests := map[string]struct {
+		tenantLimits        map[string]*validation.Limits
+		expectedChunkLimit  uint64
+		expectedSeriesLimit uint64
+	}{
+		"when max_fetched_chunks_per_query and max_fetched_series_per_query are not overridden, their default values are used as the limit of the Limiter": {
+			expectedChunkLimit:  uint64(defaultLimits.MaxChunksPerQuery),
+			expectedSeriesLimit: uint64(defaultLimits.MaxFetchedSeriesPerQuery),
+		},
+		"when max_fetched_chunks_per_query and max_fetched_series_per_query are overridden, the overridden values are used as the limit of the Limiter": {
+			tenantLimits: map[string]*validation.Limits{
+				userID: {
+					MaxChunksPerQuery:        overriddenChunksLimit,
+					MaxFetchedSeriesPerQuery: overriddenSeriesLimit,
+				},
+			},
+			expectedChunkLimit:  uint64(overriddenChunksLimit),
+			expectedSeriesLimit: uint64(overriddenSeriesLimit),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := prepareStorageConfig(t)
+
+			storageDir := t.TempDir()
+
+			bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+			require.NoError(t, err)
+
+			overrides, err := validation.NewOverrides(defaultLimits, validation.NewMockTenantLimits(testData.tenantLimits))
+			require.NoError(t, err)
+
+			var allowedTenants *util.AllowedTenants
+			reg := prometheus.NewPedanticRegistry()
+			stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, overrides, log.NewNopLogger(), reg)
+			require.NoError(t, err)
+
+			store, err := stores.getOrCreateStore(userID)
+			require.NoError(t, err)
+
+			chunksLimit := overrides.MaxChunksPerQuery(userID)
+			if chunksLimit != 0 {
+				chunksLimiter := store.chunksLimiterFactory(promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "chunks"}))
+				err = chunksLimiter.Reserve(testData.expectedChunkLimit)
+				require.NoError(t, err)
+
+				err = chunksLimiter.Reserve(1)
+				require.Error(t, err)
+			}
+
+			seriesLimit := overrides.MaxFetchedSeriesPerQuery(userID)
+			if seriesLimit != 0 {
+				seriesLimiter := store.seriesLimiterFactory(promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "series"}))
+				err = seriesLimiter.Reserve(testData.expectedSeriesLimit)
+				require.NoError(t, err)
+
+				err = seriesLimiter.Reserve(1)
+				require.Error(t, err)
+			}
+
+		})
+	}
+}
+
 func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *testing.T, lazyLoadingEnabled bool) {
 	const (
 		userID     = "user-1"
@@ -330,62 +427,58 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
-	cfg.BucketStore.IndexHeaderLazyLoadingEnabled = lazyLoadingEnabled
-	cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout = time.Minute
+	cfg.BucketStore.IndexHeader.LazyLoadingEnabled = lazyLoadingEnabled
+	cfg.BucketStore.IndexHeader.LazyLoadingIdleTimeout = time.Minute
 
 	storageDir := t.TempDir()
 
 	// Generate a single block with 1 series and a lot of samples.
 	generateStorageBlock(t, storageDir, userID, metricName, 0, 10000, 1)
 
+	promBlock := openPromBlocks(t, filepath.Join(storageDir, userID))[0]
+
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
+	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.InitialSync(ctx))
 
 	tests := map[string]struct {
-		reqMinTime      int64
-		reqMaxTime      int64
-		expectedSamples int
+		reqMinTime int64
+		reqMaxTime int64
 	}{
 		"query the entire block": {
-			reqMinTime:      math.MinInt64,
-			reqMaxTime:      math.MaxInt64,
-			expectedSamples: 10000,
+			reqMinTime: math.MinInt64,
+			reqMaxTime: math.MaxInt64,
 		},
 		"query the beginning of the block": {
-			reqMinTime:      0,
-			reqMaxTime:      100,
-			expectedSamples: MaxSamplesPerChunk,
+			reqMinTime: 0,
+			reqMaxTime: 100,
 		},
 		"query the middle of the block": {
-			reqMinTime:      4000,
-			reqMaxTime:      4050,
-			expectedSamples: MaxSamplesPerChunk,
+			reqMinTime: 4000,
+			reqMaxTime: 4050,
 		},
 		"query the end of the block": {
-			reqMinTime:      9800,
-			reqMaxTime:      10000,
-			expectedSamples: (MaxSamplesPerChunk * 2) + (10000 % MaxSamplesPerChunk),
+			reqMinTime: 9800,
+			reqMaxTime: 10000,
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Query a range for which we have no samples.
-			seriesSet, warnings, err := querySeries(stores, userID, metricName, testData.reqMinTime, testData.reqMaxTime)
+			seriesSet, warnings, err := querySeries(t, stores, userID, metricName, testData.reqMinTime, testData.reqMaxTime)
 			require.NoError(t, err)
 			assert.Empty(t, warnings)
 			assert.Len(t, seriesSet, 1)
 
-			// Count returned samples.
-			samples, err := readSamplesFromChunks(seriesSet[0].Chunks)
-			require.NoError(t, err)
-			assert.Equal(t, testData.expectedSamples, len(samples))
+			compareToPromChunks(t, seriesSet[0].Chunks, mimirpb.FromLabelAdaptersToLabels(seriesSet[0].Labels), testData.reqMinTime, testData.reqMaxTime, promBlock)
 		})
 	}
 }
@@ -398,38 +491,63 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
+	fixtureDir := filepath.Join("fixtures", "test-query-block-with-ooo-chunks")
+	storageDir := t.TempDir()
 
-	// Generate a single block with 1 series and a lot of samples.
-	seriesWithOutOfOrderChunks := labels.Labels{labels.Label{Name: "case", Value: "out_of_order"}, labels.Label{Name: labels.MetricName, Value: metricName}}
-	seriesWithOverlappingChunks := labels.Labels{labels.Label{Name: "case", Value: "overlapping"}, labels.Label{Name: labels.MetricName, Value: metricName}}
-	specs := []*mimir_testutil.BlockSeriesSpec{
-		// Series with out of order chunks.
-		{
-			Labels: seriesWithOutOfOrderChunks,
-			Chunks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}}),
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+	userBkt := bucket.NewUserBucketClient(userID, bkt, nil)
+
+	seriesWithOutOfOrderChunks := labels.FromStrings("case", "out_of_order", labels.MetricName, metricName)
+	seriesWithOverlappingChunks := labels.FromStrings("case", "overlapping", labels.MetricName, metricName)
+
+	// Utility function originally used to generate a block with out of order chunks
+	// used by this test. The block has been generated commenting out the checks done
+	// by TSDB block Writer to prevent OOO chunks writing.
+	_ = func() {
+		specs := []*block.SeriesSpec{
+			// Series with out of order chunks.
+			{
+				Labels: seriesWithOutOfOrderChunks,
+				Chunks: []chunks.Meta{
+					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}})),
+				},
 			},
-		},
-		// Series with out of order and overlapping chunks.
-		{
-			Labels: seriesWithOverlappingChunks,
-			Chunks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}}),
+			// Series with out of order and overlapping chunks.
+			{
+				Labels: seriesWithOverlappingChunks,
+				Chunks: []chunks.Meta{
+					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}})),
+				},
 			},
-		},
+		}
+
+		_, err := block.GenerateBlockFromSpec(fixtureDir, specs)
+		require.NoError(t, err)
 	}
 
-	storageDir := t.TempDir()
-	_, err := mimir_testutil.GenerateBlockFromSpec(userID, filepath.Join(storageDir, userID), specs)
+	// Copy blocks from fixtures dir to the test bucket.
+	entries, err := os.ReadDir(fixtureDir)
 	require.NoError(t, err)
 
-	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
-	require.NoError(t, err)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
 
+		blockID, err := ulid.Parse(entry.Name())
+		require.NoErrorf(t, err, "parsing block ID from directory name %q", entry.Name())
+
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), nil))
+	}
+
+	createBucketIndex(t, bkt, userID)
+
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bkt, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, stores.InitialSync(ctx))
 
@@ -452,18 +570,16 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			expectedSamplesForOverlappingChunks: []sample{{t: 20, v: 20}, {t: 21, v: 21}},
 		},
 		"query samples from 2nd (out of order) chunk only": {
-			minT: 10,
-			maxT: 11, // Not included.
-			// The BucketStore assumes chunks are ordered and has an optimization to stop looking up chunks when
-			// the current chunk minTime > query maxTime.
-			expectedSamplesForOutOfOrderChunks:  nil,
-			expectedSamplesForOverlappingChunks: nil,
+			minT:                                10,
+			maxT:                                11, // Not included.
+			expectedSamplesForOutOfOrderChunks:  []sample{{t: 10, v: 10}, {t: 11, v: 11}},
+			expectedSamplesForOverlappingChunks: []sample{{t: 10, v: 10}, {t: 20, v: 20}},
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			seriesSet, warnings, err := querySeries(stores, userID, metricName, testData.minT, testData.maxT)
+			seriesSet, warnings, err := querySeries(t, stores, userID, metricName, testData.minT, testData.maxT)
 			require.NoError(t, err)
 			assert.Empty(t, warnings)
 
@@ -480,7 +596,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			nextSeriesIdx := 0
 
 			if testData.expectedSamplesForOutOfOrderChunks != nil {
-				assert.Equal(t, seriesWithOutOfOrderChunks, seriesSet[nextSeriesIdx].PromLabels())
+				assert.Equal(t, seriesWithOutOfOrderChunks, promLabels(seriesSet[nextSeriesIdx]))
 
 				samples, err := readSamplesFromChunks(seriesSet[nextSeriesIdx].Chunks)
 				require.NoError(t, err)
@@ -490,7 +606,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			}
 
 			if testData.expectedSamplesForOverlappingChunks != nil {
-				assert.Equal(t, seriesWithOverlappingChunks, seriesSet[nextSeriesIdx].PromLabels())
+				assert.Equal(t, seriesWithOverlappingChunks, promLabels(seriesSet[nextSeriesIdx]))
 
 				samples, err := readSamplesFromChunks(seriesSet[nextSeriesIdx].Chunks)
 				require.NoError(t, err)
@@ -500,12 +616,15 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	}
 }
 
+func promLabels(m *storepb.Series) labels.Labels {
+	return mimirpb.FromLabelAdaptersToLabels(m.Labels)
+}
+
 func prepareStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 	tmpDir := t.TempDir()
 
 	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
-	cfg.BucketStore.BucketIndex.Enabled = false
 	cfg.BucketStore.SyncDir = tmpDir
 
 	return cfg
@@ -528,7 +647,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 		require.NoError(t, db.Close())
 	}()
 
-	series := labels.Labels{labels.Label{Name: labels.MetricName, Value: metricName}}
+	series := labels.FromStrings(labels.MetricName, metricName)
 
 	app := db.Appender(context.Background())
 	for ts := minT; ts < maxT; ts += int64(step) {
@@ -541,7 +660,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 	require.NoError(t, db.Snapshot(userDir, true))
 }
 
-func querySeries(stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storepb.Series, storage.Warnings, error) {
+func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storepb.Series, annotations.Annotations, error) {
 	req := &storepb.SeriesRequest{
 		MinTime: minT,
 		MaxTime: maxT,
@@ -550,30 +669,16 @@ func querySeries(stores *BucketStores, userID, metricName string, minT, maxT int
 			Name:  labels.MetricName,
 			Value: metricName,
 		}},
-		PartialResponseStrategy: storepb.PartialResponseStrategy_ABORT,
 	}
 
-	ctx := setUserIDToGRPCContext(context.Background(), userID)
-	srv := newBucketStoreSeriesServer(ctx)
-	err := stores.Series(req, srv)
+	srv := newStoreGatewayTestServer(t, stores)
+	seriesSet, warnings, _, _, err := srv.Series(setUserIDToGRPCContext(context.Background(), userID), req)
 
-	return srv.SeriesSet, srv.Warnings, err
-}
-
-func mockLoggingLevel() logging.Level {
-	level := logging.Level{}
-	err := level.Set("info")
-	if err != nil {
-		panic(err)
-	}
-
-	return level
+	return seriesSet, warnings, err
 }
 
 func setUserIDToGRPCContext(ctx context.Context, userID string) context.Context {
-	// We have to store it in the incoming metadata because we have to emulate the
-	// case it's coming from a gRPC request, while here we're running everything in-memory.
-	return metadata.NewIncomingContext(ctx, metadata.Pairs(GrpcContextMetadataTenantID, userID))
+	return grpc_metadata.AppendToOutgoingContext(ctx, GrpcContextMetadataTenantID, userID)
 }
 
 func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
@@ -600,11 +705,15 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
+	for userID := range userToMetric {
+		createBucketIndex(t, bucket, userID)
+	}
 
 	sharding := userShardingStrategy{}
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, &sharding, bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, &sharding, bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Perform sync.
@@ -679,7 +788,7 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 }
 
 func getUsersInDir(t *testing.T, dir string) []string {
-	fs, err := ioutil.ReadDir(dir)
+	fs, err := os.ReadDir(dir)
 	require.NoError(t, err)
 
 	var result []string
@@ -688,7 +797,7 @@ func getUsersInDir(t *testing.T, dir string) []string {
 			result = append(result, fi.Name())
 		}
 	}
-	sort.Strings(result)
+	slices.Sort(result)
 	return result
 }
 
@@ -696,11 +805,11 @@ type userShardingStrategy struct {
 	users []string
 }
 
-func (u *userShardingStrategy) FilterUsers(ctx context.Context, userIDs []string) ([]string, error) {
+func (u *userShardingStrategy) FilterUsers(context.Context, []string) ([]string, error) {
 	return u.users, nil
 }
 
-func (u *userShardingStrategy) FilterBlocks(ctx context.Context, userID string, metas map[ulid.ULID]*thanos_metadata.Meta, loaded map[ulid.ULID]struct{}, synced *extprom.TxGaugeVec) error {
+func (u *userShardingStrategy) FilterBlocks(_ context.Context, userID string, metas map[ulid.ULID]*block.Meta, _ map[ulid.ULID]struct{}, _ block.GaugeVec) error {
 	if util.StringsContain(u.users, userID) {
 		return nil
 	}
@@ -719,7 +828,7 @@ type failFirstGetBucket struct {
 }
 
 func (f *failFirstGetBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	if f.firstGet.CAS(false, true) {
+	if f.firstGet.CompareAndSwap(false, true) {
 		return nil, errors.New("Get() request mocked error")
 	}
 
@@ -736,11 +845,17 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	assert.NoError(tb, err)
 	defer func() { assert.NoError(tb, bkt.Close()) }()
 
-	card := []int{1, 10, 100, 1000}
-	series := generateSeries(card)
+	series := generateSeries([]int{1, 10, 100, 1000})
+	highCardinalitySeries := prefixLabels("high_cardinality_", generateSeries([]int{1, 1_000_000}))
+	series = append(series, highCardinalitySeries...)
 	tb.Logf("Total %d series generated", len(series))
 
-	s := prepareStoreWithTestBlocksForSeries(tb, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), series)
+	prepareCfg := defaultPrepareStoreConfig(tb)
+	prepareCfg.tempDir = dir
+	prepareCfg.series = series
+	prepareCfg.postingsStrategy = worstCaseFetchedDataStrategy{1.0}
+
+	s := prepareStoreWithTestBlocks(tb, bkt, prepareCfg)
 	mint, maxt := s.store.TimeRange()
 	assert.Equal(tb, s.minTime, mint)
 	assert.Equal(tb, s.maxTime, maxt)
@@ -829,17 +944,56 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 				assert.Equal(tb, 10, len(resp.Values))
 			}
 		})
+
+		tb.Run("1_000_000-series-matched-with-1-label-values", func(tb *testing.B) {
+			ms, err := storepb.PromMatchersToMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "high_cardinality_label_1", "0"),   // matches a single series
+				labels.MustNewMatcher(labels.MatchNotEqual, "high_cardinality_label_0", ""), // matches 1M series
+			)
+			require.NoError(tb, err)
+
+			req := &storepb.LabelValuesRequest{
+				Label:    "high_cardinality_label_0", // there is only 1 value for this label
+				Start:    timestamp.FromTime(minTime),
+				End:      timestamp.FromTime(maxTime),
+				Matchers: ms,
+			}
+			// warmup cache if any
+			resp, err := s.store.LabelValues(ctx, req)
+			require.NoError(tb, err)
+			assert.Equal(tb, 1, len(resp.Values))
+
+			tb.ResetTimer()
+			for i := 0; i < tb.N; i++ {
+				resp, err := s.store.LabelValues(ctx, req)
+				require.NoError(tb, err)
+				assert.Equal(tb, 1, len(resp.Values))
+			}
+		})
 	}
 
 	tb.Run("no cache", func(tb *testing.B) {
-		s.cache.SwapWith(noopCache{})
+		s.cache.SwapIndexCacheWith(noopCache{})
 		benchmarks(tb)
 	})
 
 	tb.Run("inmemory cache (without label values cache)", func(tb *testing.B) {
-		s.cache.SwapWith(indexCacheMissingLabelValues{indexCache})
+		s.cache.SwapIndexCacheWith(indexCacheMissingLabelValues{indexCache})
 		benchmarks(tb)
 	})
+}
+
+func prefixLabels(prefix string, series []labels.Labels) []labels.Labels {
+	prefixed := make([]labels.Labels, len(series))
+	b := labels.NewScratchBuilder(2)
+	for i := range series {
+		b.Reset()
+		series[i].Range(func(l labels.Label) {
+			b.Add(prefix+l.Name, l.Value)
+		})
+		prefixed[i] = b.Labels()
+	}
+	return prefixed
 }
 
 // indexCacheMissingLabelValues wraps an IndexCache returning a miss on all FetchLabelValues calls,
@@ -848,7 +1002,7 @@ type indexCacheMissingLabelValues struct {
 	indexcache.IndexCache
 }
 
-func (indexCacheMissingLabelValues) FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey indexcache.LabelMatchersKey) ([]byte, bool) {
+func (indexCacheMissingLabelValues) FetchLabelValues(context.Context, string, ulid.ULID, string, indexcache.LabelMatchersKey) ([]byte, bool) {
 	return nil, false
 }
 
@@ -868,9 +1022,7 @@ func generateSeries(card []int) []labels.Labels {
 	var rec func(idx int)
 	rec = func(lvl int) {
 		if lvl == len(card) {
-			cp := make([]labels.Label, len(card))
-			copy(cp, current)
-			series = append(series, cp)
+			series = append(series, labels.New(current...))
 			return
 		}
 
@@ -882,4 +1034,11 @@ func generateSeries(card []int) []labels.Labels {
 	rec(0)
 
 	return series
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

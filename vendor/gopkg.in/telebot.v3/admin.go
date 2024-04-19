@@ -6,89 +6,44 @@ import (
 	"time"
 )
 
-// ChatInviteLink object represents an invite for a chat.
-type ChatInviteLink struct {
-	// The invite link.
-	InviteLink string `json:"invite_link"`
-
-	// Invite link name.
-	Name string `json:"name"`
-
-	// The creator of the link.
-	Creator *User `json:"creator"`
-
-	// If the link is primary.
-	IsPrimary bool `json:"is_primary"`
-
-	// If the link is revoked.
-	IsRevoked bool `json:"is_revoked"`
-
-	// (Optional) Point in time when the link will expire,
-	// use ExpireDate() to get time.Time.
-	ExpireUnixtime int64 `json:"expire_date,omitempty"`
-
-	// (Optional) Maximum number of users that can be members of
-	// the chat simultaneously.
-	MemberLimit int `json:"member_limit,omitempty"`
-
-	// (Optional) True, if users joining the chat via the link need to
-	// be approved by chat administrators. If True, member_limit can't be specified.
-	JoinRequest bool `json:"creates_join_request"`
-
-	// (Optional) Number of pending join requests created using this link.
-	PendingCount int `json:"pending_join_request_count"`
-}
-
-// ExpireDate returns the moment of the link expiration in local time.
-func (c *ChatInviteLink) ExpireDate() time.Time {
-	return time.Unix(c.ExpireUnixtime, 0)
-}
-
-// ChatMemberUpdate object represents changes in the status of a chat member.
-type ChatMemberUpdate struct {
-	// Chat where the user belongs to.
-	Chat *Chat `json:"chat"`
-
-	// Sender which user the action was triggered.
-	Sender *User `json:"from"`
-
-	// Unixtime, use Date() to get time.Time.
-	Unixtime int64 `json:"date"`
-
-	// Previous information about the chat member.
-	OldChatMember *ChatMember `json:"old_chat_member"`
-
-	// New information about the chat member.
-	NewChatMember *ChatMember `json:"new_chat_member"`
-
-	// (Optional) InviteLink which was used by the user to
-	// join the chat; for joining by invite link events only.
-	InviteLink *ChatInviteLink `json:"invite_link"`
-}
-
-// Time returns the moment of the change in local time.
-func (c *ChatMemberUpdate) Time() time.Time {
-	return time.Unix(c.Unixtime, 0)
-}
-
 // Rights is a list of privileges available to chat members.
 type Rights struct {
+	// Anonymous is true, if the user's presence in the chat is hidden.
+	Anonymous bool `json:"is_anonymous"`
+
 	CanBeEdited         bool `json:"can_be_edited"`
 	CanChangeInfo       bool `json:"can_change_info"`
 	CanPostMessages     bool `json:"can_post_messages"`
 	CanEditMessages     bool `json:"can_edit_messages"`
 	CanDeleteMessages   bool `json:"can_delete_messages"`
+	CanPinMessages      bool `json:"can_pin_messages"`
 	CanInviteUsers      bool `json:"can_invite_users"`
 	CanRestrictMembers  bool `json:"can_restrict_members"`
-	CanPinMessages      bool `json:"can_pin_messages"`
 	CanPromoteMembers   bool `json:"can_promote_members"`
 	CanSendMessages     bool `json:"can_send_messages"`
-	CanSendMedia        bool `json:"can_send_media_messages"`
 	CanSendPolls        bool `json:"can_send_polls"`
 	CanSendOther        bool `json:"can_send_other_messages"`
 	CanAddPreviews      bool `json:"can_add_web_page_previews"`
-	CanManageVoiceChats bool `json:"can_manage_voice_chats"`
+	CanManageVideoChats bool `json:"can_manage_video_chats"`
 	CanManageChat       bool `json:"can_manage_chat"`
+	CanManageTopics     bool `json:"can_manage_topics"`
+
+	CanSendMedia      bool `json:"can_send_media_messages,omitempty"` // deprecated
+	CanSendAudios     bool `json:"can_send_audios"`
+	CanSendDocuments  bool `json:"can_send_documents"`
+	CanSendPhotos     bool `json:"can_send_photos"`
+	CanSendVideos     bool `json:"can_send_videos"`
+	CanSendVideoNotes bool `json:"can_send_video_notes"`
+	CanSendVoiceNotes bool `json:"can_send_voice_notes"`
+
+	// Independent defines whether the chat permissions are set independently.
+	// If not, the can_send_other_messages and can_add_web_page_previews permissions
+	// will imply the can_send_messages, can_send_audios, can_send_documents, can_send_photos,
+	// can_send_videos, can_send_video_notes, and can_send_voice_notes permissions;
+	// the can_send_polls permission will imply the can_send_messages permission.
+	//
+	// Works for Restrict and SetGroupPermissions methods only.
+	Independent bool `json:"-"`
 }
 
 // NoRights is the default Rights{}.
@@ -97,9 +52,8 @@ func NoRights() Rights { return Rights{} }
 // NoRestrictions should be used when un-restricting or
 // un-promoting user.
 //
-//		member.Rights = tele.NoRestrictions()
-//		b.Restrict(chat, member)
-//
+//	member.Rights = tele.NoRestrictions()
+//	b.Restrict(chat, member)
 func NoRestrictions() Rights {
 	return Rights{
 		CanBeEdited:         true,
@@ -112,12 +66,18 @@ func NoRestrictions() Rights {
 		CanPinMessages:      false,
 		CanPromoteMembers:   false,
 		CanSendMessages:     true,
-		CanSendMedia:        true,
 		CanSendPolls:        true,
 		CanSendOther:        true,
 		CanAddPreviews:      true,
-		CanManageVoiceChats: false,
+		CanManageVideoChats: false,
 		CanManageChat:       false,
+		CanManageTopics:     false,
+		CanSendAudios:       true,
+		CanSendDocuments:    true,
+		CanSendPhotos:       true,
+		CanSendVideos:       true,
+		CanSendVideoNotes:   true,
+		CanSendVoiceNotes:   true,
 	}
 }
 
@@ -134,12 +94,18 @@ func AdminRights() Rights {
 		CanPinMessages:      true,
 		CanPromoteMembers:   true,
 		CanSendMessages:     true,
-		CanSendMedia:        true,
 		CanSendPolls:        true,
 		CanSendOther:        true,
 		CanAddPreviews:      true,
-		CanManageVoiceChats: true,
+		CanManageVideoChats: true,
 		CanManageChat:       true,
+		CanManageTopics:     true,
+		CanSendAudios:       true,
+		CanSendDocuments:    true,
+		CanSendPhotos:       true,
+		CanSendVideos:       true,
+		CanSendVideoNotes:   true,
+		CanSendVoiceNotes:   true,
 	}
 }
 
@@ -182,20 +148,22 @@ func (b *Bot) Unban(chat *Chat, user *User, forBanned ...bool) error {
 // Restrict lets you restrict a subset of member's rights until
 // member.RestrictedUntil, such as:
 //
-//     * can send messages
-//     * can send media
-//     * can send other
-//     * can add web page previews
-//
+//   - can send messages
+//   - can send media
+//   - can send other
+//   - can add web page previews
 func (b *Bot) Restrict(chat *Chat, member *ChatMember) error {
-	prv, until := member.Rights, member.RestrictedUntil
+	perms, until := member.Rights, member.RestrictedUntil
 
 	params := map[string]interface{}{
-		"chat_id":    chat.Recipient(),
-		"user_id":    member.User.Recipient(),
-		"until_date": strconv.FormatInt(until, 10),
+		"chat_id":     chat.Recipient(),
+		"user_id":     member.User.Recipient(),
+		"until_date":  strconv.FormatInt(until, 10),
+		"permissions": perms,
 	}
-	embedRights(params, prv)
+	if perms.Independent {
+		params["use_independent_chat_permissions"] = true
+	}
 
 	_, err := b.Raw("restrictChatMember", params)
 	return err
@@ -203,24 +171,21 @@ func (b *Bot) Restrict(chat *Chat, member *ChatMember) error {
 
 // Promote lets you update member's admin rights, such as:
 //
-//     * can change info
-//     * can post messages
-//     * can edit messages
-//     * can delete messages
-//     * can invite users
-//     * can restrict members
-//     * can pin messages
-//     * can promote members
-//
+//   - can change info
+//   - can post messages
+//   - can edit messages
+//   - can delete messages
+//   - can invite users
+//   - can restrict members
+//   - can pin messages
+//   - can promote members
 func (b *Bot) Promote(chat *Chat, member *ChatMember) error {
-	prv := member.Rights
-
 	params := map[string]interface{}{
 		"chat_id":      chat.Recipient(),
 		"user_id":      member.User.Recipient(),
 		"is_anonymous": member.Anonymous,
 	}
-	embedRights(params, prv)
+	embedRights(params, member.Rights)
 
 	_, err := b.Raw("promoteChatMember", params)
 	return err
@@ -233,7 +198,6 @@ func (b *Bot) Promote(chat *Chat, member *ChatMember) error {
 //
 // If the chat is a group or a supergroup and
 // no administrators were appointed, only the creator will be returned.
-//
 func (b *Bot) AdminsOf(chat *Chat) ([]ChatMember, error) {
 	params := map[string]string{
 		"chat_id": chat.Recipient(),
@@ -309,4 +273,41 @@ func (b *Bot) UnbanSenderChat(chat *Chat, sender Recipient) error {
 
 	_, err := b.Raw("unbanChatSenderChat", params)
 	return err
+}
+
+// DefaultRights returns the current default administrator rights of the bot.
+func (b *Bot) DefaultRights(forChannels bool) (*Rights, error) {
+	params := map[string]bool{
+		"for_channels": forChannels,
+	}
+
+	data, err := b.Raw("getMyDefaultAdministratorRights", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Result *Rights
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, wrapError(err)
+	}
+	return resp.Result, nil
+}
+
+// SetDefaultRights changes the default administrator rights requested by the bot
+// when it's added as an administrator to groups or channels.
+func (b *Bot) SetDefaultRights(rights Rights, forChannels bool) error {
+	params := map[string]interface{}{
+		"rights":       rights,
+		"for_channels": forChannels,
+	}
+
+	_, err := b.Raw("setMyDefaultAdministratorRights", params)
+	return err
+}
+
+func embedRights(p map[string]interface{}, rights Rights) {
+	data, _ := json.Marshal(rights)
+	_ = json.Unmarshal(data, &p)
 }

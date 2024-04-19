@@ -11,11 +11,15 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	goregexp "regexp" //lint:ignore faillint the Prometheus client library requires us to pass a regexp from this package
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -23,23 +27,28 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/runtimeconfig"
+	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/signals"
+	"github.com/grafana/dskit/spanprofiler"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
-	"github.com/weaveworks/common/server"
-	"github.com/weaveworks/common/signals"
+	"go.opentelemetry.io/otel"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/dskit/tenant"
-
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	alertbucketclient "github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -47,14 +56,17 @@ import (
 	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
-	rulestorelocal "github.com/grafana/mimir/pkg/ruler/rulestore/local"
+	rulebucketclient "github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/usagestats"
@@ -64,6 +76,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/validation/exporter"
+	"github.com/grafana/mimir/pkg/vault"
 )
 
 var errInvalidBucketConfig = errors.New("invalid bucket config")
@@ -80,18 +94,21 @@ var errInvalidBucketConfig = errors.New("invalid bucket config")
 //   nesting of components within components.
 // - Limit as much is possible sharing of configuration between config types.
 //   Where necessary, use a pointer for this - avoid repetition.
-// - Where a nesting of components its not obvious, it's fine to pass
+// - Where a nesting of components is not obvious, it's fine to pass
 //   references to other components constructors to compose them.
 // - First argument for a components constructor should be its matching config
 //   object.
 
 // Config is the root config for Mimir.
 type Config struct {
-	Target              flagext.StringSliceCSV `yaml:"target"`
-	MultitenancyEnabled bool                   `yaml:"multitenancy_enabled"`
-	NoAuthTenant        string                 `yaml:"no_auth_tenant" category:"advanced"`
-	PrintConfig         bool                   `yaml:"-"`
-	ApplicationName     string                 `yaml:"-"`
+	Target                          flagext.StringSliceCSV `yaml:"target"`
+	MultitenancyEnabled             bool                   `yaml:"multitenancy_enabled"`
+	NoAuthTenant                    string                 `yaml:"no_auth_tenant" category:"advanced"`
+	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"advanced"`
+	MaxSeparateMetricsGroupsPerUser int                    `yaml:"max_separate_metrics_groups_per_user" category:"experimental"`
+	EnableGoRuntimeMetrics          bool                   `yaml:"enable_go_runtime_metrics" category:"advanced"`
+	PrintConfig                     bool                   `yaml:"-"`
+	ApplicationName                 string                 `yaml:"-"`
 
 	API              api.Config                      `yaml:"api"`
 	Server           server.Config                   `yaml:"server"`
@@ -103,11 +120,13 @@ type Config struct {
 	LimitsConfig     validation.Limits               `yaml:"limits"`
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
+	IngestStorage    ingest.Config                   `yaml:"ingest_storage" doc:"hidden"`
 	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor        compactor.Config                `yaml:"compactor"`
 	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
 	TenantFederation tenantfederation.Config         `yaml:"tenant_federation"`
 	ActivityTracker  activitytracker.Config          `yaml:"activity_tracker"`
+	Vault            vault.Config                    `yaml:"vault"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -117,14 +136,20 @@ type Config struct {
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
+	ContinuousTest      continuoustest.Config                      `yaml:"-"`
+	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
 	Common CommonConfig `yaml:"common"`
+
+	TimeseriesUnmarshalCachingOptimizationEnabled bool `yaml:"timeseries_unmarshal_caching_optimization_enabled" category:"experimental"`
 }
 
 // RegisterFlags registers flag.
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ApplicationName = "Grafana Mimir"
 	c.Server.MetricsNamespace = "cortex"
+	// Enable native histograms for enabled scrapers with 10% bucket growth.
+	c.Server.MetricsNativeHistogramFactor = 1.1
 	c.Server.ExcludeRequestInLog = true
 	c.Server.DisableRequestSuccessLog = true
 
@@ -138,17 +163,22 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.MultitenancyEnabled, "auth.multitenancy-enabled", true, "When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead.")
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
+	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
+	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
+	f.BoolVar(&c.EnableGoRuntimeMetrics, "enable-go-runtime-metrics", false, "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.")
+	f.BoolVar(&c.TimeseriesUnmarshalCachingOptimizationEnabled, "timeseries-unmarshal-caching-optimization-enabled", true, "Enables optimized marshaling of timeseries.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
 	c.Distributor.RegisterFlags(f, logger)
-	c.Querier.RegisterFlags(f, logger)
+	c.Querier.RegisterFlags(f)
 	c.IngesterClient.RegisterFlags(f)
 	c.Ingester.RegisterFlags(f, logger)
 	c.Flusher.RegisterFlags(f)
 	c.LimitsConfig.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
+	c.IngestStorage.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
@@ -156,13 +186,16 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	c.Ruler.RegisterFlags(f, logger)
 	c.RulerStorage.RegisterFlags(f)
+	c.Vault.RegisterFlags(f)
 	c.Alertmanager.RegisterFlags(f, logger)
 	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
 	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
-	c.QueryScheduler.RegisterFlags(f)
+	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
+	c.ContinuousTest.RegisterFlags(f)
+	c.OverridesExporter.RegisterFlags(f, logger)
 
 	c.Common.RegisterFlags(f)
 }
@@ -198,13 +231,27 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.validateBucketConfigs(); err != nil {
 		return fmt.Errorf("%w: %s", errInvalidBucketConfig, err)
 	}
+	if err := c.validateFilesystemPaths(log); err != nil {
+		return err
+	}
 	if err := c.RulerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid rulestore config")
 	}
-	if err := c.Ruler.Validate(c.LimitsConfig, log); err != nil {
+	if err := c.Ruler.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid ruler config")
 	}
-	if err := c.BlocksStorage.Validate(); err != nil {
+	if err := c.IngestStorage.Validate(); err != nil {
+		return errors.Wrap(err, "invalid ingest storage config")
+	}
+	if c.isAnyModuleEnabled(Ingester, Write, All) {
+		if c.IngestStorage.Enabled && !c.Ingester.DeprecatedReturnOnlyGRPCErrors {
+			return errors.New("to use ingest storage (-ingest-storage.enabled) also enable -ingester.return-only-grpc-errors")
+		}
+		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
+			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
+		}
+	}
+	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
 	if err := c.Distributor.Validate(c.LimitsConfig); err != nil {
@@ -213,28 +260,60 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Querier.Validate(); err != nil {
 		return errors.Wrap(err, "invalid querier config")
 	}
+	if c.Querier.EngineConfig.Timeout > c.Server.HTTPServerWriteTimeout {
+		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
+			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
+	}
 	if err := c.IngesterClient.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
-	if err := c.Worker.Validate(log); err != nil {
+	if err := c.Ingester.Validate(log); err != nil {
+		return errors.Wrap(err, "invalid ingester config")
+	}
+	if err := c.Worker.Validate(); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")
 	}
-	if err := c.Frontend.QueryMiddleware.Validate(); err != nil {
-		return errors.Wrap(err, "invalid query-frontend middleware config")
+	if err := c.Frontend.Validate(); err != nil {
+		return errors.Wrap(err, "invalid query-frontend config")
 	}
 	if err := c.StoreGateway.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid store-gateway config")
 	}
-	if err := c.Compactor.Validate(); err != nil {
+	if err := c.Compactor.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid compactor config")
 	}
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid alertmanager storage config")
 	}
-	if c.isModuleEnabled(AlertManager) {
+	if err := c.QueryScheduler.Validate(); err != nil {
+		return errors.Wrap(err, "invalid query-scheduler config")
+	}
+	if err := c.UsageStats.Validate(); err != nil {
+		return errors.Wrap(err, "invalid usage stats config")
+	}
+	if err := c.Vault.Validate(); err != nil {
+		return errors.Wrap(err, "invalid vault config")
+	}
+	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		if err := c.Alertmanager.Validate(); err != nil {
 			return errors.Wrap(err, "invalid alertmanager config")
 		}
+	}
+	if err := c.OverridesExporter.Validate(); err != nil {
+		return errors.Wrap(err, "invalid overrides-exporter config")
+	}
+	// validate the default limits
+	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ValidateLimits validates the runtime limits that can be set for each tenant against static configs
+func (c *Config) ValidateLimits(limits validation.Limits) error {
+	if err := c.Querier.ValidateLimits(limits); err != nil {
+		return errors.Wrap(err, "invalid limits config for querier")
 	}
 	return nil
 }
@@ -257,12 +336,12 @@ func (c *Config) validateBucketConfigs() error {
 	errs := multierror.New()
 
 	// Validate alertmanager bucket config.
-	if c.isAnyModuleEnabled(AlertManager) && c.AlertmanagerStorage.Backend != alertstorelocal.Name {
+	if c.isAnyModuleEnabled(AlertManager, Backend) && c.AlertmanagerStorage.Backend != alertstorelocal.Name {
 		errs.Add(errors.Wrap(validateBucketConfig(c.AlertmanagerStorage.Config, c.BlocksStorage.Bucket), "alertmanager storage"))
 	}
 
 	// Validate ruler bucket config.
-	if c.isAnyModuleEnabled(All, Ruler) && c.RulerStorage.Backend != rulestorelocal.Name {
+	if c.isAnyModuleEnabled(All, Ruler, Backend) && c.RulerStorage.Backend != rulestore.BackendLocal {
 		errs.Add(errors.Wrap(validateBucketConfig(c.RulerStorage.Config, c.BlocksStorage.Bucket), "ruler storage"))
 	}
 
@@ -306,6 +385,158 @@ func validateBucketConfig(cfg bucket.Config, blockStorageBucketCfg bucket.Config
 	return nil
 }
 
+// validateFilesystemPaths checks all configured filesystem paths and return error if it finds two of them
+// overlapping (Mimir expects all filesystem paths to not overlap).
+func (c *Config) validateFilesystemPaths(logger log.Logger) error {
+	type pathConfig struct {
+		name       string
+		cfgValue   string
+		checkValue string
+	}
+
+	var paths []pathConfig
+
+	// Blocks storage (check only for components using it).
+	if c.isAnyModuleEnabled(All, Write, Read, Backend, Ingester, Querier, StoreGateway, Compactor, Ruler) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
+		// Add the optional prefix to the path, because that's the actual location where blocks will be stored.
+		paths = append(paths, pathConfig{
+			name:       "blocks storage filesystem directory",
+			cfgValue:   c.BlocksStorage.Bucket.Filesystem.Directory,
+			checkValue: filepath.Join(c.BlocksStorage.Bucket.Filesystem.Directory, c.BlocksStorage.Bucket.StoragePrefix),
+		})
+	}
+
+	// Ingester.
+	if c.isAnyModuleEnabled(All, Ingester, Write) {
+		paths = append(paths, pathConfig{
+			name:       "tsdb directory",
+			cfgValue:   c.BlocksStorage.TSDB.Dir,
+			checkValue: c.BlocksStorage.TSDB.Dir,
+		})
+	}
+
+	// Store-gateway.
+	if c.isAnyModuleEnabled(All, StoreGateway, Backend) {
+		paths = append(paths, pathConfig{
+			name:       "bucket store sync directory",
+			cfgValue:   c.BlocksStorage.BucketStore.SyncDir,
+			checkValue: c.BlocksStorage.BucketStore.SyncDir,
+		})
+	}
+
+	// Compactor.
+	if c.isAnyModuleEnabled(All, Compactor, Backend) {
+		paths = append(paths, pathConfig{
+			name:       "compactor data directory",
+			cfgValue:   c.Compactor.DataDir,
+			checkValue: c.Compactor.DataDir,
+		})
+	}
+
+	// Ruler.
+	if c.isAnyModuleEnabled(All, Ruler, Backend) {
+		paths = append(paths, pathConfig{
+			name:       "ruler data directory",
+			cfgValue:   c.Ruler.RulePath,
+			checkValue: c.Ruler.RulePath,
+		})
+
+		if c.RulerStorage.Backend == bucket.Filesystem {
+			// All ruler configuration is stored under an hardcoded prefix that we're taking in account here.
+			paths = append(paths, pathConfig{
+				name:       "ruler storage filesystem directory",
+				cfgValue:   c.RulerStorage.Filesystem.Directory,
+				checkValue: filepath.Join(c.RulerStorage.Filesystem.Directory, rulebucketclient.RulesPrefix),
+			})
+		}
+		if c.RulerStorage.Backend == rulestore.BackendLocal {
+			paths = append(paths, pathConfig{
+				name:       "ruler storage local directory",
+				cfgValue:   c.RulerStorage.Local.Directory,
+				checkValue: c.RulerStorage.Local.Directory,
+			})
+		}
+	}
+
+	// Alertmanager.
+	if c.isAnyModuleEnabled(AlertManager, Backend) {
+		paths = append(paths, pathConfig{
+			name:       "alertmanager data directory",
+			cfgValue:   c.Alertmanager.DataDir,
+			checkValue: c.Alertmanager.DataDir,
+		})
+
+		if c.AlertmanagerStorage.Backend == bucket.Filesystem {
+			var (
+				name     = "alertmanager storage filesystem directory"
+				cfgValue = c.AlertmanagerStorage.Filesystem.Directory
+			)
+
+			// All ruler configuration is stored under an hardcoded prefix that we're taking into account here.
+			paths = append(paths, pathConfig{name: name, cfgValue: cfgValue, checkValue: filepath.Join(c.AlertmanagerStorage.Filesystem.Directory, alertbucketclient.AlertsPrefix)})
+			paths = append(paths, pathConfig{name: name, cfgValue: cfgValue, checkValue: filepath.Join(c.AlertmanagerStorage.Filesystem.Directory, alertbucketclient.AlertmanagerPrefix)})
+		}
+
+		if c.AlertmanagerStorage.Backend == alertstorelocal.Name {
+			paths = append(paths, pathConfig{
+				name:       "alertmanager storage local directory",
+				cfgValue:   c.AlertmanagerStorage.Local.Path,
+				checkValue: c.AlertmanagerStorage.Local.Path,
+			})
+		}
+	}
+
+	// Convert all check paths to absolute clean paths.
+	for idx, path := range paths {
+		abs, err := filepath.Abs(path.checkValue)
+		if err != nil {
+			// We prefer to log a warning instead of returning an error to ensure that if we're unable to
+			// run the sanity check Mimir could start anyway.
+			level.Warn(logger).Log("msg", "the configuration sanity check for the filesystem directory has been skipped because can't get the absolute path", "path", path, "err", err)
+			paths[idx].checkValue = ""
+			continue
+		}
+
+		paths[idx].checkValue = abs
+	}
+
+	for _, firstPath := range paths {
+		for _, secondPath := range paths {
+			// Skip the same config field.
+			if firstPath.name == secondPath.name {
+				continue
+			}
+
+			// Skip if we've been unable to get the absolute path of one of the two paths.
+			if firstPath.checkValue == "" || secondPath.checkValue == "" {
+				continue
+			}
+
+			if isAbsPathOverlapping(firstPath.checkValue, secondPath.checkValue) {
+				// Report the configured path in the error message, otherwise it's harder for the user to spot it.
+				return fmt.Errorf("the configured %s %q cannot overlap with the configured %s %q; please set different paths, also ensuring one is not a subdirectory of the other one", firstPath.name, firstPath.cfgValue, secondPath.name, secondPath.cfgValue)
+			}
+		}
+	}
+
+	return nil
+}
+
+// isAbsPathOverlapping returns whether the two input absolute paths overlap.
+func isAbsPathOverlapping(firstAbsPath, secondAbsPath string) bool {
+	firstBase, firstName := filepath.Split(firstAbsPath)
+	secondBase, secondName := filepath.Split(secondAbsPath)
+
+	if firstBase == secondBase {
+		// The base directories are the same, so they overlap if the last segment of the path (name)
+		// is the same or it's missing (happens when the input path is the root "/").
+		return firstName == secondName || firstName == "" || secondName == ""
+	}
+
+	// The base directories are different, but they could still overlap if one is the child of the other one.
+	return strings.HasPrefix(firstAbsPath, secondAbsPath) || strings.HasPrefix(secondAbsPath, firstAbsPath)
+}
+
 func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	throwaway := flag.NewFlagSet("throwaway", flag.PanicOnError)
 
@@ -314,11 +545,14 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	c.Server.RegisterFlags(throwaway)
 
 	defaultsOverrides := map[string]string{
-		"server.grpc.keepalive.min-time-between-pings":      "10s",
-		"server.grpc.keepalive.ping-without-stream-allowed": "true",
-		"server.http-listen-port":                           "8080",
-		"server.grpc-max-recv-msg-size-bytes":               strconv.Itoa(100 * 1024 * 1024),
-		"server.grpc-max-send-msg-size-bytes":               strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc-max-recv-msg-size-bytes":                       strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc-max-send-msg-size-bytes":                       strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc.keepalive.min-time-between-pings":              "10s",
+		"server.grpc.keepalive.ping-without-stream-allowed":         "true",
+		"server.grpc.num-workers":                                   "100",
+		"server.http-listen-port":                                   "8080",
+		"server.http-write-timeout":                                 "2m",
+		"server.report-grpc-codes-in-instrumentation-label-enabled": "true",
 	}
 
 	throwaway.VisitAll(func(f *flag.Flag) {
@@ -452,43 +686,49 @@ func (m specificLocationsUnmarshaler) UnmarshalYAML(value *yaml.Node) error {
 
 // Mimir is the root datastructure for Mimir.
 type Mimir struct {
-	Cfg Config
+	Cfg        Config
+	Registerer prometheus.Registerer
 
 	// set during initialization
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                      *api.API
-	Server                   *server.Server
-	Ring                     *ring.Ring
-	TenantLimits             validation.TenantLimits
-	Overrides                *validation.Overrides
-	Distributor              *distributor.Distributor
-	Ingester                 *ingester.Ingester
-	Flusher                  *flusher.Flusher
-	Frontend                 *frontendv1.Frontend
-	RuntimeConfig            *runtimeconfig.Manager
-	QuerierQueryable         prom_storage.SampleAndChunkQueryable
-	ExemplarQueryable        prom_storage.ExemplarQueryable
-	MetadataSupplier         querier.MetadataSupplier
-	QuerierEngine            *promql.Engine
-	QueryFrontendTripperware querymiddleware.Tripperware
-	Ruler                    *ruler.Ruler
-	RulerStorage             rulestore.RuleStore
-	Alertmanager             *alertmanager.MultitenantAlertmanager
-	Compactor                *compactor.MultitenantCompactor
-	StoreGateway             *storegateway.StoreGateway
-	MemberlistKV             *memberlist.KVInitService
-	ActivityTracker          *activitytracker.ActivityTracker
-	UsageStatsReporter       *usagestats.Reporter
-	BuildInfoHandler         http.Handler
-
-	// Queryables that the querier should use to query the long term storage.
-	StoreQueryables []querier.QueryableWithFilter
+	API                           *api.API
+	Server                        *server.Server
+	IngesterRing                  *ring.Ring
+	IngesterPartitionRingWatcher  *ring.PartitionRingWatcher
+	IngesterPartitionInstanceRing *ring.PartitionInstanceRing
+	TenantLimits                  validation.TenantLimits
+	Overrides                     *validation.Overrides
+	ActiveGroupsCleanup           *util.ActiveGroupsCleanupService
+	Distributor                   *distributor.Distributor
+	Ingester                      *ingester.Ingester
+	Flusher                       *flusher.Flusher
+	FrontendV1                    *frontendv1.Frontend
+	RuntimeConfig                 *runtimeconfig.Manager
+	QuerierQueryable              prom_storage.SampleAndChunkQueryable
+	ExemplarQueryable             prom_storage.ExemplarQueryable
+	MetadataSupplier              querier.MetadataSupplier
+	QuerierEngine                 promql.QueryEngine
+	QueryFrontendTripperware      querymiddleware.Tripperware
+	QueryFrontendCodec            querymiddleware.Codec
+	Ruler                         *ruler.Ruler
+	RulerDirectStorage            rulestore.RuleStore
+	RulerCachedStorage            rulestore.RuleStore
+	Alertmanager                  *alertmanager.MultitenantAlertmanager
+	Compactor                     *compactor.MultitenantCompactor
+	StoreGateway                  *storegateway.StoreGateway
+	StoreQueryable                prom_storage.Queryable
+	MemberlistKV                  *memberlist.KVInitService
+	ActivityTracker               *activitytracker.ActivityTracker
+	Vault                         *vault.Vault
+	UsageStatsReporter            *usagestats.Reporter
+	ContinuousTestManager         *continuoustest.Manager
+	BuildInfoHandler              http.Handler
 }
 
 // New makes a new Mimir.
-func New(cfg Config) (*Mimir, error) {
+func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	if cfg.PrintConfig {
 		if err := yaml.NewEncoder(os.Stdout).Encode(&cfg); err != nil {
 			fmt.Println("Error encoding config:", err)
@@ -496,31 +736,52 @@ func New(cfg Config) (*Mimir, error) {
 		os.Exit(0)
 	}
 
-	// Swap out the default resolver to support multiple tenant IDs separated by a '|'
-	if cfg.TenantFederation.Enabled {
-		tenant.WithDefaultResolver(tenant.NewMultiResolver())
+	setUpGoRuntimeMetrics(cfg, reg)
 
-		if cfg.Ruler.TenantFederation.Enabled {
-			util_log.WarnExperimentalUse("ruler.tenant-federation")
-		}
+	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
+		util_log.WarnExperimentalUse("ruler.tenant-federation")
 	}
+	cfg.Server.GRPCMiddleware = append(cfg.Server.GRPCMiddleware, querierapi.ReadConsistencyServerUnaryInterceptor)
+	cfg.Server.GRPCStreamMiddleware = append(cfg.Server.GRPCStreamMiddleware, querierapi.ReadConsistencyServerStreamInterceptor)
 
-	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(&cfg.Server, cfg.MultitenancyEnabled,
+	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(
+		&cfg.Server,
+		cfg.MultitenancyEnabled,
+		cfg.NoAuthTenant,
 		// Also don't check auth for these gRPC methods, since single call is used for multiple users (or no user like health check).
 		[]string{
 			"/grpc.health.v1.Health/Check",
 			"/frontend.Frontend/Process",
 			"/frontend.Frontend/NotifyClientShutdown",
+			"/ruler.Ruler/SyncRules",
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
-		}, cfg.NoAuthTenant)
+		})
+
+	// Do not allow to configure potentially unsafe options until we've properly tested them in Mimir.
+	// These configuration options are hidden in the auto-generated documentation (see pkg/util/configdoc).
+	cfg.Server.GRPCServerRecvBufferPoolsEnabled = false
+
+	// Inject the registerer in the Server config too.
+	cfg.Server.Registerer = reg
 
 	mimir := &Mimir{
-		Cfg: cfg,
+		Cfg:        cfg,
+		Registerer: reg,
 	}
 
-	mimir.setupThanosTracing()
+	mimir.setupObjstoreTracing()
+
+	// Injects span profiler into the tracer for cross-referencing between traces and profiles.
+	// Note, for performance reasons, span profiler only labels root spans.
+	tracer := spanprofiler.NewTracer(opentracing.GlobalTracer())
+	// We are passing the wrapped tracer to both opentracing and opentelemetry until after the ecosystem
+	// gets converged into the latter.
+	opentracing.SetGlobalTracer(tracer)
+	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(tracer))
+
+	mimir.Cfg.Server.Router = mux.NewRouter()
 
 	if err := mimir.setupModuleManager(); err != nil {
 		return nil, err
@@ -529,25 +790,53 @@ func New(cfg Config) (*Mimir, error) {
 	return mimir, nil
 }
 
-// setupThanosTracing appends a gRPC middleware used to inject our tracer into the custom
-// context used by Thanos, in order to get Thanos spans correctly attached to our traces.
-func (t *Mimir) setupThanosTracing() {
+func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
+	rules := []collectors.GoRuntimeMetricsRule{
+		// Enable the mutex wait time metric.
+		{Matcher: goregexp.MustCompile(`^/sync/mutex/wait/total:seconds$`)},
+	}
+
+	if cfg.EnableGoRuntimeMetrics {
+		// Enable all available runtime metrics.
+		rules = append(rules, collectors.MetricsAll)
+	}
+
+	// Unregister the default Go collector...
+	reg.Unregister(collectors.NewGoCollector())
+
+	// ...and replace it with our own that adds our extra rules.
+	reg.MustRegister(collectors.NewGoCollector(
+		collectors.WithGoCollectorRuntimeMetrics(rules...),
+	))
+}
+
+// setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
+// context used by thanos-io/objstore, in order to get Objstore spans correctly attached to our traces.
+func (t *Mimir) setupObjstoreTracing() {
 	t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, ThanosTracerUnaryInterceptor)
 	t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, ThanosTracerStreamInterceptor)
 }
 
 // Run starts Mimir running, and blocks until a Mimir stops.
 func (t *Mimir) Run() error {
+	mimirpb.TimeseriesUnmarshalCachingEnabled = t.Cfg.TimeseriesUnmarshalCachingOptimizationEnabled
+	defer util_log.Flush()
+
 	// Register custom process metrics.
 	if c, err := process.NewProcessCollector(); err == nil {
-		prometheus.MustRegister(c)
+		if t.Registerer != nil {
+			t.Registerer.MustRegister(c)
+		}
 	} else {
 		level.Warn(util_log.Logger).Log("msg", "skipped registration of custom process metrics collector", "err", err)
 	}
 
+	// Update the usage stats before we initialize modules.
+	usagestats.SetTarget(t.Cfg.Target.String())
+
 	for _, module := range t.Cfg.Target {
-		if !t.ModuleManager.IsUserVisibleModule(module) {
-			level.Warn(util_log.Logger).Log("msg", "selected target is an internal module, is this intended?", "target", module)
+		if !t.ModuleManager.IsTargetableModule(module) {
+			return fmt.Errorf("selected target (%s) is an internal module, which is not allowed", module)
 		}
 	}
 
@@ -559,13 +848,13 @@ func (t *Mimir) Run() error {
 
 	t.API.RegisterServiceMapHandler(http.HandlerFunc(t.servicesHandler))
 
-	// register ingester ring handlers, if they exists prefer the full ring
+	// register ingester ring handlers, if they exist prefer the full ring
 	// implementation provided by module.Ring over the BasicLifecycler
 	// available in ingesters
-	if t.Ring != nil {
-		t.API.RegisterRing(t.Ring)
+	if t.IngesterRing != nil {
+		t.API.RegisterIngesterRing(t.IngesterRing)
 	} else if t.Ingester != nil {
-		t.API.RegisterRing(t.Ingester.RingHandler())
+		t.API.RegisterIngesterRing(t.Ingester.RingHandler())
 	}
 
 	// get all services, create service manager and tell it to start
@@ -579,10 +868,15 @@ func (t *Mimir) Run() error {
 		return err
 	}
 
+	// Used to delay shutdown but return "not ready" during this delay.
+	shutdownRequested := atomic.NewBool(false)
+
 	// before starting servers, register /ready handler and gRPC health check service.
-	// It should reflect entire Mimir.
-	t.Server.HTTP.Path("/ready").Handler(t.readyHandler(sm))
-	grpc_health_v1.RegisterHealthServer(t.Server.GRPC, grpcutil.NewHealthCheck(sm))
+	t.Server.HTTP.Path("/ready").Handler(t.readyHandler(sm, shutdownRequested))
+	grpc_health_v1.RegisterHealthServer(t.Server.GRPC, grpcutil.NewHealthCheckFrom(
+		grpcutil.WithShutdownRequested(shutdownRequested),
+		grpcutil.WithManager(sm),
+	))
 
 	// Let's listen for events from this manager, and log them.
 	healthy := func() { level.Info(util_log.Logger).Log("msg", "Application started") }
@@ -594,7 +888,7 @@ func (t *Mimir) Run() error {
 		// let's find out which module failed
 		for m, s := range t.ServiceMap {
 			if s == service {
-				if service.FailureCase() == modules.ErrStopProcess {
+				if errors.Is(service.FailureCase(), modules.ErrStopProcess) {
 					level.Info(util_log.Logger).Log("msg", "received stop signal via return error", "module", m, "err", service.FailureCase())
 				} else {
 					level.Error(util_log.Logger).Log("msg", "module failed", "module", m, "err", service.FailureCase())
@@ -608,10 +902,18 @@ func (t *Mimir) Run() error {
 
 	sm.AddListener(services.NewManagerListener(healthy, stopped, serviceFailed))
 
-	// Setup signal handler. If signal arrives, we stop the manager, which stops all the services.
+	// Setup signal handler to gracefully shutdown in response to SIGTERM or SIGINT
 	handler := signals.NewHandler(t.Server.Log)
 	go func() {
 		handler.Loop()
+
+		shutdownRequested.Store(true)
+		t.Server.HTTPServer.SetKeepAlivesEnabled(false)
+
+		if t.Cfg.ShutdownDelay > 0 {
+			time.Sleep(t.Cfg.ShutdownDelay)
+		}
+
 		sm.StopAsync()
 	}()
 
@@ -630,7 +932,7 @@ func (t *Mimir) Run() error {
 	if err == nil {
 		if failed := sm.ServicesByState()[services.Failed]; len(failed) > 0 {
 			for _, f := range failed {
-				if f.FailureCase() != modules.ErrStopProcess {
+				if !errors.Is(f.FailureCase(), modules.ErrStopProcess) {
 					// Details were reported via failure listener before
 					err = errors.New("failed services")
 					break
@@ -641,8 +943,14 @@ func (t *Mimir) Run() error {
 	return err
 }
 
-func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
+func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if shutdownRequested.Load() {
+			level.Debug(util_log.Logger).Log("msg", "application is stopping")
+			http.Error(w, "Application is stopping", http.StatusServiceUnavailable)
+			return
+		}
+
 		if !sm.IsHealthy() {
 			var serviceNamesStates []string
 			for name, s := range t.ServiceMap {
@@ -651,8 +959,7 @@ func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
 				}
 			}
 
-			level.Debug(util_log.Logger).Log("msg", "some services are not Running", "services", serviceNamesStates)
-
+			level.Debug(util_log.Logger).Log("msg", "some services are not Running", "services", strings.Join(serviceNamesStates, ", "))
 			httpResponse := "Some services are not Running:\n" + strings.Join(serviceNamesStates, "\n")
 			http.Error(w, httpResponse, http.StatusServiceUnavailable)
 			return
@@ -669,8 +976,8 @@ func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
 
 		// Query Frontend has a special check that makes sure that a querier is attached before it signals
 		// itself as ready
-		if t.Frontend != nil {
-			if err := t.Frontend.CheckReady(r.Context()); err != nil {
+		if t.FrontendV1 != nil {
+			if err := t.FrontendV1.CheckReady(r.Context()); err != nil {
 				http.Error(w, "Query Frontend not ready: "+err.Error(), http.StatusServiceUnavailable)
 				return
 			}

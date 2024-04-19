@@ -8,6 +8,7 @@ package mimir
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,25 +23,29 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	dslog "github.com/grafana/dskit/log"
+	dskit_metrics "github.com/grafana/dskit/metrics"
+	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/server"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -49,11 +54,17 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestMimir(t *testing.T) {
 	cfg := Config{
+		Server: server.Config{
+			HTTPListenAddress: "localhost",
+			GRPCListenAddress: "localhost",
+		},
 		Ingester: ingester.Config{
 			BlocksStorageConfig: tsdb.BlocksStorageConfig{
 				Bucket: bucket.Config{
@@ -83,8 +94,6 @@ func TestMimir(t *testing.T) {
 				},
 			},
 			BucketStore: tsdb.BucketStoreConfig{
-				ChunkPoolMinBucketSizeBytes: tsdb.ChunkPoolDefaultMinBucketSize,
-				ChunkPoolMaxBucketSizeBytes: tsdb.ChunkPoolDefaultMaxBucketSize,
 				IndexCache: tsdb.IndexCacheConfig{
 					BackendConfig: cache.BackendConfig{
 						Backend: tsdb.IndexCacheBackendInMemory,
@@ -94,10 +103,12 @@ func TestMimir(t *testing.T) {
 		},
 		Ruler: ruler.Config{
 			Ring: ruler.RingConfig{
-				KVStore: kv.Config{
-					Store: "memberlist",
+				Common: util.CommonRingConfig{
+					KVStore: kv.Config{
+						Store: "memberlist",
+					},
+					InstanceAddr: "test:8080",
 				},
-				InstanceAddr: "test:8080",
 			},
 		},
 		RulerStorage: rulestore.Config{
@@ -119,9 +130,11 @@ func TestMimir(t *testing.T) {
 				return v
 			}(),
 			ShardingRing: alertmanager.RingConfig{
-				KVStore:                kv.Config{Store: "memberlist"},
-				ReplicationFactor:      1,
-				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+				Common: util.CommonRingConfig{
+					KVStore:                kv.Config{Store: "memberlist"},
+					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+				},
+				ReplicationFactor: 1,
 			},
 		},
 		AlertmanagerStorage: alertstore.Config{
@@ -136,10 +149,12 @@ func TestMimir(t *testing.T) {
 		},
 		Distributor: distributor.Config{
 			DistributorRing: distributor.RingConfig{
-				KVStore: kv.Config{
-					Store: "inmemory",
+				Common: util.CommonRingConfig{
+					KVStore: kv.Config{
+						Store: "inmemory",
+					},
+					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 				},
-				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 			},
 		},
 		StoreGateway: storegateway.Config{ShardingRing: storegateway.RingConfig{
@@ -147,36 +162,72 @@ func TestMimir(t *testing.T) {
 			ReplicationFactor:      1,
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},
+		Querier: querier.Config{
+			PromQLEngine: "standard",
+		},
+	}
+	require.NoError(t, cfg.Server.LogLevel.Set("info"))
 
-		Target: []string{All, AlertManager},
+	tests := map[string]struct {
+		target                  []string
+		expectedEnabledModules  []string
+		expectedDisabledModules []string
+	}{
+		"-target=all,alertmanager": {
+			target: []string{All, AlertManager},
+			expectedEnabledModules: []string{
+				// Check random modules that we expect to be configured when using Target=All.
+				Server, IngesterService, IngesterRing, DistributorService, Compactor,
+
+				// Check that Alertmanager is configured which is not part of Target=All.
+				AlertManager,
+			},
+		},
+		"-target=write": {
+			target:                  []string{Write},
+			expectedEnabledModules:  []string{DistributorService, IngesterService},
+			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor, AlertManager},
+		},
+		"-target=read": {
+			target:                  []string{Read},
+			expectedEnabledModules:  []string{QueryFrontend, Querier},
+			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor, AlertManager},
+		},
+		"-target=backend": {
+			target:                  []string{Backend},
+			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager},
+			expectedDisabledModules: []string{IngesterService, QueryFrontend, Querier},
+		},
 	}
 
-	c, err := New(cfg)
-	require.NoError(t, err)
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg.Target = testData.target
+			c, err := New(cfg, prometheus.NewPedanticRegistry())
+			require.NoError(t, err)
 
-	serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
-	require.NoError(t, err)
-	require.NotNil(t, serviceMap)
+			serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
+			require.NoError(t, err)
+			require.NotNil(t, serviceMap)
 
-	for m, s := range serviceMap {
-		// make sure each service is still New
-		require.Equal(t, services.New, s.State(), "module: %s", m)
+			for m, s := range serviceMap {
+				// make sure each service is still New
+				require.Equal(t, services.New, s.State(), "module: %s", m)
+			}
+
+			for _, module := range testData.expectedEnabledModules {
+				require.NotNilf(t, serviceMap[module], "module=%s", module)
+			}
+
+			for _, module := range testData.expectedDisabledModules {
+				require.Nilf(t, serviceMap[module], "module=%s", module)
+			}
+		})
 	}
-
-	// check random modules that we expect to be configured when using Target=All
-	require.NotNil(t, serviceMap[Server])
-	require.NotNil(t, serviceMap[IngesterService])
-	require.NotNil(t, serviceMap[Ring])
-	require.NotNil(t, serviceMap[DistributorService])
-	require.NotNil(t, serviceMap[Compactor])
-
-	// check that alertmanager is configured which is not part of Target=All
-	require.NotNil(t, serviceMap[AlertManager])
 }
 
 func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	prepareGlobalMetricsRegistry(t)
 
 	cfg := Config{}
 
@@ -186,14 +237,12 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg.ActivityTracker.Filepath = filepath.Join(tmpDir, "activity.log") // Enable activity tracker
 
-	cfg.Target = []string{API}
-	cfg.Server = getServerConfig(t)
-	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
-	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
+	cfg.Target = []string{Querier}
+	cfg.Server = getServerConfig(t, dslog.LogfmtFormat, "debug")
 
-	util_log.InitLogger(&cfg.Server)
+	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, false, util_log.RateLimitedLoggerCfg{})
 
-	c, err := New(cfg)
+	c, err := New(cfg, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	errCh := make(chan error)
@@ -364,9 +413,60 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectedError: nil,
 		},
+		{
+			name: "should fail if querier timeout is bigger than http server timeout",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+				cfg.Querier.EngineConfig.Timeout = cfg.Server.HTTPServerWriteTimeout + time.Second
+
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass if grpc errors are disabled, and the distributor is running with ingest storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("distributor")
+				cfg.IngestStorage.Enabled = true
+				cfg.IngestStorage.KafkaConfig.Address = "localhost:123"
+				cfg.IngestStorage.KafkaConfig.Topic = "topic"
+				cfg.Ingester.DeprecatedReturnOnlyGRPCErrors = false
+
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should fails if grpc errors are disabled, and the ingester is running with ingest storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("ingester")
+				cfg.IngestStorage.Enabled = true
+				cfg.IngestStorage.KafkaConfig.Address = "localhost:123"
+				cfg.IngestStorage.KafkaConfig.Topic = "topic"
+				cfg.Ingester.DeprecatedReturnOnlyGRPCErrors = false
+
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fails if push api disabled in ingester, and the ingester isn't running with ingest storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("ingester")
+				cfg.Ingester.PushGrpcMethodEnabled = false
+				cfg.IngestStorage.Enabled = false
+
+				return cfg
+			},
+			expectAnyError: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.getTestConfig().Validate(nil)
+			err := tc.getTestConfig().Validate(log.NewNopLogger())
 			if tc.expectAnyError {
 				require.Error(t, err)
 			} else if tc.expectedError != nil {
@@ -378,12 +478,282 @@ func TestConfigValidation(t *testing.T) {
 	}
 }
 
-func TestGrpcAuthMiddleware(t *testing.T) {
-	prepareGlobalMetricsRegistry(t)
+func TestConfig_ValidateLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		testConfig   *Config
+		limitsConfig validation.Limits
+		hasError     bool
+	}{
+		{
+			name:         "default configs should pass validation",
+			testConfig:   newDefaultConfig(),
+			limitsConfig: newDefaultConfig().LimitsConfig,
+		},
+		{
+			name: "non overlapping query-store-after and query-ingesters-within should return error",
+			testConfig: func() *Config {
+				c := newDefaultConfig()
+				c.Querier.QueryStoreAfter = time.Hour
+				return c
+			}(),
+			limitsConfig: func() validation.Limits {
+				limits := newDefaultConfig().LimitsConfig
+				limits.QueryIngestersWithin = model.Duration(time.Minute)
+				return limits
+			}(),
+			hasError: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.testConfig.ValidateLimits(tc.limitsConfig)
+			if tc.hasError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
 
+func TestConfig_validateFilesystemPaths(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	tests := map[string]struct {
+		setup       func(cfg *Config)
+		expectedErr string
+	}{
+		"should succeed with the default configuration": {
+			setup: func(*Config) {},
+		},
+		"should fail if alertmanager data directory contains bucket store sync directory when running mimir-backend": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Backend}
+				cfg.Alertmanager.DataDir = "/data"
+				cfg.BlocksStorage.BucketStore.SyncDir = "/data/tsdb"
+			},
+			expectedErr: `the configured bucket store sync directory "/data/tsdb" cannot overlap with the configured alertmanager data directory "/data"`,
+		},
+		"should fail if alertmanager filesystem backend directory is equal to alertmanager data directory": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager/"
+			},
+			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager/"`,
+		},
+		"should fail if alertmanager filesystem backend directory is a subdirectory of alertmanager data directory": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager/subdir"
+			},
+			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager/subdir"`,
+		},
+		"should fail if alertmanager data directory is a subdirectory of alertmanager filesystem backend directory, and matches with the prefix used to store alerts": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager/alerts"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager"
+			},
+			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager/alerts" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager"`,
+		},
+		"should succeed if alertmanager data directory is a subdirectory of alertmanager filesystem backend directory, but doesn't match with the prefix used to store alerts": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager/data"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager"
+			},
+		},
+		"should fail if alertmanager data directory (relative) is a subdirectory of alertmanager filesystem backend directory (absolute), and matches with the prefix used to store alertmanager config": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "./data/alertmanager"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = filepath.Join(cwd, "data")
+			},
+			expectedErr: fmt.Sprintf(`the configured alertmanager data directory "./data/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "%s"`, filepath.Join(cwd, "data")),
+		},
+		"should fail if ruler filesystem backend directory is equal to ruler data directory": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ruler}
+				cfg.Ruler.RulePath = "/path/to/ruler"
+				cfg.RulerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.RulerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/ruler/"
+			},
+			expectedErr: `the configured ruler data directory "/path/to/ruler" cannot overlap with the configured ruler storage filesystem directory "/path/to/ruler/"`,
+		},
+		"should fail if store-gateway and compactor data directory overlap": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{StoreGateway, Compactor}
+				cfg.BlocksStorage.BucketStore.SyncDir = "/path/to/data"
+				cfg.Compactor.DataDir = "/path/to/data/compactor"
+			},
+			expectedErr: `the configured bucket store sync directory "/path/to/data" cannot overlap with the configured compactor data directory "/path/to/data/compactor"`,
+		},
+		"should succeed if store-gateway and compactor data directory overlap, but it's running only the store-gateway": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{StoreGateway}
+				cfg.BlocksStorage.BucketStore.SyncDir = "/path/to/data"
+				cfg.Compactor.DataDir = "/path/to/data/compactor"
+			},
+		},
+		"should fail if tsdb directory and blocks storage filesystem directory overlap": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data/blocks"
+			},
+			expectedErr: `the configured blocks storage filesystem directory "/path/to/data/blocks" cannot overlap with the configured tsdb directory "/path/to/data"`,
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory overlap, but blocks storage has prefix configured": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data/tsdb"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+
+				// The storage directory itself overlaps with TSDB data directory,
+				// but it doesn't if you also apply the prefix.
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data"
+				cfg.BlocksStorage.Bucket.StoragePrefix = "blocks"
+			},
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data/tsdb"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data/blocks"
+			},
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap and one has the same prefix of the other one": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data-blocks"
+			},
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap and they're both root directories": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/data"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data-blocks"
+			},
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap and they're both child of the same directory": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "./data"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "./data-blocks"
+			},
+		},
+		"should succeed if blocks storage filesystem directory overlaps with alertmanager data directory, but we're running alertmanager in microservices mode": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "blocks"
+				cfg.AlertmanagerStorage.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Filesystem.Directory = "/data/alertmanager"
+				cfg.Alertmanager.DataDir = cwd
+			},
+		},
+		"should fail if blocks storage filesystem directory overlaps with alertmanager data directory, and alertmanager is running along with other components": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{All, AlertManager}
+				cfg.Common.Storage.Backend = bucket.Filesystem
+				cfg.Common.Storage.Filesystem.Directory = "blocks"
+				cfg.Alertmanager.DataDir = cwd
+			},
+			expectedErr: fmt.Sprintf(`the configured blocks storage filesystem directory "blocks" cannot overlap with the configured alertmanager data directory "%s"`, cwd),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+			testData.setup(&cfg)
+
+			actualErr := cfg.validateFilesystemPaths(log.NewNopLogger())
+
+			if testData.expectedErr != "" {
+				require.Error(t, actualErr)
+				require.Contains(t, actualErr.Error(), testData.expectedErr)
+			} else {
+				require.NoError(t, actualErr)
+			}
+		})
+	}
+}
+
+func TestIsAbsPathOverlapping(t *testing.T) {
+	tests := []struct {
+		first    string
+		second   string
+		expected bool
+	}{
+		{
+			first:    "/",
+			second:   "/",
+			expected: true,
+		},
+		{
+			first:    "/data",
+			second:   "/",
+			expected: true,
+		},
+		{
+			first:    "/",
+			second:   "/data",
+			expected: true,
+		},
+		{
+			first:    "/data",
+			second:   "/data-more",
+			expected: false,
+		},
+		{
+			first:    "/path/to/data",
+			second:   "/path/to/data",
+			expected: true,
+		},
+		{
+			first:    "/path/to/data",
+			second:   "/path/to/data/more",
+			expected: true,
+		},
+		{
+			first:    "/path/to/data",
+			second:   "/path/to/data-more",
+			expected: false,
+		},
+		{
+			first:    "/path/to/data",
+			second:   "/path/to/more/data",
+			expected: false,
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(fmt.Sprintf("check if %q overlaps %q", testData.first, testData.second), func(t *testing.T) {
+			assert.Equal(t, testData.expected, isAbsPathOverlapping(testData.first, testData.second))
+		})
+	}
+}
+
+func TestGrpcAuthMiddleware(t *testing.T) {
 	cfg := Config{
 		MultitenancyEnabled: true, // We must enable this to enable Auth middleware for gRPC server.
-		Server:              getServerConfig(t),
+		Server:              getServerConfig(t, dslog.LogfmtFormat, "debug"),
 		Target:              []string{API}, // Something innocent that doesn't require much config.
 	}
 
@@ -392,7 +762,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 
 	// Setup server, using Mimir config. This includes authentication middleware.
 	{
-		c, err := New(cfg)
+		c, err := New(cfg, prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 
 		serv, err := c.initServer()
@@ -400,6 +770,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 
 		schedulerpb.RegisterSchedulerForQuerierServer(c.Server.GRPC, msch)
 		frontendv1pb.RegisterFrontendServer(c.Server.GRPC, msch)
+		ruler.RegisterRulerServer(c.Server.GRPC, msch)
 
 		require.NoError(t, services.StartAndAwaitRunning(ctx, serv))
 		defer func() {
@@ -430,6 +801,14 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, msch.querierShutdownCalled.Load())
 	}
+	{
+		// Verify that we can call rulerClient.SyncRules without user in the context, and we don't get any error.
+		require.False(t, msch.rulerSyncRulesCalled.Load())
+		rulerClient := ruler.NewRulerClient(conn)
+		_, err = rulerClient.SyncRules(ctx, &ruler.SyncRulesRequest{UserIds: []string{"random-user-id"}})
+		require.NoError(t, err)
+		require.True(t, msch.rulerSyncRulesCalled.Load())
+	}
 }
 
 func TestFlagDefaults(t *testing.T) {
@@ -450,7 +829,7 @@ func TestFlagDefaults(t *testing.T) {
 	pingWithoutStreamChecked := false
 	for {
 		line, err := buf.ReadString(delim)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 
@@ -478,20 +857,132 @@ func TestFlagDefaults(t *testing.T) {
 	require.Equal(t, 10*time.Second, c.Server.GRPCServerMinTimeBetweenPings)
 }
 
+func TestOnlyValidRuntimeConfigIsLoaded(t *testing.T) {
+	dir := t.TempDir()
+	loadPath := filepath.Join(dir, "test")
+
+	userID := "12345"
+
+	initialValidConfig := `
+overrides:
+  '12345':
+    query_ingesters_within: 15h
+`
+	err := os.WriteFile(loadPath, []byte(initialValidConfig), 0600)
+	require.NoError(t, err)
+
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+
+	cfg.Target = []string{Overrides}
+
+	cfg.RuntimeConfig.LoadPath = []string{loadPath}
+	cfg.RuntimeConfig.ReloadPeriod = 100 * time.Millisecond
+	cfg.Querier.QueryStoreAfter = 12 * time.Hour
+	cfg.LimitsConfig.QueryIngestersWithin = model.Duration(13 * time.Hour)
+
+	registry := prometheus.NewPedanticRegistry()
+	c, err := New(cfg, registry)
+	require.NoError(t, err)
+
+	// init services
+	sm, err := c.ModuleManager.InitModuleServices(cfg.Target...)
+	require.NoError(t, err)
+	defer c.Server.Stop()
+
+	servs := []services.Service(nil)
+	for _, s := range sm {
+		servs = append(servs, s)
+	}
+	m, err := services.NewManager(servs...)
+	require.NoError(t, err)
+
+	// before the services start, all users have the default limits
+	duration := c.Overrides.QueryIngestersWithin(userID)
+	require.Equal(t, cfg.LimitsConfig.QueryIngestersWithin, model.Duration(duration))
+
+	// start services
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	require.NoError(t, m.StartAsync(ctx))
+	require.NoError(t, m.AwaitHealthy(ctx))
+
+	// the runtime config is now loaded, so the content of initialValidConfig will be used
+	duration = c.Overrides.QueryIngestersWithin(userID)
+	require.Equal(t, 15*time.Hour, duration)
+
+	// check load is successful via metric
+	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
+	require.NoError(t, err)
+	metric := metrics["cortex_runtime_config_last_reload_successful"].Metric[0]
+	require.NotNil(t, metric.Gauge.Value)
+	require.Equal(t, 1., metric.Gauge.GetValue())
+
+	// write invalid config with query_ingesters_with < query_store_after
+	configYAML2 := `
+overrides:
+  '12345':
+    query_ingesters_within: 2h
+`
+	err = os.WriteFile(loadPath, []byte(configYAML2), 0600)
+	require.NoError(t, err)
+
+	// wait sufficient time for new runtime config to be loaded
+	time.Sleep(cfg.RuntimeConfig.ReloadPeriod * 2)
+
+	// invalid config is ignored, still using initialValidConfig
+	duration = c.Overrides.QueryIngestersWithin(userID)
+	require.Equal(t, 15*time.Hour, duration)
+
+	// check load was unsuccessful via metric
+	metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
+	require.NoError(t, err)
+	metric = metrics["cortex_runtime_config_last_reload_successful"].Metric[0]
+	require.NotNil(t, metric.Gauge.Value)
+	require.Equal(t, 0., metric.Gauge.GetValue())
+
+	// write a new valid config
+	anotherValidConfig := `
+overrides:
+  '12345':
+    query_ingesters_within: 20h
+`
+	err = os.WriteFile(loadPath, []byte(anotherValidConfig), 0600)
+	require.NoError(t, err)
+
+	// wait sufficient time for new runtime config to be loaded
+	time.Sleep(cfg.RuntimeConfig.ReloadPeriod * 2)
+
+	// check config has been updated to anotherValidConfig
+	duration = c.Overrides.QueryIngestersWithin(userID)
+	require.Equal(t, 20*time.Hour, duration)
+
+	// check load is successful via metric
+	metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
+	require.NoError(t, err)
+	metric = metrics["cortex_runtime_config_last_reload_successful"].Metric[0]
+	require.NotNil(t, metric.Gauge.Value)
+	require.Equal(t, 1., metric.Gauge.GetValue())
+}
+
 // Generates server config, with gRPC listening on random port.
-func getServerConfig(t *testing.T) server.Config {
+func getServerConfig(t *testing.T, logFormat, logLevel string) server.Config {
 	grpcHost, grpcPortNum := getHostnameAndRandomPort(t)
 	httpHost, httpPortNum := getHostnameAndRandomPort(t)
 
-	return server.Config{
+	cfg := server.Config{
 		HTTPListenAddress: httpHost,
 		HTTPListenPort:    httpPortNum,
 
 		GRPCListenAddress: grpcHost,
 		GRPCListenPort:    grpcPortNum,
 
-		GPRCServerMaxRecvMsgSize: 1024,
+		GRPCServerMaxRecvMsgSize: 1024,
+		LogFormat:                logFormat,
+		Registerer:               prometheus.NewPedanticRegistry(),
 	}
+	require.NoError(t, cfg.LogLevel.Set(logLevel))
+	return cfg
 }
 
 func getHostnameAndRandomPort(t *testing.T) (string, int) {
@@ -510,6 +1001,7 @@ func getHostnameAndRandomPort(t *testing.T) (string, int) {
 type mockGrpcServiceHandler struct {
 	clientShutdownCalled  atomic.Bool
 	querierShutdownCalled atomic.Bool
+	rulerSyncRulesCalled  atomic.Bool
 }
 
 func (m *mockGrpcServiceHandler) NotifyClientShutdown(_ context.Context, _ *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
@@ -522,21 +1014,19 @@ func (m *mockGrpcServiceHandler) NotifyQuerierShutdown(_ context.Context, _ *sch
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
 }
 
+func (m *mockGrpcServiceHandler) SyncRules(_ context.Context, _ *ruler.SyncRulesRequest) (*ruler.SyncRulesResponse, error) {
+	m.rulerSyncRulesCalled.Store(true)
+	return &ruler.SyncRulesResponse{}, nil
+}
+
+func (m *mockGrpcServiceHandler) Rules(_ context.Context, _ *ruler.RulesRequest) (*ruler.RulesResponse, error) {
+	return &ruler.RulesResponse{}, nil
+}
+
 func (m *mockGrpcServiceHandler) Process(_ frontendv1pb.Frontend_ProcessServer) error {
 	panic("implement me")
 }
 
 func (m *mockGrpcServiceHandler) QuerierLoop(_ schedulerpb.SchedulerForQuerier_QuerierLoopServer) error {
 	panic("implement me")
-}
-
-func prepareGlobalMetricsRegistry(t *testing.T) {
-	oldReg, oldGat := prometheus.DefaultRegisterer, prometheus.DefaultGatherer
-
-	reg := prometheus.NewRegistry()
-	prometheus.DefaultRegisterer, prometheus.DefaultGatherer = reg, reg
-
-	t.Cleanup(func() {
-		prometheus.DefaultRegisterer, prometheus.DefaultGatherer = oldReg, oldGat
-	})
 }

@@ -7,8 +7,8 @@ package querytee
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -17,6 +17,13 @@ import (
 
 	"github.com/pkg/errors"
 )
+
+type ProxyBackendInterface interface {
+	Name() string
+	Endpoint() *url.URL
+	Preferred() bool
+	ForwardRequest(orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error)
+}
 
 // ProxyBackend holds the information of a single backend.
 type ProxyBackend struct {
@@ -31,7 +38,7 @@ type ProxyBackend struct {
 }
 
 // NewProxyBackend makes a new ProxyBackend
-func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool) *ProxyBackend {
+func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool) ProxyBackendInterface {
 	return &ProxyBackend{
 		name:      name,
 		endpoint:  endpoint,
@@ -43,6 +50,9 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 			},
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment,
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: skipTLSVerify,
+				},
 				DialContext: (&net.Dialer{
 					Timeout:   30 * time.Second,
 					KeepAlive: 30 * time.Second,
@@ -56,13 +66,29 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 	}
 }
 
-func (b *ProxyBackend) ForwardRequest(orig *http.Request, body io.ReadCloser) (int, []byte, error) {
+func (b *ProxyBackend) Name() string {
+	return b.name
+}
+
+func (b *ProxyBackend) Endpoint() *url.URL {
+	return b.endpoint
+}
+
+func (b *ProxyBackend) Preferred() bool {
+	return b.preferred
+}
+
+func (b *ProxyBackend) ForwardRequest(orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
 	req, err := b.createBackendRequest(orig, body)
 	if err != nil {
-		return 0, nil, err
+		return 0, 0, nil, nil, err
 	}
 
-	return b.doBackendRequest(req)
+	start := time.Now()
+	status, responseBody, resp, err := b.doBackendRequest(req)
+	elapsed := time.Since(start)
+
+	return elapsed, status, responseBody, resp, err
 }
 
 func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.ReadCloser) (*http.Request, error) {
@@ -78,14 +104,18 @@ func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.ReadClos
 	req.URL.Path = path.Join(b.endpoint.Path, req.URL.Path)
 
 	// Set the correct host header for the backend
-	req.Header.Set("Host", b.endpoint.Host)
+	req.Host = b.endpoint.Host
 
 	// Replace the auth:
 	// - If the endpoint has user and password, use it.
 	// - If the endpoint has user only, keep it and use the request password (if any).
 	// - If the endpoint has no user and no password, use the request auth (if any).
+	// - If the endpoint has __REQUEST_HEADER_X_SCOPE_ORGID__ as the user, then replace it with the X-Scope-OrgID header value from the request.
 	clientUser, clientPass, clientAuth := orig.BasicAuth()
 	endpointUser := b.endpoint.User.Username()
+	if endpointUser == "__REQUEST_HEADER_X_SCOPE_ORGID__" {
+		endpointUser = orig.Header.Get("X-Scope-OrgID")
+	}
 	endpointPass, _ := b.endpoint.User.Password()
 
 	req.Header.Del("Authorization")
@@ -103,7 +133,7 @@ func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.ReadClos
 	return req, nil
 }
 
-func (b *ProxyBackend) doBackendRequest(req *http.Request) (int, []byte, error) {
+func (b *ProxyBackend) doBackendRequest(req *http.Request) (int, []byte, *http.Response, error) {
 	// Honor the read timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
@@ -111,15 +141,15 @@ func (b *ProxyBackend) doBackendRequest(req *http.Request) (int, []byte, error) 
 	// Execute the request.
 	res, err := b.client.Do(req.WithContext(ctx))
 	if err != nil {
-		return 0, nil, errors.Wrap(err, "executing backend request")
+		return 0, nil, nil, errors.Wrap(err, "executing backend request")
 	}
 
 	// Read the entire response body.
 	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return 0, nil, errors.Wrap(err, "reading backend response")
+		return 0, nil, nil, errors.Wrap(err, "reading backend response")
 	}
 
-	return res.StatusCode, body, nil
+	return res.StatusCode, body, res, nil
 }

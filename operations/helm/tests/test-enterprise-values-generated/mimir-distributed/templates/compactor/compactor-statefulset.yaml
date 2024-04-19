@@ -14,6 +14,7 @@ metadata:
     {}
   namespace: "citestns"
 spec:
+  podManagementPolicy: OrderedReady
   replicas: 1
   selector:
     matchLabels:
@@ -23,6 +24,15 @@ spec:
   updateStrategy:
     type: RollingUpdate
   serviceName: test-enterprise-values-mimir-compactor
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
   template:
     metadata:
       labels:
@@ -36,26 +46,22 @@ spec:
     spec:
       serviceAccountName: test-enterprise-values-mimir
       securityContext:
-        {}
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: target
-                  operator: In
-                  values:
-                  - compactor
-              topologyKey: kubernetes.io/hostname
-            weight: 100
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-values
+            app.kubernetes.io/component: compactor
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           secret:
@@ -66,7 +72,7 @@ spec:
         - name: runtime-config
           configMap:
             name: test-enterprise-values-mimir-runtime
-        - name: storage
+        - name: active-queries
           emptyDir: {}
       containers:
         - name: compactor
@@ -84,6 +90,8 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -106,6 +114,10 @@ spec:
               cpu: 100m
               memory: 512Mi
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
           envFrom:

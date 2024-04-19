@@ -32,7 +32,6 @@ config:
       dir:
   ingester:
     ring:
-      tokens_file_path:
       kvstore:
         prefix:
   ruler:
@@ -42,10 +41,10 @@ config:
     file:
   store_gateway:
     sharding_ring:
-      tokens_file_path:
       kvstore:
         prefix:
   frontend:
+    scheduler_address:
     results_cache:
       memcached:
         addresses:
@@ -60,6 +59,7 @@ config:
         prefix:
   frontend_worker:
     frontend_address:
+    scheduler_address:
   memberlist:
     join_members:
   alertmanager_storage:
@@ -70,8 +70,14 @@ config:
     backend:
     gcs:
       bucket_name:
+    cache:
+      memcached:
+        addresses:
   compactor:
     data_dir:
     sharding_ring:
       kvstore:
         prefix:
+  common:
+    storage:
+      backend:

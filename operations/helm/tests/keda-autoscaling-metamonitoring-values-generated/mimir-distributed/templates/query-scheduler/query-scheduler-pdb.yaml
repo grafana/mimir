@@ -1,0 +1,19 @@
+---
+# Source: mimir-distributed/templates/query-scheduler/query-scheduler-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: keda-autoscaling-metamonitoring-values-mimir-query-scheduler
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-metamonitoring-values
+    app.kubernetes.io/component: query-scheduler
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: keda-autoscaling-metamonitoring-values
+      app.kubernetes.io/component: query-scheduler
+  maxUnavailable: 1

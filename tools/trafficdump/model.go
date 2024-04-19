@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -42,7 +43,9 @@ type request struct {
 	Form    url.Values `json:"form,omitempty"`
 	RawBody string     `json:"raw_body,omitempty"`
 
-	PushRequest *pushRequest `json:"push,omitempty"`
+	PushRequest any `json:"push,omitempty"`
+
+	cleanup func()
 }
 
 type requestURL struct {
@@ -57,8 +60,11 @@ type pushRequest struct {
 	Metadata   []*mimirpb.MetricMetadata `json:"metadata,omitempty"`
 
 	Error string `json:"error,omitempty"`
+}
 
-	cleanup func()
+type otlpPushRequest struct {
+	pmetricotlp.ExportRequest
+	Error string `json:"error,omitempty"`
 }
 
 type timeseries struct {
@@ -140,14 +146,16 @@ func writeJSONString(b *bytes.Buffer, s string) {
 
 func writeLabels(b *bytes.Buffer, lbls labels.Labels) {
 	b.WriteByte('{')
-	for i, l := range lbls {
+	i := 0
+	lbls.Range(func(l labels.Label) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
 		writeJSONString(b, l.Name)
 		b.WriteByte(':')
 		writeJSONString(b, l.Value)
-	}
+		i++
+	})
 	b.WriteByte('}')
 }
 
@@ -159,7 +167,7 @@ type sampleWithLabels struct {
 
 func (s sampleWithLabels) marshalToBuffer(b *bytes.Buffer) {
 	b.WriteString("[")
-	if s.lbls != nil {
+	if !s.lbls.IsEmpty() {
 		writeLabels(b, s.lbls)
 		b.WriteString(",")
 	}

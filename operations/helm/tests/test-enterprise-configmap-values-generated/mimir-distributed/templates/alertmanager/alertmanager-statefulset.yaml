@@ -37,16 +37,22 @@ spec:
     spec:
       serviceAccountName: test-enterprise-configmap-values-mimir
       securityContext:
-        {}
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-configmap-values
+            app.kubernetes.io/component: alertmanager
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -64,6 +70,11 @@ spec:
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: test-enterprise-configmap-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
           imagePullPolicy: IfNotPresent
@@ -80,8 +91,12 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: alertmanager-fallback-config
+              mountPath: /configs/
             - name: tmp
               mountPath: /tmp
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -100,10 +115,12 @@ spec:
               port: http-metrics
             initialDelaySeconds: 45
           resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
+            limits: null
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
           envFrom:

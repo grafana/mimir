@@ -12,11 +12,11 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/multierror"
+	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
-	"github.com/thanos-io/thanos/pkg/runutil"
 
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
-	rulestorelocal "github.com/grafana/mimir/pkg/ruler/rulestore/local"
+	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util/fs"
 )
@@ -29,7 +29,6 @@ type dirExistsFunc func(string) (bool, error)
 type isDirReadWritableFunc func(dir string) error
 
 func runSanityCheck(ctx context.Context, cfg Config, logger log.Logger) error {
-
 	level.Info(logger).Log("msg", "Checking directories read/write access")
 	if err := checkDirectoriesReadWriteAccess(cfg, fs.DirExists, fs.IsDirReadWritable); err != nil {
 		level.Error(logger).Log("msg", "Unable to access directory", "err", err)
@@ -54,19 +53,19 @@ func checkDirectoriesReadWriteAccess(
 ) error {
 	errs := multierror.New()
 
-	if cfg.isAnyModuleEnabled(All, Ingester) {
+	if cfg.isAnyModuleEnabled(All, Ingester, Write) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Ingester.BlocksStorageConfig.TSDB.Dir, dirExistFn, isDirReadWritableFn), "ingester"))
 	}
-	if cfg.isAnyModuleEnabled(All, StoreGateway) {
+	if cfg.isAnyModuleEnabled(All, StoreGateway, Backend) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.BlocksStorage.BucketStore.SyncDir, dirExistFn, isDirReadWritableFn), "store-gateway"))
 	}
-	if cfg.isAnyModuleEnabled(All, Compactor) {
+	if cfg.isAnyModuleEnabled(All, Compactor, Backend) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Compactor.DataDir, dirExistFn, isDirReadWritableFn), "compactor"))
 	}
-	if cfg.isAnyModuleEnabled(All, Ruler) {
+	if cfg.isAnyModuleEnabled(All, Ruler, Backend) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Ruler.RulePath, dirExistFn, isDirReadWritableFn), "ruler"))
 	}
-	if cfg.isAnyModuleEnabled(AlertManager) {
+	if cfg.isAnyModuleEnabled(AlertManager, Backend) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Alertmanager.DataDir, dirExistFn, isDirReadWritableFn), "alertmanager"))
 	}
 
@@ -128,17 +127,17 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 	errs := multierror.New()
 
 	// Check blocks storage config only if running at least one component using it.
-	if cfg.isAnyModuleEnabled(All, Ingester, Querier, Ruler, StoreGateway, Compactor) {
+	if cfg.isAnyModuleEnabled(All, Ingester, Querier, Ruler, StoreGateway, Compactor, Write, Read, Backend) {
 		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.BlocksStorage.Bucket, logger), "blocks storage"))
 	}
 
 	// Check alertmanager storage config.
-	if cfg.isAnyModuleEnabled(AlertManager) && cfg.AlertmanagerStorage.Backend != alertstorelocal.Name {
+	if cfg.isAnyModuleEnabled(AlertManager, Backend) && cfg.AlertmanagerStorage.Backend != alertstorelocal.Name {
 		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.AlertmanagerStorage.Config, logger), "alertmanager storage"))
 	}
 
 	// Check ruler storage config.
-	if cfg.isAnyModuleEnabled(All, Ruler) && cfg.RulerStorage.Backend != rulestorelocal.Name {
+	if cfg.isAnyModuleEnabled(All, Ruler, Backend) && cfg.RulerStorage.Backend != rulestore.BackendLocal {
 		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.RulerStorage.Config, logger), "ruler storage"))
 	}
 

@@ -12,9 +12,9 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 func TestLabelRemoverFilter(t *testing.T) {
@@ -58,13 +58,13 @@ func TestLabelRemoverFilter(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			metas := map[ulid.ULID]*metadata.Meta{}
+			metas := map[ulid.ULID]*block.Meta{}
 			for id, lbls := range testData.input {
-				metas[id] = &metadata.Meta{Thanos: metadata.Thanos{Labels: lbls}}
+				metas[id] = &block.Meta{Thanos: block.ThanosMeta{Labels: lbls}}
 			}
 
 			f := NewLabelRemoverFilter(testData.labels)
-			err := f.Filter(context.Background(), metas, nil, nil)
+			err := f.Filter(context.Background(), metas, nil)
 			require.NoError(t, err)
 			assert.Len(t, metas, len(testData.expected))
 

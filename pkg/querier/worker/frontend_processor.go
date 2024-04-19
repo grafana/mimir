@@ -14,27 +14,29 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/weaveworks/common/httpgrpc"
+	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/httpgrpc"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
-	"github.com/grafana/mimir/pkg/querier/stats"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 )
 
 var (
 	processorBackoffConfig = backoff.Config{
-		MinBackoff: 50 * time.Millisecond,
-		MaxBackoff: 1 * time.Second,
+		MinBackoff: 250 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
 	}
+
+	errQuerierFrontendProcessingLoopTerminated = cancellation.NewErrorf("querier frontend processing loop terminated")
 )
 
 func newFrontendProcessor(cfg Config, handler RequestHandler, log log.Logger) *frontendProcessor {
 	return &frontendProcessor{
 		log:            log,
 		handler:        handler,
-		maxMessageSize: cfg.GRPCClientConfig.MaxSendMsgSize,
+		maxMessageSize: cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:      cfg.QuerierID,
 
 		frontendClientFactory: func(conn *grpc.ClientConn) frontendv1pb.FrontendClient {
@@ -73,7 +75,7 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Cont
 	// Run the gRPC client and process all the queries in a dedicated context that we call the "execution context".
 	// The execution context is cancelled once the workerCtx is cancelled AND there's no inflight query executing.
 	execCtx, execCancel, inflightQuery := newExecutionContext(workerCtx, fp.log)
-	defer execCancel()
+	defer execCancel(errQuerierFrontendProcessingLoopTerminated)
 
 	backoff := backoff.New(execCtx, processorBackoffConfig)
 	for backoff.Ongoing() {
@@ -84,10 +86,12 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Cont
 			continue
 		}
 
-		if err := fp.process(c, inflightQuery); err != nil {
-			level.Error(fp.log).Log("msg", "error processing requests", "address", address, "err", err)
-			backoff.Wait()
-			continue
+		if err := fp.process(execCtx, c, address, inflightQuery); err != nil {
+			if !isErrCancel(err, log.With(fp.log, "address", address)) {
+				level.Error(fp.log).Log("msg", "error processing requests", "address", address, "err", err)
+				backoff.Wait()
+				continue
+			}
 		}
 
 		backoff.Reset()
@@ -95,12 +99,12 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Cont
 }
 
 // process loops processing requests on an established stream.
-func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, inflightQuery *atomic.Bool) error {
+func (fp *frontendProcessor) process(execCtx context.Context, c frontendv1pb.Frontend_ProcessClient, address string, inflightQuery *atomic.Bool) (err error) {
 	// Build a child context so we can cancel a query when the stream is closed.
-	ctx, cancel := context.WithCancel(c.Context())
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(execCtx)
+	defer cancel(cancellation.NewErrorf("query-frontend loop in querier for query-frontend %v terminated with error: %v", address, err))
 
-	for {
+	for ctx.Err() == nil {
 		request, err := c.Recv()
 		if err != nil {
 			return err
@@ -115,7 +119,7 @@ func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, infl
 			// and cancel the query.  We don't actually handle queries in parallel
 			// here, as we're running in lock step with the server - each Recv is
 			// paired with a Send.
-			go fp.runRequest(ctx, request.HttpRequest, request.StatsEnabled, func(response *httpgrpc.HTTPResponse, stats *stats.Stats) error {
+			go fp.runRequest(ctx, request.HttpRequest, request.StatsEnabled, time.Duration(request.QueueTimeNanos), func(response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error {
 				defer inflightQuery.Store(false)
 
 				return c.Send(&frontendv1pb.ClientToFrontend{
@@ -134,12 +138,23 @@ func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, infl
 			return fmt.Errorf("unknown request type: %v", request.Type)
 		}
 	}
+
+	return ctx.Err()
 }
 
-func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.HTTPRequest, statsEnabled bool, sendHTTPResponse func(response *httpgrpc.HTTPResponse, stats *stats.Stats) error) {
+func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.HTTPRequest, statsEnabled bool, queueTime time.Duration, sendHTTPResponse func(response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error) {
+	// Create a per-request context and cancel it once we're done processing the request.
+	// This is important for queries that stream chunks from ingesters to the querier, as SeriesChunksStreamReader relies
+	// on the context being cancelled to abort streaming and terminate a goroutine if the query is aborted. Requests that
+	// go direct to a querier's HTTP API have a context created and cancelled in a similar way by the Go runtime's
+	// net/http package.
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(errQueryEvaluationFinished)
+
 	var stats *querier_stats.Stats
 	if statsEnabled {
 		stats, ctx = querier_stats.ContextWithEmptyStats(ctx)
+		stats.AddQueueTime(queueTime)
 	}
 
 	response, err := fp.handler.Handle(ctx, request)

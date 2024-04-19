@@ -1,0 +1,126 @@
+---
+# Source: mimir-distributed/templates/graphite-proxy/graphite-querier/graphite-querier-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graphite-enabled-values-mimir-graphite-querier
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: graphite-enabled-values
+    app.kubernetes.io/component: graphite-querier
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: graphite-enabled-values
+      app.kubernetes.io/component: graphite-querier
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: graphite-enabled-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: graphite-querier
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: graphite-enabled-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: graphite-querier
+          imagePullPolicy: IfNotPresent
+          args:
+            - -target=graphite-querier
+            - -config.file=/etc/mimir/mimir.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: graphite-schemas
+              mountPath: /etc/graphite-proxy
+            - name: license
+              mountPath: /license
+            - name: storage
+              mountPath: "/data"
+              subPath: 
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values:
+                  - graphite-querier
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - name: config
+          configMap:
+            name: graphite-enabled-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: graphite-enabled-values-mimir-runtime
+        - name: graphite-schemas
+          configMap:
+            name: graphite-enabled-values-mimir-graphite-schemas
+        - name: license
+          secret:
+            secretName: graphite-enabled-values-mimir-license
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

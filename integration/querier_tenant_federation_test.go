@@ -3,7 +3,6 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
-// +build requires_docker
 
 package integration
 
@@ -132,7 +131,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
-		series, expectedVectors[u] = generateSeries("series_1", now)
+		series, expectedVectors[u], _ = generateAlternatingSeries(u)("series_1", now)
 
 		res, err := c.Push(series)
 		require.NoError(t, err)
@@ -146,7 +145,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	result, err := c.Query("series_1", now)
 	require.NoError(t, err)
 
-	assert.Equal(t, mergeResults(tenantIDs, expectedVectors), result.(model.Vector))
+	assert.ElementsMatch(t, mergeResults(tenantIDs, expectedVectors), result.(model.Vector))
 
 	// query exemplars for all tenants
 	exemplars, err := c.QueryExemplars("series_1", now.Add(-1*time.Hour), now.Add(1*time.Hour))
@@ -154,15 +153,24 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	assert.Len(t, exemplars, numUsers)
 
 	// ensure a push to multiple tenants is failing
-	series, _ := generateSeries("series_1", now)
+	series, _, _ := generateFloatSeries("series_1", now)
 	res, err := c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 500, res.StatusCode)
 
+	series, _, _ = generateHistogramSeries("series_1", now)
+	res, err = c.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 500, res.StatusCode)
+
 	// check metric label values for total queries in the query frontend
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_query_frontend_queries_total"}, e2e.WithLabelMatchers(
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_query_frontend_queries_total"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", strings.Join(tenantIDs, "|")),
 		labels.MustNewMatcher(labels.MatchEqual, "op", "query"))))
+
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_query_frontend_queries_total"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "user", strings.Join(tenantIDs, "|")),
+		labels.MustNewMatcher(labels.MatchEqual, "op", "other"))))
 
 	// check metric label values for query queue length in either query frontend or query scheduler
 	queueComponent := queryFrontend
@@ -182,7 +190,7 @@ func mergeResults(tenantIDs []string, resultsPerTenant []model.Vector) model.Vec
 	var v model.Vector
 	for pos, tenantID := range tenantIDs {
 		for _, r := range resultsPerTenant[pos] {
-			var s model.Sample = *r
+			s := *r
 			s.Metric = r.Metric.Clone()
 			s.Metric[model.LabelName("__tenant_id__")] = model.LabelValue(tenantID)
 			v = append(v, &s)

@@ -9,16 +9,14 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-kit/log"
+	"github.com/grafana/dskit/instrument"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/weaveworks/common/instrument"
-
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // newInstrumentMiddleware can be inserted into the middleware chain to expose timing information.
-func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics, logger log.Logger) Middleware {
+func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) MetricsQueryMiddleware {
 	var durationCol instrument.Collector
 
 	// Support the case metrics shouldn't be tracked (ie. unit tests).
@@ -28,12 +26,14 @@ func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics, 
 		durationCol = &noopCollector{}
 	}
 
-	return MiddlewareFunc(func(next Handler) Handler {
-		return HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+		return HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 			var resp Response
 			err := instrument.CollectedRequest(ctx, name, durationCol, instrument.ErrorCode, func(ctx context.Context) error {
-				sp := spanlogger.FromContext(ctx, logger)
-				req.LogToSpan(sp.Span)
+				sp := opentracing.SpanFromContext(ctx)
+				if sp != nil {
+					req.AddSpanTags(sp)
+				}
 
 				var err error
 				resp, err = next.Do(ctx, req)
@@ -69,7 +69,7 @@ type noopCollector struct{}
 func (c *noopCollector) Register() {}
 
 // Before implements instrument.Collector.
-func (c *noopCollector) Before(ctx context.Context, method string, start time.Time) {}
+func (c *noopCollector) Before(context.Context, string, time.Time) {}
 
 // After implements instrument.Collector.
-func (c *noopCollector) After(ctx context.Context, method, statusCode string, start time.Time) {}
+func (c *noopCollector) After(context.Context, string, string, time.Time) {}

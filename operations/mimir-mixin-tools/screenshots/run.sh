@@ -13,9 +13,10 @@ GRAFANA_PID=""
 if [ ! -e "${SCRIPT_DIR}/.config" ]; then
   echo "This tool expects a local config file stored at ${SCRIPT_DIR}/.config and containing the following content:"
   echo ""
-  echo "CLUSTER=\"<cluster-to-query\""
+  echo "CLUSTER=\"<cluster-to-query>\""
   echo "MIMIR_NAMESPACE=\"<namespace-where-mimir-is-running>\""
   echo "ALERTMANAGER_NAMESPACE=\"<namespace-where-alertmanager-is-running>\""
+  echo "MIMIR_USER=\"<mimir-tenant-id>\""
   echo ""
   exit 1
 fi
@@ -55,7 +56,7 @@ docker pull grafana/grafana:latest
 GRAFANA_PID="$!"
 
 # Give Grafana some time to startup. It's an hack, but an easy one.
-sleep 5
+sleep 10
 
 # Start application to take screenshots.
 echo "Start screenshot taker container with name ${DOCKER_APP_NAME}"
@@ -66,8 +67,9 @@ docker run \
   --env "CLUSTER=${CLUSTER}" \
   --env "MIMIR_NAMESPACE=${MIMIR_NAMESPACE}" \
   --env "ALERTMANAGER_NAMESPACE=${ALERTMANAGER_NAMESPACE}" \
+  --env "MIMIR_USER=${MIMIR_USER}" \
   -v "${SCRIPT_DIR}/../../mimir-mixin-compiled/dashboards:/input" \
-  -v "${SCRIPT_DIR}/../../../docs/sources/operators-guide/monitoring-grafana-mimir/dashboards:/output" \
+  -v "${SCRIPT_DIR}/../../../docs/sources/mimir/manage/monitor-grafana-mimir/dashboards:/output" \
   -v "${SCRIPT_DIR}:/sources" \
   --entrypoint "" \
   "${DOCKER_APP_IMAGE}" \

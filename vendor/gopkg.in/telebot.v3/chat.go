@@ -10,11 +10,16 @@ import (
 type User struct {
 	ID int64 `json:"id"`
 
-	FirstName    string `json:"first_name"`
-	LastName     string `json:"last_name"`
-	Username     string `json:"username"`
-	LanguageCode string `json:"language_code"`
-	IsBot        bool   `json:"is_bot"`
+	FirstName         string   `json:"first_name"`
+	LastName          string   `json:"last_name"`
+	IsForum           bool     `json:"is_forum"`
+	Username          string   `json:"username"`
+	LanguageCode      string   `json:"language_code"`
+	IsBot             bool     `json:"is_bot"`
+	IsPremium         bool     `json:"is_premium"`
+	AddedToMenu       bool     `json:"added_to_attachment_menu"`
+	Usernames         []string `json:"active_usernames"`
+	CustomEmojiStatus string   `json:"emoji_status_custom_emoji_id"`
 
 	// Returns only in getMe
 	CanJoinGroups   bool `json:"can_join_groups"`
@@ -41,26 +46,42 @@ type Chat struct {
 	LastName  string `json:"last_name"`
 	Username  string `json:"username"`
 
-	// Still shows whether the user is a member
-	// of the chat at the moment of the request.
-	Still bool `json:"is_member,omitempty"`
-
 	// Returns only in getChat
-	Bio              string        `json:"bio,omitempty"`
-	Photo            *ChatPhoto    `json:"photo,omitempty"`
-	Description      string        `json:"description,omitempty"`
-	InviteLink       string        `json:"invite_link,omitempty"`
-	PinnedMessage    *Message      `json:"pinned_message,omitempty"`
-	Permissions      *Rights       `json:"permissions,omitempty"`
-	SlowMode         int           `json:"slow_mode_delay,omitempty"`
-	StickerSet       string        `json:"sticker_set_name,omitempty"`
-	CanSetStickerSet bool          `json:"can_set_sticker_set,omitempty"`
-	LinkedChatID     int64         `json:"linked_chat_id,omitempty"`
-	ChatLocation     *ChatLocation `json:"location,omitempty"`
-	Private          bool          `json:"has_private_forwards,omitempty"`
-	Protected        bool          `json:"has_protected_content,omitempty"`
+	Bio                string        `json:"bio,omitempty"`
+	Photo              *ChatPhoto    `json:"photo,omitempty"`
+	Description        string        `json:"description,omitempty"`
+	InviteLink         string        `json:"invite_link,omitempty"`
+	PinnedMessage      *Message      `json:"pinned_message,omitempty"`
+	Permissions        *Rights       `json:"permissions,omitempty"`
+	SlowMode           int           `json:"slow_mode_delay,omitempty"`
+	StickerSet         string        `json:"sticker_set_name,omitempty"`
+	CanSetStickerSet   bool          `json:"can_set_sticker_set,omitempty"`
+	LinkedChatID       int64         `json:"linked_chat_id,omitempty"`
+	ChatLocation       *ChatLocation `json:"location,omitempty"`
+	Private            bool          `json:"has_private_forwards,omitempty"`
+	Protected          bool          `json:"has_protected_content,omitempty"`
+	NoVoiceAndVideo    bool          `json:"has_restricted_voice_and_video_messages"`
+	HiddenMembers      bool          `json:"has_hidden_members,omitempty"`
+	AggressiveAntiSpam bool          `json:"has_aggressive_anti_spam_enabled,omitempty"`
 }
 
+// Recipient returns chat ID (see Recipient interface).
+func (c *Chat) Recipient() string {
+	return strconv.FormatInt(c.ID, 10)
+}
+
+// ChatType represents one of the possible chat types.
+type ChatType string
+
+const (
+	ChatPrivate        ChatType = "private"
+	ChatGroup          ChatType = "group"
+	ChatSuperGroup     ChatType = "supergroup"
+	ChatChannel        ChatType = "channel"
+	ChatChannelPrivate ChatType = "privatechannel"
+)
+
+// ChatLocation represents a location to which a chat is connected.
 type ChatLocation struct {
 	Location Location `json:"location,omitempty"`
 	Address  string   `json:"address,omitempty"`
@@ -77,11 +98,6 @@ type ChatPhoto struct {
 	BigUniqueID string `json:"big_file_unique_id"`
 }
 
-// Recipient returns chat ID (see Recipient interface).
-func (c *Chat) Recipient() string {
-	return strconv.FormatInt(c.ID, 10)
-}
-
 // ChatMember object represents information about a single chat member.
 type ChatMember struct {
 	Rights
@@ -90,6 +106,7 @@ type ChatMember struct {
 	Role      MemberStatus `json:"status"`
 	Title     string       `json:"custom_title"`
 	Anonymous bool         `json:"is_anonymous"`
+	Member    bool         `json:"is_member,omitempty"`
 
 	// Date when restrictions will be lifted for the user, unix time.
 	//
@@ -100,6 +117,48 @@ type ChatMember struct {
 	// Use tele.Forever().
 	//
 	RestrictedUntil int64 `json:"until_date,omitempty"`
+
+	JoinToSend    string `json:"join_to_send_messages"`
+	JoinByRequest string `json:"join_by_request"`
+}
+
+// MemberStatus is one's chat status.
+type MemberStatus string
+
+const (
+	Creator       MemberStatus = "creator"
+	Administrator MemberStatus = "administrator"
+	Member        MemberStatus = "member"
+	Restricted    MemberStatus = "restricted"
+	Left          MemberStatus = "left"
+	Kicked        MemberStatus = "kicked"
+)
+
+// ChatMemberUpdate object represents changes in the status of a chat member.
+type ChatMemberUpdate struct {
+	// Chat where the user belongs to.
+	Chat *Chat `json:"chat"`
+
+	// Sender which user the action was triggered.
+	Sender *User `json:"from"`
+
+	// Unixtime, use Date() to get time.Time.
+	Unixtime int64 `json:"date"`
+
+	// Previous information about the chat member.
+	OldChatMember *ChatMember `json:"old_chat_member"`
+
+	// New information about the chat member.
+	NewChatMember *ChatMember `json:"new_chat_member"`
+
+	// (Optional) InviteLink which was used by the user to
+	// join the chat; for joining by invite link events only.
+	InviteLink *ChatInviteLink `json:"invite_link"`
+}
+
+// Time returns the moment of the change in local time.
+func (c *ChatMemberUpdate) Time() time.Time {
+	return time.Unix(c.Unixtime, 0)
 }
 
 // ChatID represents a chat or an user integer ID, which can be used
@@ -109,14 +168,13 @@ type ChatMember struct {
 //
 // Example:
 //
-//		group := tele.ChatID(-100756389456)
-//		b.Send(group, "Hello!")
+//	group := tele.ChatID(-100756389456)
+//	b.Send(group, "Hello!")
 //
-//		type Config struct {
-//			AdminGroup tele.ChatID `json:"admin_group"`
-//		}
-//		b.Send(conf.AdminGroup, "Hello!")
-//
+//	type Config struct {
+//		AdminGroup tele.ChatID `json:"admin_group"`
+//	}
+//	b.Send(conf.AdminGroup, "Hello!")
 type ChatID int64
 
 // Recipient returns chat ID (see Recipient interface).
@@ -132,6 +190,12 @@ type ChatJoinRequest struct {
 	// Sender is the user that sent the join request.
 	Sender *User `json:"from"`
 
+	// UserChatID is an ID of a private chat with the user
+	// who sent the join request. The bot can use this ID
+	// for 5 minutes to send messages until the join request
+	// is processed, assuming no other administrator contacted the user.
+	UserChatID int64 `json:"user_chat_id"`
+
 	// Unixtime, use ChatJoinRequest.Time() to get time.Time.
 	Unixtime int64 `json:"date"`
 
@@ -143,9 +207,67 @@ type ChatJoinRequest struct {
 	InviteLink *ChatInviteLink `json:"invite_link"`
 }
 
+// ChatInviteLink object represents an invite for a chat.
+type ChatInviteLink struct {
+	// The invite link.
+	InviteLink string `json:"invite_link"`
+
+	// Invite link name.
+	Name string `json:"name"`
+
+	// The creator of the link.
+	Creator *User `json:"creator"`
+
+	// If the link is primary.
+	IsPrimary bool `json:"is_primary"`
+
+	// If the link is revoked.
+	IsRevoked bool `json:"is_revoked"`
+
+	// (Optional) Point in time when the link will expire,
+	// use ExpireDate() to get time.Time.
+	ExpireUnixtime int64 `json:"expire_date,omitempty"`
+
+	// (Optional) Maximum number of users that can be members of
+	// the chat simultaneously.
+	MemberLimit int `json:"member_limit,omitempty"`
+
+	// (Optional) True, if users joining the chat via the link need to
+	// be approved by chat administrators. If True, member_limit can't be specified.
+	JoinRequest bool `json:"creates_join_request"`
+
+	// (Optional) Number of pending join requests created using this link.
+	PendingCount int `json:"pending_join_request_count"`
+}
+
+// ExpireDate returns the moment of the link expiration in local time.
+func (c *ChatInviteLink) ExpireDate() time.Time {
+	return time.Unix(c.ExpireUnixtime, 0)
+}
+
 // Time returns the moment of chat join request sending in local time.
 func (r ChatJoinRequest) Time() time.Time {
 	return time.Unix(r.Unixtime, 0)
+}
+
+// InviteLink should be used to export chat's invite link.
+func (b *Bot) InviteLink(chat *Chat) (string, error) {
+	params := map[string]string{
+		"chat_id": chat.Recipient(),
+	}
+
+	data, err := b.Raw("exportChatInviteLink", params)
+	if err != nil {
+		return "", err
+	}
+
+	var resp struct {
+		Result string
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return "", wrapError(err)
+	}
+	return resp.Result, nil
 }
 
 // CreateInviteLink creates an additional invite link for a chat.
@@ -237,8 +359,8 @@ func (b *Bot) RevokeInviteLink(chat Recipient, link string) (*ChatInviteLink, er
 	return &resp.Result, nil
 }
 
-// ApproveChatJoinRequest approves a chat join request.
-func (b *Bot) ApproveChatJoinRequest(chat Recipient, user *User) error {
+// ApproveJoinRequest approves a chat join request.
+func (b *Bot) ApproveJoinRequest(chat Recipient, user *User) error {
 	params := map[string]string{
 		"chat_id": chat.Recipient(),
 		"user_id": user.Recipient(),
@@ -252,8 +374,8 @@ func (b *Bot) ApproveChatJoinRequest(chat Recipient, user *User) error {
 	return extractOk(data)
 }
 
-// DeclineChatJoinRequest declines a chat join request.
-func (b *Bot) DeclineChatJoinRequest(chat Recipient, user *User) error {
+// DeclineJoinRequest declines a chat join request.
+func (b *Bot) DeclineJoinRequest(chat Recipient, user *User) error {
 	params := map[string]string{
 		"chat_id": chat.Recipient(),
 		"user_id": user.Recipient(),
@@ -265,4 +387,81 @@ func (b *Bot) DeclineChatJoinRequest(chat Recipient, user *User) error {
 	}
 
 	return extractOk(data)
+}
+
+// SetGroupTitle should be used to update group title.
+func (b *Bot) SetGroupTitle(chat *Chat, title string) error {
+	params := map[string]string{
+		"chat_id": chat.Recipient(),
+		"title":   title,
+	}
+
+	_, err := b.Raw("setChatTitle", params)
+	return err
+}
+
+// SetGroupDescription should be used to update group description.
+func (b *Bot) SetGroupDescription(chat *Chat, description string) error {
+	params := map[string]string{
+		"chat_id":     chat.Recipient(),
+		"description": description,
+	}
+
+	_, err := b.Raw("setChatDescription", params)
+	return err
+}
+
+// SetGroupPhoto should be used to update group photo.
+func (b *Bot) SetGroupPhoto(chat *Chat, p *Photo) error {
+	params := map[string]string{
+		"chat_id": chat.Recipient(),
+	}
+
+	_, err := b.sendFiles("setChatPhoto", map[string]File{"photo": p.File}, params)
+	return err
+}
+
+// SetGroupStickerSet should be used to update group's group sticker set.
+func (b *Bot) SetGroupStickerSet(chat *Chat, setName string) error {
+	params := map[string]string{
+		"chat_id":          chat.Recipient(),
+		"sticker_set_name": setName,
+	}
+
+	_, err := b.Raw("setChatStickerSet", params)
+	return err
+}
+
+// SetGroupPermissions sets default chat permissions for all members.
+func (b *Bot) SetGroupPermissions(chat *Chat, perms Rights) error {
+	params := map[string]interface{}{
+		"chat_id":     chat.Recipient(),
+		"permissions": perms,
+	}
+	if perms.Independent {
+		params["use_independent_chat_permissions"] = true
+	}
+
+	_, err := b.Raw("setChatPermissions", params)
+	return err
+}
+
+// DeleteGroupPhoto should be used to just remove group photo.
+func (b *Bot) DeleteGroupPhoto(chat *Chat) error {
+	params := map[string]string{
+		"chat_id": chat.Recipient(),
+	}
+
+	_, err := b.Raw("deleteChatPhoto", params)
+	return err
+}
+
+// DeleteGroupStickerSet should be used to just remove group sticker set.
+func (b *Bot) DeleteGroupStickerSet(chat *Chat) error {
+	params := map[string]string{
+		"chat_id": chat.Recipient(),
+	}
+
+	_, err := b.Raw("deleteChatStickerSet", params)
+	return err
 }

@@ -19,12 +19,16 @@ import (
 // ToProto transforms a formatted prometheus rulegroup to a rule group protobuf
 func ToProto(user string, namespace string, rl rulefmt.RuleGroup) *RuleGroupDesc {
 	rg := RuleGroupDesc{
-		Name:          rl.Name,
-		Namespace:     namespace,
-		Interval:      time.Duration(rl.Interval),
-		Rules:         formattedRuleToProto(rl.Rules),
-		User:          user,
-		SourceTenants: rl.SourceTenants,
+		Name:                          rl.Name,
+		Namespace:                     namespace,
+		Interval:                      time.Duration(rl.Interval),
+		Rules:                         formattedRuleToProto(rl.Rules),
+		User:                          user,
+		SourceTenants:                 rl.SourceTenants,
+		AlignEvaluationTimeOnInterval: rl.AlignEvaluationTimeOnInterval,
+	}
+	if rl.EvaluationDelay != nil && *rl.EvaluationDelay > 0 {
+		rg.EvaluationDelay = time.Duration(*rl.EvaluationDelay)
 	}
 	return &rg
 }
@@ -33,12 +37,13 @@ func formattedRuleToProto(rls []rulefmt.RuleNode) []*RuleDesc {
 	rules := make([]*RuleDesc, len(rls))
 	for i := range rls {
 		rules[i] = &RuleDesc{
-			Expr:        rls[i].Expr.Value,
-			Record:      rls[i].Record.Value,
-			Alert:       rls[i].Alert.Value,
-			For:         time.Duration(rls[i].For),
-			Labels:      mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Labels)),
-			Annotations: mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Annotations)),
+			Expr:          rls[i].Expr.Value,
+			Record:        rls[i].Record.Value,
+			Alert:         rls[i].Alert.Value,
+			For:           time.Duration(rls[i].For),
+			KeepFiringFor: time.Duration(rls[i].KeepFiringFor),
+			Labels:        mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Labels)),
+			Annotations:   mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Annotations)),
 		}
 	}
 
@@ -48,10 +53,15 @@ func formattedRuleToProto(rls []rulefmt.RuleNode) []*RuleDesc {
 // FromProto generates a rulefmt RuleGroup
 func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 	formattedRuleGroup := rulefmt.RuleGroup{
-		Name:          rg.GetName(),
-		Interval:      model.Duration(rg.Interval),
-		Rules:         make([]rulefmt.RuleNode, len(rg.GetRules())),
-		SourceTenants: rg.GetSourceTenants(),
+		Name:                          rg.GetName(),
+		Interval:                      model.Duration(rg.Interval),
+		Rules:                         make([]rulefmt.RuleNode, len(rg.GetRules())),
+		SourceTenants:                 rg.GetSourceTenants(),
+		AlignEvaluationTimeOnInterval: rg.GetAlignEvaluationTimeOnInterval(),
+	}
+	if rg.EvaluationDelay > 0 {
+		formattedRuleGroup.EvaluationDelay = new(model.Duration)
+		*formattedRuleGroup.EvaluationDelay = model.Duration(rg.EvaluationDelay)
 	}
 
 	for i, rl := range rg.GetRules() {
@@ -59,10 +69,11 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 		exprNode.SetString(rl.GetExpr())
 
 		newRule := rulefmt.RuleNode{
-			Expr:        exprNode,
-			Labels:      mimirpb.FromLabelAdaptersToLabels(rl.Labels).Map(),
-			Annotations: mimirpb.FromLabelAdaptersToLabels(rl.Annotations).Map(),
-			For:         model.Duration(rl.GetFor()),
+			Expr:          exprNode,
+			Labels:        mimirpb.FromLabelAdaptersToLabels(rl.Labels).Map(),
+			Annotations:   mimirpb.FromLabelAdaptersToLabels(rl.Annotations).Map(),
+			For:           model.Duration(rl.GetFor()),
+			KeepFiringFor: model.Duration(rl.GetKeepFiringFor()),
 		}
 
 		if rl.GetRecord() != "" {

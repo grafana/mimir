@@ -38,16 +38,22 @@ spec:
     spec:
       serviceAccountName: test-enterprise-configmap-values-mimir
       securityContext:
-        {}
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-configmap-values
+            app.kubernetes.io/component: ingester
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -63,6 +69,8 @@ spec:
             name: test-enterprise-configmap-values-mimir-runtime
         - name: storage
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
       containers:
         - name: ingester
           imagePullPolicy: IfNotPresent
@@ -71,6 +79,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-default"
+            - "-server.grpc-max-concurrent-streams=500"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -80,6 +89,8 @@ spec:
               mountPath: "/data"
             - name: license
               mountPath: /license
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -98,12 +109,16 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            requests:
-              cpu: 10m
-              memory: 512Mi
+            limits: null
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
           envFrom:
             - secretRef:
                 name: mimir-minio-secret

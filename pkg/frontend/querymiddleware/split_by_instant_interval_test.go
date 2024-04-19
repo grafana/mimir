@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql"
@@ -19,8 +20,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -35,16 +36,21 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 			require.NoError(t, err)
 
 			var (
-				numSeries          = 1000
-				numStaleSeries     = 100
-				numHistograms      = 1000
-				numStaleHistograms = 100
-				histogramBuckets   = []float64{1.0, 2.0, 4.0, 10.0, 100.0, math.Inf(1)}
+				numSeries                = 1000
+				numStaleSeries           = 100
+				numConvHistograms        = 1000
+				numStaleConvHistograms   = 100
+				histogramBuckets         = []float64{1.0, 2.0, 4.0, 10.0, 100.0, math.Inf(1)}
+				numNativeHistograms      = 1000
+				numStaleNativeHistograms = 100
 			)
 
 			tests := map[string]struct {
-				query                string
-				expectedSplitQueries int
+				query                        string
+				expectedSplitQueries         int
+				expectedSkippedSmallInterval int
+				expectedSkippedSubquery      int
+				expectedSkippedNonSplittable int
 			}{
 				// Splittable range vector aggregators
 				"avg_over_time": {
@@ -118,10 +124,6 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 				},
 				"floor": {
 					query:                `floor(sum_over_time(metric_counter[3m]))`,
-					expectedSplitQueries: 3,
-				},
-				"histogram_quantile": {
-					query:                `histogram_quantile(0.5, rate(metric_histogram_bucket[3m]))`,
 					expectedSplitQueries: 3,
 				},
 				"label_join": {
@@ -300,7 +302,11 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 					query:                fmt.Sprintf(`min_over_time(metric_counter[3m] offset 1m @ %v)`, start.Unix()),
 					expectedSplitQueries: 3,
 				},
-				// Histograms
+				// Conventional Histograms
+				"histogram_quantile": {
+					query:                `histogram_quantile(0.5, rate(metric_histogram_bucket[3m]))`,
+					expectedSplitQueries: 3,
+				},
 				"histogram_quantile() grouping only 'by' le": {
 					query:                `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[3m])))`,
 					expectedSplitQueries: 3,
@@ -317,90 +323,118 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 					query:                `histogram_quantile(0.5, sum by(unique, le) (rate(metric_histogram_bucket{group_1="0"}[3m])))`,
 					expectedSplitQueries: 3,
 				},
+				// Native Histograms
+				"sum(rate) for native histogram": {
+					query:                `sum(rate(metric_native_histogram[3m]))`,
+					expectedSplitQueries: 3,
+				},
+				"sum(rate) grouping 'by' for native histogram": {
+					query:                `sum by(group_1) (rate(metric_native_histogram[3m]))`,
+					expectedSplitQueries: 3,
+				},
 				// Subqueries
 				"subquery sum_over_time": {
-					query:                `sum_over_time(metric_counter[1h:5m])`,
-					expectedSplitQueries: 0,
+					query:                   `sum_over_time(metric_counter[1h:5m])`,
+					expectedSplitQueries:    0,
+					expectedSkippedSubquery: 1,
 				},
 				"subquery sum(rate)": {
-					query:                `sum(rate(metric_counter[30m:5s]))`,
-					expectedSplitQueries: 0,
+					query:                   `sum(rate(metric_counter[30m:5s]))`,
+					expectedSplitQueries:    0,
+					expectedSkippedSubquery: 1,
 				},
 				"subquery sum grouping 'by'": {
-					query:                `sum(sum_over_time(metric_counter[1h:5m]) * 60) by (group_1)`,
-					expectedSplitQueries: 0,
+					query:                   `sum(sum_over_time(metric_counter[1h:5m]) * 60) by (group_1)`,
+					expectedSplitQueries:    0,
+					expectedSkippedSubquery: 1,
 				},
 				// should not be mapped if both operands are not splittable
 				//   - first operand `rate(metric_counter[1m])` has a smaller range interval than the configured splitting
 				//   - second operand `rate(metric_counter[5h:5m])` is a subquery
 				"rate(1m) / rate(subquery) > 0.5": {
-					query:                `rate(metric_counter[1m]) / rate(metric_counter[5h:5m]) > 0.5`,
-					expectedSplitQueries: 0,
+					query:                        `rate(metric_counter[1m]) / rate(metric_counter[5h:5m]) > 0.5`,
+					expectedSplitQueries:         0,
+					expectedSkippedSmallInterval: 1,
 				},
 				// should not be mapped if range vector aggregator is not splittable
 				"absent_over_time": {
-					query:                `absent_over_time(nonexistent[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `absent_over_time(nonexistent[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"changes": {
-					query:                `changes(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `changes(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"delta": {
-					query:                `delta(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `delta(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"deriv": {
-					query:                `deriv(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `deriv(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"holt_winters": {
-					query:                `holt_winters(metric_counter[1m], 0.5, 0.9)`,
-					expectedSplitQueries: 0,
+					query:                        `holt_winters(metric_counter[1m], 0.5, 0.9)`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"idelta": {
-					query:                `idelta(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `idelta(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"irate": {
-					query:                `irate(metric_counter[3m])`,
-					expectedSplitQueries: 0,
+					query:                        `irate(metric_counter[3m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"last_over_time": {
-					query:                `last_over_time(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `last_over_time(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"predict_linear": {
-					query:                `last_over_time(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `last_over_time(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"quantile_over_time": {
-					query:                `quantile_over_time(0.95, metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `quantile_over_time(0.95, metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"resets": {
-					query:                `resets(metric_counter[3m])`,
-					expectedSplitQueries: 0,
+					query:                        `resets(metric_counter[3m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"stddev_over_time": {
-					query:                `stddev_over_time(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `stddev_over_time(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"stdvar_over_time": {
-					query:                `stdvar_over_time(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `stdvar_over_time(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"time()": {
-					query:                `time()`,
-					expectedSplitQueries: 0,
+					query:                        `time()`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"vector(10)": {
-					query:                `vector(10)`,
-					expectedSplitQueries: 0,
+					query:                        `vector(10)`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 			}
 
-			series := make([]*promql.StorageSeries, 0, numSeries+(numHistograms*len(histogramBuckets)))
+			series := make([]*promql.StorageSeries, 0, numSeries+(numConvHistograms*len(histogramBuckets))+numNativeHistograms)
 			seriesID := 0
 			end := start.Add(30 * time.Minute)
 
@@ -433,21 +467,33 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 				start.Add(5*time.Minute), end, step, factor(2)))
 			seriesID++
 
-			// Add histogram series.
-			for i := 0; i < numHistograms; i++ {
+			// Add conventional histogram series.
+			for i := 0; i < numConvHistograms; i++ {
 				for bucketIdx, bucketLe := range histogramBuckets {
 					// We expect each bucket to have a value higher than the previous one.
 					gen := factor(float64(i) * float64(bucketIdx) * 0.1)
-					if i >= numHistograms-numStaleHistograms {
+					if i >= numConvHistograms-numStaleConvHistograms {
 						// Wrap the generator to inject the staleness marker between minute 10 and 20.
 						gen = stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
 					}
 
-					series = append(series, newSeries(newTestHistogramLabels(seriesID, bucketLe),
+					series = append(series, newSeries(newTestConventionalHistogramLabels(seriesID, bucketLe),
 						start.Add(-lookbackDelta), end, step, gen))
 				}
 
 				// Increase the series ID after all per-bucket series have been created.
+				seriesID++
+			}
+
+			// Add native histogram series.
+			for i := 0; i < numNativeHistograms; i++ {
+				gen := factor(float64(i) * 0.1)
+				if i >= numNativeHistograms-numStaleNativeHistograms {
+					// Wrap the generator to inject the staleness marker between minute 10 and 20.
+					gen = stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
+				}
+
+				series = append(series, newNativeHistogramSeries(newTestNativeHistogramLabels(seriesID), start.Add(-lookbackDelta), end, step, gen))
 				seriesID++
 			}
 
@@ -460,7 +506,7 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 
 				t.Run(testName, func(t *testing.T) {
 					t.Parallel()
-					reqs := []Request{
+					reqs := []MetricsQueryRequest{
 						&PrometheusInstantQueryRequest{
 							Path:  "/query",
 							Time:  util.TimeToMillis(end),
@@ -478,7 +524,8 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 							}
 
 							// Run the query with the normal engine
-							expectedRes, err := downstream.Do(context.Background(), req)
+							_, ctx := stats.ContextWithEmptyStats(context.Background())
+							expectedRes, err := downstream.Do(ctx, req)
 							require.Nil(t, err)
 							expectedPrometheusRes := expectedRes.(*PrometheusResponse)
 							sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
@@ -490,7 +537,7 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 							splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), engine, reg)
 
 							// Run the query with splitting
-							splitRes, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+							splitRes, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(ctx, "test"), req)
 							require.Nil(t, err)
 
 							splitPrometheusRes := splitRes.(*PrometheusResponse)
@@ -500,10 +547,8 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 
 							// Assert metrics
 							expectedSucceeded := 1
-							expectedNoop := 0
 							if testData.expectedSplitQueries == 0 {
 								expectedSucceeded = 0
-								expectedNoop = 1
 							}
 
 							assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
@@ -521,14 +566,21 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 
 						# HELP cortex_frontend_instant_query_splitting_rewrites_skipped_total Total number of instant queries the query-frontend skipped or failed to split by interval.
 						# TYPE cortex_frontend_instant_query_splitting_rewrites_skipped_total counter
-						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="parsing-failed"} 0
 						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="mapping-failed"} 0
-						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="noop"} %d
-					`, testData.expectedSplitQueries, expectedSucceeded, expectedNoop)),
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="non-splittable"} %d
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="small-interval"} %d
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="subquery"} %d
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="parsing-failed"} 0
+					`, testData.expectedSplitQueries, expectedSucceeded, testData.expectedSkippedNonSplittable,
+								testData.expectedSkippedSmallInterval, testData.expectedSkippedSubquery)),
 								"cortex_frontend_instant_query_splitting_rewrites_attempted_total",
 								"cortex_frontend_instant_query_split_queries_total",
 								"cortex_frontend_instant_query_splitting_rewrites_succeeded_total",
 								"cortex_frontend_instant_query_splitting_rewrites_skipped_total"))
+
+							// Assert query stats from context
+							queryStats := stats.FromContext(ctx)
+							assert.Equal(t, uint32(testData.expectedSplitQueries), queryStats.LoadSplitQueries())
 						})
 					}
 				})

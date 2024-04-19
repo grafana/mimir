@@ -5,6 +5,15 @@
     // Raise the msg size for the GRPC messages query-frontend <-> querier by this factor when query sharding is enabled
     query_sharding_msg_size_factor: 4,
 
+    // The expectation is that if sharding is enabled, we would run more but smaller
+    // queries on the queriers. However this can't be extended too far because several
+    // queries (including instant queries) can't be sharded. Therefore, we must strike a balance
+    // which allows us to process more sharded queries in parallel when requested, but not overload
+    // queriers during normal queries.
+    //
+    // NOTE: we're intentionally not overriding ruler_querier_max_concurrency because it inherits querier_max_concurrency by default
+    querier_max_concurrency: if !$._config.query_sharding_enabled then super.querier_max_concurrency else 16,
+
     overrides+: if $._config.query_sharding_enabled then {
       // Target 6M active series.
       big_user+:: {
@@ -18,6 +27,16 @@
 
       // Target 16M active series.
       mega_user+:: {
+        query_sharding_total_shards: 8,
+      },
+
+      // Target 24M active series.
+      user_24M+:: {
+        query_sharding_total_shards: 8,
+      },
+
+      // Target 32M active series.
+      user_32M+:: {
         query_sharding_total_shards: 8,
       },
     }
@@ -36,7 +55,11 @@
       replicas: std.max(super.replicas, min_replicas),
     },
   },
-  query_frontend_deployment+: if $._config.query_sharding_enabled then ensure_replica_ratio_to_queriers else {},
+
+  query_frontend_deployment: overrideSuperIfExists(
+    'query_frontend_deployment',
+    if $._config.query_sharding_enabled then ensure_replica_ratio_to_queriers else {}
+  ),
 
   query_frontend_args+:: if !$._config.query_sharding_enabled then {} else
     // When sharding is enabled, query-frontend runs PromQL engine internally.
@@ -64,14 +87,11 @@
   },
 
   querier_args+:: if !$._config.query_sharding_enabled then {} else {
-    // The expectation is that if sharding is enabled, we would run more but smaller
-    // queries on the queriers. However this can't be extended too far because several
-    // queries (including instant queries) can't be sharded. Therefore, we must strike a balance
-    // which allows us to process more sharded queries in parallel when requested, but not overload
-    // queriers during normal queries.
-    'querier.max-concurrent': 16,
-
     // Raise the msg size for the GRPC messages query-frontend <-> querier by a factor when query sharding is enabled
     'querier.frontend-client.grpc-max-send-msg-size': super['querier.frontend-client.grpc-max-send-msg-size'] * $._config.query_sharding_msg_size_factor,
   },
+
+  // Utility used to override a field only if exists in super.
+  local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
+    super[name] + override,
 }

@@ -15,9 +15,8 @@ import (
 )
 
 const (
-	httpPort   = 8080
-	grpcPort   = 9095
-	GossipPort = 9094
+	httpPort = 8080
+	grpcPort = 9095
 )
 
 // GetDefaultImage returns the Docker image to use to run Mimir.
@@ -29,6 +28,24 @@ func GetDefaultImage() string {
 	}
 
 	return "grafana/mimir:latest"
+}
+
+func GetDefaultEnvVariables() map[string]string {
+	// Add jaeger configuration with a 50% sampling rate so that we can trigger
+	// code paths that rely on a trace being sampled.
+	envVars := map[string]string{
+		"JAEGER_SAMPLER_TYPE":  "probabilistic",
+		"JAEGER_SAMPLER_PARAM": "0.5",
+	}
+
+	str := os.Getenv("MIMIR_ENV_VARS_JSON")
+	if str == "" {
+		return envVars
+	}
+	if err := json.Unmarshal([]byte(str), &envVars); err != nil {
+		panic(fmt.Errorf("can't unmarshal MIMIR_ENV_VARS_JSON as JSON, it should be a map of env var name to value: %s", err))
+	}
+	return envVars
 }
 
 func GetMimirtoolImage() string {
@@ -54,13 +71,14 @@ func getExtraFlags() map[string]string {
 func newMimirServiceFromOptions(name string, defaultFlags, flags map[string]string, options ...Option) *MimirService {
 	o := newOptions(options)
 	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags, getExtraFlags()))
-	binaryName := getBinaryNameForBackwardsCompatibility(o.Image)
+	binaryName := getBinaryNameForBackwardsCompatibility()
 
 	return NewMimirService(
 		name,
 		o.Image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(serviceFlags)...),
 		e2e.NewHTTPReadinessProbe(o.HTTPPort, "/ready", 200, 299),
+		o.Environment,
 		o.HTTPPort,
 		o.GRPCPort,
 		o.OtherPorts...,
@@ -77,8 +95,10 @@ func NewDistributor(name string, consulAddress string, flags map[string]string, 
 			"-ingester.ring.replication-factor": "1",
 			"-distributor.remote-timeout":       "2s", // Fail fast in integration tests.
 			// Configure the ingesters ring backend
-			"-ingester.ring.store":           "consul",
-			"-ingester.ring.consul.hostname": consulAddress,
+			"-ingester.ring.store":                     "consul",
+			"-ingester.ring.consul.hostname":           consulAddress,
+			"-ingester.partition-ring.store":           "consul",
+			"-ingester.partition-ring.consul.hostname": consulAddress,
 			// Configure the distributor ring backend
 			"-distributor.ring.store": "memberlist",
 		},
@@ -95,8 +115,10 @@ func NewQuerier(name string, consulAddress string, flags map[string]string, opti
 			"-log.level":                        "warn",
 			"-ingester.ring.replication-factor": "1",
 			// Ingesters ring backend.
-			"-ingester.ring.store":           "consul",
-			"-ingester.ring.consul.hostname": consulAddress,
+			"-ingester.ring.store":                     "consul",
+			"-ingester.ring.consul.hostname":           consulAddress,
+			"-ingester.partition-ring.store":           "consul",
+			"-ingester.partition-ring.consul.hostname": consulAddress,
 			// Query-frontend worker.
 			"-querier.frontend-client.backoff-min-period": "100ms",
 			"-querier.frontend-client.backoff-max-period": "100ms",
@@ -138,18 +160,21 @@ func NewIngester(name string, consulAddress string, flags map[string]string, opt
 			"-log.level":                "warn",
 			"-ingester.ring.num-tokens": "512",
 			// Configure the ingesters ring backend
-			"-ingester.ring.store":           "consul",
-			"-ingester.ring.consul.hostname": consulAddress,
+			"-ingester.ring.store":                     "consul",
+			"-ingester.ring.consul.hostname":           consulAddress,
+			"-ingester.partition-ring.store":           "consul",
+			"-ingester.partition-ring.consul.hostname": consulAddress,
 			// Speed up the startup.
-			"-ingester.ring.min-ready-duration":          "0s",
-			"-ingester.ring.readiness-check-ring-health": "false",
+			"-ingester.ring.min-ready-duration": "0s",
+			// Enable native histograms
+			"-ingester.native-histograms-ingestion-enabled": "true",
 		},
 		flags,
 		options...,
 	)
 }
 
-func getBinaryNameForBackwardsCompatibility(image string) string {
+func getBinaryNameForBackwardsCompatibility() string {
 	return "mimir"
 }
 
@@ -189,8 +214,9 @@ func NewCompactor(name string, consulAddress string, flags map[string]string, op
 			"-compactor.ring.store":           "consul",
 			"-compactor.ring.consul.hostname": consulAddress,
 			// Startup quickly.
-			"-compactor.ring.wait-stability-min-duration": "0",
-			"-compactor.ring.wait-stability-max-duration": "0",
+			"-compactor.ring.wait-stability-min-duration":   "0",
+			"-compactor.ring.wait-stability-max-duration":   "0",
+			"-compactor.first-level-compaction-wait-period": "0s",
 		},
 		flags,
 		options...,
@@ -206,8 +232,52 @@ func NewSingleBinary(name string, flags map[string]string, options ...Option) *M
 			"-target":    "all",
 			"-log.level": "warn",
 			// Speed up the startup.
-			"-ingester.ring.min-ready-duration":          "0s",
-			"-ingester.ring.readiness-check-ring-health": "false",
+			"-ingester.ring.min-ready-duration": "0s",
+			// Enable native histograms
+			"-ingester.native-histograms-ingestion-enabled": "true",
+		},
+		flags,
+		options...,
+	)
+}
+
+func NewReadInstance(name string, flags map[string]string, options ...Option) *MimirService {
+	return newMimirServiceFromOptions(
+		name,
+		map[string]string{
+			"-target":                           "read",
+			"-log.level":                        "warn",
+			"-ingester.ring.replication-factor": "1",
+		},
+		flags,
+		options...,
+	)
+}
+
+func NewWriteInstance(name string, flags map[string]string, options ...Option) *MimirService {
+	return newMimirServiceFromOptions(
+		name,
+		map[string]string{
+			"-target":                           "write",
+			"-log.level":                        "warn",
+			"-ingester.ring.replication-factor": "1",
+			// Speed up startup.
+			"-ingester.ring.min-ready-duration": "0s",
+			// Enable native histograms
+			"-ingester.native-histograms-ingestion-enabled": "true",
+		},
+		flags,
+		options...,
+	)
+}
+
+func NewBackendInstance(name string, flags map[string]string, options ...Option) *MimirService {
+	return newMimirServiceFromOptions(
+		name,
+		map[string]string{
+			"-target":                           "backend",
+			"-log.level":                        "warn",
+			"-ingester.ring.replication-factor": "1",
 		},
 		flags,
 		options...,
@@ -232,13 +302,14 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, options ...Opt
 		"-target":    "alertmanager",
 		"-log.level": "warn",
 	}, flags, getExtraFlags()))
-	binaryName := getBinaryNameForBackwardsCompatibility(o.Image)
+	binaryName := getBinaryNameForBackwardsCompatibility()
 
 	return NewMimirService(
 		name,
 		o.Image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(serviceFlags)...),
 		e2e.NewTCPReadinessProbe(o.HTTPPort),
+		o.Environment,
 		o.HTTPPort,
 		o.GRPCPort,
 		o.OtherPorts...,
@@ -252,35 +323,36 @@ func NewRuler(name string, consulAddress string, flags map[string]string, option
 			"-target":    "ruler",
 			"-log.level": "warn",
 			// Configure the ingesters ring backend
-			"-ingester.ring.store":           "consul",
-			"-ingester.ring.consul.hostname": consulAddress,
+			"-ingester.ring.store":                     "consul",
+			"-ingester.ring.consul.hostname":           consulAddress,
+			"-ingester.partition-ring.store":           "consul",
+			"-ingester.partition-ring.consul.hostname": consulAddress,
 		},
 		flags,
 		options...,
 	)
 }
 
-func NewPurger(name string, flags map[string]string, options ...Option) *MimirService {
+func NewOverridesExporter(name string, consulAddress string, flags map[string]string, options ...Option) *MimirService {
 	return newMimirServiceFromOptions(
 		name,
 		map[string]string{
-			"-target":                   "purger",
-			"-log.level":                "warn",
-			"-purger.object-store-type": "filesystem",
-			"-local.chunk-directory":    e2e.ContainerSharedDir,
-		},
-		flags,
-		options...,
-	)
+			"-target":    "overrides-exporter",
+			"-log.level": "warn",
+			// overrides-exporter ring backend.
+			"-overrides-exporter.ring.store":           "consul",
+			"-overrides-exporter.ring.consul.hostname": consulAddress,
+		}, flags, options...)
 }
 
 // Options holds a set of options for running services, they can be altered passing Option funcs.
 type Options struct {
-	Image      string
-	MapFlags   FlagMapper
-	OtherPorts []int
-	HTTPPort   int
-	GRPCPort   int
+	Image       string
+	MapFlags    FlagMapper
+	OtherPorts  []int
+	HTTPPort    int
+	GRPCPort    int
+	Environment map[string]string
 }
 
 // Option modifies options.
@@ -289,10 +361,11 @@ type Option func(*Options)
 // newOptions creates an Options with default values and applies the options provided.
 func newOptions(options []Option) *Options {
 	o := &Options{
-		Image:    GetDefaultImage(),
-		MapFlags: NoopFlagMapper,
-		HTTPPort: httpPort,
-		GRPCPort: grpcPort,
+		Image:       GetDefaultImage(),
+		MapFlags:    NoopFlagMapper,
+		HTTPPort:    httpPort,
+		GRPCPort:    grpcPort,
+		Environment: GetDefaultEnvVariables(),
 	}
 	for _, opt := range options {
 		opt(o)
@@ -342,7 +415,7 @@ func WithConfigFile(configFile string) Option {
 }
 
 // WithNoopOption returns an option that doesn't change anything.
-func WithNoopOption() Option { return func(options *Options) {} }
+func WithNoopOption() Option { return func(*Options) {} }
 
 // FlagMapper is the type of function that maps flags, just to reduce some verbosity.
 type FlagMapper func(flags map[string]string) map[string]string

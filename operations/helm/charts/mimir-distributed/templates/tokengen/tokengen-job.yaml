@@ -21,9 +21,8 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "tokengen") | nindent 8 }}
-        {{- with .Values.tokengenJob.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+      annotations:
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "tokengen") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
@@ -31,7 +30,7 @@ spec:
       priorityClassName: {{ .Values.tokengenJob.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.tokengenJob.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "tokengen") | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -59,6 +58,8 @@ spec:
               mountPath: /etc/mimir
             - name: license
               mountPath: /license
+            - name: active-queries
+              mountPath: /active-query-tracker
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
@@ -86,6 +87,8 @@ spec:
           secret:
             secretName: {{ tpl .Values.license.secretName . }}
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
 {{- end -}}
 {{- end -}}

@@ -1,0 +1,82 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graphite-enabled-values-minio
+  labels:
+    app: minio
+    chart: minio-5.0.14
+    release: graphite-enabled-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: graphite-enabled-values
+  template:
+    metadata:
+      name: graphite-enabled-values-minio
+      labels:
+        app: minio
+        release: graphite-enabled-values
+      annotations:
+        checksum/secrets: 545fbc32bd7ff7e1401207d79924ed32e95c84173658cd23028f18854e928aab
+        checksum/config: 00303abe67d4352d4c5ec69c61f51ddf70ebb97c649e140cde0d85bebf6839f4
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: graphite-enabled-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: graphite-enabled-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: graphite-enabled-values-minio
+        - name: minio-user
+          secret:
+            secretName: graphite-enabled-values-minio

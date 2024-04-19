@@ -4,21 +4,24 @@ package test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 )
 
 type testingLogger struct {
-	t *testing.T
+	t testing.TB
 }
 
-func NewTestingLogger(t *testing.T) log.Logger {
+func NewTestingLogger(t testing.TB) log.Logger {
 	return &testingLogger{
 		t: t,
 	}
 }
 
 func (l *testingLogger) Log(keyvals ...interface{}) error {
+	// Prepend log with timestamp.
+	keyvals = append([]interface{}{time.Now().String()}, keyvals...)
 	l.t.Log(keyvals...)
 	return nil
 }

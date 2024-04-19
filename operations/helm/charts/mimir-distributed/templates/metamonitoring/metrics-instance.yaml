@@ -1,5 +1,5 @@
 {{- with .Values.metaMonitoring.grafanaAgent }}
-{{- if .enabled }}
+{{- if and .enabled .metrics.enabled }}
 apiVersion: monitoring.grafana.com/v1alpha1
 kind: MetricsInstance
 metadata:
@@ -19,9 +19,7 @@ spec:
     {{- if or (.metrics).additionalRemoteWriteConfigs (.metrics).remote }}
     {{- range $i, $cfg := prepend ((.metrics).additionalRemoteWriteConfigs | default list) (.metrics).remote }}
     {{- with $cfg }}
-    {{- if $cfg.url }}
-    - {{- include "mimir.metaMonitoring.metrics.remoteWrite" (dict "ctx" $ "url" .url "auth" .auth "usernameKey" (printf "username-%d" $i) "headers" .headers ) | nindent 6 -}}
-    {{- end }}
+    {{- include "mimir.metaMonitoring.metrics.remoteWrite" (dict "ctx" $ "url" .url "auth" .auth "usernameKey" (printf "username-%d" $i) "headers" .headers ) | nindent 6 -}}
     {{- end }}
     {{- end }}
     {{- end }}

@@ -1,0 +1,25 @@
+{{- if .Values.gateway.route.enabled }}
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "gateway") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "gateway") | nindent 4 }}
+  {{- with .Values.gateway.route.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  host: {{ tpl .Values.gateway.route.host  $ | quote }}
+  to:
+    kind: Service
+    name: {{ include "mimir.gateway.service.name" . }}
+    weight: 100
+  port:
+    targetPort: http-metrics
+{{- with .Values.gateway.route.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+{{- end }}
+{{- end }}

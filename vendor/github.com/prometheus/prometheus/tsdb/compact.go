@@ -16,18 +16,18 @@ package tsdb
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/semaphore"
@@ -48,7 +48,7 @@ func ExponentialBlockRanges(minSize int64, steps, stepSize int) []int64 {
 	curRange := minSize
 	for i := 0; i < steps; i++ {
 		ranges = append(ranges, curRange)
-		curRange = curRange * int64(stepSize)
+		curRange *= int64(stepSize)
 	}
 
 	return ranges
@@ -64,7 +64,7 @@ type Compactor interface {
 
 	// Write persists a Block into a directory.
 	// No Block is written when resulting Block has 0 samples, and returns empty ulid.ULID{}.
-	Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error)
+	Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) (ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
@@ -83,59 +83,63 @@ type Compactor interface {
 
 // LeveledCompactor implements the Compactor interface.
 type LeveledCompactor struct {
-	metrics                     *compactorMetrics
+	metrics                     *CompactorMetrics
 	logger                      log.Logger
 	ranges                      []int64
 	chunkPool                   chunkenc.Pool
 	ctx                         context.Context
 	maxBlockChunkSegmentSize    int64
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
+	postingsEncoder             index.PostingsEncoder
 	enableOverlappingCompaction bool
-
-	concurrencyOpts LeveledCompactorConcurrencyOptions
+	concurrencyOpts             LeveledCompactorConcurrencyOptions
 }
 
-type compactorMetrics struct {
-	ran               prometheus.Counter
-	populatingBlocks  prometheus.Gauge
-	overlappingBlocks prometheus.Counter
-	duration          prometheus.Histogram
-	chunkSize         prometheus.Histogram
-	chunkSamples      prometheus.Histogram
-	chunkRange        prometheus.Histogram
+type CompactorMetrics struct {
+	Ran               prometheus.Counter
+	PopulatingBlocks  prometheus.Gauge
+	OverlappingBlocks prometheus.Counter
+	Duration          prometheus.Histogram
+	ChunkSize         prometheus.Histogram
+	ChunkSamples      prometheus.Histogram
+	ChunkRange        prometheus.Histogram
 }
 
-func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
-	m := &compactorMetrics{}
+// NewCompactorMetrics initializes metrics for Compactor.
+func NewCompactorMetrics(r prometheus.Registerer) *CompactorMetrics {
+	m := &CompactorMetrics{}
 
-	m.ran = prometheus.NewCounter(prometheus.CounterOpts{
+	m.Ran = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_total",
 		Help: "Total number of compactions that were executed for the partition.",
 	})
-	m.populatingBlocks = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.PopulatingBlocks = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_compaction_populating_block",
 		Help: "Set to 1 when a block is currently being written to the disk.",
 	})
-	m.overlappingBlocks = prometheus.NewCounter(prometheus.CounterOpts{
+	m.OverlappingBlocks = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_vertical_compactions_total",
 		Help: "Total number of compactions done on overlapping blocks.",
 	})
-	m.duration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "prometheus_tsdb_compaction_duration_seconds",
-		Help:    "Duration of compaction runs",
-		Buckets: prometheus.ExponentialBuckets(1, 2, 14),
+	m.Duration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:                            "prometheus_tsdb_compaction_duration_seconds",
+		Help:                            "Duration of compaction runs",
+		Buckets:                         prometheus.ExponentialBuckets(1, 2, 14),
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
-	m.chunkSize = prometheus.NewHistogram(prometheus.HistogramOpts{
+	m.ChunkSize = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_compaction_chunk_size_bytes",
 		Help:    "Final size of chunks on their first compaction",
 		Buckets: prometheus.ExponentialBuckets(32, 1.5, 12),
 	})
-	m.chunkSamples = prometheus.NewHistogram(prometheus.HistogramOpts{
+	m.ChunkSamples = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_compaction_chunk_samples",
 		Help:    "Final number of samples on their first compaction",
 		Buckets: prometheus.ExponentialBuckets(4, 1.5, 12),
 	})
-	m.chunkRange = prometheus.NewHistogram(prometheus.HistogramOpts{
+	m.ChunkRange = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_compaction_chunk_range_seconds",
 		Help:    "Final time range of chunks on their first compaction",
 		Buckets: prometheus.ExponentialBuckets(100, 4, 10),
@@ -143,26 +147,49 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 
 	if r != nil {
 		r.MustRegister(
-			m.ran,
-			m.populatingBlocks,
-			m.overlappingBlocks,
-			m.duration,
-			m.chunkRange,
-			m.chunkSamples,
-			m.chunkSize,
+			m.Ran,
+			m.PopulatingBlocks,
+			m.OverlappingBlocks,
+			m.Duration,
+			m.ChunkRange,
+			m.ChunkSamples,
+			m.ChunkSize,
 		)
 	}
 	return m
 }
 
-// NewLeveledCompactor returns a LeveledCompactor.
-func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, enableOverlappingCompaction bool) (*LeveledCompactor, error) {
-	return NewLeveledCompactorWithChunkSize(ctx, r, l, ranges, pool, chunks.DefaultChunkSegmentSize, mergeFunc, enableOverlappingCompaction)
+type LeveledCompactorOptions struct {
+	// PE specifies the postings encoder. It is called when compactor is writing out the postings for a label name/value pair during compaction.
+	// If it is nil then the default encoder is used. At the moment that is the "raw" encoder. See index.EncodePostingsRaw for more.
+	PE index.PostingsEncoder
+	// MaxBlockChunkSegmentSize is the max block chunk segment size. If it is 0 then the default chunks.DefaultChunkSegmentSize is used.
+	MaxBlockChunkSegmentSize int64
+	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge) is used.
+	MergeFunc storage.VerticalChunkSeriesMergeFunc
+	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.
+	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
+	EnableOverlappingCompaction bool
 }
 
-func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc, enableOverlappingCompaction bool) (*LeveledCompactor, error) {
+func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
+	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
+		MaxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
+		MergeFunc:                   mergeFunc,
+		EnableOverlappingCompaction: true,
+	})
+}
+
+func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
+	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
+		MergeFunc:                   mergeFunc,
+		EnableOverlappingCompaction: true,
+	})
+}
+
+func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, opts LeveledCompactorOptions) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
-		return nil, errors.Errorf("at least one range must be provided")
+		return nil, fmt.Errorf("at least one range must be provided")
 	}
 	if pool == nil {
 		pool = chunkenc.NewPool()
@@ -170,19 +197,29 @@ func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Register
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+	mergeFunc := opts.MergeFunc
 	if mergeFunc == nil {
 		mergeFunc = storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)
+	}
+	maxBlockChunkSegmentSize := opts.MaxBlockChunkSegmentSize
+	if maxBlockChunkSegmentSize == 0 {
+		maxBlockChunkSegmentSize = chunks.DefaultChunkSegmentSize
+	}
+	pe := opts.PE
+	if pe == nil {
+		pe = index.EncodePostingsRaw
 	}
 	return &LeveledCompactor{
 		ranges:                      ranges,
 		chunkPool:                   pool,
 		logger:                      l,
-		metrics:                     newCompactorMetrics(r),
+		metrics:                     NewCompactorMetrics(r),
 		ctx:                         ctx,
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
 		mergeFunc:                   mergeFunc,
+		postingsEncoder:             pe,
+		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
 		concurrencyOpts:             DefaultLeveledCompactorConcurrencyOptions(),
-		enableOverlappingCompaction: enableOverlappingCompaction,
 	}, nil
 }
 
@@ -232,8 +269,15 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 }
 
 func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
-	sort.Slice(dms, func(i, j int) bool {
-		return dms[i].meta.MinTime < dms[j].meta.MinTime
+	slices.SortFunc(dms, func(a, b dirMeta) int {
+		switch {
+		case a.meta.MinTime < b.meta.MinTime:
+			return -1
+		case a.meta.MinTime > b.meta.MinTime:
+			return 1
+		default:
+			return 0
+		}
 	})
 
 	res := c.selectOverlappingDirs(dms)
@@ -415,8 +459,8 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	for s := range sources {
 		res.Compaction.Sources = append(res.Compaction.Sources, s)
 	}
-	sort.Slice(res.Compaction.Sources, func(i, j int) bool {
-		return res.Compaction.Sources[i].Compare(res.Compaction.Sources[j]) < 0
+	slices.SortFunc(res.Compaction.Sources, func(a, b ulid.ULID) int {
+		return a.Compare(b)
 	})
 
 	res.MinTime = mint
@@ -428,13 +472,13 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 // and returns slice of block IDs. Position of returned block ID in the result slice corresponds to the shard index.
 // If given output block has no series, corresponding block ID will be zero ULID value.
 func (c *LeveledCompactor) CompactWithSplitting(dest string, dirs []string, open []*Block, shardCount uint64) (result []ulid.ULID, _ error) {
-	return c.compact(dest, dirs, open, shardCount)
+	return c.CompactWithBlockPopulator(dest, dirs, open, DefaultBlockPopulator{}, shardCount)
 }
 
 // Compact creates a new block in the compactor's directory from the blocks in the
 // provided directories.
 func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (uid ulid.ULID, err error) {
-	ulids, err := c.compact(dest, dirs, open, 1)
+	ulids, err := c.CompactWithBlockPopulator(dest, dirs, open, DefaultBlockPopulator{}, 1)
 	if err != nil {
 		return ulid.ULID{}, err
 	}
@@ -453,7 +497,7 @@ type shardedBlock struct {
 	indexw   IndexWriter
 }
 
-func (c *LeveledCompactor) compact(dest string, dirs []string, open []*Block, shardCount uint64) (_ []ulid.ULID, err error) {
+func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string, open []*Block, blockPopulator BlockPopulator, shardCount uint64) (_ []ulid.ULID, err error) {
 	if shardCount == 0 {
 		shardCount = 1
 	}
@@ -487,7 +531,7 @@ func (c *LeveledCompactor) compact(dest string, dirs []string, open []*Block, sh
 		outBlocks[ix] = shardedBlock{meta: CompactBlockMetas(ulid.MustNew(outBlocksTime, rand.Reader), metas...)}
 	}
 
-	err = c.write(dest, outBlocks, blocks...)
+	err = c.write(dest, outBlocks, blockPopulator, blocks...)
 	if err == nil {
 		ulids := make([]ulid.ULID, len(outBlocks))
 		allOutputBlocksAreEmpty := true
@@ -539,10 +583,10 @@ func (c *LeveledCompactor) compact(dest string, dirs []string, open []*Block, sh
 	}
 
 	errs := tsdb_errors.NewMulti(err)
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		for _, b := range bs {
 			if err := b.setCompactionFailed(); err != nil {
-				errs.Add(errors.Wrapf(err, "setting compaction failed for block: %s", b.Dir()))
+				errs.Add(fmt.Errorf("setting compaction failed for block: %s: %w", b.Dir(), err))
 			}
 		}
 	}
@@ -581,10 +625,6 @@ func (c *LeveledCompactor) compactOOO(dest string, oooHead *OOOCompactionHead, s
 
 	start := time.Now()
 
-	if err != nil {
-		return nil, err
-	}
-
 	// The first dimension of outBlocks determines the time based splitting (i.e. outBlocks[i] has blocks all for the same time range).
 	// The second dimension of outBlocks determines the label based shard (i.e. outBlocks[i][j] is the (j+1)th shard.
 	// During ingestion of samples we can identify which ooo blocks will exists so that
@@ -598,7 +638,7 @@ func (c *LeveledCompactor) compactOOO(dest string, oooHead *OOOCompactionHead, s
 	blockSize := oooHead.ChunkRange()
 	oooHeadMint, oooHeadMaxt := oooHead.MinTime(), oooHead.MaxTime()
 	ulids := make([][]ulid.ULID, 0)
-	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t = t + blockSize {
+	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t += blockSize {
 		mint, maxt := t, t+blockSize
 
 		outBlocks = append(outBlocks, make([]shardedBlock, shardCount))
@@ -623,7 +663,7 @@ func (c *LeveledCompactor) compactOOO(dest string, oooHead *OOOCompactionHead, s
 		}
 
 		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
-		err := c.write(dest, outBlocks[ix], oooHead.CloneForTimeRange(mint, maxt-1))
+		err := c.write(dest, outBlocks[ix], DefaultBlockPopulator{}, oooHead.CloneForTimeRange(mint, maxt-1))
 		if err != nil {
 			// We need to delete all blocks in case there was an error.
 			for _, obs := range outBlocks {
@@ -676,7 +716,7 @@ func (c *LeveledCompactor) compactOOO(dest string, oooHead *OOOCompactionHead, s
 	return ulids, nil
 }
 
-func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
+func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) (ulid.ULID, error) {
 	start := time.Now()
 
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
@@ -689,13 +729,16 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 	meta.Compaction.Level = 1
 	meta.Compaction.Sources = []ulid.ULID{uid}
 
-	if parent != nil {
+	if base != nil {
 		meta.Compaction.Parents = []BlockDesc{
-			{ULID: parent.ULID, MinTime: parent.MinTime, MaxTime: parent.MaxTime},
+			{ULID: base.ULID, MinTime: base.MinTime, MaxTime: base.MaxTime},
+		}
+		if base.Compaction.FromOutOfOrder() {
+			meta.Compaction.SetOutOfOrder()
 		}
 	}
 
-	err := c.write(dest, []shardedBlock{{meta: meta}}, b)
+	err := c.write(dest, []shardedBlock{{meta: meta}}, DefaultBlockPopulator{}, b)
 	if err != nil {
 		return uid, err
 	}
@@ -716,6 +759,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 		"maxt", meta.MaxTime,
 		"ulid", meta.ULID,
 		"duration", time.Since(start),
+		"ooo", meta.Compaction.FromOutOfOrder(),
 	)
 	return uid, nil
 }
@@ -740,7 +784,7 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...chunks.Meta) error {
 }
 
 // write creates new output blocks that are the union of the provided blocks into dir.
-func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks ...BlockReader) (err error) {
+func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPopulator BlockPopulator, blocks ...BlockReader) (err error) {
 	var closers []io.Closer
 
 	defer func(t time.Time) {
@@ -764,8 +808,8 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 				}
 			}
 		}
-		c.metrics.ran.Inc()
-		c.metrics.duration.Observe(time.Since(t).Seconds())
+		c.metrics.Ran.Inc()
+		c.metrics.Duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
 	for ix := range outBlocks {
@@ -788,7 +832,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 		var chunkw ChunkWriter
 		chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxBlockChunkSegmentSize)
 		if err != nil {
-			return errors.Wrap(err, "open chunk writer")
+			return fmt.Errorf("open chunk writer: %w", err)
 		}
 		chunkw = newPreventDoubleCloseChunkWriter(chunkw) // We now close chunkWriter in populateBlock, but keep it in the closers here as well.
 
@@ -798,18 +842,18 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 		if outBlocks[ix].meta.Compaction.Level == 1 {
 			chunkw = &instrumentedChunkWriter{
 				ChunkWriter: chunkw,
-				size:        c.metrics.chunkSize,
-				samples:     c.metrics.chunkSamples,
-				trange:      c.metrics.chunkRange,
+				size:        c.metrics.ChunkSize,
+				samples:     c.metrics.ChunkSamples,
+				trange:      c.metrics.ChunkRange,
 			}
 		}
 
 		outBlocks[ix].chunkw = chunkw
 
 		var indexw IndexWriter
-		indexw, err = index.NewWriter(c.ctx, filepath.Join(tmp, indexFilename))
+		indexw, err = index.NewWriterWithEncoder(c.ctx, filepath.Join(tmp, indexFilename), c.postingsEncoder)
 		if err != nil {
-			return errors.Wrap(err, "open index writer")
+			return fmt.Errorf("open index writer: %w", err)
 		}
 		indexw = newPreventDoubleCloseIndexWriter(indexw) // We now close indexWriter in populateBlock, but keep it in the closers here as well.
 		closers = append(closers, indexw)
@@ -818,8 +862,8 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 	}
 
 	// We use MinTime and MaxTime from first output block, because ALL output blocks have the same min/max times set.
-	if err := c.populateBlock(blocks, outBlocks[0].meta.MinTime, outBlocks[0].meta.MaxTime, outBlocks); err != nil {
-		return errors.Wrap(err, "populate block")
+	if err := blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, c.concurrencyOpts, blocks, outBlocks[0].meta.MinTime, outBlocks[0].meta.MaxTime, outBlocks); err != nil {
+		return fmt.Errorf("populate block: %w", err)
 	}
 
 	select {
@@ -848,17 +892,17 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 		}
 
 		if _, err = writeMetaFile(c.logger, ob.tmpDir, ob.meta); err != nil {
-			return errors.Wrap(err, "write merged meta")
+			return fmt.Errorf("write merged meta: %w", err)
 		}
 
 		// Create an empty tombstones file.
 		if _, err := tombstones.WriteFile(c.logger, ob.tmpDir, tombstones.NewMemTombstones()); err != nil {
-			return errors.Wrap(err, "write new tombstones file")
+			return fmt.Errorf("write new tombstones file: %w", err)
 		}
 
 		df, err := fileutil.OpenDir(ob.tmpDir)
 		if err != nil {
-			return errors.Wrap(err, "open temporary block dir")
+			return fmt.Errorf("open temporary block dir: %w", err)
 		}
 		defer func() {
 			if df != nil {
@@ -867,18 +911,18 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 		}()
 
 		if err := df.Sync(); err != nil {
-			return errors.Wrap(err, "sync temporary dir file")
+			return fmt.Errorf("sync temporary dir file: %w", err)
 		}
 
 		// Close temp dir before rename block dir (for windows platform).
 		if err = df.Close(); err != nil {
-			return errors.Wrap(err, "close temporary dir")
+			return fmt.Errorf("close temporary dir: %w", err)
 		}
 		df = nil
 
 		// Block successfully written, make it visible in destination dir by moving it from tmp one.
 		if err := fileutil.Replace(ob.tmpDir, ob.blockDir); err != nil {
-			return errors.Wrap(err, "rename block dir")
+			return fmt.Errorf("rename block dir: %w", err)
 		}
 	}
 
@@ -900,10 +944,10 @@ func debugOutOfOrderChunks(chks []chunks.Meta, logger log.Logger) {
 		}
 
 		// Looks like the chunk is out of order.
-		prevSafeChk, prevIsSafeChk := prevChk.Chunk.(*safeChunk)
-		currSafeChk, currIsSafeChk := currChk.Chunk.(*safeChunk)
+		prevSafeChk, prevIsSafeChk := prevChk.Chunk.(*safeHeadChunk)
+		currSafeChk, currIsSafeChk := currChk.Chunk.(*safeHeadChunk)
 
-		// Get info out of safeChunk (if possible).
+		// Get info out of safeHeadChunk (if possible).
 		prevHeadChunkID := chunks.HeadChunkID(0)
 		currHeadChunkID := chunks.HeadChunkID(0)
 		prevLabels := labels.Labels{}
@@ -942,12 +986,18 @@ func timeFromMillis(ms int64) time.Time {
 	return time.Unix(0, ms*int64(time.Millisecond))
 }
 
-// populateBlock fills the index and chunk writers of output blocks with new data gathered as the union
-// of the provided blocks.
+type BlockPopulator interface {
+	PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger log.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, concurrencyOpts LeveledCompactorConcurrencyOptions, blocks []BlockReader, minT, maxT int64, outBlocks []shardedBlock) error
+}
+
+type DefaultBlockPopulator struct{}
+
+// PopulateBlock fills the index and chunk writers with new data gathered as the union
+// of the provided blocks. It returns meta information for the new block.
 // It expects sorted blocks input by mint.
 // If there is more than 1 output block, each output block will only contain series that hash into its shard
 // (based on total number of output blocks).
-func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64, outBlocks []shardedBlock) (err error) {
+func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger log.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, concurrencyOpts LeveledCompactorConcurrencyOptions, blocks []BlockReader, minT, maxT int64, outBlocks []shardedBlock) (err error) {
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block(s) from no readers")
 	}
@@ -962,26 +1012,26 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 	defer func() {
 		errs := tsdb_errors.NewMulti(err)
 		if cerr := tsdb_errors.CloseAll(closers); cerr != nil {
-			errs.Add(errors.Wrap(cerr, "close"))
+			errs.Add(fmt.Errorf("close: %w", cerr))
 		}
 		err = errs.Err()
-		c.metrics.populatingBlocks.Set(0)
+		metrics.PopulatingBlocks.Set(0)
 	}()
-	c.metrics.populatingBlocks.Set(1)
+	metrics.PopulatingBlocks.Set(1)
 
 	globalMaxt := blocks[0].Meta().MaxTime
 	for i, b := range blocks {
 		select {
-		case <-c.ctx.Done():
-			return c.ctx.Err()
+		case <-ctx.Done():
+			return ctx.Err()
 		default:
 		}
 
 		if !overlapping {
 			if i > 0 && b.Meta().MinTime < globalMaxt {
-				c.metrics.overlappingBlocks.Inc()
+				metrics.OverlappingBlocks.Inc()
 				overlapping = true
-				level.Info(c.logger).Log("msg", "Found overlapping blocks during compaction")
+				level.Info(logger).Log("msg", "Found overlapping blocks during compaction")
 			}
 			if b.Meta().MaxTime > globalMaxt {
 				globalMaxt = b.Meta().MaxTime
@@ -990,42 +1040,42 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 
 		indexr, err := b.Index()
 		if err != nil {
-			return errors.Wrapf(err, "open index reader for block %+v", b.Meta())
+			return fmt.Errorf("open index reader for block %+v: %w", b.Meta(), err)
 		}
 		closers = append(closers, indexr)
 
 		chunkr, err := b.Chunks()
 		if err != nil {
-			return errors.Wrapf(err, "open chunk reader for block %+v", b.Meta())
+			return fmt.Errorf("open chunk reader for block %+v: %w", b.Meta(), err)
 		}
 		closers = append(closers, chunkr)
 
 		tombsr, err := b.Tombstones()
 		if err != nil {
-			return errors.Wrapf(err, "open tombstone reader for block %+v", b.Meta())
+			return fmt.Errorf("open tombstone reader for block %+v: %w", b.Meta(), err)
 		}
 		closers = append(closers, tombsr)
 
 		k, v := index.AllPostingsKey()
-		all, err := indexr.Postings(k, v)
+		all, err := indexr.Postings(ctx, k, v)
 		if err != nil {
 			return err
 		}
 		all = indexr.SortedPostings(all)
 		// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
-		sets = append(sets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, minT, maxT-1, false))
+		sets = append(sets, NewBlockChunkSeriesSet(b.Meta().ULID, indexr, chunkr, tombsr, all, minT, maxT-1, false))
 
 		if len(outBlocks) > 1 {
 			// To iterate series when populating symbols, we cannot reuse postings we just got, but need to get a new copy.
 			// Postings can only be iterated once.
 			k, v = index.AllPostingsKey()
-			all, err = indexr.Postings(k, v)
+			all, err = indexr.Postings(ctx, k, v)
 			if err != nil {
 				return err
 			}
 			all = indexr.SortedPostings(all)
 			// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
-			symbolsSets = append(symbolsSets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, minT, maxT-1, false))
+			symbolsSets = append(symbolsSets, NewBlockChunkSeriesSet(b.Meta().ULID, indexr, chunkr, tombsr, all, minT, maxT-1, false))
 		} else {
 			syms := indexr.Symbols()
 			if i == 0 {
@@ -1039,52 +1089,65 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 	if len(outBlocks) == 1 {
 		for symbols.Next() {
 			if err := outBlocks[0].indexw.AddSymbol(symbols.At()); err != nil {
-				return errors.Wrap(err, "add symbol")
+				return fmt.Errorf("add symbol: %w", err)
 			}
 		}
-		if symbols.Err() != nil {
-			return errors.Wrap(symbols.Err(), "next symbol")
+		if err := symbols.Err(); err != nil {
+			return fmt.Errorf("next symbol: %w", err)
 		}
 	} else {
-		if err := c.populateSymbols(symbolsSets, outBlocks); err != nil {
+		if err := populateSymbols(ctx, mergeFunc, concurrencyOpts, symbolsSets, outBlocks); err != nil {
 			return err
 		}
 	}
 
 	// Semaphore for number of blocks that can be closed at once.
-	sema := semaphore.NewWeighted(int64(c.concurrencyOpts.MaxClosingBlocks))
+	sema := semaphore.NewWeighted(int64(concurrencyOpts.MaxClosingBlocks))
 
 	blockWriters := make([]*asyncBlockWriter, len(outBlocks))
 	for ix := range outBlocks {
-		blockWriters[ix] = newAsyncBlockWriter(c.chunkPool, outBlocks[ix].chunkw, outBlocks[ix].indexw, sema)
-		defer blockWriters[ix].closeAsync() // Make sure to close writer to stop goroutine.
+		blockWriters[ix] = newAsyncBlockWriter(chunkPool, outBlocks[ix].chunkw, outBlocks[ix].indexw, sema)
 	}
+	defer func() {
+		// Stop all async writers.
+		for ix := range outBlocks {
+			blockWriters[ix].closeAsync()
+		}
+
+		// And wait until they have finished, to make sure that they no longer update chunk or index writers.
+		for ix := range outBlocks {
+			_, _ = blockWriters[ix].waitFinished()
+		}
+	}()
+
+	var chksIter chunks.Iterator
 
 	set := sets[0]
 	if len(sets) > 1 {
 		// Merge series using specified chunk series merger.
 		// The default one is the compacting series merger.
-		set = storage.NewMergeChunkSeriesSet(sets, c.mergeFunc)
+		set = storage.NewMergeChunkSeriesSet(sets, mergeFunc)
 	}
 
 	// Iterate over all sorted chunk series.
 	for set.Next() {
 		select {
-		case <-c.ctx.Done():
-			return c.ctx.Err()
+		case <-ctx.Done():
+			return ctx.Err()
 		default:
 		}
 		s := set.At()
 
-		chksIter := s.Iterator()
+		chksIter := s.Iterator(chksIter)
 		var chks []chunks.Meta
 		for chksIter.Next() {
-			// We are not iterating in streaming way over chunk as it's more efficient to do bulk write for index and
+			// We are not iterating in streaming way over chunk as
+			// it's more efficient to do bulk write for index and
 			// chunk file purposes.
 			chks = append(chks, chksIter.At())
 		}
-		if chksIter.Err() != nil {
-			return errors.Wrap(chksIter.Err(), "chunk iter")
+		if err := chksIter.Err(); err != nil {
+			return fmt.Errorf("chunk iter: %w", err)
 		}
 
 		// Skip the series with all deleted chunks.
@@ -1092,20 +1155,20 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 			continue
 		}
 
-		debugOutOfOrderChunks(chks, c.logger)
+		debugOutOfOrderChunks(chks, logger)
 
 		obIx := uint64(0)
 		if len(outBlocks) > 1 {
-			obIx = s.Labels().Hash() % uint64(len(outBlocks))
+			obIx = labels.StableHash(s.Labels()) % uint64(len(outBlocks))
 		}
 
 		err := blockWriters[obIx].addSeries(s.Labels(), chks)
 		if err != nil {
-			return errors.Wrap(err, "adding series")
+			return fmt.Errorf("adding series: %w", err)
 		}
 	}
-	if set.Err() != nil {
-		return errors.Wrap(set.Err(), "iterate compaction set")
+	if err := set.Err(); err != nil {
+		return fmt.Errorf("iterate compaction set: %w", err)
 	}
 
 	for ix := range blockWriters {
@@ -1115,7 +1178,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 	for ix := range blockWriters {
 		stats, err := blockWriters[ix].waitFinished()
 		if err != nil {
-			return errors.Wrap(err, "writing block")
+			return fmt.Errorf("writing block: %w", err)
 		}
 
 		outBlocks[ix].meta.Stats = stats
@@ -1130,12 +1193,12 @@ const inMemorySymbolsLimit = 1_000_000
 // populateSymbols writes symbols to output blocks. We need to iterate through all series to find
 // which series belongs to what block. We collect symbols per sharded block, and then add sorted symbols to
 // block's index.
-func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlocks []shardedBlock) error {
+func populateSymbols(ctx context.Context, mergeFunc storage.VerticalChunkSeriesMergeFunc, concurrencyOpts LeveledCompactorConcurrencyOptions, sets []storage.ChunkSeriesSet, outBlocks []shardedBlock) error {
 	if len(outBlocks) == 0 {
 		return errors.New("no output block")
 	}
 
-	flushers := newSymbolFlushers(c.concurrencyOpts.SymbolsFlushersCount)
+	flushers := newSymbolFlushers(concurrencyOpts.SymbolsFlushersCount)
 	defer flushers.close() // Make sure to stop flushers before exiting to avoid leaking goroutines.
 
 	batchers := make([]*symbolsBatcher, len(outBlocks))
@@ -1146,48 +1209,55 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 		// and if we only include symbols from series, we would skip it.
 		// It may not be required, but it's small and better be safe than sorry.
 		if err := batchers[ix].addSymbol(""); err != nil {
-			return errors.Wrap(err, "addSymbol to batcher")
+			return fmt.Errorf("addSymbol to batcher: %w", err)
 		}
 	}
 
 	seriesSet := sets[0]
 	if len(sets) > 1 {
-		seriesSet = storage.NewMergeChunkSeriesSet(sets, c.mergeFunc)
+		seriesSet = storage.NewMergeChunkSeriesSet(sets, mergeFunc)
 	}
 
 	for seriesSet.Next() {
-		if err := c.ctx.Err(); err != nil {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 
 		s := seriesSet.At()
 
-		obIx := s.Labels().Hash() % uint64(len(outBlocks))
+		var obIx uint64
+		if len(outBlocks) > 1 {
+			obIx = labels.StableHash(s.Labels()) % uint64(len(outBlocks))
+		}
 
-		for _, l := range s.Labels() {
+		err := s.Labels().Validate(func(l labels.Label) error {
 			if err := batchers[obIx].addSymbol(l.Name); err != nil {
-				return errors.Wrap(err, "addSymbol to batcher")
+				return fmt.Errorf("addSymbol to batcher: %w", err)
 			}
 			if err := batchers[obIx].addSymbol(l.Value); err != nil {
-				return errors.Wrap(err, "addSymbol to batcher")
+				return fmt.Errorf("addSymbol to batcher: %w", err)
 			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
 	}
 
 	for ix := range outBlocks {
 		// Flush the batcher to write remaining symbols.
 		if err := batchers[ix].flushSymbols(true); err != nil {
-			return errors.Wrap(err, "flushing batcher")
+			return fmt.Errorf("flushing batcher: %w", err)
 		}
 	}
 
 	err := flushers.close()
 	if err != nil {
-		return errors.Wrap(err, "closing flushers")
+		return fmt.Errorf("closing flushers: %w", err)
 	}
 
 	for ix := range outBlocks {
-		if err := c.ctx.Err(); err != nil {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 
@@ -1195,7 +1265,7 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 
 		it, err := newSymbolsIterator(symbolFiles)
 		if err != nil {
-			return errors.Wrap(err, "opening symbols iterator")
+			return fmt.Errorf("opening symbols iterator: %w", err)
 		}
 
 		// Each symbols iterator must be closed to close underlying files.
@@ -1210,12 +1280,12 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 		for sym, err = it.NextSymbol(); err == nil; sym, err = it.NextSymbol() {
 			err = outBlocks[ix].indexw.AddSymbol(sym)
 			if err != nil {
-				return errors.Wrap(err, "AddSymbol")
+				return fmt.Errorf("AddSymbol: %w", err)
 			}
 		}
 
-		if err != io.EOF {
-			return errors.Wrap(err, "iterating symbols")
+		if !errors.Is(err, io.EOF) {
+			return fmt.Errorf("iterating symbols: %w", err)
 		}
 
 		// if err == io.EOF, we have iterated through all symbols. We can close underlying
@@ -1227,7 +1297,7 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 		// or compaction fails, because in that case compactor already removes entire (temp) output block directory.
 		for _, fn := range symbolFiles {
 			if err := os.Remove(fn); err != nil {
-				return errors.Wrap(err, "deleting symbols file")
+				return fmt.Errorf("deleting symbols file: %w", err)
 			}
 		}
 	}

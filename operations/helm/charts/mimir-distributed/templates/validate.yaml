@@ -10,7 +10,7 @@
 {{- end }}
 
 {{- if not ($calculatedConfig.activity_tracker).filepath }}
-{{- fail "The 'activity_tracker.filepath' in 'mimir.config' should be set to a path that is on a writeable volume. For example: '/data/metrics-activity.log'." }}
+{{- fail "The 'activity_tracker.filepath' in 'mimir.config' should be set to a path that is on a writeable volume. For example: '/active-query-tracker/activity.log'." }}
 {{- end }}
 
 {{- if ($unstructuredConfig.server).http_listen_port }}
@@ -143,3 +143,124 @@
     {{- fail "memcached-results.enabled has been renamed to results-cache.enabled" }}
   {{- end }}
 {{- end }}
+
+{{- if not .Values.ingester.statefulSet.enabled -}}
+{{- fail "You have set ingester.statefulSet.enabled=false. Ingesters are stateful, kubernetes Deployment workloads are no longer supported. Please refer to the documentation for more details." }}
+{{- end -}}
+
+
+{{- if and .Values.ingester.zoneAwareReplication.enabled (not ((($calculatedConfig).ingester).ring).zone_awareness_enabled) -}}
+{{- fail "You have set ingester.zoneAwareReplication.enabled=true. The mimir.config must include ingester.ring.zone_awareness_enabled=true. Please merge the latest mimir.config from the chart with your mimir.config."}}
+{{- end -}}
+
+{{- if and .Values.ingester.zoneAwareReplication.migration.enabled (not .Values.ingester.zoneAwareReplication.enabled) -}}
+{{- fail "You have set ingester.zoneAwareReplication.migration.enabled=true, but ingester.zoneAwareReplication.enabled=false. Please consult the Migrating from single zone with Helm document."}}
+{{- end -}}
+
+{{- with $.Values.ingester.zoneAwareReplication.migration }}
+{{- if and .replicas (not .enabled) }}
+{{- fail "You have set ingester.zoneAwareReplication.migration.replicas, but ingester.zoneAwareReplication.migration.enabled=false. Please consult the Migrating from single zone with Helm document."}}
+{{- end -}}
+{{/* Check that if a migration step is enabled, every previous step is also enabled. */}}
+{{- $steps := list "enabled" "writePath" "readPath" "excludeDefaultZone" "scaleDownDefaultZone" }}
+{{- range $i, $item := rest $steps -}}
+{{- range $j, $mustHave := slice $steps 0 $i }}
+{{- with $.Values.ingester.zoneAwareReplication.migration }}
+{{- if and (index . $item) (not (index . $mustHave)) -}}
+{{- printf "You have set ingester.zoneAwareReplication.migration.%s=true, but ingester.zoneAwareReplication.migration.%s=false. Please consult the Migrating from single zone with Helm document." $item $mustHave | fail }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+
+{{- if and .Values.store_gateway.zoneAwareReplication.enabled (not ((($calculatedConfig).store_gateway).sharding_ring).zone_awareness_enabled) -}}
+{{- fail "You have set store_gateway.zoneAwareReplication.enabled=true. The mimir.config must include store_gateway.sharding_ring.zone_awareness_enabled=true. Please merge the latest mimir.config from the chart with your mimir.config."}}
+{{- end -}}
+
+{{- if and .Values.store_gateway.zoneAwareReplication.migration.enabled (ne (((($calculatedConfig).store_gateway).sharding_ring).kvstore).prefix "multi-zone/") -}}
+{{- fail "You have set store_gateway.zoneAwareReplication.migration.enabled=true. The mimir.config must include store_gateway.sharding_ring.kvstore.prefix=multi-zone/. Please merge the latest mimir.config from the chart with your mimir.config."}}
+{{- end -}}
+
+{{- if and .Values.store_gateway.zoneAwareReplication.migration.enabled (not .Values.store_gateway.zoneAwareReplication.enabled) -}}
+{{- fail "You have set store_gateway.zoneAwareReplication.migration.enabled=true, but store_gateway.zoneAwareReplication.enabled=false. Please consult the Migrating from single zone with Helm document."}}
+{{- end -}}
+
+{{- with $.Values.store_gateway.zoneAwareReplication.migration }}
+{{/* Check that if a migration step is enabled, every previous step is also enabled. */}}
+{{- $steps := list "enabled" "readPath" }}
+{{- range $i, $item := rest $steps -}}
+{{- range $j, $mustHave := slice $steps 0 $i }}
+{{- with $.Values.store_gateway.zoneAwareReplication.migration }}
+{{- if and (index . $item) (not (index . $mustHave)) -}}
+{{- printf "You have set store_gateway.zoneAwareReplication.migration.%s=true, but store_gateway.zoneAwareReplication.migration.%s=false. Please consult the Migrating from single zone with Helm document." $item $mustHave | fail }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- if and .Values.alertmanager.zoneAwareReplication.enabled (not .Values.alertmanager.statefulSet.enabled) -}}
+{{- fail "You have set alertmanager.zoneAwareReplication.enabled=true, but alertmanager.statefulSet.enabled=false. This is not a supported configuration." -}}
+{{- end -}}
+
+{{- if and .Values.alertmanager.zoneAwareReplication.enabled (not ((($calculatedConfig).alertmanager).sharding_ring).zone_awareness_enabled) -}}
+{{- fail "You have set alertmanager.zoneAwareReplication.enabled=true. The mimir.config must include alertmanager.sharding_ring.zone_awareness_enabled=true. Please merge the latest mimir.config from the chart with your mimir.config."}}
+{{- end -}}
+
+{{- if and .Values.alertmanager.zoneAwareReplication.migration.enabled (not .Values.alertmanager.zoneAwareReplication.enabled) -}}
+{{- fail "You have set alertmanager.zoneAwareReplication.migration.enabled=true, but alertmanager.zoneAwareReplication.enabled=false. Please consult the Migrating from single zone with Helm document."}}
+{{- end -}}
+
+{{- with $.Values.alertmanager.zoneAwareReplication.migration }}
+{{/* Check that if a migration step is enabled, every previous step is also enabled. */}}
+{{- $steps := list "enabled" "writePath" }}
+{{- range $i, $item := rest $steps -}}
+{{- range $j, $mustHave := slice $steps 0 $i }}
+{{- with $.Values.alertmanager.zoneAwareReplication.migration }}
+{{- if and (index . $item) (not (index . $mustHave)) -}}
+{{- printf "You have set alertmanager.zoneAwareReplication.migration.%s=true, but alertmanager.zoneAwareReplication.migration.%s=false. Please consult the Migrating from single zone with Helm document." $item $mustHave | fail }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- with .Values.nginx -}}
+{{- if and .autoscaling.enabled .autoscaling.targetCPUUtilizationPercentage (not ((.resources).requests).cpu) -}}
+{{- fail "You have enabled nginx.autoscaling.targetCPUUtilizationPercentage, you must also set nginx.resources.requests.cpu." -}}
+{{- end -}}
+{{- if and .autoscaling.enabled .autoscaling.targetMemoryUtilizationPercentage (not ((.resources).requests).memory) -}}
+{{- fail "You have enabled nginx.autoscaling.targetMemoryUtilizationPercentage, you must also set nginx.resources.requests.memory." -}}
+{{- end -}}
+{{- end -}}
+
+{{- with .Values.gateway -}}
+{{- if and .autoscaling.enabled .autoscaling.targetCPUUtilizationPercentage (not ((.resources).requests).cpu) -}}
+{{- fail "You have enabled gateway.autoscaling.targetCPUUtilizationPercentage, you must also set gateway.resources.requests.cpu." -}}
+{{- end -}}
+{{- if and .autoscaling.enabled .autoscaling.targetMemoryUtilizationPercentage (not ((.resources).requests).memory) -}}
+{{- fail "You have enabled gateway.autoscaling.targetMemoryUtilizationPercentage, you must also set gateway.resources.requests.memory." -}}
+{{- end -}}
+{{- end -}}
+
+{{- if eq .Values.rbac.type "scc" -}}
+{{- with .Values.rbac.podSecurityContext -}}
+{{- if or (hasKey . "fsGroup") (hasKey . "runAsGroup") (hasKey . "runAsUser") -}}
+{{- fail "You have selected rbac.type=scc, you must set the values fsGroup, runAsGroup, runAsUser to null in rbac.podSecurityContext" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- if eq .Values.rbac.type "scc" -}}
+{{- with .Values.rollout_operator.podSecurityContext -}}
+{{- if or (hasKey . "fsGroup") (hasKey . "runAsGroup") (hasKey . "runAsUser") -}}
+{{- fail "You have selected rbac.type=scc, you must set the values fsGroup, runAsGroup, runAsUser to null in rollout_operator.podSecurityContext" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- if and .Values.ingress.enabled .Values.gateway.ingress.enabled -}}
+{{- fail "You have selected both ingress.enabled and gateway.ingress.enabled, you must select either ingress or gateway but not both" -}}
+{{- end -}}

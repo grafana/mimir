@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //go:build requires_docker
-// +build requires_docker
 
 package integration
 

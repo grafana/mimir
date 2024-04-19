@@ -1,8 +1,3 @@
-blocks_storage:
-  tsdb:
-    block_ranges_period:
-      - 3h0m0s
-
 compactor:
   block_ranges:
     - 3h0m0s

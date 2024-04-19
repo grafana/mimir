@@ -5,8 +5,9 @@ mimir {
     namespace: 'default',
     external_url: 'http://test',
 
-    blocks_storage_backend: 'gcs',
+    storage_backend: 'gcs',
     blocks_storage_bucket_name: 'blocks-bucket',
+
     query_scheduler_enabled: false,
   },
 }

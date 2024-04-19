@@ -3,7 +3,6 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
-// +build requires_docker
 
 package integration
 
@@ -19,13 +18,12 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/kv/etcd"
+	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/e2e"
-	e2edb "github.com/grafana/e2e/db"
 )
 
 func TestKVList(t *testing.T) {
@@ -33,7 +31,7 @@ func TestKVList(t *testing.T) {
 		// Create keys to list back
 		keysToCreate := []string{"key-a", "key-b", "key-c"}
 		for _, key := range keysToCreate {
-			err := client.CAS(context.Background(), key, func(in interface{}) (out interface{}, retry bool, err error) {
+			err := client.CAS(context.Background(), key, func(interface{}) (out interface{}, retry bool, err error) {
 				return key, false, nil
 			})
 			require.NoError(t, err, "could not create key")
@@ -55,7 +53,7 @@ func TestKVList(t *testing.T) {
 func TestKVDelete(t *testing.T) {
 	testKVs(t, func(t *testing.T, client kv.Client, reg *prometheus.Registry) {
 		// Create a key
-		err := client.CAS(context.Background(), "key-to-delete", func(in interface{}) (out interface{}, retry bool, err error) {
+		err := client.CAS(context.Background(), "key-to-delete", func(interface{}) (out interface{}, retry bool, err error) {
 			return "key-to-delete", false, nil
 		})
 		require.NoError(t, err, "object could not be created")
@@ -78,11 +76,11 @@ func TestKVDelete(t *testing.T) {
 }
 
 func TestKVWatchAndDelete(t *testing.T) {
-	testKVs(t, func(t *testing.T, client kv.Client, reg *prometheus.Registry) {
+	testKVs(t, func(t *testing.T, client kv.Client, _ *prometheus.Registry) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		err := client.CAS(context.Background(), "key-before-watch", func(in interface{}) (out interface{}, retry bool, err error) {
+		err := client.CAS(context.Background(), "key-before-watch", func(interface{}) (out interface{}, retry bool, err error) {
 			return "value-before-watch", false, nil
 		})
 		require.NoError(t, err)
@@ -95,7 +93,7 @@ func TestKVWatchAndDelete(t *testing.T) {
 			w.watch(ctx, client)
 		}()
 
-		err = client.CAS(context.Background(), "key-to-delete", func(in interface{}) (out interface{}, retry bool, err error) {
+		err = client.CAS(context.Background(), "key-to-delete", func(interface{}) (out interface{}, retry bool, err error) {
 			return "value-to-delete", false, nil
 		})
 		require.NoError(t, err, "object could not be created")

@@ -10,11 +10,10 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"time"
 
 	"github.com/stretchr/testify/mock"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 )
 
 // ErrObjectDoesNotExist is used in tests to simulate objstore.Bucket.IsObjNotFoundErr().
@@ -93,24 +92,32 @@ func (m *ClientMock) Get(ctx context.Context, name string) (io.ReadCloser, error
 
 // MockGet is a convenient method to mock Get() and Exists()
 func (m *ClientMock) MockGet(name, content string, err error) {
+	m.MockGetAndLastModified(name, content, time.Now(), err)
+}
+
+func (m *ClientMock) MockGetAndLastModified(name, content string, lastModified time.Time, err error) {
 	if content != "" {
 		m.On("Exists", mock.Anything, name).Return(true, err)
 		m.On("Attributes", mock.Anything, name).Return(objstore.ObjectAttributes{
 			Size:         int64(len(content)),
-			LastModified: time.Now(),
+			LastModified: lastModified,
 		}, nil)
 
 		// Since we return an ReadCloser and it can be consumed only once,
 		// each time the mocked Get() is called we do create a new one, so
 		// that getting the same mocked object twice works as expected.
 		m.On("Get", mock.Anything, name).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
-			return ioutil.NopCloser(bytes.NewReader([]byte(content))), err
+			return io.NopCloser(bytes.NewReader([]byte(content))), err
 		})
 	} else {
 		m.On("Exists", mock.Anything, name).Return(false, err)
 		m.On("Get", mock.Anything, name).Return(nil, ErrObjectDoesNotExist)
 		m.On("Attributes", mock.Anything, name).Return(nil, ErrObjectDoesNotExist)
 	}
+}
+
+func (m *ClientMock) MockAttributes(name string, attrs objstore.ObjectAttributes, err error) {
+	m.On("Attributes", mock.Anything, name).Return(attrs, err)
 }
 
 func (m *ClientMock) MockDelete(name string, err error) {
@@ -135,7 +142,11 @@ func (m *ClientMock) Exists(ctx context.Context, name string) (bool, error) {
 
 // IsObjNotFoundErr mocks objstore.Bucket.IsObjNotFoundErr()
 func (m *ClientMock) IsObjNotFoundErr(err error) bool {
-	return err == ErrObjectDoesNotExist
+	return errors.Is(err, ErrObjectDoesNotExist)
+}
+
+func (m *ClientMock) IsAccessDeniedErr(_ error) bool {
+	return false
 }
 
 // ObjectSize mocks objstore.Bucket.Attributes()

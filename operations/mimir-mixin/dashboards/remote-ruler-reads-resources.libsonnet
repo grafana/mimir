@@ -3,42 +3,43 @@ local filename = 'mimir-remote-ruler-reads-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == '1940f6ef765a506a171faa2056c956c3' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Remote ruler reads resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow(
-      $.row('Query-frontend (dedicated to ruler)')
+      $.row('Ruler-query-frontend')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'ruler-query-frontend'),
+        $.containerCPUUsagePanelByComponent('ruler_query_frontend'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ruler-query-frontend'),
+        $.containerMemoryWorkingSetPanelByComponent('ruler_query_frontend'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ruler_query_frontend),
-      )
-    )
-    .addRow(
-      $.row('Query-scheduler (dedicated to ruler)')
-      .addPanel(
-        $.containerCPUUsagePanel('CPU', 'ruler-query-scheduler'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ruler-query-scheduler'),
-      )
-      .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ruler_query_scheduler),
+        $.containerGoHeapInUsePanelByComponent('ruler_query_frontend'),
       )
     )
     .addRow(
-      $.row('Querier (dedicated to ruler)')
+      $.row('Ruler-query-scheduler')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'ruler-querier'),
+        $.containerCPUUsagePanelByComponent('ruler_query_scheduler'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ruler-querier'),
+        $.containerMemoryWorkingSetPanelByComponent('ruler_query_scheduler'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ruler_querier),
+        $.containerGoHeapInUsePanelByComponent('ruler_query_scheduler'),
+      )
+    )
+    .addRow(
+      $.row('Ruler-querier')
+      .addPanel(
+        $.containerCPUUsagePanelByComponent('ruler_querier'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('ruler_querier'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('ruler_querier'),
       )
     ) + {
       templating+: {

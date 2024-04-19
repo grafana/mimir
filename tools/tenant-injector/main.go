@@ -13,6 +13,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"time"
+
+	"github.com/grafana/dskit/flagext"
 )
 
 type Config struct {
@@ -26,7 +28,11 @@ func main() {
 	flag.StringVar(&cfg.LocalAddress, "local-address", ":8080", "Local address to listen on (host:port or :port).")
 	flag.StringVar(&cfg.RemoteURL, "remote-address", "", "URL of target to forward requests to to (eg. http://domain.com:80).")
 	flag.StringVar(&cfg.TenantID, "tenant-id", "", "Tenant ID to inject to proxied requests.")
-	flag.Parse()
+
+	// Parse CLI arguments.
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatalln(err.Error())
+	}
 
 	// Parse remote URL.
 	if cfg.RemoteURL == "" {

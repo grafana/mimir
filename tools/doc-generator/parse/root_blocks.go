@@ -5,14 +5,15 @@ package parse
 import (
 	"reflect"
 
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/kv/etcd"
 	"github.com/grafana/dskit/kv/memberlist"
-	"github.com/weaveworks/common/server"
+	"github.com/grafana/dskit/server"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
@@ -105,6 +106,11 @@ var (
 			Desc:       "The ingester_client block configures how the distributors connect to the ingesters.",
 		},
 		{
+			Name:       "grpc_client",
+			StructType: reflect.TypeOf(grpcclient.Config{}),
+			Desc:       "The grpc_client block configures the gRPC client used to communicate between two Mimir components.",
+		},
+		{
 			Name:       "frontend_worker",
 			StructType: reflect.TypeOf(querier_worker.Config{}),
 			Desc:       "The frontend_worker block configures the worker running within the querier, picking up and executing queries enqueued by the query-frontend or the query-scheduler.",
@@ -146,8 +152,13 @@ var (
 		},
 		{
 			Name:       "memcached",
-			StructType: reflect.TypeOf(cache.MemcachedConfig{}),
+			StructType: reflect.TypeOf(cache.MemcachedClientConfig{}),
 			Desc:       "The memcached block configures the Memcached-based caching backend.",
+		},
+		{
+			Name:       "redis",
+			StructType: reflect.TypeOf(cache.RedisClientConfig{}),
+			Desc:       "The redis block configures the Redis-based caching backend.",
 		},
 		{
 			Name:       "s3_storage_backend",

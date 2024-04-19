@@ -1,7 +1,8 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-ruler.json';
 
-(import 'dashboard-utils.libsonnet') {
+(import 'dashboard-utils.libsonnet') +
+(import 'dashboard-queries.libsonnet') {
   local ruler_config_api_routes_re = '(%s)|(%s)' % [
     // Prometheus API routes which are also exposed by Mimir.
     '(api_prom_api_v1|prometheus_api_v1)_(rules|alerts|status_buildinfo)',
@@ -9,63 +10,8 @@ local filename = 'mimir-ruler.json';
     '(api_prom|api_v1|prometheus|prometheus_config_v1)_rules.*',
   ],
 
-  rulerQueries+:: {
-    ruleEvaluations: {
-      success:
-        |||
-          sum(rate(cortex_prometheus_rule_evaluations_total{%s}[$__rate_interval]))
-          -
-          sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__rate_interval]))
-        |||,
-      failure: 'sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__rate_interval]))',
-      latency:
-        |||
-          sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%s}[$__rate_interval]))
-            /
-          sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__rate_interval]))
-        |||,
-      missedIterations: 'sum(rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__rate_interval]))',
-    },
-    perUserPerGroupEvaluations: {
-      failure: 'sum by(rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__rate_interval])) > 0',
-      latency:
-        |||
-          sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%s}[$__rate_interval]))
-            /
-          sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__rate_interval]))
-        |||,
-    },
-    groupEvaluations: {
-      missedIterations: 'sum by(user) (rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__rate_interval])) > 0',
-      latency:
-        |||
-          rate(cortex_prometheus_rule_group_duration_seconds_sum{%s}[$__rate_interval])
-            /
-          rate(cortex_prometheus_rule_group_duration_seconds_count{%s}[$__rate_interval])
-        |||,
-    },
-    notifications: {
-      failure:
-        |||
-          sum by(user) (rate(cortex_prometheus_notifications_errors_total{%s}[$__rate_interval]))
-            /
-          sum by(user) (rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval]))
-          > 0
-        |||,
-      queue:
-        |||
-          sum by(user) (rate(cortex_prometheus_notifications_queue_length{%s}[$__rate_interval]))
-            /
-          sum by(user) (rate(cortex_prometheus_notifications_queue_capacity{%s}[$__rate_interval])) > 0
-        |||,
-      dropped:
-        |||
-          sum by (user) (increase(cortex_prometheus_notifications_dropped_total{%s}[$__rate_interval])) > 0
-        |||,
-    },
-  },
-
   [filename]:
+    assert std.md5(filename) == '631e15d5d85afb2ca8e35d62984eeaa0' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Ruler') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
@@ -83,7 +29,17 @@ local filename = 'mimir-ruler.json';
       )
       .addPanel(
         $.panel('Read from ingesters - QPS') +
-        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler), format='reqps')
+        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier), format='reqps') +
+        $.panelDescription(
+          'Read from ingesters - QPS',
+          |||
+            Note: Even while operating in Remote ruler mode you will still see values for this panel.
+
+            This is because the metrics are inclusive of intermediate services and are showing the requests that ultimately reach the ingesters.
+
+            For a more detailed view of the read path when using remote ruler mode, see the Remote ruler reads dashboard.
+          |||
+        ),
       )
       .addPanel(
         $.panel('Write to ingesters - QPS') +
@@ -93,66 +49,76 @@ local filename = 'mimir-ruler.json';
     .addRow(
       $.row('Rule evaluations global')
       .addPanel(
-        $.panel('Evaluations per second') +
-        $.queryPanel(
+        $.timeseriesPanel('Evaluations per second') +
+        $.successFailureCustomPanel(
           [
-            $.rulerQueries.ruleEvaluations.success % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
-            $.rulerQueries.ruleEvaluations.failure % $.jobMatcher($._config.job_names.ruler),
-            $.rulerQueries.ruleEvaluations.missedIterations % $.jobMatcher($._config.job_names.ruler),
+            $.queries.ruler.evaluations.successPerSecond,
+            $.queries.ruler.evaluations.failurePerSecond,
+            $.queries.ruler.evaluations.missedIterationsPerSecond,
           ],
           ['success', 'failed', 'missed'],
         ),
       )
       .addPanel(
-        $.panel('Latency') +
+        $.timeseriesPanel('Latency') +
         $.queryPanel(
-          $.rulerQueries.ruleEvaluations.latency % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
+          $.queries.ruler.evaluations.latency,
           'average'
         ) +
-        { yaxes: $.yaxes('s') },
+        { fieldConfig+: { defaults+: { unit: 's' } } },
       )
     )
     .addRowIf(
       $._config.gateway_enabled,
       $.row('Configuration API (gateway)')
       .addPanel(
-        $.panel('QPS') +
+        $.timeseriesPanel('QPS') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.gateway), ruler_config_api_routes_re])
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)])
       )
       .addPanel(
-        $.panel('Per route p99 latency') +
+        local selectors = $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)];
+        $.timeseriesPanel('Per route p99 latency') +
         $.queryPanel(
-          'histogram_quantile(0.99, sum by (route, le) (%s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%s, route=~"%s"}))' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.gateway), ruler_config_api_routes_re],
+          'histogram_quantile(0.99, sum by (route, le) (%s:cortex_request_duration_seconds_bucket:sum_rate%s))' %
+          [$.recordingRulePrefix(selectors), utils.toPrometheusSelector(selectors)],
           '{{ route }}'
         ) +
-        { yaxes: $.yaxes('s') }
+        { fieldConfig+: { defaults+: { unit: 's' } } },
       )
     )
     .addRow(
       $.row('Writes (ingesters)')
       .addPanel(
-        $.panel('QPS') +
+        $.timeseriesPanel('QPS') +
         $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ruler))
       )
       .addPanel(
-        $.panel('Latency') +
+        $.timeseriesPanel('Latency') +
         $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ruler))
       )
     )
     .addRow(
       $.row('Reads (ingesters)')
       .addPanel(
-        $.panel('QPS') +
-        $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher($._config.job_names.ruler))
+        $.timeseriesPanel('QPS') +
+        $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier))
       )
       .addPanel(
-        $.panel('Latency') +
-        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher($._config.job_names.ruler))
+        $.timeseriesPanel('Latency') +
+        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier))
       )
+    )
+    .addRowIf(
+      $._config.autoscaling.ruler.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Ruler'),
+    )
+    .addRowIf(
+      $._config.autoscaling.ruler_query_frontend.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Ruler-query-frontend'),
     )
     .addRow(
       $.kvStoreRow('Ruler - key-value store for rulers ring', 'ruler', 'ruler')
@@ -160,66 +126,94 @@ local filename = 'mimir-ruler.json';
     .addRow(
       $.row('Ruler - blocks storage')
       .addPanel(
-        $.panel('Number of store-gateways hit per query') +
+        $.timeseriesPanel('Number of store-gateways hit per query') +
         $.latencyPanel('cortex_querier_storegateway_instances_hit_per_query', '{%s}' % $.jobMatcher($._config.job_names.ruler), multiplier=1) +
-        { yaxes: $.yaxes('short') },
+        { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
-        $.panel('Refetches of missing blocks per query') +
+        $.timeseriesPanel('Refetches of missing blocks per query') +
         $.latencyPanel('cortex_querier_storegateway_refetches_per_query', '{%s}' % $.jobMatcher($._config.job_names.ruler), multiplier=1) +
-        { yaxes: $.yaxes('short') },
+        { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
-        $.panel('Consistency checks failed') +
-        $.queryPanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'Failure Rate') +
-        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
+        $.timeseriesPanel('Consistency checks failed') +
+        $.failurePanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'Failures / sec') +
+        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
+        $.panelDescription(
+          'Consistency checks failed',
+          |||
+            Rate of queries that had to run with consistency checks and those checks failed. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+          |||
+        ),
       )
     )
     .addRow(
       $.row('Notifications')
       .addPanel(
-        $.panel('Delivery errors') +
-        $.queryPanel($.rulerQueries.notifications.failure % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}')
+        $.timeseriesPanel('Delivery errors') +
+        $.queryPanel(|||
+          sum by(user) (rate(cortex_prometheus_notifications_errors_total{%s}[$__rate_interval]))
+            /
+          sum by(user) (rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval]) > 0)
+          > 0
+        ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}') +
+        { fieldConfig+: { defaults+: { unit: 'short', noValue: 0 } } }
       )
       .addPanel(
-        $.panel('Queue length') +
-        $.queryPanel($.rulerQueries.notifications.queue % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}')
+        $.timeseriesPanel('Queue length') +
+        $.queryPanel(|||
+          sum by(user) (rate(cortex_prometheus_notifications_queue_length{%s}[$__rate_interval]))
+            /
+          sum by(user) (rate(cortex_prometheus_notifications_queue_capacity{%s}[$__rate_interval])) > 0
+        ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}')
+        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } },
       )
       .addPanel(
-        $.panel('Dropped') +
-        $.queryPanel($.rulerQueries.notifications.dropped % $.jobMatcher($._config.job_names.ruler), '{{ user }}')
+        $.timeseriesPanel('Dropped') +
+        $.queryPanel(|||
+          sum by (user) (increase(cortex_prometheus_notifications_dropped_total{%s}[$__rate_interval])) > 0
+        ||| % $.jobMatcher($._config.job_names.ruler), '{{ user }}') +
+        { fieldConfig+: { defaults+: { unit: 'short', noValue: 0 } } }
       )
     )
     .addRow(
       ($.row('Group evaluations') + { collapse: true })
       .addPanel(
-        $.panel('Missed iterations') +
-        $.queryPanel($.rulerQueries.groupEvaluations.missedIterations % $.jobMatcher($._config.job_names.ruler), '{{ user }}'),
+        $.timeseriesPanel('Missed iterations') +
+        $.queryPanel('sum by(user) (rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__rate_interval])) > 0' % $.jobMatcher($._config.job_names.ruler), '{{ user }}'),
       )
       .addPanel(
-        $.panel('Latency') +
+        $.timeseriesPanel('Latency') +
         $.queryPanel(
-          $.rulerQueries.groupEvaluations.latency % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
+          |||
+            rate(cortex_prometheus_rule_group_duration_seconds_sum{%s}[$__rate_interval])
+              /
+            rate(cortex_prometheus_rule_group_duration_seconds_count{%s}[$__rate_interval])
+          ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
           '{{ user }}'
         ) +
-        { yaxes: $.yaxes('s') },
+        { fieldConfig+: { defaults+: { unit: 's' } } },
       )
       .addPanel(
-        $.panel('Failures') +
+        $.timeseriesPanel('Failures') +
         $.queryPanel(
-          $.rulerQueries.perUserPerGroupEvaluations.failure % [$.jobMatcher($._config.job_names.ruler)], '{{ rule_group }}'
+          'sum by(rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__rate_interval])) > 0' % [$.jobMatcher($._config.job_names.ruler)], '{{ rule_group }}'
         )
       )
     )
     .addRow(
       ($.row('Rule evaluation per user') + { collapse: true })
       .addPanel(
-        $.panel('Latency') +
+        $.timeseriesPanel('Latency') +
         $.queryPanel(
-          $.rulerQueries.perUserPerGroupEvaluations.latency % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
+          |||
+            sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%s}[$__rate_interval]))
+              /
+            sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
           '{{ user }}'
         ) +
-        { yaxes: $.yaxes('s') }
+        { fieldConfig+: { defaults+: { unit: 's' } } },
       )
     )
     .addRows(

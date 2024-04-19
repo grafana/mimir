@@ -1,0 +1,9 @@
+store_gateway:
+  zoneAwareReplication:
+    enabled: true
+    migration:
+      enabled: true
+      readPath: true
+
+rollout_operator:
+  enabled: true

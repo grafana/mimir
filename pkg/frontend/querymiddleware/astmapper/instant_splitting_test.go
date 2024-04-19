@@ -3,6 +3,7 @@
 package astmapper
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -373,7 +374,7 @@ func TestInstantSplitter(t *testing.T) {
 
 		t.Run(tt.in, func(t *testing.T) {
 			stats := NewInstantSplitterStats()
-			mapper := NewInstantQuerySplitter(splitInterval, log.NewNopLogger(), stats)
+			mapper := NewInstantQuerySplitter(context.Background(), splitInterval, log.NewNopLogger(), stats)
 
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
@@ -385,6 +386,7 @@ func TestInstantSplitter(t *testing.T) {
 			require.Equal(t, out.String(), mapped.String())
 
 			assert.Equal(t, tt.expectedSplitQueries, stats.GetSplitQueries())
+			assert.Equal(t, noneSkippedReason, stats.GetSkippedReason())
 		})
 	}
 }
@@ -423,7 +425,7 @@ func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 
 		t.Run(tt.in, func(t *testing.T) {
 			stats := NewInstantSplitterStats()
-			mapper := NewInstantQuerySplitter(splitInterval, log.NewNopLogger(), stats)
+			mapper := NewInstantQuerySplitter(context.Background(), splitInterval, log.NewNopLogger(), stats)
 
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
@@ -435,142 +437,180 @@ func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 			require.Equal(t, out.String(), mapped.String())
 
 			assert.Equal(t, tt.expectedSplitQueries, stats.GetSplitQueries())
+			assert.Equal(t, noneSkippedReason, stats.GetSkippedReason())
 		})
 	}
 }
 
-func TestInstantSplitterNoOp(t *testing.T) {
+func TestInstantSplitterSkippedQueryReason(t *testing.T) {
 	splitInterval := 1 * time.Minute
 
 	for _, tt := range []struct {
-		query string
+		query         string
+		skippedReason SkippedReason
 	}{
 		// should be noop if range vector aggregator is not splittable
 		{
-			query: `absent_over_time({app="foo"}[3m])`,
+			query:         `absent_over_time({app="foo"}[3m])`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `changes({app="foo"}[3m])`,
+			query:         `changes({app="foo"}[3m])`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `delta({app="foo"}[3m])`,
+			query:         `delta({app="foo"}[3m])`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `deriv({app="foo"}[3m])`,
+			query:         `deriv({app="foo"}[3m])`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `holt_winters({app="foo"}[3m], 1, 10)`,
+			query:         `holt_winters({app="foo"}[3m], 1, 10)`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `idelta({app="foo"}[3m])`,
+			query:         `idelta({app="foo"}[3m])`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `irate({app="foo"}[3m])`,
+			query:         `irate({app="foo"}[3m])`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `last_over_time({app="foo"}[3m])`,
+			query:         `last_over_time({app="foo"}[3m])`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `predict_linear({app="foo"}[3m], 1)`,
+			query:         `predict_linear({app="foo"}[3m], 1)`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `quantile_over_time(0.95, foo[3m])`,
+			query:         `quantile_over_time(0.95, foo[3m])`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `resets(foo[3m])`,
+			query:         `resets(foo[3m])`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `stddev_over_time(foo[3m])`,
+			query:         `stddev_over_time(foo[3m])`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `stdvar_over_time(foo[3m])`,
+			query:         `stdvar_over_time(foo[3m])`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `time()`,
+			query:         `time()`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `vector(10)`,
+			query:         `vector(10)`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		// should be noop if expression is not splittable
 		{
-			query: `topk(10, histogram_quantile(0.9, delta({app="foo"}[3m])))`,
+			query:         `topk(10, histogram_quantile(0.9, delta({app="foo"}[3m])))`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		// should be noop if range interval is lower or equal to split interval (1m)
 		{
-			query: `rate({app="foo"}[1m])`,
+			query:         `rate({app="foo"}[1m])`,
+			skippedReason: SkippedReasonSmallInterval,
 		},
 		// should be noop if expression is a number literal
 		{
-			query: `5`,
+			query:         `5`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		// should be noop if binary expression's operands are both constant scalars
 		{
-			query: `20 / 10`,
+			query:         `20 / 10`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `(20 / 10)`,
+			query:         `(20 / 10)`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `(20) / (10)`,
+			query:         `(20) / (10)`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		{
-			query: `time() != bool 0`,
+			query:         `time() != bool 0`,
+			skippedReason: SkippedReasonNonSplittable,
 		},
 		// should be noop if binary operation is not mapped
 		//   - first operand `rate(metric_counter[1m])` has a smaller range interval than the configured splitting
 		//   - second operand `rate(metric_counter[5h:5m])` is a subquery
 		{
-			query: `rate({app="foo"}[1m]) / rate({app="bar"}[5h:5m]) > 0.5`,
+			query:         `rate({app="foo"}[1m]) / rate({app="bar"}[5h:5m]) > 0.5`,
+			skippedReason: SkippedReasonSmallInterval,
 		},
 		// should be noop if inner binary operation is not mapped
 		{
-			query: `sum(rate({app="foo"}[1h:5m]) * 60) by (bar)`,
+			query:         `sum(rate({app="foo"}[1h:5m]) * 60) by (bar)`,
+			skippedReason: SkippedReasonSubquery,
 		},
 		// should be noop if subquery
 		{
-			query: `sum_over_time(metric_counter[1h:5m])`,
+			query:         `sum_over_time(metric_counter[1h:5m])`,
+			skippedReason: SkippedReasonSubquery,
 		},
 		{
-			query: `sum(rate(metric_counter[30m:5s]))`,
+			query:         `sum(rate(metric_counter[30m:5s]))`,
+			skippedReason: SkippedReasonSubquery,
 		},
 		{
 			// Parenthesis expression between sum_over_time() and the subquery.
-			query: `sum_over_time((metric_counter[30m:5s]))`,
+			query:         `sum_over_time((metric_counter[30m:5s]))`,
+			skippedReason: SkippedReasonSubquery,
 		},
 		{
 			// Multiple parenthesis expressions between sum_over_time() and the subquery.
-			query: `sum_over_time((((metric_counter[30m:5s]))))`,
+			query:         `sum_over_time((((metric_counter[30m:5s]))))`,
+			skippedReason: SkippedReasonSubquery,
 		},
 		{
-			query: `quantile_over_time(1, metric_counter[10m:1m])`,
+			query:         `quantile_over_time(1, metric_counter[10m:1m])`,
+			skippedReason: SkippedReasonSubquery,
 		},
 		{
-			query: `sum(avg_over_time(metric_counter[1h:5m])) by (bar)`,
+			query:         `sum(avg_over_time(metric_counter[1h:5m])) by (bar)`,
+			skippedReason: SkippedReasonSubquery,
 		},
 		{
-			query: `min_over_time(sum by(group_1) (rate(metric_counter[5m]))[10m:2m])`,
+			query:         `min_over_time(sum by(group_1) (rate(metric_counter[5m]))[10m:2m])`,
+			skippedReason: SkippedReasonSubquery,
 		},
 		{
-			query: `max_over_time(stddev_over_time(deriv(rate(metric_counter[10m])[5m:1m])[2m:])[10m:])`,
+			query:         `max_over_time(stddev_over_time(deriv(rate(metric_counter[10m])[5m:1m])[2m:])[10m:])`,
+			skippedReason: SkippedReasonSubquery,
 		},
 		{
-			query: `rate(sum by(group_1) (rate(metric_counter[5m]))[10m:])`,
+			query:         `rate(sum by(group_1) (rate(metric_counter[5m]))[10m:])`,
+			skippedReason: SkippedReasonSubquery,
 		},
 		{
-			query: `absent_over_time(rate(metric_counter[5m])[10m:])`,
+			query:         `absent_over_time(rate(metric_counter[5m])[10m:])`,
+			skippedReason: SkippedReasonSubquery,
 		},
 		{
-			query: `max_over_time(stddev_over_time(deriv(sort(metric_counter)[5m:1m])[2m:])[10m:])`,
+			query:         `max_over_time(stddev_over_time(deriv(sort(metric_counter)[5m:1m])[2m:])[10m:])`,
+			skippedReason: SkippedReasonSubquery,
 		},
 		{
-			query: `max_over_time(absent_over_time(deriv(rate(metric_counter[1m])[5m:1m])[2m:])[10m:])`,
+			query:         `max_over_time(absent_over_time(deriv(rate(metric_counter[1m])[5m:1m])[2m:])[10m:])`,
+			skippedReason: SkippedReasonSubquery,
 		},
 	} {
 		tt := tt
 
 		t.Run(tt.query, func(t *testing.T) {
 			stats := NewInstantSplitterStats()
-			mapper := NewInstantQuerySplitter(splitInterval, log.NewNopLogger(), stats)
+			mapper := NewInstantQuerySplitter(context.Background(), splitInterval, log.NewNopLogger(), stats)
 
 			expr, err := parser.ParseExpr(tt.query)
 			require.NoError(t, err)
@@ -580,7 +620,9 @@ func TestInstantSplitterNoOp(t *testing.T) {
 			// the statistics.
 			_, err = mapper.Map(expr)
 			require.NoError(t, err)
+
 			assert.Equal(t, 0, stats.GetSplitQueries())
+			assert.Equal(t, tt.skippedReason, stats.GetSkippedReason())
 		})
 	}
 }

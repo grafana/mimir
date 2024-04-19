@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,13 +17,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/template"
 	commoncfg "github.com/prometheus/common/config"
 	"gopkg.in/yaml.v3"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
@@ -47,13 +45,20 @@ const (
 )
 
 var (
-	errPasswordFileNotAllowed           = errors.New("setting password_file, bearer_token_file and credentials_file is not allowed")
-	errOAuth2SecretFileNotAllowed       = errors.New("setting OAuth2 client_secret_file is not allowed")
-	errProxyURLNotAllowed               = errors.New("setting proxy_url is not allowed")
-	errTLSFileNotAllowed                = errors.New("setting TLS ca_file, cert_file and key_file is not allowed")
-	errSlackAPIURLFileNotAllowed        = errors.New("setting Slack api_url_file and global slack_api_url_file is not allowed")
-	errVictorOpsAPIKeyFileNotAllowed    = errors.New("setting VictorOps api_key_file is not allowed")
-	errOpsGenieAPIKeyFileFileNotAllowed = errors.New("setting OpsGenie api_key_file and global opsgenie_api_key_file is not allowed")
+	errPasswordFileNotAllowed            = errors.New("setting smtp_auth_password_file, password_file, bearer_token_file, auth_password_file or credentials_file is not allowed")
+	errOAuth2SecretFileNotAllowed        = errors.New("setting OAuth2 client_secret_file is not allowed")
+	errProxyURLNotAllowed                = errors.New("setting proxy_url is not allowed")
+	errProxyFromEnvironmentURLNotAllowed = errors.New("setting proxy_from_environment is not allowed")
+	errTLSConfigNotAllowed               = errors.New("setting TLS ca_file, cert_file, key_file, ca, cert or key is not allowed")
+	errSlackAPIURLFileNotAllowed         = errors.New("setting Slack api_url_file or global slack_api_url_file is not allowed")
+	errVictorOpsAPIKeyFileNotAllowed     = errors.New("setting VictorOps api_key_file or global victorops_api_key_file is not allowed")
+	errOpsGenieAPIKeyFileFileNotAllowed  = errors.New("setting OpsGenie api_key_file or global opsgenie_api_key_file is not allowed")
+	errPagerDutyServiceKeyFileNotAllowed = errors.New("setting PagerDuty service_key_file is not allowed")
+	errPagerDutyRoutingKeyFileNotAllowed = errors.New("setting PagerDuty routing_key_file is not allowed")
+	errPushoverUserKeyFileNotAllowed     = errors.New("setting Pushover user_key_file is not allowed")
+	errPushoverTokenFileNotAllowed       = errors.New("setting Pushover token_file is not allowed")
+	errTelegramBotTokenFileNotAllowed    = errors.New("setting Telegram bot_token_file is not allowed")
+	errWebhookURLFileNotAllowed          = errors.New("setting Webhook url_file is not allowed")
 )
 
 // UserConfig is used to communicate a users alertmanager configs
@@ -74,7 +79,7 @@ func (am *MultitenantAlertmanager) GetUserConfig(w http.ResponseWriter, r *http.
 
 	cfg, err := am.store.GetAlertConfig(r.Context(), userID)
 	if err != nil {
-		if err == alertspb.ErrNotFound {
+		if errors.Is(err, alertspb.ErrNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 		} else {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -119,7 +124,7 @@ func (am *MultitenantAlertmanager) SetUserConfig(w http.ResponseWriter, r *http.
 		input = r.Body
 	}
 
-	payload, err := ioutil.ReadAll(input)
+	payload, err := io.ReadAll(input)
 	if err != nil {
 		level.Error(logger).Log("msg", errReadingConfiguration, "err", err.Error())
 		http.Error(w, fmt.Sprintf("%s: %s", errReadingConfiguration, err.Error()), http.StatusBadRequest)
@@ -181,6 +186,8 @@ func (am *MultitenantAlertmanager) DeleteUserConfig(w http.ResponseWriter, r *ht
 
 // Partially copied from: https://github.com/prometheus/alertmanager/blob/8e861c646bf67599a1704fc843c6a94d519ce312/cli/check_config.go#L65-L96
 func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits Limits, user string) error {
+	validateMatchersInConfigDesc(logger, "api", cfg)
+
 	// We don't have a valid use case for empty configurations. If a tenant does not have a
 	// configuration set and issue a request to the Alertmanager, we'll a) upload an empty
 	// config and b) immediately start an Alertmanager instance for them if a fallback
@@ -231,7 +238,7 @@ func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits 
 	// not to configured data dir, and on the flipside, it'll fail if we can't write
 	// to tmpDir. Ignoring both cases for now as they're ultra rare but will revisit if
 	// we see this in the wild.
-	userTempDir, err := ioutil.TempDir("", "validate-config-"+cfg.User)
+	userTempDir, err := os.MkdirTemp("", "validate-config-"+cfg.User)
 	if err != nil {
 		return err
 	}
@@ -255,7 +262,7 @@ func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits 
 		templateFiles[i] = filepath.Join(userTempDir, t)
 	}
 
-	_, err = template.FromGlobs(templateFiles...)
+	_, err = template.FromGlobs(templateFiles, WithCustomFunctions(user))
 	if err != nil {
 		return err
 	}
@@ -340,6 +347,16 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 			return err
 		}
 
+	case reflect.TypeOf(config.DiscordConfig{}):
+		if err := validateDiscordConfig(v.Interface().(config.DiscordConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.EmailConfig{}):
+		if err := validateEmailConfig(v.Interface().(config.EmailConfig)); err != nil {
+			return err
+		}
+
 	case reflect.TypeOf(commoncfg.HTTPClientConfig{}):
 		if err := validateReceiverHTTPConfig(v.Interface().(commoncfg.HTTPClientConfig)); err != nil {
 			return err
@@ -362,6 +379,31 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 
 	case reflect.TypeOf(config.VictorOpsConfig{}):
 		if err := validateVictorOpsConfig(v.Interface().(config.VictorOpsConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.PagerdutyConfig{}):
+		if err := validatePagerDutyConfig(v.Interface().(config.PagerdutyConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.PushoverConfig{}):
+		if err := validatePushoverConfig(v.Interface().(config.PushoverConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.MSTeamsConfig{}):
+		if err := validateMSTeamsConfig(v.Interface().(config.MSTeamsConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.TelegramConfig{}):
+		if err := validateTelegramConfig(v.Interface().(config.TelegramConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.WebhookConfig{}):
+		if err := validateWebhookConfig(v.Interface().(config.WebhookConfig)); err != nil {
 			return err
 		}
 	}
@@ -422,26 +464,33 @@ func validateReceiverHTTPConfig(cfg commoncfg.HTTPClientConfig) error {
 	if cfg.BearerTokenFile != "" {
 		return errPasswordFileNotAllowed
 	}
-	if cfg.OAuth2 != nil && cfg.OAuth2.ClientSecretFile != "" {
-		return errOAuth2SecretFileNotAllowed
+	if cfg.OAuth2 != nil {
+		if cfg.OAuth2.ClientSecretFile != "" {
+			return errOAuth2SecretFileNotAllowed
+		}
+		// Mimir's "firewall" doesn't protect OAuth2 client, so we disallow Proxy settings here.
+		if cfg.OAuth2.ProxyURL.URL != nil {
+			return errProxyURLNotAllowed
+		}
+		if cfg.OAuth2.ProxyFromEnvironment {
+			return errProxyFromEnvironmentURLNotAllowed
+		}
 	}
-	if cfg.OAuth2 != nil && cfg.OAuth2.ProxyURL.URL != nil {
-		return errProxyURLNotAllowed
-	}
+	// We allow setting proxy config (cfg.ProxyConfig), because Mimir's "firewall" protects those calls.
 	return validateReceiverTLSConfig(cfg.TLSConfig)
 }
 
 // validateReceiverTLSConfig validates the TLS config and returns an error if it contains
 // settings not allowed by Mimir.
 func validateReceiverTLSConfig(cfg commoncfg.TLSConfig) error {
-	if cfg.CAFile != "" || cfg.CertFile != "" || cfg.KeyFile != "" {
-		return errTLSFileNotAllowed
+	if cfg.CAFile != "" || cfg.CertFile != "" || cfg.KeyFile != "" || cfg.CA != "" || cfg.Cert != "" || cfg.Key != "" {
+		return errTLSConfigNotAllowed
 	}
 	return nil
 }
 
 // validateGlobalConfig validates the Global config and returns an error if it contains
-// settings now allowed by Mimir.
+// settings not allowed by Mimir.
 func validateGlobalConfig(cfg config.GlobalConfig) error {
 	if cfg.SlackAPIURLFile != "" {
 		return errSlackAPIURLFileNotAllowed
@@ -449,11 +498,35 @@ func validateGlobalConfig(cfg config.GlobalConfig) error {
 	if cfg.OpsGenieAPIKeyFile != "" {
 		return errOpsGenieAPIKeyFileFileNotAllowed
 	}
+	if cfg.SMTPAuthPasswordFile != "" {
+		return errPasswordFileNotAllowed
+	}
+	if cfg.VictorOpsAPIKeyFile != "" {
+		return errVictorOpsAPIKeyFileNotAllowed
+	}
+	return nil
+}
+
+// validateDiscordConfig validates the Discord config and returns an error if it
+// contains settings not allowed by Mimir.
+func validateDiscordConfig(cfg config.DiscordConfig) error {
+	if cfg.WebhookURLFile != "" {
+		return errWebhookURLFileNotAllowed
+	}
+	return nil
+}
+
+// validateEmailConfig validates the Email config and returns an error if it contains settings not allowed by Mimir.
+func validateEmailConfig(cfg config.EmailConfig) error {
+	if cfg.AuthPasswordFile != "" {
+		return errPasswordFileNotAllowed
+	}
+
 	return nil
 }
 
 // validateSlackConfig validates the Slack config and returns an error if it contains
-// settings now allowed by Mimir.
+// settings not allowed by Mimir.
 func validateSlackConfig(cfg config.SlackConfig) error {
 	if cfg.APIURLFile != "" {
 		return errSlackAPIURLFileNotAllowed
@@ -462,7 +535,7 @@ func validateSlackConfig(cfg config.SlackConfig) error {
 }
 
 // validateVictorOpsConfig validates the VictorOps config and returns an error if it contains
-// settings now allowed by Mimir.
+// settings not allowed by Mimir.
 func validateVictorOpsConfig(cfg config.VictorOpsConfig) error {
 	if cfg.APIKeyFile != "" {
 		return errVictorOpsAPIKeyFileNotAllowed
@@ -471,10 +544,63 @@ func validateVictorOpsConfig(cfg config.VictorOpsConfig) error {
 }
 
 // validateOpsGenieConfig validates the OpsGenie config and returns an error if it contains
-// settings now allowed by Mimir.
+// settings not allowed by Mimir.
 func validateOpsGenieConfig(cfg config.OpsGenieConfig) error {
 	if cfg.APIKeyFile != "" {
 		return errOpsGenieAPIKeyFileFileNotAllowed
+	}
+	return nil
+}
+
+// validatePagerDutyConfig validates the PagerDuty config and returns an error if it contains
+// settings not allowed by Mimir.
+func validatePagerDutyConfig(cfg config.PagerdutyConfig) error {
+	if cfg.ServiceKeyFile != "" {
+		return errPagerDutyServiceKeyFileNotAllowed
+	}
+	if cfg.RoutingKeyFile != "" {
+		return errPagerDutyRoutingKeyFileNotAllowed
+	}
+
+	return nil
+}
+
+// validatePushoverConfig validates the Pushover config and returns an error if it contains
+// settings not allowed by Mimir.
+func validatePushoverConfig(cfg config.PushoverConfig) error {
+	if cfg.UserKeyFile != "" {
+		return errPushoverUserKeyFileNotAllowed
+	}
+	if cfg.TokenFile != "" {
+		return errPushoverTokenFileNotAllowed
+	}
+
+	return nil
+}
+
+// validateMSTeamsConfig validates the Microsoft Teams config and returns an error if it
+// contains settings not allowed by Mimir.
+func validateMSTeamsConfig(cfg config.MSTeamsConfig) error {
+	if cfg.WebhookURLFile != "" {
+		return errWebhookURLFileNotAllowed
+	}
+	return nil
+}
+
+// validateTelegramConfig validates the Telegram config and returns an error if it contains
+// settings not allowed by Mimir.
+func validateTelegramConfig(cfg config.TelegramConfig) error {
+	if cfg.BotTokenFile != "" {
+		return errTelegramBotTokenFileNotAllowed
+	}
+	return nil
+}
+
+// validateWebhookConfig validates the Webhook config and returns an error if it contains
+// settings not allowed by Mimir.
+func validateWebhookConfig(cfg config.WebhookConfig) error {
+	if cfg.URLFile != "" {
+		return errWebhookURLFileNotAllowed
 	}
 	return nil
 }

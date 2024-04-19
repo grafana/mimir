@@ -1,0 +1,14 @@
+{{- if and .Values.enterprise.enabled .Values.graphite.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "graphite-schemas") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "graphite-schemas") | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+data:
+  storage-schemas.conf: |
+{{ .Values.graphite.querier.schemasConfiguration.storageSchemas | indent 4 }}
+  storage-aggregations.conf: |
+{{ .Values.graphite.querier.schemasConfiguration.storageAggregations | indent 4 }}
+{{- end -}}

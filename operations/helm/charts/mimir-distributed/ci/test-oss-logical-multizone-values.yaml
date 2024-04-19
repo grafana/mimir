@@ -1,0 +1,45 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.20"
+
+# Remove resource requests and limits because in CI we only have limited memory and CPU
+ci_resources: &ci_resources
+  requests:
+  limits:
+
+alertmanager:
+  resources:
+    <<: *ci_resources
+  persistentVolume:
+    enabled: false
+  zoneAwareReplication:
+    enabled: true
+
+compactor:
+  resources:
+    <<: *ci_resources
+  persistentVolume:
+    enabled: false
+
+ingester:
+  resources:
+    <<: *ci_resources
+  persistentVolume:
+    enabled: false
+
+store_gateway:
+  resources:
+    <<: *ci_resources
+  persistentVolume:
+    enabled: false
+
+querier:
+  resources:
+    <<: *ci_resources
+
+query_frontend:
+  resources:
+    <<: *ci_resources
+
+query_scheduler:
+  resources:
+    <<: *ci_resources

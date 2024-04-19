@@ -1,0 +1,25 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.20"
+
+# Majority of users will want GEM on OpenShift
+enterprise:
+  enabled: true
+
+# Not supporting minio on OpenShift
+minio:
+  enabled: false
+
+# Set rbac type to SecurityContextConstraints (SCC)
+rbac:
+  type: scc
+
+  podSecurityContext:
+    fsGroup: null
+    runAsGroup: null
+    runAsUser: null
+
+rollout_operator:
+  podSecurityContext:
+    fsGroup: null
+    runAsGroup: null
+    runAsUser: null

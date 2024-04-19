@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2017-2023 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -41,6 +41,16 @@ type opts struct {
 	filters    []func(stack.Stack) bool
 	maxRetries int
 	maxSleep   time.Duration
+	cleanup    func(int)
+}
+
+// implement apply so that opts struct itself can be used as
+// an Option.
+func (o *opts) apply(opts *opts) {
+	opts.filters = o.filters
+	opts.maxRetries = o.maxRetries
+	opts.maxSleep = o.maxSleep
+	opts.cleanup = o.cleanup
 }
 
 // optionFunc lets us easily write options without a custom type.
@@ -54,6 +64,34 @@ func (f optionFunc) apply(opts *opts) { f(opts) }
 func IgnoreTopFunction(f string) Option {
 	return addFilter(func(s stack.Stack) bool {
 		return s.FirstFunction() == f
+	})
+}
+
+// IgnoreAnyFunction ignores goroutines where the specified function
+// is present anywhere in the stack.
+//
+// The function name must be fully qualified, e.g.,
+//
+//	go.uber.org/goleak.IgnoreAnyFunction
+//
+// For methods, the fully qualified form looks like:
+//
+//	go.uber.org/goleak.(*MyType).MyMethod
+func IgnoreAnyFunction(f string) Option {
+	return addFilter(func(s stack.Stack) bool {
+		return s.HasFunction(f)
+	})
+}
+
+// Cleanup sets up a cleanup function that will be executed at the
+// end of the leak check.
+// When passed to [VerifyTestMain], the exit code passed to cleanupFunc
+// will be set to the exit code of TestMain.
+// When passed to [VerifyNone], the exit code will be set to 0.
+// This cannot be passed to [Find].
+func Cleanup(cleanupFunc func(exitCode int)) Option {
+	return optionFunc(func(opts *opts) {
+		opts.cleanup = cleanupFunc
 	})
 }
 
@@ -98,8 +136,8 @@ func buildOpts(options ...Option) *opts {
 	return opts
 }
 
-func (vo *opts) filter(s stack.Stack) bool {
-	for _, filter := range vo.filters {
+func (o *opts) filter(s stack.Stack) bool {
+	for _, filter := range o.filters {
 		if filter(s) {
 			return true
 		}
@@ -107,14 +145,14 @@ func (vo *opts) filter(s stack.Stack) bool {
 	return false
 }
 
-func (vo *opts) retry(i int) bool {
-	if i >= vo.maxRetries {
+func (o *opts) retry(i int) bool {
+	if i >= o.maxRetries {
 		return false
 	}
 
 	d := time.Duration(int(time.Microsecond) << uint(i))
-	if d > vo.maxSleep {
-		d = vo.maxSleep
+	if d > o.maxSleep {
+		d = o.maxSleep
 	}
 	time.Sleep(d)
 	return true
@@ -129,8 +167,12 @@ func isTestStack(s stack.Stack) bool {
 	// Since go1.7, a separate goroutine is started to wait for signals.
 	// T.Parallel is for parallel tests, which are blocked until all serial
 	// tests have run with T.Parallel at the top of the stack.
+	// testing.runFuzzTests is for fuzz testing, it's blocked until the test
+	// function with all seed corpus have run.
+	// testing.runFuzzing is for fuzz testing, it's blocked until a failing
+	// input is found.
 	switch s.FirstFunction() {
-	case "testing.RunTests", "testing.(*T).Run", "testing.(*T).Parallel":
+	case "testing.RunTests", "testing.(*T).Run", "testing.(*T).Parallel", "testing.runFuzzing", "testing.runFuzzTests":
 		// In pre1.7 and post-1.7, background goroutines started by the testing
 		// package are blocked waiting on a channel.
 		return strings.HasPrefix(s.State(), "chan receive")
@@ -141,7 +183,7 @@ func isTestStack(s stack.Stack) bool {
 func isSyscallStack(s stack.Stack) bool {
 	// Typically runs in the background when code uses CGo:
 	// https://github.com/golang/go/issues/16714
-	return s.FirstFunction() == "runtime.goexit" && strings.HasPrefix(s.State(), "syscall")
+	return s.HasFunction("runtime.goexit") && strings.HasPrefix(s.State(), "syscall")
 }
 
 func isStdLibStack(s stack.Stack) bool {
@@ -152,5 +194,5 @@ func isStdLibStack(s stack.Stack) bool {
 	}
 
 	// Using signal.Notify will start a runtime goroutine.
-	return strings.Contains(s.Full(), "runtime.ensureSigM")
+	return s.HasFunction("runtime.ensureSigM")
 }

@@ -6,12 +6,16 @@
 package astmapper
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,8 +33,8 @@ func TestCloneExpr(t *testing.T) {
 			},
 			&parser.BinaryExpr{
 				Op:  parser.ADD,
-				LHS: &parser.NumberLiteral{Val: 1, PosRange: parser.PositionRange{Start: 0, End: 1}},
-				RHS: &parser.NumberLiteral{Val: 1, PosRange: parser.PositionRange{Start: 4, End: 5}},
+				LHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 0, End: 1}},
+				RHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 4, End: 5}},
 			},
 		},
 		{
@@ -53,15 +57,15 @@ func TestCloneExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
-					PosRange: parser.PositionRange{
-						Start: 18,
-						End:   29,
+					PosRange: posrange.PositionRange{
+						Start: 19,
+						End:   30,
 					},
 				},
 				Grouping: []string{"foo"},
-				PosRange: parser.PositionRange{
+				PosRange: posrange.PositionRange{
 					Start: 0,
-					End:   30,
+					End:   31,
 				},
 			},
 		},
@@ -112,4 +116,27 @@ func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
 		panic(err)
 	}
 	return m
+}
+
+func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
+	const expressions = 30
+	const timeout = 10 * time.Second
+
+	query := `vector(1)`
+	// On 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz:
+	// This was taking 3s for 20 expressions, and doubled the time for each extra one.
+	// So checking for 30 expressions would take an hour if processing time is exponential.
+	for i := 2; i <= expressions; i++ {
+		query += fmt.Sprintf("or vector(%d)", i)
+	}
+	expr, err := parser.ParseExpr(query)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	mapper, err := NewSharding(ctx, 2, log.NewNopLogger(), NewMapperStats())
+	require.NoError(t, err)
+
+	_, err = mapper.Map(expr)
+	require.NoError(t, err)
 }

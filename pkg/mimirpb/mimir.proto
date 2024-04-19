@@ -2,6 +2,9 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/cortexpb/cortex.proto
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/prompb/types.proto
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Prometheus Team.
 
 syntax = "proto3";
 
@@ -23,16 +26,39 @@ message WriteRequest {
   SourceEnum Source = 2;
   repeated MetricMetadata metadata = 3 [(gogoproto.nullable) = true];
 
-  bool skip_label_name_validation = 1000; //set intentionally high to keep WriteRequest compatible with upstream Prometheus
+  // Mimir-specific fields, using intentionally high field numbers to avoid conflicts with upstream Prometheus.
+
+  // Skip validation of label names.
+  bool skip_label_name_validation = 1000;
 }
 
 message WriteResponse {}
+
+enum ErrorCause {
+  UNKNOWN_CAUSE = 0;
+  REPLICAS_DID_NOT_MATCH = 1;
+  TOO_MANY_CLUSTERS = 2;
+  BAD_DATA = 3;
+  INGESTION_RATE_LIMITED = 4;
+  REQUEST_RATE_LIMITED = 5;
+  INSTANCE_LIMIT = 6;
+  SERVICE_UNAVAILABLE = 7;
+  TSDB_UNAVAILABLE = 8;
+  TOO_BUSY = 9;
+  CIRCUIT_BREAKER_OPEN = 10;
+  METHOD_NOT_ALLOWED = 11;
+}
+
+message ErrorDetails {
+  ErrorCause Cause = 1;
+}
 
 message TimeSeries {
   repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
   // Sorted by time, oldest sample first.
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
+  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
 }
 
 message LabelPair {
@@ -41,7 +67,7 @@ message LabelPair {
 }
 
 message Sample {
-  // Fields order MUST match promql.Point so that we can cast types between them.
+	// Fields order MUST match promql.FPoint so that we can cast types between them.
   int64 timestamp_ms = 2;
   double value       = 1;
 }
@@ -73,4 +99,199 @@ message Exemplar {
   repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
   double value = 2;
   int64 timestamp_ms = 3;
+}
+
+// This is based on https://github.com/prometheus/prometheus/blob/main/prompb/types.proto
+message Histogram {
+  enum ResetHint {
+    // These values are based on CounterResetHint from https://github.com/prometheus/prometheus/blob/main/model/histogram/histogram.go.
+    // The values must remain in sync with the constants defined there.
+
+    option (gogoproto.goproto_enum_prefix) = true;
+    UNKNOWN = 0; // Need to test for a counter reset explicitly.
+    YES     = 1; // This is the 1st histogram after a counter reset.
+    NO      = 2; // There was no counter reset between this and the previous Histogram.
+    GAUGE   = 3; // This is a gauge histogram where counter resets don't happen.
+  }
+
+  oneof count { // Count of observations in the histogram.
+    uint64 count_int   = 1;
+    double count_float = 2;
+  }
+  double sum = 3; // Sum of observations in the histogram.
+  // The schema defines the bucket schema. Currently, valid numbers
+  // are -4 <= n <= 8. They are all for base-2 bucket schemas, where 1
+  // is a bucket boundary in each case, and then each power of two is
+  // divided into 2^n logarithmic buckets. Or in other words, each
+  // bucket boundary is the previous boundary times 2^(2^-n). In the
+  // future, more bucket schemas may be added using numbers < -4 or >
+  // 8.
+  sint32 schema             = 4;
+  double zero_threshold     = 5; // Breadth of the zero bucket.
+  oneof zero_count { // Count in zero bucket.
+    uint64 zero_count_int     = 6;
+    double zero_count_float   = 7;
+  }
+
+  // Negative Buckets.
+  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
+  // Use either "negative_deltas" or "negative_counts", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  repeated sint64 negative_deltas    =  9; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double negative_counts    = 10; // Absolute count of each bucket.
+
+  // Positive Buckets.
+  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
+  // Use either "positive_deltas" or "positive_counts", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  repeated sint64 positive_deltas    = 12; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double positive_counts    = 13; // Absolute count of each bucket.
+
+  ResetHint reset_hint               = 14;
+  // timestamp is in ms format
+  int64 timestamp = 15;
+}
+
+// FloatHistogram is based on https://github.com/prometheus/prometheus/blob/main/model/histogram/float_histogram.go.
+// The fields below must be the same types and in the same order as Prometheus' histogram.FloatHistogram type so we can cast between
+// them safely.
+message FloatHistogram {
+  // Reserve fields used in Histogram type for integer histograms to prevent any confusion if a payload is accidentally decoded with the wrong type.
+  reserved 1, 6, 9, 12, 15;
+  reserved "count_int", "zero_count_int", "negative_deltas", "positive_deltas", "timestamp";
+
+  uint32 counter_reset_hint = 14 [(gogoproto.casttype) = "github.com/prometheus/prometheus/model/histogram.CounterResetHint"];
+  sint32 schema = 4;
+  double zero_threshold = 5;
+  double zero_count = 7;
+  double count = 2;
+  double sum = 3;
+  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
+  repeated BucketSpan negative_spans = 8 [(gogoproto.nullable) = false];
+  repeated double positive_buckets = 13;
+  repeated double negative_buckets = 10;
+}
+
+// A BucketSpan defines a number of consecutive buckets with their
+// offset. Logically, it would be more straightforward to include the
+// bucket counts in the Span. However, the protobuf representation is
+// more compact in the way the data is structured here (with all the
+// buckets in a single array separate from the Spans).
+//
+// BucketSpan is based on Prometheus' histogram.Span type defined in https://github.com/prometheus/prometheus/blob/main/model/histogram/histogram.go.
+// The fields below must be the same types and in the same order Prometheus' histogram.Span type so we can cast between
+// them safely.
+message BucketSpan {
+  sint32 offset = 1;
+  uint32 length = 2;
+}
+
+message FloatHistogramPair {
+	// Fields order MUST match promql.HPoint so that we can cast types between them.
+  int64 timestamp_ms = 2;
+  FloatHistogram histogram = 1 [(gogoproto.nullable) = true];
+}
+
+// SampleHistogram is based on https://github.com/prometheus/common/blob/main/model/value_histogram.go
+// for compatibility with PromQL API results
+// Must keep the same order and type of fields for casting
+message SampleHistogram {
+  double count = 1;
+  double sum = 2;
+  repeated HistogramBucket buckets = 3;
+}
+
+// Must keep the same order and type of fields for casting, see SampleHistogram
+message HistogramBucket {
+  int32 boundaries = 1;
+  double lower = 2;
+  double upper = 3;
+  double count = 4;
+}
+
+// Must keep the same order and type of fields for casting, see SampleHistogram
+message SampleHistogramPair {
+  int64 timestamp = 2;
+  SampleHistogram histogram = 1;
+}
+
+message QueryResponse {
+  // These values correspond to the possible status values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
+  enum Status {
+    option (gogoproto.goproto_enum_prefix) = true;
+    ERROR = 0;
+    SUCCESS = 1;
+  }
+
+  // These values correspond to the possible error type values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
+  enum ErrorType {
+    option (gogoproto.goproto_enum_prefix) = true;
+    NONE = 0;
+    TIMEOUT = 1;
+    CANCELED = 2;
+    EXECUTION = 3;
+    BAD_DATA = 4;
+    INTERNAL = 5;
+    UNAVAILABLE = 6;
+    NOT_FOUND = 7;
+    NOT_ACCEPTABLE = 8;
+  }
+
+  Status status = 1;
+  ErrorType error_type = 2;
+  string error = 3;
+
+  oneof data {
+    StringData string = 4;
+    VectorData vector = 5;
+    ScalarData scalar = 6;
+    MatrixData matrix = 7;
+  }
+
+  repeated string warnings = 8;
+}
+
+message StringData {
+  string value = 1;
+  int64 timestamp_ms = 2;
+}
+
+message VectorData {
+  repeated VectorSample samples = 1 [(gogoproto.nullable) = false];
+  repeated VectorHistogram histograms = 2 [(gogoproto.nullable) = false];
+}
+
+message VectorSample {
+  // Why not use a map<...> here? We want to preserve the order of the labels, as labels.Labels expects them to be sorted.
+  repeated string metric = 1;
+
+  double value = 2;
+  int64 timestamp_ms = 3;
+}
+
+message VectorHistogram {
+  // Why not use a map<...> here? We want to preserve the order of the labels, as labels.Labels expects them to be sorted.
+  repeated string metric = 1;
+
+  FloatHistogram histogram = 2 [(gogoproto.nullable) = false];
+  int64 timestamp_ms = 3;
+}
+
+message ScalarData {
+  double value = 1;
+  int64 timestamp_ms = 2;
+}
+
+message MatrixData {
+  repeated MatrixSeries series = 1 [(gogoproto.nullable) = false];
+}
+
+message MatrixSeries {
+  // Why not use a map<...> here? We want to preserve the order of the labels.
+  repeated string metric = 1;
+
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false];
 }

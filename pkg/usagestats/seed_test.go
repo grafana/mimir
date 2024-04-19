@@ -13,7 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -66,7 +66,7 @@ func TestReadSeedFile(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			testData.setup(bucketClient)
 
-			seed, err := readSeedFile(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), log.NewNopLogger())
+			seed, err := readSeedFile(context.Background(), objstore.WrapWithMetrics(bucketClient, nil, ""), log.NewNopLogger())
 			if testData.expectedErr != nil {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), testData.expectedErr.Error())
@@ -106,7 +106,7 @@ func TestWriteSeedFile(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			testData.setup(bucketClient)
 
-			err := writeSeedFile(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), seed)
+			err := writeSeedFile(context.Background(), objstore.WrapWithMetrics(bucketClient, nil, ""), seed)
 			if testData.expectedErr != nil {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), testData.expectedErr.Error())
@@ -120,56 +120,55 @@ func TestWriteSeedFile(t *testing.T) {
 func TestWaitSeedFileStability(t *testing.T) {
 	const minStability = 3 * time.Second
 
-	type testConfig struct {
-		setup               func(bucketClient *bucket.ClientMock)
+	type testExpectations struct {
 		expectedSeed        ClusterSeed
 		expectedErr         error
 		expectedMinDuration time.Duration
 	}
 
-	tests := map[string]testConfig{
-		"should immediately return if seed file does not exist": {
-			setup: func(bucketClient *bucket.ClientMock) {
-				bucketClient.MockGet(ClusterSeedFileName, "", bucket.ErrObjectDoesNotExist)
-			},
-			expectedErr: bucket.ErrObjectDoesNotExist,
+	tests := map[string]func(t *testing.T, bucketClient *bucket.ClientMock) testExpectations{
+		"should immediately return if seed file does not exist": func(_ *testing.T, bucketClient *bucket.ClientMock) testExpectations {
+			bucketClient.MockGet(ClusterSeedFileName, "", bucket.ErrObjectDoesNotExist)
+
+			return testExpectations{
+				expectedErr: bucket.ErrObjectDoesNotExist,
+			}
 		},
-		"should immediately return if seed file is corrupted": {
-			setup: func(bucketClient *bucket.ClientMock) {
-				bucketClient.MockGet(ClusterSeedFileName, "xxx", nil)
-			},
-			expectedErr: errClusterSeedFileCorrupted,
+		"should immediately return if seed file is corrupted": func(_ *testing.T, bucketClient *bucket.ClientMock) testExpectations {
+			bucketClient.MockGet(ClusterSeedFileName, "xxx", nil)
+
+			return testExpectations{
+				expectedErr: errClusterSeedFileCorrupted,
+			}
 		},
-		"should immediately return if seed file was created more than 'min stability' time ago": func() testConfig {
+		"should immediately return if seed file was created more than 'min stability' time ago": func(t *testing.T, bucketClient *bucket.ClientMock) testExpectations {
 			oldSeed := ClusterSeed{UID: "old", CreatedAt: time.Now().Add(-2 * minStability)}
 
-			return testConfig{
-				setup: func(bucketClient *bucket.ClientMock) {
-					data, err := json.Marshal(oldSeed)
-					require.NoError(t, err)
-					bucketClient.MockGet(ClusterSeedFileName, string(data), nil)
-				},
+			data, err := json.Marshal(oldSeed)
+			require.NoError(t, err)
+			bucketClient.MockGet(ClusterSeedFileName, string(data), nil)
+
+			return testExpectations{
 				expectedSeed:        oldSeed,
 				expectedMinDuration: 0,
 			}
-		}(),
-		"should wait for 'min stability' and return the seed file if was created less than 'min stability' time ago": func() testConfig {
+		},
+		"should wait for 'min stability' and return the seed file if was created less than 'min stability' time ago": func(t *testing.T, bucketClient *bucket.ClientMock) testExpectations {
 			newSeed := ClusterSeed{UID: "new", CreatedAt: time.Now()}
 
-			return testConfig{
-				setup: func(bucketClient *bucket.ClientMock) {
-					data, err := json.Marshal(newSeed)
-					require.NoError(t, err)
-					bucketClient.MockGet(ClusterSeedFileName, string(data), nil)
-				},
+			data, err := json.Marshal(newSeed)
+			require.NoError(t, err)
+			bucketClient.MockGet(ClusterSeedFileName, string(data), nil)
+
+			return testExpectations{
 				expectedSeed:        newSeed,
 				expectedMinDuration: minStability,
 			}
-		}(),
+		},
 	}
 
-	for testName, testData := range tests {
-		testData := testData
+	for testName, testSetup := range tests {
+		testSetup := testSetup
 
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
@@ -177,9 +176,9 @@ func TestWaitSeedFileStability(t *testing.T) {
 			startTime := time.Now()
 
 			bucketClient := &bucket.ClientMock{}
-			testData.setup(bucketClient)
+			testData := testSetup(t, bucketClient)
 
-			actualSeed, err := waitSeedFileStability(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), minStability, log.NewNopLogger())
+			actualSeed, err := waitSeedFileStability(context.Background(), objstore.WrapWithMetrics(bucketClient, nil, ""), minStability, log.NewNopLogger())
 			if testData.expectedErr != nil {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), testData.expectedErr.Error())
@@ -197,62 +196,59 @@ func TestWaitSeedFileStability(t *testing.T) {
 func TestInitSeedFile(t *testing.T) {
 	const minStability = 3 * time.Second
 
-	type testConfig struct {
-		setup               func(bucketClient objstore.Bucket)
+	type testExpectations struct {
 		expectedErr         error
 		expectedMinDuration time.Duration
 	}
 
-	tests := map[string]testConfig{
-		"should immediately return if seed file exists and it was created more than 'min stability' time ago": func() testConfig {
+	tests := map[string]func(t *testing.T, bucketClient objstore.Bucket) testExpectations{
+		"should immediately return if seed file exists and it was created more than 'min stability' time ago": func(t *testing.T, bucketClient objstore.Bucket) testExpectations {
 			oldSeed := ClusterSeed{UID: "old", CreatedAt: time.Now().Add(-2 * minStability)}
 
-			return testConfig{
-				setup: func(bucketClient objstore.Bucket) {
-					data, err := json.Marshal(oldSeed)
-					require.NoError(t, err)
-					require.NoError(t, bucketClient.Upload(context.Background(), ClusterSeedFileName, bytes.NewReader(data)))
-				},
+			data, err := json.Marshal(oldSeed)
+			require.NoError(t, err)
+			require.NoError(t, bucketClient.Upload(context.Background(), ClusterSeedFileName, bytes.NewReader(data)))
+
+			return testExpectations{
 				expectedMinDuration: 0,
 			}
-		}(),
-		"should wait for 'min stability' and return the seed file if it exists and was created less than 'min stability' time ago": func() testConfig {
+		},
+		"should wait for 'min stability' and return the seed file if it exists and was created less than 'min stability' time ago": func(t *testing.T, bucketClient objstore.Bucket) testExpectations {
 			newSeed := ClusterSeed{UID: "new", CreatedAt: time.Now()}
 
-			return testConfig{
-				setup: func(bucketClient objstore.Bucket) {
-					data, err := json.Marshal(newSeed)
-					require.NoError(t, err)
-					require.NoError(t, bucketClient.Upload(context.Background(), ClusterSeedFileName, bytes.NewReader(data)))
-				},
+			data, err := json.Marshal(newSeed)
+			require.NoError(t, err)
+			require.NoError(t, bucketClient.Upload(context.Background(), ClusterSeedFileName, bytes.NewReader(data)))
+
+			return testExpectations{
 				expectedMinDuration: minStability,
 			}
-		}(),
-		"should create the seed file if doesn't exist and then wait for 'min stability'": {
-			setup:               func(bucketClient objstore.Bucket) {},
-			expectedMinDuration: minStability,
 		},
-		"should re-create the seed file if exist but is corrupted, and then wait for 'min stability'": {
-			setup: func(bucketClient objstore.Bucket) {
-				require.NoError(t, bucketClient.Upload(context.Background(), ClusterSeedFileName, bytes.NewReader([]byte("xxx"))))
-			},
-			expectedMinDuration: minStability,
+		"should create the seed file if doesn't exist and then wait for 'min stability'": func(*testing.T, objstore.Bucket) testExpectations {
+			return testExpectations{
+				expectedMinDuration: minStability,
+			}
+		},
+		"should re-create the seed file if exist but is corrupted, and then wait for 'min stability'": func(t *testing.T, bucketClient objstore.Bucket) testExpectations {
+			require.NoError(t, bucketClient.Upload(context.Background(), ClusterSeedFileName, bytes.NewReader([]byte("xxx"))))
+
+			return testExpectations{
+				expectedMinDuration: minStability,
+			}
 		},
 	}
 
-	for testName, testData := range tests {
-		testData := testData
+	for testName, testSetup := range tests {
+		testSetup := testSetup
 
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			bucketClient, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
-			require.NoError(t, err)
-
-			testData.setup(bucketClient)
+			bucketClient := prepareLocalBucketClient(t)
+			testData := testSetup(t, bucketClient)
 
 			startTime := time.Now()
-			actualSeed, err := initSeedFile(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), minStability, log.NewNopLogger())
+			actualSeed, err := initSeedFile(context.Background(), bucketClient, minStability, log.NewNopLogger())
 			if testData.expectedErr != nil {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), testData.expectedErr.Error())
@@ -260,7 +256,7 @@ func TestInitSeedFile(t *testing.T) {
 				require.NoError(t, err)
 
 				// We expect the seed stored in the bucket.
-				expectedSeed, err := readSeedFile(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), log.NewNopLogger())
+				expectedSeed, err := readSeedFile(context.Background(), bucketClient, log.NewNopLogger())
 				require.NoError(t, err)
 				require.Equal(t, expectedSeed.UID, actualSeed.UID)
 				require.Equal(t, expectedSeed.CreatedAt.Unix(), actualSeed.CreatedAt.Unix())
@@ -299,7 +295,7 @@ func TestInitSeedFile_CreatingConcurrency(t *testing.T) {
 			// Wait for the start.
 			<-start
 
-			seed, err := initSeedFile(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), minStability, log.NewNopLogger())
+			seed, err := initSeedFile(context.Background(), objstore.WrapWithMetrics(bucketClient, nil, ""), minStability, log.NewNopLogger())
 			if err != nil {
 				return err
 			}

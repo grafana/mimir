@@ -6,8 +6,9 @@
 package querytee
 
 import (
+	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -17,8 +18,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/server"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 var testRoutes = []Route{
@@ -27,7 +33,9 @@ var testRoutes = []Route{
 
 type testComparator struct{}
 
-func (testComparator) Compare(expected, actual []byte) error { return nil }
+func (testComparator) Compare(_, _ []byte) (ComparisonResult, error) {
+	return ComparisonSuccess, nil
+}
 
 func Test_NewProxy(t *testing.T) {
 	cfg := ProxyConfig{}
@@ -159,17 +167,20 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 
 			// Start the proxy.
 			cfg := ProxyConfig{
-				BackendEndpoints:   strings.Join(backendURLs, ","),
-				PreferredBackend:   strconv.Itoa(testData.preferredBackendIdx),
-				ServerServicePort:  0,
-				BackendReadTimeout: time.Second,
+				BackendEndpoints:         strings.Join(backendURLs, ","),
+				PreferredBackend:         strconv.Itoa(testData.preferredBackendIdx),
+				ServerHTTPServiceAddress: "localhost",
+				ServerHTTPServicePort:    0,
+				ServerGRPCServiceAddress: "localhost",
+				ServerGRPCServicePort:    0,
+				BackendReadTimeout:       time.Second,
 			}
 
 			if len(backendURLs) == 2 {
 				cfg.CompareResponses = true
 			}
 
-			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, nil)
+			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
 			require.NoError(t, err)
 			require.NotNil(t, p)
 			defer p.Stop() //nolint:errcheck
@@ -177,11 +188,12 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			require.NoError(t, p.Start())
 
 			// Send a query request to the proxy.
-			res, err := http.Get(fmt.Sprintf("http://%s/api/v1/query", p.Endpoint()))
+			endpoint := fmt.Sprintf("http://%s/api/v1/query", p.server.HTTPListenAddr())
+			res, err := http.Get(endpoint)
 			require.NoError(t, err)
 
 			defer res.Body.Close()
-			body, err := ioutil.ReadAll(res.Body)
+			body, err := io.ReadAll(res.Body)
 			require.NoError(t, err)
 
 			assert.Equal(t, testData.expectedStatus, res.StatusCode)
@@ -313,12 +325,15 @@ func TestProxy_Passthrough(t *testing.T) {
 			cfg := ProxyConfig{
 				BackendEndpoints:               strings.Join(backendURLs, ","),
 				PreferredBackend:               strconv.Itoa(testData.preferredBackendIdx),
-				ServerServicePort:              0,
+				ServerHTTPServiceAddress:       "localhost",
+				ServerHTTPServicePort:          0,
+				ServerGRPCServiceAddress:       "localhost",
+				ServerGRPCServicePort:          0,
 				BackendReadTimeout:             time.Second,
 				PassThroughNonRegisteredRoutes: true,
 			}
 
-			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, nil)
+			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
 			require.NoError(t, err)
 			require.NotNil(t, p)
 			defer p.Stop() //nolint:errcheck
@@ -328,11 +343,12 @@ func TestProxy_Passthrough(t *testing.T) {
 			for _, query := range testData.queries {
 
 				// Send a query request to the proxy.
-				res, err := http.Get(fmt.Sprintf("http://%s%s", p.Endpoint(), query.path))
+				endpoint := fmt.Sprintf("http://%s%s", p.server.HTTPListenAddr(), query.path)
+				res, err := http.Get(endpoint)
 				require.NoError(t, err)
 
 				defer res.Body.Close()
-				body, err := ioutil.ReadAll(res.Body)
+				body, err := io.ReadAll(res.Body)
 				require.NoError(t, err)
 
 				assert.Equal(t, query.expectedStatusCode, res.StatusCode)
@@ -340,6 +356,142 @@ func TestProxy_Passthrough(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProxyHTTPGRPC(t *testing.T) {
+	const (
+		pathPrefix         = "/api/v1/query"
+		querySingleMetric1 = `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"cortex_build_info"},"value":[1583320883,"1"]}]}}`
+		querySingleMetric2 = `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"cortex_build_info"},"value":[1583320883,"2"]}]}}`
+	)
+
+	type mockedBackend struct {
+		pathPrefix string
+		handler    http.HandlerFunc
+	}
+
+	backends := []mockedBackend{
+		{handler: mockQueryResponse(pathPrefix, 200, querySingleMetric1)},
+		{handler: mockQueryResponse(pathPrefix, 200, querySingleMetric2)},
+	}
+
+	t.Run("HTTP proxy connection", func(t *testing.T) {
+		var backendURLs []string
+		logger := log.NewNopLogger()
+
+		// Start backend servers.
+		for _, backend := range backends {
+			server, err := server.New(server.Config{
+				HTTPListenAddress: "localhost",
+				HTTPListenPort:    0,
+				GRPCListenAddress: "localhost",
+				GRPCListenPort:    0,
+				Registerer:        prometheus.NewRegistry(),
+				Log:               logger,
+			})
+			require.NoError(t, err)
+			server.HTTP.Path(pathPrefix).Methods("GET").Handler(backend.handler)
+			go func() {
+				defer server.Shutdown()
+				require.NoError(t, server.Run())
+			}()
+
+			backendURLs = append(backendURLs, getServerAddress("http", server)+backend.pathPrefix)
+		}
+
+		// Start the proxy.
+		cfg := ProxyConfig{
+			BackendEndpoints:         strings.Join(backendURLs, ","),
+			PreferredBackend:         strconv.Itoa(0), // First backend server is preferred response
+			ServerHTTPServiceAddress: "localhost",
+			ServerHTTPServicePort:    0,
+			ServerGRPCServiceAddress: "localhost",
+			ServerGRPCServicePort:    0,
+			BackendReadTimeout:       time.Second,
+		}
+
+		p, err := NewProxy(cfg, logger, testRoutes, prometheus.NewRegistry())
+		require.NoError(t, err)
+		require.NotNil(t, p)
+		defer p.Stop() //nolint:errcheck
+
+		require.NoError(t, p.Start())
+
+		// Send a query request to the proxy.
+		endpoint := getServerAddress("http", p.server) + "/api/v1/query"
+
+		res, err := http.Get(endpoint)
+		require.NoError(t, err)
+
+		defer res.Body.Close()
+		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+
+		assert.Equal(t, 200, res.StatusCode)
+		assert.Equal(t, querySingleMetric1, string(body))
+	})
+
+	t.Run("gRPC proxy connection", func(t *testing.T) {
+		var backendURLs []string
+		logger := log.NewNopLogger()
+
+		// Start backend servers.
+		for _, backend := range backends {
+			server, err := server.New(server.Config{
+				HTTPListenAddress: "localhost",
+				HTTPListenPort:    0,
+				GRPCListenAddress: "localhost",
+				GRPCListenPort:    0,
+				Registerer:        prometheus.NewRegistry(),
+				Log:               logger,
+			})
+			require.NoError(t, err)
+			server.HTTP.Path(pathPrefix).Methods("GET").Handler(backend.handler)
+			go func() {
+				defer server.Shutdown()
+				require.NoError(t, server.Run())
+			}()
+
+			backendURLs = append(backendURLs, getServerAddress("http", server)+backend.pathPrefix)
+		}
+
+		// Start the proxy.
+		cfg := ProxyConfig{
+			BackendEndpoints:         strings.Join(backendURLs, ","),
+			PreferredBackend:         strconv.Itoa(0), // First backend server is preferred response
+			ServerHTTPServiceAddress: "localhost",
+			ServerHTTPServicePort:    0,
+			ServerGRPCServiceAddress: "localhost",
+			ServerGRPCServicePort:    0,
+			BackendReadTimeout:       time.Second,
+		}
+
+		p, err := NewProxy(cfg, logger, testRoutes, prometheus.NewRegistry())
+		require.NoError(t, err)
+		require.NotNil(t, p)
+		defer p.Stop() //nolint:errcheck
+
+		require.NoError(t, p.Start())
+
+		// gRPC connection to proxy
+		grpcAddress := getServerAddress("grpc", p.server)
+		conn, err := grpc.Dial(grpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		require.NoError(t, err)
+		grpcClient := httpgrpc.NewHTTPClient(conn)
+
+		// HTTP request message to be send via gRPC
+		req := httpgrpc.HTTPRequest{
+			Method: http.MethodGet,
+			Url:    "/api/v1/query",
+		}
+
+		// Make gRPC request
+		res, err := grpcClient.Handle(context.Background(), &req)
+		require.NoError(t, err)
+
+		assert.Equal(t, int32(200), res.Code)
+		assert.Equal(t, querySingleMetric1, string(res.Body))
+	})
 }
 
 func mockQueryResponse(path string, status int, res string) http.HandlerFunc {
@@ -356,4 +508,17 @@ func mockQueryResponse(path string, status int, res string) http.HandlerFunc {
 			_, _ = w.Write([]byte(res))
 		}
 	}
+}
+
+// getServerAddress gets the server address of protocol proto:
+//   - http: HTTPListenAddr()
+//   - grpc: GRPCListenAddr()
+func getServerAddress(proto string, server *server.Server) string {
+	if proto == "http" {
+		return "http://" + server.HTTPListenAddr().String()
+	} else if proto == "grpc" {
+		return "dns:///" + server.GRPCListenAddr().String()
+	}
+
+	return ""
 }

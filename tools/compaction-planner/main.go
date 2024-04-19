@@ -15,20 +15,22 @@ import (
 	"time"
 
 	gokitlog "github.com/go-kit/log"
-	"github.com/oklog/ulid"
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/extprom"
 
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	cfg := struct {
 		bucket      bucket.Config
 		userID      string
@@ -38,6 +40,8 @@ func main() {
 		sorting     string
 	}{}
 
+	logger := gokitlog.NewNopLogger()
+
 	// Loads bucket index, and plans compaction for all loaded meta files.
 	cfg.bucket.RegisterFlags(flag.CommandLine)
 	cfg.blockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
@@ -46,13 +50,15 @@ func main() {
 	flag.IntVar(&cfg.shardCount, "shard-count", 4, "Shard count")
 	flag.IntVar(&cfg.splitGroups, "split-groups", 4, "Split groups")
 	flag.StringVar(&cfg.sorting, "sorting", compactor.CompactionOrderOldestFirst, "One of: "+strings.Join(compactor.CompactionOrders, ", ")+".")
-	flag.Parse()
+
+	// Parse CLI arguments.
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatalln(err.Error())
+	}
 
 	if cfg.userID == "" {
 		log.Fatalln("no user specified")
 	}
-
-	logger := gokitlog.NewNopLogger()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()
@@ -69,34 +75,17 @@ func main() {
 
 	log.Println("Using index from", time.Unix(idx.UpdatedAt, 0).UTC().Format(time.RFC3339))
 
-	// convert index to metas.
-	deleted := map[ulid.ULID]bool{}
-	for _, id := range idx.BlockDeletionMarks.GetULIDs() {
-		deleted[id] = true
-	}
-
-	metas := map[ulid.ULID]*metadata.Meta{}
-	for _, b := range idx.Blocks {
-		if deleted[b.ID] {
-			continue
-		}
-		metas[b.ID] = b.ThanosMeta()
-		if metas[b.ID].Thanos.Labels == nil {
-			metas[b.ID].Thanos.Labels = map[string]string{}
-		}
-		metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID // Needed for correct planning.
-	}
-
+	metas := compactor.ConvertBucketIndexToMetasForCompactionJobPlanning(idx)
 	synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{Name: "synced", Help: "Number of block metadata synced"},
 		[]string{"state"}, []string{block.MarkedForNoCompactionMeta},
 	)
 
 	for _, f := range []block.MetadataFilter{
 		// No need to exclude blocks marked for deletion, as we did that above already.
-		compactor.NewNoCompactionMarkFilter(bucket.NewUserBucketClient(cfg.userID, bkt, nil), true),
+		compactor.NewNoCompactionMarkFilter(bucket.NewUserBucketClient(cfg.userID, bkt, nil)),
 	} {
 		log.Printf("Filtering using %T\n", f)
-		err = f.Filter(ctx, metas, synced, nil)
+		err = f.Filter(ctx, metas, synced)
 		if err != nil {
 			log.Fatalln("filter failed:", err)
 		}

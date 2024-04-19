@@ -19,10 +19,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/extprom"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
 func TestShuffleShardingStrategy(t *testing.T) {
@@ -363,7 +363,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			// Initialize the ring state.
-			require.NoError(t, store.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
+			require.NoError(t, store.CAS(ctx, "test", func(interface{}) (interface{}, bool, error) {
 				d := ring.NewDesc()
 				testData.setupRing(d)
 				return d, true, nil
@@ -397,7 +397,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{}, []string{"state"})
 				synced.WithLabelValues(shardExcludedMeta).Set(0)
 
-				metas := map[ulid.ULID]*metadata.Meta{
+				metas := map[ulid.ULID]*block.Meta{
 					block1: {},
 					block2: {},
 					block3: {},

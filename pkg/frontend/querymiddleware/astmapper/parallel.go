@@ -14,6 +14,7 @@ import (
 )
 
 var summableAggregates = map[parser.ItemType]struct{}{
+	parser.GROUP: {},
 	parser.SUM:   {},
 	parser.MIN:   {},
 	parser.MAX:   {},
@@ -28,9 +29,14 @@ var NonParallelFuncs = []string{
 	"absent_over_time",
 	"histogram_quantile",
 	"sort_desc",
+	"sort_by_label",
+	"sort_by_label_desc",
 	"sort",
 	"time",
 	"vector",
+
+	// The following function may be parallelized using a strategy similar to avg().
+	"histogram_avg",
 }
 
 // FuncsWithDefaultTimeArg is the list of functions that extract date information from a variadic list of params,
@@ -124,6 +130,19 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 func containsAggregateExpr(e parser.Expr) bool {
 	containsAggregate, _ := anyNode(e, isAggregateExpr)
 	return containsAggregate
+}
+
+// countVectorSelectors returns the number of vector selectors in the input expression.
+func countVectorSelectors(e parser.Expr) int {
+	count := 0
+
+	visitNode(e, func(node parser.Node) {
+		if ok, _ := isVectorSelector(node); ok {
+			count++
+		}
+	})
+
+	return count
 }
 
 func isAggregateExpr(n parser.Node) (bool, error) {

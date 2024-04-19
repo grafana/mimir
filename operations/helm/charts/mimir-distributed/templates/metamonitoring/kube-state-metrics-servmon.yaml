@@ -1,4 +1,4 @@
-{{- if and ((.Values.metaMonitoring).grafanaAgent).enabled ((((.Values.metaMonitoring).grafanaAgent).metrics).scrapeK8s).enabled }}
+{{- if and .Values.metaMonitoring.grafanaAgent.enabled .Values.metaMonitoring.grafanaAgent.metrics.enabled .Values.metaMonitoring.grafanaAgent.metrics.scrapeK8s.enabled }}
 {{- with .Values.metaMonitoring.serviceMonitor }}
 {{- if .enabled }}
 apiVersion: monitoring.coreos.com/v1
@@ -17,15 +17,20 @@ metadata:
   {{- end }}
 spec:
   endpoints:
-    - port: http-metrics
+    - port: {{ $.Values.metaMonitoring.grafanaAgent.metrics.scrapeK8s.kubeStateMetrics.service.port }}
       metricRelabelings:
         - action: keep
-          regex: {{ include "mimir.resourceName" (dict "ctx"  $) }}.*
+          regex: "(^|.*;){{ include "mimir.resourceName" (dict "ctx"  $) }}.*"
           sourceLabels:
             - deployment
             - statefulset
             - pod
-          separator: ''
+          separator: ';'
+      {{- if kindIs "string" .clusterLabel }}
+      relabelings:
+        - targetLabel: cluster
+          replacement: "{{ .clusterLabel | default (include "mimir.clusterName" $) }}"
+      {{- end }}
       path: /metrics
       honorLabels: true # retain namespace label from kube-state-metrics
       {{- with .scrapeTimeout }}

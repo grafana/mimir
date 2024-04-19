@@ -9,7 +9,7 @@ package stats;
 
 option go_package = "stats";
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 
 option (gogoproto.marshaler_all) = true;
@@ -20,12 +20,18 @@ message Stats {
   google.protobuf.Duration wall_time = 1 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   // The number of series fetched for the query
   uint64 fetched_series_count = 2;
-  // The number of bytes of the chunks fetched for the query
+  // The number of bytes of the chunks fetched for the query, after any deduplication
   uint64 fetched_chunk_bytes = 3;
-  // The number of chunks fetched for the query
+  // The number of chunks fetched for the query, after any deduplication
   uint64 fetched_chunks_count = 4;
   // The number of sharded queries executed. 0 if sharding is disabled or the query can't be sharded.
   uint32 sharded_queries = 5;
   // The number of split partial queries executed. 0 if splitting is disabled or the query can't be split.
   uint32 split_queries = 6;
+  // The number of index bytes fetched on the store-gateway for the query
+  uint64 fetched_index_bytes = 7;
+  // The estimated number of series to be fetched for the query
+  uint64 estimated_series_count = 8;
+  // The sum of durations that the query spent in the queue, before it was handled by querier.
+  google.protobuf.Duration queue_time = 9 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
 }

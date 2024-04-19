@@ -6,11 +6,11 @@
 package commands
 
 import (
-	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
@@ -25,7 +25,6 @@ var allMetricsInRuleTest = []string{
 	"apiserver_request_duration_seconds_bucket",
 	"apiserver_request_duration_seconds_count",
 	"apiserver_request_total",
-	"container_cpu_usage_seconds_total",
 	"container_memory_cache",
 	"container_memory_rss",
 	"container_memory_swap",
@@ -70,6 +69,6 @@ func TestParseMetricsInRuleFile(t *testing.T) {
 	for metric := range output.OverallMetrics {
 		metricsUsed = append(metricsUsed, metric)
 	}
-	sort.Strings(metricsUsed)
+	slices.Sort(metricsUsed)
 	assert.Equal(t, allMetricsInRuleTest, metricsUsed)
 }

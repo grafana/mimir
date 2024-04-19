@@ -1,0 +1,16 @@
+{{- if .Values.alertmanager.enabled -}}
+{{- if .Values.alertmanager.fallbackConfig -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}-fallback-config
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 4 }}
+  annotations:
+  {{- toYaml .Values.alertmanager.annotations | nindent 4 }} 
+  namespace: {{ .Release.Namespace | quote }}
+data:
+  alertmanager_fallback_config.yaml: |
+    {{- .Values.alertmanager.fallbackConfig | nindent 4 }}
+{{- end -}}
+{{- end -}}

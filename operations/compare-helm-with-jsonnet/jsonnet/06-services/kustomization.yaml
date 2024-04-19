@@ -4,7 +4,7 @@ patches:
   # Minor difference: Jsonnet names service ports differently and uses numbers instead of names for targetPort
   - target:
       kind: Service
-      name: 'mimir-(overrides-exporter|store-gateway|query-frontend(-headless)?|querier|ingester|ruler|distributor-headless|compactor|alertmanager-headless)'
+      name: 'mimir-(overrides-exporter|store-gateway|query-frontend(-headless)?|query-scheduler(-headless)?|querier|ingester|ruler|distributor-headless|compactor|alertmanager-headless)'
     patch: |-
       - op: replace
         path: /spec/ports/0/name
@@ -16,7 +16,7 @@ patches:
   # Minor difference: Jsonnet names service ports differently and uses numbers instead of names for targetPort
   - target:
       kind: Service
-      name: 'mimir-(store-gateway|query-frontend(-headless)?|querier|ingester|ruler|distributor-headless|compactor|alertmanager-headless)'
+      name: 'mimir-(store-gateway|query-frontend(-headless)?|query-scheduler(-headless)?|querier|ingester|ruler|distributor-headless|compactor|alertmanager-headless)'
     patch: |-
       - op: replace
         path: /spec/ports/1/name
@@ -32,14 +32,6 @@ patches:
     patch: |-
       - op: remove
         path: /spec/ports/1
-
-  # TODO(logiraptor): Helm doesn't add an http port to distributor-headless
-  - target:
-      kind: Service
-      name: 'mimir-(distributor-headless)'
-    patch: |-
-      - op: remove
-        path: /spec/ports/0
 
   # TODO(logiraptor): Helm's compactor service is not headless
   - target:

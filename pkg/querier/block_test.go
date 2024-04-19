@@ -13,17 +13,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/store/labelpb"
-	"github.com/thanos-io/thanos/pkg/store/storepb"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestBlockQuerierSeries(t *testing.T) {
@@ -36,39 +36,80 @@ func TestBlockQuerierSeries(t *testing.T) {
 	tests := map[string]struct {
 		series          *storepb.Series
 		expectedMetric  labels.Labels
-		expectedSamples []model.SamplePair
+		expectedSamples int64
+		assertSample    func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType)
 		expectedErr     string
 	}{
 		"empty series": {
 			series:         &storepb.Series{},
-			expectedMetric: labels.Labels(nil),
+			expectedMetric: labels.EmptyLabels(),
 			expectedErr:    "no chunks",
 		},
-		"should return series on success": {
+		"should return float series on success": {
 			series: &storepb.Series{
-				Labels: []labelpb.ZLabel{
+				Labels: []mimirpb.LabelAdapter{
 					{Name: "foo", Value: "bar"},
 				},
 				Chunks: []storepb.AggrChunk{
-					{MinTime: minTimestamp.Unix() * 1000, MaxTime: maxTimestamp.Unix() * 1000, Raw: &storepb.Chunk{Type: storepb.Chunk_XOR, Data: mockTSDBChunkData()}},
+					{
+						MinTime: minTimestamp.Unix() * 1000,
+						MaxTime: maxTimestamp.Unix() * 1000,
+						Raw:     storepb.Chunk{Type: storepb.Chunk_XOR, Data: mockTSDBXorChunkData(t)},
+					},
 				},
 			},
-			expectedMetric: labels.Labels{
-				{Name: "foo", Value: "bar"},
+			expectedMetric:  labels.FromStrings("foo", "bar"),
+			expectedSamples: 2,
+			assertSample: func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
+				test.RequireIteratorFloat(t, time.Unix(i, 0).UnixMilli(), float64(i), iter, valueType)
 			},
-			expectedSamples: []model.SamplePair{
-				{Timestamp: model.TimeFromUnixNano(time.Unix(1, 0).UnixNano()), Value: model.SampleValue(1)},
-				{Timestamp: model.TimeFromUnixNano(time.Unix(2, 0).UnixNano()), Value: model.SampleValue(2)},
+		},
+		"should return histogram series on success": {
+			series: &storepb.Series{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "foo", Value: "bar"},
+				},
+				Chunks: []storepb.AggrChunk{
+					{
+						MinTime: minTimestamp.Unix() * 1000,
+						MaxTime: maxTimestamp.Unix() * 1000,
+						Raw:     storepb.Chunk{Type: storepb.Chunk_Histogram, Data: mockTSDBHistogramChunkData(t)},
+					},
+				},
+			},
+			expectedMetric:  labels.FromStrings("foo", "bar"),
+			expectedSamples: 2,
+			assertSample: func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
+				test.RequireIteratorHistogram(t, time.Unix(i, 0).UnixMilli(), test.GenerateTestHistogram(int(i)), iter, valueType)
+			},
+		},
+		"should return float histogram series on success": {
+			series: &storepb.Series{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "foo", Value: "bar"},
+				},
+				Chunks: []storepb.AggrChunk{
+					{
+						MinTime: minTimestamp.Unix() * 1000,
+						MaxTime: maxTimestamp.Unix() * 1000,
+						Raw:     storepb.Chunk{Type: storepb.Chunk_FloatHistogram, Data: mockTSDBFloatHistogramChunkData(t)},
+					},
+				},
+			},
+			expectedMetric:  labels.FromStrings("foo", "bar"),
+			expectedSamples: 2,
+			assertSample: func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
+				test.RequireIteratorFloatHistogram(t, time.Unix(i, 0).UnixMilli(), test.GenerateTestFloatHistogram(int(i)), iter, valueType)
 			},
 		},
 		"should return error on failure while reading encoded chunk data": {
 			series: &storepb.Series{
-				Labels: []labelpb.ZLabel{{Name: "foo", Value: "bar"}},
+				Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
 				Chunks: []storepb.AggrChunk{
-					{MinTime: minTimestamp.Unix() * 1000, MaxTime: maxTimestamp.Unix() * 1000, Raw: &storepb.Chunk{Type: storepb.Chunk_XOR, Data: []byte{0, 1}}},
+					{MinTime: minTimestamp.Unix() * 1000, MaxTime: maxTimestamp.Unix() * 1000, Raw: storepb.Chunk{Type: storepb.Chunk_XOR, Data: []byte{0, 1}}},
 				},
 			},
-			expectedMetric: labels.Labels{labels.Label{Name: "foo", Value: "bar"}},
+			expectedMetric: labels.FromStrings("foo", "bar"),
 			expectedErr:    `cannot iterate chunk for series: {foo="bar"}: EOF`,
 		},
 	}
@@ -77,22 +118,20 @@ func TestBlockQuerierSeries(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			series := newBlockQuerierSeries(labelpb.ZLabelsToPromLabels(testData.series.Labels), testData.series.Chunks)
+			series := newBlockQuerierSeries(mimirpb.FromLabelAdaptersToLabels(testData.series.Labels), testData.series.Chunks)
 
-			assert.Equal(t, testData.expectedMetric, series.Labels())
+			assert.True(t, labels.Equal(testData.expectedMetric, series.Labels()))
 
-			sampleIx := 0
+			sampleIx := int64(0)
 
-			it := series.Iterator()
-			for it.Next() {
-				ts, val := it.At()
-				require.True(t, sampleIx < len(testData.expectedSamples))
-				assert.Equal(t, int64(testData.expectedSamples[sampleIx].Timestamp), ts)
-				assert.Equal(t, float64(testData.expectedSamples[sampleIx].Value), val)
+			it := series.Iterator(nil)
+			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+				require.True(t, sampleIx < testData.expectedSamples)
+				testData.assertSample(t, sampleIx+1, it, valType) // +1 because the chunk contains samples starting from timestamp 1, not 0
 				sampleIx++
 			}
 			// make sure we've got all expected samples
-			require.Equal(t, sampleIx, len(testData.expectedSamples))
+			require.Equal(t, sampleIx, testData.expectedSamples)
 
 			if testData.expectedErr != "" {
 				require.EqualError(t, it.Err(), testData.expectedErr)
@@ -103,15 +142,39 @@ func TestBlockQuerierSeries(t *testing.T) {
 	}
 }
 
-func mockTSDBChunkData() []byte {
+func mockTSDBXorChunkData(t *testing.T) []byte {
 	chunk := chunkenc.NewXORChunk()
 	appender, err := chunk.Appender()
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 
 	appender.Append(time.Unix(1, 0).Unix()*1000, 1)
 	appender.Append(time.Unix(2, 0).Unix()*1000, 2)
+
+	return chunk.Bytes()
+}
+
+func mockTSDBHistogramChunkData(t *testing.T) []byte {
+	chunk := chunkenc.NewHistogramChunk()
+	appender, err := chunk.Appender()
+	require.NoError(t, err)
+
+	_, _, _, err = appender.AppendHistogram(nil, time.Unix(1, 0).Unix()*1000, test.GenerateTestHistogram(1), true)
+	require.NoError(t, err)
+	_, _, _, err = appender.AppendHistogram(nil, time.Unix(2, 0).Unix()*1000, test.GenerateTestHistogram(2), true)
+	require.NoError(t, err)
+
+	return chunk.Bytes()
+}
+
+func mockTSDBFloatHistogramChunkData(t *testing.T) []byte {
+	chunk := chunkenc.NewFloatHistogramChunk()
+	appender, err := chunk.Appender()
+	require.NoError(t, err)
+
+	_, _, _, err = appender.AppendFloatHistogram(nil, time.Unix(1, 0).Unix()*1000, test.GenerateTestFloatHistogram(1), true)
+	require.NoError(t, err)
+	_, _, _, err = appender.AppendFloatHistogram(nil, time.Unix(2, 0).Unix()*1000, test.GenerateTestFloatHistogram(2), true)
+	require.NoError(t, err)
 
 	return chunk.Bytes()
 }
@@ -241,7 +304,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 		t.Run(fmt.Sprintf("consume with .Next() method, perform .At() after every %dth call to .Next()", callAtEvery), func(t *testing.T) {
 			t.Parallel()
 
-			advance := func(it chunkenc.Iterator, wantTs int64) bool { return it.Next() }
+			advance := func(it chunkenc.Iterator, _ int64) chunkenc.ValueType { return it.Next() }
 			ss := getSeriesSet()
 
 			verifyNextSeries(t, ss, labels.FromStrings("__name__", "first", "a", "a"), 3*time.Millisecond, []timeRange{
@@ -271,7 +334,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 		t.Run(fmt.Sprintf("consume with .Seek() method, perform .At() after every %dth call to .Seek()", callAtEvery), func(t *testing.T) {
 			t.Parallel()
 
-			advance := func(it chunkenc.Iterator, wantTs int64) bool { return it.Seek(wantTs) }
+			advance := func(it chunkenc.Iterator, wantTs int64) chunkenc.ValueType { return it.Seek(wantTs) }
 			ss := getSeriesSet()
 
 			verifyNextSeries(t, ss, labels.FromStrings("__name__", "first", "a", "a"), 3*time.Millisecond, []timeRange{
@@ -302,7 +365,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 			t.Parallel()
 
 			var seek bool
-			advance := func(it chunkenc.Iterator, wantTs int64) bool {
+			advance := func(it chunkenc.Iterator, wantTs int64) chunkenc.ValueType {
 				seek = !seek
 				if seek {
 					return it.Seek(wantTs)
@@ -343,17 +406,17 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 // "samples" is the expected total number of samples.
 // "callAtEvery" defines after every how many samples we want to call .At().
 // "advance" is a function which takes an iterator and advances its position.
-func verifyNextSeries(t *testing.T, ss storage.SeriesSet, labels labels.Labels, step time.Duration, ranges []timeRange, samples, callAtEvery uint32, advance func(chunkenc.Iterator, int64) bool) {
+func verifyNextSeries(t *testing.T, ss storage.SeriesSet, labels labels.Labels, step time.Duration, ranges []timeRange, samples, callAtEvery uint32, advance func(chunkenc.Iterator, int64) chunkenc.ValueType) {
 	require.True(t, ss.Next())
 
 	s := ss.At()
 	require.Equal(t, labels, s.Labels())
 
 	var count uint32
-	it := s.Iterator()
+	it := s.Iterator(nil)
 	for _, r := range ranges {
 		for wantTs := r.minT.UnixNano() / 1000000; wantTs <= r.maxT.UnixNano()/1000000; wantTs += step.Milliseconds() {
-			require.True(t, advance(it, wantTs))
+			require.Equal(t, chunkenc.ValFloat, advance(it, wantTs))
 
 			if count%callAtEvery == 0 {
 				gotTs, v := it.At()
@@ -371,24 +434,24 @@ func verifyNextSeries(t *testing.T, ss storage.SeriesSet, labels labels.Labels, 
 // createAggrChunkWithSineSamples takes a min/maxTime and a step duration, it generates a chunk given these specs.
 // The minTime and maxTime are both inclusive.
 func createAggrChunkWithSineSamples(minTime, maxTime time.Time, step time.Duration) storepb.AggrChunk {
-	var samples []promql.Point
+	var samples []promql.FPoint
 
 	minT := minTime.UnixNano() / 1000000
 	maxT := maxTime.UnixNano() / 1000000
 	stepMillis := step.Milliseconds()
 
 	for t := minT; t <= maxT; t += stepMillis {
-		samples = append(samples, promql.Point{T: t, V: math.Sin(float64(t))})
+		samples = append(samples, promql.FPoint{T: t, F: math.Sin(float64(t))})
 	}
 
 	return createAggrChunk(minT, maxT, samples...)
 }
 
-func createAggrChunkWithSamples(samples ...promql.Point) storepb.AggrChunk {
+func createAggrChunkWithSamples(samples ...promql.FPoint) storepb.AggrChunk {
 	return createAggrChunk(samples[0].T, samples[len(samples)-1].T, samples...)
 }
 
-func createAggrChunk(minTime, maxTime int64, samples ...promql.Point) storepb.AggrChunk {
+func createAggrChunk(minTime, maxTime int64, samples ...promql.FPoint) storepb.AggrChunk {
 	// Ensure samples are sorted by timestamp.
 	sort.Slice(samples, func(i, j int) bool {
 		return samples[i].T < samples[j].T
@@ -401,24 +464,24 @@ func createAggrChunk(minTime, maxTime int64, samples ...promql.Point) storepb.Ag
 	}
 
 	for _, s := range samples {
-		appender.Append(s.T, s.V)
+		appender.Append(s.T, s.F)
 	}
 
 	return storepb.AggrChunk{
 		MinTime: minTime,
 		MaxTime: maxTime,
-		Raw: &storepb.Chunk{
+		Raw: storepb.Chunk{
 			Type: storepb.Chunk_XOR,
 			Data: chunk.Bytes(),
 		},
 	}
 }
 
-func mkZLabels(s ...string) []labelpb.ZLabel {
-	var result []labelpb.ZLabel
+func mkZLabels(s ...string) []mimirpb.LabelAdapter {
+	var result []mimirpb.LabelAdapter
 
 	for i := 0; i+1 < len(s); i = i + 2 {
-		result = append(result, labelpb.ZLabel{
+		result = append(result, mimirpb.LabelAdapter{
 			Name:  s[i],
 			Value: s[i+1],
 		})
@@ -427,12 +490,8 @@ func mkZLabels(s ...string) []labelpb.ZLabel {
 	return result
 }
 
-func mkLabels(s ...string) []labels.Label {
-	return labelpb.ZLabelsToPromLabels(mkZLabels(s...))
-}
-
 func Benchmark_newBlockQuerierSeries(b *testing.B) {
-	lbls := mkLabels(
+	lbls := labels.FromStrings(
 		"__name__", "test",
 		"label_1", "value_1",
 		"label_2", "value_2",
@@ -483,8 +542,9 @@ func Benchmark_blockQuerierSeriesSet_iteration(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		set := blockQuerierSeriesSet{series: series}
 
+		var t chunkenc.Iterator
 		for set.Next() {
-			for t := set.At().Iterator(); t.Next(); {
+			for t = set.At().Iterator(t); t.Next() != chunkenc.ValNone; {
 				t.At()
 			}
 		}
@@ -521,9 +581,10 @@ func Benchmark_blockQuerierSeriesSet_seek(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		set := blockQuerierSeriesSet{series: series}
 
+		var t chunkenc.Iterator
 		for set.Next() {
 			seekT := int64(0)
-			for t := set.At().Iterator(); t.Seek(seekT); seekT += samplesPerStep {
+			for t = set.At().Iterator(t); t.Seek(seekT) != chunkenc.ValNone; seekT += samplesPerStep {
 				t.At()
 			}
 		}

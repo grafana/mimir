@@ -3,14 +3,18 @@
 package compactor
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
+	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 // Job holds a compaction job, which consists of a group of blocks that should be compacted together.
@@ -20,8 +24,7 @@ type Job struct {
 	key            string
 	labels         labels.Labels
 	resolution     int64
-	metasByMinTime []*metadata.Meta
-	hashFunc       metadata.HashFunc
+	metasByMinTime []*block.Meta
 	useSplitting   bool
 	shardingKey    string
 
@@ -29,14 +32,13 @@ type Job struct {
 	splitNumShards uint32
 }
 
-// NewJob returns a new compaction Job.
-func NewJob(userID string, key string, lset labels.Labels, resolution int64, hashFunc metadata.HashFunc, useSplitting bool, splitNumShards uint32, shardingKey string) *Job {
+// newJob returns a new compaction Job.
+func newJob(userID string, key string, lset labels.Labels, resolution int64, useSplitting bool, splitNumShards uint32, shardingKey string) *Job {
 	return &Job{
 		userID:         userID,
 		key:            key,
 		labels:         lset,
 		resolution:     resolution,
-		hashFunc:       hashFunc,
 		useSplitting:   useSplitting,
 		splitNumShards: splitNumShards,
 		shardingKey:    shardingKey,
@@ -53,8 +55,8 @@ func (job *Job) Key() string {
 	return job.key
 }
 
-// AppendMeta the block with the given meta to the job.
-func (job *Job) AppendMeta(meta *metadata.Meta) error {
+// AppendMeta appends the block with the given meta to the job.
+func (job *Job) AppendMeta(meta *block.Meta) error {
 	if !labels.Equal(job.labels, labels.FromMap(meta.Thanos.Labels)) {
 		return errors.New("block and group labels do not match")
 	}
@@ -99,6 +101,27 @@ func (job *Job) MaxTime() int64 {
 	return max
 }
 
+// MinCompactionLevel returns the minimum compaction level across all source blocks
+// in this job.
+func (job *Job) MinCompactionLevel() int {
+	min := math.MaxInt
+
+	for _, m := range job.metasByMinTime {
+		if m.Compaction.Level < min {
+			min = m.Compaction.Level
+		}
+	}
+
+	return min
+}
+
+// Metas returns the metadata for each block that is part of this job, ordered by the block's MinTime
+func (job *Job) Metas() []*block.Meta {
+	out := make([]*block.Meta, len(job.metasByMinTime))
+	copy(out, job.metasByMinTime)
+	return out
+}
+
 // Labels returns the external labels for the output block(s) of this job.
 func (job *Job) Labels() labels.Labels {
 	return job.labels
@@ -109,7 +132,7 @@ func (job *Job) Resolution() int64 {
 	return job.resolution
 }
 
-// UseSplitting returns whether blocks should be splitted into multiple shards when compacted.
+// UseSplitting returns whether blocks should be split into multiple shards when compacted.
 func (job *Job) UseSplitting() bool {
 	return job.useSplitting
 }
@@ -126,4 +149,39 @@ func (job *Job) ShardingKey() string {
 
 func (job *Job) String() string {
 	return fmt.Sprintf("%s (minTime: %d maxTime: %d)", job.Key(), job.MinTime(), job.MaxTime())
+}
+
+// jobWaitPeriodElapsed returns whether the 1st level compaction wait period has
+// elapsed for the input job. If the wait period has not elapsed, then this function
+// also returns the Meta of the first source block encountered for which the wait
+// period has not elapsed yet.
+func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, userBucket objstore.Bucket) (bool, *block.Meta, error) {
+	if waitPeriod <= 0 {
+		return true, nil, nil
+	}
+
+	if job.MinCompactionLevel() > 1 {
+		return true, nil, nil
+	}
+
+	// Check if the job contains any source block uploaded more recently than "wait period" ago,
+	// ignoring out of order blocks.
+	threshold := time.Now().Add(-waitPeriod)
+
+	for _, meta := range job.Metas() {
+		if meta.OutOfOrder || meta.Compaction.FromOutOfOrder() {
+			continue
+		}
+
+		attrs, err := block.GetMetaAttributes(ctx, meta, userBucket)
+		if err != nil {
+			return false, meta, err
+		}
+
+		if attrs.LastModified.After(threshold) {
+			return false, meta, nil
+		}
+	}
+
+	return true, nil, nil
 }

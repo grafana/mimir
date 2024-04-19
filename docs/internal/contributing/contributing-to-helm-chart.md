@@ -10,9 +10,19 @@ Please see the [general workflow](README.md#workflow) for reference.
 
 ## Updating compiled manifests
 
-We keep a compiled version of the helm chart for each values file in the `ci` directory.
+We keep a compiled version of the helm chart committed in the repository for each values file in the `operations/helm/charts/mimir-distributed/ci` directory and its sub-directories.
 This makes it easy to see how a given PR impacts the final output.
-A PR check will fail if you forget to update the compiled manifests, and you can use `make build-helm-tests` to update them.
+
+For each values file the helm chart is compiled into intermediate YAML manifests, then some frequently changing version information is removed from the manifests and the result is committed.
+
+A PR check will fail if you forget to update the compiled manifests, and you can use `make build-helm-tests` to update them and `make check-helm-tests` to verify them after commit.
+The PR check will also fail if [static checks](#static-checks) on the intermediate YAML manifests fail.
+
+### Static checks
+
+To lint, verify, and execute [conftest](https://www.conftest.dev/) static analysis tests, use the make targets `conftest-fmt`, `conftest-verify` and `check-helm-tests`.
+
+The tests verify that the policies defined in `operations/helm/policies` are met for all Kubernetes manifests that are generated from configurations that are defined in the `operations/helm/charts/mimir-distributed/ci` directory and its sub-directories.
 
 ## Versioning
 
@@ -30,10 +40,10 @@ In order to search, template, install, upgrade, etc beta versions of charts, Hel
 
 ## Linting
 
-Install [ct](https://github.com/helm/chart-testing) and run
+Run [ct](https://github.com/helm/chart-testing) with the `docker` command:
 
 ```bash
-ct lint --config operations/helm/ct.yaml --charts operations/helm/charts/mimir-distributed
+docker run --rm -u $(id -g):$(id -u) -e HOME=/tmp -v $(pwd):/data quay.io/helmpack/chart-testing:latest sh -c "ct lint --all --debug --chart-dirs /data/operations/helm/charts --check-version-increment false --config /data/operations/helm/ct.yaml"
 ```
 
 ## Automated comparison with Jsonnet

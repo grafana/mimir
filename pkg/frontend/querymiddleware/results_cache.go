@@ -7,8 +7,11 @@ package querymiddleware
 
 import (
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
+	"hash/fnv"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -16,19 +19,21 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/uber/jaeger-client-go"
 
-	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/math"
 )
 
 const (
@@ -43,7 +48,9 @@ const (
 )
 
 var (
-	supportedResultsCacheBackends = []string{cache.BackendMemcached}
+	supportedResultsCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
+
+	errUnsupportedBackend = errors.New("unsupported cache backend")
 )
 
 // ResultsCacheConfig is the config for the results cache.
@@ -54,8 +61,9 @@ type ResultsCacheConfig struct {
 
 // RegisterFlags registers flags.
 func (cfg *ResultsCacheConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.Backend, "query-frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", supportedResultsCacheBackends))
-	cfg.Memcached.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.memcached.")
+	f.StringVar(&cfg.Backend, "query-frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", strings.Join(supportedResultsCacheBackends, ", ")))
+	cfg.Memcached.RegisterFlagsWithPrefix("query-frontend.results-cache.memcached.", f)
+	cfg.Redis.RegisterFlagsWithPrefix("query-frontend.results-cache.redis.", f)
 	cfg.Compression.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.")
 }
 
@@ -64,10 +72,16 @@ func (cfg *ResultsCacheConfig) Validate() error {
 		return errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	if cfg.Backend == cache.BackendMemcached {
+	switch cfg.Backend {
+	case cache.BackendMemcached:
 		if err := cfg.Memcached.Validate(); err != nil {
 			return errors.Wrap(err, "query-frontend results cache")
 		}
+	case cache.BackendRedis:
+		if err := cfg.Redis.Validate(); err != nil {
+			return errors.Wrap(err, "query-frontend results cache")
+		}
+
 	}
 
 	if err := cfg.Compression.Validate(); err != nil {
@@ -77,17 +91,37 @@ func (cfg *ResultsCacheConfig) Validate() error {
 	return nil
 }
 
-func errUnsupportedResultsCacheBackend(unsupportedBackend string) error {
-	return fmt.Errorf("unsupported cache backend: %q, supported values: %v", unsupportedBackend, supportedResultsCacheBackends)
+func errUnsupportedResultsCacheBackend(backend string) error {
+	return fmt.Errorf("%w: %q, supported values: %v", errUnsupportedBackend, backend, supportedResultsCacheBackends)
+}
+
+type resultsCacheMetrics struct {
+	cacheRequests prometheus.Counter
+	cacheHits     prometheus.Counter
+}
+
+func newResultsCacheMetrics(requestType string, reg prometheus.Registerer) *resultsCacheMetrics {
+	return &resultsCacheMetrics{
+		cacheRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_frontend_query_result_cache_requests_total",
+			Help:        "Total number of requests (or partial requests) looked up in the results cache.",
+			ConstLabels: map[string]string{"request_type": requestType},
+		}),
+		cacheHits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_frontend_query_result_cache_hits_total",
+			Help:        "Total number of requests (or partial requests) fetched from the results cache.",
+			ConstLabels: map[string]string{"request_type": requestType},
+		}),
+	}
 }
 
 // newResultsCache creates a new results cache based on the input configuration.
 func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
 	// Add the "component" label similarly to other components, so that metrics don't clash and have the same labels set
 	// when running in monolithic mode.
-	reg = extprom.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, reg)
+	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, reg)
 
-	client, err := cache.CreateClient("frontend-cache", cfg.BackendConfig, logger, reg)
+	client, err := cache.CreateClient("frontend-cache", cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, err
 	} else if client == nil {
@@ -95,7 +129,7 @@ func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.R
 	}
 
 	return cache.NewVersioned(
-		cache.NewSpanlessTracingCache(client, logger),
+		cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver()),
 		resultsCacheVersion,
 	), nil
 }
@@ -121,9 +155,10 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 		}
 	}
 	return &PrometheusResponse{
-		Status:  promRes.Status,
-		Data:    data,
-		Headers: promRes.Headers,
+		Status:   promRes.Status,
+		Data:     data,
+		Headers:  promRes.Headers,
+		Warnings: promRes.Warnings,
 	}
 }
 
@@ -139,23 +174,50 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 		}
 	}
 	return &PrometheusResponse{
-		Status: promRes.Status,
-		Data:   data,
+		Status:   promRes.Status,
+		Data:     data,
+		Warnings: promRes.Warnings,
 	}
 }
 
-// CacheSplitter generates cache keys. This is a useful interface for downstream
+// ErrUnsupportedRequest is intended to be used with CacheKeyGenerator
+var ErrUnsupportedRequest = errors.New("request is not cacheable")
+
+// CacheKeyGenerator generates cache keys. This is a useful interface for downstream
 // consumers who wish to implement their own strategies.
-type CacheSplitter interface {
-	GenerateCacheKey(ctx context.Context, userID string, r Request) string
+type CacheKeyGenerator interface {
+	// QueryRequest should generate a cache key based on the tenant ID and MetricsQueryRequest.
+	QueryRequest(ctx context.Context, tenantID string, r MetricsQueryRequest) string
+
+	// LabelValues should return a cache key for a label values request. The cache key does not need to contain the tenant ID.
+	// LabelValues can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
+	// LabelValues should return a nil *GenericQueryCacheKey when it returns an error and
+	// should always return non-nil *GenericQueryCacheKey when the returned error is nil.
+	LabelValues(r *http.Request) (*GenericQueryCacheKey, error)
+
+	// LabelValuesCardinality should return a cache key for a label values cardinality request. The cache key does not need to contain the tenant ID.
+	// LabelValuesCardinality can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
+	// LabelValuesCardinality should return a nil *GenericQueryCacheKey when it returns an error and
+	// should always return non-nil *GenericQueryCacheKey when the returned error is nil.
+	LabelValuesCardinality(r *http.Request) (*GenericQueryCacheKey, error)
 }
 
-// ConstSplitter is a utility for using a constant split interval when determining cache keys
-type ConstSplitter time.Duration
+type DefaultCacheKeyGenerator struct {
+	codec Codec
+	// interval is a constant split interval when determining cache keys for QueryRequest.
+	interval time.Duration
+}
 
-// GenerateCacheKey generates a cache key based on the userID, Request and interval.
-func (t ConstSplitter) GenerateCacheKey(_ context.Context, userID string, r Request) string {
-	startInterval := r.GetStart() / time.Duration(t).Milliseconds()
+func NewDefaultCacheKeyGenerator(codec Codec, interval time.Duration) DefaultCacheKeyGenerator {
+	return DefaultCacheKeyGenerator{
+		codec:    codec,
+		interval: interval,
+	}
+}
+
+// QueryRequest generates a cache key based on the userID, MetricsQueryRequest and interval.
+func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, userID string, r MetricsQueryRequest) string {
+	startInterval := r.GetStart() / g.interval.Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 
 	// Use original format for step-aligned request, so that we can use existing cached results for such requests.
@@ -168,29 +230,29 @@ func (t ConstSplitter) GenerateCacheKey(_ context.Context, userID string, r Requ
 
 // shouldCacheFn checks whether the current request should go to cache
 // or not. If not, just send the request to next handler.
-type shouldCacheFn func(r Request) bool
+type shouldCacheFn func(r MetricsQueryRequest) bool
 
 // resultsCacheAlwaysEnabled is a shouldCacheFn function always returning true.
-var resultsCacheAlwaysEnabled = func(_ Request) bool { return true }
+var resultsCacheAlwaysEnabled = func(_ MetricsQueryRequest) bool { return true }
 
 // isRequestCachable says whether the request is eligible for caching.
-func isRequestCachable(req Request, maxCacheTime int64, cacheUnalignedRequests bool, logger log.Logger) bool {
+func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalignedRequests bool, logger log.Logger) (cachable bool, reason string) {
 	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
 	// PromQL compatible. But this means we cannot cache queries that do not have their start and end aligned.
 	if !cacheUnalignedRequests && !isRequestStepAligned(req) {
-		return false
+		return false, notCachableReasonUnalignedTimeRange
 	}
 
 	// Do not cache it at all if the query time range is more recent than the configured max cache freshness.
 	if req.GetStart() > maxCacheTime {
-		return false
+		return false, notCachableReasonTooNew
 	}
 
 	if !areEvaluationTimeModifiersCachable(req, maxCacheTime, logger) {
-		return false
+		return false, notCachableReasonModifiersNotCachable
 	}
 
-	return true
+	return true, ""
 }
 
 // isResponseCachable says whether the response should be cached or not.
@@ -212,7 +274,7 @@ var (
 )
 
 // areEvaluationTimeModifiersCachable returns true if the @ modifier and the offset modifier results are safe to cache.
-func areEvaluationTimeModifiersCachable(r Request, maxCacheTime int64, logger log.Logger) bool {
+func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int64, logger log.Logger) bool {
 	// There are 3 cases when evaluation time modifiers are not safe to cache:
 	//   1. When @ modifier points to time beyond the maxCacheTime.
 	//   2. If the @ modifier time is > the query range end while being
@@ -275,7 +337,7 @@ func getHeaderValuesWithName(r Response, headerName string) (headerValues []stri
 
 // mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
 // The input extents can be overlapping and are not required to be sorted.
-func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, extents []Extent) ([]Extent, error) {
+func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, merger Merger, extents []Extent) ([]Extent, error) {
 	// Fast path.
 	if len(extents) <= 1 {
 		return extents, nil
@@ -315,7 +377,6 @@ func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, 
 		if accumulator.End >= extents[i].End {
 			continue
 		}
-
 		accumulator.TraceId = jaegerTraceID(ctx)
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
@@ -327,6 +388,15 @@ func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, 
 			return nil, err
 		}
 		accumulator.Response = merged
+
+		if accumulator.QueryTimestampMs > 0 && extents[i].QueryTimestampMs > 0 {
+			// Keep older (minimum) timestamp.
+			accumulator.QueryTimestampMs = math.Min(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
+		} else {
+			// Some old extents may have zero timestamps. In that case we keep the non-zero one.
+			// (Hopefully one of them is not zero, since we're only merging if there are some new extents.)
+			accumulator.QueryTimestampMs = math.Max(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
+		}
 	}
 
 	return mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
@@ -338,15 +408,16 @@ type accumulator struct {
 }
 
 func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Extent, error) {
-	any, err := types.MarshalAny(acc.Response)
+	marshalled, err := types.MarshalAny(acc.Response)
 	if err != nil {
 		return nil, err
 	}
 	return append(extents, Extent{
-		Start:    acc.Extent.Start,
-		End:      acc.Extent.End,
-		Response: any,
-		TraceId:  acc.Extent.TraceId,
+		Start:            acc.Extent.Start,
+		End:              acc.Extent.End,
+		Response:         marshalled,
+		TraceId:          acc.Extent.TraceId,
+		QueryTimestampMs: acc.QueryTimestampMs,
 	}), nil
 }
 
@@ -361,23 +432,24 @@ func newAccumulator(base Extent) (*accumulator, error) {
 	}, nil
 }
 
-func toExtent(ctx context.Context, req Request, res Response) (Extent, error) {
-	any, err := types.MarshalAny(res)
+func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryTime time.Time) (Extent, error) {
+	marshalled, err := types.MarshalAny(res)
 	if err != nil {
 		return Extent{}, err
 	}
 	return Extent{
-		Start:    req.GetStart(),
-		End:      req.GetEnd(),
-		Response: any,
-		TraceId:  jaegerTraceID(ctx),
+		Start:            req.GetStart(),
+		End:              req.GetEnd(),
+		Response:         marshalled,
+		TraceId:          jaegerTraceID(ctx),
+		QueryTimestampMs: queryTime.UnixMilli(),
 	}, nil
 }
 
 // partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func partitionCacheExtents(req Request, extents []Extent, minCacheExtent int64, extractor Extractor) ([]Request, []Response, error) {
-	var requests []Request
+func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, error) {
+	var requests []MetricsQueryRequest
 	var cachedResponses []Response
 	start := req.GetStart()
 
@@ -440,7 +512,7 @@ func partitionCacheExtents(req Request, extents []Extent, minCacheExtent int64, 
 	return requests, cachedResponses, nil
 }
 
-func filterRecentCacheExtents(req Request, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
+func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
 	maxCacheTime := (int64(model.Now().Add(-maxCacheFreshness)) / req.GetStep()) * req.GetStep()
 	for i := range extents {
 		// Never cache data for the latest freshness period.
@@ -451,11 +523,11 @@ func filterRecentCacheExtents(req Request, maxCacheFreshness time.Duration, extr
 				return nil, err
 			}
 			extracted := extractor.Extract(extents[i].Start, maxCacheTime, res)
-			any, err := types.MarshalAny(extracted)
+			marshalled, err := types.MarshalAny(extracted)
 			if err != nil {
 				return nil, err
 			}
-			extents[i].Response = any
+			extents[i].Response = marshalled
 		}
 	}
 	return extents, nil
@@ -486,17 +558,47 @@ func extractMatrix(start, end int64, matrix []SampleStream) []SampleStream {
 	return result
 }
 
-func extractSampleStream(start, end int64, stream SampleStream) (SampleStream, bool) {
-	result := SampleStream{
-		Labels:  stream.Labels,
-		Samples: make([]mimirpb.Sample, 0, len(stream.Samples)),
-	}
-	for _, sample := range stream.Samples {
+func filterFloatStream(start, end int64, streamSamples []mimirpb.Sample) []mimirpb.Sample {
+	result := make([]mimirpb.Sample, 0, len(streamSamples))
+	for _, sample := range streamSamples {
 		if start <= sample.TimestampMs && sample.TimestampMs <= end {
-			result.Samples = append(result.Samples, sample)
+			result = append(result, sample)
 		}
 	}
-	if len(result.Samples) == 0 {
+	return result
+}
+
+func filterHistogramStream(start, end int64, streamSamples []mimirpb.FloatHistogramPair) []mimirpb.FloatHistogramPair {
+	result := make([]mimirpb.FloatHistogramPair, 0, len(streamSamples))
+	for _, sample := range streamSamples {
+		if start <= sample.TimestampMs && sample.TimestampMs <= end {
+			result = append(result, sample)
+		}
+	}
+	return result
+}
+
+func extractSampleStream(start, end int64, stream SampleStream) (SampleStream, bool) {
+	result := SampleStream{
+		Labels: stream.Labels,
+	}
+	gotSamples := false
+	gotHistograms := false
+	if len(stream.Histograms) > 0 {
+		histograms := filterHistogramStream(start, end, stream.Histograms)
+		if len(histograms) > 0 {
+			result.Histograms = histograms
+			gotHistograms = true
+		}
+	}
+	if len(stream.Samples) > 0 {
+		samples := filterFloatStream(start, end, stream.Samples)
+		if len(samples) > 0 {
+			result.Samples = samples
+			gotSamples = true
+		}
+	}
+	if !gotHistograms && !gotSamples {
 		return SampleStream{}, false
 	}
 	return result, true
@@ -517,4 +619,13 @@ func (e *Extent) toResponse() (Response, error) {
 		return nil, fmt.Errorf("bad cached type")
 	}
 	return resp, nil
+}
+
+// cacheHashKey hashes key into something you can store in the results cache.
+func cacheHashKey(key string) string {
+	hasher := fnv.New64a()
+	_, _ = hasher.Write([]byte(key)) // This'll never error.
+
+	// Hex because memcache errors for the bytes produced by the hash.
+	return hex.EncodeToString(hasher.Sum(nil))
 }

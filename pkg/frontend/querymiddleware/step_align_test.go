@@ -7,17 +7,22 @@ package querymiddleware
 
 import (
 	"context"
-	"strconv"
 	"testing"
 
+	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
-func TestStepAlignMiddleware(t *testing.T) {
-	for i, tc := range []struct {
+func TestStepAlignMiddleware_SingleUser(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
 		input, expected *PrometheusRangeQueryRequest
 	}{
 		{
+			name: "no adjustment needed",
 			input: &PrometheusRangeQueryRequest{
 				Start: 0,
 				End:   100,
@@ -31,6 +36,7 @@ func TestStepAlignMiddleware(t *testing.T) {
 		},
 
 		{
+			name: "adjust start and end",
 			input: &PrometheusRangeQueryRequest{
 				Start: 2,
 				End:   102,
@@ -43,15 +49,103 @@ func TestStepAlignMiddleware(t *testing.T) {
 			},
 		},
 	} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			var result *PrometheusRangeQueryRequest
 
-			next := HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			next := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 				result = req.(*PrometheusRangeQueryRequest)
 				return nil, nil
 			})
-			s := newStepAlignMiddleware().Wrap(next)
-			_, err := s.Do(context.Background(), tc.input)
+
+			limits := mockLimits{alignQueriesWithStep: true}
+			log := test.NewTestingLogger(t)
+			ctx := user.InjectOrgID(context.Background(), "123")
+
+			s := newStepAlignMiddleware(limits, log, prometheus.NewPedanticRegistry()).Wrap(next)
+			_, err := s.Do(ctx, tc.input)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		limits          *multiTenantMockLimits
+		input, expected *PrometheusRangeQueryRequest
+	}{
+		{
+			name: "no adjustment needed",
+			limits: &multiTenantMockLimits{
+				byTenant: map[string]mockLimits{
+					"123": {alignQueriesWithStep: true},
+					"456": {alignQueriesWithStep: true},
+				},
+			},
+			input: &PrometheusRangeQueryRequest{
+				Start: 0,
+				End:   100,
+				Step:  10,
+			},
+			expected: &PrometheusRangeQueryRequest{
+				Start: 0,
+				End:   100,
+				Step:  10,
+			},
+		},
+		{
+			name: "adjust start and end",
+			limits: &multiTenantMockLimits{
+				byTenant: map[string]mockLimits{
+					"123": {alignQueriesWithStep: true},
+					"456": {alignQueriesWithStep: true},
+				},
+			},
+			input: &PrometheusRangeQueryRequest{
+				Start: 2,
+				End:   102,
+				Step:  10,
+			},
+			expected: &PrometheusRangeQueryRequest{
+				Start: 0,
+				End:   100,
+				Step:  10,
+			},
+		},
+		{
+			name: "not enabled for all users",
+			limits: &multiTenantMockLimits{
+				byTenant: map[string]mockLimits{
+					"123": {alignQueriesWithStep: false},
+					"456": {alignQueriesWithStep: true},
+				},
+			},
+			input: &PrometheusRangeQueryRequest{
+				Start: 2,
+				End:   102,
+				Step:  10,
+			},
+			expected: &PrometheusRangeQueryRequest{
+				Start: 2,
+				End:   102,
+				Step:  10,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var result *PrometheusRangeQueryRequest
+
+			next := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+				result = req.(*PrometheusRangeQueryRequest)
+				return nil, nil
+			})
+
+			log := test.NewTestingLogger(t)
+			ctx := user.InjectOrgID(context.Background(), "123|456")
+
+			s := newStepAlignMiddleware(tc.limits, log, prometheus.NewPedanticRegistry()).Wrap(next)
+			_, err := s.Do(ctx, tc.input)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, result)
 		})
@@ -60,7 +154,7 @@ func TestStepAlignMiddleware(t *testing.T) {
 
 func TestIsRequestStepAligned(t *testing.T) {
 	tests := map[string]struct {
-		req      Request
+		req      MetricsQueryRequest
 		expected bool
 	}{
 		"should return true if start and end are aligned to step": {

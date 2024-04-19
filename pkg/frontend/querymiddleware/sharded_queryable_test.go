@@ -8,6 +8,7 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -24,6 +26,7 @@ import (
 )
 
 func TestShardedQuerier_Select(t *testing.T) {
+	ctx := context.Background()
 	var testExpr = []struct {
 		name    string
 		querier *shardedQuerier
@@ -35,7 +38,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				nil,
 			),
 			fn: func(t *testing.T, q *shardedQuerier) {
-				set := q.Select(false, nil)
+				set := q.Select(ctx, false, nil)
 				require.Equal(t, set.Err(), errNoEmbeddedQueries)
 			},
 		},
@@ -56,7 +59,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 
 				// override handler func to assert new query has been substituted
 				q.handler = HandlerFunc(
-					func(ctx context.Context, req Request) (Response, error) {
+					func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 						require.Equal(t, `http_requests_total{cluster="prod"}`, req.GetQuery())
 						return expected, nil
 					},
@@ -65,6 +68,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				encoded, err := astmapper.JSONCodec.Encode([]string{`http_requests_total{cluster="prod"}`})
 				require.Nil(t, err)
 				set := q.Select(
+					ctx,
 					false,
 					nil,
 					labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
@@ -85,6 +89,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				encoded, err := astmapper.JSONCodec.Encode([]string{`http_requests_total{cluster="prod"}`})
 				require.Nil(t, err)
 				set := q.Select(
+					ctx,
 					false,
 					nil,
 					labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
@@ -141,6 +146,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				encoded, err := astmapper.JSONCodec.Encode([]string{`http_requests_total{cluster="prod"}`})
 				require.Nil(t, err)
 				set := q.Select(
+					ctx,
 					false,
 					nil,
 					labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
@@ -204,13 +210,15 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 		`sum(rate(metric{__query_shard__="2_of_3"}[1m]))`,
 	}
 
+	ctx := context.Background()
+
 	// Mock the downstream handler to wait until all concurrent queries have been
 	// received. If the test succeeds we have the guarantee they were called concurrently
 	// otherwise the test times out while hanging in the downstream handler.
 	downstreamWg := sync.WaitGroup{}
 	downstreamWg.Add(len(embeddedQueries))
 
-	querier := mkShardedQuerier(HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
+	querier := mkShardedQuerier(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 		// Wait until the downstream handler has been concurrently called for each embedded query.
 		downstreamWg.Done()
 		downstreamWg.Wait()
@@ -230,6 +238,7 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 	require.Nil(t, err)
 
 	seriesSet := querier.Select(
+		ctx,
 		false,
 		nil,
 		labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
@@ -252,7 +261,7 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	assert.Empty(t, queryable.getResponseHeaders())
 
 	// Merge some response headers from the 1st querier.
-	querier, err := queryable.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	querier, err := queryable.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
 	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
@@ -265,7 +274,7 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	}, queryable.getResponseHeaders())
 
 	// Merge some response headers from the 2nd querier.
-	querier, err = queryable.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	querier, err = queryable.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
 	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
@@ -278,8 +287,8 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	}, queryable.getResponseHeaders())
 }
 
-func mkShardedQuerier(handler Handler) *shardedQuerier {
-	return &shardedQuerier{ctx: context.Background(), req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
+func mkShardedQuerier(handler MetricsQueryHandler) *shardedQuerier {
+	return &shardedQuerier{req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
 }
 
 func TestNewSeriesSetFromEmbeddedQueriesResults(t *testing.T) {
@@ -446,16 +455,34 @@ func assertEqualSampleStream(t *testing.T, expected, actual []SampleStream) {
 func seriesSetToSampleStreams(set storage.SeriesSet) ([]SampleStream, error) {
 	var out []SampleStream
 
+	var it chunkenc.Iterator
 	for set.Next() {
 		stream := SampleStream{Labels: mimirpb.FromLabelsToLabelAdapters(set.At().Labels())}
 
-		it := set.At().Iterator()
-		for it.Next() {
-			t, v := it.At()
-			stream.Samples = append(stream.Samples, mimirpb.Sample{
-				Value:       v,
-				TimestampMs: t,
-			})
+		it = set.At().Iterator(it)
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			switch valType {
+			case chunkenc.ValFloat:
+				t, v := it.At()
+				stream.Samples = append(stream.Samples, mimirpb.Sample{
+					Value:       v,
+					TimestampMs: t,
+				})
+			case chunkenc.ValHistogram:
+				t, v := it.AtHistogram(nil)
+				stream.Histograms = append(stream.Histograms, mimirpb.FloatHistogramPair{
+					Histogram:   mimirpb.FloatHistogramFromPrometheusModel(v.ToFloat(nil)),
+					TimestampMs: t,
+				})
+			case chunkenc.ValFloatHistogram:
+				t, v := it.AtFloatHistogram(nil)
+				stream.Histograms = append(stream.Histograms, mimirpb.FloatHistogramPair{
+					Histogram:   mimirpb.FloatHistogramFromPrometheusModel(v),
+					TimestampMs: t,
+				})
+			default:
+				panic(fmt.Errorf("Unexpected value type: %x", valType))
+			}
 		}
 
 		if it.Err() != nil {

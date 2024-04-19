@@ -38,6 +38,8 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 					bucketCfg.Backend = bucket.Filesystem
 					bucketCfg.Filesystem.Directory = "/does/not/exists"
 				}
+
+				cfg.BlocksStorage.Bucket.StoragePrefix = "blocks"
 			},
 			expected: "",
 		},
@@ -214,19 +216,19 @@ func TestCheckDirectoryReadWriteAccess(t *testing.T) {
 		expected          string
 	}{
 		"should fail on directory without write access": {
-			dirExistsFn: func(dir string) (bool, error) {
+			dirExistsFn: func(string) (bool, error) {
 				return true, nil
 			},
-			isDirReadWritable: func(dir string) error {
+			isDirReadWritable: func(string) error {
 				return errors.New("read only")
 			},
 			expected: fmt.Sprintf("failed to access directory %s: read only", configuredPath),
 		},
 		"should pass on directory with read-write access": {
-			dirExistsFn: func(dir string) (bool, error) {
+			dirExistsFn: func(string) (bool, error) {
 				return true, nil
 			},
-			isDirReadWritable: func(dir string) error {
+			isDirReadWritable: func(string) error {
 				return nil
 			},
 			expected: "",

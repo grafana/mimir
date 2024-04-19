@@ -3,11 +3,13 @@ local filename = 'mimir-writes-networking.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == '978c1cb452585c96697a238eaac7fe2d' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Writes networking') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
-    .addRowIf($._config.gateway_enabled, $.jobNetworkingRow('Gateway', 'gateway'))
-    .addRow($.jobNetworkingRow('Distributor', 'distributor'))
-    .addRow($.jobNetworkingRow('Ingester', 'ingester'))
+    .addRow($.containerNetworkingRowByComponent('Summary', 'write'))
+    .addRowIf($._config.gateway_enabled, $.containerNetworkingRowByComponent('Gateway', 'gateway'))
+    .addRow($.containerNetworkingRowByComponent('Distributor', 'distributor'))
+    .addRow($.containerNetworkingRowByComponent('Ingester', 'ingester'))
     + {
       templating+: {
         list: [

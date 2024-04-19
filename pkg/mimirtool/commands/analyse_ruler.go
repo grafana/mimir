@@ -11,8 +11,9 @@ import (
 	"os"
 	"sort"
 
-	log "github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
+	"github.com/alecthomas/kingpin/v2"
+	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/client"
@@ -20,32 +21,13 @@ import (
 
 type RulerAnalyzeCommand struct {
 	ClientConfig client.Config
-	cli          *client.MimirClient
 	outputFile   string
 }
 
-func (cmd *RulerAnalyzeCommand) run(k *kingpin.ParseContext) error {
-	output := &analyze.MetricsInRuler{}
-	output.OverallMetrics = make(map[string]struct{})
-
-	cli, err := client.New(cmd.ClientConfig)
+func (cmd *RulerAnalyzeCommand) run(_ *kingpin.ParseContext) error {
+	output, err := AnalyzeRuler(cmd.ClientConfig)
 	if err != nil {
 		return err
-	}
-
-	cmd.cli = cli
-	rules, err := cmd.cli.ListRules(context.Background(), "")
-	if err != nil {
-		log.Fatalf("Unable to read rules from Grafana Mimir, %v", err)
-	}
-
-	for ns := range rules {
-		for _, rg := range rules[ns] {
-			err := analyze.ParseMetricsInRuleGroup(output, rg, ns)
-			if err != nil {
-				log.Fatalf("metrics parse error %v", err)
-			}
-		}
 	}
 
 	err = writeOutRuleMetrics(output, cmd.outputFile)
@@ -56,20 +38,49 @@ func (cmd *RulerAnalyzeCommand) run(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func writeOutRuleMetrics(mir *analyze.MetricsInRuler, outputFile string) error {
-	var metricsUsed []string
-	for metric := range mir.OverallMetrics {
-		metricsUsed = append(metricsUsed, metric)
-	}
-	sort.Strings(metricsUsed)
+// AnalyzeRuler analyze Mimir's ruler and return the list metrics used in them.
+func AnalyzeRuler(c client.Config) (*analyze.MetricsInRuler, error) {
+	output := &analyze.MetricsInRuler{}
+	output.OverallMetrics = make(map[string]struct{})
 
-	mir.MetricsUsed = metricsUsed
+	cli, err := client.New(c)
+	if err != nil {
+		return nil, err
+	}
+
+	rules, err := cli.ListRules(context.Background(), "")
+	if err != nil {
+		return nil, errors.Wrap(err, "Unable to read rules from Grafana Mimir")
+
+	}
+
+	for ns := range rules {
+		for _, rg := range rules[ns] {
+			err := analyze.ParseMetricsInRuleGroup(output, rg, ns)
+			if err != nil {
+				return nil, errors.Wrap(err, "metrics parse error")
+
+			}
+		}
+	}
+
+	var metricsUsed model.LabelValues
+	for metric := range output.OverallMetrics {
+		metricsUsed = append(metricsUsed, model.LabelValue(metric))
+	}
+	sort.Sort(metricsUsed)
+	output.MetricsUsed = metricsUsed
+
+	return output, nil
+}
+
+func writeOutRuleMetrics(mir *analyze.MetricsInRuler, outputFile string) error {
 	out, err := json.MarshalIndent(mir, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	if err := os.WriteFile(outputFile, out, os.FileMode(int(0666))); err != nil {
+	if err := os.WriteFile(outputFile, out, os.FileMode(int(0o666))); err != nil {
 		return err
 	}
 

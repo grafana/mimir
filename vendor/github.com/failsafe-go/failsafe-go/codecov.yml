@@ -1,0 +1,10 @@
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch: off
+  ignore:
+    - "internal/policytesting"
+    - "internal/testutil"
+    - "examples"

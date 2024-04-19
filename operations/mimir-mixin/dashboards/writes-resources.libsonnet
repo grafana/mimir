@@ -3,72 +3,99 @@ local filename = 'mimir-writes-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == 'bc9160e50b52e89e0e49c840fea3d379' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Writes resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
+    .addRow(
+      $.row('Summary')
+      .addPanel(
+        $.timeseriesPanel('CPU') +
+        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
+        $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Memory (workingset)') +
+        $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
+        $.stack +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('write') +
+        $.stack,
+      )
+    )
     .addRowIf(
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', $._config.job_names.gateway),
+        $.containerCPUUsagePanelByComponent('gateway'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', $._config.job_names.gateway),
+        $.containerMemoryWorkingSetPanelByComponent('gateway'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.gateway),
+        $.containerGoHeapInUsePanelByComponent('gateway'),
       )
     )
     .addRow(
       $.row('Distributor')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'distributor'),
+        $.containerCPUUsagePanelByComponent('distributor'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'distributor'),
+        $.containerMemoryWorkingSetPanelByComponent('distributor'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.distributor),
+        $.containerGoHeapInUsePanelByComponent('distributor'),
       )
     )
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.panel('In-memory series') +
+        $.timeseriesPanel('In-memory series') +
         $.queryPanel(
           'sum by(%s) (cortex_ingester_memory_series{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)],
           '{{%s}}' % $._config.per_instance_label
         ) +
         {
-          tooltip: { sort: 2 },  // Sort descending.
-          fill: 0,
+          options+: {
+            tooltip+: { sort: 'desc' },
+          },
+          fieldConfig+: {
+            defaults+: {
+              custom+: {
+                fillOpacity: 0,
+              },
+            },
+          },
         },
       )
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'ingester'),
+        $.containerCPUUsagePanelByComponent('ingester'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerMemoryRSSPanel('Memory (RSS)', 'ingester'),
+        $.containerMemoryRSSPanelByComponent('ingester'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ingester'),
+        $.containerMemoryWorkingSetPanelByComponent('ingester'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ingester),
+        $.containerGoHeapInUsePanelByComponent('ingester'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel('Disk writes', 'ingester')
+        $.containerDiskWritesPanelByComponent('ingester')
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk reads', 'ingester')
+        $.containerDiskReadsPanelByComponent('ingester')
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', 'ingester'),
+        $.containerDiskSpaceUtilizationPanelByComponent('ingester'),
       )
     )
     + {

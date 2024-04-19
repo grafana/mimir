@@ -17,10 +17,10 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/listblocks"
 )
@@ -44,6 +44,10 @@ type config struct {
 }
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	logger := gokitlog.NewNopLogger()
 	cfg := config{}
 	cfg.bucket.RegisterFlags(flag.CommandLine)
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
@@ -59,7 +63,11 @@ func main() {
 	flag.Var(&cfg.maxTime, "max-time", "If set, only blocks with MaxTime <= this value are printed")
 	flag.BoolVar(&cfg.useUlidTimeForMinTimeCheck, "use-ulid-time-for-min-time-check", false, "If true, meta.json files for blocks with ULID time before min-time are not loaded. This may incorrectly skip blocks that have data from the future (minT/maxT higher than ULID).")
 	flag.BoolVar(&cfg.showStats, "show-stats", false, "Show block stats (number of series, chunks, samples)")
-	flag.Parse()
+
+	// Parse CLI flags.
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatalln(err.Error())
+	}
 
 	if cfg.userID == "" {
 		log.Fatalln("no user specified")
@@ -68,7 +76,6 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()
 
-	logger := gokitlog.NewNopLogger()
 	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
 	if err != nil {
 		log.Fatalln("failed to create bucket:", err)
@@ -79,17 +86,18 @@ func main() {
 		loadMetasMinTime = time.Time(cfg.minTime)
 	}
 
-	metas, deletedTimes, err := listblocks.LoadMetaFilesAndDeletionMarkers(ctx, bkt, cfg.userID, cfg.showDeleted, loadMetasMinTime)
+	metas, deleteMarkerDetails, noCompactMarkerDetails, err := listblocks.LoadMetaFilesAndMarkers(ctx, bkt, cfg.userID, cfg.showDeleted, loadMetasMinTime)
 	if err != nil {
 		log.Fatalln("failed to read block metadata:", err)
 	}
 
-	printMetas(metas, deletedTimes, cfg)
+	printMetas(metas, deleteMarkerDetails, noCompactMarkerDetails, cfg)
 }
 
 // nolint:errcheck
+//
 //goland:noinspection GoUnhandledErrorResult
-func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]time.Time, cfg config) {
+func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.ULID]block.DeletionMark, noCompactMarkerDetails map[ulid.ULID]block.NoCompactMark, cfg config) {
 	blocks := listblocks.SortBlocks(metas)
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)
@@ -106,6 +114,7 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 	fmt.Fprintf(tabber, "Min Time\t")
 	fmt.Fprintf(tabber, "Max Time\t")
 	fmt.Fprintf(tabber, "Duration\t")
+	fmt.Fprintf(tabber, "No Compact\t")
 	if cfg.showDeleted {
 		fmt.Fprintf(tabber, "Deletion Time\t")
 	}
@@ -132,7 +141,7 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 	fmt.Fprintln(tabber)
 
 	for _, b := range blocks {
-		if !cfg.showDeleted && !deletedTimes[b.ULID].IsZero() {
+		if !cfg.showDeleted && deleteMarkerDetails[b.ULID].DeletionTime != 0 {
 			continue
 		}
 
@@ -154,11 +163,19 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).UTC().Format(time.RFC3339))
 		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).Sub(util.TimeFromMillis(b.MinTime)))
 
+		if val, ok := noCompactMarkerDetails[b.ULID]; ok {
+			fmt.Fprintf(tabber, "%v\t", []string{
+				fmt.Sprintf("Time: %s", time.Unix(val.NoCompactTime, 0).UTC().Format(time.RFC3339)),
+				fmt.Sprintf("Reason: %s", val.Reason)})
+		} else {
+			fmt.Fprintf(tabber, "\t")
+		}
+
 		if cfg.showDeleted {
-			if deletedTimes[b.ULID].IsZero() {
+			if deleteMarkerDetails[b.ULID].DeletionTime == 0 {
 				fmt.Fprintf(tabber, "\t") // no deletion time.
 			} else {
-				fmt.Fprintf(tabber, "%v\t", deletedTimes[b.ULID].UTC().Format(time.RFC3339))
+				fmt.Fprintf(tabber, "%v\t", time.Unix(deleteMarkerDetails[b.ULID].DeletionTime, 0).UTC().Format(time.RFC3339))
 			}
 		}
 

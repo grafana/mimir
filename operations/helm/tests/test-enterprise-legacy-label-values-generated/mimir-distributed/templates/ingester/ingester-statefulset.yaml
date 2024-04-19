@@ -1,0 +1,387 @@
+---
+# Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-ingester-zone-a
+  labels:
+    app: enterprise-metrics-ingester
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+    name: "ingester-zone-a"
+    rollout-group: ingester
+    zone: zone-a
+  annotations:
+    rollout-max-unavailable: "50"
+  namespace: "citestns"
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-metrics-ingester
+      release: test-enterprise-legacy-label-values
+      rollout-group: ingester
+      zone: zone-a
+  updateStrategy:
+    type: OnDelete
+  serviceName: test-enterprise-legacy-label-values-enterprise-metrics-ingester
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
+  template:
+    metadata:
+      labels:
+        app: enterprise-metrics-ingester
+        gossip_ring_member: "true"
+        target: ingester
+        release: test-enterprise-legacy-label-values
+        name: "ingester-zone-a"
+        rollout-group: ingester
+        zone: zone-a
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-ingester
+            release: test-enterprise-legacy-label-values
+      terminationGracePeriodSeconds: 1200
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-config
+        - name: license
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-license
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-legacy-label-values-enterprise-metrics-runtime
+        - name: active-queries
+          emptyDir: {}
+      containers:
+        - name: ingester
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=ingester"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-ingester.ring.instance-availability-zone=zone-a"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: storage
+              mountPath: "/data"
+            - name: license
+              mountPath: /license
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 60
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
+          envFrom:
+---
+# Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-ingester-zone-b
+  labels:
+    app: enterprise-metrics-ingester
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+    name: "ingester-zone-b"
+    rollout-group: ingester
+    zone: zone-b
+  annotations:
+    rollout-max-unavailable: "50"
+  namespace: "citestns"
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-metrics-ingester
+      release: test-enterprise-legacy-label-values
+      rollout-group: ingester
+      zone: zone-b
+  updateStrategy:
+    type: OnDelete
+  serviceName: test-enterprise-legacy-label-values-enterprise-metrics-ingester
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
+  template:
+    metadata:
+      labels:
+        app: enterprise-metrics-ingester
+        gossip_ring_member: "true"
+        target: ingester
+        release: test-enterprise-legacy-label-values
+        name: "ingester-zone-b"
+        rollout-group: ingester
+        zone: zone-b
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-ingester
+            release: test-enterprise-legacy-label-values
+      terminationGracePeriodSeconds: 1200
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-config
+        - name: license
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-license
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-legacy-label-values-enterprise-metrics-runtime
+        - name: active-queries
+          emptyDir: {}
+      containers:
+        - name: ingester
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=ingester"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-ingester.ring.instance-availability-zone=zone-b"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: storage
+              mountPath: "/data"
+            - name: license
+              mountPath: /license
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 60
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
+          envFrom:
+---
+# Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-ingester-zone-c
+  labels:
+    app: enterprise-metrics-ingester
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+    name: "ingester-zone-c"
+    rollout-group: ingester
+    zone: zone-c
+  annotations:
+    rollout-max-unavailable: "50"
+  namespace: "citestns"
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-metrics-ingester
+      release: test-enterprise-legacy-label-values
+      rollout-group: ingester
+      zone: zone-c
+  updateStrategy:
+    type: OnDelete
+  serviceName: test-enterprise-legacy-label-values-enterprise-metrics-ingester
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
+  template:
+    metadata:
+      labels:
+        app: enterprise-metrics-ingester
+        gossip_ring_member: "true"
+        target: ingester
+        release: test-enterprise-legacy-label-values
+        name: "ingester-zone-c"
+        rollout-group: ingester
+        zone: zone-c
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-ingester
+            release: test-enterprise-legacy-label-values
+      terminationGracePeriodSeconds: 1200
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-config
+        - name: license
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-license
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-legacy-label-values-enterprise-metrics-runtime
+        - name: active-queries
+          emptyDir: {}
+      containers:
+        - name: ingester
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=ingester"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-ingester.ring.instance-availability-zone=zone-c"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: storage
+              mountPath: "/data"
+            - name: license
+              mountPath: /license
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 60
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
+          envFrom:

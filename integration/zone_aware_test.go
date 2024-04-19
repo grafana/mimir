@@ -3,7 +3,6 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
-// +build requires_docker
 
 package integration
 
@@ -77,7 +76,7 @@ func TestZoneAwareReplication(t *testing.T) {
 
 	for i := 1; i <= numSeries; i++ {
 		metricName := fmt.Sprintf("series_%d", i)
-		series, expectedVector := generateSeries(metricName, now)
+		series, expectedVector, _ := generateAlternatingSeries(i)(metricName, now)
 		res, err := client.Push(series)
 		require.NoError(t, err)
 		require.Equal(t, 200, res.StatusCode)
@@ -99,7 +98,7 @@ func TestZoneAwareReplication(t *testing.T) {
 	// Push 1 more series => all good
 	numSeries++
 	metricName := fmt.Sprintf("series_%d", numSeries)
-	series, expectedVector := generateSeries(metricName, now)
+	series, expectedVector, _ := generateFloatSeries(metricName, now)
 	res, err := client.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
@@ -120,7 +119,7 @@ func TestZoneAwareReplication(t *testing.T) {
 	// Push 1 more series => all good
 	numSeries++
 	metricName = fmt.Sprintf("series_%d", numSeries)
-	series, expectedVector = generateSeries(metricName, now)
+	series, expectedVector, _ = generateHistogramSeries(metricName, now)
 	res, err = client.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
@@ -149,7 +148,7 @@ func TestZoneAwareReplication(t *testing.T) {
 	require.NoError(t, ingester4.Kill())
 
 	// Push 1 more series => fail
-	series, _ = generateSeries("series_last", now)
+	series, _, _ = generateFloatSeries("series_last", now)
 	res, err = client.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 500, res.StatusCode)

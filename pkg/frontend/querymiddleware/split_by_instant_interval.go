@@ -9,6 +9,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
@@ -25,12 +26,11 @@ import (
 const (
 	skippedReasonParsingFailed = "parsing-failed"
 	skippedReasonMappingFailed = "mapping-failed"
-	skippedReasonNoop          = "noop"
 )
 
-// splitInstantQueryByIntervalMiddleware is a Middleware that can (optionally) split the instant query by splitInterval
+// splitInstantQueryByIntervalMiddleware is a MetricsQueryMiddleware that can (optionally) split the instant query by splitInterval
 type splitInstantQueryByIntervalMiddleware struct {
-	next   Handler
+	next   MetricsQueryHandler
 	limits Limits
 	logger log.Logger
 
@@ -73,7 +73,8 @@ func newInstantQuerySplittingMetrics(registerer prometheus.Registerer) instantQu
 	}
 
 	// Initialize known label values.
-	for _, reason := range []string{skippedReasonParsingFailed, skippedReasonMappingFailed, skippedReasonNoop} {
+	for _, reason := range []string{skippedReasonParsingFailed, skippedReasonMappingFailed,
+		string(astmapper.SkippedReasonSmallInterval), string(astmapper.SkippedReasonSubquery), string(astmapper.SkippedReasonNonSplittable)} {
 		m.splittingSkipped.WithLabelValues(reason)
 	}
 
@@ -85,10 +86,10 @@ func newSplitInstantQueryByIntervalMiddleware(
 	limits Limits,
 	logger log.Logger,
 	engine *promql.Engine,
-	registerer prometheus.Registerer) Middleware {
+	registerer prometheus.Registerer) MetricsQueryMiddleware {
 	metrics := newInstantQuerySplittingMetrics(registerer)
 
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &splitInstantQueryByIntervalMiddleware{
 			next:    next,
 			limits:  limits,
@@ -99,21 +100,21 @@ func newSplitInstantQueryByIntervalMiddleware(
 	})
 }
 
-func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Request) (Response, error) {
+func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	// Log the instant query and its timestamp in every error log, so that we have more information for debugging failures.
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "splitInstantQueryByIntervalMiddleware.Do")
 	defer spanLog.Span.Finish()
 
-	tenantsIds, err := tenant.TenantIDs(ctx)
+	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	splitInterval := s.getSplitIntervalForQuery(tenantsIds, req, logger)
+	splitInterval := s.getSplitIntervalForQuery(tenantIDs, req, spanLog)
 	if splitInterval <= 0 {
-		level.Debug(logger).Log("msg", "query splitting is disabled for this query or tenant")
+		spanLog.DebugLog("msg", "query splitting is disabled for this query or tenant")
 		return s.next.Do(ctx, req)
 	}
 
@@ -121,33 +122,44 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	s.metrics.splittingAttempts.Inc()
 
 	mapperStats := astmapper.NewInstantSplitterStats()
-	mapper := astmapper.NewInstantQuerySplitter(splitInterval, s.logger, mapperStats)
+	mapperCtx, cancel := context.WithTimeout(ctx, shardingTimeout)
+	defer cancel()
+	mapper := astmapper.NewInstantQuerySplitter(mapperCtx, splitInterval, s.logger, mapperStats)
 
 	expr, err := parser.ParseExpr(req.GetQuery())
 	if err != nil {
 		level.Warn(spanLog).Log("msg", "failed to parse query", "err", err)
 		s.metrics.splittingSkipped.WithLabelValues(skippedReasonParsingFailed).Inc()
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
+		return nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
 	}
 
 	instantSplitQuery, err := mapper.Map(expr)
 	if err != nil {
-		level.Error(spanLog).Log("msg", "failed to map the input query, falling back to try executing without splitting", "err", err)
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			level.Error(spanLog).Log("msg", "timeout while splitting query by instant interval, please fill in a bug report with this query, falling back to try executing without splitting", "err", err)
+		} else {
+			level.Error(spanLog).Log("msg", "failed to map the input query, falling back to try executing without splitting", "err", err)
+		}
 		s.metrics.splittingSkipped.WithLabelValues(skippedReasonMappingFailed).Inc()
 		return s.next.Do(ctx, req)
 	}
 
 	if mapperStats.GetSplitQueries() == 0 {
 		// the query cannot be split, so continue
-		level.Debug(spanLog).Log("msg", "input query resulted in a no operation, falling back to try executing without splitting")
-		s.metrics.splittingSkipped.WithLabelValues(skippedReasonNoop).Inc()
+		spanLog.DebugLog("msg", "input query resulted in a no operation, falling back to try executing without splitting")
+		switch mapperStats.GetSkippedReason() {
+		case astmapper.SkippedReasonSmallInterval:
+			s.metrics.splittingSkipped.WithLabelValues(string(astmapper.SkippedReasonSmallInterval)).Inc()
+		case astmapper.SkippedReasonSubquery:
+			s.metrics.splittingSkipped.WithLabelValues(string(astmapper.SkippedReasonSubquery)).Inc()
+		default:
+			// If there are no split queries, the default skipped reason case is a non-splittable query
+			s.metrics.splittingSkipped.WithLabelValues(string(astmapper.SkippedReasonNonSplittable)).Inc()
+		}
 		return s.next.Do(ctx, req)
 	}
 
-	level.Debug(spanLog).Log("msg", "instant query has been split by interval", "rewritten", instantSplitQuery, "split_queries", mapperStats.GetSplitQueries())
-
-	// Send hint with number of embedded queries to the sharding middleware
-	hints := &Hints{TotalQueries: int32(mapperStats.GetSplitQueries())}
+	spanLog.DebugLog("msg", "instant query has been split by interval", "rewritten", instantSplitQuery, "split_queries", mapperStats.GetSplitQueries())
 
 	// Update query stats.
 	queryStats := stats.FromContext(ctx)
@@ -158,10 +170,11 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	s.metrics.splitQueries.Add(float64(mapperStats.GetSplitQueries()))
 	s.metrics.splitQueriesPerQuery.Observe(float64(mapperStats.GetSplitQueries()))
 
-	req = req.WithQuery(instantSplitQuery.String()).WithHints(hints)
+	// Send hint with number of embedded queries to the sharding middleware
+	req = req.WithQuery(instantSplitQuery.String()).WithTotalQueriesHint(int32(mapperStats.GetSplitQueries()))
 	shardedQueryable := newShardedQueryable(req, s.next)
 
-	qry, err := newQuery(req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
+	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
 		level.Warn(spanLog).Log("msg", "failed to create new query from splittable request", "err", err)
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -180,17 +193,21 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 			Result:     extracted,
 		},
 		Headers: shardedQueryable.getResponseHeaders(),
+		// Note that the positions based on the original query may be wrong as the rewritten
+		// query which is actually used is different, but the user does not see the rewritten
+		// query, so we pass in an empty string as the query so the positions will be hidden.
+		Warnings: res.Warnings.AsStrings("", 0),
 	}, nil
 }
 
 // getSplitIntervalForQuery calculates and return the split interval that should be used to run the instant query.
-func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantsIds []string, r Request, spanLog log.Logger) time.Duration {
+func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantIDs []string, r MetricsQueryRequest, spanLog *spanlogger.SpanLogger) time.Duration {
 	// Check if splitting is disabled for the given request.
 	if r.GetOptions().InstantSplitDisabled {
 		return 0
 	}
 
-	splitInterval := validation.SmallestPositiveNonZeroDurationPerTenant(tenantsIds, s.limits.SplitInstantQueriesByInterval)
+	splitInterval := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, s.limits.SplitInstantQueriesByInterval)
 	if splitInterval <= 0 {
 		return 0
 	}
@@ -200,7 +217,7 @@ func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenants
 		splitInterval = time.Duration(r.GetOptions().InstantSplitInterval)
 	}
 
-	level.Debug(spanLog).Log("msg", "getting split instant query interval", "tenantsIds", tenantsIds, "split interval", splitInterval)
+	spanLog.DebugLog("msg", "getting split instant query interval", "tenantIDs", tenantIDs, "split interval", splitInterval)
 
 	return splitInterval
 }

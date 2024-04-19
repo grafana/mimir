@@ -148,7 +148,11 @@ func (w *markdownWriter) writeConfigDoc(blocks []*parse.ConfigBlock) {
 
 	for _, rootBlock := range parse.RootBlocks {
 		if block, ok := uniqueBlocks[rootBlock.Name]; ok {
-			w.writeConfigBlock(block)
+			// Keep the root block description.
+			blockToWrite := *block
+			blockToWrite.Desc = rootBlock.Desc
+
+			w.writeConfigBlock(&blockToWrite)
 		}
 	}
 }

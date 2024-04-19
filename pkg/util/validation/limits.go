@@ -8,83 +8,116 @@ package validation
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/thanos-io/thanos/pkg/block"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
-	MaxSeriesPerMetricFlag     = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag   = "ingester.max-global-metadata-per-metric"
-	MaxSeriesPerUserFlag       = "ingester.max-global-series-per-user"
-	MaxMetadataPerUserFlag     = "ingester.max-global-metadata-per-user"
-	MaxChunksPerQueryFlag      = "querier.max-fetched-chunks-per-query"
-	MaxChunkBytesPerQueryFlag  = "querier.max-fetched-chunk-bytes-per-query"
-	MaxSeriesPerQueryFlag      = "querier.max-fetched-series-per-query"
-	maxLabelNamesPerSeriesFlag = "validation.max-label-names-per-series"
-	maxLabelNameLengthFlag     = "validation.max-length-label-name"
-	maxLabelValueLengthFlag    = "validation.max-length-label-value"
-	maxMetadataLengthFlag      = "validation.max-metadata-length"
-	creationGracePeriodFlag    = "validation.create-grace-period"
-	maxQueryLengthFlag         = "store.max-query-length"
-	requestRateFlag            = "distributor.request-rate-limit"
-	requestBurstSizeFlag       = "distributor.request-burst-size"
-	ingestionRateFlag          = "distributor.ingestion-rate-limit"
-	ingestionBurstSizeFlag     = "distributor.ingestion-burst-size"
-	HATrackerMaxClustersFlag   = "distributor.ha-tracker.max-clusters"
+	MaxSeriesPerMetricFlag                   = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag                 = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag                     = "ingester.max-global-series-per-user"
+	MaxMetadataPerUserFlag                   = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag                    = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag                = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag                    = "querier.max-fetched-series-per-query"
+	MaxEstimatedChunksPerQueryMultiplierFlag = "querier.max-estimated-fetched-chunks-per-query-multiplier"
+	MaxLabelNamesPerSeriesFlag               = "validation.max-label-names-per-series"
+	MaxLabelNameLengthFlag                   = "validation.max-length-label-name"
+	MaxLabelValueLengthFlag                  = "validation.max-length-label-value"
+	MaxMetadataLengthFlag                    = "validation.max-metadata-length"
+	maxNativeHistogramBucketsFlag            = "validation.max-native-histogram-buckets"
+	ReduceNativeHistogramOverMaxBucketsFlag  = "validation.reduce-native-histogram-over-max-buckets"
+	CreationGracePeriodFlag                  = "validation.create-grace-period"
+	MaxPartialQueryLengthFlag                = "querier.max-partial-query-length"
+	MaxTotalQueryLengthFlag                  = "query-frontend.max-total-query-length"
+	MaxQueryExpressionSizeBytesFlag          = "query-frontend.max-query-expression-size-bytes"
+	RequestRateFlag                          = "distributor.request-rate-limit"
+	RequestBurstSizeFlag                     = "distributor.request-burst-size"
+	IngestionRateFlag                        = "distributor.ingestion-rate-limit"
+	IngestionBurstSizeFlag                   = "distributor.ingestion-burst-size"
+	IngestionBurstFactorFlag                 = "distributor.ingestion-burst-factor"
+	HATrackerMaxClustersFlag                 = "distributor.ha-tracker.max-clusters"
+	resultsCacheTTLFlag                      = "query-frontend.results-cache-ttl"
+	resultsCacheTTLForOutOfOrderWindowFlag   = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
+	alignQueriesWithStepFlag                 = "query-frontend.align-queries-with-step"
+	QueryIngestersWithinFlag                 = "querier.query-ingesters-within"
+
+	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
+	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
 )
 
-// LimitError are errors that do not comply with the limits specified.
-type LimitError string
+var (
+	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
+	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
+)
 
-func (e LimitError) Error() string {
+// LimitError is a marker interface for the errors that do not comply with the specified limits.
+type LimitError interface {
+	error
+	limitError()
+}
+
+type limitErr string
+
+// limitErr implements error and LimitError interfaces
+func (e limitErr) Error() string {
 	return string(e)
 }
 
-type ForwardingRule struct {
-	// Ingest defines whether a metric should still be pushed to the Ingesters despite it being forwarded.
-	Ingest bool `yaml:"ingest" json:"ingest"`
+// limitErr implements LimitError interface
+func (e limitErr) limitError() {}
 
-	// Endpoint is the URL of the remote_write endpoint to which a metric should be forwarded.
-	Endpoint string `yaml:"endpoint" json:"endpoint"`
+func NewLimitError(msg string) LimitError {
+	return limitErr(msg)
 }
 
-// ForwardingRules are keyed by metric names, excluding labels.
-type ForwardingRules map[string]ForwardingRule
+func IsLimitError(err error) bool {
+	var limitErr LimitError
+	return errors.As(err, &limitErr)
+}
 
 // Limits describe all the limits for users; can be used to describe global default
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
-	RequestRate               float64             `yaml:"request_rate" json:"request_rate" category:"experimental"`
-	RequestBurstSize          int                 `yaml:"request_burst_size" json:"request_burst_size" category:"experimental"`
-	IngestionRate             float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
-	IngestionBurstSize        int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
-	AcceptHASamples           bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
-	HAClusterLabel            string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
-	HAReplicaLabel            string              `yaml:"ha_replica_label" json:"ha_replica_label"`
-	HAMaxClusters             int                 `yaml:"ha_max_clusters" json:"ha_max_clusters"`
-	DropLabels                flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
-	MaxLabelNameLength        int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
-	MaxLabelValueLength       int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
-	MaxLabelNamesPerSeries    int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
-	MaxMetadataLength         int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
-	CreationGracePeriod       model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
-	EnforceMetadataMetricName bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
-	IngestionTenantShardSize  int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
-	MetricRelabelConfigs      []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs." category:"experimental"`
-
+	RequestRate                                 float64             `yaml:"request_rate" json:"request_rate"`
+	RequestBurstSize                            int                 `yaml:"request_burst_size" json:"request_burst_size"`
+	IngestionRate                               float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
+	IngestionBurstSize                          int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
+	IngestionBurstFactor                        float64             `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
+	AcceptHASamples                             bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
+	HAClusterLabel                              string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
+	HAReplicaLabel                              string              `yaml:"ha_replica_label" json:"ha_replica_label"`
+	HAMaxClusters                               int                 `yaml:"ha_max_clusters" json:"ha_max_clusters"`
+	DropLabels                                  flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
+	MaxLabelNameLength                          int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
+	MaxLabelValueLength                         int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
+	MaxLabelNamesPerSeries                      int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
+	MaxMetadataLength                           int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
+	MaxNativeHistogramBuckets                   int                 `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
+	ReduceNativeHistogramOverMaxBuckets         bool                `yaml:"reduce_native_histogram_over_max_buckets" json:"reduce_native_histogram_over_max_buckets"`
+	CreationGracePeriod                         model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
+	EnforceMetadataMetricName                   bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
+	IngestionTenantShardSize                    int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
+	MetricRelabelConfigs                        []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
+	MetricRelabelingEnabled                     bool                `yaml:"metric_relabeling_enabled" json:"metric_relabeling_enabled" category:"experimental"`
+	ServiceOverloadStatusCodeOnRateLimitEnabled bool                `yaml:"service_overload_status_code_on_rate_limit_enabled" json:"service_overload_status_code_on_rate_limit_enabled" category:"experimental"`
 	// Ingester enforced limits.
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
@@ -94,47 +127,73 @@ type Limits struct {
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
 	// Exemplars
 	MaxGlobalExemplarsPerUser int `yaml:"max_global_exemplars_per_user" json:"max_global_exemplars_per_user" category:"experimental"`
+	// Native histograms
+	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
 	// Active series custom trackers
-	// TODO remove this with Mimir version 2.4
-	ActiveSeriesCustomTrackersConfigOld activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers_config" json:"active_series_custom_trackers_config" doc:"hidden"`
-	ActiveSeriesCustomTrackersConfig    activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
+	ActiveSeriesCustomTrackersConfig activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
 	// Max allowed time window for out-of-order samples.
-	OutOfOrderTimeWindow model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
+	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
+	OutOfOrderBlocksExternalLabelEnabled bool           `yaml:"out_of_order_blocks_external_label_enabled" json:"out_of_order_blocks_external_label_enabled" category:"experimental"`
+
+	// User defined label to give the option of subdividing specific metrics by another label
+	SeparateMetricsGroupLabel string `yaml:"separate_metrics_group_label" json:"separate_metrics_group_label" category:"experimental"`
 
 	// Querier enforced limits.
-	MaxChunksPerQuery              int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
-	MaxFetchedSeriesPerQuery       int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
-	MaxFetchedChunkBytesPerQuery   int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
-	MaxQueryLookback               model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
-	MaxQueryLength                 model.Duration `yaml:"max_query_length" json:"max_query_length"`
-	MaxQueryParallelism            int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
-	MaxLabelsQueryLength           model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
-	MaxCacheFreshness              model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
-	MaxQueriersPerTenant           int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
-	QueryShardingTotalShards       int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
-	QueryShardingMaxShardedQueries int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
-	SplitInstantQueriesByInterval  model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
+	MaxChunksPerQuery                    int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
+	MaxEstimatedChunksPerQueryMultiplier float64        `yaml:"max_estimated_fetched_chunks_per_query_multiplier" json:"max_estimated_fetched_chunks_per_query_multiplier" category:"experimental"`
+	MaxFetchedSeriesPerQuery             int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
+	MaxFetchedChunkBytesPerQuery         int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
+	MaxQueryLookback                     model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
+	MaxPartialQueryLength                model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
+	MaxQueryParallelism                  int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
+	MaxLabelsQueryLength                 model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
+	MaxCacheFreshness                    model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
+	MaxQueriersPerTenant                 int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
+	QueryShardingTotalShards             int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
+	QueryShardingMaxShardedQueries       int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
+	QueryShardingMaxRegexpSizeBytes      int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
+	SplitInstantQueriesByInterval        model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
+	QueryIngestersWithin                 model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
+
+	// Query-frontend limits.
+	MaxTotalQueryLength                    model.Duration  `yaml:"max_total_query_length" json:"max_total_query_length"`
+	ResultsCacheTTL                        model.Duration  `yaml:"results_cache_ttl" json:"results_cache_ttl"`
+	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration  `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window"`
+	ResultsCacheTTLForCardinalityQuery     model.Duration  `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query"`
+	ResultsCacheTTLForLabelsQuery          model.Duration  `yaml:"results_cache_ttl_for_labels_query" json:"results_cache_ttl_for_labels_query"`
+	ResultsCacheForUnalignedQueryEnabled   bool            `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
+	MaxQueryExpressionSizeBytes            int             `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
+	BlockedQueries                         []*BlockedQuery `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
+	AlignQueriesWithStep                   bool            `yaml:"align_queries_with_step" json:"align_queries_with_step"`
+
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
 	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
 	LabelValuesMaxCardinalityLabelNamesPerRequest int  `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
+	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"experimental"`
 
 	// Ruler defaults and limits.
-	RulerEvaluationDelay        model.Duration `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
-	RulerTenantShardSize        int            `yaml:"ruler_tenant_shard_size" json:"ruler_tenant_shard_size"`
-	RulerMaxRulesPerRuleGroup   int            `yaml:"ruler_max_rules_per_rule_group" json:"ruler_max_rules_per_rule_group"`
-	RulerMaxRuleGroupsPerTenant int            `yaml:"ruler_max_rule_groups_per_tenant" json:"ruler_max_rule_groups_per_tenant"`
+	RulerEvaluationDelay                 model.Duration `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
+	RulerTenantShardSize                 int            `yaml:"ruler_tenant_shard_size" json:"ruler_tenant_shard_size"`
+	RulerMaxRulesPerRuleGroup            int            `yaml:"ruler_max_rules_per_rule_group" json:"ruler_max_rules_per_rule_group"`
+	RulerMaxRuleGroupsPerTenant          int            `yaml:"ruler_max_rule_groups_per_tenant" json:"ruler_max_rule_groups_per_tenant"`
+	RulerRecordingRulesEvaluationEnabled bool           `yaml:"ruler_recording_rules_evaluation_enabled" json:"ruler_recording_rules_evaluation_enabled" category:"experimental"`
+	RulerAlertingRulesEvaluationEnabled  bool           `yaml:"ruler_alerting_rules_evaluation_enabled" json:"ruler_alerting_rules_evaluation_enabled" category:"experimental"`
+	RulerSyncRulesOnChangesEnabled       bool           `yaml:"ruler_sync_rules_on_changes_enabled" json:"ruler_sync_rules_on_changes_enabled" category:"advanced"`
 
 	// Store-gateway.
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
 
 	// Compactor.
-	CompactorBlocksRetentionPeriod     model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
-	CompactorSplitAndMergeShards       int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
-	CompactorSplitGroups               int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
-	CompactorTenantShardSize           int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
-	CompactorPartialBlockDeletionDelay model.Duration `yaml:"compactor_partial_block_deletion_delay" json:"compactor_partial_block_deletion_delay"`
-	CompactorBlockUploadEnabled        bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
+	CompactorBlocksRetentionPeriod        model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
+	CompactorSplitAndMergeShards          int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
+	CompactorSplitGroups                  int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
+	CompactorTenantShardSize              int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
+	CompactorPartialBlockDeletionDelay    model.Duration `yaml:"compactor_partial_block_deletion_delay" json:"compactor_partial_block_deletion_delay"`
+	CompactorBlockUploadEnabled           bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
+	CompactorBlockUploadValidationEnabled bool           `yaml:"compactor_block_upload_validation_enabled" json:"compactor_block_upload_validation_enabled"`
+	CompactorBlockUploadVerifyChunks      bool           `yaml:"compactor_block_upload_verify_chunks" json:"compactor_block_upload_verify_chunks"`
+	CompactorBlockUploadMaxBlockSizeBytes int64          `yaml:"compactor_block_upload_max_block_size_bytes" json:"compactor_block_upload_max_block_size_bytes" category:"advanced"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
@@ -156,66 +215,109 @@ type Limits struct {
 	AlertmanagerMaxAlertsCount                 int `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
 	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
 
-	ForwardingRules ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
+	// OpenTelemetry
+	OTelMetricSuffixesEnabled bool `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
+
+	// Ingest storage.
+	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental" doc:"hidden"`
+	IngestionPartitionsTenantShardSize int    `yaml:"ingestion_partitions_tenant_shard_size" json:"ingestion_partitions_tenant_shard_size" category:"experimental" doc:"hidden"`
+
+	extensions map[string]interface{}
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
-	f.Float64Var(&l.RequestRate, requestRateFlag, 0, "Per-tenant request rate limit in requests per second. 0 to disable.")
-	f.IntVar(&l.RequestBurstSize, requestBurstSizeFlag, 0, "Per-tenant allowed request burst size. 0 to disable.")
-	f.Float64Var(&l.IngestionRate, ingestionRateFlag, 10000, "Per-tenant ingestion rate limit in samples per second.")
-	f.IntVar(&l.IngestionBurstSize, ingestionBurstSizeFlag, 200000, "Per-tenant allowed ingestion burst size (in number of samples).")
+	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
+	f.Float64Var(&l.RequestRate, RequestRateFlag, 0, "Per-tenant push request rate limit in requests per second. 0 to disable.")
+	f.IntVar(&l.RequestBurstSize, RequestBurstSizeFlag, 0, "Per-tenant allowed push request burst size. 0 to disable.")
+	f.Float64Var(&l.IngestionRate, IngestionRateFlag, 10000, "Per-tenant ingestion rate limit in samples per second.")
+	f.IntVar(&l.IngestionBurstSize, IngestionBurstSizeFlag, 200000, "Per-tenant allowed ingestion burst size (in number of samples).")
+	f.Float64Var(&l.IngestionBurstFactor, IngestionBurstFactorFlag, 0, "Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate, this burst-factor must be greater than or equal to 1. If this is set it will override the ingestion-burst-size option.")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
 	f.IntVar(&l.HAMaxClusters, HATrackerMaxClustersFlag, 100, "Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.")
 	f.Var(&l.DropLabels, "distributor.drop-label", "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.")
-	f.IntVar(&l.MaxLabelNameLength, maxLabelNameLengthFlag, 1024, "Maximum length accepted for label names")
-	f.IntVar(&l.MaxLabelValueLength, maxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
-	f.IntVar(&l.MaxLabelNamesPerSeries, maxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
-	f.IntVar(&l.MaxMetadataLength, maxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT.")
+	f.IntVar(&l.MaxLabelNameLength, MaxLabelNameLengthFlag, 1024, "Maximum length accepted for label names")
+	f.IntVar(&l.MaxLabelValueLength, MaxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
+	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
+	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
+	f.IntVar(&l.MaxNativeHistogramBuckets, maxNativeHistogramBucketsFlag, 0, "Maximum number of buckets per native histogram sample. 0 to disable the limit.")
+	f.BoolVar(&l.ReduceNativeHistogramOverMaxBuckets, ReduceNativeHistogramOverMaxBucketsFlag, true, "Whether to reduce or reject native histogram samples with more buckets than the configured limit.")
 	_ = l.CreationGracePeriod.Set("10m")
-	f.Var(&l.CreationGracePeriod, creationGracePeriodFlag, "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`.")
+	f.Var(&l.CreationGracePeriod, CreationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future).")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
+	f.BoolVar(&l.MetricRelabelingEnabled, "distributor.metric-relabeling-enabled", true, "Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis.")
+	f.BoolVar(&l.ServiceOverloadStatusCodeOnRateLimitEnabled, "distributor.service-overload-status-code-on-rate-limit-enabled", false, "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.")
+	f.BoolVar(&l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
-	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 20000, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
 
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
-	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", "Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the following two conditions: (1) The newest sample for that time series, if it exists. For example, within [series.maxTime-timeWindow, series.maxTime]). (2) The TSDB's maximum time, if the series does not exist. For example, within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples.")
+	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
+	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", false, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
+	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 
-	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
-	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable")
-	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
-	f.Var(&l.MaxQueryLength, maxQueryLengthFlag, "Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.")
+	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
+
+	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
+	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
+	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
+	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from ingesters and store-gateways. This limit is enforced in the querier and ruler. 0 to disable.")
+	f.Var(&l.MaxPartialQueryLength, MaxPartialQueryLengthFlag, "Limit the time range for partial queries at the querier level.")
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
 	f.Var(&l.MaxLabelsQueryLength, "store.max-labels-query-length", "Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
+	f.IntVar(&l.ActiveSeriesResultsMaxSizeBytes, "querier.active-series-results-max-size-bytes", 400*1024*1024, "Maximum size of an active series request result shard in bytes. 0 to disable.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
-	_ = l.MaxCacheFreshness.Set("1m")
+	_ = l.MaxCacheFreshness.Set("10m")
 	f.Var(&l.MaxCacheFreshness, "query-frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
+
 	f.IntVar(&l.MaxQueriersPerTenant, "query-frontend.max-queriers-per-tenant", 0, "Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.")
 	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
+	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 4096, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
 	f.Var(&l.SplitInstantQueriesByInterval, "query-frontend.split-instant-queries-by-interval", "Split instant queries by an interval and execute in parallel. 0 to disable it.")
+	_ = l.QueryIngestersWithin.Set("13h")
+	f.Var(&l.QueryIngestersWithin, QueryIngestersWithinFlag, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 
+	_ = l.RulerEvaluationDelay.Set("1m")
 	f.Var(&l.RulerEvaluationDelay, "ruler.evaluation-delay-duration", "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.")
 	f.IntVar(&l.RulerTenantShardSize, "ruler.tenant-shard-size", 0, "The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.")
 	f.IntVar(&l.RulerMaxRulesPerRuleGroup, "ruler.max-rules-per-rule-group", 20, "Maximum number of rules per rule group per-tenant. 0 to disable.")
 	f.IntVar(&l.RulerMaxRuleGroupsPerTenant, "ruler.max-rule-groups-per-tenant", 70, "Maximum number of rule groups per-tenant. 0 to disable.")
+	f.BoolVar(&l.RulerRecordingRulesEvaluationEnabled, "ruler.recording-rules-evaluation-enabled", true, "Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis.")
+	f.BoolVar(&l.RulerAlertingRulesEvaluationEnabled, "ruler.alerting-rules-evaluation-enabled", true, "Controls whether alerting rules evaluation is enabled. This configuration option can be used to forcefully disable alerting rules evaluation on a per-tenant basis.")
+	f.BoolVar(&l.RulerSyncRulesOnChangesEnabled, "ruler.sync-rules-on-changes-enabled", true, "True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing. When enabled, it may take up to few tens of seconds before a configuration change triggers the re-sync.")
 
-	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. 0 to disable.")
+	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
 	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 1, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.")
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
-	f.Var(&l.CompactorPartialBlockDeletionDelay, "compactor.partial-block-deletion-delay", fmt.Sprintf("If a partial block (unfinished block without %s file) hasn't been modified for this time, it will be marked for deletion. 0 to disable.", block.MetaFilename))
+	_ = l.CompactorPartialBlockDeletionDelay.Set("1d")
+	f.Var(&l.CompactorPartialBlockDeletionDelay, "compactor.partial-block-deletion-delay", fmt.Sprintf("If a partial block (unfinished block without %s file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is %s: a lower value will be ignored and the feature disabled. 0 to disable.", block.MetaFilename, MinCompactorPartialBlockDeletionDelay.String()))
 	f.BoolVar(&l.CompactorBlockUploadEnabled, "compactor.block-upload-enabled", false, "Enable block upload API for the tenant.")
+	f.BoolVar(&l.CompactorBlockUploadValidationEnabled, "compactor.block-upload-validation-enabled", true, "Enable block upload validation for the tenant.")
+	f.BoolVar(&l.CompactorBlockUploadVerifyChunks, "compactor.block-upload-verify-chunks", true, "Verify chunks when uploading blocks via the upload API for the tenant.")
+	f.Int64Var(&l.CompactorBlockUploadMaxBlockSizeBytes, "compactor.block-upload-max-block-size-bytes", 0, "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.")
+
+	// Query-frontend.
+	f.Var(&l.MaxTotalQueryLength, MaxTotalQueryLengthFlag, "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.")
+	_ = l.ResultsCacheTTL.Set("7d")
+	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
+	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
+	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
+	f.Var(&l.ResultsCacheTTLForCardinalityQuery, "query-frontend.results-cache-ttl-for-cardinality-query", "Time to live duration for cached cardinality query results. The value 0 disables the cache.")
+	f.Var(&l.ResultsCacheTTLForLabelsQuery, "query-frontend.results-cache-ttl-for-labels-query", "Time to live duration for cached label names and label values query results. The value 0 disables the cache.")
+	f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
+	f.IntVar(&l.MaxQueryExpressionSizeBytes, MaxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
+	f.BoolVar(&l.AlignQueriesWithStep, alignQueriesWithStepFlag, false, "Mutate incoming queries to align their start and end with their step to improve result caching.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -236,58 +338,81 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxDispatcherAggregationGroups, "alertmanager.max-dispatcher-aggregation-groups", 0, "Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsCount, "alertmanager.max-alerts-count", 0, "Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
+
+	// Ingest storage.
+	f.StringVar(&l.IngestStorageReadConsistency, "ingest-storage.read-consistency", api.ReadConsistencyEventual, fmt.Sprintf("The default consistency level to enforce to queries when using the ingest storage. Supports values: %s.", strings.Join(api.ReadConsistencies, ", ")))
+	f.IntVar(&l.IngestionPartitionsTenantShardSize, "ingest-storage.ingestion-partition-tenant-shard-size", 0, "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.")
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (l *Limits) UnmarshalYAML(value *yaml.Node) error {
-	// We want to set l to the defaults and then overwrite it with the input.
-	// To make unmarshal fill the plain data struct rather than calling UnmarshalYAML
-	// again, we have to hide it using a type indirection.  See prometheus/config.
-
-	// During startup we wont have a default value so we don't want to overwrite them
-	if defaultLimits != nil {
-		*l = *defaultLimits
-		// Make copy of default limits. Otherwise unmarshalling would modify map in default limits.
-		l.copyNotificationIntegrationLimits(defaultLimits.NotificationRateLimitPerIntegration)
-	}
-	type plain Limits
-
-	err := value.DecodeWithOptions((*plain)(l), yaml.DecodeOptions{KnownFields: true})
-	if err != nil {
-		return err
-	}
-
-	if !l.ActiveSeriesCustomTrackersConfigOld.Empty() {
-		l.ActiveSeriesCustomTrackersConfig = l.ActiveSeriesCustomTrackersConfigOld
-		l.ActiveSeriesCustomTrackersConfigOld = activeseries.CustomTrackersConfig{}
-	}
-	return nil
+	return l.unmarshal(func(v any) error {
+		return value.DecodeWithOptions(v, yaml.DecodeOptions{KnownFields: true})
+	})
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (l *Limits) UnmarshalJSON(data []byte) error {
-	// Like the YAML method above, we want to set l to the defaults and then overwrite
-	// it with the input. We prevent an infinite loop of calling UnmarshalJSON by hiding
-	// behind type indirection.
+	return l.unmarshal(func(v any) error {
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.DisallowUnknownFields()
+
+		return dec.Decode(v)
+	})
+}
+
+// unmarshal does both YAML and JSON.
+func (l *Limits) unmarshal(decode func(any) error) error {
+	// We want to set l to the defaults and then overwrite it with the input.
 	if defaultLimits != nil {
 		*l = *defaultLimits
-		// Make copy of default limits. Otherwise unmarshalling would modify map in default limits.
+		// Make copy of default limits, otherwise unmarshalling would modify map in default limits.
 		l.copyNotificationIntegrationLimits(defaultLimits.NotificationRateLimitPerIntegration)
 	}
 
-	type plain Limits
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-
-	err := dec.Decode((*plain)(l))
+	// Decode into a reflection-crafted struct that has fields for the extensions.
+	cfg, getExtensions := newLimitsWithExtensions((*plainLimits)(l))
+	err := decode(cfg)
 	if err != nil {
 		return err
 	}
+	l.extensions = getExtensions()
 
-	if !l.ActiveSeriesCustomTrackersConfigOld.Empty() {
-		l.ActiveSeriesCustomTrackersConfig = l.ActiveSeriesCustomTrackersConfigOld
-		l.ActiveSeriesCustomTrackersConfigOld = activeseries.CustomTrackersConfig{}
+	return l.validate()
+}
+
+// RegisterExtensionsDefaults registers the default values for extensions into l.
+// This is especially handy for those downstream projects that wish to have control
+// over the exact moment in which the registration happens (e.g. during service
+// dependency initialization).
+func (l *Limits) RegisterExtensionsDefaults() {
+	_, getExtensions := newLimitsWithExtensions((*plainLimits)(l))
+	l.extensions = getExtensions()
+}
+
+func (l *Limits) MarshalJSON() ([]byte, error) {
+	return json.Marshal(limitsToStructWithExtensionFields(l))
+}
+
+func (l *Limits) MarshalYAML() (interface{}, error) {
+	return limitsToStructWithExtensionFields(l), nil
+}
+
+func (l *Limits) validate() error {
+	for _, cfg := range l.MetricRelabelConfigs {
+		if cfg == nil {
+			return errors.New("invalid metric_relabel_configs")
+		}
 	}
+
+	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
+		return errInvalidMaxEstimatedChunksPerQueryMultiplier
+	}
+
+	if !util.StringsContain(api.ReadConsistencies, l.IngestStorageReadConsistency) {
+		return errInvalidIngestStorageReadConsistency
+	}
+
 	return nil
 }
 
@@ -355,6 +480,10 @@ func (o *Overrides) LabelNamesAndValuesResultsMaxSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).LabelNamesAndValuesResultsMaxSizeBytes
 }
 
+func (o *Overrides) ActiveSeriesResultsMaxSizeBytes(userID string) int {
+	return o.getOverridesForUser(userID).ActiveSeriesResultsMaxSizeBytes
+}
+
 func (o *Overrides) CardinalityAnalysisEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).CardinalityAnalysisEnabled
 }
@@ -369,9 +498,22 @@ func (o *Overrides) IngestionBurstSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionBurstSize
 }
 
+func (o *Overrides) IngestionBurstFactor(userID string) float64 {
+	burstFactor := o.getOverridesForUser(userID).IngestionBurstFactor
+	if burstFactor < 1 {
+		return 0
+	}
+	return burstFactor
+}
+
 // AcceptHASamples returns whether the distributor should track and accept samples from HA replicas for this user.
 func (o *Overrides) AcceptHASamples(userID string) bool {
 	return o.getOverridesForUser(userID).AcceptHASamples
+}
+
+// ServiceOverloadStatusCodeOnRateLimitEnabled return whether the distributor uses status code 529 instead of 429 when the rate limit is exceeded.
+func (o *Overrides) ServiceOverloadStatusCodeOnRateLimitEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).ServiceOverloadStatusCodeOnRateLimitEnabled
 }
 
 // HAClusterLabel returns the cluster label to look for when deciding whether to accept a sample from a Prometheus HA replica.
@@ -411,6 +553,18 @@ func (o *Overrides) MaxMetadataLength(userID string) int {
 	return o.getOverridesForUser(userID).MaxMetadataLength
 }
 
+// MaxNativeHistogramBuckets returns the maximum number of buckets per native
+// histogram sample.
+func (o *Overrides) MaxNativeHistogramBuckets(userID string) int {
+	return o.getOverridesForUser(userID).MaxNativeHistogramBuckets
+}
+
+// ReduceNativeHistogramOverMaxBuckets returns whether to reduce or reject
+// native histogram samples with more buckets than the configured limit.
+func (o *Overrides) ReduceNativeHistogramOverMaxBuckets(userID string) bool {
+	return o.getOverridesForUser(userID).ReduceNativeHistogramOverMaxBuckets
+}
+
 // CreationGracePeriod is misnamed, and actually returns how far into the future
 // we should accept samples.
 func (o *Overrides) CreationGracePeriod(userID string) time.Duration {
@@ -431,6 +585,11 @@ func (o *Overrides) MaxChunksPerQuery(userID string) int {
 	return o.getOverridesForUser(userID).MaxChunksPerQuery
 }
 
+func (o *Overrides) MaxEstimatedChunksPerQuery(userID string) int {
+	overridesForUser := o.getOverridesForUser(userID)
+	return int(overridesForUser.MaxEstimatedChunksPerQueryMultiplier * float64(overridesForUser.MaxChunksPerQuery))
+}
+
 // MaxFetchedSeriesPerQuery returns the maximum number of series allowed per query when fetching
 // chunks from ingesters and blocks storage.
 func (o *Overrides) MaxFetchedSeriesPerQuery(userID string) int {
@@ -448,9 +607,24 @@ func (o *Overrides) MaxQueryLookback(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MaxQueryLookback)
 }
 
-// MaxQueryLength returns the limit of the length (in time) of a query.
-func (o *Overrides) MaxQueryLength(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).MaxQueryLength)
+// MaxPartialQueryLength returns the limit of the length (in time) of a (partial) query.
+func (o *Overrides) MaxPartialQueryLength(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).MaxPartialQueryLength)
+}
+
+// MaxTotalQueryLength returns the limit of the total length (in time) of a query.
+func (o *Overrides) MaxTotalQueryLength(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).MaxTotalQueryLength)
+}
+
+// MaxQueryExpressionSizeBytes returns the limit of the raw query size, in bytes.
+func (o *Overrides) MaxQueryExpressionSizeBytes(userID string) int {
+	return o.getOverridesForUser(userID).MaxQueryExpressionSizeBytes
+}
+
+// BlockedQueries returns the blocked queries.
+func (o *Overrides) BlockedQueries(userID string) []*BlockedQuery {
+	return o.getOverridesForUser(userID).BlockedQueries
 }
 
 // MaxLabelsQueryLength returns the limit of the length (in time) of a label names or values request.
@@ -487,10 +661,23 @@ func (o *Overrides) QueryShardingMaxShardedQueries(userID string) int {
 	return o.getOverridesForUser(userID).QueryShardingMaxShardedQueries
 }
 
+// QueryShardingMaxRegexpSizeBytes returns the limit to the max number of bytes allowed
+// for a regexp matcher in a shardable query. If a query contains a regexp matcher longer
+// than this limit, the query will not be sharded. 0 to disable limit.
+func (o *Overrides) QueryShardingMaxRegexpSizeBytes(userID string) int {
+	return o.getOverridesForUser(userID).QueryShardingMaxRegexpSizeBytes
+}
+
 // SplitInstantQueriesByInterval returns the split time interval to use when splitting an instant query
 // via the query-frontend. 0 to disable limit.
 func (o *Overrides) SplitInstantQueriesByInterval(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).SplitInstantQueriesByInterval)
+}
+
+// QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
+// 0 means all queries are sent to ingester.
+func (o *Overrides) QueryIngestersWithin(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).QueryIngestersWithin)
 }
 
 // EnforceMetadataMetricName whether to enforce the presence of a metric name on metadata.
@@ -518,8 +705,18 @@ func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) activeseries
 }
 
 // OutOfOrderTimeWindow returns the out-of-order time window for the user.
-func (o *Overrides) OutOfOrderTimeWindow(userID string) model.Duration {
-	return o.getOverridesForUser(userID).OutOfOrderTimeWindow
+func (o *Overrides) OutOfOrderTimeWindow(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).OutOfOrderTimeWindow)
+}
+
+// OutOfOrderBlocksExternalLabelEnabled returns if the shipper is flagging out-of-order blocks with an external label.
+func (o *Overrides) OutOfOrderBlocksExternalLabelEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).OutOfOrderBlocksExternalLabelEnabled
+}
+
+// SeparateMetricsGroupLabel returns the custom label used to separate specific metrics
+func (o *Overrides) SeparateMetricsGroupLabel(userID string) string {
+	return o.getOverridesForUser(userID).SeparateMetricsGroupLabel
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.
@@ -547,14 +744,23 @@ func (o *Overrides) CompactorSplitAndMergeShards(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitAndMergeShards
 }
 
-// CompactorSplitGroupsCount returns the number of groups that blocks for splitting should be grouped into.
+// CompactorSplitGroups returns the number of groups that blocks for splitting should be grouped into.
 func (o *Overrides) CompactorSplitGroups(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitGroups
 }
 
-// CompactorPartialBlockDeletionDelay returns the partial block deletion delay time period for a given user.
-func (o *Overrides) CompactorPartialBlockDeletionDelay(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).CompactorPartialBlockDeletionDelay)
+// CompactorPartialBlockDeletionDelay returns the partial block deletion delay time period for a given user,
+// and whether the configured value was valid. If the value wasn't valid, the returned delay is the default one
+// and the caller is responsible to warn the Mimir operator about it.
+func (o *Overrides) CompactorPartialBlockDeletionDelay(userID string) (delay time.Duration, valid bool) {
+	delay = time.Duration(o.getOverridesForUser(userID).CompactorPartialBlockDeletionDelay)
+
+	// Forcefully disable partial blocks deletion if the configured delay is too low.
+	if delay > 0 && delay < MinCompactorPartialBlockDeletionDelay {
+		return 0, false
+	}
+
+	return delay, true
 }
 
 // CompactorBlockUploadEnabled returns whether block upload is enabled for a certain tenant.
@@ -562,9 +768,33 @@ func (o *Overrides) CompactorBlockUploadEnabled(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).CompactorBlockUploadEnabled
 }
 
+// CompactorBlockUploadValidationEnabled returns whether block upload validation is enabled for a certain tenant.
+func (o *Overrides) CompactorBlockUploadValidationEnabled(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).CompactorBlockUploadValidationEnabled
+}
+
+// CompactorBlockUploadVerifyChunks returns whether compaction chunk verification is enabled for a certain tenant.
+func (o *Overrides) CompactorBlockUploadVerifyChunks(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).CompactorBlockUploadVerifyChunks
+}
+
+// CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded or validated for a given user.
+func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(userID string) int64 {
+	return o.getOverridesForUser(userID).CompactorBlockUploadMaxBlockSizeBytes
+}
+
 // MetricRelabelConfigs returns the metric relabel configs for a given user.
 func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	return o.getOverridesForUser(userID).MetricRelabelConfigs
+}
+
+func (o *Overrides) MetricRelabelingEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).MetricRelabelingEnabled
+}
+
+// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester
+func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).NativeHistogramsIngestionEnabled
 }
 
 // RulerTenantShardSize returns shard size (number of rulers) used by this tenant when using shuffle-sharding strategy.
@@ -580,6 +810,21 @@ func (o *Overrides) RulerMaxRulesPerRuleGroup(userID string) int {
 // RulerMaxRuleGroupsPerTenant returns the maximum number of rule groups for a given user.
 func (o *Overrides) RulerMaxRuleGroupsPerTenant(userID string) int {
 	return o.getOverridesForUser(userID).RulerMaxRuleGroupsPerTenant
+}
+
+// RulerRecordingRulesEvaluationEnabled returns whether the recording rules evaluation is enabled for a given user.
+func (o *Overrides) RulerRecordingRulesEvaluationEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).RulerRecordingRulesEvaluationEnabled
+}
+
+// RulerAlertingRulesEvaluationEnabled returns whether the alerting rules evaluation is enabled for a given user.
+func (o *Overrides) RulerAlertingRulesEvaluationEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).RulerAlertingRulesEvaluationEnabled
+}
+
+// RulerSyncRulesOnChangesEnabled returns whether the ruler's event-based sync is enabled.
+func (o *Overrides) RulerSyncRulesOnChangesEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).RulerSyncRulesOnChangesEnabled
 }
 
 // StoreGatewayTenantShardSize returns the store-gateway shard size for a given user.
@@ -691,8 +936,40 @@ func (o *Overrides) AlertmanagerMaxAlertsSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).AlertmanagerMaxAlertsSizeBytes
 }
 
-func (o *Overrides) ForwardingRules(user string) ForwardingRules {
-	return o.getOverridesForUser(user).ForwardingRules
+func (o *Overrides) ResultsCacheTTL(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTL)
+}
+
+func (o *Overrides) ResultsCacheTTLForOutOfOrderTimeWindow(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForOutOfOrderTimeWindow)
+}
+
+func (o *Overrides) ResultsCacheTTLForCardinalityQuery(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForCardinalityQuery)
+}
+
+func (o *Overrides) ResultsCacheTTLForLabelsQuery(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForLabelsQuery)
+}
+
+func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).ResultsCacheForUnalignedQueryEnabled
+}
+
+func (o *Overrides) OTelMetricSuffixesEnabled(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).OTelMetricSuffixesEnabled
+}
+
+func (o *Overrides) AlignQueriesWithStep(userID string) bool {
+	return o.getOverridesForUser(userID).AlignQueriesWithStep
+}
+
+func (o *Overrides) IngestStorageReadConsistency(userID string) string {
+	return o.getOverridesForUser(userID).IngestStorageReadConsistency
+}
+
+func (o *Overrides) IngestionPartitionsTenantShardSize(userID string) int {
+	return o.getOverridesForUser(userID).IngestionPartitionsTenantShardSize
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
@@ -703,6 +980,16 @@ func (o *Overrides) getOverridesForUser(userID string) *Limits {
 		}
 	}
 	return o.defaultLimits
+}
+
+// AllTrueBooleansPerTenant returns true only if limit func is true for all given tenants
+func AllTrueBooleansPerTenant(tenantIDs []string, f func(string) bool) bool {
+	for _, tenantID := range tenantIDs {
+		if !f(tenantID) {
+			return false
+		}
+	}
+	return true
 }
 
 // SmallestPositiveIntPerTenant is returning the minimal positive value of the
@@ -723,7 +1010,7 @@ func SmallestPositiveIntPerTenant(tenantIDs []string, f func(string) int) int {
 
 // SmallestPositiveNonZeroIntPerTenant is returning the minimal positive and
 // non-zero value of the supplied limit function for all given tenants. In many
-// limits a value of 0 means unlimted so the method will return 0 only if all
+// limits a value of 0 means unlimited so the method will return 0 only if all
 // inputs have a limit of 0 or an empty tenant list is given.
 func SmallestPositiveNonZeroIntPerTenant(tenantIDs []string, f func(string) int) int {
 	var result *int
@@ -741,7 +1028,7 @@ func SmallestPositiveNonZeroIntPerTenant(tenantIDs []string, f func(string) int)
 
 // SmallestPositiveNonZeroDurationPerTenant is returning the minimal positive
 // and non-zero value of the supplied limit function for all given tenants. In
-// many limits a value of 0 means unlimted so the method will return 0 only if
+// many limits a value of 0 means unlimited so the method will return 0 only if
 // all inputs have a limit of 0 or an empty tenant list is given.
 func SmallestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
 	var result *time.Duration
@@ -757,6 +1044,38 @@ func SmallestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string)
 	return *result
 }
 
+// LargestPositiveNonZeroDurationPerTenant is returning the maximum positive
+// and non-zero value of the supplied limit function for all given tenants. In
+// many limits a value of 0 means unlimited so the method will return 0 only if
+// all inputs have a limit of 0 or an empty tenant list is given.
+func LargestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
+	var result *time.Duration
+	for _, tenantID := range tenantIDs {
+		v := f(tenantID)
+		if v > 0 && (result == nil || v > *result) {
+			result = &v
+		}
+	}
+	if result == nil {
+		return 0
+	}
+	return *result
+}
+
+// MinDurationPerTenant is returning the minimum duration per tenant. Without
+// tenants given it will return a time.Duration(0).
+func MinDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
+	result := time.Duration(0)
+	for idx, tenantID := range tenantIDs {
+		v := f(tenantID)
+
+		if idx == 0 || v < result {
+			result = v
+		}
+	}
+	return result
+}
+
 // MaxDurationPerTenant is returning the maximum duration per tenant. Without
 // tenants given it will return a time.Duration(0).
 func MaxDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
@@ -768,4 +1087,171 @@ func MaxDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time
 		}
 	}
 	return result
+}
+
+// MustRegisterExtension registers the extensions type with given name
+// and returns a function to get the extensions value from a *Limits instance.
+//
+// The provided name will be used as YAML/JSON key to decode the extensions.
+//
+// The returned getter will return the result of E.Default() if *Limits is nil.
+//
+// This method is not thread safe and should be called only during package initialization.
+// Registering same name twice, or registering a name that is already a *Limits JSON or YAML key will cause a panic.
+func MustRegisterExtension[E interface{ Default() E }](name string) func(*Limits) E {
+	if name == "" {
+		panic("extension name cannot be empty")
+	}
+	if _, ok := standardLimitsYAMLJSONKeys[name]; ok {
+		panic(fmt.Errorf("extension %s cannot be registered because it's a standard limits field", name))
+	}
+	if _, ok := registeredExtensions[name]; ok {
+		panic(fmt.Errorf("extension %s already registered", name))
+	}
+
+	var zeroE E
+	registeredExtensions[name] = registeredExtension{
+		index:            len(registeredExtensions),
+		reflectedDefault: func() reflect.Value { return reflect.ValueOf(zeroE.Default()) },
+	}
+
+	limitsExtensionsFields = append(limitsExtensionsFields, reflect.StructField{
+		Name: strings.ToUpper(name),
+		Type: reflect.TypeOf(zeroE),
+		Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s" json:"%s"`, name, name)),
+	})
+
+	return func(l *Limits) (e E) {
+		if l == nil {
+			// Call e.Default() here every time instead of storing it when the extension is being registered, as it might change over time.
+			// Especially when the default values are initialized after package initialization phase, where this is registered.
+			return e.Default()
+		}
+		if l.extensions[name] == nil {
+			return zeroE
+		}
+		return l.extensions[name].(E)
+	}
+}
+
+var standardLimitsYAMLJSONKeys = map[string]struct{}{}
+
+func init() {
+	limitsType := reflect.TypeOf(Limits{})
+	for i := 0; i < limitsType.NumField(); i++ {
+		// yamlKey/jsonKey could be empty, but we also shouldn't allow registering a field with an empty name, so just add it to the map.
+		yamlKey, _, _ := strings.Cut(limitsType.Field(i).Tag.Get("yaml"), ",")
+		jsonKey, _, _ := strings.Cut(limitsType.Field(i).Tag.Get("json"), ",")
+		standardLimitsYAMLJSONKeys[yamlKey] = struct{}{}
+		standardLimitsYAMLJSONKeys[jsonKey] = struct{}{}
+	}
+}
+
+type registeredExtension struct {
+	index            int
+	reflectedDefault func() reflect.Value
+}
+
+// registeredExtensions is used to keep track of the indexes of each registered extension.
+var registeredExtensions = map[string]registeredExtension{}
+
+// limitsExtensionsFields is the list of the extension fields to be added to the reflection-crafted Limits struct.
+var limitsExtensionsFields []reflect.StructField
+
+// plainLimits is used to prevent an infinite loop of calling UnmarshalJSON/UnmarshalYAML by hiding behind type indirection.
+type plainLimits Limits
+
+// plainLimitsStructField is the last field in the struct crafted by newLimitsWithExtensions.
+var plainLimitsStructField = reflect.StructField{
+	Name:      "PlainLimits",
+	Type:      reflect.TypeOf(new(plainLimits)),
+	Tag:       `yaml:",inline"`,
+	Anonymous: true,
+}
+
+// buildStructWithExtensionFieldsAndDefaultValues returns an interface{} value of a pointer to a struct of type:
+//
+//	struct {
+//	    EXTNAME1    T1                     `yaml:"extname1" json:"extname1"`
+//	    // ...
+//	    EXTNAMEN    TN                     `yaml:"extnameN" json:"extnameN"`
+//
+//	    PlainLimits map[string]interface{} `yaml:",inline"`
+//	}
+//
+// Where TN is the type of the registered extension N, and extnameN is the name of it.
+// This makes the JSON/YAML unmarshaler go through each extension field, and unmarshal the rest of the payload in the plain limits field.
+//
+// Embedding PlainLimits in the struct makes JSON parser act like `yaml:",inline"`.
+//
+// This method doesn't set any field values.
+func buildStructWithExtensionFieldsAndDefaultValues() reflect.Value {
+	// We have extensions, craft our own type.
+	// It's not strictly necessary to create a new slice here, we could just append to limitsExtensionsFields assuming that
+	// this would allocate a new underlying array, but that is too fragile, so let's copy the fields to a new slice.
+	fields := make([]reflect.StructField, 0, len(limitsExtensionsFields)+1)
+	fields = append(fields, limitsExtensionsFields...)
+	fields = append(fields, plainLimitsStructField)
+
+	// typ is the type of the new struct.
+	typ := reflect.StructOf(fields)
+	// cfg is an instance of a pointer to a new struct.
+	cfg := reflect.New(typ)
+	return cfg
+}
+
+// newLimitsWithExtensions returns struct suitable for unmarshalling and a function to return map of extension values.
+func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtensions func() map[string]interface{}) {
+	if len(registeredExtensions) == 0 {
+		// No extensions, so just return the plain limits and an extension getter that returns nil.
+		return limits, func() map[string]interface{} { return nil }
+	}
+
+	cfg := buildStructWithExtensionFieldsAndDefaultValues()
+
+	// Set default values of each field
+	// In other words:
+	//     cfg.EXTNAME1 = cfg.EXTNAME1.Default()
+	for _, ext := range registeredExtensions {
+		cfg.Elem().Field(ext.index).Set(ext.reflectedDefault())
+	}
+
+	// set the limits provided (they probably contain default limits) to the new struct, so we'll unmarshal on top of them.
+	// In other words:
+	//     cfg.PlainLimits = limits
+	cfg.Elem().FieldByName(plainLimitsStructField.Name).Set(reflect.ValueOf(limits))
+
+	return cfg.Interface(), func() map[string]interface{} {
+		ext := map[string]interface{}{}
+		for name, re := range registeredExtensions {
+			ext[name] = cfg.Elem().Field(re.index).Interface()
+		}
+		return ext
+	}
+}
+
+// limitsToStructWithExtensionFields converts existing Limits into a struct that contains all extension fields
+// set to values in the limits. This struct can be used for JSON/YAML marshalling.
+func limitsToStructWithExtensionFields(limits *Limits) interface{} {
+	if len(registeredExtensions) == 0 {
+		return (*plainLimits)(limits)
+	}
+
+	cfg := buildStructWithExtensionFieldsAndDefaultValues()
+
+	// Set values from limits.
+	// In other words:
+	//     cfg.PlainLimits = limits
+	cfg.Elem().FieldByName(plainLimitsStructField.Name).Set(reflect.ValueOf((*plainLimits)(limits)))
+
+	// Set value of each extension field based on value stored in supplied limits.
+	// Some values may not be set.
+	// In other words:
+	//     cfg.EXTNAME = limits.extension[EXTNAME]
+	for name, val := range limits.extensions {
+		ext := registeredExtensions[name]
+		cfg.Elem().Field(ext.index).Set(reflect.ValueOf(val))
+	}
+
+	return cfg.Interface()
 }

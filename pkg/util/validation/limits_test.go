@@ -7,11 +7,14 @@ package validation
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/assert"
@@ -22,25 +25,10 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 )
 
-// mockTenantLimits exposes per-tenant limits based on a provided map
-type mockTenantLimits struct {
-	limits map[string]*Limits
-}
+func TestMain(m *testing.M) {
+	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 
-// newMockTenantLimits creates a new mockTenantLimits that returns per-tenant limits based on
-// the given map
-func newMockTenantLimits(limits map[string]*Limits) *mockTenantLimits {
-	return &mockTenantLimits{
-		limits: limits,
-	}
-}
-
-func (l *mockTenantLimits) ByUserID(userID string) *Limits {
-	return l.limits[userID]
-}
-
-func (l *mockTenantLimits) AllByUserID() map[string]*Limits {
-	return l.limits
+	m.Run()
 }
 
 func TestOverridesManager_GetOverrides(t *testing.T) {
@@ -49,7 +37,7 @@ func TestOverridesManager_GetOverrides(t *testing.T) {
 	defaults := Limits{
 		MaxLabelNamesPerSeries: 100,
 	}
-	ov, err := NewOverrides(defaults, newMockTenantLimits(tenantLimits))
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 	require.NoError(t, err)
 
 	require.Equal(t, 100, ov.MaxLabelNamesPerSeries("user1"))
@@ -72,10 +60,6 @@ func TestOverridesManager_GetOverrides(t *testing.T) {
 }
 
 func TestLimitsLoadingFromYaml(t *testing.T) {
-	SetDefaultLimitsForYAMLUnmarshalling(Limits{
-		MaxLabelNameLength: 100,
-	})
-
 	inp := `ingestion_rate: 0.5`
 
 	l := Limits{}
@@ -84,14 +68,10 @@ func TestLimitsLoadingFromYaml(t *testing.T) {
 	require.NoError(t, dec.Decode(&l))
 
 	assert.Equal(t, 0.5, l.IngestionRate, "from yaml")
-	assert.Equal(t, 100, l.MaxLabelNameLength, "from defaults")
+	assert.Equal(t, 1024, l.MaxLabelNameLength, "from defaults")
 }
 
 func TestLimitsLoadingFromJson(t *testing.T) {
-	SetDefaultLimitsForYAMLUnmarshalling(Limits{
-		MaxLabelNameLength: 100,
-	})
-
 	inp := `{"ingestion_rate": 0.5}`
 
 	l := Limits{}
@@ -99,7 +79,7 @@ func TestLimitsLoadingFromJson(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 0.5, l.IngestionRate, "from json")
-	assert.Equal(t, 100, l.MaxLabelNameLength, "from defaults")
+	assert.Equal(t, 1024, l.MaxLabelNameLength, "from defaults")
 
 	// Unmarshal should fail if input contains unknown struct fields and
 	// the decoder flag `json.Decoder.DisallowUnknownFields()` is set
@@ -135,15 +115,15 @@ func TestLimitsTagsYamlMatchJson(t *testing.T) {
 func TestLimitsStringDurationYamlMatchJson(t *testing.T) {
 	inputYAML := `
 max_query_lookback: 1s
-max_query_length: 1s
+max_partial_query_length: 1s
 `
-	inputJSON := `{"max_query_lookback": "1s", "max_query_length": "1s"}`
+	inputJSON := `{"max_query_lookback": "1s", "max_partial_query_length": "1s"}`
 
-	limitsYAML := Limits{}
+	limitsYAML := getDefaultLimits()
 	err := yaml.Unmarshal([]byte(inputYAML), &limitsYAML)
 	require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
-	limitsJSON := Limits{}
+	limitsJSON := getDefaultLimits()
 	err = json.Unmarshal([]byte(inputJSON), &limitsJSON)
 	require.NoError(t, err, "expected to be able to unmarshal from JSON")
 
@@ -167,8 +147,6 @@ func TestLimitsAlwaysUsesPromDuration(t *testing.T) {
 }
 
 func TestMetricRelabelConfigLimitsLoadingFromYaml(t *testing.T) {
-	SetDefaultLimitsForYAMLUnmarshalling(Limits{})
-
 	inp := `
 metric_relabel_configs:
 - action: drop
@@ -203,7 +181,7 @@ func TestSmallestPositiveIntPerTenant(t *testing.T) {
 	defaults := Limits{
 		MaxQueryParallelism: 0,
 	}
-	ov, err := NewOverrides(defaults, newMockTenantLimits(tenantLimits))
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
@@ -235,7 +213,7 @@ func TestSmallestPositiveNonZeroIntPerTenant(t *testing.T) {
 	defaults := Limits{
 		MaxQueriersPerTenant: 0,
 	}
-	ov, err := NewOverrides(defaults, newMockTenantLimits(tenantLimits))
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
@@ -257,17 +235,17 @@ func TestSmallestPositiveNonZeroIntPerTenant(t *testing.T) {
 func TestSmallestPositiveNonZeroDurationPerTenant(t *testing.T) {
 	tenantLimits := map[string]*Limits{
 		"tenant-a": {
-			MaxQueryLength: model.Duration(time.Hour),
+			MaxPartialQueryLength: model.Duration(time.Hour),
 		},
 		"tenant-b": {
-			MaxQueryLength: model.Duration(4 * time.Hour),
+			MaxPartialQueryLength: model.Duration(4 * time.Hour),
 		},
 	}
 
 	defaults := Limits{
-		MaxQueryLength: 0,
+		MaxPartialQueryLength: 0,
 	}
-	ov, err := NewOverrides(defaults, newMockTenantLimits(tenantLimits))
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
@@ -282,8 +260,150 @@ func TestSmallestPositiveNonZeroDurationPerTenant(t *testing.T) {
 		{tenantIDs: []string{"tenant-c", "tenant-d", "tenant-e"}, expLimit: time.Duration(0)},
 		{tenantIDs: []string{"tenant-a", "tenant-b", "tenant-c"}, expLimit: time.Hour},
 	} {
-		assert.Equal(t, tc.expLimit, SmallestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxQueryLength))
+		assert.Equal(t, tc.expLimit, SmallestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxPartialQueryLength))
 	}
+}
+
+func TestMinDurationPerTenant(t *testing.T) {
+	defaults := Limits{ResultsCacheTTLForCardinalityQuery: 0}
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {ResultsCacheTTLForCardinalityQuery: 0},
+		"tenant-b": {ResultsCacheTTLForCardinalityQuery: model.Duration(time.Minute)},
+		"tenant-c": {ResultsCacheTTLForCardinalityQuery: model.Duration(time.Hour)},
+	}
+
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		tenantIDs []string
+		expLimit  time.Duration
+	}{
+		{tenantIDs: []string{}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-b"}, expLimit: time.Minute},
+		{tenantIDs: []string{"tenant-c"}, expLimit: time.Hour},
+		{tenantIDs: []string{"tenant-a", "tenant-b"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-c", "tenant-b"}, expLimit: time.Minute},
+		{tenantIDs: []string{"tenant-c", "tenant-d", "tenant-e"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-c", "tenant-b", "tenant-a"}, expLimit: time.Duration(0)},
+	} {
+		assert.Equal(t, tc.expLimit, MinDurationPerTenant(tc.tenantIDs, ov.ResultsCacheTTLForCardinalityQuery))
+	}
+}
+
+func TestLargestPositiveNonZeroDurationPerTenant(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			CreationGracePeriod: model.Duration(time.Hour),
+		},
+		"tenant-b": {
+			CreationGracePeriod: model.Duration(4 * time.Hour),
+		},
+	}
+
+	defaults := Limits{
+		CreationGracePeriod: 0,
+	}
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		tenantIDs []string
+		expLimit  time.Duration
+	}{
+		{tenantIDs: []string{}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a"}, expLimit: time.Hour},
+		{tenantIDs: []string{"tenant-b"}, expLimit: 4 * time.Hour},
+		{tenantIDs: []string{"tenant-c"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a", "tenant-b"}, expLimit: 4 * time.Hour},
+		{tenantIDs: []string{"tenant-c", "tenant-d", "tenant-e"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a", "tenant-b", "tenant-c"}, expLimit: 4 * time.Hour},
+	} {
+		assert.Equal(t, tc.expLimit, LargestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.CreationGracePeriod))
+	}
+}
+
+func TestMaxTotalQueryLengthWithoutDefault(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			MaxTotalQueryLength: model.Duration(4 * time.Hour),
+		},
+	}
+	defaults := Limits{}
+
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		tenantIDs []string
+		expLimit  time.Duration
+	}{
+		{tenantIDs: []string{}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a"}, expLimit: 4 * time.Hour},
+		{tenantIDs: []string{"tenant-b"}, expLimit: time.Duration(0)},
+	} {
+		assert.Equal(t, tc.expLimit, SmallestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxTotalQueryLength))
+	}
+}
+
+func TestMaxTotalQueryLengthWithDefault(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			MaxTotalQueryLength: model.Duration(4 * time.Hour),
+		},
+	}
+	defaults := Limits{
+		MaxTotalQueryLength: model.Duration(3 * time.Hour),
+	}
+
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		tenantIDs []string
+		expLimit  time.Duration
+	}{
+		{tenantIDs: []string{}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a"}, expLimit: 4 * time.Hour},
+		{tenantIDs: []string{"tenant-b"}, expLimit: 3 * time.Hour},
+	} {
+		assert.Equal(t, tc.expLimit, SmallestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxTotalQueryLength))
+	}
+}
+
+func TestMaxPartialQueryLengthWithDefault(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			MaxPartialQueryLength: model.Duration(1 * time.Hour),
+		},
+	}
+	defaults := Limits{
+		MaxPartialQueryLength: model.Duration(6 * time.Hour),
+	}
+
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	assert.Equal(t, 6*time.Hour, ov.MaxPartialQueryLength(""))
+	assert.Equal(t, 1*time.Hour, ov.MaxPartialQueryLength("tenant-a"))
+	assert.Equal(t, 6*time.Hour, ov.MaxPartialQueryLength("tenant-b"))
+}
+
+func TestMaxPartialQueryLengthWithoutDefault(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			MaxPartialQueryLength: model.Duration(3 * time.Hour),
+		},
+	}
+	defaults := Limits{}
+
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	assert.Equal(t, time.Duration(0), ov.MaxPartialQueryLength(""))
+	assert.Equal(t, 3*time.Hour, ov.MaxPartialQueryLength("tenant-a"))
+	assert.Equal(t, time.Duration(0), ov.MaxPartialQueryLength("tenant-b"))
 }
 
 func TestAlertmanagerNotificationLimits(t *testing.T) {
@@ -470,9 +590,14 @@ testuser:
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			SetDefaultLimitsForYAMLUnmarshalling(Limits{})
+			// Reset the default limits at the end of the test.
+			t.Cleanup(func() {
+				SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+			})
 
-			limitsYAML := Limits{}
+			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
+			var limitsYAML Limits
 			err := yaml.Unmarshal([]byte(baseYaml), &limitsYAML)
 			require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
@@ -482,7 +607,7 @@ testuser:
 			err = yaml.Unmarshal([]byte(tc.overrides), &overrides)
 			require.NoError(t, err, "parsing overrides")
 
-			tl := newMockTenantLimits(overrides)
+			tl := NewMockTenantLimits(overrides)
 
 			ov, err := NewOverrides(limitsYAML, tl)
 			require.NoError(t, err)
@@ -494,46 +619,340 @@ testuser:
 }
 
 func TestCustomTrackerConfigDeserialize(t *testing.T) {
-	oldYaml := `
-    user:
-        active_series_custom_trackers_config:
-            baz: '{foo="bar"}'
-    `
 	expectedConfig, err := activeseries.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
 	require.NoError(t, err, "creating expected config")
-	newYaml := `
+	cfg := `
     user:
         active_series_custom_trackers:
             baz: '{foo="bar"}'
     `
-	bothYaml := `
-    user:
-        active_series_custom_trackers:
-            baznew: '{foonew="barnew"}'
-        active_series_custom_trackers_config:
-            baz: '{foo="bar"}'
-    `
-	for name, tc := range map[string]struct {
-		yaml string
-	}{
-		"testOldVersionCopiedToNewField": {
-			yaml: oldYaml,
-		},
-		"testNewVersion": {
-			yaml: newYaml,
-		},
-		"testBothVersionsOldTakesPrecedenceInNewField": {
-			yaml: bothYaml,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			overrides := map[string]*Limits{}
-			err := yaml.Unmarshal([]byte(tc.yaml), &overrides)
-			require.NoError(t, err, "parsing overrides")
 
-			assert.True(t, overrides["user"].ActiveSeriesCustomTrackersConfigOld.Empty())
-			assert.False(t, overrides["user"].ActiveSeriesCustomTrackersConfig.Empty())
-			assert.Equal(t, expectedConfig.String(), overrides["user"].ActiveSeriesCustomTrackersConfig.String())
+	overrides := map[string]*Limits{}
+	require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+
+	assert.False(t, overrides["user"].ActiveSeriesCustomTrackersConfig.Empty())
+	assert.Equal(t, expectedConfig.String(), overrides["user"].ActiveSeriesCustomTrackersConfig.String())
+}
+
+func TestUnmarshalYAML_ShouldValidateConfig(t *testing.T) {
+	tests := map[string]struct {
+		cfg         string
+		expectedErr string
+	}{
+		"should fail on invalid metric_relabel_configs": {
+			cfg: `
+metric_relabel_configs:
+  -
+`,
+			expectedErr: "invalid metric_relabel_configs",
+		},
+		"should fail on negative max_estimated_fetched_chunks_per_query_multiplier": {
+			cfg:         `max_estimated_fetched_chunks_per_query_multiplier: -0.1`,
+			expectedErr: errInvalidMaxEstimatedChunksPerQueryMultiplier.Error(),
+		},
+		"should pass on max_estimated_fetched_chunks_per_query_multiplier = 0": {
+			cfg:         `max_estimated_fetched_chunks_per_query_multiplier: 0`,
+			expectedErr: "",
+		},
+		"should fail on max_estimated_fetched_chunks_per_query_multiplier greater than 0 but less than 1": {
+			cfg:         `max_estimated_fetched_chunks_per_query_multiplier: 0.9`,
+			expectedErr: errInvalidMaxEstimatedChunksPerQueryMultiplier.Error(),
+		},
+		"should pass on max_estimated_fetched_chunks_per_query_multiplier = 1": {
+			cfg:         `max_estimated_fetched_chunks_per_query_multiplier: 1`,
+			expectedErr: "",
+		},
+		"should pass on max_estimated_fetched_chunks_per_query_multiplier greater than 1": {
+			cfg:         `max_estimated_fetched_chunks_per_query_multiplier: 1.1`,
+			expectedErr: "",
+		},
+		"should fail on invalid ingest_storage_read_consistency": {
+			cfg:         `ingest_storage_read_consistency: xyz`,
+			expectedErr: errInvalidIngestStorageReadConsistency.Error(),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := getDefaultLimits()
+			err := yaml.Unmarshal([]byte(testData.cfg), &limits)
+
+			if testData.expectedErr != "" {
+				require.ErrorContains(t, err, testData.expectedErr)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
+}
+
+func TestUnmarshalJSON_ShouldValidateConfig(t *testing.T) {
+	tests := map[string]struct {
+		cfg         string
+		expectedErr string
+	}{
+		"should fail on invalid metric_relabel_configs": {
+			cfg:         `{"metric_relabel_configs": [null]}`,
+			expectedErr: "invalid metric_relabel_configs",
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := getDefaultLimits()
+			err := json.Unmarshal([]byte(testData.cfg), &limits)
+
+			if testData.expectedErr != "" {
+				require.ErrorContains(t, err, testData.expectedErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+type structExtension struct {
+	Foo int `yaml:"foo" json:"foo"`
+}
+
+func (te structExtension) Default() structExtension {
+	return structExtension{Foo: 42}
+}
+
+type stringExtension string
+
+func (stringExtension) Default() stringExtension {
+	return "default string extension value"
+}
+
+func TestExtensions(t *testing.T) {
+	t.Cleanup(func() {
+		registeredExtensions = map[string]registeredExtension{}
+		limitsExtensionsFields = nil
+	})
+
+	getExtensionStruct := MustRegisterExtension[structExtension]("test_extension_struct")
+	getExtensionString := MustRegisterExtension[stringExtension]("test_extension_string")
+
+	// Unmarshal a config with extensions.
+	// JSON is a valid YAML, so we can use it here to avoid having to fight the whitespaces.
+
+	cfg := `{"user": {"test_extension_struct": {"foo": 1}, "test_extension_string": "bar"}}`
+	t.Run("yaml", func(t *testing.T) {
+		overrides := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+
+		// Check that getExtensionStruct(*Limits) actually returns the proper type with filled extensions.
+		assert.Equal(t, structExtension{Foo: 1}, getExtensionStruct(overrides["user"]))
+		assert.Equal(t, stringExtension("bar"), getExtensionString(overrides["user"]))
+	})
+
+	t.Run("json", func(t *testing.T) {
+		overrides := map[string]*Limits{}
+		require.NoError(t, json.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+
+		// Check that getExtensionStruct(*Limits) actually returns the proper type with filled extensions.
+		assert.Equal(t, structExtension{Foo: 1}, getExtensionStruct(overrides["user"]))
+		assert.Equal(t, stringExtension("bar"), getExtensionString(overrides["user"]))
+	})
+
+	t.Run("can't register twice", func(t *testing.T) {
+		require.Panics(t, func() {
+			MustRegisterExtension[structExtension]("foo")
+			MustRegisterExtension[structExtension]("foo")
+		})
+	})
+
+	t.Run("can't register name that is already a Limits JSON/YAML key", func(t *testing.T) {
+		require.Panics(t, func() {
+			MustRegisterExtension[stringExtension]("max_global_series_per_user")
+		})
+	})
+
+	t.Run("can't register empty name", func(t *testing.T) {
+		require.Panics(t, func() {
+			MustRegisterExtension[stringExtension]("")
+		})
+	})
+
+	t.Run("default value", func(t *testing.T) {
+		var limits Limits
+		require.NoError(t, json.Unmarshal([]byte(`{}`), &limits), "parsing overrides")
+		require.Equal(t, structExtension{Foo: 42}, getExtensionStruct(&limits))
+		require.Equal(t, stringExtension("default string extension value"), getExtensionString(&limits))
+	})
+
+	t.Run("default value after registering extension defaults", func(t *testing.T) {
+		var limits Limits
+
+		limits.RegisterExtensionsDefaults()
+
+		require.Equal(t, structExtension{Foo: 42}, getExtensionStruct(&limits))
+		require.Equal(t, stringExtension("default string extension value"), getExtensionString(&limits))
+	})
+
+	t.Run("empty value from empty yaml", func(t *testing.T) {
+		// Reset the default limits at the end of the test.
+		t.Cleanup(func() {
+			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+		})
+
+		SetDefaultLimitsForYAMLUnmarshalling(Limits{
+			RequestRate: 100,
+		})
+		var limits map[string]Limits
+
+		require.NoError(t, yaml.Unmarshal([]byte(`foo:`), &limits), "parsing overrides")
+
+		fooLimits, ok := limits["foo"]
+		require.True(t, ok, "foo limits should be present")
+		require.Equal(t, float64(0), fooLimits.RequestRate)
+
+		require.Equal(t, structExtension{}, getExtensionStruct(&fooLimits))
+		require.Equal(t, stringExtension(""), getExtensionString(&fooLimits))
+	})
+
+	t.Run("default limits does not interfere with tenants extensions", func(t *testing.T) {
+		// This test makes sure that sharing the default limits does not leak extensions values between tenants.
+		// Since we assign l = *defaultLimits before unmarshaling,
+		// there's a chance of unmarshaling on top of a reference that is already being used in different tenant's limits.
+		// This shouldn't happen, but let's have a test to make sure that it doesnt.
+		def := getDefaultLimits()
+		require.NoError(t, json.Unmarshal([]byte(`{"test_extension_string": "default"}`), &def), "parsing overrides")
+		require.Equal(t, stringExtension("default"), getExtensionString(&def))
+
+		// Reset the default limits at the end of the test.
+		t.Cleanup(func() {
+			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+		})
+
+		SetDefaultLimitsForYAMLUnmarshalling(def)
+
+		cfg := `{"one": {"test_extension_string": "one"}, "two": {"test_extension_string": "two"}}`
+		overrides := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+		require.Equal(t, stringExtension("one"), getExtensionString(overrides["one"]))
+		require.Equal(t, stringExtension("two"), getExtensionString(overrides["two"]))
+
+		cfg = `{"three": {"test_extension_string": "three"}}`
+		overrides2 := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides2), "parsing overrides")
+		require.Equal(t, stringExtension("three"), getExtensionString(overrides2["three"]))
+
+		// Previous values did not change.
+		require.Equal(t, stringExtension("one"), getExtensionString(overrides["one"]))
+		require.Equal(t, stringExtension("two"), getExtensionString(overrides["two"]))
+
+		// Default value did not change.
+		require.Equal(t, stringExtension("default"), getExtensionString(&def))
+	})
+
+	t.Run("getter works with nil Limits returning default values", func(t *testing.T) {
+		require.Equal(t, structExtension{}.Default(), getExtensionStruct(nil))
+	})
+}
+
+func TestExtensionMarshalling(t *testing.T) {
+	t.Cleanup(func() {
+		registeredExtensions = map[string]registeredExtension{}
+		limitsExtensionsFields = nil
+	})
+
+	MustRegisterExtension[structExtension]("test_extension_struct")
+	MustRegisterExtension[stringExtension]("test_extension_string")
+
+	t.Run("marshal limits with no extension values", func(t *testing.T) {
+		overrides := map[string]*Limits{
+			"test": {},
+		}
+
+		val, err := yaml.Marshal(overrides)
+		require.NoError(t, err)
+		fmt.Println(string(val))
+		require.Contains(t, string(val),
+			`test:
+    test_extension_struct:
+        foo: 0
+    test_extension_string: ""
+    request_rate: 0`)
+
+		val, err = json.Marshal(overrides)
+		require.NoError(t, err)
+		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":0},"test_extension_string":"","request_rate":0,`)
+	})
+
+	t.Run("marshal limits with partial extension values", func(t *testing.T) {
+		overrides := map[string]*Limits{
+			"test": {
+				extensions: map[string]interface{}{
+					"test_extension_struct": structExtension{Foo: 421237},
+				},
+			},
+		}
+
+		val, err := yaml.Marshal(overrides)
+		require.NoError(t, err)
+		require.Contains(t, string(val),
+			`test:
+    test_extension_struct:
+        foo: 421237
+    test_extension_string: ""
+    request_rate: 0
+    request_burst_size: 0`)
+
+		val, err = json.Marshal(overrides)
+		require.NoError(t, err)
+		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":421237},"test_extension_string":"","request_rate":0,"request_burst_size":0,`)
+	})
+
+	t.Run("marshal limits with default extension values", func(t *testing.T) {
+		overrides := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(`{"user": {}}`), &overrides), "parsing overrides")
+
+		val, err := yaml.Marshal(overrides)
+		require.NoError(t, err)
+		require.Contains(t, string(val),
+			`user:
+    test_extension_struct:
+        foo: 42
+    test_extension_string: default string extension value
+    request_rate: 0
+    request_burst_size: 0`)
+
+		val, err = json.Marshal(overrides)
+		require.NoError(t, err)
+		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","request_rate":0,"request_burst_size":0,`)
+	})
+}
+
+func TestIsLimitError(t *testing.T) {
+	const msg = "this is an error"
+	testCases := map[string]struct {
+		err             error
+		expectedOutcome bool
+	}{
+		"a random error is not a LimitError": {
+			err:             errors.New(msg),
+			expectedOutcome: false,
+		},
+		"errors implementing LimitError interface are LimitErrors": {
+			err:             NewLimitError(msg),
+			expectedOutcome: true,
+		},
+		"wrapped LimitErrors are LimitErrors": {
+			err:             errors.Wrap(NewLimitError(msg), "wrapped"),
+			expectedOutcome: true,
+		},
+	}
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			require.Equal(t, testData.expectedOutcome, IsLimitError(testData.err))
+		})
+	}
+}
+
+func getDefaultLimits() Limits {
+	limits := Limits{}
+	flagext.DefaultValues(&limits)
+	return limits
 }

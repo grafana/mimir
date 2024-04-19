@@ -32,21 +32,20 @@ spec:
         {{- end }}
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "nginx") | nindent 8 }}
-        {{- with .Values.nginx.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ include "mimir.serviceAccountName" . }}
-      {{- with .Values.imagePullSecrets }}
+      {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
       {{- end }}
       {{- if .Values.nginx.priorityClassName }}
       priorityClassName: {{ .Values.nginx.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.nginx.podSecurityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "nginx") | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.nginx.terminationGracePeriodSeconds }}
       containers:
         - name: nginx
@@ -82,7 +81,8 @@ spec:
             {{- toYaml .Values.nginx.containerSecurityContext | nindent 12 }}
           volumeMounts:
             - name: config
-              mountPath: /etc/nginx
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
             {{- if .Values.nginx.basicAuth.enabled }}
             - name: auth
               mountPath: /etc/nginx/secrets
@@ -103,6 +103,7 @@ spec:
       affinity:
         {{- tpl . $ | nindent 8 }}
       {{- end }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "nginx") | nindent 6 }}
       {{- with .Values.nginx.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

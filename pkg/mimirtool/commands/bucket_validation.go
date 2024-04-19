@@ -13,12 +13,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/thanos-io/thanos/pkg/objstore"
-	"gopkg.in/alecthomas/kingpin.v2"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
@@ -105,7 +104,8 @@ func (b *BucketValidationCommand) Register(app *kingpin.Application, _ EnvVarNam
 	bvCmd.Flag("bucket-config-help", "Help text explaining how to use the -bucket-config parameter").BoolVar(&b.bucketConfigHelp)
 }
 
-func (b *BucketValidationCommand) validate(k *kingpin.ParseContext) error {
+func (b *BucketValidationCommand) validate(_ *kingpin.ParseContext) error {
+	b.logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	if b.bucketConfigHelp {
 		b.printBucketConfigHelp()
 		return nil
@@ -118,10 +118,9 @@ func (b *BucketValidationCommand) validate(k *kingpin.ParseContext) error {
 
 	b.setObjectNames()
 	b.objectContent = "testData"
-	b.logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	ctx := context.Background()
 
-	bucketClient, err := bucket.NewClient(ctx, b.cfg, "testClient", b.logger, prometheus.DefaultRegisterer)
+	bucketClient, err := bucket.NewClient(ctx, b.cfg, "testClient", b.logger, nil)
 	if err != nil {
 		return errors.Wrap(err, "failed to create the bucket client")
 	}
@@ -317,7 +316,7 @@ func (b *BucketValidationCommand) deleteTestObjects(ctx context.Context) error {
 			return errors.Wrapf(err, "failed to list objects")
 		}
 		if foundDeletedDir {
-			return errors.Errorf("List returned directory which is supposed to be deleted.")
+			return errors.Errorf("list returned directory which is supposed to be deleted")
 		}
 		expectedDirCount := len(b.objectNames) - iteration
 		if foundDirCount != expectedDirCount {

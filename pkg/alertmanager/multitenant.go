@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,21 +20,22 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/httpgrpc/server"
-	"github.com/weaveworks/common/user"
 	"golang.org/x/time/rate"
-
-	"github.com/grafana/dskit/tenant"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -78,7 +78,8 @@ type MultitenantAlertmanagerConfig struct {
 
 	PeerTimeout time.Duration `yaml:"peer_timeout" category:"advanced"`
 
-	EnableAPI bool `yaml:"enable_api" category:"advanced"`
+	EnableAPI                               bool `yaml:"enable_api" category:"advanced"`
+	GrafanaAlertmanagerCompatibilityEnabled bool `yaml:"grafana_alertmanager_compatibility_enabled" category:"experimental"`
 
 	MaxConcurrentGetRequestsPerTenant int `yaml:"max_concurrent_get_requests_per_tenant" category:"advanced"`
 
@@ -87,13 +88,21 @@ type MultitenantAlertmanagerConfig struct {
 
 	// For the state persister.
 	Persister PersisterConfig `yaml:",inline"`
+
+	// Allow disabling of full_state object cleanup.
+	EnableStateCleanup bool `yaml:"enable_state_cleanup" category:"advanced"`
+
+	// Enable UTF-8 strict mode. This means Alertmanager uses the matchers/parse parser
+	// to parse configurations and API requests, instead of pkg/labels. Use this mode
+	// once you are confident that your configuration is forwards compatible.
+	UTF8StrictMode bool `yaml:"utf8_strict_mode" category:"experimental"`
 }
 
 const (
 	defaultPeerTimeout = 15 * time.Second
 )
 
-// RegisterFlags adds the flags required to config this to the given FlagSet.
+// RegisterFlags adds the features required to config this to the given FlagSet.
 func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.DataDir, "alertmanager.storage.path", "./data-alertmanager/", "Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled.")
 	f.DurationVar(&cfg.Retention, "alertmanager.storage.retention", 5*24*time.Hour, "How long should we store stateful data (notification logs and silences). For notification log entries, refers to how long should we keep entries before they expire and are deleted. For silences, refers to how long should tenants view silences after they expire and are deleted.")
@@ -106,13 +115,18 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.DurationVar(&cfg.PollInterval, "alertmanager.configs.poll-interval", 15*time.Second, "How frequently to poll Alertmanager configs.")
 
 	f.BoolVar(&cfg.EnableAPI, "alertmanager.enable-api", true, "Enable the alertmanager config API.")
+	f.BoolVar(&cfg.GrafanaAlertmanagerCompatibilityEnabled, "alertmanager.grafana-alertmanager-compatibility-enabled", false, "Enable routes to support the migration and operation of the Grafana Alertmanager.")
 	f.IntVar(&cfg.MaxConcurrentGetRequestsPerTenant, "alertmanager.max-concurrent-get-requests-per-tenant", 0, "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
+
+	f.BoolVar(&cfg.EnableStateCleanup, "alertmanager.enable-state-cleanup", true, "Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration.")
 
 	cfg.AlertmanagerClient.RegisterFlagsWithPrefix("alertmanager.alertmanager-client", f)
 	cfg.Persister.RegisterFlagsWithPrefix("alertmanager", f)
 	cfg.ShardingRing.RegisterFlags(f, logger)
 
 	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
+
+	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended to check both alertmanager_matchers_disagree_total and alertmanager_matchers_incompatible_total metrics before using this mode as otherwise some tenant configurations might fail to load.")
 }
 
 // Validate config and returns error on failure
@@ -267,7 +281,8 @@ type MultitenantAlertmanager struct {
 
 	alertmanagerClientsPool ClientsPool
 
-	limits Limits
+	limits   Limits
+	features featurecontrol.Flagger
 
 	registry          prometheus.Registerer
 	ringCheckErrors   prometheus.Counter
@@ -278,26 +293,19 @@ type MultitenantAlertmanager struct {
 }
 
 // NewMultitenantAlertmanager creates a new MultitenantAlertmanager.
-func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alertstore.AlertStore, limits Limits, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
+func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alertstore.AlertStore, limits Limits, features featurecontrol.Flagger, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
 	err := os.MkdirAll(cfg.DataDir, 0777)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create Alertmanager data directory %q: %s", cfg.DataDir, err)
 	}
 
-	var fallbackConfig []byte
-	if cfg.FallbackConfigFile != "" {
-		fallbackConfig, err = ioutil.ReadFile(cfg.FallbackConfigFile)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read fallback config %q: %s", cfg.FallbackConfigFile, err)
-		}
-		_, err = amconfig.LoadFile(cfg.FallbackConfigFile)
-		if err != nil {
-			return nil, fmt.Errorf("unable to load fallback config %q: %s", cfg.FallbackConfigFile, err)
-		}
+	fallbackConfig, err := ComputeFallbackConfig(cfg.FallbackConfigFile)
+	if err != nil {
+		return nil, err
 	}
 
 	ringStore, err := kv.NewClient(
-		cfg.ShardingRing.KVStore,
+		cfg.ShardingRing.Common.KVStore,
 		ring.GetCodec(),
 		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", registerer), "alertmanager"),
 		logger,
@@ -306,21 +314,55 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 		return nil, errors.Wrap(err, "create KV store client")
 	}
 
-	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, logger, registerer)
+	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, features, logger, registerer)
 }
 
-func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackConfig []byte, store alertstore.AlertStore, ringStore kv.Client, limits Limits, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
+// ComputeFallbackConfig will load, vaildate and return the provided fallbackConfigFile
+// or return an valid empty default configuration if none is provided.
+func ComputeFallbackConfig(fallbackConfigFile string) ([]byte, error) {
+	if fallbackConfigFile != "" {
+		fallbackConfig, err := os.ReadFile(fallbackConfigFile)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read fallback config %q: %s", fallbackConfigFile, err)
+		}
+		_, err = amconfig.LoadFile(fallbackConfigFile)
+		if err != nil {
+			return nil, fmt.Errorf("unable to load fallback config %q: %s", fallbackConfigFile, err)
+		}
+		return fallbackConfig, nil
+	}
+	globalConfig := amconfig.DefaultGlobalConfig()
+	defaultConfig := amconfig.Config{
+		Global: &globalConfig,
+		Route: &amconfig.Route{
+			Receiver: "empty-receiver",
+		},
+		Receivers: []amconfig.Receiver{
+			{
+				Name: "empty-receiver",
+			},
+		},
+	}
+	fallbackConfig, err := yaml.Marshal(defaultConfig)
+	if err != nil {
+		return nil, fmt.Errorf("unable to marshal default fallback config: %s", err)
+	}
+	return fallbackConfig, nil
+}
+
+func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackConfig []byte, store alertstore.AlertStore, ringStore kv.Client, limits Limits, features featurecontrol.Flagger, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
 	am := &MultitenantAlertmanager{
 		cfg:                 cfg,
 		fallbackConfig:      string(fallbackConfig),
 		cfgs:                map[string]alertspb.AlertConfigDesc{},
 		alertmanagers:       map[string]*Alertmanager{},
-		alertmanagerMetrics: newAlertmanagerMetrics(),
+		alertmanagerMetrics: newAlertmanagerMetrics(logger),
 		multitenantMetrics:  newMultitenantAlertmanagerMetrics(registerer),
 		store:               store,
 		logger:              log.With(logger, "component", "MultiTenantAlertmanager"),
 		registry:            registerer,
 		limits:              limits,
+		features:            features,
 		ringCheckErrors: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_alertmanager_ring_check_errors_total",
 			Help: "Number of errors that have occurred when checking the ring for ownership.",
@@ -358,19 +400,19 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 	// chained via "next delegate").
 	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.JOINING, RingNumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, am.logger)
-	delegate = ring.NewAutoForgetDelegate(am.cfg.ShardingRing.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, am.logger)
+	delegate = ring.NewAutoForgetDelegate(am.cfg.ShardingRing.Common.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, am.logger)
 
 	am.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, am.logger, prometheus.WrapRegistererWithPrefix("cortex_", am.registry))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler")
 	}
 
-	am.ring, err = ring.NewWithStoreClientAndStrategy(am.cfg.ShardingRing.ToRingConfig(), RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", am.registry), am.logger)
+	am.ring, err = ring.NewWithStoreClientAndStrategy(am.cfg.ShardingRing.toRingConfig(), RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", am.registry), am.logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize Alertmanager's ring")
 	}
 
-	am.grpcServer = server.NewServer(&handlerForGRPCServer{am: am})
+	am.grpcServer = server.NewServer(&handlerForGRPCServer{am: am}, server.WithReturn4XXErrors)
 
 	am.alertmanagerClientsPool = newAlertmanagerClientsPool(client.NewRingServiceDiscovery(am.ring), cfg.AlertmanagerClient, logger, am.registry)
 	am.distributor, err = NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, am.ring, am.alertmanagerClientsPool, log.With(logger, "component", "AlertmanagerDistributor"), am.registry)
@@ -508,7 +550,9 @@ func (am *MultitenantAlertmanager) loadAndSyncConfigs(ctx context.Context, syncR
 
 	// Note when cleaning up remote state, remember that the user may not necessarily be configured
 	// in this instance. Therefore, pass the list of _all_ configured users to filter by.
-	am.deleteUnusedRemoteUserState(ctx, allUsers)
+	if am.cfg.EnableStateCleanup {
+		am.deleteUnusedRemoteUserState(ctx, allUsers)
+	}
 
 	return nil
 }
@@ -633,10 +677,21 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	var userTemplateDir = filepath.Join(am.getTenantDirectory(cfg.User), templatesDir)
 	var pathsToRemove = make(map[string]struct{})
 
-	// List existing files to keep track the ones to be removed
-	if oldTemplateFiles, err := ioutil.ReadDir(userTemplateDir); err == nil {
+	// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
+	// The reason for this that the config.Load function uses the origin "config",
+	// which is correct, but Mimir uses config.Load to validate both API requests and tenant
+	// configurations. This means metrics from API requests are confused with metrics from
+	// tenant configurations. To avoid this confusion, we use a different origin.
+	validateMatchersInConfigDesc(am.logger, "tenant", cfg)
+
+	// List existing files to keep track of the ones to be removed
+	if oldTemplateFiles, err := os.ReadDir(userTemplateDir); err == nil {
 		for _, file := range oldTemplateFiles {
-			pathsToRemove[filepath.Join(userTemplateDir, file.Name())] = struct{}{}
+			templateFilePath, err := safeTemplateFilepath(userTemplateDir, file.Name())
+			if err != nil {
+				return err
+			}
+			pathsToRemove[templateFilePath] = struct{}{}
 		}
 	}
 
@@ -748,6 +803,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 		Store:                             am.store,
 		PersisterConfig:                   am.cfg.Persister,
 		Limits:                            am.limits,
+		Features:                          am.features,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
@@ -834,8 +890,8 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 		return
 	}
 
-	level.Debug(am.logger).Log("msg", "the Alertmanager has no configuration and no fallback specified", "user", userID)
-	http.Error(w, "the Alertmanager is not configured", http.StatusNotFound)
+	level.Info(am.logger).Log("msg", "the Alertmanager has no configuration and no fallback specified", "user", userID)
+	http.Error(w, "the Alertmanager is not configured", http.StatusPreconditionFailed)
 }
 
 func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Context, userID string) (*Alertmanager, error) {
@@ -884,7 +940,7 @@ func (am *MultitenantAlertmanager) ReplicateStateForUser(ctx context.Context, us
 	level.Debug(am.logger).Log("msg", "message received for replication", "user", userID, "key", part.Key)
 
 	selfAddress := am.ringLifecycler.GetInstanceAddr()
-	err := ring.DoBatch(ctx, RingOp, am.ring, []uint32{shardByUser(userID)}, func(desc ring.InstanceDesc, _ []int) error {
+	err := ring.DoBatchWithOptions(ctx, RingOp, am.ring, []uint32{shardByUser(userID)}, func(desc ring.InstanceDesc, _ []int) error {
 		if desc.GetAddr() == selfAddress {
 			return nil
 		}
@@ -906,7 +962,7 @@ func (am *MultitenantAlertmanager) ReplicateStateForUser(ctx context.Context, us
 			level.Debug(am.logger).Log("msg", "user not found while trying to replicate state", "user", userID, "key", part.Key)
 		}
 		return nil
-	}, func() {})
+	}, ring.DoBatchOptions{})
 
 	return err
 }
@@ -1066,7 +1122,7 @@ func (am *MultitenantAlertmanager) deleteUnusedLocalUserState() {
 // getPerUserDirectories returns map of users to their directories (full path). Only users with local
 // directory are returned.
 func (am *MultitenantAlertmanager) getPerUserDirectories() map[string]string {
-	files, err := ioutil.ReadDir(am.cfg.DataDir)
+	files, err := os.ReadDir(am.cfg.DataDir)
 	if err != nil {
 		level.Warn(am.logger).Log("msg", "failed to list local dir", "dir", am.cfg.DataDir, "err", err)
 		return nil
@@ -1088,7 +1144,7 @@ func (am *MultitenantAlertmanager) getPerUserDirectories() map[string]string {
 }
 
 // ReadState implements the Alertmanager service.
-func (am *MultitenantAlertmanager) ReadState(ctx context.Context, req *alertmanagerpb.ReadStateRequest) (*alertmanagerpb.ReadStateResponse, error) {
+func (am *MultitenantAlertmanager) ReadState(ctx context.Context, _ *alertmanagerpb.ReadStateRequest) (*alertmanagerpb.ReadStateResponse, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
@@ -1183,13 +1239,13 @@ func storeTemplateFile(templateFilepath, content string) (bool, error) {
 	}
 
 	// Check if the template file already exists and if it has changed
-	if tmpl, err := ioutil.ReadFile(templateFilepath); err == nil && string(tmpl) == content {
+	if tmpl, err := os.ReadFile(templateFilepath); err == nil && string(tmpl) == content {
 		return false, nil
 	} else if err != nil && !os.IsNotExist(err) {
 		return false, err
 	}
 
-	if err := ioutil.WriteFile(templateFilepath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(templateFilepath, []byte(content), 0644); err != nil {
 		return false, fmt.Errorf("unable to create Alertmanager template file %q: %s", templateFilepath, err)
 	}
 

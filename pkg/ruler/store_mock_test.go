@@ -16,11 +16,6 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 )
 
-type mockRuleStore struct {
-	rules map[string]rulespb.RuleGroupList
-	mtx   sync.Mutex
-}
-
 var (
 	delim       = "/"
 	interval, _ = time.ParseDuration("1m")
@@ -30,17 +25,8 @@ var (
 				Name:      "group1",
 				Namespace: "namespace1",
 				User:      "user1",
-				Rules: []*rulespb.RuleDesc{
-					{
-						Record: "UP_RULE",
-						Expr:   "up",
-					},
-					{
-						Alert: "UP_ALERT",
-						Expr:  "up < 1",
-					},
-				},
-				Interval: interval,
+				Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
+				Interval:  interval,
 			},
 		},
 		"user2": {
@@ -48,43 +34,31 @@ var (
 				Name:      "group1",
 				Namespace: "namespace1",
 				User:      "user2",
-				Rules: []*rulespb.RuleDesc{
-					{
-						Record: "UP_RULE",
-						Expr:   "up",
-					},
-				},
-				Interval: interval,
-			},
-		},
-	}
-
-	mockSpecialCharRules = map[string]rulespb.RuleGroupList{
-		"user1": {
-			&rulespb.RuleGroupDesc{
-				Name:      ")(_+?/|group1+/?",
-				Namespace: ")(_+?/|namespace1+/?",
-				User:      "user1",
-				Rules: []*rulespb.RuleDesc{
-					{
-						Record: "UP_RULE",
-						Expr:   "up",
-					},
-					{
-						Alert: "UP_ALERT",
-						Expr:  "up < 1",
-					},
-				},
-				Interval: interval,
+				Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")},
+				Interval:  interval,
 			},
 		},
 	}
 )
 
+type mockRuleStore struct {
+	rules        map[string]rulespb.RuleGroupList
+	missingRules rulespb.RuleGroupList
+	mtx          sync.Mutex
+}
+
 func newMockRuleStore(rules map[string]rulespb.RuleGroupList) *mockRuleStore {
 	return &mockRuleStore{
 		rules: rules,
 	}
+}
+
+// setMissingRuleGroups configures the list of rule groups what will be returned as missing
+// from LoadRuleGroups().
+func (m *mockRuleStore) setMissingRuleGroups(missing rulespb.RuleGroupList) {
+	m.mtx.Lock()
+	m.missingRules = missing
+	m.mtx.Unlock()
 }
 
 func (m *mockRuleStore) ListAllUsers(_ context.Context) ([]string, error) {
@@ -119,7 +93,7 @@ func (m *mockRuleStore) ListRuleGroupsForUserAndNamespace(_ context.Context, use
 	return result, nil
 }
 
-func (m *mockRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[string]rulespb.RuleGroupList) error {
+func (m *mockRuleStore) LoadRuleGroups(_ context.Context, groupsToLoad map[string]rulespb.RuleGroupList) (rulespb.RuleGroupList, error) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -138,12 +112,12 @@ func (m *mockRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[str
 			key := user + delim + base64.URLEncoding.EncodeToString([]byte(namespace)) + delim + base64.URLEncoding.EncodeToString([]byte(name))
 			mgr, ok := gm[key]
 			if !ok {
-				return fmt.Errorf("failed to get rule group user %s", gr.GetUser())
+				return nil, fmt.Errorf("failed to get rule group user %s", gr.GetUser())
 			}
 			*gr = *mgr
 		}
 	}
-	return nil
+	return m.missingRules, nil
 }
 
 func (m *mockRuleStore) GetRuleGroup(_ context.Context, userID string, namespace string, group string) (*rulespb.RuleGroupDesc, error) {
@@ -168,7 +142,7 @@ func (m *mockRuleStore) GetRuleGroup(_ context.Context, userID string, namespace
 	return nil, rulestore.ErrGroupNotFound
 }
 
-func (m *mockRuleStore) SetRuleGroup(ctx context.Context, userID string, namespace string, group *rulespb.RuleGroupDesc) error {
+func (m *mockRuleStore) SetRuleGroup(_ context.Context, userID string, namespace string, group *rulespb.RuleGroupDesc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -193,7 +167,7 @@ func (m *mockRuleStore) SetRuleGroup(ctx context.Context, userID string, namespa
 	return nil
 }
 
-func (m *mockRuleStore) DeleteRuleGroup(ctx context.Context, userID string, namespace string, group string) error {
+func (m *mockRuleStore) DeleteRuleGroup(_ context.Context, userID string, namespace string, group string) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -217,7 +191,7 @@ func (m *mockRuleStore) DeleteRuleGroup(ctx context.Context, userID string, name
 	return nil
 }
 
-func (m *mockRuleStore) DeleteNamespace(ctx context.Context, userID, namespace string) error {
+func (m *mockRuleStore) DeleteNamespace(_ context.Context, userID, namespace string) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 

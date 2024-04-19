@@ -4,12 +4,16 @@ package activeseries
 
 import (
 	"fmt"
-	"sort"
+	"math"
 	"strings"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
+	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
+
+// preAllocDynamicSlice is using uint16 to represent custom tracker matches
+const maxNumberOfTrackers = math.MaxUint16
 
 // CustomTrackersConfig configures active series custom trackers.
 // It can be set using a flag, or parsed from yaml.
@@ -50,7 +54,7 @@ func customTrackersConfigString(cfg map[string]string) string {
 	}
 
 	// The map is traversed in an ordered fashion to make String representation stable and comparable.
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	var sb strings.Builder
 	for i, name := range keys {
@@ -142,6 +146,9 @@ func (c CustomTrackersConfig) MarshalYAML() (interface{}, error) {
 func NewCustomTrackersConfig(m map[string]string) (c CustomTrackersConfig, err error) {
 	c.source = m
 	c.config = map[string]labelsMatchers{}
+	if len(m) > maxNumberOfTrackers {
+		return c, fmt.Errorf("the number of trackers set [%d] exceeds the maximum number of trackers [%d]", len(m), maxNumberOfTrackers)
+	}
 	for name, matcher := range m {
 		sm, err := amlabels.ParseMatchers(matcher)
 		if err != nil {

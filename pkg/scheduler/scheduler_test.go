@@ -17,26 +17,35 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go/config"
-	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 const testMaxOutstandingPerTenant = 5
 
+func TestMain(m *testing.M) {
+	util_test.VerifyNoLeakTestMain(m)
+}
+
 func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedulerpb.SchedulerForFrontendClient, schedulerpb.SchedulerForQuerierClient) {
-	cfg := Config{}
+	cfg := Config{AdditionalQueryQueueDimensionsEnabled: true}
 	flagext.DefaultValues(&cfg)
 	cfg.MaxOutstandingPerTenant = testMaxOutstandingPerTenant
 
@@ -52,7 +61,7 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 		_ = services.StopAndAwaitTerminated(context.Background(), s)
 	})
 
-	l, err := net.Listen("tcp", "")
+	l, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
 	go func() {
@@ -78,10 +87,11 @@ func TestSchedulerBasicEnqueue(t *testing.T) {
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:         schedulerpb.ENQUEUE,
+		QueryID:      1,
+		UserID:       "test",
+		HttpRequest:  &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		StatsEnabled: true,
 	})
 
 	{
@@ -95,6 +105,8 @@ func TestSchedulerBasicEnqueue(t *testing.T) {
 		require.Equal(t, "frontend-12345", msg2.FrontendAddress)
 		require.Equal(t, "GET", msg2.HttpRequest.Method)
 		require.Equal(t, "/hello", msg2.HttpRequest.Url)
+		require.True(t, msg2.StatsEnabled)
+		require.Greater(t, msg2.QueueTimeNanos, int64(0))
 		require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{}))
 	}
 
@@ -121,14 +133,6 @@ func TestSchedulerEnqueueWithCancel(t *testing.T) {
 
 	verifyQuerierDoesntReceiveRequest(t, querierLoop, 500*time.Millisecond)
 	verifyNoPendingRequestsLeft(t, scheduler)
-}
-
-func initQuerierLoop(t *testing.T, querierClient schedulerpb.SchedulerForQuerierClient, querier string) schedulerpb.SchedulerForQuerier_QuerierLoopClient {
-	querierLoop, err := querierClient.QuerierLoop(context.Background())
-	require.NoError(t, err)
-	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: querier}))
-
-	return querierLoop
 }
 
 func TestSchedulerEnqueueByMultipleFrontendsWithCancel(t *testing.T) {
@@ -189,7 +193,7 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 	})
 
 	// Disconnect frontend.
-	require.NoError(t, frontendLoop.CloseSend())
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](frontendLoop))
 
 	// Wait until the frontend has disconnected.
 	test.Poll(t, time.Second, float64(0), func() interface{} {
@@ -202,7 +206,7 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 	verifyNoPendingRequestsLeft(t, scheduler)
 }
 
-func TestCancelRequestInProgress(t *testing.T) {
+func TestCancelRequestInProgress_QuerierFinishesBeforeObservingCancellation(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
@@ -222,7 +226,7 @@ func TestCancelRequestInProgress(t *testing.T) {
 
 	// At this point, scheduler assumes that querier is processing the request (until it receives empty QuerierToScheduler message back).
 	// Simulate frontend disconnect.
-	require.NoError(t, frontendLoop.CloseSend())
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](frontendLoop))
 
 	// Add a little sleep to make sure that scheduler notices frontend disconnect.
 	time.Sleep(500 * time.Millisecond)
@@ -231,6 +235,38 @@ func TestCancelRequestInProgress(t *testing.T) {
 	// Note: testing on querierLoop.Context() cancellation didn't work :(
 	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
 	require.Error(t, err)
+
+	verifyNoPendingRequestsLeft(t, scheduler)
+}
+
+func TestCancelRequestInProgress_QuerierObservesCancellation(t *testing.T) {
+	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+
+	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:        schedulerpb.ENQUEUE,
+		QueryID:     1,
+		UserID:      "test",
+		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	})
+
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	_, err = querierLoop.Recv()
+	require.NoError(t, err)
+
+	// At this point, scheduler assumes that querier is processing the request (until it receives empty QuerierToScheduler message back).
+	// Simulate frontend disconnect.
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](frontendLoop))
+
+	// Add a little sleep to make sure that scheduler notices frontend disconnect.
+	time.Sleep(500 * time.Millisecond)
+
+	// Wait for querier to receive notification that query was cancelled.
+	_, err = querierLoop.Recv()
+	require.Equal(t, codes.Canceled, status.Code(err))
 
 	verifyNoPendingRequestsLeft(t, scheduler)
 }
@@ -262,7 +298,7 @@ func TestTracingContext(t *testing.T) {
 	require.Equal(t, 1, len(scheduler.pendingRequests))
 
 	for _, r := range scheduler.pendingRequests {
-		require.NotNil(t, r.parentSpanContext)
+		require.NotNil(t, r.ParentSpanContext)
 	}
 }
 
@@ -339,16 +375,28 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 
 	// One more query from the same user will trigger an error.
 	fl := initFrontendLoop(t, frontendClient, "extra-frontend")
-	require.NoError(t, fl.Send(&schedulerpb.FrontendToScheduler{
+
+	req := schedulerpb.FrontendToScheduler{
 		Type:        schedulerpb.ENQUEUE,
 		QueryID:     0,
 		UserID:      "test",
 		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
-	}))
+	}
+
+	// Inject span context to the request so we can check handling of max outstanding requests.
+	mockTracer := mocktracer.New()
+	opentracing.SetGlobalTracer(mockTracer)
+	sp, _ := opentracing.StartSpanFromContextWithTracer(context.Background(), mockTracer, "client")
+	require.NoError(t, mockTracer.Inject(sp.Context(), opentracing.HTTPHeaders, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest)))
+
+	require.NoError(t, fl.Send(&req))
 
 	msg, err := fl.Recv()
 	require.NoError(t, err)
 	require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, msg.Status)
+
+	spans := mockTracer.FinishedSpans()
+	require.Greater(t, len(spans), 0, "expected at least one span even if rejected by queue full")
 }
 
 func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
@@ -362,7 +410,7 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 		frontendGrpcServer := grpc.NewServer()
 		frontendv2pb.RegisterFrontendForQuerierServer(frontendGrpcServer, fm)
 
-		l, err := net.Listen("tcp", "")
+		l, err := net.Listen("tcp", "localhost:0")
 		require.NoError(t, err)
 
 		frontendAddress = l.Addr().String()
@@ -397,7 +445,7 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 	require.NoError(t, err)
 
 	// Querier now disconnects, without sending empty message back.
-	require.NoError(t, querierLoop.CloseSend())
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
 
 	// Verify that frontend was notified about request.
 	test.Poll(t, 2*time.Second, true, func() interface{} {
@@ -411,7 +459,7 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 	})
 }
 
-func TestSchedulerMetrics(t *testing.T) {
+func TestSchedulerQueueMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 
 	scheduler, frontendClient, _ := setupScheduler(t, reg)
@@ -446,6 +494,39 @@ func TestSchedulerMetrics(t *testing.T) {
 	`), "cortex_query_scheduler_queue_length"))
 }
 
+func TestSchedulerQuerierMetrics(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	_, _, querierClient := setupScheduler(t, reg)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	querierLoop, err := querierClient.QuerierLoop(ctx)
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	require.Eventually(t, func() bool {
+		err := promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_query_scheduler_connected_querier_clients Number of querier worker clients currently connected to the query-scheduler.
+			# TYPE cortex_query_scheduler_connected_querier_clients gauge
+			cortex_query_scheduler_connected_querier_clients 1
+		`), "cortex_query_scheduler_connected_querier_clients")
+
+		return err == nil
+	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be incremented after querier connected")
+
+	cancel()
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
+
+	require.Eventually(t, func() bool {
+		err := promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_query_scheduler_connected_querier_clients Number of querier worker clients currently connected to the query-scheduler.
+			# TYPE cortex_query_scheduler_connected_querier_clients gauge
+			cortex_query_scheduler_connected_querier_clients 0
+		`), "cortex_query_scheduler_connected_querier_clients")
+
+		return err == nil
+	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be decremented after querier disconnected")
+}
+
 func initFrontendLoop(t *testing.T, client schedulerpb.SchedulerForFrontendClient, frontendAddr string) schedulerpb.SchedulerForFrontend_FrontendLoopClient {
 	loop, err := client.FrontendLoop(context.Background())
 	require.NoError(t, err)
@@ -463,6 +544,13 @@ func initFrontendLoop(t *testing.T, client schedulerpb.SchedulerForFrontendClien
 	return loop
 }
 
+func initQuerierLoop(t *testing.T, querierClient schedulerpb.SchedulerForQuerierClient, querier string) schedulerpb.SchedulerForQuerier_QuerierLoopClient {
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: querier}))
+
+	return querierLoop
+}
 func frontendToScheduler(t *testing.T, frontendLoop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *schedulerpb.FrontendToScheduler) {
 	require.NoError(t, frontendLoop.Send(req))
 	msg, err := frontendLoop.Recv()
@@ -518,6 +606,11 @@ func (f *frontendMock) QueryResult(_ context.Context, request *frontendv2pb.Quer
 
 	f.resp[request.QueryID] = request.HttpResponse
 	return &frontendv2pb.QueryResultResponse{}, nil
+}
+
+// satisfy frontendv2pb.FrontendForQuerierServer interface
+func (f *frontendMock) QueryResultStream(_ frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	panic("unexpected call to QueryResultStream")
 }
 
 func (f *frontendMock) getRequest(queryID uint64) *httpgrpc.HTTPResponse {

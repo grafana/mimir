@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
-	"strings"
 )
 
 // Recipient is any possible endpoint you can send
@@ -19,7 +18,6 @@ type Recipient interface {
 // This is pretty cool, since it lets bots implement
 // custom Sendables for complex kind of media or
 // chat objects spanning across multiple messages.
-//
 type Sendable interface {
 	Send(*Bot, Recipient, *SendOptions) (*Message, error)
 }
@@ -88,7 +86,7 @@ func (d *Document) Send(b *Bot, to Recipient, opt *SendOptions) (*Message, error
 	b.embedSendOptions(params, opt)
 
 	if d.FileSize != 0 {
-		params["file_size"] = strconv.Itoa(d.FileSize)
+		params["file_size"] = strconv.FormatInt(d.FileSize, 10)
 	}
 	if d.DisableTypeDetection {
 		params["disable_content_type_detection"] = "true"
@@ -99,9 +97,16 @@ func (d *Document) Send(b *Bot, to Recipient, opt *SendOptions) (*Message, error
 		return nil, err
 	}
 
-	msg.Document.File.stealRef(&d.File)
-	*d = *msg.Document
-	d.Caption = msg.Caption
+	if doc := msg.Document; doc != nil {
+		doc.File.stealRef(&d.File)
+		*d = *doc
+		d.Caption = msg.Caption
+	} else if vid := msg.Video; vid != nil {
+		vid.File.stealRef(&d.File)
+		d.Caption = vid.Caption
+		d.MIME = vid.MIME
+		d.Thumbnail = vid.Thumbnail
+	}
 
 	return msg, nil
 }
@@ -312,44 +317,8 @@ func (v *Venue) Send(b *Bot, to Recipient, opt *SendOptions) (*Message, error) {
 
 // Send delivers invoice through bot b to recipient.
 func (i *Invoice) Send(b *Bot, to Recipient, opt *SendOptions) (*Message, error) {
-	params := map[string]string{
-		"chat_id":                       to.Recipient(),
-		"title":                         i.Title,
-		"description":                   i.Description,
-		"start_parameter":               i.Start,
-		"payload":                       i.Payload,
-		"provider_token":                i.Token,
-		"currency":                      i.Currency,
-		"max_tip_amount":                strconv.Itoa(i.MaxTipAmount),
-		"need_name":                     strconv.FormatBool(i.NeedName),
-		"need_phone_number":             strconv.FormatBool(i.NeedPhoneNumber),
-		"need_email":                    strconv.FormatBool(i.NeedEmail),
-		"need_shipping_address":         strconv.FormatBool(i.NeedShippingAddress),
-		"send_phone_number_to_provider": strconv.FormatBool(i.SendPhoneNumber),
-		"send_email_to_provider":        strconv.FormatBool(i.SendEmail),
-		"is_flexible":                   strconv.FormatBool(i.Flexible),
-	}
-	if i.Photo != nil {
-		if i.Photo.FileURL != "" {
-			params["photo_url"] = i.Photo.FileURL
-		}
-		if i.PhotoSize > 0 {
-			params["photo_size"] = strconv.Itoa(i.PhotoSize)
-		}
-		if i.Photo.Width > 0 {
-			params["photo_width"] = strconv.Itoa(i.Photo.Width)
-		}
-		if i.Photo.Height > 0 {
-			params["photo_height"] = strconv.Itoa(i.Photo.Height)
-		}
-	}
-	if len(i.Prices) > 0 {
-		data, _ := json.Marshal(i.Prices)
-		params["prices"] = string(data)
-	}
-	if len(i.SuggestedTipAmounts) > 0 {
-		params["suggested_tip_amounts"] = "[" + strings.Join(intsToStrs(i.SuggestedTipAmounts), ",") + "]"
-	}
+	params := i.params()
+	params["chat_id"] = to.Recipient()
 	b.embedSendOptions(params, opt)
 
 	data, err := b.Raw("sendInvoice", params)
@@ -428,4 +397,11 @@ func (g *Game) Send(b *Bot, to Recipient, opt *SendOptions) (*Message, error) {
 	}
 
 	return extractMessage(data)
+}
+
+func thumbnailToFilemap(thumb *Photo) map[string]File {
+	if thumb != nil {
+		return map[string]File{"thumb": thumb.File}
+	}
+	return nil
 }

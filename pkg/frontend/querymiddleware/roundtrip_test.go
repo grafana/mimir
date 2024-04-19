@@ -7,8 +7,8 @@ package querymiddleware
 
 import (
 	"context"
-	"fmt"
-	"io/ioutil"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -26,8 +28,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/middleware"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -43,6 +43,7 @@ func TestRangeTripperware(t *testing.T) {
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var err error
 				if r.RequestURI == query {
+					w.Header().Set("Content-Type", jsonMimeType)
 					_, err = w.Write([]byte(responseBody))
 				} else {
 					_, err = w.Write([]byte("bar"))
@@ -63,10 +64,11 @@ func TestRangeTripperware(t *testing.T) {
 		next: http.DefaultTransport,
 	}
 
-	tw, err := NewTripperware(Config{},
+	tw, err := NewTripperware(
+		Config{},
 		log.NewNopLogger(),
 		mockLimits{},
-		PrometheusCodec,
+		newTestPrometheusCodec(),
 		nil,
 		promql.EngineOpts{
 			Logger:     log.NewNopLogger(),
@@ -74,6 +76,7 @@ func TestRangeTripperware(t *testing.T) {
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
+		true,
 		nil,
 	)
 	if err != nil {
@@ -98,7 +101,7 @@ func TestRangeTripperware(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, 200, resp.StatusCode)
 
-			bs, err := ioutil.ReadAll(resp.Body)
+			bs, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedBody, string(bs))
 		})
@@ -109,6 +112,7 @@ func TestInstantTripperware(t *testing.T) {
 	const totalShards = 8
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
+	codec := newTestPrometheusCodec()
 
 	tw, err := NewTripperware(
 		Config{
@@ -116,7 +120,7 @@ func TestInstantTripperware(t *testing.T) {
 		},
 		log.NewNopLogger(),
 		mockLimits{totalShards: totalShards},
-		PrometheusCodec,
+		codec,
 		nil,
 		promql.EngineOpts{
 			Logger:     log.NewNopLogger(),
@@ -124,11 +128,11 @@ func TestInstantTripperware(t *testing.T) {
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
+		true,
 		nil,
 	)
 	require.NoError(t, err)
 
-	ts := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
 	rt := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		// We will provide a sample exactly for the requested time,
 		// this way we'll also be able to tell which time was requested.
@@ -137,7 +141,7 @@ func TestInstantTripperware(t *testing.T) {
 			return nil, err
 		}
 
-		return PrometheusCodec.EncodeResponse(r.Context(), &PrometheusResponse{
+		return codec.EncodeResponse(r.Context(), r, &PrometheusResponse{
 			Status: "success",
 			Data: &PrometheusData{
 				ResultType: "vector",
@@ -153,11 +157,14 @@ func TestInstantTripperware(t *testing.T) {
 		})
 	})
 
-	queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: tw(rt)})
-	require.NoError(t, err)
-	api := v1.NewAPI(queryClient)
+	tripper := tw(rt)
 
-	t.Run("happy case roundtrip", func(t *testing.T) {
+	t.Run("specific time happy case", func(t *testing.T) {
+		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: tripper})
+		require.NoError(t, err)
+		api := v1.NewAPI(queryClient)
+
+		ts := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
 		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, ts)
 		require.NoError(t, err)
 		require.Equal(t, model.Vector{
@@ -165,8 +172,32 @@ func TestInstantTripperware(t *testing.T) {
 		}, res)
 	})
 
-	t.Run("default time param", func(t *testing.T) {
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Now())
+	t.Run("specific time param with form being already parsed", func(t *testing.T) {
+		ts := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
+
+		formParserRoundTripper := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			assert.NoError(t, r.ParseForm())
+			return tripper.RoundTrip(r)
+		})
+		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: formParserRoundTripper})
+		require.NoError(t, err)
+		api := v1.NewAPI(queryClient)
+
+		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, ts)
+		require.NoError(t, err)
+		require.IsType(t, model.Vector{}, res)
+		require.NotEmpty(t, res.(model.Vector))
+
+		resultTime := res.(model.Vector)[0].Timestamp.Time()
+		require.Equal(t, ts.Unix(), resultTime.Unix())
+	})
+
+	t.Run("default time param happy case", func(t *testing.T) {
+		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: tripper})
+		require.NoError(t, err)
+		api := v1.NewAPI(queryClient)
+
+		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Time{})
 		require.NoError(t, err)
 		require.IsType(t, model.Vector{}, res)
 		require.NotEmpty(t, res.(model.Vector))
@@ -174,32 +205,170 @@ func TestInstantTripperware(t *testing.T) {
 		resultTime := res.(model.Vector)[0].Timestamp.Time()
 		require.InDelta(t, time.Now().Unix(), resultTime.Unix(), 1)
 	})
+
+	t.Run("default time param with form being already parsed", func(t *testing.T) {
+		formParserRoundTripper := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			assert.NoError(t, r.ParseForm())
+			return tripper.RoundTrip(r)
+		})
+		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: formParserRoundTripper})
+		require.NoError(t, err)
+		api := v1.NewAPI(queryClient)
+
+		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Time{})
+		require.NoError(t, err)
+		require.IsType(t, model.Vector{}, res)
+		require.NotEmpty(t, res.(model.Vector))
+
+		resultTime := res.(model.Vector)[0].Timestamp.Time()
+		require.InDelta(t, time.Now().Unix(), resultTime.Unix(), 1)
+	})
+
+	t.Run("post form time param takes precedence over query time param ", func(t *testing.T) {
+		postFormTimeParam := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
+
+		addQueryTimeParam := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			query := r.URL.Query()
+			// Set query's "time" param to something wrong, so that it would fail to be parsed if it's used.
+			query.Set("time", "query-time-param-should-not-be-used")
+			r.URL.RawQuery = query.Encode()
+			return tripper.RoundTrip(r)
+		})
+		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: addQueryTimeParam})
+		require.NoError(t, err)
+		api := v1.NewAPI(queryClient)
+
+		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, postFormTimeParam)
+		require.NoError(t, err)
+		require.IsType(t, model.Vector{}, res)
+		require.NotEmpty(t, res.(model.Vector))
+
+		resultTime := res.(model.Vector)[0].Timestamp.Time()
+		require.Equal(t, postFormTimeParam.Unix(), resultTime.Unix())
+	})
 }
 
 func TestTripperware_Metrics(t *testing.T) {
 	tests := map[string]struct {
-		path                    string
-		expectedNotAlignedCount int
-		stepAlignEnabled        bool
+		path             string
+		stepAlignEnabled bool
+		expectedMetrics  string
 	}{
-		"start/end is aligned to step": {
-			path:                    "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=120",
-			expectedNotAlignedCount: 0,
+		"range query, start/end is aligned to step": {
+			path: "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=120",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="query_range",user="user-1"} 1
+			`,
 		},
-		"start/end is not aligned to step, aligning disabled": {
-			path:                    "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
-			expectedNotAlignedCount: 1,
+		"range query, start/end is not aligned to step, aligning disabled": {
+			path: "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 1
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="query_range",user="user-1"} 1
+			`,
 		},
-		"start/end is not aligned to step, aligning enabled": {
-			path:                    "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
-			expectedNotAlignedCount: 1,
-			stepAlignEnabled:        true,
+		"range query, start/end is not aligned to step, aligning enabled": {
+			path:             "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
+			stepAlignEnabled: true,
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 1
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="query_range",user="user-1"} 1
+			`,
+		},
+		"instant query": {
+			path: "/api/v1/query?query=up&time=1536673680",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="query",user="user-1"} 1
+			`,
+		},
+		"label names": {
+			path: "/api/v1/labels?start=1536673680&end=1536716880",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="label_names_and_values",user="user-1"} 1
+			`,
+		},
+		"label values": {
+			path: "/api/v1/label/test/values?start=1536673680&end=1536716880",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="label_names_and_values",user="user-1"} 1
+			`,
+		},
+		"cardinality label names": {
+			path: "/api/v1/cardinality/label_names?selector=%7Bjob%3D%22test%22%7D",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="cardinality",user="user-1"} 1
+			`,
+		},
+		"cardinality active series": {
+			path: "/api/v1/cardinality/active_series?selector=%7Bjob%3D%22test%22%7D",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="active_series",user="user-1"} 1
+			`,
+		},
+		"unknown query type": {
+			path: "/api/v1/unknown",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="other",user="user-1"} 1
+			`,
 		},
 	}
 
 	s := httptest.NewServer(
 		middleware.AuthenticateUser.Wrap(
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", jsonMimeType)
 				_, err := w.Write([]byte("{}"))
 				require.NoError(t, err)
 			}),
@@ -218,10 +387,11 @@ func TestTripperware_Metrics(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			tw, err := NewTripperware(Config{AlignQueriesWithStep: testData.stepAlignEnabled},
+			tw, err := NewTripperware(
+				Config{DeprecatedAlignQueriesWithStep: testData.stepAlignEnabled},
 				log.NewNopLogger(),
 				mockLimits{},
-				PrometheusCodec,
+				newTestPrometheusCodec(),
 				nil,
 				promql.EngineOpts{
 					Logger:     log.NewNopLogger(),
@@ -229,6 +399,7 @@ func TestTripperware_Metrics(t *testing.T) {
 					MaxSamples: 1000,
 					Timeout:    time.Minute,
 				},
+				true,
 				reg,
 			)
 			require.NoError(t, err)
@@ -244,17 +415,78 @@ func TestTripperware_Metrics(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, 200, resp.StatusCode)
 
-			body, err := ioutil.ReadAll(resp.Body)
-			require.NoError(t, err)
-			require.Equal(t, `{"status":""}`, string(body))
-
-			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
-				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
-				cortex_query_frontend_non_step_aligned_queries_total %d
-			`, testData.expectedNotAlignedCount)),
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics),
 				"cortex_query_frontend_non_step_aligned_queries_total",
+				"cortex_query_frontend_queries_total",
 			))
+		})
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		config        Config
+		expectedError error
+	}{
+		"happy path": {
+			config:        Config{QueryResultResponseFormat: formatJSON},
+			expectedError: nil,
+		},
+		"unknown query result payload format": {
+			config:        Config{QueryResultResponseFormat: "something-else"},
+			expectedError: errors.New("unknown query result response format 'something-else'. Supported values: json, protobuf"),
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := test.config.Validate()
+			require.Equal(t, test.expectedError, err)
+		})
+	}
+}
+
+func TestIsLabelsQuery(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected bool
+	}{
+		{
+			path:     "/api/v1/labels/unknown",
+			expected: false,
+		}, {
+			path:     "/api/v1/",
+			expected: false,
+		}, {
+			path:     "/api/v1/labels",
+			expected: true,
+		}, {
+			path:     "/labels",
+			expected: false,
+		}, {
+			path:     "/prometheus/api/v1/labels",
+			expected: true,
+		}, {
+			path:     "/api/v1/label/test/values",
+			expected: true,
+		}, {
+			path:     "/values",
+			expected: false,
+		}, {
+			path:     "/prometheus/api/v1/label/test/values",
+			expected: true,
+		}, {
+			path:     "/prometheus/api/v1/label/test/values/unknown",
+			expected: false,
+		}, {
+			path:     "/prometheus/api/v1/label/test/unknown/values",
+			expected: false,
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(testData.path, func(t *testing.T) {
+			assert.Equal(t, testData.expected, IsLabelsQuery(testData.path))
 		})
 	}
 }

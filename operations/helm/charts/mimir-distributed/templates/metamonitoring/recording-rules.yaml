@@ -1,0 +1,20 @@
+{{- with .Values.metaMonitoring.prometheusRule }}
+{{- if .mimirRules }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "rules") }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" $) | nindent 4 }}
+    {{- with .labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  namespace: {{ .namespace | default $.Release.Namespace | quote }}
+spec:
+    {{- $.Files.Get "mixins/rules.yaml" | nindent 2 }}
+{{- end }}
+{{- end }}

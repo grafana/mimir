@@ -3,20 +3,20 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
-// +build requires_docker
 
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"testing"
 
+	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/e2e"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/runutil"
 
 	"github.com/grafana/mimir/integration/e2emimir"
 )
@@ -74,7 +74,7 @@ func TestConfigAPIEndpoint(t *testing.T) {
 	require.NoError(t, err)
 
 	defer runutil.ExhaustCloseWithErrCapture(&err, res.Body, "config API response")
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
@@ -83,4 +83,26 @@ func TestConfigAPIEndpoint(t *testing.T) {
 	require.NoError(t, writeFileToSharedDir(s, mimirConfigFile, body))
 	mimir2 := e2emimir.NewSingleBinary("mimir-2", nil, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile(mimirConfigFile))
 	require.NoError(t, s.StartAndWaitReady(mimir2))
+}
+
+func TestFormatQueryAPIEndpoint(t *testing.T) {
+	// Start Mimir in single binary mode, reading the config from file
+	s, mimir1 := newMimirSingleBinaryWithLocalFilesytemBucket(t, "mimir-1", nil)
+	defer s.Close()
+	require.NoError(t, s.StartAndWaitReady(mimir1))
+
+	// Get config from /prometheus/api/v1/format_query API endpoint.
+	res, err := e2e.DoGet(fmt.Sprintf("http://%s/prometheus/api/v1/format_query?query=count(up)by(foo)", mimir1.Endpoint(9009)))
+	require.NoError(t, err)
+
+	defer runutil.ExhaustCloseWithErrCapture(&err, res.Body, "format query API response")
+	respBody, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	var respJSON struct {
+		Data string `json:"data"`
+	}
+	err = json.Unmarshal(respBody, &respJSON)
+	require.NoError(t, err)
+	require.Equal(t, "count by (foo) (up)", respJSON.Data)
 }

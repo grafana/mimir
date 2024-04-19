@@ -3,14 +3,22 @@
 
 package s2
 
+import "github.com/klauspost/compress/internal/race"
+
+const hasAmd64Asm = true
+
 // encodeBlock encodes a non-empty src to a guaranteed-large-enough dst. It
 // assumes that the varint-encoded length of the decompressed bytes has already
 // been written.
 //
 // It also assumes that:
+//
 //	len(dst) >= MaxEncodedLen(len(src)) &&
-// 	minNonLiteralBlockSize <= len(src) && len(src) <= maxBlockSize
+//	minNonLiteralBlockSize <= len(src) && len(src) <= maxBlockSize
 func encodeBlock(dst, src []byte) (d int) {
+	race.ReadSlice(src)
+	race.WriteSlice(dst)
+
 	const (
 		// Use 12 bit table when less than...
 		limit12B = 16 << 10
@@ -43,9 +51,13 @@ func encodeBlock(dst, src []byte) (d int) {
 // been written.
 //
 // It also assumes that:
+//
 //	len(dst) >= MaxEncodedLen(len(src)) &&
-// 	minNonLiteralBlockSize <= len(src) && len(src) <= maxBlockSize
+//	minNonLiteralBlockSize <= len(src) && len(src) <= maxBlockSize
 func encodeBlockBetter(dst, src []byte) (d int) {
+	race.ReadSlice(src)
+	race.WriteSlice(dst)
+
 	const (
 		// Use 12 bit table when less than...
 		limit12B = 16 << 10
@@ -78,9 +90,13 @@ func encodeBlockBetter(dst, src []byte) (d int) {
 // been written.
 //
 // It also assumes that:
+//
 //	len(dst) >= MaxEncodedLen(len(src)) &&
-// 	minNonLiteralBlockSize <= len(src) && len(src) <= maxBlockSize
+//	minNonLiteralBlockSize <= len(src) && len(src) <= maxBlockSize
 func encodeBlockSnappy(dst, src []byte) (d int) {
+	race.ReadSlice(src)
+	race.WriteSlice(dst)
+
 	const (
 		// Use 12 bit table when less than...
 		limit12B = 16 << 10
@@ -112,9 +128,13 @@ func encodeBlockSnappy(dst, src []byte) (d int) {
 // been written.
 //
 // It also assumes that:
+//
 //	len(dst) >= MaxEncodedLen(len(src)) &&
-// 	minNonLiteralBlockSize <= len(src) && len(src) <= maxBlockSize
+//	minNonLiteralBlockSize <= len(src) && len(src) <= maxBlockSize
 func encodeBlockBetterSnappy(dst, src []byte) (d int) {
+	race.ReadSlice(src)
+	race.WriteSlice(dst)
+
 	const (
 		// Use 12 bit table when less than...
 		limit12B = 16 << 10

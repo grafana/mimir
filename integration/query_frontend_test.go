@@ -3,7 +3,6 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
-// +build requires_docker
 
 package integration
 
@@ -16,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -31,13 +31,16 @@ import (
 
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/util/validation"
+	mimirquerier "github.com/grafana/mimir/pkg/querier"
 )
 
 type queryFrontendTestConfig struct {
-	querySchedulerEnabled bool
-	queryStatsEnabled     bool
-	setup                 func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
+	querySchedulerEnabled       bool
+	querySchedulerDiscoveryMode string
+	queryStatsEnabled           bool
+	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
+	withHistograms              bool
+	shardActiveSeriesQueries    bool
 }
 
 func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
@@ -53,6 +56,7 @@ func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -69,6 +73,7 @@ func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -86,30 +91,47 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndQueryStatsEnabled(t *testing.T
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
 func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.T) {
-	runQueryFrontendTest(t, queryFrontendTestConfig{
-		querySchedulerEnabled: true,
-		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = mergeFlags(
-				BlocksStorageFlags(),
-				BlocksStorageS3Flags(),
-			)
+	setup := func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+		flags = mergeFlags(
+			BlocksStorageFlags(),
+			BlocksStorageS3Flags(),
+		)
 
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			require.NoError(t, s.StartAndWaitReady(minio))
+		minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+		require.NoError(t, s.StartAndWaitReady(minio))
 
-			return "", flags
-		},
+		return "", flags
+	}
+
+	t.Run("with query-scheduler (DNS-based service discovery)", func(t *testing.T) {
+		runQueryFrontendTest(t, queryFrontendTestConfig{
+			querySchedulerEnabled:       true,
+			querySchedulerDiscoveryMode: "dns",
+			setup:                       setup,
+			withHistograms:              true,
+		})
+	})
+
+	t.Run("with query-scheduler (ring-based service discovery)", func(t *testing.T) {
+		runQueryFrontendTest(t, queryFrontendTestConfig{
+			querySchedulerEnabled:       true,
+			querySchedulerDiscoveryMode: "ring",
+			setup:                       setup,
+			withHistograms:              true,
+		})
 	})
 }
 
 func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQuerySchedulerAndQueryStatsEnabled(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
-		querySchedulerEnabled: true,
-		queryStatsEnabled:     true,
+		querySchedulerEnabled:       true,
+		querySchedulerDiscoveryMode: "dns",
+		queryStatsEnabled:           true,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			flags = mergeFlags(
 				BlocksStorageFlags(),
@@ -121,6 +143,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQuerySchedulerAndQueryStat
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -134,6 +157,7 @@ func TestQueryFrontendWithBlocksStorageViaConfigFile(t *testing.T) {
 
 			return mimirConfigFile, e2e.EmptyFlags()
 		},
+		withHistograms: true,
 	})
 }
 
@@ -180,6 +204,52 @@ func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 
 			return "", flags
 		},
+		withHistograms: true,
+	})
+}
+
+func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
+	formats := []string{"json", "protobuf"}
+
+	for _, format := range formats {
+		t.Run(format, func(t *testing.T) {
+			runQueryFrontendTest(t, queryFrontendTestConfig{
+				setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+					flags = mergeFlags(
+						BlocksStorageFlags(),
+						BlocksStorageS3Flags(),
+					)
+
+					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+					require.NoError(t, s.StartAndWaitReady(minio))
+
+					return "", flags
+				},
+				withHistograms: format == "protobuf",
+			})
+		})
+	}
+}
+
+func TestQueryFrontendWithIngestStorageViaFlagsAndWithQuerySchedulerAndQueryStatsEnabled(t *testing.T) {
+	runQueryFrontendTest(t, queryFrontendTestConfig{
+		querySchedulerEnabled:       true,
+		querySchedulerDiscoveryMode: "dns",
+		queryStatsEnabled:           true,
+		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+			flags = mergeFlags(
+				BlocksStorageFlags(),
+				BlocksStorageS3Flags(),
+				IngestStorageFlags(),
+			)
+
+			kafka := e2edb.NewKafka()
+			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			require.NoError(t, s.StartAndWaitReady(minio, kafka))
+
+			return "", flags
+		},
+		withHistograms: true,
 	})
 }
 
@@ -206,11 +276,18 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	// Start the query-scheduler if enabled.
 	var queryScheduler *e2emimir.MimirService
-	if cfg.querySchedulerEnabled {
+	if cfg.querySchedulerEnabled && cfg.querySchedulerDiscoveryMode == "dns" {
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
 		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+	} else if cfg.querySchedulerEnabled && cfg.querySchedulerDiscoveryMode == "ring" {
+		flags["-query-scheduler.service-discovery-mode"] = "ring"
+		flags["-query-scheduler.ring.store"] = "consul"
+		flags["-query-scheduler.ring.consul.hostname"] = consul.NetworkHTTPEndpoint()
+
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
+		require.NoError(t, s.StartAndWaitReady(queryScheduler))
 	}
 
 	// Start the query-frontend.
@@ -222,7 +299,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// Start all other services.
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	ingester := e2emimir.NewIngester("ingester-0", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 
@@ -230,13 +307,28 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	require.NoError(t, s.WaitReady(queryFrontend))
 
 	// Check if we're discovering memcache or not.
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_memcached_dns_lookups_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_cache_dns_provider_results"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_cache_dns_lookups_total"))
 
-	// Wait until both the distributor and querier have updated the ring.
-	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
-	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// Wait until distributor and querier have updated the ingesters ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// When using the ingest storage, wait until partitions are ACTIVE in the ring.
+	if flags["-ingest-storage.enabled"] == "true" {
+		require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+			labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+
+		require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+			labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+	}
 
 	// Push a series for each user to Mimir.
 	now := time.Now()
@@ -247,7 +339,11 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
-		series, expectedVectors[u] = generateSeries("series_1", now)
+		genSeries := generateFloatSeries
+		if cfg.withHistograms && u%2 > 0 {
+			genSeries = generateHistogramSeries
+		}
+		series, expectedVectors[u], _ = genSeries("series_1", now)
 
 		res, err := c.Push(series)
 		require.NoError(t, err)
@@ -311,18 +407,21 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	wg.Wait()
 
-	extra := float64(2)
+	// Compute the expected number of queries.
+	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 2
+	expectedIngesterQueriesCount := float64(numUsers * numQueriesPerUser) // The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
 	if cfg.queryStatsEnabled {
-		extra++
+		expectedQueriesCount++
+		expectedIngesterQueriesCount++
 	}
 
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numUsers*numQueriesPerUser+extra), "cortex_query_frontend_queries_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueriesCount), "cortex_query_frontend_queries_total"))
 
-	// The number of received request is greater then the query requests because include
+	// The number of received requests may be greater than the query requests because include
 	// requests to /metrics and /ready.
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Greater(numUsers*numQueriesPerUser), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
-	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Greater(numUsers*numQueriesPerUser), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
-	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Greater(numUsers*numQueriesPerUser), []string{"cortex_querier_request_duration_seconds"}, e2e.WithMetricCount))
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedQueriesCount), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedQueriesCount), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedQueriesCount), []string{"cortex_querier_request_duration_seconds"}, e2e.WithMetricCount))
 
 	// Ensure query stats metrics are tracked only when enabled.
 	if cfg.queryStatsEnabled {
@@ -332,6 +431,14 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 	} else {
 		require.NoError(t, queryFrontend.WaitRemovedMetric("cortex_query_seconds_total"))
+	}
+
+	// When the ingest storage is used, we expect that each query issued by this test was processed
+	// with strong read consistency by the ingester.
+	if flags["-ingest-storage.enabled"] == "true" {
+		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(expectedIngesterQueriesCount), "cortex_ingest_storage_strong_consistency_requests_total"))
+	} else {
+		require.NoError(t, ingester.WaitRemovedMetric("cortex_ingest_storage_strong_consistency_requests_total"))
 	}
 
 	// Ensure no service-specific metrics prefix is used by the wrong service.
@@ -372,9 +479,9 @@ overrides:
 
 	flags = mergeFlags(flags, map[string]string{
 		"-querier.max-samples":                          "20",                                                 // Very low limit so that we can easily hit it, but high enough to test other features.
+		"-querier.max-partial-query-length":             "30d",                                                // To test too long query error (31d)
 		"-query-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
 		"-query-frontend.query-sharding-total-shards":   "0",                                                  // Disable query-sharding by default
-		"-store.max-query-length":                       "30d",                                                // To test too long query error (31d)
 		"-runtime-config.file":                          filepath.Join(e2e.ContainerSharedDir, runtimeConfig), // Read per tenant runtime config
 	})
 	consul := e2edb.NewConsul()
@@ -407,7 +514,7 @@ overrides:
 	require.NoError(t, err)
 
 	for i := 0; i < 50; i++ {
-		series, _ := generateSeries(
+		series, _, _ := generateFloatSeries(
 			"metric",
 			now,
 			prompb.Label{Name: "unique", Value: strconv.Itoa(i)},
@@ -432,10 +539,17 @@ overrides:
 	cQuerier, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "fake")
 	require.NoError(t, err)
 
+	queryClients := map[string]*e2emimir.Client{
+		"query-frontend":               cQueryFrontend,
+		"query-frontend with sharding": cQueryFrontendWithQuerySharding,
+		"querier":                      cQuerier,
+	}
+
 	for _, tc := range []struct {
 		name          string
 		query         func(*e2emimir.Client) (*http.Response, []byte, error)
 		expStatusCode int
+		expJSON       string
 		expBody       string
 	}{
 		{
@@ -444,7 +558,7 @@ overrides:
 				return c.QueryRangeRaw("unknown", now.Add(-time.Hour*24), now, time.Second)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "negative step",
@@ -452,7 +566,7 @@ overrides:
 				return c.QueryRangeRaw("unknown", now.Add(-time.Hour), now, -time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"step\": zero or negative query resolution step widths are not accepted. Try a positive integer", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"step\": zero or negative query resolution step widths are not accepted. Try a positive integer", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "unknown function",
@@ -460,7 +574,7 @@ overrides:
 				return c.QueryRangeRaw("unknown(up)", now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"1:1: parse error: unknown function with name \"unknown\"", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"query\": 1:1: parse error: unknown function with name \"unknown\"", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "range vector instead of instant vector",
@@ -468,7 +582,7 @@ overrides:
 				return c.QueryRangeRaw(`sum by(grpc_method)(grpc_server_handled_total{job="cortex-dedicated-06/etcd"}[1m])`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"1:21: parse error: expected type instant vector in aggregation expression, got range vector", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"query\": 1:21: parse error: expected type instant vector in aggregation expression, got range vector", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "start after end",
@@ -476,7 +590,7 @@ overrides:
 				return c.QueryRangeRaw("unknown", now, now.Add(-time.Hour), time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"end\": end timestamp must not be before start time", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"end\": end timestamp must not be before start time", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "wrong duration specified in step",
@@ -491,7 +605,7 @@ overrides:
 				))
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"step\": cannot parse \"123notafloat\" to a valid duration", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"step\": cannot parse \"123notafloat\" to a valid duration", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "wrong timestamp in start",
@@ -506,7 +620,7 @@ overrides:
 				))
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"start\": cannot parse \"depths-of-time\" to a valid timestamp", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"start\": cannot parse \"depths-of-time\" to a valid timestamp", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "max samples limit hit",
@@ -514,7 +628,7 @@ overrides:
 				return c.QueryRangeRaw(`metric`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expBody:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
+			expJSON:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
 		},
 		{
 			name: "query time range exceeds the limit",
@@ -522,7 +636,25 @@ overrides:
 				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expBody:       fmt.Sprintf(`{"error":"expanding series: %s", "errorType":"execution", "status":"error"}`, validation.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute), 720*time.Hour)),
+			expJSON:       fmt.Sprintf(`{"error":"expanding series: %s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute), 720*time.Hour)),
+		},
+		{
+			name: "query remote read time range exceeds the limit",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				httpR, _, respBytes, err := c.RemoteRead(`metric`, now.Add(-time.Hour*24*32), now)
+				return httpR, respBytes, err
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       mimirquerier.NewMaxQueryLengthError(time.Hour*24*32, 720*time.Hour).Error(),
+		},
+		{
+			name: "query remote read time range exceeds the limit (streaming chunks)",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				httpR, _, respBytes, err := c.RemoteReadChunks(`metric`, now.Add(-time.Hour*24*32), now)
+				return httpR, respBytes, err
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       mimirquerier.NewMaxQueryLengthError(time.Hour*24*32, 720*time.Hour).Error(),
 		},
 		{
 			name: "execution error",
@@ -530,7 +662,7 @@ overrides:
 				return c.QueryRangeRaw(`sum by (group_1) (metric{unique=~"0|1|2|3"}) * on(group_1) group_right(unique) (sum by (group_1,unique) (metric{unique=~"0|1|2|3"}))`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expBody:       `{"error":"multiple matches for labels: grouping labels must ensure unique matches", "errorType":"execution", "status":"error"}`,
+			expJSON:       `{"error":"multiple matches for labels: grouping labels must ensure unique matches", "errorType":"execution", "status":"error"}`,
 		},
 		{
 			name: "range query with range vector",
@@ -538,51 +670,38 @@ overrides:
 				return c.QueryRangeRaw(`(sum(rate(up[1m])))[5m:]`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, body, err := tc.query(cQuerier)
-			require.NoError(t, err)
-			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "querier returns unexpected statusCode")
-			assert.JSONEq(t, tc.expBody, string(body), "querier returns unexpected body")
+			if tc.expBody != "" && tc.expJSON != "" {
+				t.Fatalf("expected only one of expBody or expJSON to be set")
+			}
 
-			resp, body, err = tc.query(cQueryFrontend)
-			require.NoError(t, err)
-			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "query-frontend returns unexpected statusCode")
-			assert.JSONEq(t, tc.expBody, string(body), "query-frontend returns unexpected body")
-
-			resp, body, err = tc.query(cQueryFrontendWithQuerySharding)
-			require.NoError(t, err)
-			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "query-frontend with query-sharding returns unexpected statusCode")
-			assert.JSONEq(t, tc.expBody, string(body), "query-frontend with query-sharding returns unexpected body")
+			for name, c := range queryClients {
+				resp, body, err := tc.query(c)
+				require.NoError(t, err)
+				assert.Equal(t, tc.expStatusCode, resp.StatusCode, "querier returns unexpected statusCode for "+name)
+				if tc.expJSON != "" {
+					assert.JSONEq(t, tc.expJSON, string(body), "querier returns unexpected body for "+name)
+				} else {
+					assert.Equal(t, tc.expBody, strings.TrimSpace(string(body)), "querier returns unexpected body for "+name)
+				}
+			}
 		})
 	}
 }
 
-func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
-	t.Run("with query-scheduler", func(t *testing.T) {
-		runQueryFrontendWithQueryShardingAndTooManyRequestsTest(t, queryFrontendTestConfig{
-			querySchedulerEnabled: true,
-			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-					"-query-scheduler.max-outstanding-requests-per-tenant": "1",
-				})
-
-				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-				require.NoError(t, s.StartAndWaitReady(minio))
-
-				return "", flags
-			},
-		})
-	})
-
-	t.Run("without query-scheduler", func(t *testing.T) {
-		runQueryFrontendWithQueryShardingAndTooManyRequestsTest(t, queryFrontendTestConfig{
+func TestQueryFrontendWithQueryShardingAndTooLargeEntityRequest(t *testing.T) {
+	runQueryFrontendWithQueryShardingHTTPTest(
+		t,
+		queryFrontendTestConfig{
 			querySchedulerEnabled: false,
 			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-					"-querier.max-outstanding-requests-per-tenant": "1", // Limit
+					// Set the maximum entity size to 100 bytes.
+					// The query result payload is 107 bytes, so it will be too large for the configured limit.
+					"-querier.frontend-client.grpc-max-send-msg-size": "100",
 				})
 
 				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -590,10 +709,72 @@ func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
 
 				return "", flags
 			},
+		},
+		http.StatusRequestEntityTooLarge,
+		false,
+	)
+}
+
+func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
+	setupTestWithQueryScheduler := func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+		flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+			"-query-scheduler.max-outstanding-requests-per-tenant": "1",
 		})
+
+		minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+		require.NoError(t, s.StartAndWaitReady(minio))
+
+		return "", flags
+	}
+
+	t.Run("with query-scheduler (DNS-based service discovery)", func(t *testing.T) {
+		runQueryFrontendWithQueryShardingHTTPTest(
+			t,
+			queryFrontendTestConfig{
+				querySchedulerEnabled:       true,
+				querySchedulerDiscoveryMode: "dns",
+				setup:                       setupTestWithQueryScheduler,
+			},
+			http.StatusTooManyRequests,
+			true,
+		)
+	})
+
+	t.Run("with query-scheduler (ring-based service discovery)", func(t *testing.T) {
+		runQueryFrontendWithQueryShardingHTTPTest(
+			t,
+			queryFrontendTestConfig{
+				querySchedulerEnabled:       true,
+				querySchedulerDiscoveryMode: "ring",
+				setup:                       setupTestWithQueryScheduler,
+			},
+			http.StatusTooManyRequests,
+			true,
+		)
+	})
+
+	t.Run("without query-scheduler", func(t *testing.T) {
+		runQueryFrontendWithQueryShardingHTTPTest(
+			t,
+			queryFrontendTestConfig{
+				querySchedulerEnabled: false,
+				setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+					flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+						"-querier.max-outstanding-requests-per-tenant": "1", // Limit
+					})
+
+					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+					require.NoError(t, s.StartAndWaitReady(minio))
+
+					return "", flags
+				},
+			},
+			http.StatusTooManyRequests,
+			true,
+		)
 	})
 }
-func runQueryFrontendWithQueryShardingAndTooManyRequestsTest(t *testing.T, cfg queryFrontendTestConfig) {
+func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTestConfig, expectHTTPSStatus int, checkDiscardedMetrics bool) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -618,11 +799,18 @@ func runQueryFrontendWithQueryShardingAndTooManyRequestsTest(t *testing.T, cfg q
 
 	// Start the query-scheduler if enabled.
 	var queryScheduler *e2emimir.MimirService
-	if cfg.querySchedulerEnabled {
+	if cfg.querySchedulerEnabled && cfg.querySchedulerDiscoveryMode == "dns" {
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
 		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+	} else if cfg.querySchedulerEnabled && cfg.querySchedulerDiscoveryMode == "ring" {
+		flags["-query-scheduler.service-discovery-mode"] = "ring"
+		flags["-query-scheduler.ring.store"] = "consul"
+		flags["-query-scheduler.ring.consul.hostname"] = consul.NetworkHTTPEndpoint()
+
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
+		require.NoError(t, s.StartAndWaitReady(queryScheduler))
 	}
 
 	// Start the query-frontend.
@@ -642,36 +830,42 @@ func runQueryFrontendWithQueryShardingAndTooManyRequestsTest(t *testing.T, cfg q
 	require.NoError(t, s.WaitReady(queryFrontend))
 
 	// Check if we're discovering memcache or not.
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_memcached_dns_lookups_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_cache_dns_provider_results"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_cache_dns_lookups_total"))
 
-	// Wait until both the distributor and querier have updated the ring.
-	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
-	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// Wait until distributor and querier have updated the ingesters ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 	// Push series for the test user to Mimir.
 	now := time.Now()
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
 	var series []prompb.TimeSeries
-	series, _ = generateSeries("series_1", now)
+	series, _, _ = generateFloatSeries("series_1", now, prompb.Label{Name: "group", Value: "a-really-really-really-long-name-that-will-pad-out-the-response-payload-size"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	resp, _, err := c.QueryRaw("sum(series_1)")
+	resp, _, err := c.QueryRawAt("sum by (group) (series_1)", now)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+	require.Equal(t, expectHTTPSStatus, resp.StatusCode)
 
 	// Check that query was actually sharded.
 	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_frontend_sharded_queries_total"))
-	// Check that we actually discarded the request.
 
-	if cfg.querySchedulerEnabled {
-		require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Greater(0), "cortex_query_scheduler_discarded_requests_total"))
-	} else {
-		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_query_frontend_discarded_requests_total"))
+	// Check that we actually discarded the request.
+	if checkDiscardedMetrics {
+		if cfg.querySchedulerEnabled {
+			require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Greater(0), "cortex_query_scheduler_discarded_requests_total"))
+		} else {
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_query_frontend_discarded_requests_total"))
+		}
 	}
 }

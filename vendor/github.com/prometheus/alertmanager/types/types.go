@@ -14,13 +14,16 @@
 package types
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+
+	"github.com/prometheus/alertmanager/matchers/compat"
+	"github.com/prometheus/alertmanager/pkg/labels"
 )
 
 // AlertState is used as part of AlertStatus.
@@ -52,18 +55,18 @@ type AlertStatus struct {
 // Marker helps to mark alerts as silenced and/or inhibited.
 // All methods are goroutine-safe.
 type Marker interface {
-	// SetSilenced replaces the previous SilencedBy by the provided IDs of
+	// SetActiveOrSilenced replaces the previous SilencedBy by the provided IDs of
 	// active and pending silences, including the version number of the
 	// silences state. The set of provided IDs is supposed to represent the
 	// complete set of relevant silences. If no active silence IDs are provided and
 	// InhibitedBy is already empty, it sets the provided alert to AlertStateActive.
 	// Otherwise, it sets the provided alert to AlertStateSuppressed.
-	SetSilenced(alert model.Fingerprint, version int, activeSilenceIDs []string, pendingSilenceIDs []string)
+	SetActiveOrSilenced(alert model.Fingerprint, version int, activeSilenceIDs, pendingSilenceIDs []string)
 	// SetInhibited replaces the previous InhibitedBy by the provided IDs of
-	// alerts. In contrast to SetSilenced, the set of provided IDs is not
+	// alerts. In contrast to SetActiveOrSilenced, the set of provided IDs is not
 	// expected to represent the complete set of inhibiting alerts. (In
 	// practice, this method is only called with one or zero IDs. However,
-	// this expectation might change in the future.) If no IDs are provided
+	// this expectation might change in the future. If no IDs are provided
 	// and InhibitedBy is already empty, it sets the provided alert to
 	// AlertStateActive. Otherwise, it sets the provided alert to
 	// AlertStateSuppressed.
@@ -85,7 +88,7 @@ type Marker interface {
 	// result is based on.
 	Unprocessed(model.Fingerprint) bool
 	Active(model.Fingerprint) bool
-	Silenced(model.Fingerprint) (activeIDs []string, pendingIDs []string, version int, silenced bool)
+	Silenced(model.Fingerprint) (activeIDs, pendingIDs []string, version int, silenced bool)
 	Inhibited(model.Fingerprint) ([]string, bool)
 }
 
@@ -107,11 +110,11 @@ type memMarker struct {
 }
 
 func (m *memMarker) registerMetrics(r prometheus.Registerer) {
-	newAlertMetricByState := func(st AlertState) prometheus.GaugeFunc {
+	newMarkedAlertMetricByState := func(st AlertState) prometheus.GaugeFunc {
 		return prometheus.NewGaugeFunc(
 			prometheus.GaugeOpts{
-				Name:        "alertmanager_alerts",
-				Help:        "How many alerts by state.",
+				Name:        "alertmanager_marked_alerts",
+				Help:        "How many alerts by state are currently marked in the Alertmanager regardless of their expiry.",
 				ConstLabels: prometheus.Labels{"state": string(st)},
 			},
 			func() float64 {
@@ -120,11 +123,13 @@ func (m *memMarker) registerMetrics(r prometheus.Registerer) {
 		)
 	}
 
-	alertsActive := newAlertMetricByState(AlertStateActive)
-	alertsSuppressed := newAlertMetricByState(AlertStateSuppressed)
+	alertsActive := newMarkedAlertMetricByState(AlertStateActive)
+	alertsSuppressed := newMarkedAlertMetricByState(AlertStateSuppressed)
+	alertStateUnprocessed := newMarkedAlertMetricByState(AlertStateUnprocessed)
 
 	r.MustRegister(alertsActive)
 	r.MustRegister(alertsSuppressed)
+	r.MustRegister(alertStateUnprocessed)
 }
 
 // Count implements Marker.
@@ -147,8 +152,8 @@ func (m *memMarker) Count(states ...AlertState) int {
 	return count
 }
 
-// SetSilenced implements Marker.
-func (m *memMarker) SetSilenced(alert model.Fingerprint, version int, activeIDs []string, pendingIDs []string) {
+// SetActiveOrSilenced implements Marker.
+func (m *memMarker) SetActiveOrSilenced(alert model.Fingerprint, version int, activeIDs, pendingIDs []string) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -238,7 +243,7 @@ func (m *memMarker) Inhibited(alert model.Fingerprint) ([]string, bool) {
 // Silenced returns whether the alert for the given Fingerprint is in the
 // Silenced state, any associated silence IDs, and the silences state version
 // the result is based on.
-func (m *memMarker) Silenced(alert model.Fingerprint) (activeIDs []string, pendingIDs []string, version int, silenced bool) {
+func (m *memMarker) Silenced(alert model.Fingerprint) (activeIDs, pendingIDs []string, version int, silenced bool) {
 	s := m.Status(alert)
 	return s.SilencedBy, s.pendingSilences, s.silencesVersion,
 		s.State == AlertStateSuppressed && len(s.SilencedBy) > 0
@@ -297,6 +302,39 @@ type Alert struct {
 	// The authoritative timestamp.
 	UpdatedAt time.Time
 	Timeout   bool
+}
+
+func validateLs(ls model.LabelSet) error {
+	for ln, lv := range ls {
+		if !compat.IsValidLabelName(ln) {
+			return fmt.Errorf("invalid name %q", ln)
+		}
+		if !lv.IsValid() {
+			return fmt.Errorf("invalid value %q", lv)
+		}
+	}
+	return nil
+}
+
+// Validate overrides the same method in model.Alert to allow UTF-8 labels.
+// This can be removed once prometheus/common has support for UTF-8.
+func (a *Alert) Validate() error {
+	if a.StartsAt.IsZero() {
+		return fmt.Errorf("start time missing")
+	}
+	if !a.EndsAt.IsZero() && a.EndsAt.Before(a.StartsAt) {
+		return fmt.Errorf("start time must be before end time")
+	}
+	if len(a.Labels) == 0 {
+		return fmt.Errorf("at least one label pair required")
+	}
+	if err := validateLs(a.Labels); err != nil {
+		return fmt.Errorf("invalid label set: %w", err)
+	}
+	if err := validateLs(a.Annotations); err != nil {
+		return fmt.Errorf("invalid annotations: %w", err)
+	}
+	return nil
 }
 
 // AlertSlice is a sortable slice of Alerts.
@@ -376,6 +414,11 @@ func (a *Alert) Merge(o *Alert) *Alert {
 // Mutes.
 type Muter interface {
 	Mutes(model.LabelSet) bool
+}
+
+// TimeMuter determines if alerts should be muted based on the specified current time and active time interval on the route.
+type TimeMuter interface {
+	Mutes(timeIntervalName []string, now time.Time) (bool, error)
 }
 
 // A MuteFunc is a function that implements the Muter interface.

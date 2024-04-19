@@ -8,7 +8,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 )
 
 // DelayedBucketClient wraps objstore.InstrumentedBucket and add a random delay to each API call.
@@ -79,6 +79,10 @@ func (m *DelayedBucketClient) Exists(ctx context.Context, name string) (bool, er
 
 func (m *DelayedBucketClient) IsObjNotFoundErr(err error) bool {
 	return m.wrapped.IsObjNotFoundErr(err)
+}
+
+func (m *DelayedBucketClient) IsAccessDeniedErr(err error) bool {
+	return m.wrapped.IsAccessDeniedErr(err)
 }
 
 func (m *DelayedBucketClient) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {

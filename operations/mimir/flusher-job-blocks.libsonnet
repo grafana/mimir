@@ -14,6 +14,8 @@
   local volumeMount = $.core.v1.volumeMount,
   local volume = $.core.v1.volume,
 
+  flusher_env_map:: {},
+
   flusher_container::
     container.new('flusher', $._images.flusher) +
     container.withPorts($.util.defaultPorts) +
@@ -21,6 +23,7 @@
       target: 'flusher',
       'blocks-storage.tsdb.retention-period': '10000h',  // don't delete old blocks too soon.
     })) +
+    (if std.length($.flusher_env_map) > 0 then container.withEnvMap(std.prune($.flusher_env_map)) else {}) +
     $.util.resourcesRequests('4', '15Gi') +
     $.util.resourcesLimits(null, '25Gi') +
     $.util.readinessProbe +
@@ -45,6 +48,6 @@
     job.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     job.mixin.spec.template.spec.withTerminationGracePeriodSeconds(300) +
     (if !std.isObject($._config.node_selector) then {} else job.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    $.mimirVolumeMounts +
     $.util.podPriority('high'),
 }

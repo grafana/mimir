@@ -24,11 +24,18 @@ spec:
         app.kubernetes.io/instance: test-enterprise-configmap-values
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: tokengen
+      annotations:
+        minio-secret-version: "42"
       namespace: "citestns"
     spec:
       serviceAccountName: test-enterprise-configmap-values-mimir
       securityContext:
-        null
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         []
       containers:
@@ -43,11 +50,17 @@ spec:
               mountPath: /etc/mimir
             - name: license
               mountPath: /license
+            - name: active-queries
+              mountPath: /active-query-tracker
           env:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
       restartPolicy: OnFailure
       volumes:
@@ -61,4 +74,6 @@ spec:
           secret:
             secretName: test-enterprise-configmap-values-mimir-license
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}

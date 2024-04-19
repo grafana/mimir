@@ -6,15 +6,20 @@
 package querymiddleware
 
 import (
+	"bytes"
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"time"
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -38,43 +43,176 @@ func newEmptyPrometheusResponse() *PrometheusResponse {
 	}
 }
 
+type PrometheusRangeQueryRequest struct {
+	Path    string
+	Start   int64
+	End     int64
+	Step    int64
+	Timeout time.Duration
+	Query   string
+	Options Options
+	// ID of the request used to correlate downstream requests and responses.
+	ID int64
+	// Hints that could be optionally attached to the request to pass down the stack.
+	// These hints can be used to optimize the query execution.
+	Hints *Hints
+}
+
+func (r *PrometheusRangeQueryRequest) GetPath() string {
+	return r.Path
+}
+
+func (r *PrometheusRangeQueryRequest) GetStart() int64 {
+	return r.Start
+}
+
+func (r *PrometheusRangeQueryRequest) GetEnd() int64 {
+	return r.End
+}
+
+func (r *PrometheusRangeQueryRequest) GetStep() int64 {
+	return r.Step
+}
+
+func (r *PrometheusRangeQueryRequest) GetTimeout() time.Duration {
+	return r.Timeout
+}
+
+func (r *PrometheusRangeQueryRequest) GetQuery() string {
+	return r.Query
+}
+
+func (r *PrometheusRangeQueryRequest) GetOptions() Options {
+	return r.Options
+}
+
+func (r *PrometheusRangeQueryRequest) GetID() int64 {
+	return r.ID
+}
+
+func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
+	return r.Hints
+}
+
+type PrometheusInstantQueryRequest struct {
+	Path    string
+	Time    int64
+	Query   string
+	Options Options
+	// ID of the request used to correlate downstream requests and responses.
+	ID int64
+	// Hints that could be optionally attached to the request to pass down the stack.
+	// These hints can be used to optimize the query execution.
+	Hints *Hints
+}
+
+func (r *PrometheusInstantQueryRequest) GetPath() string {
+	return r.Path
+}
+
+func (r *PrometheusInstantQueryRequest) GetTime() int64 {
+	return r.Time
+}
+
+func (r *PrometheusInstantQueryRequest) GetQuery() string {
+	return r.Query
+}
+
+func (r *PrometheusInstantQueryRequest) GetOptions() Options {
+	return r.Options
+}
+
+func (r *PrometheusInstantQueryRequest) GetID() int64 {
+	return r.ID
+}
+
+func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
+	return r.Hints
+}
+
+type Hints struct {
+	// Total number of queries that are expected to be executed to serve the original request.
+	TotalQueries int32
+	// Estimated total number of series that a request might return.
+	CardinalityEstimate *EstimatedSeriesCount
+}
+
+func (h *Hints) GetCardinalityEstimate() *EstimatedSeriesCount {
+	return h.CardinalityEstimate
+}
+
+func (h *Hints) GetTotalQueries() int32 {
+	return h.TotalQueries
+}
+
+func (h *Hints) GetEstimatedSeriesCount() uint64 {
+	if x := h.GetCardinalityEstimate(); x != nil {
+		return x.EstimatedSeriesCount
+	}
+	return 0
+}
+
+type EstimatedSeriesCount struct {
+	EstimatedSeriesCount uint64
+}
+
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
-func (q *PrometheusRangeQueryRequest) WithID(id int64) Request {
-	new := *q
-	new.Id = id
-	return &new
+func (r *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.ID = id
+	return &newRequest
 }
 
 // WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
-func (q *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) Request {
-	new := *q
-	new.Start = start
-	new.End = end
-	return &new
+func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.Start = start
+	newRequest.End = end
+	return &newRequest
 }
 
 // WithQuery clones the current `PrometheusRangeQueryRequest` with a new query.
-func (q *PrometheusRangeQueryRequest) WithQuery(query string) Request {
-	new := *q
-	new.Query = query
-	return &new
+func (r *PrometheusRangeQueryRequest) WithQuery(query string) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.Query = query
+	return &newRequest
 }
 
-// WithQuery clones the current `PrometheusRangeQueryRequest` with new hints.
-func (q *PrometheusRangeQueryRequest) WithHints(hints *Hints) Request {
-	new := *q
-	new.Hints = hints
-	return &new
+// WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
+// added Hint value for TotalQueries.
+func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
+	newRequest := *r
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{TotalQueries: totalQueries}
+	} else {
+		*newRequest.Hints = *(r.Hints)
+		newRequest.Hints.TotalQueries = totalQueries
+	}
+	return &newRequest
 }
 
-// LogToSpan logs the current `PrometheusRangeQueryRequest` parameters to the specified span.
-func (q *PrometheusRangeQueryRequest) LogToSpan(sp opentracing.Span) {
-	sp.LogFields(
-		otlog.String("query", q.GetQuery()),
-		otlog.String("start", timestamp.Time(q.GetStart()).String()),
-		otlog.String("end", timestamp.Time(q.GetEnd()).String()),
-		otlog.Int64("step (ms)", q.GetStep()),
-	)
+// WithEstimatedSeriesCountHint clones the current `PrometheusRangeQueryRequest`
+// with an added Hint value for EstimatedCardinality.
+func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
+	newRequest := *r
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{
+			CardinalityEstimate: &EstimatedSeriesCount{count},
+		}
+	} else {
+		*newRequest.Hints = *(r.Hints)
+		newRequest.Hints.CardinalityEstimate = &EstimatedSeriesCount{count}
+	}
+	return &newRequest
+}
+
+// AddSpanTags writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
+// ("attributes" in OpenTelemetry parlance).
+func (r *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
+	sp.SetTag("query", r.GetQuery())
+	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
+	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+	sp.SetTag("step_ms", r.GetStep())
 }
 
 func (r *PrometheusInstantQueryRequest) GetStart() int64 {
@@ -89,35 +227,182 @@ func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 	return 0
 }
 
-func (r *PrometheusInstantQueryRequest) WithID(id int64) Request {
-	new := *r
-	new.Id = id
-	return &new
+func (r *PrometheusInstantQueryRequest) WithID(id int64) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.ID = id
+	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, endTime int64) Request {
-	new := *r
-	new.Time = startTime
-	return &new
+func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, _ int64) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.Time = startTime
+	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) WithQuery(s string) Request {
-	new := *r
-	new.Query = s
-	return &new
+func (r *PrometheusInstantQueryRequest) WithQuery(s string) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.Query = s
+	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) WithHints(hints *Hints) Request {
-	new := *r
-	new.Hints = hints
-	return &new
+func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
+	newRequest := *r
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{TotalQueries: totalQueries}
+	} else {
+		*newRequest.Hints = *(r.Hints)
+		newRequest.Hints.TotalQueries = totalQueries
+	}
+	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) LogToSpan(sp opentracing.Span) {
-	sp.LogFields(
-		otlog.String("query", r.GetQuery()),
-		otlog.String("time", timestamp.Time(r.GetTime()).String()),
-	)
+func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
+	newRequest := *r
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{
+			CardinalityEstimate: &EstimatedSeriesCount{count},
+		}
+	} else {
+		*newRequest.Hints = *(r.Hints)
+		newRequest.Hints.CardinalityEstimate = &EstimatedSeriesCount{count}
+	}
+	return &newRequest
+}
+
+// AddSpanTags writes query information about the current `PrometheusInstantQueryRequest`
+// to a span's tag ("attributes" in OpenTelemetry parlance).
+func (r *PrometheusInstantQueryRequest) AddSpanTags(sp opentracing.Span) {
+	sp.SetTag("query", r.GetQuery())
+	sp.SetTag("time", timestamp.Time(r.GetTime()).String())
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetLabelName() string {
+	return ""
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetStartOrDefault() int64 {
+	if r.GetStart() == 0 {
+		return v1.MinTime.UnixMilli()
+	}
+	return r.GetStart()
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetEndOrDefault() int64 {
+	if r.GetEnd() == 0 {
+		return v1.MaxTime.UnixMilli()
+	}
+	return r.GetEnd()
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetStartOrDefault() int64 {
+	if r.GetStart() == 0 {
+		return v1.MinTime.UnixMilli()
+	}
+	return r.GetStart()
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetEndOrDefault() int64 {
+	if r.GetEnd() == 0 {
+		return v1.MaxTime.UnixMilli()
+	}
+	return r.GetEnd()
+}
+
+// AddSpanTags writes query information about the current `PrometheusLabelNamesQueryRequest`
+// to a span's tag ("attributes" in OpenTelemetry parlance).
+func (r *PrometheusLabelNamesQueryRequest) AddSpanTags(sp opentracing.Span) {
+	sp.SetTag("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets()))
+	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
+	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+}
+
+// AddSpanTags writes query information about the current `PrometheusLabelNamesQueryRequest`
+// to a span's tag ("attributes" in OpenTelemetry parlance).
+func (r *PrometheusLabelValuesQueryRequest) AddSpanTags(sp opentracing.Span) {
+	sp.SetTag("label", fmt.Sprintf("%v", r.GetLabelName()))
+	sp.SetTag("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets()))
+	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
+	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+}
+
+type PrometheusLabelNamesQueryRequest struct {
+	Path  string
+	Start int64
+	End   int64
+	// labelMatcherSets is a repeated field here in order to enable the representation
+	// of labels queries which have not yet been split; the prometheus querier code
+	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
+	// into separate queries, one for each matcher set
+	LabelMatcherSets []string
+	// ID of the request used to correlate downstream requests and responses.
+	ID int64
+	// Limit the number of label names returned. A value of 0 means no limit
+	Limit uint64
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetPath() string {
+	return r.Path
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetStart() int64 {
+	return r.Start
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetEnd() int64 {
+	return r.End
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetLabelMatcherSets() []string {
+	return r.LabelMatcherSets
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetID() int64 {
+	return r.ID
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetLimit() uint64 {
+	return r.Limit
+}
+
+type PrometheusLabelValuesQueryRequest struct {
+	Path      string
+	LabelName string
+	Start     int64
+	End       int64
+	// labelMatcherSets is a repeated field here in order to enable the representation
+	// of labels queries which have not yet been split; the prometheus querier code
+	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
+	// into separate queries, one for each matcher set
+	LabelMatcherSets []string
+	// ID of the request used to correlate downstream requests and responses.
+	ID int64
+	// Limit the number of label values returned. A value of 0 means no limit.
+	Limit uint64
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetLabelName() string {
+	return r.LabelName
+
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetStart() int64 {
+	return r.Start
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetEnd() int64 {
+	return r.End
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetLabelMatcherSets() []string {
+	return r.LabelMatcherSets
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetID() int64 {
+	return r.ID
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetLimit() uint64 {
+	return r.Limit
 }
 
 func (d *PrometheusData) UnmarshalJSON(b []byte) error {
@@ -284,6 +569,10 @@ func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
+	if s.Histogram != nil {
+		return errors.New("cannot unmarshal native histogram from JSON")
+	}
+
 	*vs = vectorSampleStream{
 		Labels:  mimirpb.FromMetricsToLabelAdapters(s.Metric),
 		Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
@@ -292,39 +581,70 @@ func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
 }
 
 func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
-	if len(vs.Samples) != 1 {
-		return nil, fmt.Errorf("vector sample stream should have exactly one sample, got %d", len(vs.Samples))
+	if (len(vs.Samples) == 1) == (len(vs.Histograms) == 1) { // not XOR
+		return nil, fmt.Errorf("vector sample stream should have exactly one sample or one histogram, got %d samples and %d histograms", len(vs.Samples), len(vs.Histograms))
 	}
-	return json.Marshal(model.Sample{
-		Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
-		Timestamp: model.Time(vs.Samples[0].TimestampMs),
-		Value:     model.SampleValue(vs.Samples[0].Value),
-	})
+	var sample model.Sample
+	if len(vs.Samples) == 1 {
+		sample = model.Sample{
+			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
+			Timestamp: model.Time(vs.Samples[0].TimestampMs),
+			Value:     model.SampleValue(vs.Samples[0].Value),
+		}
+	} else {
+		sample = model.Sample{
+			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
+			Timestamp: model.Time(vs.Histograms[0].TimestampMs),
+			Histogram: mimirpb.FromFloatHistogramToPromHistogram(vs.Histograms[0].Histogram.ToPrometheusModel()),
+		}
+	}
+	return json.Marshal(sample)
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (s *SampleStream) UnmarshalJSON(data []byte) error {
 	var stream struct {
-		Metric model.Metric     `json:"metric"`
-		Values []mimirpb.Sample `json:"values"`
+		Metric     model.Metric                  `json:"metric"`
+		Values     []mimirpb.Sample              `json:"values"`
+		Histograms []mimirpb.SampleHistogramPair `json:"histograms"`
 	}
 	if err := json.Unmarshal(data, &stream); err != nil {
 		return err
 	}
 	s.Labels = mimirpb.FromMetricsToLabelAdapters(stream.Metric)
-	s.Samples = stream.Values
+	if len(stream.Values) > 0 {
+		s.Samples = stream.Values
+	}
+	if len(stream.Histograms) > 0 {
+		return fmt.Errorf("cannot unmarshal native histograms from JSON, but stream contains %d histograms", len(stream.Histograms))
+	}
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
 func (s *SampleStream) MarshalJSON() ([]byte, error) {
-	stream := struct {
-		Metric model.Metric     `json:"metric"`
-		Values []mimirpb.Sample `json:"values"`
-	}{
-		Metric: mimirpb.FromLabelAdaptersToMetric(s.Labels),
-		Values: s.Samples,
+	var histograms []mimirpb.SampleHistogramPair
+	if len(s.Histograms) > 0 {
+		histograms = make([]mimirpb.SampleHistogramPair, len(s.Histograms))
 	}
+
+	for i, h := range s.Histograms {
+		histograms[i] = mimirpb.SampleHistogramPair{
+			Timestamp: h.TimestampMs,
+			Histogram: mimirpb.FromFloatHistogramToSampleHistogram(h.Histogram.ToPrometheusModel()),
+		}
+	}
+
+	stream := struct {
+		Metric     model.Metric                  `json:"metric"`
+		Values     []mimirpb.Sample              `json:"values,omitempty"`
+		Histograms []mimirpb.SampleHistogramPair `json:"histograms,omitempty"`
+	}{
+		Metric:     mimirpb.FromLabelAdaptersToMetric(s.Labels),
+		Values:     s.Samples,
+		Histograms: histograms,
+	}
+
 	return json.Marshal(stream)
 }
 
@@ -343,4 +663,50 @@ func (resp *PrometheusResponse) minTime() int64 {
 		return -1
 	}
 	return result[0].Samples[0].TimestampMs
+}
+
+// EncodeCachedHTTPResponse encodes the input http.Response into CachedHTTPResponse.
+// The input res.Body is replaced in this function, so that it can be safely consumed again.
+func EncodeCachedHTTPResponse(cacheKey string, res *http.Response) (*CachedHTTPResponse, error) {
+	// Read the response.
+	body, err := readResponseBody(res)
+	if err != nil {
+		return nil, err
+	}
+
+	// Since we've already consumed the response Body we have to replace it on the response,
+	// otherwise the caller will get a response with a closed Body.
+	res.Body = io.NopCloser(bytes.NewBuffer(body))
+
+	// When preallocating the slice we assume that header as 1 value (which is the most common case).
+	headers := make([]*CachedHTTPHeader, 0, len(res.Header))
+	for name, values := range res.Header {
+		for _, value := range values {
+			headers = append(headers, &CachedHTTPHeader{
+				Name:  name,
+				Value: value,
+			})
+		}
+	}
+
+	return &CachedHTTPResponse{
+		CacheKey:   cacheKey,
+		StatusCode: int32(res.StatusCode),
+		Body:       body,
+		Headers:    headers,
+	}, nil
+}
+
+func DecodeCachedHTTPResponse(res *CachedHTTPResponse) *http.Response {
+	headers := http.Header{}
+	for _, header := range res.Headers {
+		headers[header.Name] = append(headers[header.Name], header.Value)
+	}
+
+	return &http.Response{
+		StatusCode:    int(res.StatusCode),
+		Body:          io.NopCloser(bytes.NewReader(res.Body)),
+		Header:        headers,
+		ContentLength: int64(len(res.Body)),
+	}
 }

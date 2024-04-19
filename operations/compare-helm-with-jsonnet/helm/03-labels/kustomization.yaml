@@ -9,7 +9,7 @@ patches:
 
   - target:
       kind: 'Deployment|StatefulSet'
-      name: 'mimir-(distributor|alertmanager|ingester|store-gateway|query-frontend|overrides-exporter|ruler|compactor|querier)'
+      name: 'mimir-(distributor|alertmanager|ingester|store-gateway|query-frontend|query-scheduler|overrides-exporter|ruler|compactor|querier)'
     patch: |-
       - op: remove
         path: /spec/template/metadata/annotations

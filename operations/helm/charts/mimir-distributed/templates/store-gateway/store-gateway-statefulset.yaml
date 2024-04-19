@@ -1,19 +1,34 @@
+{{- $args := dict "ctx" $ "component" "store-gateway" "memberlist" true -}}
+{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
+{{- range $zoneName, $rolloutZone := $zonesMap }}
+{{- with $ -}}
+{{- $_ := set $args "rolloutZoneName" $zoneName -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "store-gateway") }}
+  name: {{ include "mimir.resourceName" $args }}
   labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "store-gateway" "memberlist" true) | nindent 4 }}
+    {{- include "mimir.labels" $args | nindent 4 }}
   annotations:
-    {{- toYaml .Values.store_gateway.annotations | nindent 4 }}
+    {{- include "mimir.componentAnnotations" $args | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  replicas: {{ .Values.store_gateway.replicas }}
+  podManagementPolicy: {{ .Values.store_gateway.podManagementPolicy }}
+  replicas: {{ $rolloutZone.replicas }}
+  {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.store_gateway.persistentVolume.enableRetentionPolicy)  }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: {{ .Values.store_gateway.persistentVolume.whenDeleted }}
+    whenScaled: {{ .Values.store_gateway.persistentVolume.whenScaled }}
+  {{- end }}
   selector:
     matchLabels:
-      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "store-gateway" "memberlist" true) | nindent 6 }}
+      {{- include "mimir.selectorLabels" $args | nindent 6 }}
   updateStrategy:
+    {{- if $zoneName }}
+    type: OnDelete
+    {{- else }}
     {{- toYaml .Values.store_gateway.strategy | nindent 4 }}
+    {{- end }}
   serviceName: {{ template "mimir.fullname" . }}-store-gateway{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
   {{- if .Values.store_gateway.persistentVolume.enabled }}
   volumeClaimTemplates:
@@ -21,18 +36,19 @@ spec:
         name: storage
         {{- if .Values.store_gateway.persistentVolume.annotations }}
         annotations:
-          {{ toYaml .Values.store_gateway.persistentVolume.annotations | nindent 10 }}
+          {{- toYaml .Values.store_gateway.persistentVolume.annotations | nindent 10 }}
         {{- end }}
       spec:
-        {{- if .Values.store_gateway.persistentVolume.storageClass }}
-        {{- if (eq "-" .Values.store_gateway.persistentVolume.storageClass) }}
+        {{- $storageClass := default .Values.store_gateway.persistentVolume.storageClass $rolloutZone.storageClass }}
+        {{- if $storageClass }}
+        {{- if (eq "-" $storageClass) }}
         storageClassName: ""
         {{- else }}
-        storageClassName: "{{ .Values.store_gateway.persistentVolume.storageClass }}"
+        storageClassName: {{ $storageClass }}
         {{- end }}
         {{- end }}
         accessModes:
-          {{ toYaml .Values.store_gateway.persistentVolume.accessModes | nindent 10 }}
+          {{- toYaml .Values.store_gateway.persistentVolume.accessModes | nindent 10 }}
         resources:
           requests:
             storage: "{{ .Values.store_gateway.persistentVolume.size }}"
@@ -40,34 +56,43 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "mimir.podLabels" (dict "ctx" . "component" "store-gateway" "memberlist" true) | nindent 8 }}
-        {{- with .Values.store_gateway.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "mimir.podLabels" $args | nindent 8 }}
       annotations:
-        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "store-gateway") | nindent 8 }}
+        {{- include "mimir.podAnnotations" $args | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
+      {{- with .Values.store_gateway.schedulerName }}
+      schedulerName: {{ . | quote }}
+      {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.store_gateway.priorityClassName }}
       priorityClassName: {{ .Values.store_gateway.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.store_gateway.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" $args | nindent 8 }}
+      {{- with .Values.store_gateway.initContainers }}
       initContainers:
-        {{- toYaml .Values.store_gateway.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
         - name: {{ . }}
       {{- end }}
       {{- end }}
+      {{- with $rolloutZone.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.store_gateway.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $rolloutZone.affinity }}
       affinity:
-        {{- toYaml .Values.store_gateway.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "store-gateway") | nindent 6 }}
+      {{- with .Values.store_gateway.tolerations }}
       tolerations:
-        {{- toYaml .Values.store_gateway.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.store_gateway.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -87,6 +112,8 @@ spec:
         {{- if .Values.store_gateway.extraVolumes }}
         {{ toYaml .Values.store_gateway.extraVolumes | nindent 8 }}
         {{- end }}
+        - name: active-queries
+          emptyDir: {}
       containers:
         {{- if .Values.store_gateway.extraContainers }}
         {{ toYaml .Values.store_gateway.extraContainers | nindent 8 }}
@@ -98,6 +125,14 @@ spec:
             - "-target=store-gateway"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            {{- if $zoneName }}
+            - "-store-gateway.sharding-ring.instance-availability-zone={{ $zoneName }}"
+            {{- else }}
+            {{- if .Values.store_gateway.zoneAwareReplication.migration.enabled }}
+            - "-store-gateway.sharding-ring.prefix=collectors/"
+            - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
+            {{- end }}
+            {{- end }}
             {{- range $key, $value := .Values.store_gateway.extraArgs }}
             - "-{{ $key }}={{ $value }}"
             {{- end }}
@@ -116,8 +151,10 @@ spec:
             - name: storage
               mountPath: "/data"
               {{- if .Values.store_gateway.persistentVolume.subPath }}
-              subPath: {{ .Values.store_gateway.persistentVolume.subPath }}             
+              subPath: {{ .Values.store_gateway.persistentVolume.subPath }}
               {{- end }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -143,6 +180,23 @@ spec:
             {{- with .Values.store_gateway.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- $cpu_request := dig "requests" "cpu" nil .Values.store_gateway.resources }}
+            {{- if $cpu_request }}
+              {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+              {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
+            - name: "GOMAXPROCS"
+              value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
+            {{- end }}
+            {{- $mem_request := dig "requests" "memory" nil .Values.store_gateway.resources }}
+            {{- if $mem_request }}
+            - name: "GOMEMLIMIT"
+              value: {{include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
+            {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.store_gateway }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
+            {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -150,3 +204,7 @@ spec:
             {{- with .Values.store_gateway.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+
+---
+{{ end }}
+{{ end }}

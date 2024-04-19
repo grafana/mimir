@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -21,17 +20,23 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/klauspost/compress/s2"
 	alertConfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
+	"github.com/prometheus/prometheus/storage/remote"
 	yaml "gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/ruler"
-	"github.com/grafana/mimir/pkg/util/push"
+	"github.com/grafana/mimir/pkg/alertmanager"
+	"github.com/grafana/mimir/pkg/distributor"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 var ErrNotFound = errors.New("not found")
@@ -49,6 +54,50 @@ type Client struct {
 	orgID               string
 }
 
+type ClientOption func(*clientConfig)
+
+func WithAddHeader(key, value string) ClientOption {
+	return WithTripperware(func(tripper http.RoundTripper) http.RoundTripper {
+		return querymiddleware.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.Header.Add(key, value)
+			return tripper.RoundTrip(req)
+		})
+	})
+}
+
+func WithTripperware(wrap querymiddleware.Tripperware) ClientOption {
+	return func(c *clientConfig) {
+		c.defaultTransport = wrap(c.defaultTransport)
+		c.querierTransport = wrap(c.querierTransport)
+		c.alertmanagerTransport = wrap(c.alertmanagerTransport)
+	}
+}
+
+type clientConfig struct {
+	defaultTransport http.RoundTripper
+
+	querierTransport      http.RoundTripper
+	alertmanagerTransport http.RoundTripper
+}
+
+func defaultConfig() *clientConfig {
+	cfg := &clientConfig{
+		// Use fresh transport for each Client.
+		defaultTransport:      http.DefaultTransport.(*http.Transport).Clone(),
+		querierTransport:      http.DefaultTransport.(*http.Transport).Clone(),
+		alertmanagerTransport: http.DefaultTransport.(*http.Transport).Clone(),
+	}
+	// Disable compression in querier client so it's easier to debug issue looking at the HTTP responses
+	// logged by the querier.
+	cfg.querierTransport.(*http.Transport).DisableCompression = true
+
+	cfg.defaultTransport.(*http.Transport).MaxIdleConns = 0
+	cfg.defaultTransport.(*http.Transport).MaxConnsPerHost = 0
+	cfg.defaultTransport.(*http.Transport).MaxIdleConnsPerHost = 10000 // 0 would mean DefaultMaxIdleConnsPerHost, ie. 2.
+
+	return cfg
+}
+
 // NewClient makes a new Mimir client
 func NewClient(
 	distributorAddress string,
@@ -56,16 +105,17 @@ func NewClient(
 	alertmanagerAddress string,
 	rulerAddress string,
 	orgID string,
+	opts ...ClientOption,
 ) (*Client, error) {
-	// Disable compression in querier client so it's easier to debug issue looking at the HTTP responses
-	// logged by the querier.
-	querierTransport := http.DefaultTransport.(*http.Transport).Clone()
-	querierTransport.DisableCompression = true
+	cfg := defaultConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
 
 	// Create querier API client
 	querierAPIClient, err := promapi.NewClient(promapi.Config{
 		Address:      "http://" + querierAddress + "/prometheus",
-		RoundTripper: &addOrgIDRoundTripper{orgID: orgID, next: querierTransport},
+		RoundTripper: &addOrgIDRoundTripper{orgID: orgID, next: cfg.querierTransport},
 	})
 	if err != nil {
 		return nil, err
@@ -77,7 +127,7 @@ func NewClient(
 		alertmanagerAddress: alertmanagerAddress,
 		rulerAddress:        rulerAddress,
 		timeout:             5 * time.Second,
-		httpClient:          &http.Client{},
+		httpClient:          &http.Client{Transport: cfg.defaultTransport},
 		querierClient:       promv1.NewAPI(querierAPIClient),
 		orgID:               orgID,
 	}
@@ -85,7 +135,7 @@ func NewClient(
 	if alertmanagerAddress != "" {
 		alertmanagerAPIClient, err := promapi.NewClient(promapi.Config{
 			Address:      "http://" + alertmanagerAddress,
-			RoundTripper: &addOrgIDRoundTripper{orgID: orgID, next: http.DefaultTransport},
+			RoundTripper: &addOrgIDRoundTripper{orgID: orgID, next: cfg.alertmanagerTransport},
 		})
 		if err != nil {
 			return nil, err
@@ -94,6 +144,10 @@ func NewClient(
 	}
 
 	return c, nil
+}
+
+func (c *Client) SetTimeout(t time.Duration) {
+	c.timeout = t
 }
 
 // Push the input timeseries to the remote endpoint
@@ -130,9 +184,9 @@ func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 }
 
 // PushOTLP the input timeseries to the remote endpoint in OTLP format
-func (c *Client) PushOTLP(timeseries []prompb.TimeSeries) (*http.Response, error) {
+func (c *Client) PushOTLP(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) (*http.Response, error) {
 	// Create write request
-	otlpRequest := push.TimeseriesToOTLPRequest(timeseries)
+	otlpRequest := distributor.TimeseriesToOTLPRequest(timeseries, metadata)
 
 	data, err := otlpRequest.MarshalProto()
 	if err != nil {
@@ -162,13 +216,19 @@ func (c *Client) PushOTLP(timeseries []prompb.TimeSeries) (*http.Response, error
 
 // Query runs an instant query.
 func (c *Client) Query(query string, ts time.Time) (model.Value, error) {
-	value, _, err := c.querierClient.Query(context.Background(), query, ts)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	value, _, err := c.querierClient.Query(ctx, query, ts)
 	return value, err
 }
 
 // Query runs a query range.
 func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration) (model.Value, error) {
-	value, _, err := c.querierClient.QueryRange(context.Background(), query, promv1.Range{
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	value, _, err := c.querierClient.QueryRange(ctx, query, promv1.Range{
 		Start: start,
 		End:   end,
 		Step:  step,
@@ -190,9 +250,143 @@ func (c *Client) QueryRangeRaw(query string, start, end time.Time, step time.Dur
 	return c.DoGetBody(addr)
 }
 
+// RemoteRead runs a remote read query against the querier.
+// RemoteRead uses samples streaming. See RemoteReadChunks as well for chunks streaming.
+// RemoteRead returns the HTTP response with consumed body, the remote read protobuf response and an error.
+// In case the response is not a protobuf, the plaintext body content is returned instead of the protobuf message.
+func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Response, _ *prompb.QueryResult, plaintextResponse []byte, _ error) {
+	req := &prompb.ReadRequest{
+		Queries: []*prompb.Query{{
+			Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}},
+			StartTimestampMs: start.UnixMilli(),
+			EndTimestampMs:   end.UnixMilli(),
+			Hints: &prompb.ReadHints{
+				StepMs:  1,
+				StartMs: start.UnixMilli(),
+				EndMs:   end.UnixMilli(),
+			},
+		}},
+	}
+	resp, err := c.doRemoteReadReq(req)
+	if err != nil {
+		return resp, nil, nil, fmt.Errorf("making remote read request: %w", err)
+	}
+	switch contentType := resp.Header.Get("Content-Type"); contentType {
+	case "application/x-protobuf":
+		if encoding := resp.Header.Get("Content-Encoding"); encoding != "snappy" {
+			return resp, nil, nil, fmt.Errorf("remote read should return snappy-encoded protobuf; got %s %s instead", encoding, contentType)
+		}
+		queryResult, err := parseRemoteReadSamples(resp)
+		if err != nil {
+			return resp, queryResult, nil, fmt.Errorf("parsing remote read response: %w", err)
+		}
+		return resp, queryResult, nil, nil
+	case "text/plain; charset=utf-8":
+		respBytes, err := io.ReadAll(resp.Body)
+		return resp, nil, respBytes, err
+	default:
+		return resp, nil, nil, fmt.Errorf("unexpected content type %s", contentType)
+	}
+}
+
+// RemoteReadChunks runs a remote read query against the querier.
+// RemoteReadChunks uses chunks streaming. See RemoteRead as well for samples streaming.
+// RemoteReadChunks returns the HTTP response with consumed body, the remote read protobuf response and an error.
+// In case the response is not a protobuf, the plaintext body content is returned instead of the protobuf message.
+func (c *Client) RemoteReadChunks(metricName string, start, end time.Time) (_ *http.Response, _ []prompb.ChunkedReadResponse, plaintextResponse []byte, _ error) {
+	req := &prompb.ReadRequest{
+		Queries: []*prompb.Query{{
+			Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}},
+			StartTimestampMs: start.UnixMilli(),
+			EndTimestampMs:   end.UnixMilli(),
+			Hints: &prompb.ReadHints{
+				StepMs:  1,
+				StartMs: start.UnixMilli(),
+				EndMs:   end.UnixMilli(),
+			},
+		}},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+	}
+
+	resp, err := c.doRemoteReadReq(req)
+	if err != nil {
+		return resp, nil, nil, err
+	}
+	if err != nil {
+		return resp, nil, nil, fmt.Errorf("making remote read request: %w", err)
+	}
+	switch contentType := resp.Header.Get("Content-Type"); contentType {
+	case api.ContentTypeRemoteReadStreamedChunks:
+		if encoding := resp.Header.Get("Content-Encoding"); encoding != "" {
+			return resp, nil, nil, fmt.Errorf("remote read should not return Content-Encoding; got %s %s instead", encoding, contentType)
+		}
+		chunks, err := parseRemoteReadChunks(resp)
+		if err != nil {
+			return resp, chunks, nil, fmt.Errorf("parsing remote read response: %w", err)
+		}
+		return resp, chunks, nil, nil
+	case "text/plain; charset=utf-8":
+		respBytes, err := io.ReadAll(resp.Body)
+		return resp, nil, respBytes, err
+	default:
+		return resp, nil, nil, fmt.Errorf("unexpected content type %s", contentType)
+	}
+}
+
+func (c *Client) doRemoteReadReq(req *prompb.ReadRequest) (*http.Response, error) {
+	addr := fmt.Sprintf(
+		"http://%s/prometheus/api/v1/read",
+		c.querierAddress,
+	)
+
+	reqBytes, err := req.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("marshalling remote read request: %w", err)
+	}
+
+	return c.DoPost(addr, bytes.NewReader(snappy.Encode(nil, reqBytes)))
+}
+
+func parseRemoteReadSamples(resp *http.Response) (*prompb.QueryResult, error) {
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading remote read response: %w", err)
+	}
+	uncompressedBytes, err := snappy.Decode(nil, respBytes)
+	if err != nil {
+		return nil, fmt.Errorf("decompressing remote read response: %w", err)
+	}
+	response := &prompb.ReadResponse{}
+	err = response.Unmarshal(uncompressedBytes)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshalling remote read response: %w", err)
+	}
+	return response.Results[0], nil
+}
+
+func parseRemoteReadChunks(resp *http.Response) ([]prompb.ChunkedReadResponse, error) {
+	stream := remote.NewChunkedReader(resp.Body, remote.DefaultChunkedReadLimit, nil)
+
+	var results []prompb.ChunkedReadResponse
+	for {
+		var res prompb.ChunkedReadResponse
+		err := stream.NextProto(&res)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading remote read response: %w", err)
+		}
+		results = append(results, res)
+	}
+	return results, nil
+}
+
 // QueryExemplars runs an exemplar query.
 func (c *Client) QueryExemplars(query string, start, end time.Time) ([]promv1.ExemplarQueryResult, error) {
-	return c.querierClient.QueryExemplars(context.Background(), query, start, end)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+	return c.querierClient.QueryExemplars(ctx, query, start, end)
 }
 
 // QuerierAddress returns the address of the querier
@@ -207,26 +401,41 @@ func (c *Client) QueryRaw(query string) (*http.Response, []byte, error) {
 	return c.DoGetBody(addr)
 }
 
+func (c *Client) QueryRawAt(query string, ts time.Time) (*http.Response, []byte, error) {
+	addr := fmt.Sprintf("http://%s/prometheus/api/v1/query?query=%s&time=%s", c.querierAddress, url.QueryEscape(query), FormatTime(ts))
+
+	return c.DoGetBody(addr)
+}
+
 // Series finds series by label matchers.
 func (c *Client) Series(matches []string, start, end time.Time) ([]model.LabelSet, error) {
-	result, _, err := c.querierClient.Series(context.Background(), matches, start, end)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	result, _, err := c.querierClient.Series(ctx, matches, start, end)
 	return result, err
 }
 
 // LabelValues gets label values
 func (c *Client) LabelValues(label string, start, end time.Time, matches []string) (model.LabelValues, error) {
-	result, _, err := c.querierClient.LabelValues(context.Background(), label, matches, start, end)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	result, _, err := c.querierClient.LabelValues(ctx, label, matches, start, end)
 	return result, err
 }
 
 // LabelNames gets label names
 func (c *Client) LabelNames(start, end time.Time) ([]string, error) {
-	result, _, err := c.querierClient.LabelNames(context.Background(), nil, start, end)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	result, _, err := c.querierClient.LabelNames(ctx, nil, start, end)
 	return result, err
 }
 
 // LabelNamesAndValues returns distinct label values per label name.
-func (c *Client) LabelNamesAndValues(selector string, limit int) (*http.Response, error) {
+func (c *Client) LabelNamesAndValues(selector string, limit int) (*api.LabelNamesCardinalityResponse, error) {
 	body := make(url.Values)
 	if len(selector) > 0 {
 		body.Set("selector", selector)
@@ -246,12 +455,23 @@ func (c *Client) LabelNamesAndValues(selector string, limit int) (*http.Response
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	// Execute HTTP request
-	return c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	}
+	var lvalsResp api.LabelNamesCardinalityResponse
+	err = json.NewDecoder(resp.Body).Decode(&lvalsResp)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding label values response: %w", err)
+	}
+	return &lvalsResp, nil
 }
 
 // LabelValuesCardinality returns all values and series total count for each label name.
-func (c *Client) LabelValuesCardinality(labelNames []string, selector string, limit int) (*http.Response, error) {
+func (c *Client) LabelValuesCardinality(labelNames []string, selector string, limit int) (*api.LabelValuesCardinalityResponse, error) {
 	body := make(url.Values)
 	if len(selector) > 0 {
 		body.Set("selector", selector)
@@ -274,7 +494,115 @@ func (c *Client) LabelValuesCardinality(labelNames []string, selector string, li
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	// Execute HTTP request
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	}
+
+	var lvalsResp api.LabelValuesCardinalityResponse
+	err = json.NewDecoder(resp.Body).Decode(&lvalsResp)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding label values response: %w", err)
+	}
+	return &lvalsResp, nil
+}
+
+type activeSeriesRequestConfig struct {
+	method         string
+	useCompression bool
+	header         http.Header
+}
+
+type ActiveSeriesOption func(*activeSeriesRequestConfig)
+
+func WithEnableCompression() ActiveSeriesOption {
+	return func(c *activeSeriesRequestConfig) {
+		c.useCompression = true
+		c.header.Set("Accept-Encoding", "x-snappy-framed")
+	}
+}
+
+func WithRequestMethod(m string) ActiveSeriesOption {
+	return func(c *activeSeriesRequestConfig) {
+		c.method = m
+	}
+}
+
+func WithQueryShards(n int) ActiveSeriesOption {
+	return func(c *activeSeriesRequestConfig) {
+		c.header.Set("Sharding-Control", strconv.Itoa(n))
+	}
+}
+
+func (c *Client) ActiveSeries(selector string, options ...ActiveSeriesOption) (*api.ActiveSeriesResponse, error) {
+	cfg := activeSeriesRequestConfig{method: http.MethodGet, header: http.Header{"X-Scope-OrgID": []string{c.orgID}}}
+	for _, option := range options {
+		option(&cfg)
+	}
+
+	req, err := http.NewRequest(cfg.method, fmt.Sprintf("http://%s/prometheus/api/v1/cardinality/active_series", c.querierAddress), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = cfg.header
+
+	q := req.URL.Query()
+	q.Set("selector", selector)
+	switch cfg.method {
+	case http.MethodGet:
+		req.URL.RawQuery = q.Encode()
+	case http.MethodPost:
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req.Body = io.NopCloser(strings.NewReader(q.Encode()))
+	default:
+		return nil, fmt.Errorf("invalid method %s", cfg.method)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer func(body io.ReadCloser) {
+		_, _ = io.ReadAll(body)
+		_ = body.Close()
+	}(resp.Body)
+
+	var bodyReader io.Reader = resp.Body
+	if resp.Header.Get("Content-Encoding") == "x-snappy-framed" {
+		bodyReader = s2.NewReader(bodyReader)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(bodyReader)
+		return nil, fmt.Errorf("unexpected status code %d, body: %s", resp.StatusCode, body)
+	}
+
+	res := &api.ActiveSeriesResponse{}
+	err = json.NewDecoder(bodyReader).Decode(res)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding active series response: %w", err)
+	}
+	return res, nil
+}
+
+// GetPrometheusMetadata fetches the metadata from the Prometheus endpoint /api/v1/metadata.
+func (c *Client) GetPrometheusMetadata() (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/prometheus/api/v1/metadata", c.querierAddress), nil)
+
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Scope-OrgID", c.orgID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
 	return c.httpClient.Do(req.WithContext(ctx))
 }
 
@@ -292,13 +620,18 @@ func (r *addOrgIDRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 // ServerStatus represents a Alertmanager status response
 // TODO: Upgrade to Alertmanager v0.20.0+ and utilize vendored structs
 type ServerStatus struct {
-	Data struct {
-		ConfigYaml string `json:"configYAML"`
-	} `json:"data"`
+	Config struct {
+		Original string `json:"original"`
+	} `json:"config"`
+}
+
+type successResult struct {
+	Status string          `json:"status"`
+	Data   json.RawMessage `json:"data,omitempty"`
 }
 
 // GetPrometheusRules fetches the rules from the Prometheus endpoint /api/v1/rules.
-func (c *Client) GetPrometheusRules() ([]*ruler.RuleGroup, error) {
+func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 	// Create HTTP request
 	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/api/v1/rules", c.rulerAddress), nil)
 	if err != nil {
@@ -316,19 +649,21 @@ func (c *Client) GetPrometheusRules() ([]*ruler.RuleGroup, error) {
 	}
 	defer res.Body.Close()
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
 	}
 
 	// Decode the response.
 	type response struct {
-		Status string              `json:"status"`
-		Data   ruler.RuleDiscovery `json:"data"`
+		Status string `json:"status"`
+		Data   struct {
+			RuleGroups []*promv1.RuleGroup `json:"groups"`
+		} `json:"data"`
 	}
 
-	decoded := &response{}
-	if err := json.Unmarshal(body, decoded); err != nil {
+	decoded := response{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
 		return nil, err
 	}
 
@@ -360,7 +695,7 @@ func (c *Client) GetRuleGroups() (map[string][]rulefmt.RuleGroup, error) {
 	defer res.Body.Close()
 	rgs := map[string][]rulefmt.RuleGroup{}
 
-	data, err := ioutil.ReadAll(res.Body)
+	data, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -494,7 +829,7 @@ func (c *Client) getRawPage(ctx context.Context, url string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	content, err := ioutil.ReadAll(resp.Body)
+	content, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -540,7 +875,7 @@ func (c *Client) doAlertmanagerRequest(ctx context.Context, method string, path 
 
 // GetAlertmanagerConfig gets the status of an alertmanager instance
 func (c *Client) GetAlertmanagerConfig(ctx context.Context) (*alertConfig.Config, error) {
-	u := c.alertmanagerClient.URL("/alertmanager/api/v1/status", nil)
+	u := c.alertmanagerClient.URL("/alertmanager/api/v2/status", nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -567,7 +902,7 @@ func (c *Client) GetAlertmanagerConfig(ctx context.Context) (*alertConfig.Config
 	}
 
 	cfg := &alertConfig.Config{}
-	err = yaml.Unmarshal([]byte(ss.Data.ConfigYaml), cfg)
+	err = yaml.Unmarshal([]byte(ss.Config.Original), cfg)
 
 	return cfg, err
 }
@@ -629,34 +964,8 @@ func (c *Client) DeleteAlertmanagerConfig(ctx context.Context) error {
 	return nil
 }
 
-// SendAlertToAlermanager sends alerts to the Alertmanager API
-func (c *Client) SendAlertToAlermanager(ctx context.Context, alert *model.Alert) error {
-	u := c.alertmanagerClient.URL("/alertmanager/api/v1/alerts", nil)
-
-	data, err := json.Marshal([]types.Alert{{Alert: *alert}})
-	if err != nil {
-		return fmt.Errorf("error marshaling the alert: %v", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("error creating request: %v", err)
-	}
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("sending alert failed with status %d and error %v", resp.StatusCode, string(body))
-	}
-
-	return nil
-}
-
-func (c *Client) GetAlertsV1(ctx context.Context) ([]model.Alert, error) {
-	u := c.alertmanagerClient.URL("alertmanager/api/v1/alerts", nil)
+func (c *Client) GetGrafanaAlertmanagerConfig(ctx context.Context) (*alertmanager.UserGrafanaConfig, error) {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -673,27 +982,203 @@ func (c *Client) GetAlertsV1(ctx context.Context) ([]model.Alert, error) {
 	}
 
 	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("getting alerts failed with status %d and error %v", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("getting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
 	}
 
-	type response struct {
-		Status string        `json:"status"`
-		Data   []model.Alert `json:"data"`
-	}
-
-	decoded := &response{}
-	if err := json.Unmarshal(body, decoded); err != nil {
+	var sr *successResult
+	err = json.Unmarshal(body, &sr)
+	if err != nil {
 		return nil, err
 	}
 
-	if decoded.Status != "success" {
-		return nil, fmt.Errorf("unexpected response status '%s'", decoded.Status)
+	var ugc *alertmanager.UserGrafanaConfig
+	err = json.Unmarshal(sr.Data, &ugc)
+	if err != nil {
+		return nil, err
 	}
 
-	return decoded.Data, nil
+	return ugc, err
 }
 
-func (c *Client) GetAlertsV2(ctx context.Context) ([]model.Alert, error) {
+func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTimestamp int64, cfg, hash string, isDefault bool) error {
+	var grafanaConfig alertmanager.GrafanaAlertmanagerConfig
+	if err := json.Unmarshal([]byte(cfg), &grafanaConfig); err != nil {
+		return err
+	}
+
+	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
+	data, err := json.Marshal(&alertmanager.UserGrafanaConfig{
+		GrafanaAlertmanagerConfig: grafanaConfig,
+		Hash:                      hash,
+		CreatedAt:                 createdAtTimestamp,
+		Default:                   isDefault,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("setting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) DeleteGrafanaAlertmanagerConfig(ctx context.Context) error {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
+	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("deleting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) GetGrafanaAlertmanagerState(ctx context.Context) (*alertmanager.UserGrafanaState, error) {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("getting grafana state failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	var sr *successResult
+	err = json.Unmarshal(body, &sr)
+	if err != nil {
+		return nil, err
+	}
+
+	var ugs *alertmanager.UserGrafanaState
+	err = json.Unmarshal(sr.Data, &ugs)
+	if err != nil {
+		return nil, err
+	}
+
+	return ugs, err
+}
+
+func (c *Client) SetGrafanaAlertmanagerState(ctx context.Context, state string) error {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
+
+	data, err := json.Marshal(&alertmanager.UserGrafanaState{
+		State: state,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("setting grafana state failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) DeleteGrafanaAlertmanagerState(ctx context.Context) error {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
+	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("deleting grafana state failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// SendAlertToAlermanager sends alerts to the Alertmanager API
+func (c *Client) SendAlertToAlermanager(ctx context.Context, alert *model.Alert) error {
+	u := c.alertmanagerClient.URL("/alertmanager/api/v2/alerts", nil)
+
+	data, err := json.Marshal([]types.Alert{{Alert: *alert}})
+	if err != nil {
+		return fmt.Errorf("error marshaling the alert: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("sending alert failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) GetAlerts(ctx context.Context) ([]model.Alert, error) {
 	u := c.alertmanagerClient.URL("alertmanager/api/v2/alerts", nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
@@ -757,7 +1242,7 @@ func (c *Client) GetAlertGroups(ctx context.Context) ([]AlertGroup, error) {
 
 // CreateSilence creates a new silence and returns the unique identifier of the silence.
 func (c *Client) CreateSilence(ctx context.Context, silence types.Silence) (string, error) {
-	u := c.alertmanagerClient.URL("alertmanager/api/v1/silences", nil)
+	u := c.alertmanagerClient.URL("alertmanager/api/v2/silences", nil)
 
 	data, err := json.Marshal(silence)
 	if err != nil {
@@ -768,6 +1253,7 @@ func (c *Client) CreateSilence(ctx context.Context, silence types.Silence) (stri
 	if err != nil {
 		return "", fmt.Errorf("error creating request: %v", err)
 	}
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
 	if err != nil {
@@ -779,63 +1265,18 @@ func (c *Client) CreateSilence(ctx context.Context, silence types.Silence) (stri
 	}
 
 	type response struct {
-		Status string `json:"status"`
-		Data   struct {
-			SilenceID string `json:"silenceID"`
-		} `json:"data"`
+		SilenceID string `json:"silenceID"`
 	}
 
-	decoded := &response{}
-	if err := json.Unmarshal(body, decoded); err != nil {
+	decoded := response{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
 		return "", err
 	}
 
-	if decoded.Status != "success" {
-		return "", fmt.Errorf("unexpected response status '%s'", decoded.Status)
-	}
-
-	return decoded.Data.SilenceID, nil
+	return decoded.SilenceID, nil
 }
 
-func (c *Client) GetSilencesV1(ctx context.Context) ([]types.Silence, error) {
-	u := c.alertmanagerClient.URL("alertmanager/api/v1/silences", nil)
-
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
-	}
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrNotFound
-	}
-
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("getting silences failed with status %d and error %v", resp.StatusCode, string(body))
-	}
-
-	type response struct {
-		Status string          `json:"status"`
-		Data   []types.Silence `json:"data"`
-	}
-
-	decoded := &response{}
-	if err := json.Unmarshal(body, decoded); err != nil {
-		return nil, err
-	}
-
-	if decoded.Status != "success" {
-		return nil, fmt.Errorf("unexpected response status '%s'", decoded.Status)
-	}
-
-	return decoded.Data, nil
-}
-
-func (c *Client) GetSilencesV2(ctx context.Context) ([]types.Silence, error) {
+func (c *Client) GetSilences(ctx context.Context) ([]types.Silence, error) {
 	u := c.alertmanagerClient.URL("alertmanager/api/v2/silences", nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
@@ -864,45 +1305,7 @@ func (c *Client) GetSilencesV2(ctx context.Context) ([]types.Silence, error) {
 	return decoded, nil
 }
 
-func (c *Client) GetSilenceV1(ctx context.Context, id string) (types.Silence, error) {
-	u := c.alertmanagerClient.URL(fmt.Sprintf("alertmanager/api/v1/silence/%s", url.PathEscape(id)), nil)
-
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		return types.Silence{}, fmt.Errorf("error creating request: %v", err)
-	}
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return types.Silence{}, err
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return types.Silence{}, ErrNotFound
-	}
-
-	if resp.StatusCode/100 != 2 {
-		return types.Silence{}, fmt.Errorf("getting silence failed with status %d and error %v", resp.StatusCode, string(body))
-	}
-
-	type response struct {
-		Status string        `json:"status"`
-		Data   types.Silence `json:"data"`
-	}
-
-	decoded := &response{}
-	if err := json.Unmarshal(body, decoded); err != nil {
-		return types.Silence{}, err
-	}
-
-	if decoded.Status != "success" {
-		return types.Silence{}, fmt.Errorf("unexpected response status '%s'", decoded.Status)
-	}
-
-	return decoded.Data, nil
-}
-
-func (c *Client) GetSilenceV2(ctx context.Context, id string) (types.Silence, error) {
+func (c *Client) GetSilence(ctx context.Context, id string) (types.Silence, error) {
 	u := c.alertmanagerClient.URL(fmt.Sprintf("alertmanager/api/v2/silence/%s", url.PathEscape(id)), nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
@@ -932,7 +1335,7 @@ func (c *Client) GetSilenceV2(ctx context.Context, id string) (types.Silence, er
 }
 
 func (c *Client) DeleteSilence(ctx context.Context, id string) error {
-	u := c.alertmanagerClient.URL(fmt.Sprintf("alertmanager/api/v1/silence/%s", url.PathEscape(id)), nil)
+	u := c.alertmanagerClient.URL(fmt.Sprintf("alertmanager/api/v2/silence/%s", url.PathEscape(id)), nil)
 
 	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
 	if err != nil {
@@ -956,7 +1359,7 @@ func (c *Client) DeleteSilence(ctx context.Context, id string) error {
 }
 
 func (c *Client) GetReceivers(ctx context.Context) ([]string, error) {
-	u := c.alertmanagerClient.URL("alertmanager/api/v1/receivers", nil)
+	u := c.alertmanagerClient.URL("alertmanager/api/v2/receivers", nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -976,21 +1379,20 @@ func (c *Client) GetReceivers(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("getting receivers failed with status %d and error %v", resp.StatusCode, string(body))
 	}
 
-	type response struct {
-		Status string   `json:"status"`
-		Data   []string `json:"data"`
+	type response []struct {
+		Name string `json:"name"`
 	}
 
-	decoded := &response{}
-	if err := json.Unmarshal(body, decoded); err != nil {
+	decoded := response{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
 		return nil, err
 	}
 
-	if decoded.Status != "success" {
-		return nil, fmt.Errorf("unexpected response status '%s'", decoded.Status)
+	var receivers []string
+	for _, v := range decoded {
+		receivers = append(receivers, v.Name)
 	}
-
-	return decoded.Data, nil
+	return receivers, nil
 }
 
 // DoGet performs a HTTP GET request towards the supplied URL. The request
@@ -1010,7 +1412,7 @@ func (c *Client) DoGetBody(url string) (*http.Response, []byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1023,6 +1425,24 @@ func (c *Client) DoGetBody(url string) (*http.Response, []byte, error) {
 // timeout configured by the client object.
 func (c *Client) DoPost(url string, body io.Reader) (*http.Response, error) {
 	return c.doRequest("POST", url, body)
+}
+
+// DoPostBody performs a HTTP POST request towards the supplied URL and returns
+// the full response body. The request contains the X-Scope-OrgID header and
+// the timeout configured by the client object.
+func (c *Client) DoPostBody(url string, body io.Reader) (*http.Response, []byte, error) {
+	resp, err := c.DoPost(url, body)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return resp, respBytes, nil
 }
 
 func (c *Client) doRequest(method, url string, body io.Reader) (*http.Response, error) {
@@ -1041,4 +1461,8 @@ func (c *Client) doRequest(method, url string, body io.Reader) (*http.Response, 
 // FormatTime converts a time to a string acceptable by the Prometheus API.
 func FormatTime(t time.Time) string {
 	return strconv.FormatFloat(float64(t.Unix())+float64(t.Nanosecond())/1e9, 'f', -1, 64)
+}
+
+func (c *Client) CloseIdleConnections() {
+	c.httpClient.CloseIdleConnections()
 }

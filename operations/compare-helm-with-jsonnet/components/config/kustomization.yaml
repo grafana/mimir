@@ -11,16 +11,6 @@ patches:
       kind: MimirConfig
     path: ./common-config.yaml
 
-  # TODO: Compactor differences
-  - target:
-      kind: MimirConfig
-    path: ./compactor-config.yaml
-
-  # TODO: Read path differences
-  - target:
-      kind: MimirConfig
-    path: ./read-path-config.yaml
-
   # TODO: Write path differences
   - target:
       kind: MimirConfig
@@ -34,7 +24,14 @@ patches:
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|query-frontend'
+      name: 'alertmanager|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/compactor
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|query-frontend|query-scheduler'
     patch: |-
       - op: remove
         path: /config/blocks_storage/bucket_store/index_cache
@@ -43,21 +40,63 @@ patches:
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|query-frontend'
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|query-frontend|query-scheduler'
     patch: |-
       - op: remove
         path: /config/blocks_storage/bucket_store/metadata_cache
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|store-gateway'
+      name: 'ruler|querier'
     patch: |-
       - op: remove
-        path: /config/frontend
+        path: /config/blocks_storage/bucket_store/metadata_cache/memcached/max_idle_connections
+
+  # Do not check the TSDB settings on any component different than ingester (it's irrelevant).
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|overrides-exporter|querier|ruler|query-frontend|query-scheduler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/blocks_storage/tsdb/head_compaction_interval
+      - op: remove
+        path: /config/blocks_storage/tsdb/wal_replay_concurrency
+
+  # Do not check the ruler storage settings on any component different than ruler (it's irrelevant).
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/ruler_storage
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|store-gateway|query-frontend|overrides-exporter'
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|store-gateway|query-scheduler'
+    patch: |-
+      - op: remove
+        path: /config/frontend
+      - op: remove
+        path: /config/limits/max_cache_freshness
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|ruler|store-gateway|query-scheduler|query-frontend'
+    patch: |-
+      - op: remove
+        path: /config/frontend_worker
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|overrides-exporter|querier|query-frontend|query-scheduler|ruler|store-gateway'
+    patch: |-
+      # Jsonnet configures the ingester ring heartbeat period only on the ingester (other components don't need it).
+      - op: remove
+        path: /config/ingester/ring/heartbeat_period
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|store-gateway|query-frontend|query-scheduler|overrides-exporter'
     patch: |-
       - op: remove
         path: /config/ingester
@@ -68,3 +107,102 @@ patches:
     patch: |-
       - op: remove
         path: /config/memberlist
+
+  - target:
+      kind: MimirConfig
+      name: 'distributor|querier|ruler'
+    patch: |-
+      - op: remove
+        path: /config/ingester/ring/tokens_file_path
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler'
+    patch: |-
+      - op: remove
+        path: /config/store_gateway/sharding_ring/tokens_file_path
+      - op: remove
+        path: /config/store_gateway/sharding_ring/wait_stability_min_duration
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|ruler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/query_scheduler
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|query-frontend|query-scheduler|ruler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/querier/max_concurrent
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-scheduler|ruler|store-gateway'
+    patch: |-
+      # These limits apply only to query-frontend
+      - op: remove
+        path: /config/limits/max_query_parallelism
+      - op: remove
+        path: /config/limits/max_total_query_length
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler|store-gateway'
+    patch: |-
+      # Helm sets it to helm, jsonnet sets it to jsonnet
+      - op: remove
+        path: /config/usage_stats/installation_mode
+
+  - target:
+      kind: MimirConfig
+      name: 'compactor'
+    patch: |-
+      # Jsonnet sets this limit to 1, which makes sense in a cloud, multi-tenant environment
+      # By default, it probably makes more sense for tenants to use all compactors
+      # This makes it simpler to just scale up the compactor and improve compaction time
+      - op: remove
+        path: /config/limits/compactor_tenant_shard_size
+
+  - target:
+      kind: MimirConfig
+      name: 'compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/alertmanager/fallback_config_file
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler|store-gateway'
+    patch: |-
+      # Jsonnet configures the distributor ring only on the distributor (other components don't need it).
+      - op: remove
+        path: /config/distributor/ring/heartbeat_period
+      - op: remove
+        path: /config/distributor/ring/heartbeat_timeout
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler'
+    patch: |-
+      # Jsonnet doesn't set this on non-store-gateway components
+      - op: remove
+        path: /config/store_gateway/sharding_ring/unregister_on_shutdown
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler'
+    patch: |-
+      # Jsonnet configures the store-gateway ring heartbeat period only on the store-gateway (other components don't need it).
+      - op: remove
+        path: /config/store_gateway/sharding_ring/heartbeat_period
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|query-frontend|query-scheduler'
+    patch: |-
+      # Jsonnet configures the store-gateway ring heartbeat timeout only on components using the store-gateway ring (store-gateway, querier, ruler).
+      - op: remove
+        path: /config/store_gateway/sharding_ring/heartbeat_timeout

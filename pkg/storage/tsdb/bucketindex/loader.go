@@ -16,17 +16,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util"
-)
-
-const (
-	// readIndexTimeout is the maximum allowed time when reading a single bucket index
-	// from the storage. It's hard-coded to a reasonably high value.
-	readIndexTimeout = 15 * time.Second
 )
 
 type LoaderConfig struct {
@@ -114,9 +108,13 @@ func (l *Loader) GetIndex(ctx context.Context, userID string) (*Index, error) {
 	l.loadAttempts.Inc()
 	idx, err := ReadIndex(ctx, l.bkt, userID, l.cfgProvider, l.logger)
 	if err != nil {
-		// Cache the error, to avoid hammering the object store in case of persistent issues
-		// (eg. corrupted bucket index or not existing).
-		l.cacheIndex(userID, nil, err)
+		if !errors.Is(err, context.Canceled) {
+			// Cache the error, to avoid hammering the object store in case of persistent issues
+			// (eg. corrupted bucket index or not existing).
+			// Don't cache context.Canceled errors, as they are caused by the individual query, and we don't want to
+			// continue failing queries on them.
+			l.cacheIndex(userID, nil, err)
+		}
 
 		if errors.Is(err, ErrIndexNotFound) {
 			level.Warn(l.logger).Log("msg", "bucket index not found", "user", userID)
@@ -195,12 +193,9 @@ func (l *Loader) checkCachedIndexesToUpdateAndDelete() (toUpdate, toDelete []str
 }
 
 func (l *Loader) updateCachedIndex(ctx context.Context, userID string) {
-	readCtx, cancel := context.WithTimeout(ctx, readIndexTimeout)
-	defer cancel()
-
 	l.loadAttempts.Inc()
 	startTime := time.Now()
-	idx, err := ReadIndex(readCtx, l.bkt, userID, l.cfgProvider, l.logger)
+	idx, err := ReadIndex(ctx, l.bkt, userID, l.cfgProvider, l.logger)
 	if err != nil && !errors.Is(err, ErrIndexNotFound) {
 		l.loadFailures.Inc()
 		level.Warn(l.logger).Log("msg", "unable to update bucket index", "user", userID, "err", err)

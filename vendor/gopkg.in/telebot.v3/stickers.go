@@ -5,20 +5,29 @@ import (
 	"strconv"
 )
 
+type StickerSetType = string
+
+const (
+	StickerRegular     = "regular"
+	StickerMask        = "mask"
+	StickerCustomEmoji = "custom_emoji"
+)
+
 // StickerSet represents a sticker set.
 type StickerSet struct {
-	Name          string        `json:"name"`
-	Title         string        `json:"title"`
-	Animated      bool          `json:"is_animated"`
-	Video         bool          `json:"is_video"`
-	Stickers      []Sticker     `json:"stickers"`
-	Thumbnail     *Photo        `json:"thumb"`
-	PNG           *File         `json:"png_sticker"`
-	TGS           *File         `json:"tgs_sticker"`
-	WebM          *File         `json:"webm_sticker"`
-	Emojis        string        `json:"emojis"`
-	ContainsMasks bool          `json:"contains_masks"`
-	MaskPosition  *MaskPosition `json:"mask_position"`
+	Type          StickerSetType `json:"sticker_type"`
+	Name          string         `json:"name"`
+	Title         string         `json:"title"`
+	Animated      bool           `json:"is_animated"`
+	Video         bool           `json:"is_video"`
+	Stickers      []Sticker      `json:"stickers"`
+	Thumbnail     *Photo         `json:"thumb"`
+	PNG           *File          `json:"png_sticker"`
+	TGS           *File          `json:"tgs_sticker"`
+	WebM          *File          `json:"webm_sticker"`
+	Emojis        string         `json:"emojis"`
+	ContainsMasks bool           `json:"contains_masks"` // FIXME: can be removed
+	MaskPosition  *MaskPosition  `json:"mask_position"`
 }
 
 // MaskPosition describes the position on faces where
@@ -29,6 +38,16 @@ type MaskPosition struct {
 	YShift  float32     `json:"y_shift"`
 	Scale   float32     `json:"scale"`
 }
+
+// MaskFeature defines sticker mask position.
+type MaskFeature string
+
+const (
+	FeatureForehead MaskFeature = "forehead"
+	FeatureEyes     MaskFeature = "eyes"
+	FeatureMouth    MaskFeature = "mouth"
+	FeatureChin     MaskFeature = "chin"
+)
 
 // UploadSticker uploads a PNG file with a sticker for later use.
 func (b *Bot) UploadSticker(to Recipient, png *File) (*File, error) {
@@ -84,6 +103,7 @@ func (b *Bot) CreateStickerSet(to Recipient, s StickerSet) error {
 
 	params := map[string]string{
 		"user_id":        to.Recipient(),
+		"sticker_type":   s.Type,
 		"name":           s.Name,
 		"title":          s.Title,
 		"emojis":         s.Emojis,
@@ -167,4 +187,26 @@ func (b *Bot) SetStickerSetThumb(to Recipient, s StickerSet) error {
 
 	_, err := b.sendFiles("setStickerSetThumb", files, params)
 	return err
+}
+
+// CustomEmojiStickers returns the information about custom emoji stickers by their ids.
+func (b *Bot) CustomEmojiStickers(ids []string) ([]Sticker, error) {
+	data, _ := json.Marshal(ids)
+
+	params := map[string]string{
+		"custom_emoji_ids": string(data),
+	}
+
+	data, err := b.Raw("getCustomEmojiStickers", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Result []Sticker
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, wrapError(err)
+	}
+	return resp.Result, nil
 }

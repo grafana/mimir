@@ -1,0 +1,105 @@
+---
+# Source: mimir-distributed/templates/gateway/gateway-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    {}
+  labels:
+    app: enterprise-metrics-gateway
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  name: test-enterprise-legacy-label-values-enterprise-metrics-gateway
+  namespace: "citestns"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-metrics-gateway
+      release: test-enterprise-legacy-label-values
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: enterprise-metrics-gateway
+        name: gateway
+        target: gateway
+        release: test-enterprise-legacy-label-values
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=gateway"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: license
+              mountPath: /license
+            - name: tmp
+              mountPath: /data
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 15
+            timeoutSeconds: 1
+          resources:
+            {}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-gateway
+            release: test-enterprise-legacy-label-values
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-config
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-legacy-label-values-enterprise-metrics-runtime
+        - name: tmp
+          emptyDir: {}
+        - name: license
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-license
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

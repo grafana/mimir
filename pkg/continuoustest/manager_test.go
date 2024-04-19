@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/modules"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -24,12 +25,12 @@ func (d *dummyTest) Name() string {
 }
 
 // Init implements Test.
-func (d *dummyTest) Init(ctx context.Context, now time.Time) error {
+func (d *dummyTest) Init(_ context.Context, _ time.Time) error {
 	return nil
 }
 
 // Run implements Test.
-func (d *dummyTest) Run(ctx context.Context, now time.Time) error {
+func (d *dummyTest) Run(_ context.Context, _ time.Time) error {
 	d.runs++
 	return d.err
 }
@@ -72,7 +73,7 @@ func TestManager_SmokeTest(t *testing.T) {
 		defer cancel()
 		err := manager.Run(ctx)
 
-		require.NoError(t, err)
+		require.EqualError(t, err, modules.ErrStopProcess.Error())
 		require.Equal(t, dummyTest.runs, 1)
 	})
 

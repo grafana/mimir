@@ -10,7 +10,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 )
 
 type PrefixedBucketClient struct {
@@ -76,6 +76,11 @@ func (b *PrefixedBucketClient) Exists(ctx context.Context, name string) (bool, e
 // IsObjNotFoundErr returns true if error means that object is not found. Relevant to Get operations.
 func (b *PrefixedBucketClient) IsObjNotFoundErr(err error) bool {
 	return b.bucket.IsObjNotFoundErr(err)
+}
+
+// IsAccessDeniedErr returns true if access to an operation is denied
+func (b *PrefixedBucketClient) IsAccessDeniedErr(err error) bool {
+	return b.bucket.IsAccessDeniedErr(err)
 }
 
 // Attributes returns attributes of the specified object.

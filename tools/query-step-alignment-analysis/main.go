@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -123,7 +124,7 @@ func main() {
 	var qs QueryStat
 
 	for {
-		if err := dec.Decode(&qs); err == io.EOF {
+		if err := dec.Decode(&qs); errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			log.Print("warning: ", err)

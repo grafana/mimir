@@ -27,10 +27,13 @@ import (
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/dispatch"
+	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/inhibit"
 	"github.com/prometheus/alertmanager/nflog"
 	"github.com/prometheus/alertmanager/notify"
+	"github.com/prometheus/alertmanager/notify/discord"
 	"github.com/prometheus/alertmanager/notify/email"
+	"github.com/prometheus/alertmanager/notify/msteams"
 	"github.com/prometheus/alertmanager/notify/opsgenie"
 	"github.com/prometheus/alertmanager/notify/pagerduty"
 	"github.com/prometheus/alertmanager/notify/pushover"
@@ -38,6 +41,7 @@ import (
 	"github.com/prometheus/alertmanager/notify/sns"
 	"github.com/prometheus/alertmanager/notify/telegram"
 	"github.com/prometheus/alertmanager/notify/victorops"
+	"github.com/prometheus/alertmanager/notify/webex"
 	"github.com/prometheus/alertmanager/notify/webhook"
 	"github.com/prometheus/alertmanager/notify/wechat"
 	"github.com/prometheus/alertmanager/provider/mem"
@@ -76,6 +80,7 @@ type Config struct {
 	MaxConcurrentGetRequestsPerTenant int
 	ExternalURL                       *url.URL
 	Limits                            Limits
+	Features                          featurecontrol.Flagger
 
 	// Tenant-specific local directory where AM can store its state (notifications, silences, templates). When AM is stopped, entire dir is removed.
 	TenantDataDir string
@@ -101,7 +106,7 @@ type Alertmanager struct {
 	dispatcher      *dispatch.Dispatcher
 	inhibitor       *inhibit.Inhibitor
 	pipelineBuilder *notify.PipelineBuilder
-	stop            chan struct{}
+	maintenanceStop chan struct{}
 	wg              sync.WaitGroup
 	mux             *http.ServeMux
 	registry        *prometheus.Registry
@@ -130,6 +135,7 @@ func init() {
 		// Since this is not a "normal" Alertmanager which reads its config
 		// from disk, we just accept and ignore web-based reload signals. Config
 		// updates are only applied externally via ApplyConfig().
+		// nolint:revive // We want to drain the channel, we don't need to do anything inside the loop body.
 		for range webReload {
 		}
 	}()
@@ -167,9 +173,9 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	}
 
 	am := &Alertmanager{
-		cfg:    cfg,
-		logger: log.With(cfg.Logger, "user", cfg.UserID),
-		stop:   make(chan struct{}),
+		cfg:             cfg,
+		logger:          log.With(cfg.Logger, "user", cfg.UserID),
+		maintenanceStop: make(chan struct{}),
 		configHashMetric: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "alertmanager_config_hash",
 			Help: "Hash of the currently loaded alertmanager configuration.",
@@ -186,18 +192,24 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, am.logger, am.registry)
 	am.persister = newStatePersister(cfg.PersisterConfig, cfg.UserID, am.state, cfg.Store, am.logger, am.registry)
 
-	am.wg.Add(1)
 	var err error
-	am.nflog, err = nflog.New(
-		nflog.WithRetention(cfg.Retention),
-		nflog.WithSnapshot(filepath.Join(cfg.TenantDataDir, notificationLogSnapshot)),
-		nflog.WithMaintenance(maintenancePeriod, am.stop, am.wg.Done, nil),
-		nflog.WithMetrics(am.registry),
-		nflog.WithLogger(log.With(am.logger, "component", "nflog")),
-	)
+	snapshotFile := filepath.Join(cfg.TenantDataDir, notificationLogSnapshot)
+	am.nflog, err = nflog.New(nflog.Options{
+		SnapshotFile: snapshotFile,
+		Retention:    cfg.Retention,
+		Logger:       log.With(am.logger, "component", "nflog"),
+		Metrics:      am.registry,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create notification log: %v", err)
 	}
+
+	// Run the nflog maintenance in a dedicated goroutine.
+	am.wg.Add(1)
+	go func() {
+		am.nflog.Maintenance(maintenancePeriod, snapshotFile, am.maintenanceStop, nil)
+		am.wg.Done()
+	}()
 
 	c := am.state.AddState("nfl:"+cfg.UserID, am.nflog, am.registry)
 	am.nflog.SetBroadcast(c.Broadcast)
@@ -227,11 +239,12 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		return nil, errors.Wrap(err, "failed to start state persister service")
 	}
 
-	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry)
+	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry, cfg.Features)
 
+	// Run the silences maintenance in a dedicated goroutine.
 	am.wg.Add(1)
 	go func() {
-		am.silences.Maintenance(maintenancePeriod, silencesFile, am.stop, nil)
+		am.silences.Maintenance(maintenancePeriod, silencesFile, am.maintenanceStop, nil)
 		am.wg.Done()
 	}()
 
@@ -240,7 +253,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		callback = newAlertsLimiter(am.cfg.UserID, am.cfg.Limits, reg)
 	}
 
-	am.alerts, err = mem.NewAlerts(context.Background(), am.marker, 30*time.Minute, callback, am.logger)
+	am.alerts, err = mem.NewAlerts(context.Background(), am.marker, 30*time.Minute, callback, am.logger, reg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create alerts: %v", err)
 	}
@@ -311,7 +324,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		templateFiles[i] = templateFilepath
 	}
 
-	tmpl, err := template.FromGlobs(templateFiles...)
+	tmpl, err := template.FromGlobs(templateFiles, WithCustomFunctions(userID))
 	if err != nil {
 		return err
 	}
@@ -359,17 +372,22 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		return nil
 	}
 
-	muteTimes := make(map[string][]timeinterval.TimeInterval, len(conf.MuteTimeIntervals))
+	timeIntervals := make(map[string][]timeinterval.TimeInterval, len(conf.MuteTimeIntervals)+len(conf.TimeIntervals))
 	for _, ti := range conf.MuteTimeIntervals {
-		muteTimes[ti.Name] = ti.TimeIntervals
+		timeIntervals[ti.Name] = ti.TimeIntervals
 	}
+
+	for _, ti := range conf.TimeIntervals {
+		timeIntervals[ti.Name] = ti.TimeIntervals
+	}
+	intervener := timeinterval.NewIntervener(timeIntervals)
 
 	pipeline := am.pipelineBuilder.New(
 		integrationsMap,
 		waitFunc,
 		am.inhibitor,
 		silence.NewSilencer(am.silences, am.marker, am.logger),
-		muteTimes,
+		intervener,
 		am.nflog,
 		am.state,
 	)
@@ -406,7 +424,7 @@ func (am *Alertmanager) Stop() {
 	am.state.StopAsync()
 
 	am.alerts.Close()
-	close(am.stop)
+	close(am.maintenanceStop)
 }
 
 func (am *Alertmanager) StopAndWait() {
@@ -433,7 +451,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a
 // list of receiver config.
-func buildIntegrationsMap(nc []*config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
+func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
 	integrationsMap := make(map[string][]notify.Integration, len(nc))
 	for _, rcv := range nc {
 		integrations, err := buildReceiverIntegrations(rcv, tmpl, firewallDialer, logger, notifierWrapper)
@@ -448,7 +466,7 @@ func buildIntegrationsMap(nc []*config.Receiver, tmpl *template.Template, firewa
 // buildReceiverIntegrations builds a list of integration notifiers off of a
 // receiver config.
 // Taken from https://github.com/prometheus/alertmanager/blob/94d875f1227b29abece661db1a68c001122d1da5/cmd/alertmanager/main.go#L112-L159.
-func buildReceiverIntegrations(nc *config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]notify.Integration, error) {
+func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]notify.Integration, error) {
 	var (
 		errs         types.MultiError
 		integrations []notify.Integration
@@ -459,7 +477,7 @@ func buildReceiverIntegrations(nc *config.Receiver, tmpl *template.Template, fir
 				return
 			}
 			n = wrapper(name, n)
-			integrations = append(integrations, notify.NewIntegration(n, rs, name, i))
+			integrations = append(integrations, notify.NewIntegration(n, rs, name, i, nc.Name))
 		}
 	)
 
@@ -497,6 +515,15 @@ func buildReceiverIntegrations(nc *config.Receiver, tmpl *template.Template, fir
 	}
 	for i, c := range nc.TelegramConfigs {
 		add("telegram", i, c, func(l log.Logger) (notify.Notifier, error) { return telegram.New(c, tmpl, l, httpOps...) })
+	}
+	for i, c := range nc.DiscordConfigs {
+		add("discord", i, c, func(l log.Logger) (notify.Notifier, error) { return discord.New(c, tmpl, l, httpOps...) })
+	}
+	for i, c := range nc.WebexConfigs {
+		add("webex", i, c, func(l log.Logger) (notify.Notifier, error) { return webex.New(c, tmpl, l, httpOps...) })
+	}
+	for i, c := range nc.MSTeamsConfigs {
+		add("msteams", i, c, func(l log.Logger) (notify.Notifier, error) { return msteams.New(c, tmpl, l, httpOps...) })
 	}
 	// If we add support for more integrations, we need to add them to validation as well. See validation.allowedIntegrationNames field.
 	if errs.Len() > 0 {

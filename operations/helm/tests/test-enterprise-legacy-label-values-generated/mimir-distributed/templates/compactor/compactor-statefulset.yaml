@@ -1,0 +1,119 @@
+---
+# Source: mimir-distributed/templates/compactor/compactor-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-compactor
+  labels:
+    app: enterprise-metrics-compactor
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  podManagementPolicy: OrderedReady
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-metrics-compactor
+      release: test-enterprise-legacy-label-values
+  updateStrategy:
+    type: RollingUpdate
+  serviceName: test-enterprise-legacy-label-values-enterprise-metrics-compactor
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
+  template:
+    metadata:
+      labels:
+        app: enterprise-metrics-compactor
+        name: compactor
+        gossip_ring_member: "true"
+        target: compactor
+        release: test-enterprise-legacy-label-values
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-compactor
+            release: test-enterprise-legacy-label-values
+      terminationGracePeriodSeconds: 900
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-config
+        - name: license
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-license
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-legacy-label-values-enterprise-metrics-runtime
+        - name: active-queries
+          emptyDir: {}
+      containers:
+        - name: compactor
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=compactor"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: storage
+              mountPath: "/data"
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 60
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:

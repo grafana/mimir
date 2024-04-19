@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,14 +14,18 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/mimir/pkg/cardinality"
+	pkg_distributor "github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -44,21 +48,21 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
 	body := recorder.Result().Body
 	defer body.Close()
-	responseBody := LabelNamesCardinalityResponse{}
-	bodyContent, err := ioutil.ReadAll(body)
+	responseBody := api.LabelNamesCardinalityResponse{}
+	bodyContent, err := io.ReadAll(body)
 	require.NoError(t, err)
 	err = json.Unmarshal(bodyContent, &responseBody)
 	require.NoError(t, err)
 	require.Equal(t, 4, responseBody.LabelNamesCount)
 	require.Equal(t, 8, responseBody.LabelValuesCountTotal)
 	require.Len(t, responseBody.Cardinality, 4)
-	require.Equal(t, responseBody.Cardinality[0], &LabelNamesCardinalityItem{LabelName: "label-z", LabelValuesCount: 3},
+	require.Equal(t, responseBody.Cardinality[0], &api.LabelNamesCardinalityItem{LabelName: "label-z", LabelValuesCount: 3},
 		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
-	require.Equal(t, responseBody.Cardinality[1], &LabelNamesCardinalityItem{LabelName: "label-a", LabelValuesCount: 2},
+	require.Equal(t, responseBody.Cardinality[1], &api.LabelNamesCardinalityItem{LabelName: "label-a", LabelValuesCount: 2},
 		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
-	require.Equal(t, responseBody.Cardinality[2], &LabelNamesCardinalityItem{LabelName: "label-b", LabelValuesCount: 2},
+	require.Equal(t, responseBody.Cardinality[2], &api.LabelNamesCardinalityItem{LabelName: "label-b", LabelValuesCount: 2},
 		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
-	require.Equal(t, responseBody.Cardinality[3], &LabelNamesCardinalityItem{LabelName: "label-c", LabelValuesCount: 1},
+	require.Equal(t, responseBody.Cardinality[3], &api.LabelNamesCardinalityItem{LabelName: "label-c", LabelValuesCount: 1},
 		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
 }
 
@@ -82,8 +86,8 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 			name:     "selector with metric name to be parse",
 			selector: "metric{env!='prod'}",
 			expectedMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchNotEqual, "env", "prod"),
 				labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric"),
+				labels.MustNewMatcher(labels.MatchNotEqual, "env", "prod"),
 			},
 		},
 		{
@@ -110,10 +114,10 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 			handler.ServeHTTP(recorder, request)
 			body := recorder.Result().Body
 			defer body.Close()
-			bodyContent, err := ioutil.ReadAll(body)
+			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, recorder.Result().StatusCode, "unexpected error %v", string(bodyContent))
-			distributor.AssertCalled(t, "LabelNamesAndValues", mock.Anything, data.expectedMatchers)
+			distributor.AssertCalled(t, "LabelNamesAndValues", mock.Anything, data.expectedMatchers, cardinality.InMemoryMethod)
 		})
 	}
 }
@@ -166,8 +170,8 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
 			body := recorder.Result().Body
 			defer body.Close()
-			responseBody := LabelNamesCardinalityResponse{}
-			bodyContent, err := ioutil.ReadAll(body)
+			responseBody := api.LabelNamesCardinalityResponse{}
+			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			err = json.Unmarshal(bodyContent, &responseBody)
 			require.NoError(t, err)
@@ -222,7 +226,7 @@ func TestLabelNamesCardinalityHandler_DistributorError(t *testing.T) {
 			body := recorder.Result().Body
 			defer func() { _ = body.Close() }()
 
-			bodyContent, err := ioutil.ReadAll(body)
+			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			bodyErrMessage := string(bodyContent)
 
@@ -283,7 +287,7 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 			require.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
 			body := recorder.Result().Body
 			defer body.Close()
-			bytes, err := ioutil.ReadAll(body)
+			bytes, err := io.ReadAll(body)
 			require.NoError(t, err)
 			require.Contains(t, string(bytes), data.expectedErrorMessage)
 		})
@@ -300,8 +304,9 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 		postRequestForm        url.Values
 		labelNames             []model.LabelName
 		matcher                []*labels.Matcher
+		scope                  cardinality.CountMethod
 		labelValuesCardinality *client.LabelValuesCardinalityResponse
-		expectedResponse       labelValuesCardinalityResponse
+		expectedResponse       api.LabelValuesCardinalityResponse
 	}{
 		"should return the label values cardinality for the specified label name": {
 			getRequestParams: "?label_names[]=__name__",
@@ -310,19 +315,20 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
 					LabelValueSeries: map[string]uint64{"test_1": 10},
 				}},
 			},
-			expectedResponse: labelValuesCardinalityResponse{
+			expectedResponse: api.LabelValuesCardinalityResponse{
 				SeriesCountTotal: seriesCountTotal,
-				Labels: []labelNamesCardinality{{
+				Labels: []api.LabelNamesCardinality{{
 					LabelName:        "__name__",
 					LabelValuesCount: 1,
 					SeriesCount:      10,
-					Cardinality: []labelValuesCardinality{
+					Cardinality: []api.LabelValuesCardinality{
 						{LabelValue: "test_1", SeriesCount: 10},
 					},
 				}},
@@ -336,19 +342,20 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher{nameMatcher},
+			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
 					LabelValueSeries: map[string]uint64{"test_1": 10},
 				}},
 			},
-			expectedResponse: labelValuesCardinalityResponse{
+			expectedResponse: api.LabelValuesCardinalityResponse{
 				SeriesCountTotal: seriesCountTotal,
-				Labels: []labelNamesCardinality{{
+				Labels: []api.LabelNamesCardinality{{
 					LabelName:        "__name__",
 					LabelValuesCount: 1,
 					SeriesCount:      10,
-					Cardinality: []labelValuesCardinality{
+					Cardinality: []api.LabelValuesCardinality{
 						{LabelValue: "test_1", SeriesCount: 10},
 					},
 				}},
@@ -359,28 +366,29 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			postRequestForm: url.Values{
 				"label_names[]": []string{"foo", "bar"},
 			},
-			labelNames: []model.LabelName{"foo", "bar"},
+			labelNames: []model.LabelName{"bar", "foo"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{
-					{
-						LabelName:        "foo",
-						LabelValueSeries: map[string]uint64{"test_1": 10},
-					},
 					{
 						LabelName:        "bar",
 						LabelValueSeries: map[string]uint64{"test_1": 20},
 					},
+					{
+						LabelName:        "foo",
+						LabelValueSeries: map[string]uint64{"test_1": 10},
+					},
 				},
 			},
-			expectedResponse: labelValuesCardinalityResponse{
+			expectedResponse: api.LabelValuesCardinalityResponse{
 				SeriesCountTotal: seriesCountTotal,
-				Labels: []labelNamesCardinality{
+				Labels: []api.LabelNamesCardinality{
 					{
 						LabelName:        "bar",
 						LabelValuesCount: 1,
 						SeriesCount:      20,
-						Cardinality: []labelValuesCardinality{
+						Cardinality: []api.LabelValuesCardinality{
 							{LabelValue: "test_1", SeriesCount: 20},
 						},
 					},
@@ -388,7 +396,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 						LabelName:        "foo",
 						LabelValuesCount: 1,
 						SeriesCount:      10,
-						Cardinality: []labelValuesCardinality{
+						Cardinality: []api.LabelValuesCardinality{
 							{LabelValue: "test_1", SeriesCount: 10},
 						},
 					},
@@ -400,28 +408,29 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			postRequestForm: url.Values{
 				"label_names[]": []string{"foo", "bar"},
 			},
-			labelNames: []model.LabelName{"foo", "bar"},
+			labelNames: []model.LabelName{"bar", "foo"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{
+					{
+						LabelName:        "bar",
+						LabelValueSeries: map[string]uint64{"test_1": 10},
+					},
 					{
 						LabelName:        "foo",
 						LabelValueSeries: map[string]uint64{"test_1": 10},
 					},
-					{
-						LabelName:        "bar",
-						LabelValueSeries: map[string]uint64{"test_1": 10},
-					},
 				},
 			},
-			expectedResponse: labelValuesCardinalityResponse{
+			expectedResponse: api.LabelValuesCardinalityResponse{
 				SeriesCountTotal: seriesCountTotal,
-				Labels: []labelNamesCardinality{
+				Labels: []api.LabelNamesCardinality{
 					{
 						LabelName:        "bar",
 						LabelValuesCount: 1,
 						SeriesCount:      10,
-						Cardinality: []labelValuesCardinality{
+						Cardinality: []api.LabelValuesCardinality{
 							{LabelValue: "test_1", SeriesCount: 10},
 						},
 					},
@@ -429,7 +438,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 						LabelName:        "foo",
 						LabelValuesCount: 1,
 						SeriesCount:      10,
-						Cardinality: []labelValuesCardinality{
+						Cardinality: []api.LabelValuesCardinality{
 							{LabelValue: "test_1", SeriesCount: 10},
 						},
 					},
@@ -443,19 +452,20 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
 					LabelValueSeries: map[string]uint64{"test_1": 10, "test_2": 20},
 				}},
 			},
-			expectedResponse: labelValuesCardinalityResponse{
+			expectedResponse: api.LabelValuesCardinalityResponse{
 				SeriesCountTotal: seriesCountTotal,
-				Labels: []labelNamesCardinality{{
+				Labels: []api.LabelNamesCardinality{{
 					LabelName:        "__name__",
 					LabelValuesCount: 2,
 					SeriesCount:      30,
-					Cardinality: []labelValuesCardinality{
+					Cardinality: []api.LabelValuesCardinality{
 						{LabelValue: "test_2", SeriesCount: 20},
 						{LabelValue: "test_1", SeriesCount: 10},
 					},
@@ -469,19 +479,20 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
 					LabelValueSeries: map[string]uint64{"test_1": 10, "test_2": 10},
 				}},
 			},
-			expectedResponse: labelValuesCardinalityResponse{
+			expectedResponse: api.LabelValuesCardinalityResponse{
 				SeriesCountTotal: seriesCountTotal,
-				Labels: []labelNamesCardinality{{
+				Labels: []api.LabelNamesCardinality{{
 					LabelName:        "__name__",
 					LabelValuesCount: 2,
 					SeriesCount:      20,
-					Cardinality: []labelValuesCardinality{
+					Cardinality: []api.LabelValuesCardinality{
 						{LabelValue: "test_1", SeriesCount: 10},
 						{LabelValue: "test_2", SeriesCount: 10},
 					},
@@ -496,19 +507,20 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
 					LabelValueSeries: map[string]uint64{"test_1": 100, "test_2": 20, "test_3": 30},
 				}},
 			},
-			expectedResponse: labelValuesCardinalityResponse{
+			expectedResponse: api.LabelValuesCardinalityResponse{
 				SeriesCountTotal: seriesCountTotal,
-				Labels: []labelNamesCardinality{{
+				Labels: []api.LabelNamesCardinality{{
 					LabelName:        "__name__",
 					LabelValuesCount: 3,
 					SeriesCount:      150,
-					Cardinality: []labelValuesCardinality{
+					Cardinality: []api.LabelValuesCardinality{
 						{LabelValue: "test_1", SeriesCount: 100},
 						{LabelValue: "test_3", SeriesCount: 30},
 						{LabelValue: "test_2", SeriesCount: 20},
@@ -524,19 +536,20 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
 					LabelValueSeries: map[string]uint64{"test_1": 100, "test_2": 20, "test_3": 30},
 				}},
 			},
-			expectedResponse: labelValuesCardinalityResponse{
+			expectedResponse: api.LabelValuesCardinalityResponse{
 				SeriesCountTotal: seriesCountTotal,
-				Labels: []labelNamesCardinality{{
+				Labels: []api.LabelNamesCardinality{{
 					LabelName:        "__name__",
 					LabelValuesCount: 3,
 					SeriesCount:      150,
-					Cardinality: []labelValuesCardinality{
+					Cardinality: []api.LabelValuesCardinality{
 						{LabelValue: "test_1", SeriesCount: 100},
 						{LabelValue: "test_3", SeriesCount: 30},
 					},
@@ -549,6 +562,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 		distributor := mockDistributorLabelValuesCardinality(
 			testData.labelNames,
 			testData.matcher,
+			testData.scope,
 			seriesCountTotal,
 			testData.labelValuesCardinality,
 			nil)
@@ -566,8 +580,8 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			body := recorder.Result().Body
 			defer func() { _ = body.Close() }()
 
-			responseBody := labelValuesCardinalityResponse{}
-			bodyContent, err := ioutil.ReadAll(body)
+			responseBody := api.LabelValuesCardinalityResponse{}
+			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			err = json.Unmarshal(bodyContent, &responseBody)
 			require.NoError(t, err)
@@ -586,8 +600,8 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			body := recorder.Result().Body
 			defer func() { _ = body.Close() }()
 
-			responseBody := labelValuesCardinalityResponse{}
-			bodyContent, err := ioutil.ReadAll(body)
+			responseBody := api.LabelValuesCardinalityResponse{}
+			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			err = json.Unmarshal(bodyContent, &responseBody)
 			require.NoError(t, err)
@@ -624,6 +638,7 @@ func TestLabelValuesCardinalityHandler_FeatureFlag(t *testing.T) {
 			distributor := mockDistributorLabelValuesCardinality(
 				[]model.LabelName{"foo"},
 				[]*labels.Matcher(nil),
+				cardinality.InMemoryMethod,
 				uint64(0),
 				&client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}},
 				nil)
@@ -642,7 +657,7 @@ func TestLabelValuesCardinalityHandler_FeatureFlag(t *testing.T) {
 				body := recorder.Result().Body
 				defer func() { _ = body.Close() }()
 
-				bodyContent, err := ioutil.ReadAll(body)
+				bodyContent, err := io.ReadAll(body)
 				require.NoError(t, err)
 				require.Equal(t, string(bodyContent), testData.expectedErrorMessage)
 			}
@@ -654,6 +669,7 @@ func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
 	distributor := mockDistributorLabelValuesCardinality(
 		[]model.LabelName{},
 		[]*labels.Matcher(nil),
+		cardinality.InMemoryMethod,
 		uint64(0),
 		&client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}},
 		nil)
@@ -710,7 +726,7 @@ func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
 				body := recorder.Result().Body
 				defer func() { _ = body.Close() }()
 
-				bytes, err := ioutil.ReadAll(body)
+				bytes, err := io.ReadAll(body)
 				require.NoError(t, err)
 				require.Contains(t, string(bytes), testData.expectedErrorMessage)
 			})
@@ -745,8 +761,9 @@ func TestLabelValuesCardinalityHandler_DistributorError(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			distributor := mockDistributorLabelValuesCardinality(
-				[]model.LabelName{"foo", "bar"},
+				[]model.LabelName{"bar", "foo"},
 				[]*labels.Matcher(nil),
+				cardinality.InMemoryMethod,
 				uint64(0),
 				&client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}},
 				testData.distributorError)
@@ -763,7 +780,7 @@ func TestLabelValuesCardinalityHandler_DistributorError(t *testing.T) {
 			body := recorder.Result().Body
 			defer func() { _ = body.Close() }()
 
-			bodyContent, err := ioutil.ReadAll(body)
+			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			bodyErrMessage := string(bodyContent)
 
@@ -772,8 +789,121 @@ func TestLabelValuesCardinalityHandler_DistributorError(t *testing.T) {
 	}
 }
 
+func TestActiveSeriesCardinalityHandler(t *testing.T) {
+	tests := []struct {
+		name                 string
+		requestParams        map[string][]string
+		expectMatcherSetSize int
+		returnedError        error
+		expectStatusCode     int
+	}{
+		{
+			name:             "should error on missing selector param",
+			expectStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:             "should error on invalid selector",
+			requestParams:    map[string][]string{"selector": {"-not-valid-"}},
+			expectStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:             "should error on multiple selectors",
+			requestParams:    map[string][]string{"selector": {"a", "b"}},
+			expectStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:             "valid selector",
+			requestParams:    map[string][]string{"selector": {`{job="prometheus"}`}},
+			expectStatusCode: http.StatusOK,
+		},
+		{
+			name:             "upstream error: response too large",
+			requestParams:    map[string][]string{"selector": {`{job="prometheus"}`}},
+			returnedError:    pkg_distributor.ErrResponseTooLarge,
+			expectStatusCode: http.StatusRequestEntityTooLarge,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			d := &mockDistributor{}
+
+			series := []labels.Labels{
+				labels.FromStrings("__name__", "up", "job", "prometheus"),
+				labels.FromStrings("__name__", "process_start_time_seconds", "job", "prometheus"),
+			}
+			d.On("ActiveSeries", mock.Anything, mock.Anything).Return(series, test.returnedError)
+
+			handler := createEnabledHandler(t, ActiveSeriesCardinalityHandler, d)
+			ctx := user.InjectOrgID(context.Background(), "test")
+
+			data := url.Values{}
+			for key, values := range test.requestParams {
+				for _, value := range values {
+					data.Add(key, value)
+				}
+			}
+			request, err := http.NewRequestWithContext(ctx, "POST", "/active_series", strings.NewReader(data.Encode()))
+			require.NoError(t, err)
+			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+
+			assert.Equal(t, test.expectStatusCode, recorder.Result().StatusCode)
+
+			if test.expectStatusCode != http.StatusOK {
+				return
+			}
+
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+
+			body := recorder.Result().Body
+			defer func(body io.ReadCloser) {
+				err := body.Close()
+				require.NoError(t, err)
+			}(body)
+			bodyContent, err := io.ReadAll(body)
+			require.NoError(t, err)
+
+			resp := api.ActiveSeriesResponse{}
+			err = json.Unmarshal(bodyContent, &resp)
+			require.NoError(t, err)
+			assert.Len(t, resp.Data, len(series))
+		})
+	}
+}
+
+func BenchmarkActiveSeriesHandler_ServeHTTP(b *testing.B) {
+	const numResponseSeries = 1000
+
+	d := &mockDistributor{}
+
+	var s []labels.Labels
+	for i := 0; i < numResponseSeries; i++ {
+		s = append(s, labels.FromStrings("__name__", "up", "job", "prometheus", "instance", "instance"+fmt.Sprint(i)))
+	}
+	d.On("ActiveSeries", mock.Anything, mock.Anything).Return(s, nil)
+
+	handler := createEnabledHandler(b, ActiveSeriesCardinalityHandler, d)
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	for i := 0; i < b.N; i++ {
+		// Prepare a request.
+		r := httptest.NewRequest("POST", "/active_series", strings.NewReader("selector={job=\"prometheus\"}"))
+		r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+		// Run the benchmark.
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, r.WithContext(ctx))
+
+		// Make sure we're not benchmarking error responses.
+		require.Equal(b, http.StatusOK, recorder.Result().StatusCode)
+	}
+}
+
 // createEnabledHandler creates a cardinalityHandler that can be either a LabelNamesCardinalityHandler or a LabelValuesCardinalityHandler
-func createEnabledHandler(t *testing.T, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
+func createEnabledHandler(t testing.TB, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
 	limits := validation.Limits{CardinalityAnalysisEnabled: true}
 	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
@@ -807,12 +937,12 @@ func generateLabelValues(count int) ([]*client.LabelValues, int) {
 
 func mockDistributorLabelNamesAndValues(items []*client.LabelValues, err error) *mockDistributor {
 	distributor := &mockDistributor{}
-	distributor.On("LabelNamesAndValues", mock.Anything, mock.Anything).Return(&client.LabelNamesAndValuesResponse{Items: items}, err)
+	distributor.On("LabelNamesAndValues", mock.Anything, mock.Anything, mock.Anything).Return(&client.LabelNamesAndValuesResponse{Items: items}, err)
 	return distributor
 }
 
-func mockDistributorLabelValuesCardinality(labelNames []model.LabelName, matchers []*labels.Matcher, seriesCount uint64, cardinalityResponse *client.LabelValuesCardinalityResponse, err error) *mockDistributor {
+func mockDistributorLabelValuesCardinality(labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod, seriesCount uint64, cardinalityResponse *client.LabelValuesCardinalityResponse, err error) *mockDistributor {
 	distributor := &mockDistributor{}
-	distributor.On("LabelValuesCardinality", mock.Anything, labelNames, matchers).Return(seriesCount, cardinalityResponse, err)
+	distributor.On("LabelValuesCardinality", mock.Anything, labelNames, matchers, countMethod).Return(seriesCount, cardinalityResponse, err)
 	return distributor
 }

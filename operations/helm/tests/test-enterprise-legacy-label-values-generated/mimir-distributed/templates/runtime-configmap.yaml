@@ -1,0 +1,15 @@
+---
+# Source: mimir-distributed/templates/runtime-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-runtime
+  labels:
+    app: enterprise-metrics
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  namespace: "citestns"
+data:
+  runtime.yaml: |
+    
+    {}

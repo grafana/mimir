@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 type SplitAndMergeGrouper struct {
@@ -48,8 +49,8 @@ func NewSplitAndMergeGrouper(
 	}
 }
 
-func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Job, err error) {
-	flatBlocks := make([]*metadata.Meta, 0, len(blocks))
+func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*block.Meta) (res []*Job, err error) {
+	flatBlocks := make([]*block.Meta, 0, len(blocks))
 	for _, b := range blocks {
 		flatBlocks = append(flatBlocks, b)
 	}
@@ -74,12 +75,11 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		resolution := job.blocks[0].Thanos.Downsample.Resolution
 		externalLabels := labels.FromMap(job.blocks[0].Thanos.Labels)
 
-		compactionJob := NewJob(
+		compactionJob := newJob(
 			g.userID,
 			groupKey,
 			externalLabels,
 			resolution,
-			metadata.NoneFunc,
 			job.stage == stageSplit,
 			g.shardCount,
 			job.shardingKey(),
@@ -101,14 +101,14 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 // planCompaction analyzes the input blocks and returns a list of compaction jobs that can be
 // run concurrently. Each returned job may belong either to this compactor instance or another one
 // in the cluster, so the caller should check if they belong to their instance before running them.
-func planCompaction(userID string, blocks []*metadata.Meta, ranges []int64, shardCount, splitGroups uint32) (jobs []*job) {
+func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCount, splitGroups uint32) (jobs []*job) {
 	if len(blocks) == 0 || len(ranges) == 0 {
 		return nil
 	}
 
 	// First of all we have to group blocks using the default grouping, but not
-	// considering the shard ID in the external labels (because will be checked later).
-	mainGroups := map[string][]*metadata.Meta{}
+	// considering the shard ID in the external labels (because it will be checked later).
+	mainGroups := map[string][]*block.Meta{}
 	for _, b := range blocks {
 		key := defaultGroupKeyWithoutShardID(b.Thanos)
 		mainGroups[key] = append(mainGroups[key], b)
@@ -136,9 +136,11 @@ func planCompaction(userID string, blocks []*metadata.Meta, ranges []int64, shar
 		}
 	}
 
-	// Ensure we don't compact the most recent blocks prematurely when another one of
-	// the same size still fits in the range. To do it, we consider a job valid only
-	// if its range is before the most recent block or if it fully covers the range.
+	// Ensure we don't compact the most recent blocks prematurely. We allow a job to remain if:
+	// - its range is before the most recent block
+	// - its range is at least 1 job length in the past
+	// - its max compaction level is 1
+	// - it fully covers the range
 	highestMaxTime := getMaxTime(blocks)
 
 	for idx := 0; idx < len(jobs); {
@@ -146,6 +148,18 @@ func planCompaction(userID string, blocks []*metadata.Meta, ranges []int64, shar
 
 		// If the job covers a range before the most recent block, it's fine.
 		if job.rangeEnd <= highestMaxTime {
+			idx++
+			continue
+		}
+
+		// If the job covers a range at least 1 job length in the past, it's fine.
+		if job.rangeEnd+job.rangeLength() <= time.Now().UnixMilli() {
+			idx++
+			continue
+		}
+
+		// If the job only contains level 1 blocks, it's fine.
+		if job.maxCompactionLevel() == 1 {
 			idx++
 			continue
 		}
@@ -175,9 +189,9 @@ func planCompaction(userID string, blocks []*metadata.Meta, ranges []int64, shar
 	return jobs
 }
 
-// planCompactionByRange analyze the input blocks and returns a list of compaction jobs to
+// planCompactionByRange analyzes the input blocks and returns a list of compaction jobs to
 // compact blocks for the given compaction time range. Input blocks MUST be sorted by MinTime.
-func planCompactionByRange(userID string, blocks []*metadata.Meta, tr int64, isSmallestRange bool, shardCount, splitGroups uint32) (jobs []*job) {
+func planCompactionByRange(userID string, blocks []*block.Meta, tr int64, isSmallestRange bool, shardCount, splitGroups uint32) (jobs []*job) {
 	groups := groupBlocksByRange(blocks, tr)
 
 	for _, group := range groups {
@@ -262,8 +276,8 @@ func planSplitting(userID string, group blocksGroup, splitGroups uint32) []*job 
 // groupBlocksByShardID groups the blocks by shard ID (read from the block external labels).
 // If a block doesn't have any shard ID in the external labels, it will be grouped with the
 // shard ID set to an empty string.
-func groupBlocksByShardID(blocks []*metadata.Meta) map[string][]*metadata.Meta {
-	groups := map[string][]*metadata.Meta{}
+func groupBlocksByShardID(blocks []*block.Meta) map[string][]*block.Meta {
+	groups := map[string][]*block.Meta{}
 
 	for _, block := range blocks {
 		// If the label doesn't exist, we'll group together such blocks using an
@@ -280,7 +294,7 @@ func groupBlocksByShardID(blocks []*metadata.Meta) map[string][]*metadata.Meta {
 //
 // For example, if we have blocks [0-10, 10-20, 50-60, 90-100] and the split range tr is 30
 // it returns [0-10, 10-20], [50-60], [90-100].
-func groupBlocksByRange(blocks []*metadata.Meta, tr int64) []blocksGroup {
+func groupBlocksByRange(blocks []*block.Meta, tr int64) []blocksGroup {
 	var ret []blocksGroup
 
 	for i := 0; i < len(blocks); {
@@ -324,7 +338,7 @@ func groupBlocksByRange(blocks []*metadata.Meta, tr int64) []blocksGroup {
 	return ret
 }
 
-func getRangeStart(m *metadata.Meta, tr int64) int64 {
+func getRangeStart(m *block.Meta, tr int64) int64 {
 	// Compute start of aligned time range of size tr closest to the current block's start.
 	// This code has been copied from TSDB.
 	if m.MinTime >= 0 {
@@ -333,7 +347,7 @@ func getRangeStart(m *metadata.Meta, tr int64) int64 {
 	return tr * ((m.MinTime - tr + 1) / tr)
 }
 
-func sortMetasByMinTime(metas []*metadata.Meta) []*metadata.Meta {
+func sortMetasByMinTime(metas []*block.Meta) []*block.Meta {
 	sort.Slice(metas, func(i, j int) bool {
 		if metas[i].BlockMeta.MinTime != metas[j].BlockMeta.MinTime {
 			return metas[i].BlockMeta.MinTime < metas[j].BlockMeta.MinTime
@@ -347,7 +361,7 @@ func sortMetasByMinTime(metas []*metadata.Meta) []*metadata.Meta {
 }
 
 // getMaxTime returns the highest max time across all input blocks.
-func getMaxTime(blocks []*metadata.Meta) int64 {
+func getMaxTime(blocks []*block.Meta) int64 {
 	maxTime := int64(math.MinInt64)
 
 	for _, block := range blocks {
@@ -361,6 +375,18 @@ func getMaxTime(blocks []*metadata.Meta) int64 {
 
 // defaultGroupKeyWithoutShardID returns the default group key excluding ShardIDLabelName
 // when computing it.
-func defaultGroupKeyWithoutShardID(meta metadata.Thanos) string {
-	return defaultGroupKey(meta.Downsample.Resolution, labels.NewBuilder(labels.FromMap(meta.Labels)).Del(mimir_tsdb.CompactorShardIDExternalLabel).Labels())
+func defaultGroupKeyWithoutShardID(meta block.ThanosMeta) string {
+	return defaultGroupKey(meta.Downsample.Resolution, labelsWithoutShard(meta.Labels))
+}
+
+// Return labels built from base, but without any label with name equal to mimir_tsdb.CompactorShardIDExternalLabel.
+func labelsWithoutShard(base map[string]string) labels.Labels {
+	b := labels.NewScratchBuilder(len(base))
+	for k, v := range base {
+		if k != mimir_tsdb.CompactorShardIDExternalLabel {
+			b.Add(k, v)
+		}
+	}
+	b.Sort()
+	return b.Labels()
 }

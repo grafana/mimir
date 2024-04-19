@@ -10,6 +10,9 @@ import (
 type Message struct {
 	ID int `json:"message_id"`
 
+	// (Optional) Unique identifier of a message thread to which the message belongs; for supergroups only
+	ThreadID int `json:"message_thread_id"`
+
 	// For message sent to channels, Sender will be nil
 	Sender *User `json:"from"`
 
@@ -58,6 +61,9 @@ type Message struct {
 
 	// (Optional) Time of last edit in Unix.
 	LastEdit int64 `json:"edit_date"`
+
+	// (Optional) True, if the message is sent to a forum topic.
+	TopicMessage bool `json:"is_topic_message"`
 
 	// (Optional) Message can't be forwarded.
 	Protected bool `json:"has_protected_content,omitempty"`
@@ -223,20 +229,29 @@ type Message struct {
 	// Message is a service message about a successful payment.
 	Payment *Payment `json:"successful_payment"`
 
+	// For a service message, a user was shared with the bot.
+	UserShared *RecipientShared `json:"user_shared,omitempty"`
+
+	// For a service message, a chat was shared with the bot.
+	ChatShared *RecipientShared `json:"chat_shared,omitempty"`
+
 	// The domain name of the website on which the user has logged in.
 	ConnectedWebsite string `json:"connected_website,omitempty"`
 
-	// For a service message, a voice chat started in the chat.
-	VoiceChatStarted *VoiceChatStarted `json:"voice_chat_started,omitempty"`
+	// For a service message, a video chat started in the chat.
+	VideoChatStarted *VideoChatStarted `json:"video_chat_started,omitempty"`
 
-	// For a service message, a voice chat ended in the chat.
-	VoiceChatEnded *VoiceChatEnded `json:"voice_chat_ended,omitempty"`
+	// For a service message, a video chat ended in the chat.
+	VideoChatEnded *VideoChatEnded `json:"video_chat_ended,omitempty"`
 
-	// For a service message, some users were invited in the voice chat.
-	VoiceChatParticipants *VoiceChatParticipants `json:"voice_chat_participants_invited,omitempty"`
+	// For a service message, some users were invited in the video chat.
+	VideoChatParticipants *VideoChatParticipants `json:"video_chat_participants_invited,omitempty"`
 
-	// For a service message, a voice chat schedule in the chat.
-	VoiceChatScheduled *VoiceChatScheduled `json:"voice_chat_scheduled,omitempty"`
+	// For a service message, a video chat schedule in the chat.
+	VideoChatScheduled *VideoChatScheduled `json:"video_chat_scheduled,omitempty"`
+
+	// For a data sent by a Web App.
+	WebAppData *WebAppData `json:"web_app_data,omitempty"`
 
 	// For a service message, represents the content of a service message,
 	// sent whenever a user in the chat triggers a proximity alert set by another user.
@@ -247,6 +262,30 @@ type Message struct {
 
 	// Inline keyboard attached to the message.
 	ReplyMarkup *ReplyMarkup `json:"reply_markup,omitempty"`
+
+	// Service message: forum topic created
+	TopicCreated *Topic `json:"forum_topic_created,omitempty"`
+
+	// Service message: forum topic closed
+	TopicClosed *struct{} `json:"forum_topic_closed,omitempty"`
+
+	// Service message: forum topic reopened
+	TopicReopened *Topic `json:"forum_topic_reopened,omitempty"`
+
+	// Service message: forum topic deleted
+	TopicEdited *Topic `json:"forum_topic_edited,omitempty"`
+
+	// Service message: general forum topic hidden
+	GeneralTopicHidden *struct{} `json:"general_topic_hidden,omitempty"`
+
+	// Service message: general forum topic unhidden
+	GeneralTopicUnhidden *struct{} `json:"general_topic_unhidden,omitempty"`
+
+	// Service message: represents spoiler information about the message.
+	HasMediaSpoiler bool `json:"has_media_spoiler,omitempty"`
+
+	// Service message: the user allowed the bot added to the attachment menu to write messages
+	WriteAccessAllowed *WriteAccessAllowed `json:"write_access_allowed,omitempty"`
 }
 
 // MessageEntity object represents "special" parts of text messages,
@@ -271,7 +310,33 @@ type MessageEntity struct {
 
 	// (Optional) For EntityCodeBlock entity type only.
 	Language string `json:"language,omitempty"`
+
+	// (Optional) For EntityCustomEmoji entity type only.
+	CustomEmoji string `json:"custom_emoji_id"`
 }
+
+// EntityType is a MessageEntity type.
+type EntityType string
+
+const (
+	EntityMention       EntityType = "mention"
+	EntityTMention      EntityType = "text_mention"
+	EntityHashtag       EntityType = "hashtag"
+	EntityCashtag       EntityType = "cashtag"
+	EntityCommand       EntityType = "bot_command"
+	EntityURL           EntityType = "url"
+	EntityEmail         EntityType = "email"
+	EntityPhone         EntityType = "phone_number"
+	EntityBold          EntityType = "bold"
+	EntityItalic        EntityType = "italic"
+	EntityUnderline     EntityType = "underline"
+	EntityStrikethrough EntityType = "strikethrough"
+	EntityCode          EntityType = "code"
+	EntityCodeBlock     EntityType = "pre"
+	EntityTextLink      EntityType = "text_link"
+	EntitySpoiler       EntityType = "spoiler"
+	EntityCustomEmoji   EntityType = "custom_emoji"
+)
 
 // Entities is used to set message's text entities as a send option.
 type Entities []MessageEntity
@@ -336,7 +401,6 @@ func (m *Message) FromChannel() bool {
 // Service messages are automatically sent messages, which
 // typically occur on some global action. For instance, when
 // anyone leaves the chat or chat title changes.
-//
 func (m *Message) IsService() bool {
 	fact := false
 
@@ -357,7 +421,6 @@ func (m *Message) IsService() bool {
 //
 // It's safer than manually slicing Text because Telegram uses
 // UTF-16 indices whereas Go string are []byte.
-//
 func (m *Message) EntityText(e MessageEntity) string {
 	text := m.Text
 	if text == "" {
@@ -375,7 +438,7 @@ func (m *Message) EntityText(e MessageEntity) string {
 }
 
 // Media returns the message's media if it contains either photo,
-// voice, audio, animation, document, video or video note.
+// voice, audio, animation, sticker, document, video or video note.
 func (m *Message) Media() Media {
 	switch {
 	case m.Photo != nil:
@@ -386,6 +449,8 @@ func (m *Message) Media() Media {
 		return m.Audio
 	case m.Animation != nil:
 		return m.Animation
+	case m.Sticker != nil:
+		return m.Sticker
 	case m.Document != nil:
 		return m.Document
 	case m.Video != nil:

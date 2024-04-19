@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"testing"
 
+	s3_service "github.com/aws/aws-sdk-go/service/s3"
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,6 +53,98 @@ func TestSSEConfig_Validate(t *testing.T) {
 					KMSEncryptionContext: `{"department": "10103.0"}`,
 				}
 			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, testData.setup().Validate())
+		})
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		setup    func() *Config
+		expected error
+	}{
+		"should pass with default config": {
+			setup: func() *Config {
+				sseCfg := &SSEConfig{}
+				flagext.DefaultValues(sseCfg)
+				cfg := &Config{
+					Endpoint:         "s3.eu-central-1.amazonaws.com",
+					BucketName:       "mimir-block",
+					SSE:              *sseCfg,
+					SignatureVersion: SignatureVersionV4,
+					StorageClass:     s3_service.StorageClassStandard,
+				}
+				return cfg
+			},
+		},
+		"should fail if invalid storage class is set": {
+			setup: func() *Config {
+				return &Config{
+					SignatureVersion: SignatureVersionV2,
+					StorageClass:     "foo",
+				}
+			},
+			expected: errUnsupportedStorageClass,
+		},
+		"should pass if valid storage signature version is set": {
+			setup: func() *Config {
+				return &Config{
+					SignatureVersion: SignatureVersionV4, StorageClass: s3_service.StorageClassStandard,
+				}
+			},
+		},
+		"should fail on invalid endpoint prefix": {
+			setup: func() *Config {
+				return &Config{
+					Endpoint:         "mimir-blocks.s3.eu-central-1.amazonaws.com",
+					BucketName:       "mimir-blocks",
+					SignatureVersion: SignatureVersionV4,
+					StorageClass:     s3_service.StorageClassStandard,
+				}
+			},
+			expected: errInvalidEndpointPrefix,
+		},
+		"should pass if native_aws_auth_enabled is set": {
+			setup: func() *Config {
+				return &Config{
+					SignatureVersion:     SignatureVersionV4,
+					NativeAWSAuthEnabled: true,
+				}
+			},
+		},
+		"should pass with using sts endpoint": {
+			setup: func() *Config {
+				sseCfg := &SSEConfig{}
+				flagext.DefaultValues(sseCfg)
+				cfg := &Config{
+					BucketName:       "mimir-block",
+					SSE:              *sseCfg,
+					SignatureVersion: SignatureVersionV4,
+					StorageClass:     s3_service.StorageClassStandard,
+					STSEndpoint:      "https://sts.eu-central-1.amazonaws.com",
+				}
+				return cfg
+			},
+		},
+		"should not pass with using sts endpoint as its using an invalid url": {
+			setup: func() *Config {
+				sseCfg := &SSEConfig{}
+				flagext.DefaultValues(sseCfg)
+				cfg := &Config{
+					BucketName:       "mimir-block",
+					SSE:              *sseCfg,
+					SignatureVersion: SignatureVersionV4,
+					StorageClass:     s3_service.StorageClassStandard,
+					STSEndpoint:      "sts.eu-central-1.amazonaws.com",
+				}
+				return cfg
+			},
+			expected: errInvalidSTSEndpoint,
 		},
 	}
 

@@ -12,14 +12,13 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	seriesset "github.com/grafana/mimir/pkg/storage/series"
 )
 
-type chunkIteratorFunc func(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator
-
 // Series in the returned set are sorted alphabetically by labels.
-func partitionChunks(chunks []chunk.Chunk, mint, maxt int64, iteratorFunc chunkIteratorFunc) storage.SeriesSet {
+func partitionChunks(chunks []chunk.Chunk, mint, maxt int64) storage.SeriesSet {
 	chunksBySeries := map[string][]chunk.Chunk{}
 	for _, c := range chunks {
 		key := client.LabelsToKeyString(c.Metric)
@@ -29,23 +28,21 @@ func partitionChunks(chunks []chunk.Chunk, mint, maxt int64, iteratorFunc chunkI
 	series := make([]storage.Series, 0, len(chunksBySeries))
 	for i := range chunksBySeries {
 		series = append(series, &chunkSeries{
-			labels:            chunksBySeries[i][0].Metric,
-			chunks:            chunksBySeries[i],
-			chunkIteratorFunc: iteratorFunc,
-			mint:              mint,
-			maxt:              maxt,
+			labels: chunksBySeries[i][0].Metric,
+			chunks: chunksBySeries[i],
+			mint:   mint,
+			maxt:   maxt,
 		})
 	}
 
-	return seriesset.NewConcreteSeriesSet(series)
+	return seriesset.NewConcreteSeriesSetFromUnsortedSeries(series)
 }
 
 // Implements SeriesWithChunks
 type chunkSeries struct {
-	labels            labels.Labels
-	chunks            []chunk.Chunk
-	chunkIteratorFunc chunkIteratorFunc
-	mint, maxt        int64
+	labels     labels.Labels
+	chunks     []chunk.Chunk
+	mint, maxt int64
 }
 
 func (s *chunkSeries) Labels() labels.Labels {
@@ -53,8 +50,8 @@ func (s *chunkSeries) Labels() labels.Labels {
 }
 
 // Iterator returns a new iterator of the data of the series.
-func (s *chunkSeries) Iterator() chunkenc.Iterator {
-	return s.chunkIteratorFunc(s.chunks, model.Time(s.mint), model.Time(s.maxt))
+func (s *chunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	return batch.NewChunkMergeIterator(it, s.chunks, model.Time(s.mint), model.Time(s.maxt))
 }
 
 // Chunks implements SeriesWithChunks interface.

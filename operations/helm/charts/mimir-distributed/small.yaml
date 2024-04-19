@@ -1,73 +1,96 @@
-# These values configure the Grafana Mimir or Grafana Enterprise Metrics cluster to
-# handle production ingestion of ~1M active series using the blocks
-# storage engine scraped with a 15s interval.
+# These values configure the Grafana Mimir or Grafana Enterprise Metrics cluster
+# for a more production-ready setup. The setup targets 70% CPU and memory utilization
+# so that the cluster has room to grow. The resource requests reflect 70% utilization
+# and the limits reflect 100% utilization. The values do not set CPU limits,
+# because CPU limits have caused severe issues elsewhere, so we don't apply any in our helm chart:
+# see https://engineering.indeedblog.com/blog/2019/12/unthrottled-fixing-cpu-limits-in-the-cloud/
+# If you require CPU limits for billing purposes see capped-small.yaml
+#
+# These values are suitable for ingestion of ~1M series and scrape interval of 15s.
+# This implies ingestion rate of around 66000 samples per second.
+#
 # Query requirements can vary dramatically depending on query rate and query
-# ranges. The values here satisfy a "usual" query load as seen from our
-# production clusters at this scale.
-# It is important to ensure that you run no more than one ingester replica
-# per node so that a single node failure does not cause data loss. Zone aware
-# replication can be configured to ensure data replication spans availability
-# zones. Refer to [Zone Aware Replication](https://grafana.com/docs/mimir/v2.0.x/operators-guide/configuring/configuring-zone-aware-replication/)
+# ranges. The values here satisfy a "usual" query load of around 5 queries per second
+# as seen from our production clusters at this scale.
+#
+# The values in this file also add podAntiAffinity rules for ingesters and store-gateways.
+# The rules ensure that the replicas of the same component are not scheduled on the same
+# Kubernetes Node. Zone-aware replication is enabled by default on new installation.
+# Refer to [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm) and
+# [Zone-Aware Replication](https://grafana.com/docs/mimir/latest/configure/configure-zone-aware-replication/)
 # for more information.
-# Minio is no longer enabled and you are encouraged to use your cloud providers
-# object storage service for production deployments.
-# Ingesters are configured with a replication factor of 3 to ensure that a single ingester failur does not
-# result in data loss.
+#
+# MinIO is no longer enabled, and you are encouraged to use your cloud providers
+# object storage service such as S3 or GCS.
 
 alertmanager:
   persistentVolume:
     enabled: true
-  replicas: 3
+  replicas: 2
   resources:
     limits:
-      memory: 8Gi
+      memory: 1.4Gi
     requests:
-      cpu: 300m
-      memory: 6Gi
+      cpu: 1
+      memory: 1Gi
   statefulSet:
     enabled: true
 
 compactor:
   persistentVolume:
-    size: 50Gi
+    size: 20Gi
   resources:
     limits:
-      cpu: 1200m
-      memory: 2Gi
+      memory: 2.1Gi
     requests:
       cpu: 1
-      memory: 1Gi
+      memory: 1.5Gi
 
 distributor:
-  replicas: 3
+  replicas: 2
   resources:
     limits:
-      memory: 4Gi
+      memory: 5.7Gi
     requests:
       cpu: 2
-      memory: 2Gi
+      memory: 4Gi
 
 ingester:
   persistentVolume:
     size: 50Gi
-  replicas: 4
+  replicas: 3
   resources:
     limits:
-      memory: 25Gi
+      memory: 12Gi
     requests:
-      cpu: 4
-      memory: 15Gi
+      cpu: 3.5
+      memory: 8Gi
+  topologySpreadConstraints: {}
   affinity:
     podAntiAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
             matchExpressions:
-              - key: target
+              - key: target # support for enterprise.legacyLabels
                 operator: In
                 values:
                   - ingester
           topologyKey: 'kubernetes.io/hostname'
 
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                  - ingester
+          topologyKey: 'kubernetes.io/hostname'
+
+  zoneAwareReplication:
+    topologyKey: 'kubernetes.io/hostname'
+
+admin-cache:
+  enabled: true
+  replicas: 2
 
 chunks-cache:
   enabled: true
@@ -82,6 +105,7 @@ metadata-cache:
 
 results-cache:
   enabled: true
+  replicas: 2
 
 minio:
   enabled: false
@@ -90,61 +114,94 @@ overrides_exporter:
   replicas: 1
   resources:
     limits:
-      memory: 256Mi
+      memory: 128Mi
     requests:
       cpu: 100m
       memory: 128Mi
 
 querier:
-  replicas: 2
+  replicas: 1
   resources:
     limits:
-      memory: 24Gi
+      memory: 5.6Gi
     requests:
-      cpu: 1
-      memory: 12Gi
+      cpu: 2
+      memory: 4Gi
 
 query_frontend:
   replicas: 1
   resources:
     limits:
-      memory: 6Gi
+      memory: 2.8Gi
     requests:
       cpu: 2
       memory: 2Gi
 
 ruler:
-  replicas: 2
+  replicas: 1
   resources:
     limits:
-      memory: 16Gi
+      memory: 2.8Gi
     requests:
       cpu: 1
-      memory: 6Gi
+      memory: 2Gi
 
 store_gateway:
   persistentVolume:
-    size: 50Gi
-  replicas: 1
-  resources:
-    requests:
-      cpu: 1
-      memory: 6Gi
-
-# Grafana Enterprise Metrics feature related
-admin_api:
+    size: 10Gi
   replicas: 3
   resources:
     limits:
-      cpu: 200m
-      memory: 256Mi
+      memory: 2.1Gi
     requests:
-      cpu: 10m
+      cpu: 1
+      memory: 1.5Gi
+  topologySpreadConstraints: {}
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: target # support for enterprise.legacyLabels
+                operator: In
+                values:
+                  - store-gateway
+          topologyKey: 'kubernetes.io/hostname'
+
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                  - store-gateway
+          topologyKey: 'kubernetes.io/hostname'
+  zoneAwareReplication:
+    topologyKey: 'kubernetes.io/hostname'
+
+nginx:
+  replicas: 1
+  resources:
+    limits:
+      memory: 731Mi
+    requests:
+      cpu: 1
+      memory: 512Mi
+
+# Grafana Enterprise Metrics feature related
+admin_api:
+  replicas: 1
+  resources:
+    limits:
+      memory: 128Mi
+    requests:
+      cpu: 100m
       memory: 64Mi
 
 gateway:
-  replicas: 3
+  replicas: 1
   resources:
+    limits:
+      memory: 731Mi
     requests:
       cpu: 1
-      memory: 384Mi
+      memory: 512Mi

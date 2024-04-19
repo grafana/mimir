@@ -4,6 +4,8 @@
 set -e
 set -o pipefail
 
+command -v kustomize >/dev/null 2>&1 || { echo "Please install kustomize. Visit https://kubectl.docs.kubernetes.io/installation/kustomize/ for more info."; exit 1; }
+
 lhs=$1
 rhs=$2
 filter=${3:-'.'}
@@ -21,4 +23,4 @@ ${KUSTOMIZE_BUILD[@]} $lhs | yq -s "\"scratch/$lhs/\" + .metadata.name + \"-\" +
 ${KUSTOMIZE_BUILD[@]} $rhs | yq -s "\"scratch/$rhs/\" + .metadata.name + \"-\" + .kind" "select(.kind != null) | $filter"
 
 # difft --missing-as-empty --skip-unchanged scratch/$lhs scratch/$rhs
-diff -r -u -N scratch/$lhs scratch/$rhs
+diff -r -U 15 -N scratch/$lhs scratch/$rhs

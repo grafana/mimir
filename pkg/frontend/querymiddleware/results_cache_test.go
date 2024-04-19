@@ -7,19 +7,18 @@ package querymiddleware
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/cache"
-	mimir_tsdb "github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -37,40 +36,45 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 			}(),
 		},
 		"should pass with memcached backend": {
-			cfg: ResultsCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: cache.BackendMemcached,
-					Memcached: mimir_tsdb.MemcachedConfig{
-						Addresses: "localhost",
-					},
-				},
-			},
+			cfg: func() ResultsCacheConfig {
+				cfg := ResultsCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = cache.BackendMemcached
+				cfg.Memcached.Addresses = []string{"localhost"}
+
+				return cfg
+			}(),
 		},
 		"should fail with invalid memcached config": {
-			cfg: ResultsCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: cache.BackendMemcached,
-					Memcached: mimir_tsdb.MemcachedConfig{
-						Addresses: "",
-					},
-				},
-			},
-			expected: errors.New("query-frontend results cache: no memcached addresses configured"),
+			cfg: func() ResultsCacheConfig {
+				cfg := ResultsCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = cache.BackendMemcached
+				cfg.Memcached.Addresses = []string{}
+
+				return cfg
+			}(),
+			expected: cache.ErrNoMemcachedAddresses,
 		},
 		"should fail with unsupported backend": {
-			cfg: ResultsCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: "unsupported",
-				},
-			},
-			expected: errUnsupportedResultsCacheBackend("unsupported"),
+			cfg: func() ResultsCacheConfig {
+				cfg := ResultsCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = "unsupported"
+
+				return cfg
+			}(),
+			expected: errUnsupportedBackend,
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			if testData.expected != nil {
-				assert.EqualError(t, testData.cfg.Validate(), testData.expected.Error())
+				assert.ErrorIs(t, testData.cfg.Validate(), testData.expected)
 			} else {
 				assert.NoError(t, testData.cfg.Validate())
 			}
@@ -104,19 +108,20 @@ func mkAPIResponse(start, end, step int64) *PrometheusResponse {
 }
 
 func mkExtent(start, end int64) Extent {
-	return mkExtentWithStep(start, end, 10)
+	return mkExtentWithStepAndQueryTime(start, end, 10, 0)
 }
 
-func mkExtentWithStep(start, end, step int64) Extent {
+func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 	res := mkAPIResponse(start, end, step)
-	any, err := types.MarshalAny(res)
+	marshalled, err := types.MarshalAny(res)
 	if err != nil {
 		panic(err)
 	}
 	return Extent{
-		Start:    start,
-		End:      end,
-		Response: any,
+		Start:            start,
+		End:              end,
+		Response:         marshalled,
+		QueryTimestampMs: queryTime,
 	}
 }
 
@@ -124,10 +129,11 @@ func TestIsRequestCachable(t *testing.T) {
 	maxCacheTime := int64(150 * 1000)
 
 	for _, tc := range []struct {
-		name               string
-		request            Request
-		expected           bool
-		cacheStepUnaligned bool
+		name                      string
+		request                   MetricsQueryRequest
+		expected                  bool
+		expectedNotCachableReason string
+		cacheStepUnaligned        bool
 	}{
 		// @ modifier on vector selectors.
 		{
@@ -136,19 +142,22 @@ func TestIsRequestCachable(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "@ modifier on vector selector, after end, before maxCacheTime",
-			request:  &PrometheusRangeQueryRequest{Query: "metric @ 127", End: 125000, Step: 5},
-			expected: false,
+			name:                      "@ modifier on vector selector, after end, before maxCacheTime",
+			request:                   &PrometheusRangeQueryRequest{Query: "metric @ 127", End: 125000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		{
-			name:     "@ modifier on vector selector, before end, after maxCacheTime",
-			request:  &PrometheusRangeQueryRequest{Query: "metric @ 151", End: 200000, Step: 5},
-			expected: false,
+			name:                      "@ modifier on vector selector, before end, after maxCacheTime",
+			request:                   &PrometheusRangeQueryRequest{Query: "metric @ 151", End: 200000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		{
-			name:     "@ modifier on vector selector, after end, after maxCacheTime",
-			request:  &PrometheusRangeQueryRequest{Query: "metric @ 151", End: 125000, Step: 5},
-			expected: false,
+			name:                      "@ modifier on vector selector, after end, after maxCacheTime",
+			request:                   &PrometheusRangeQueryRequest{Query: "metric @ 151", End: 125000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		{
 			name:     "@ modifier on vector selector with start() before maxCacheTime",
@@ -156,9 +165,10 @@ func TestIsRequestCachable(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "@ modifier on vector selector with end() after maxCacheTime",
-			request:  &PrometheusRangeQueryRequest{Query: "metric @ end()", Start: 100000, End: 200000, Step: 5},
-			expected: false,
+			name:                      "@ modifier on vector selector with end() after maxCacheTime",
+			request:                   &PrometheusRangeQueryRequest{Query: "metric @ end()", Start: 100000, End: 200000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		// @ modifier on matrix selectors.
 		{
@@ -167,19 +177,22 @@ func TestIsRequestCachable(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "@ modifier on matrix selector, after end, before maxCacheTime",
-			request:  &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ 127)", End: 125000, Step: 5},
-			expected: false,
+			name:                      "@ modifier on matrix selector, after end, before maxCacheTime",
+			request:                   &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ 127)", End: 125000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		{
-			name:     "@ modifier on matrix selector, before end, after maxCacheTime",
-			request:  &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ 151)", End: 200000, Step: 5},
-			expected: false,
+			name:                      "@ modifier on matrix selector, before end, after maxCacheTime",
+			request:                   &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ 151)", End: 200000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		{
-			name:     "@ modifier on matrix selector, after end, after maxCacheTime",
-			request:  &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ 151)", End: 125000, Step: 5},
-			expected: false,
+			name:                      "@ modifier on matrix selector, after end, after maxCacheTime",
+			request:                   &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ 151)", End: 125000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		{
 			name:     "@ modifier on matrix selector with start() before maxCacheTime",
@@ -187,9 +200,10 @@ func TestIsRequestCachable(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "@ modifier on matrix selector with end() after maxCacheTime",
-			request:  &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ end())", Start: 100000, End: 200000, Step: 5},
-			expected: false,
+			name:                      "@ modifier on matrix selector with end() after maxCacheTime",
+			request:                   &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ end())", Start: 100000, End: 200000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		// @ modifier on subqueries.
 		{
@@ -198,19 +212,22 @@ func TestIsRequestCachable(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "@ modifier on subqueries, after end, before maxCacheTime",
-			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 127)", End: 125000, Step: 5},
-			expected: false,
+			name:                      "@ modifier on subqueries, after end, before maxCacheTime",
+			request:                   &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 127)", End: 125000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		{
-			name:     "@ modifier on subqueries, before end, after maxCacheTime",
-			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 200000, Step: 5},
-			expected: false,
+			name:                      "@ modifier on subqueries, before end, after maxCacheTime",
+			request:                   &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 200000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		{
-			name:     "@ modifier on subqueries, after end, after maxCacheTime",
-			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 125000, Step: 5},
-			expected: false,
+			name:                      "@ modifier on subqueries, after end, after maxCacheTime",
+			request:                   &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 125000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		{
 			name:     "@ modifier on subqueries with start() before maxCacheTime",
@@ -218,9 +235,10 @@ func TestIsRequestCachable(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "@ modifier on subqueries with end() after maxCacheTime",
-			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ end())", Start: 100000, End: 200000, Step: 5},
-			expected: false,
+			name:                      "@ modifier on subqueries with end() after maxCacheTime",
+			request:                   &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ end())", Start: 100000, End: 200000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		// offset modifier on vector selectors.
 		{
@@ -229,9 +247,10 @@ func TestIsRequestCachable(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "negative offset on vector selector",
-			request:  &PrometheusRangeQueryRequest{Query: "metric offset -1ms", End: 125000, Step: 5},
-			expected: false,
+			name:                      "negative offset on vector selector",
+			request:                   &PrometheusRangeQueryRequest{Query: "metric offset -1ms", End: 125000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		// offset modifier on subqueries.
 		{
@@ -240,9 +259,10 @@ func TestIsRequestCachable(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "negative offset on subqueries",
-			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] offset -1ms)", Start: 100000, End: 200000, Step: 5},
-			expected: false,
+			name:                      "negative offset on subqueries",
+			request:                   &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] offset -1ms)", Start: 100000, End: 200000, Step: 5},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonModifiersNotCachable,
 		},
 		// On step aligned and non-aligned requests
 		{
@@ -251,10 +271,11 @@ func TestIsRequestCachable(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:               "request that is NOT step aligned, with cacheStepUnaligned=false",
-			request:            &PrometheusRangeQueryRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
-			expected:           false,
-			cacheStepUnaligned: false,
+			name:                      "request that is NOT step aligned, with cacheStepUnaligned=false",
+			request:                   &PrometheusRangeQueryRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
+			expected:                  false,
+			expectedNotCachableReason: notCachableReasonUnalignedTimeRange,
+			cacheStepUnaligned:        false,
 		},
 		{
 			name:               "request that is NOT step aligned",
@@ -265,8 +286,13 @@ func TestIsRequestCachable(t *testing.T) {
 	} {
 		{
 			t.Run(tc.name, func(t *testing.T) {
-				ret := isRequestCachable(tc.request, maxCacheTime, tc.cacheStepUnaligned, log.NewNopLogger())
-				require.Equal(t, tc.expected, ret)
+				cachable, reason := isRequestCachable(tc.request, maxCacheTime, tc.cacheStepUnaligned, log.NewNopLogger())
+				require.Equal(t, tc.expected, cachable)
+				if !cachable {
+					require.Equal(t, tc.expectedNotCachableReason, reason)
+				} else {
+					require.Empty(t, reason)
+				}
 			})
 		}
 	}
@@ -347,9 +373,9 @@ func TestIsResponseCachable(t *testing.T) {
 func TestPartitionCacheExtents(t *testing.T) {
 	for _, tc := range []struct {
 		name                   string
-		input                  Request
+		input                  MetricsQueryRequest
 		prevCachedResponse     []Extent
-		expectedRequests       []Request
+		expectedRequests       []MetricsQueryRequest
 		expectedCachedResponse []Response
 	}{
 		{
@@ -377,7 +403,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			prevCachedResponse: []Extent{
 				mkExtent(110, 210),
 			},
-			expectedRequests: []Request{
+			expectedRequests: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{
 					Start: 0,
 					End:   100,
@@ -395,7 +421,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			prevCachedResponse: []Extent{
 				mkExtent(50, 100),
 			},
-			expectedRequests: []Request{
+			expectedRequests: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{
 					Start: 0,
 					End:   50,
@@ -417,7 +443,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				mkExtent(50, 120),
 				mkExtent(160, 250),
 			},
-			expectedRequests: []Request{
+			expectedRequests: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{
 					Start: 120,
 					End:   160,
@@ -440,7 +466,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				mkExtent(50, 120),
 				mkExtent(122, 130),
 			},
-			expectedRequests: []Request{
+			expectedRequests: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{
 					Start: 120,
 					End:   160,
@@ -461,7 +487,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			prevCachedResponse: []Extent{
 				mkExtent(50, 90),
 			},
-			expectedRequests: []Request{
+			expectedRequests: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{
 					Start: 100,
 					End:   100,
@@ -495,12 +521,12 @@ func TestPartitionCacheExtents(t *testing.T) {
 			prevCachedResponse: []Extent{
 				// 486 is equal to input.Start + N * input.Step (for integer N)
 				// 625 is not equal to input.Start + N * input.Step for any integer N.
-				mkExtentWithStep(486, 625, 33),
+				mkExtentWithStepAndQueryTime(486, 625, 33, time.Now().UnixMilli()),
 			},
 			expectedCachedResponse: []Response{
 				mkAPIResponse(486, 625, 33),
 			},
-			expectedRequests: []Request{
+			expectedRequests: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: 123, End: 486, Step: 33},
 				&PrometheusRangeQueryRequest{
 					Start: 651,  // next number after 625 (end of extent) such that it is equal to input.Start + N * input.Step.
@@ -527,13 +553,16 @@ func TestPartitionCacheExtents(t *testing.T) {
 	}
 }
 
-func TestConstSplitter_generateCacheKey(t *testing.T) {
+func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	t.Parallel()
+	reg := prometheus.NewPedanticRegistry()
+	codec := NewPrometheusCodec(reg, formatJSON)
+
 	ctx := context.Background()
 
 	tests := []struct {
 		name     string
-		r        Request
+		r        MetricsQueryRequest
 		interval time.Duration
 		want     string
 	}{
@@ -550,7 +579,7 @@ func TestConstSplitter_generateCacheKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s - %s", tt.name, tt.interval), func(t *testing.T) {
-			if got := ConstSplitter(tt.interval).GenerateCacheKey(ctx, "fake", tt.r); got != tt.want {
+			if got := (DefaultCacheKeyGenerator{codec: codec, interval: tt.interval}).QueryRequest(ctx, "fake", tt.r); got != tt.want {
 				t.Errorf("generateKey() = %v, want %v", got, tt.want)
 			}
 		})

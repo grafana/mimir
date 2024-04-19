@@ -8,12 +8,11 @@ package bucketcache
 import (
 	"time"
 
-	"github.com/thanos-io/thanos/pkg/objstore"
-
-	"github.com/grafana/mimir/pkg/cache"
+	"github.com/grafana/dskit/cache"
+	"github.com/thanos-io/objstore"
 )
 
-// Codec for encoding and decoding results of Iter call.
+// IterCodec is a codec for encoding and decoding results of Iter call.
 type IterCodec interface {
 	Encode(files []string) ([]byte, error)
 	Decode(cachedData []byte) ([]string, error)

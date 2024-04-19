@@ -37,34 +37,28 @@ spec:
     spec:
       serviceAccountName: test-oss-values-mimir
       securityContext:
-        fsGroup: 11211
-        runAsGroup: 11211
+        fsGroup: 10001
+        runAsGroup: 10001
         runAsNonRoot: true
-        runAsUser: 11211
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      
+      terminationGracePeriodSeconds: 30
       containers:
         - name: memcached
-          image: memcached:1.6.9-alpine
+          image: memcached:1.6.26-alpine
           imagePullPolicy: IfNotPresent
           resources:
-            requests:
-              cpu: 10m
+            limits: null
+            requests: null
           ports:
             - containerPort: 11211
               name: client
           args:
             - -m 30
-            - -o
-            - modern
-            - -I 15m
+            - --extended=modern,track_sizes
+            - -I 5m
             - -c 16384
             - -v
             - -u 11211
@@ -79,7 +73,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
         - name: exporter
-          image: prom/memcached-exporter:v0.6.0
+          image: prom/memcached-exporter:v0.14.3
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9150
@@ -90,3 +84,9 @@ spec:
           resources:
             limits: {}
             requests: {}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true

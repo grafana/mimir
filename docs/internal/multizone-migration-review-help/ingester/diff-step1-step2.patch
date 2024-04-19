@@ -1,0 +1,54 @@
+diff -c -r step1/mimir-distributed/templates/ingester/ingester-statefulset.yaml step2/mimir-distributed/templates/ingester/ingester-statefulset.yaml
+*** step1/mimir-distributed/templates/ingester/ingester-statefulset.yaml
+--- step2/mimir-distributed/templates/ingester/ingester-statefulset.yaml
+***************
+*** 137,143 ****
+    namespace: "default"
+  spec:
+    podManagementPolicy: Parallel
+!   replicas: 0
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: mimir
+--- 137,143 ----
+    namespace: "default"
+  spec:
+    podManagementPolicy: Parallel
+!   replicas: 1
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: mimir
+***************
+*** 262,268 ****
+    namespace: "default"
+  spec:
+    podManagementPolicy: Parallel
+!   replicas: 0
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: mimir
+--- 262,268 ----
+    namespace: "default"
+  spec:
+    podManagementPolicy: Parallel
+!   replicas: 1
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: mimir
+***************
+*** 387,393 ****
+    namespace: "default"
+  spec:
+    podManagementPolicy: Parallel
+!   replicas: 0
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: mimir
+--- 387,393 ----
+    namespace: "default"
+  spec:
+    podManagementPolicy: Parallel
+!   replicas: 1
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: mimir

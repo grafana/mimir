@@ -4,14 +4,14 @@ package compactor
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 type compactionStage string
@@ -56,8 +56,8 @@ func (j *job) conflicts(other *job) bool {
 	// are never merged together, so they can't conflict. Since all blocks within the same job are expected to have the same
 	// downsample resolution and external labels, we just check the 1st block of each job.
 	if len(j.blocks) > 0 && len(other.blocks) > 0 {
-		myLabels := labels.NewBuilder(labels.FromMap(j.blocksGroup.blocks[0].Thanos.Labels)).Del(tsdb.CompactorShardIDExternalLabel).Labels()
-		otherLabels := labels.NewBuilder(labels.FromMap(other.blocksGroup.blocks[0].Thanos.Labels)).Del(tsdb.CompactorShardIDExternalLabel).Labels()
+		myLabels := labelsWithoutShard(j.blocksGroup.blocks[0].Thanos.Labels)
+		otherLabels := labelsWithoutShard(other.blocksGroup.blocks[0].Thanos.Labels)
 		if !labels.Equal(myLabels, otherLabels) {
 			return false
 		}
@@ -86,7 +86,7 @@ func (j *job) String() string {
 	}
 
 	// Keep the output stable for tests.
-	sort.Strings(blocks)
+	slices.Sort(blocks)
 
 	return fmt.Sprintf("stage: %s, range start: %d, range end: %d, shard: %s, blocks: %s",
 		j.stage, j.rangeStart, j.rangeEnd, j.shardID, strings.Join(blocks, ","))
@@ -94,9 +94,9 @@ func (j *job) String() string {
 
 // blocksGroup holds a group of blocks within the same time range.
 type blocksGroup struct {
-	rangeStart int64            // Included.
-	rangeEnd   int64            // Excluded.
-	blocks     []*metadata.Meta // Sorted by MinTime.
+	rangeStart int64         // Included.
+	rangeEnd   int64         // Excluded.
+	blocks     []*block.Meta // Sorted by MinTime.
 }
 
 // overlaps returns whether the group range overlaps with the input group.
@@ -131,9 +131,22 @@ func (g blocksGroup) maxTime() int64 {
 	return max
 }
 
+// maxCompactionLevel returns the highest Compaction.Level across all blocks in the group.
+func (g blocksGroup) maxCompactionLevel() int {
+	maxLevel := g.blocks[0].Compaction.Level
+
+	for _, b := range g.blocks[1:] {
+		if b.Compaction.Level > maxLevel {
+			maxLevel = b.Compaction.Level
+		}
+	}
+
+	return maxLevel
+}
+
 // getNonShardedBlocks returns the list of non-sharded blocks.
-func (g blocksGroup) getNonShardedBlocks() []*metadata.Meta {
-	var out []*metadata.Meta
+func (g blocksGroup) getNonShardedBlocks() []*block.Meta {
+	var out []*block.Meta
 
 	for _, b := range g.blocks {
 		if value, ok := b.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]; !ok || value == "" {

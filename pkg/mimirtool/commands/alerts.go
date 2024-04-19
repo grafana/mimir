@@ -14,28 +14,26 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
+	gokitlog "github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/featurecontrol"
+	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/grafana/mimir/pkg/mimirtool/printer"
-)
-
-var (
-	nonDuplicateAlerts = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "mimirtool_alerts_single_source",
-			Help: "Alerts found by the alerts verify command that are coming from a single source rather than multiple sources..",
-		},
-	)
 )
 
 // AlertmanagerCommand configures and executes rule related mimir api operations
@@ -45,6 +43,9 @@ type AlertmanagerCommand struct {
 	AlertmanagerConfigFile string
 	TemplateFiles          []string
 	DisableColor           bool
+	ValidateOnly           bool
+	OutputDir              string
+	UTF8StrictMode         bool
 
 	cli *client.MimirClient
 }
@@ -60,31 +61,78 @@ type AlertCommand struct {
 	CheckFrequency int
 	ClientConfig   client.Config
 	cli            *client.MimirClient
+
+	// Metrics.
+	nonDuplicateAlerts prometheus.Gauge
 }
 
 // Register rule related commands and flags with the kingpin application
 func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	alertCmd := app.Command("alertmanager", "View and edit Alertmanager configurations that are stored in Grafana Mimir.").PreAction(a.setup)
-	alertCmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
-	alertCmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
-	alertCmd.Flag("user", fmt.Sprintf("API user to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
-	alertCmd.Flag("key", "API key to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&a.ClientConfig.Key)
+	alertCmd.Flag("user", fmt.Sprintf("Basic auth API user to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
+	alertCmd.Flag("key", "Basic auth API key to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&a.ClientConfig.Key)
 	alertCmd.Flag("tls-ca-path", "TLS CA certificate to verify Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCAPath+".").Default("").Envar(envVars.TLSCAPath).StringVar(&a.ClientConfig.TLS.CAPath)
 	alertCmd.Flag("tls-cert-path", "TLS client certificate to authenticate with the Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCertPath+".").Default("").Envar(envVars.TLSCertPath).StringVar(&a.ClientConfig.TLS.CertPath)
 	alertCmd.Flag("tls-key-path", "TLS client certificate private key to authenticate with the Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSKeyPath+".").Default("").Envar(envVars.TLSKeyPath).StringVar(&a.ClientConfig.TLS.KeyPath)
+	alertCmd.Flag("tls-insecure-skip-verify", "Skip TLS certificate verification; alternatively, set "+envVars.TLSInsecureSkipVerify+".").Default("false").Envar(envVars.TLSInsecureSkipVerify).BoolVar(&a.ClientConfig.TLS.InsecureSkipVerify)
 	alertCmd.Flag("auth-token", "Authentication token bearer authentication; alternatively, set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&a.ClientConfig.AuthToken)
+	alertCmd.Flag("utf8-strict-mode", "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts.").Default("false").BoolVar(&a.UTF8StrictMode)
+
 	// Get Alertmanager Configs Command
 	getAlertsCmd := alertCmd.Command("get", "Get the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.getConfig)
 	getAlertsCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
+	getAlertsCmd.Flag("output-dir", "The directory where the config and templates will be written to and disables printing to console.").ExistingDirVar(&a.OutputDir)
 
-	alertCmd.Command("delete", "Delete the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.deleteConfig)
+	deleteCmd := alertCmd.Command("delete", "Delete the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.deleteConfig)
 
-	loadalertCmd := alertCmd.Command("load", "Load a set of rules to a designated Grafana Mimir endpoint").Action(a.loadConfig)
-	loadalertCmd.Arg("config", "alertmanager configuration to load").Required().StringVar(&a.AlertmanagerConfigFile)
+	loadalertCmd := alertCmd.Command("load", "Load Alertmanager tenant configuration and template files into Grafana Mimir.").Action(a.loadConfig)
+	loadalertCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
 	loadalertCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
+
+	for _, cmd := range []*kingpin.CmdClause{getAlertsCmd, deleteCmd, loadalertCmd} {
+		cmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
+		cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided.").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
+	}
+
+	migrateCmd := alertCmd.Command("migrate-utf8", "Migrate the Alertmanager tenant configuration for UTF-8.").Action(a.migrateConfig)
+	migrateCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
+	migrateCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
+	migrateCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
+	migrateCmd.Flag("output-dir", "The directory where the migrated configuration and templates will be written to and disables printing to console.").ExistingDirVar(&a.OutputDir)
+
+	verifyalertCmd := alertCmd.Command("verify", "Verify Alertmanager tenant configuration and template files.").Action(a.verifyAlertmanagerConfig)
+	verifyalertCmd.Arg("config", "Alertmanager configuration to verify").Required().StringVar(&a.AlertmanagerConfigFile)
+	verifyalertCmd.Arg("template-files", "The template files to verify").ExistingFilesVar(&a.TemplateFiles)
+
+	trCmd := &TemplateRenderCmd{}
+	renderCmd := alertCmd.Command("render", "Render a given definition in a template file to standard output.").Action(trCmd.render)
+	renderCmd.Flag("template.glob", "Glob of paths that will be expanded and used for rendering.").Required().StringsVar(&trCmd.TemplateFilesGlobs)
+	renderCmd.Flag("template.text", "The template that will be rendered.").Required().StringVar(&trCmd.TemplateText)
+	renderCmd.Flag("template.type", "The type of the template. Can be either text (default) or html.").EnumVar(&trCmd.TemplateType, "html", "text")
+	renderCmd.Flag("template.data", "Full path to a file which contains the data of the alert(-s) with which the --template-text will be rendered. Must be in JSON. File must be formatted according to the following layout: https://pkg.go.dev/github.com/prometheus/alertmanager/template#Data. If none has been specified then a predefined, simple alert will be used for rendering.").FileVar(&trCmd.TemplateData)
+	renderCmd.Flag("id", "Basic auth username to use when rendering template used by the function `tenantID`, also set as tenant ID; alternatively, set "+envVars.TenantID+".").
+		Envar(envVars.TenantID).
+		Default("").
+		StringVar(&trCmd.TenantID)
 }
 
-func (a *AlertmanagerCommand) setup(k *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext) error {
+	// The default mode for mimirtool is to first use the new parser for UTF-8 matchers,
+	// and if it fails, fallback to the classic parser. If this happens, it also logs a
+	// warning to stdout. It is possible to disable to fallback, and use just the UTF-8
+	// parser, with the -utf8-strict-mode flag. This will help operators ensure their
+	// configurations are compatible with the new parser going forward.
+	l := level.NewFilter(gokitlog.NewLogfmtLogger(os.Stdout), level.AllowInfo())
+	features := ""
+	if a.UTF8StrictMode {
+		features = featurecontrol.FeatureUTF8StrictMode
+	}
+	flags, err := featurecontrol.NewFlags(l, features)
+	if err != nil {
+		return err
+	}
+	compat.InitFromFlags(l, flags)
+
 	cli, err := client.New(a.ClientConfig)
 	if err != nil {
 		return err
@@ -94,59 +142,129 @@ func (a *AlertmanagerCommand) setup(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (a *AlertmanagerCommand) getConfig(k *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) getConfig(_ *kingpin.ParseContext) error {
 	cfg, templates, err := a.cli.GetAlertmanagerConfig(context.Background())
 	if err != nil {
-		if err == client.ErrResourceNotFound {
+		if errors.Is(err, client.ErrResourceNotFound) {
 			log.Infof("no Alertmanager config currently exists for this user")
 			return nil
 		}
 		return err
 	}
 
-	p := printer.New(a.DisableColor)
-
-	return p.PrintAlertmanagerConfig(cfg, templates)
+	if a.OutputDir == "" {
+		p := printer.New(a.DisableColor)
+		return p.PrintAlertmanagerConfig(cfg, templates)
+	}
+	return a.outputAlertManagerConfigTemplates(cfg, templates)
 }
 
-func (a *AlertmanagerCommand) loadConfig(k *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) outputAlertManagerConfigTemplates(config string, templates map[string]string) error {
+	var baseDir string
+	var fileOutputLocation string
+	baseDir, err := filepath.Abs(a.OutputDir)
+	if err != nil {
+		return err
+	}
+	fileOutputLocation = filepath.Join(baseDir, "config.yaml")
+	log.Debugf("writing the config file to %s", fileOutputLocation)
+	err = os.WriteFile(fileOutputLocation, []byte(config), os.FileMode(0o600))
+	if err != nil {
+		return err
+	}
+
+	for fn, template := range templates {
+		fileOutputLocation = filepath.Join(baseDir, fn)
+		log.Debugf("writing the template file to %s", fileOutputLocation)
+		err = os.WriteFile(fileOutputLocation, []byte(template), os.FileMode(0o600))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *AlertmanagerCommand) readAlertManagerConfig() (string, map[string]string, error) {
 	content, err := os.ReadFile(a.AlertmanagerConfigFile)
 	if err != nil {
-		return errors.Wrap(err, "unable to load config file: "+a.AlertmanagerConfigFile)
+		return "", nil, errors.Wrap(err, "unable to load config file: "+a.AlertmanagerConfigFile)
 	}
 
 	cfg := string(content)
 	_, err = config.Load(cfg)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 
+	templates, err := a.readAlertManagerConfigTemplates()
+	if err != nil {
+		return "", nil, err
+	}
+
+	return cfg, templates, nil
+}
+
+func (a *AlertmanagerCommand) readAlertManagerConfigTemplates() (map[string]string, error) {
 	templates := map[string]string{}
+	originalPaths := map[string]string{}
 	for _, f := range a.TemplateFiles {
 		tmpl, err := os.ReadFile(f)
 		if err != nil {
-			return errors.Wrap(err, "unable to load template file: "+f)
+			return nil, errors.Wrap(err, "unable to load template file: "+f)
 		}
-		templates[f] = string(tmpl)
+		name := filepath.Base(f)
+		if _, ok := templates[name]; ok {
+			return nil, errors.Errorf("cannot have multiple templates with same file names but different paths: %s collides with %s", f, originalPaths[name])
+		}
+		templates[name] = string(tmpl)
+		originalPaths[name] = f
 	}
+	return templates, nil
+}
 
+func (a *AlertmanagerCommand) verifyAlertmanagerConfig(_ *kingpin.ParseContext) error {
+	_, _, err := a.readAlertManagerConfig()
+	return err
+}
+
+func (a *AlertmanagerCommand) loadConfig(_ *kingpin.ParseContext) error {
+	cfg, templates, err := a.readAlertManagerConfig()
+	if err != nil {
+		return err
+	}
 	return a.cli.CreateAlertmanagerConfig(context.Background(), cfg, templates)
 }
 
-func (a *AlertmanagerCommand) deleteConfig(k *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) deleteConfig(_ *kingpin.ParseContext) error {
 	err := a.cli.DeleteAlermanagerConfig(context.Background())
-	if err != nil && err != client.ErrResourceNotFound {
+	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		return err
 	}
 	return nil
 }
 
-func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
-	alertCmd := app.Command("alerts", "View active alerts in alertmanager.").PreAction(a.setup)
+func (a *AlertmanagerCommand) migrateConfig(_ *kingpin.ParseContext) error {
+	cfg, templates, err := a.readAlertManagerConfig()
+	if err != nil {
+		return err
+	}
+	cfg, err = migrateCfg(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to migrate cfg: %w", err)
+	}
+	if a.OutputDir == "" {
+		p := printer.New(a.DisableColor)
+		return p.PrintAlertmanagerConfig(cfg, templates)
+	}
+	return a.outputAlertManagerConfigTemplates(cfg, templates)
+}
+
+func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames, reg prometheus.Registerer) {
+	alertCmd := app.Command("alerts", "View active alerts in alertmanager.").PreAction(func(k *kingpin.ParseContext) error { return a.setup(k, reg) })
 	alertCmd.Flag("address", "Address of the Grafana Mimir cluster, alternatively set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
-	alertCmd.Flag("id", "Mimir tenant id, alternatively set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
-	alertCmd.Flag("user", fmt.Sprintf("API user to use when contacting Grafana Mimir, alternatively set %s. If empty, %s will be used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
-	alertCmd.Flag("key", "API key to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&a.ClientConfig.Key)
+	alertCmd.Flag("id", "Mimir tenant id, alternatively set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided..").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
+	alertCmd.Flag("user", fmt.Sprintf("Basic auth username to use when contacting Grafana Mimir, alternatively set %s. If empty, %s will be used instead. ", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
+	alertCmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&a.ClientConfig.Key)
 	alertCmd.Flag("auth-token", "Authentication token for bearer token or JWT auth, alternatively set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&a.ClientConfig.AuthToken)
 
 	verifyAlertsCmd := alertCmd.Command("verify", "Verifies whether or not alerts in an Alertmanager cluster are deduplicated; useful for verifying correct configuration when transferring from Prometheus to Grafana Mimir alert evaluation.").Action(a.verifyConfig)
@@ -156,7 +274,14 @@ func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	verifyAlertsCmd.Flag("frequency", "Setting this value will turn mimirtool into a long-running process, running the alerts verify check every # of minutes specified").IntVar(&a.CheckFrequency)
 }
 
-func (a *AlertCommand) setup(k *kingpin.ParseContext) error {
+func (a *AlertCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
+	a.nonDuplicateAlerts = promauto.With(reg).NewGauge(
+		prometheus.GaugeOpts{
+			Name: "mimirtool_alerts_single_source",
+			Help: "Alerts found by the alerts verify command that are coming from a single source rather than multiple sources..",
+		},
+	)
+
 	cli, err := client.New(a.ClientConfig)
 	if err != nil {
 		return err
@@ -180,7 +305,7 @@ type metric struct {
 	Metric map[string]string `json:"metric"`
 }
 
-func (a *AlertCommand) verifyConfig(k *kingpin.ParseContext) error {
+func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
 	var empty interface{}
 	if a.IgnoreString != "" {
 		a.IgnoreAlerts = make(map[string]interface{})
@@ -209,7 +334,7 @@ func (a *AlertCommand) verifyConfig(k *kingpin.ParseContext) error {
 	// Use a different registerer than default so we don't get all the Mimir metrics, but include Go runtime metrics.
 	goStats := collectors.NewGoCollector()
 	reg := prometheus.NewRegistry()
-	reg.MustRegister(nonDuplicateAlerts)
+	reg.MustRegister(a.nonDuplicateAlerts)
 	reg.MustRegister(goStats)
 
 	http.Handle("/metrics", promhttp.HandlerFor(
@@ -223,12 +348,12 @@ func (a *AlertCommand) verifyConfig(k *kingpin.ParseContext) error {
 
 	ctx := context.Background()
 
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	defer func() {
 		signal.Stop(c)
-		cancel()
+		cancel(cancellation.NewErrorf("application stopped"))
 	}()
 	var lastErr error
 	var n int
@@ -237,10 +362,10 @@ func (a *AlertCommand) verifyConfig(k *kingpin.ParseContext) error {
 		ticker := time.NewTicker(time.Duration(a.CheckFrequency) * time.Minute)
 		for {
 			n, lastErr = a.runVerifyQuery(ctx, query)
-			nonDuplicateAlerts.Set(float64(n))
+			a.nonDuplicateAlerts.Set(float64(n))
 			select {
 			case <-c:
-				cancel()
+				cancel(cancellation.NewErrorf("application received shutdown signal"))
 				return
 			case <-ticker.C:
 				continue

@@ -8,7 +8,7 @@ package frontend
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,20 +21,21 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
+	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/user"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
-	"github.com/weaveworks/common/middleware"
-	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 )
 
 const (
@@ -84,7 +85,7 @@ func TestFrontend_RequestHostHeaderWhenDownstreamURLIsConfigured(t *testing.T) {
 		require.Equal(t, 200, resp.StatusCode)
 
 		defer resp.Body.Close()
-		_, err = ioutil.ReadAll(resp.Body)
+		_, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
 		// We expect the Host received by the downstream is the downstream host itself
@@ -104,7 +105,7 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 	require.NoError(t, err)
 
 	downstreamServer := http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, err := w.Write([]byte(responseBody))
 			require.NoError(t, err)
 		}),
@@ -142,7 +143,7 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 
 		resp, err := client.Do(req)
 		assert.NoError(t, err)
-		b, err := ioutil.ReadAll(resp.Body)
+		b, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
 		assert.NoError(t, err)
@@ -166,7 +167,7 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 	require.NoError(t, err)
 
 	downstreamServer := http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, err := w.Write([]byte(responseBody))
 			require.NoError(t, err)
 		}),
@@ -200,7 +201,7 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 
 		resp, err := client.Do(req)
 		assert.NoError(t, err)
-		b, err := ioutil.ReadAll(resp.Body)
+		b, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		assert.NoError(t, err)
 
@@ -228,7 +229,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	httpListen, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
-	rt, v1, v2, err := InitFrontend(config, limits{}, 0, logger, nil)
+	rt, v1, v2, err := InitFrontend(config, limits{}, limits{}, 0, logger, nil)
 	require.NoError(t, err)
 	require.NotNil(t, rt)
 	// v1 will be nil if DownstreamURL is defined.
@@ -253,7 +254,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	r.PathPrefix("/").Handler(middleware.Merge(
 		middleware.AuthenticateUser,
 		middleware.Tracer{},
-	).Wrap(transport.NewHandler(config.Handler, rt, logger, nil)))
+	).Wrap(transport.NewHandler(config.Handler, rt, logger, nil, nil)))
 
 	httpServer := http.Server{
 		Handler: r,
@@ -264,7 +265,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	go grpcServer.Serve(grpcListen) //nolint:errcheck
 
 	var worker services.Service
-	worker, err = querier_worker.NewQuerierWorker(workerConfig, httpgrpc_server.NewServer(handler), logger, nil)
+	worker, err = querier_worker.NewQuerierWorker(workerConfig, httpgrpc_server.NewServer(handler, httpgrpc_server.WithReturn4XXErrors), logger, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), worker))
 
@@ -279,13 +280,23 @@ func defaultFrontendConfig() CombinedFrontendConfig {
 	flagext.DefaultValues(&config.Handler)
 	flagext.DefaultValues(&config.FrontendV1)
 	flagext.DefaultValues(&config.FrontendV2)
+
+	querySchedulerDiscoveryConfig := schedulerdiscovery.Config{}
+	flagext.DefaultValues(&querySchedulerDiscoveryConfig)
+	config.FrontendV2.QuerySchedulerDiscovery = querySchedulerDiscoveryConfig
+
 	return config
 }
 
 type limits struct {
-	queriers int
+	queriers             int
+	queryIngestersWithin time.Duration
 }
 
 func (l limits) MaxQueriersPerUser(_ string) int {
 	return l.queriers
+}
+
+func (l limits) QueryIngestersWithin(string) time.Duration {
+	return l.queryIngestersWithin
 }

@@ -3,6 +3,7 @@
 package astmapper
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"time"
@@ -10,9 +11,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 type instantSplitter struct {
+	ctx context.Context
+
 	interval time.Duration
 	// In case of outer vector aggregator expressions, this contains the expression that will be used on the
 	// downstream queries, i.e. the query that will be executed in parallel in each partial query.
@@ -56,9 +60,10 @@ var cannotDoubleCountBoundaries = map[string]bool{
 }
 
 // NewInstantQuerySplitter creates a new query range mapper.
-func NewInstantQuerySplitter(interval time.Duration, logger log.Logger, stats *InstantSplitterStats) ASTMapper {
+func NewInstantQuerySplitter(ctx context.Context, interval time.Duration, logger log.Logger, stats *InstantSplitterStats) ASTMapper {
 	instantQueryMapper := NewASTExprMapper(
 		&instantSplitter{
+			ctx:      ctx,
 			interval: interval,
 			logger:   logger,
 			stats:    stats,
@@ -73,6 +78,10 @@ func NewInstantQuerySplitter(interval time.Duration, logger log.Logger, stats *I
 
 // MapExpr returns expr mapped as embedded queries
 func (i *instantSplitter) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
+	if err := i.ctx.Err(); err != nil {
+		return nil, false, err
+	}
+
 	// Immediately clone the expr to avoid mutating the original
 	expr, err = cloneExpr(expr)
 	if err != nil {
@@ -87,6 +96,7 @@ func (i *instantSplitter) MapExpr(expr parser.Expr) (mapped parser.Expr, finishe
 	case *parser.Call:
 		if isSubqueryCall(e) {
 			// Subqueries are currently not supported by splitting, so we stop the mapping here.
+			i.stats.SetSkippedReason(SkippedReasonSubquery)
 			return e, true, nil
 		}
 
@@ -95,6 +105,7 @@ func (i *instantSplitter) MapExpr(expr parser.Expr) (mapped parser.Expr, finishe
 		return i.mapParenExpr(e)
 	case *parser.SubqueryExpr:
 		// Subqueries are currently not supported by splitting, so we stop the mapping here.
+		i.stats.SetSkippedReason(SkippedReasonSubquery)
 		return e, true, nil
 	default:
 		return e, false, nil
@@ -184,7 +195,7 @@ func (i *instantSplitter) mapParenExpr(expr *parser.ParenExpr) (mapped parser.Ex
 
 	return &parser.ParenExpr{
 		Expr:     parenExpr,
-		PosRange: parser.PositionRange{},
+		PosRange: posrange.PositionRange{},
 	}, true, nil
 }
 
@@ -246,9 +257,10 @@ func (i *instantSplitter) mapCallRate(expr *parser.Call) (mapped parser.Expr, fi
 	// don't split it and don't map further nodes (finished=true).
 	rangeInterval, canSplit, err := i.assertSplittableRangeInterval(expr)
 	if err != nil {
-		return nil, true, err
+		return nil, false, err
 	}
 	if !canSplit {
+		i.stats.SetSkippedReason(SkippedReasonSmallInterval)
 		return expr, true, nil
 	}
 
@@ -290,6 +302,7 @@ func (i *instantSplitter) mapCallVectorAggregation(expr *parser.Call, op parser.
 		return nil, false, err
 	}
 	if !canSplit {
+		i.stats.SetSkippedReason(SkippedReasonSmallInterval)
 		return expr, true, nil
 	}
 
@@ -319,7 +332,7 @@ func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, rangeInterva
 		Param:    nil,
 		Grouping: grouping,
 		Without:  groupingWithout,
-		PosRange: parser.PositionRange{},
+		PosRange: posrange.PositionRange{},
 	}, true, nil
 }
 

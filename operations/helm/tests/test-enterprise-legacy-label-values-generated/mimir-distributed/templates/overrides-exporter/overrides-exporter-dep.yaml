@@ -1,0 +1,106 @@
+---
+# Source: mimir-distributed/templates/overrides-exporter/overrides-exporter-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    {}
+  labels:
+    app: enterprise-metrics-overrides-exporter
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  name: test-enterprise-legacy-label-values-enterprise-metrics-overrides-exporter
+  namespace: "citestns"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-metrics-overrides-exporter
+      release: test-enterprise-legacy-label-values
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: enterprise-metrics-overrides-exporter
+        name: overrides-exporter
+        target: overrides-exporter
+        release: test-enterprise-legacy-label-values
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: overrides-exporter
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=overrides-exporter"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: storage
+              mountPath: "/data"
+              subPath: 
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+      
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-config
+        - name: license
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-license
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-legacy-label-values-enterprise-metrics-runtime
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

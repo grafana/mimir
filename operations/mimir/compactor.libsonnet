@@ -4,27 +4,9 @@
   local container = $.core.v1.container,
   local statefulSet = $.apps.v1.statefulSet,
 
-  local parseDuration(duration) =
-    if std.endsWith(duration, 's') then
-      std.parseInt(std.substr(duration, 0, std.length(duration) - 1))
-    else if std.endsWith(duration, 'm') then
-      std.parseInt(std.substr(duration, 0, std.length(duration) - 1)) * 60
-    else if std.endsWith(duration, 'h') then
-      std.parseInt(std.substr(duration, 0, std.length(duration) - 1)) * 3600
-    else
-      error 'unable to parse duration %s' % duration,
-
-  local formatDuration(seconds) =
-    if seconds <= 60 then
-      '%ds' % seconds
-    else if seconds <= 3600 && seconds % 60 == 0 then
-      '%dm' % (seconds / 60)
-    else if seconds % 3600 == 0 then
-      '%dh' % (seconds / 3600)
-    else
-      '%dm%ds' % [seconds / 60, seconds % 60],
-
   compactor_args::
+    $._config.commonConfig +
+    $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
@@ -55,33 +37,45 @@
 
       // Configure sharding.
       'compactor.ring.store': 'consul',
-      'compactor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'compactor.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'compactor.ring.prefix': '',
       'compactor.ring.wait-stability-min-duration': '1m',  // Wait until ring is stable before switching to ACTIVE.
 
+      // Relax pressure on KV store when running at scale.
+      'compactor.ring.heartbeat-period': '1m',
+      'compactor.ring.heartbeat-timeout': '4m',
+
+      // The compactor wait period is the amount of time that compactors will wait before compacting
+      // 1st level blocks (uploaded by ingesters) since the last block was uploaded. In the worst
+      // case scenario, we have 1 ingester whose TSDB head compaction started at time 0 and another
+      // ingester who started at time -blocks-storage.tsdb.head-compaction-interval. So the total
+      // time we should wait is -blocks-storage.tsdb.head-compaction-interval + a small delta (10m) to
+      // account for am ingester slower than others to compact and upload blocks.
+      'compactor.first-level-compaction-wait-period': $.util.formatDuration(
+        $.util.parseDuration($.ingester_args['blocks-storage.tsdb.head-compaction-interval']) +
+        $.util.parseDuration('10m')
+      ),
+
       // Delete blocks sooner in order to keep the number of live blocks lower in the storage.
-      'compactor.deletion-delay': formatDuration(
+      'compactor.deletion-delay': $.util.formatDuration(
         // Bucket index is updated every cleanup interval.
-        parseDuration($._config.compactor_cleanup_interval) +
+        $.util.parseDuration($._config.compactor_cleanup_interval) +
         // Wait until after the ignore deletion marks delay.
-        parseDuration(
+        $.util.parseDuration(
           if std.objectHas($.store_gateway_args, 'blocks-storage.bucket-store.ignore-deletion-marks-delay') then
             $.store_gateway_args['blocks-storage.bucket-store.ignore-deletion-marks-delay']
           else
             '1h'  // Default config.
         ) +
         // Wait until store-gateway have updated. Add 3x the sync interval (instead of 1x) to account for delays and temporarily failures.
-        (parseDuration(
+        ($.util.parseDuration(
            if std.objectHas($.store_gateway_args, 'blocks-storage.bucket-store.sync-interval') then
              $.store_gateway_args['blocks-storage.bucket-store.sync-interval']
            else
              '15m'  // Default config.
          ) * 3)
       ),
-
-      // Limits config.
-      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
-    },
+    } + $.mimirRuntimeConfigFile,
 
   local compactor_data_pvc =
     pvc.new() +
@@ -92,28 +86,51 @@
 
   compactor_ports:: $.util.defaultPorts,
 
+  compactor_env_map:: {},
+
+  compactor_node_affinity_matchers:: [],
+
   compactor_container::
     container.new('compactor', $._images.compactor) +
     container.withPorts($.compactor_ports) +
     container.withArgsMixin($.util.mapToFlags($.compactor_args)) +
     container.withVolumeMountsMixin([volumeMount.new('compactor-data', '/data')]) +
+    (if std.length($.compactor_env_map) > 0 then container.withEnvMap(std.prune($.compactor_env_map)) else {}) +
     // Do not limit compactor CPU and request enough cores to honor configured max concurrency.
     $.util.resourcesRequests($._config.compactor_max_concurrency, '6Gi') +
     $.util.resourcesLimits(null, '6Gi') +
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  newCompactorStatefulSet(name, container)::
+  newCompactorStatefulSet(name, container, nodeAffinityMatchers=[], concurrent_rollout_enabled=false, max_unavailable=1)::
     $.newMimirStatefulSet(name, 1, container, compactor_data_pvc) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint),
+    $.mimirVolumeMounts +
+    (
+      if !concurrent_rollout_enabled then {} else
+        statefulSet.mixin.spec.selector.withMatchLabels({ name: 'compactor', 'rollout-group': 'compactor' }) +
+        statefulSet.mixin.spec.updateStrategy.withType('OnDelete') +
+        statefulSet.mixin.metadata.withLabelsMixin({ 'rollout-group': 'compactor' }) +
+        statefulSet.mixin.metadata.withAnnotationsMixin({ 'rollout-max-unavailable': std.toString(max_unavailable) }) +
+        statefulSet.mixin.spec.template.metadata.withLabelsMixin({ 'rollout-group': 'compactor' })
+    ),
 
-  compactor_statefulset:
-    $.newCompactorStatefulSet('compactor', $.compactor_container),
+  compactor_statefulset: if !$._config.is_microservices_deployment_mode then null else
+    $.newCompactorStatefulSet(
+      'compactor',
+      $.compactor_container,
+      $.compactor_node_affinity_matchers,
+      $._config.cortex_compactor_concurrent_rollout_enabled,
+      $._config.cortex_compactor_max_unavailable,
+    ),
 
-  compactor_service:
+  compactor_service: if !$._config.is_microservices_deployment_mode then null else
     local service = $.core.v1.service;
 
     $.util.serviceFor($.compactor_statefulset, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),
+
+  compactor_pdb: if !$._config.is_microservices_deployment_mode then null else
+    $.newMimirPdb('compactor'),
 }

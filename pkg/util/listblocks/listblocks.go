@@ -13,34 +13,37 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/oklog/ulid"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-// LoadMetaFilesAndDeletionMarkers reads the bucket and loads the meta files for the provided user.
+// LoadMetaFilesAndMarkers reads the bucket and loads the meta files for the provided user.
+// No-compact marker files are also read and returned all the time.
 // If showDeleted is true, then deletion marker files are also read and returned.
 // If ulidMinTime is non-zero, then only blocks with ULID time higher than that are read,
 // this is useful to filter the results for users with high amount of blocks without reading the metas
 // (but it can be inexact since ULID time can differ from block min/max times range).
-func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, ulidMinTime time.Time) (metas map[ulid.ULID]*metadata.Meta, deletionTimes map[ulid.ULID]time.Time, _ error) {
+func LoadMetaFilesAndMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, ulidMinTime time.Time) (metas map[ulid.ULID]*block.Meta, deletionDetails map[ulid.ULID]block.DeletionMark, noCompactDetails map[ulid.ULID]block.NoCompactMark, _ error) {
 	deletedBlocks := map[ulid.ULID]bool{}
+	noCompactMarkerFiles := []string(nil)
 	deletionMarkerFiles := []string(nil)
 
-	// Find blocks marked for deletion
-	err := bkt.Iter(ctx, path.Join(user, bucketindex.MarkersPathname), func(s string) error {
-		if id, ok := bucketindex.IsBlockDeletionMarkFilename(path.Base(s)); ok {
+	// Find blocks marked for deletion and no-compact.
+	err := bkt.Iter(ctx, path.Join(user, block.MarkersPathname), func(s string) error {
+		if id, ok := block.IsDeletionMarkFilename(path.Base(s)); ok {
 			deletedBlocks[id] = true
 			deletionMarkerFiles = append(deletionMarkerFiles, s)
+		}
+		if _, ok := block.IsNoCompactMarkFilename(path.Base(s)); ok {
+			noCompactMarkerFiles = append(noCompactMarkerFiles, s)
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	metaPaths := []string(nil)
@@ -62,28 +65,31 @@ func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketRea
 	})
 
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if showDeleted {
-		deletionTimes, err = fetchDeletionTimes(ctx, bkt, deletionMarkerFiles)
+		deletionDetails, err = fetchMarkerDetails[block.DeletionMark](ctx, bkt, deletionMarkerFiles)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
-
+	noCompactDetails, err = fetchMarkerDetails[block.NoCompactMark](ctx, bkt, noCompactMarkerFiles)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	metas, err = fetchMetas(ctx, bkt, metaPaths)
-	return metas, deletionTimes, err
+	return metas, deletionDetails, noCompactDetails, err
 }
 
 const concurrencyLimit = 32
 
-func fetchDeletionTimes(ctx context.Context, bkt objstore.BucketReader, deletionMarkers []string) (map[ulid.ULID]time.Time, error) {
+func fetchMarkerDetails[MARKER_TYPE block.Marker](ctx context.Context, bkt objstore.BucketReader, markers []string) (map[ulid.ULID]MARKER_TYPE, error) {
 	mu := sync.Mutex{}
-	times := map[ulid.ULID]time.Time{}
+	details := map[ulid.ULID]MARKER_TYPE{}
 
-	return times, concurrency.ForEachJob(ctx, len(deletionMarkers), concurrencyLimit, func(ctx context.Context, idx int) error {
-		r, err := bkt.Get(ctx, deletionMarkers[idx])
+	return details, concurrency.ForEachJob(ctx, len(markers), concurrencyLimit, func(ctx context.Context, idx int) error {
+		r, err := bkt.Get(ctx, markers[idx])
 		if err != nil {
 			if bkt.IsObjNotFoundErr(err) {
 				return nil
@@ -95,22 +101,21 @@ func fetchDeletionTimes(ctx context.Context, bkt objstore.BucketReader, deletion
 
 		dec := json.NewDecoder(r)
 
-		m := metadata.DeletionMark{}
+		var m MARKER_TYPE
 		if err := dec.Decode(&m); err != nil {
 			return err
 		}
 
 		mu.Lock()
-		times[m.ID] = time.Unix(m.DeletionTime, 0)
+		details[m.BlockULID()] = m
 		mu.Unlock()
-
 		return nil
 	})
 }
 
-func fetchMetas(ctx context.Context, bkt objstore.BucketReader, metaFiles []string) (map[ulid.ULID]*metadata.Meta, error) {
+func fetchMetas(ctx context.Context, bkt objstore.BucketReader, metaFiles []string) (map[ulid.ULID]*block.Meta, error) {
 	mu := sync.Mutex{}
-	metas := map[ulid.ULID]*metadata.Meta{}
+	metas := map[ulid.ULID]*block.Meta{}
 
 	return metas, concurrency.ForEachJob(ctx, len(metaFiles), concurrencyLimit, func(ctx context.Context, idx int) error {
 		r, err := bkt.Get(ctx, metaFiles[idx])
@@ -123,7 +128,7 @@ func fetchMetas(ctx context.Context, bkt objstore.BucketReader, metaFiles []stri
 		}
 		defer r.Close()
 
-		m, err := metadata.Read(r)
+		m, err := block.ReadMeta(r)
 		if err != nil {
 			return err
 		}
@@ -136,8 +141,8 @@ func fetchMetas(ctx context.Context, bkt objstore.BucketReader, metaFiles []stri
 	})
 }
 
-func SortBlocks(metas map[ulid.ULID]*metadata.Meta) []*metadata.Meta {
-	var blocks []*metadata.Meta
+func SortBlocks(metas map[ulid.ULID]*block.Meta) []*block.Meta {
+	var blocks []*block.Meta
 
 	for _, b := range metas {
 		blocks = append(blocks, b)
@@ -181,7 +186,7 @@ func SortBlocks(metas map[ulid.ULID]*metadata.Meta) []*metadata.Meta {
 	return blocks
 }
 
-func GetFormattedBlockSize(b *metadata.Meta) string {
+func GetFormattedBlockSize(b *block.Meta) string {
 	if len(b.Thanos.Files) == 0 {
 		return ""
 	}
@@ -191,7 +196,7 @@ func GetFormattedBlockSize(b *metadata.Meta) string {
 	return humanize.IBytes(size)
 }
 
-func GetBlockSizeBytes(b *metadata.Meta) uint64 {
+func GetBlockSizeBytes(b *block.Meta) uint64 {
 	size := uint64(0)
 	for _, f := range b.Thanos.Files {
 		size += uint64(f.SizeBytes)

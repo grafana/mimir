@@ -29,7 +29,7 @@ func (r *MimirClient) CreateRuleGroup(ctx context.Context, namespace string, rg 
 	escapedNamespace := url.PathEscape(namespace)
 	path := r.apiPath + "/" + escapedNamespace
 
-	res, err := r.doRequest(path, "POST", bytes.NewBuffer(payload), int64(len(payload)))
+	res, err := r.doRequest(ctx, path, "POST", bytes.NewBuffer(payload), int64(len(payload)))
 	if err != nil {
 		return err
 	}
@@ -39,13 +39,13 @@ func (r *MimirClient) CreateRuleGroup(ctx context.Context, namespace string, rg 
 	return nil
 }
 
-// DeleteRuleGroup creates a new rule group
+// DeleteRuleGroup deletes a rule group
 func (r *MimirClient) DeleteRuleGroup(ctx context.Context, namespace, groupName string) error {
 	escapedNamespace := url.PathEscape(namespace)
 	escapedGroupName := url.PathEscape(groupName)
 	path := r.apiPath + "/" + escapedNamespace + "/" + escapedGroupName
 
-	res, err := r.doRequest(path, "DELETE", nil, -1)
+	res, err := r.doRequest(ctx, path, "DELETE", nil, -1)
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func (r *MimirClient) GetRuleGroup(ctx context.Context, namespace, groupName str
 	path := r.apiPath + "/" + escapedNamespace + "/" + escapedGroupName
 
 	fmt.Println(path)
-	res, err := r.doRequest(path, "GET", nil, -1)
+	res, err := r.doRequest(ctx, path, "GET", nil, -1)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (r *MimirClient) ListRules(ctx context.Context, namespace string) (map[stri
 		path = path + "/" + namespace
 	}
 
-	res, err := r.doRequest(path, "GET", nil, -1)
+	res, err := r.doRequest(ctx, path, "GET", nil, -1)
 	if err != nil {
 		return nil, err
 	}
@@ -113,4 +113,19 @@ func (r *MimirClient) ListRules(ctx context.Context, namespace string) (map[stri
 	}
 
 	return ruleSet, nil
+}
+
+// DeleteNamespace delete all the rule groups in a namespace including the namespace itself
+func (r *MimirClient) DeleteNamespace(ctx context.Context, namespace string) error {
+	escapedNamespace := url.PathEscape(namespace)
+	path := r.apiPath + "/" + escapedNamespace
+
+	res, err := r.doRequest(ctx, path, "DELETE", nil, -1)
+	if err != nil {
+		return err
+	}
+
+	res.Body.Close()
+
+	return nil
 }

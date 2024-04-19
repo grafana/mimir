@@ -1,3 +1,4 @@
+//go:build go1.9
 // +build go1.9
 
 package prometheus
@@ -5,7 +6,6 @@ package prometheus
 import (
 	"fmt"
 	"log"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +20,7 @@ var (
 	// PrometheusSink.
 	DefaultPrometheusOpts = PrometheusOpts{
 		Expiration: 60 * time.Second,
-		Name: "default_prometheus_sink",
+		Name:       "default_prometheus_sink",
 	}
 )
 
@@ -247,15 +247,15 @@ func initCounters(m *sync.Map, counters []CounterDefinition, help map[string]str
 	return
 }
 
-var forbiddenChars = regexp.MustCompile("[ .=\\-/]")
+var forbiddenCharsReplacer = strings.NewReplacer(" ", "_", ".", "_", "=", "_", "-", "_", "/", "_")
 
 func flattenKey(parts []string, labels []metrics.Label) (string, string) {
 	key := strings.Join(parts, "_")
-	key = forbiddenChars.ReplaceAllString(key, "_")
+	key = forbiddenCharsReplacer.Replace(key)
 
 	hash := key
 	for _, label := range labels {
-		hash += fmt.Sprintf(";%s=%s", label.Name, label.Value)
+		hash += ";" + label.Name + "=" + label.Value
 	}
 
 	return key, hash
@@ -446,6 +446,10 @@ func (s *PrometheusPushSink) flushMetrics() {
 	}()
 }
 
+// Shutdown tears down the PrometheusPushSink, and blocks while flushing metrics to the backend.
 func (s *PrometheusPushSink) Shutdown() {
 	close(s.stopChan)
+	// Closing the channel only stops the running goroutine that pushes metrics.
+	// To minimize the chance of data loss pusher.Push is called one last time.
+	s.pusher.Push()
 }

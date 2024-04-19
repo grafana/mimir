@@ -1,4 +1,6 @@
-{{- if and .Values.rbac.create (or (eq .Values.rbac.type "psp") (eq .Values.rbac.type "scc")) }}
+{{- $usePSP := (eq (include "mimir.rbac.usePodSecurityPolicy" .) "true") }}
+{{- $useSCC := (eq (include "mimir.rbac.useSecurityContextConstraints" .) "true") }}
+{{- if or $usePSP $useSCC }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -7,13 +9,13 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 rules:
-{{- if eq .Values.rbac.type "psp" }}
+{{- if $usePSP }}
 - apiGroups:      ['extensions']
   resources:      ['podsecuritypolicies']
   verbs:          ['use']
   resourceNames:  [{{ include "mimir.resourceName" (dict "ctx" .) }}]
 {{- end }}
-{{- if eq .Values.rbac.type "scc" }}
+{{- if $useSCC }}
 - apiGroups:
     - security.openshift.io
   resources:

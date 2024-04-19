@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
@@ -28,7 +29,8 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
+
+	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
 
 var (
@@ -36,18 +38,6 @@ var (
 	// add 15 to the default Prometheus buckets
 	defBuckets = append(prometheus.DefBuckets, 15)
 )
-
-var writeRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Namespace: "loadgen",
-	Name:      "write_request_duration_seconds",
-	Buckets:   defBuckets,
-}, []string{"success"})
-
-var queryRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Namespace: "loadgen",
-	Name:      "query_request_duration_seconds",
-	Buckets:   defBuckets,
-}, []string{"success"})
 
 type LoadgenCommand struct {
 	writeURL       string
@@ -70,42 +60,61 @@ type LoadgenCommand struct {
 	wg          sync.WaitGroup
 	writeClient remote.WriteClient
 	queryClient v1.API
+
+	// Metrics.
+	writeRequestDuration *prometheus.HistogramVec
+	queryRequestDuration *prometheus.HistogramVec
 }
 
-func (c *LoadgenCommand) Register(app *kingpin.Application, _ EnvVarNames) {
-	loadgenCommand := &LoadgenCommand{}
-	cmd := app.Command("loadgen", "Simple load generator for Grafana Mimir.").Action(loadgenCommand.run)
-	cmd.Flag("write-url", "").
-		Default("").StringVar(&loadgenCommand.writeURL)
+func (c *LoadgenCommand) Register(app *kingpin.Application, _ EnvVarNames, reg prometheus.Registerer) {
+	cmd := app.Command("loadgen", "Simple load generator for Grafana Mimir.").PreAction(func(k *kingpin.ParseContext) error { return c.setup(k, reg) }).Action(c.run)
+	cmd.Flag("write-url", "Remote write URL where to push metrics to (e.g. \"http://mimir.local/api/v1/push\")").
+		Default("").StringVar(&c.writeURL)
 	cmd.Flag("series-name", "name of the metric that will be generated").
-		Default("node_cpu_seconds_total").StringVar(&loadgenCommand.metricName)
+		Default("node_cpu_seconds_total").StringVar(&c.metricName)
 	cmd.Flag("active-series", "number of active series to send").
-		Default("1000").IntVar(&loadgenCommand.activeSeries)
+		Default("1000").IntVar(&c.activeSeries)
 	cmd.Flag("scrape-interval", "period to send metrics").
-		Default("15s").DurationVar(&loadgenCommand.scrapeInterval)
+		Default("15s").DurationVar(&c.scrapeInterval)
 	cmd.Flag("parallelism", "how many metrics to send simultaneously").
-		Default("10").IntVar(&loadgenCommand.parallelism)
+		Default("10").IntVar(&c.parallelism)
 	cmd.Flag("batch-size", "how big a batch to send").
-		Default("100").IntVar(&loadgenCommand.batchSize)
+		Default("100").IntVar(&c.batchSize)
 	cmd.Flag("write-timeout", "timeout for write requests").
-		Default("500ms").DurationVar(&loadgenCommand.writeTimeout)
+		Default("500ms").DurationVar(&c.writeTimeout)
 
-	cmd.Flag("query-url", "").
-		Default("").StringVar(&loadgenCommand.queryURL)
+	cmd.Flag("query-url", "API URL to query from (e.g. \"http://mimir.local/api/v1\")").
+		Default("").StringVar(&c.queryURL)
 	cmd.Flag("query", "query to run").
-		Default("sum(node_cpu_seconds_total)").StringVar(&loadgenCommand.query)
+		Default("sum(node_cpu_seconds_total)").StringVar(&c.query)
 	cmd.Flag("query-parallelism", "number of queries to run in parallel").
-		Default("10").IntVar(&loadgenCommand.queryParallelism)
+		Default("10").IntVar(&c.queryParallelism)
 	cmd.Flag("query-timeout", "").
-		Default("20s").DurationVar(&loadgenCommand.queryTimeout)
+		Default("20s").DurationVar(&c.queryTimeout)
 	cmd.Flag("query-duration", "length of query").
-		Default("1h").DurationVar(&loadgenCommand.queryDuration)
+		Default("1h").DurationVar(&c.queryDuration)
 
 	cmd.Flag("metrics-listen-address", "address to serve metrics on").
-		Default(":8080").StringVar(&loadgenCommand.metricsListenAddress)
+		Default("127.0.0.1:8080").StringVar(&c.metricsListenAddress)
 }
 
-func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
+func (c *LoadgenCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
+	c.writeRequestDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "loadgen",
+		Name:      "write_request_duration_seconds",
+		Buckets:   defBuckets,
+	}, []string{"success"})
+
+	c.queryRequestDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "loadgen",
+		Name:      "query_request_duration_seconds",
+		Buckets:   defBuckets,
+	}, []string{"success"})
+
+	return nil
+}
+
+func (c *LoadgenCommand) run(_ *kingpin.ParseContext) error {
 	if c.writeURL == "" && c.queryURL == "" {
 		return errors.New("either a -write-url or -query-url flag must be provided to run the loadgen command")
 	}
@@ -128,6 +137,9 @@ func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
 		writeClient, err := remote.NewWriteClient("loadgen", &remote.ClientConfig{
 			URL:     &config.URL{URL: writeURL},
 			Timeout: model.Duration(c.writeTimeout),
+			Headers: map[string]string{
+				"User-Agent": client.UserAgent(),
+			},
 		})
 		if err != nil {
 			return err
@@ -218,11 +230,11 @@ func (c *LoadgenCommand) runBatch(from, to int) error {
 	compressed := snappy.Encode(nil, data)
 
 	start := time.Now()
-	if err := c.writeClient.Store(context.Background(), compressed); err != nil {
-		writeRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
+	if err := c.writeClient.Store(context.Background(), compressed, 0); err != nil {
+		c.writeRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
 		return err
 	}
-	writeRequestDuration.WithLabelValues("success").Observe(time.Since(start).Seconds())
+	c.writeRequestDuration.WithLabelValues("success").Observe(time.Since(start).Seconds())
 
 	return nil
 }
@@ -245,9 +257,9 @@ func (c *LoadgenCommand) runQuery() {
 	start := time.Now()
 	_, _, err := c.queryClient.QueryRange(ctx, c.query, r)
 	if err != nil {
-		queryRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
+		c.queryRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
 		log.Printf("error doing query: %v", err)
 		return
 	}
-	queryRequestDuration.WithLabelValues("success").Observe(time.Since(start).Seconds())
+	c.queryRequestDuration.WithLabelValues("success").Observe(time.Since(start).Seconds())
 }

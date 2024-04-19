@@ -9,12 +9,12 @@ import (
 type File struct {
 	FileID   string `json:"file_id"`
 	UniqueID string `json:"file_unique_id"`
-	FileSize int    `json:"file_size"`
+	FileSize int64  `json:"file_size"`
 
 	// FilePath is used for files on Telegram server.
 	FilePath string `json:"file_path"`
 
-	// FileLocal uis ed for files on local file system.
+	// FileLocal is used for files on local file system.
 	FileLocal string `json:"file_local"`
 
 	// FileURL is used for file on the internet.

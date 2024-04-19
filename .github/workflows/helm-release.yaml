@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - "release-[0-9]+.[0-9]+"
+      - "mimir-distributed-release-[0-9]+.[0-9]+"
 
 jobs:
   call-update-helm-repo:
@@ -14,6 +14,5 @@ jobs:
       cr_configfile: operations/helm/cr.yaml
       ct_configfile: operations/helm/ct.yaml
     secrets:
-      helm_repo_token: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
-      # See https://github.com/grafana/helm-charts/blob/main/INTERNAL.md about this key
-      gpg_key_base64: ${{ secrets.HELM_SIGN_KEY_BASE64 }}
+      github_app_id: ${{ secrets.MIMIR_HELM_RELEASE_APP_ID }}
+      github_app_pem: ${{ secrets.MIMIR_HELM_RELEASE_APP_KEY_PEM }}

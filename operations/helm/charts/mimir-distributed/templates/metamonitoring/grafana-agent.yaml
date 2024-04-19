@@ -15,13 +15,41 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  serviceAccountName: {{ include "mimir.resourceName" (dict "ctx" $ "component" "grafana-agent") }}
+  serviceAccountName: {{ include "mimir.serviceAccountName" $ }}
+  {{- with .podSecurityContext }}
+  securityContext:
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
+  containers:
+    # The container specs here are merged with the ones in the operator using a strategic merge patch.
+    - name: config-reloader
+  {{- if .imageRepo }}{{ if .imageRepo.configReloader }}
+  {{- with .imageRepo.configReloader }}
+      image: {{ .repo }}/{{ .image }}:{{ .tag }}
+  {{- end }}
+  {{- end }}{{ end }}
+  {{- with .containerSecurityContext }}
+      securityContext:
+        {{- . | toYaml | nindent 8 }}
+  {{- end }}
+    - name: grafana-agent
+  {{- if .imageRepo }}{{ if .imageRepo.grafanaAgent }}
+  {{- with .imageRepo.grafanaAgent }}
+      image: {{ .repo }}/{{ .image }}:{{ .tag }}
+  {{- end }}
+  {{- end }}{{ end }}
+  {{- with .containerSecurityContext }}
+      securityContext:
+        {{- . | toYaml | nindent 8 }}
+  {{- end }}
+
   logs:
     instanceSelector:
       matchLabels:
         {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "meta-monitoring") | nindent 8 }}
     # cluster label for logs is added in the LogsInstance
   metrics:
+    scrapeInterval: {{ .metrics.scrapeInterval }}
     instanceSelector:
       matchLabels:
         {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "meta-monitoring") | nindent 8 }}

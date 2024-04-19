@@ -21,8 +21,8 @@ spec:
       app.kubernetes.io/component: gateway
   strategy:
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -36,9 +36,12 @@ spec:
     spec:
       serviceAccountName: test-enterprise-values-mimir
       securityContext:
-        {}
-      initContainers:
-        []
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: gateway
           imagePullPolicy: IfNotPresent
@@ -53,35 +56,40 @@ spec:
               mountPath: /var/mimir
             - name: license
               mountPath: /license
-            - name: storage
-              mountPath: "/data"
-              subPath: 
+            - name: tmp
+              mountPath: /data
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
               protocol: TCP
-          livenessProbe:
-            null
           readinessProbe:
             httpGet:
               path: /ready
               port: http-metrics
-            initialDelaySeconds: 45
+            initialDelaySeconds: 15
+            timeoutSeconds: 1
           resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
+            {}
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
           envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-values
+            app.kubernetes.io/component: gateway
+      terminationGracePeriodSeconds: 30
       volumes:
         - name: config
           secret:
@@ -89,8 +97,12 @@ spec:
         - name: runtime-config
           configMap:
             name: test-enterprise-values-mimir-runtime
+        - name: tmp
+          emptyDir: {}
         - name: license
           secret:
             secretName: test-enterprise-values-mimir-license
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}

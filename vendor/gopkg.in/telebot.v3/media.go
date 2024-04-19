@@ -29,6 +29,7 @@ type InputMedia struct {
 	Performer            string   `json:"performer,omitempty"`
 	Streaming            bool     `json:"supports_streaming,omitempty"`
 	DisableTypeDetection bool     `json:"disable_content_type_detection,omitempty"`
+	HasSpoiler           bool     `json:"is_spoiler,omitempty"`
 }
 
 // Inputtable is a generic type for all kinds of media you
@@ -279,14 +280,17 @@ func (v *VideoNote) MediaFile() *File {
 // Sticker object represents a WebP image, so-called sticker.
 type Sticker struct {
 	File
-	Width        int           `json:"width"`
-	Height       int           `json:"height"`
-	Animated     bool          `json:"is_animated"`
-	Video        bool          `json:"is_video"`
-	Thumbnail    *Photo        `json:"thumb"`
-	Emoji        string        `json:"emoji"`
-	SetName      string        `json:"set_name"`
-	MaskPosition *MaskPosition `json:"mask_position"`
+	Width            int            `json:"width"`
+	Height           int            `json:"height"`
+	Animated         bool           `json:"is_animated"`
+	Video            bool           `json:"is_video"`
+	Thumbnail        *Photo         `json:"thumb"`
+	Emoji            string         `json:"emoji"`
+	SetName          string         `json:"set_name"`
+	MaskPosition     *MaskPosition  `json:"mask_position"`
+	PremiumAnimation *File          `json:"premium_animation"`
+	Type             StickerSetType `json:"type"`
+	CustomEmoji      string         `json:"custom_emoji_id"`
 }
 
 func (s *Sticker) MediaType() string {
@@ -340,3 +344,15 @@ type Dice struct {
 	Type  DiceType `json:"emoji"`
 	Value int      `json:"value"`
 }
+
+// DiceType defines dice types.
+type DiceType string
+
+var (
+	Cube = &Dice{Type: "🎲"}
+	Dart = &Dice{Type: "🎯"}
+	Ball = &Dice{Type: "🏀"}
+	Goal = &Dice{Type: "⚽"}
+	Slot = &Dice{Type: "🎰"}
+	Bowl = &Dice{Type: "🎳"}
+)

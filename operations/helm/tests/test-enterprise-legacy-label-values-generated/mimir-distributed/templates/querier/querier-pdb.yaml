@@ -1,0 +1,17 @@
+---
+# Source: mimir-distributed/templates/querier/querier-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-querier
+  labels:
+    app: enterprise-metrics-querier
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app: enterprise-metrics-querier
+      release: test-enterprise-legacy-label-values
+  maxUnavailable: 1

@@ -3,13 +3,13 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
-// +build requires_docker
 
 package integration
 
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"testing"
 	"time"
@@ -88,7 +88,7 @@ func TestS3Client(t *testing.T) {
 
 			read := make([]byte, 4)
 			_, err = readCloser.Read(read)
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				require.NoError(t, err)
 			}
 

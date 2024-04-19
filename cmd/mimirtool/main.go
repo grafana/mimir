@@ -9,7 +9,8 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/alecthomas/kingpin.v2"
+	"github.com/alecthomas/kingpin/v2"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/commands"
 	"github.com/grafana/mimir/pkg/mimirtool/version"
@@ -36,19 +37,19 @@ func main() {
 
 	envVars := commands.NewEnvVarsWithPrefix("MIMIR")
 	aclCommand.Register(app, envVars)
-	alertCommand.Register(app, envVars)
+	alertCommand.Register(app, envVars, prometheus.DefaultRegisterer)
 	alertmanagerCommand.Register(app, envVars)
 	analyzeCommand.Register(app, envVars)
+	backfillCommand.Register(app, envVars)
 	bucketValidateCommand.Register(app, envVars)
 	configCommand.Register(app, envVars)
-	loadgenCommand.Register(app, envVars)
+	loadgenCommand.Register(app, envVars, prometheus.DefaultRegisterer)
 	logConfig.Register(app, envVars)
 	pushGateway.Register(app, envVars)
 	remoteReadCommand.Register(app, envVars)
-	ruleCommand.Register(app, envVars)
-	backfillCommand.Register(app, envVars)
+	ruleCommand.Register(app, envVars, prometheus.DefaultRegisterer)
 
-	app.Command("version", "Get the version of the mimirtool CLI").Action(func(k *kingpin.ParseContext) error {
+	app.Command("version", "Get the version of the mimirtool CLI").Action(func(*kingpin.ParseContext) error {
 		fmt.Fprintln(os.Stdout, mimirversion.Print("Mimirtool"))
 		version.CheckLatest(mimirversion.Version)
 		return nil

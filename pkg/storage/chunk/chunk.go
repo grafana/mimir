@@ -6,10 +6,17 @@
 package chunk
 
 import (
+	"fmt"
 	"io"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/zeropool"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const (
@@ -25,6 +32,18 @@ type EncodedChunk interface {
 	// The returned EncodedChunk is the overflow chunk if it was created.
 	// The returned EncodedChunk is nil if the sample got appended to the same chunk.
 	Add(sample model.SamplePair) (EncodedChunk, error)
+	// AddHistogram adds a histogram to the chunks, performs any necessary
+	// re-encoding, and creates any necessary overflow chunk.
+	// The returned EncodedChunk is the overflow chunk if it was created.
+	// The returned EncodedChunk is nil if the histogram got appended to the same chunk.
+	AddHistogram(timestamp int64, histogram *histogram.Histogram) (EncodedChunk, error)
+
+	// AddFloatHistogram adds a float histogram to the chunks, performs any necessary
+	// re-encoding, and creates any necessary overflow chunk.
+	// The returned EncodedChunk is the overflow chunk if it was created.
+	// The returned EncodedChunk is nil if the histogram got appended to the same chunk.
+	AddFloatHistogram(timestamp int64, histogram *histogram.FloatHistogram) (EncodedChunk, error)
+
 	// NewIterator returns an iterator for the chunks.
 	// The iterator passed as argument is for re-use. Depending on implementation,
 	// the iterator can be re-used or a new iterator can be allocated.
@@ -45,20 +64,29 @@ type Iterator interface {
 	// Scans the next value in the chunk. Directly after the iterator has
 	// been created, the next value is the first value in the
 	// chunk. Otherwise, it is the value following the last value scanned or
-	// found (by one of the Find... methods). Returns false if either the
+	// found (by one of the Find... methods). Returns chunkenc.ValNone if either the
 	// end of the chunk is reached or an error has occurred.
-	Scan() bool
-	// Finds the oldest value at or after the provided time. Returns false
+	Scan() chunkenc.ValueType
+	// Finds the oldest value at or after the provided time. Returns chunkenc.ValNone
 	// if either the chunk contains no value at or after the provided time,
 	// or an error has occurred.
-	FindAtOrAfter(model.Time) bool
+	FindAtOrAfter(model.Time) chunkenc.ValueType
 	// Returns the last value scanned (by the scan method) or found (by one
 	// of the find... methods). It returns model.ZeroSamplePair before any of
 	// those methods were called.
 	Value() model.SamplePair
-	// Returns a batch of the provisded size; NB not idempotent!  Should only be called
+	AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram)
+	AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram)
+	Timestamp() int64
+	// Batch returns a batch of the provisded size; NB not idempotent!  Should only be called
 	// once per Scan.
-	Batch(size int) Batch
+	// When the optional *zeropool.Pool arguments hPool and fhPool are passed, they will be
+	// used to optimize memory allocations for histogram.Histogram and histogram.FloatHistogram
+	// objects.
+	// For example, when creating a batch of chunkenc.ValHistogram or chunkenc.ValFloatHistogram
+	// objects, the histogram.Histogram or histogram.FloatHistograms objects already present in
+	// the hPool or fhPool pool will be used instead of creating new ones.
+	Batch(size int, valueType chunkenc.ValueType, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch
 	// Returns the last error encountered. In general, an error signals data
 	// corruption in the chunk and requires quarantining.
 	Err() error
@@ -68,13 +96,48 @@ type Iterator interface {
 // 1 to 128.
 const BatchSize = 12
 
-// Batch is a sorted set of (timestamp, value) pairs.  They are intended to be
-// small, and passed by value.
+// Batches are sorted sets of (timestamp, value) pairs, where all values are of the same type (i.e. floats/histograms).
+//
+// Batch is intended to be small, and passed by value!
 type Batch struct {
 	Timestamps [BatchSize]int64
-	Values     [BatchSize]float64
-	Index      int
-	Length     int
+	// Values stores float values related to this batch if ValueType is chunkenc.ValFloat.
+	Values [BatchSize]float64
+	// PointerValues store pointers to non-float complex values like histograms, float histograms or future additions.
+	// Since Batch is expected to be passed by value, the array needs to be constant sized,
+	// however increasing the size of the Batch also adds memory management overhead. Using the unsafe.Pointer
+	// combined with the ValueType implements a kind of "union" type to keep the memory use down.
+	PointerValues [BatchSize]unsafe.Pointer
+	ValueType     chunkenc.ValueType
+	Index         int
+	Length        int
+}
+
+func (b *Batch) HasNext() chunkenc.ValueType {
+	if b.Index >= 0 && b.Index < b.Length {
+		return b.ValueType
+	}
+	return chunkenc.ValNone
+}
+
+func (b *Batch) Next() {
+	b.Index++
+}
+
+func (b *Batch) AtTime() int64 {
+	return b.Timestamps[b.Index]
+}
+
+func (b *Batch) At() (int64, float64) {
+	return b.Timestamps[b.Index], b.Values[b.Index]
+}
+
+func (b *Batch) AtHistogram() (int64, unsafe.Pointer) {
+	return b.Timestamps[b.Index], b.PointerValues[b.Index]
+}
+
+func (b *Batch) AtFloatHistogram() (int64, unsafe.Pointer) {
+	return b.Timestamps[b.Index], b.PointerValues[b.Index]
 }
 
 // Chunk contains encoded timeseries data
@@ -95,24 +158,38 @@ func NewChunk(metric labels.Labels, c EncodedChunk, from, through model.Time) Ch
 	}
 }
 
-// Samples returns all SamplePairs for the chunk.
-func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, error) {
+// Samples returns all SamplePairs and Histograms for the chunk.
+func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, []mimirpb.Histogram, error) {
 	it := c.Data.NewIterator(nil)
 	return rangeValues(it, from, through)
 }
 
 // rangeValues is a utility function that retrieves all values within the given
 // range from an Iterator.
-func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]model.SamplePair, error) {
-	result := []model.SamplePair{}
-	if !it.FindAtOrAfter(oldestInclusive) {
-		return result, it.Err()
+func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]model.SamplePair, []mimirpb.Histogram, error) {
+	resultFloat := []model.SamplePair{}
+	resultHist := []mimirpb.Histogram{}
+	currValType := it.FindAtOrAfter(oldestInclusive)
+	if currValType == chunkenc.ValNone {
+		return resultFloat, resultHist, it.Err()
 	}
-	for !it.Value().Timestamp.After(newestInclusive) {
-		result = append(result, it.Value())
-		if !it.Scan() {
+	for !model.Time(it.Timestamp()).After(newestInclusive) {
+		switch currValType {
+		case chunkenc.ValFloat:
+			resultFloat = append(resultFloat, it.Value())
+		case chunkenc.ValHistogram:
+			t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
+			resultHist = append(resultHist, mimirpb.FromHistogramToHistogramProto(t, h))
+		case chunkenc.ValFloatHistogram:
+			t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
+			resultHist = append(resultHist, mimirpb.FromFloatHistogramToHistogramProto(t, h))
+		default:
+			return nil, nil, fmt.Errorf("unknown value type %v in iterator", currValType)
+		}
+		currValType = it.Scan()
+		if currValType == chunkenc.ValNone {
 			break
 		}
 	}
-	return result, it.Err()
+	return resultFloat, resultHist, it.Err()
 }

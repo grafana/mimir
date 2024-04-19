@@ -6,12 +6,12 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/regexp"
 )
 
@@ -70,7 +70,7 @@ func addLicense(dir string) error {
 			return nil
 		}
 
-		b, err := ioutil.ReadFile(filepath.Clean(path))
+		b, err := os.ReadFile(filepath.Clean(path))
 		if err != nil {
 			return err
 		}
@@ -111,19 +111,24 @@ func addLicense(dir string) error {
 		// Add the rest of the file.
 		_, _ = bb.Write(b)
 
-		return ioutil.WriteFile(path, bb.Bytes(), 0600)
+		return os.WriteFile(path, bb.Bytes(), 0600)
 	})
 }
 
 func main() {
-	// Parse the flags.
-	flag.Parse()
-	if flag.NArg() == 0 {
+	// Parse CLI arguments.
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "Usage: add-license <dir> ...")
 		os.Exit(1)
 	}
 
-	for _, dir := range flag.Args() {
+	for _, dir := range args {
 		if err := addLicense(dir); err != nil {
 			log.Fatal(err)
 		}

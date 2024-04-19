@@ -7,90 +7,94 @@ package ingester
 
 import (
 	"context"
-	"io/ioutil"
+	"encoding/json"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
-	"github.com/thanos-io/thanos/pkg/shipper"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-type metrics struct {
-	dirSyncs        prometheus.Counter
-	dirSyncFailures prometheus.Counter
-	uploads         prometheus.Counter
-	uploadFailures  prometheus.Counter
+// shipperMetrics holds the shipper metrics. Mimir runs 1 shipper for each tenant but
+// the metrics instance is shared across all tenants.
+type shipperMetrics struct {
+	uploads                  prometheus.Counter
+	uploadFailures           prometheus.Counter
+	lastSuccessfulUploadTime prometheus.Gauge
 }
 
-func newMetrics(reg prometheus.Registerer) *metrics {
-	var m metrics
-
-	m.dirSyncs = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_dir_syncs_total",
-		Help: "Total number of dir syncs",
-	})
-	m.dirSyncFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_dir_sync_failures_total",
-		Help: "Total number of failed dir syncs",
-	})
-	m.uploads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_uploads_total",
-		Help: "Total number of uploaded blocks",
-	})
-	m.uploadFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_upload_failures_total",
-		Help: "Total number of block upload failures",
-	})
-	return &m
+func newShipperMetrics(reg prometheus.Registerer) *shipperMetrics {
+	return &shipperMetrics{
+		uploads: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_shipper_uploads_total",
+			Help: "Total number of uploaded TSDB blocks",
+		}),
+		uploadFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_shipper_upload_failures_total",
+			Help: "Total number of TSDB block upload failures",
+		}),
+		lastSuccessfulUploadTime: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_shipper_last_successful_upload_timestamp_seconds",
+			Help: "Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.",
+		}),
+	}
 }
 
-// Shipper watches a directory for matching files and directories and uploads
+type ShipperConfigProvider interface {
+	OutOfOrderBlocksExternalLabelEnabled(userID string) bool
+}
+
+// shipper watches a directory for matching files and directories and uploads
 // them to a remote data store.
-// Shipper implements BlocksUploader interface.
-type Shipper struct {
-	logger  log.Logger
-	dir     string
-	metrics *metrics
-	bucket  objstore.Bucket
-	source  metadata.SourceType
-
-	hashFunc metadata.HashFunc
+// shipper implements BlocksUploader interface.
+type shipper struct {
+	logger      log.Logger
+	cfgProvider ShipperConfigProvider
+	userID      string
+	dir         string
+	metrics     *shipperMetrics
+	bucket      objstore.Bucket
+	source      block.SourceType
 }
 
-// NewShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
+// newShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
 // remote if necessary. It attaches the Thanos metadata section in each meta JSON file.
 // If uploadCompacted is enabled, it also uploads compacted blocks which are already in filesystem.
-func NewShipper(
+func newShipper(
 	logger log.Logger,
-	r prometheus.Registerer,
+	cfgProvider ShipperConfigProvider,
+	userID string,
+	metrics *shipperMetrics,
 	dir string,
 	bucket objstore.Bucket,
-	source metadata.SourceType,
-	hashFunc metadata.HashFunc,
-) *Shipper {
+	source block.SourceType,
+) *shipper {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
-	return &Shipper{
-		logger:   logger,
-		dir:      dir,
-		bucket:   bucket,
-		metrics:  newMetrics(r),
-		source:   source,
-		hashFunc: hashFunc,
+	return &shipper{
+		logger:      logger,
+		cfgProvider: cfgProvider,
+		userID:      userID,
+		dir:         dir,
+		bucket:      bucket,
+		metrics:     metrics,
+		source:      source,
 	}
 }
 
@@ -98,27 +102,20 @@ func NewShipper(
 // to the object bucket once.
 //
 // It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
-func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
-	meta, err := shipper.ReadMetaFile(s.dir)
+func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
+	shippedBlocks, err := readShippedBlocks(s.dir)
 	if err != nil {
-		// If we encounter any error, proceed with an empty meta file and overwrite it later.
-		// The meta file is only used to avoid unnecessary bucket.Exists call,
-		// which are properly handled by the system if their occur anyway.
-		if !os.IsNotExist(err) {
-			level.Warn(s.logger).Log("msg", "reading meta file failed, will override it", "err", err)
-		}
-		meta = &shipper.Meta{Version: shipper.MetaVersion1}
+		// If we encounter any error, proceed with an new list of shipped blocks.
+		// The meta file will be overridden later. Note that the meta file is only
+		// used to avoid unnecessary bucket.Exists call, which are properly handled
+		// by the system if their occur anyway.
+		level.Warn(s.logger).Log("msg", "reading meta file failed, will override it", "err", err)
+
+		// Reset the shipped blocks slice, so we can rebuild it only with blocks that still exist locally.
+		shippedBlocks = map[ulid.ULID]time.Time{}
 	}
 
-	// Build a map of blocks we already uploaded.
-	hasUploaded := make(map[ulid.ULID]struct{}, len(meta.Uploaded))
-	for _, id := range meta.Uploaded {
-		hasUploaded[id] = struct{}{}
-	}
-
-	// Reset the uploaded slice, so we can rebuild it only with blocks that still exist locally.
-	meta.Uploaded = nil
-
+	meta := shipperMeta{Version: shipperMetaVersion1, Shipped: map[ulid.ULID]model.Time{}}
 	var uploadErrs int
 
 	metas, err := s.blockMetasFromOldest()
@@ -126,10 +123,10 @@ func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 		return 0, err
 	}
 	for _, m := range metas {
-		// Do not sync a block if we already uploaded or ignored it. If it's no longer found in the bucket,
+		// Do not sync a block if we already shipped or ignored it. If it's no longer found in the bucket,
 		// it was generally removed by the compaction process.
-		if _, uploaded := hasUploaded[m.ULID]; uploaded {
-			meta.Uploaded = append(meta.Uploaded, m.ULID)
+		if shippedTime, shipped := shippedBlocks[m.ULID]; shipped {
+			meta.Shipped[m.ULID] = model.TimeFromUnixNano(shippedTime.UnixNano())
 			continue
 		}
 
@@ -150,54 +147,64 @@ func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 			return 0, errors.Wrap(err, "check exists")
 		}
 		if ok {
-			meta.Uploaded = append(meta.Uploaded, m.ULID)
-			uploaded++ // the last upload must have failed, report the block as if it was uploaded successfully now
+			// We decide to be conservative here and assume it was just recently uploaded.
+			// It would be very rare to have blocks uploaded but not tracked in the shipper meta file.
+			// This could happen if process crashed while uploading the block.
+			meta.Shipped[m.ULID] = model.Now()
+			shipped++ // the last upload must have failed, report the block as if it was shipped successfully now
 			continue
 		}
 
+		level.Info(s.logger).Log("msg", "uploading new block to long-term storage", "block", m.ULID)
 		if err := s.upload(ctx, m); err != nil {
-			// No error returned, just log line. This is because we want other blocks to be uploaded even
+			// No error returned, just log line. This is because we want other blocks to be shipped even
 			// though this one failed. It will be retried on second Sync iteration.
-			level.Error(s.logger).Log("msg", "shipping failed", "block", m.ULID, "err", err)
+			level.Error(s.logger).Log("msg", "uploading new block to long-term storage failed", "block", m.ULID, "err", err)
 			uploadErrs++
 			continue
 		}
-		meta.Uploaded = append(meta.Uploaded, m.ULID)
-		uploaded++
+		level.Info(s.logger).Log("msg", "finished uploading new block to long-term storage", "block", m.ULID)
+
+		meta.Shipped[m.ULID] = model.Now()
+		shipped++
 		s.metrics.uploads.Inc()
+		s.metrics.lastSuccessfulUploadTime.SetToCurrentTime()
 	}
-	if err := shipper.WriteMetaFile(s.logger, s.dir, meta); err != nil {
+
+	if err := writeShipperMetaFile(s.logger, s.dir, meta); err != nil {
 		level.Warn(s.logger).Log("msg", "updating meta file failed", "err", err)
 	}
 
-	s.metrics.dirSyncs.Inc()
 	if uploadErrs > 0 {
 		s.metrics.uploadFailures.Add(float64(uploadErrs))
-		return uploaded, errors.Errorf("failed to sync %v blocks", uploadErrs)
+		return shipped, errors.Errorf("failed to sync %v blocks", uploadErrs)
 	}
 
-	return uploaded, nil
+	return shipped, nil
 }
 
 // upload method uploads the block to blocks storage. Block is uploaded with updated meta.json file with extra details.
 // This updated version of meta.json is however not persisted locally on the disk, to avoid race condition when TSDB
 // library could actually unload the block if it found meta.json file missing.
-func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
-	level.Info(s.logger).Log("msg", "upload new block", "id", meta.ULID)
-
+func (s *shipper) upload(ctx context.Context, meta *block.Meta) error {
 	blockDir := filepath.Join(s.dir, meta.ULID.String())
 
 	meta.Thanos.Source = s.source
 	meta.Thanos.SegmentFiles = block.GetSegmentFiles(blockDir)
 
+	if meta.Compaction.FromOutOfOrder() && s.cfgProvider.OutOfOrderBlocksExternalLabelEnabled(s.userID) {
+		// At this point the OOO data was already ingested and compacted, so there's no point in checking for the OOO feature flag
+		meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] = mimir_tsdb.OutOfOrderExternalLabelValue
+	}
+
 	// Upload block with custom metadata.
-	return tsdb.UploadBlock(ctx, s.logger, s.bucket, blockDir, meta)
+	return block.Upload(ctx, s.logger, s.bucket, blockDir, meta)
 }
 
 // blockMetasFromOldest returns the block meta of each block found in dir
 // sorted by minTime asc.
-func (s *Shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
-	fis, err := ioutil.ReadDir(s.dir)
+func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
+	fis, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, errors.Wrap(err, "read dir")
 	}
@@ -218,7 +225,7 @@ func (s *Shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
 		if !fi.IsDir() {
 			continue
 		}
-		m, err := metadata.ReadFromDir(dir)
+		m, err := block.ReadMetaFromDir(dir)
 		if err != nil {
 			return nil, errors.Wrapf(err, "read metadata for block %v", dir)
 		}
@@ -230,20 +237,103 @@ func (s *Shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
 	return metas, nil
 }
 
-func readShippedBlocks(dir string) (map[ulid.ULID]struct{}, error) {
-	shipperMeta, err := shipper.ReadMetaFile(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		// If the meta file doesn't exist it means the shipper hasn't run yet.
-		shipperMeta = &shipper.Meta{}
-	} else if err != nil {
-		return nil, err
+func readShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {
+	meta, err := readShipperMetaFile(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// If the meta file doesn't exist it means the shipper hasn't run yet.
+			meta = shipperMeta{}
+		} else {
+			return nil, err
+		}
 	}
 
-	// Build a map.
-	shippedBlocks := make(map[ulid.ULID]struct{}, len(shipperMeta.Uploaded))
-	for _, blockID := range shipperMeta.Uploaded {
-		shippedBlocks[blockID] = struct{}{}
+	shippedBlocks := make(map[ulid.ULID]time.Time, len(meta.Shipped))
+	for blockID, shippedTime := range meta.Shipped {
+		shippedBlocks[blockID] = shippedTime.Time()
 	}
-
 	return shippedBlocks, nil
+}
+
+// shipperMeta defines the format mimir.shipper.json file that the shipper places in the data directory.
+type shipperMeta struct {
+	Version int                      `json:"version"`
+	Shipped map[ulid.ULID]model.Time `json:"shipped"`
+}
+
+const (
+	// shipperMetaFilename is the known JSON filename for meta information.
+	shipperMetaFilename = "mimir.shipper.json"
+
+	// shipperMetaVersion1 represents 1 version of meta.
+	shipperMetaVersion1 = 1
+)
+
+// writeShipperMetaFile writes the given meta into <dir>/mimir.shipper.json.
+func writeShipperMetaFile(logger log.Logger, dir string, meta shipperMeta) error {
+	path := filepath.Join(dir, shipperMetaFilename)
+	tmp := path + ".tmp"
+
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "\t")
+
+	if err := enc.Encode(meta); err != nil {
+		runutil.CloseWithLogOnErr(logger, f, "write meta file close")
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	err = renameFile(logger, tmp, path)
+	if err != nil {
+		return errors.Wrap(err, "writing mimir shipped meta file")
+	}
+
+	return nil
+}
+
+// readShipperMetaFile reads the given meta from <dir>/mimir.shipper.json.
+func readShipperMetaFile(dir string) (shipperMeta, error) {
+	fpath := filepath.Join(dir, filepath.Clean(shipperMetaFilename))
+	b, err := os.ReadFile(fpath)
+	if err != nil {
+		return shipperMeta{}, errors.Wrapf(err, "failed to read %s", fpath)
+	}
+
+	var m shipperMeta
+	if err := json.Unmarshal(b, &m); err != nil {
+		return shipperMeta{}, errors.Wrapf(err, "failed to parse %s as JSON: %q", fpath, string(b))
+	}
+	if m.Version != shipperMetaVersion1 {
+		return shipperMeta{}, errors.Errorf("unexpected meta file version %d", m.Version)
+	}
+
+	return m, nil
+}
+
+func renameFile(logger log.Logger, from, to string) error {
+	if err := os.RemoveAll(to); err != nil {
+		return err
+	}
+	if err := os.Rename(from, to); err != nil {
+		return err
+	}
+
+	// Directory was renamed; sync parent dir to persist rename.
+	pdir, err := fileutil.OpenDir(filepath.Dir(to))
+	if err != nil {
+		return err
+	}
+
+	if err = fileutil.Fdatasync(pdir); err != nil {
+		runutil.CloseWithLogOnErr(logger, pdir, "rename file dir close")
+		return err
+	}
+	return pdir.Close()
 }

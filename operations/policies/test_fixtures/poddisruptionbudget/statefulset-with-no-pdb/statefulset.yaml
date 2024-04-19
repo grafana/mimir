@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-set
+spec:
+  template:
+    metadata:
+      labels:
+        rollout-group: test-set
+  selector:
+    matchLabels:
+      rollout-group: test-set
+  serviceName: some-app

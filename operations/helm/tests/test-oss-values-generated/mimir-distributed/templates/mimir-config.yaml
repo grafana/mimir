@@ -13,11 +13,12 @@ data:
   mimir.yaml: |
     
     activity_tracker:
-      filepath: /data/metrics-activity.log
+      filepath: /active-query-tracker/activity.log
     alertmanager:
       data_dir: /data
       enable_api: true
       external_url: /alertmanager
+      fallback_config_file: /configs/alertmanager_fallback_config.yaml
     alertmanager_storage:
       backend: s3
       s3:
@@ -33,17 +34,21 @@ data:
           backend: memcached
           memcached:
             addresses: dns+test-oss-values-mimir-chunks-cache.citestns.svc:11211
+            max_idle_connections: 150
             max_item_size: 1048576
-            timeout: 450ms
+            timeout: 750ms
         index_cache:
           backend: memcached
           memcached:
             addresses: dns+test-oss-values-mimir-index-cache.citestns.svc:11211
-            max_item_size: 15728640
+            max_idle_connections: 150
+            max_item_size: 5242880
+            timeout: 750ms
         metadata_cache:
           backend: memcached
           memcached:
             addresses: dns+test-oss-values-mimir-metadata-cache.citestns.svc:11211
+            max_idle_connections: 150
             max_item_size: 1048576
         sync_dir: /data/tsdb-sync
       s3:
@@ -54,40 +59,75 @@ data:
         secret_access_key: ${MINIO_ROOT_PASSWORD}
       tsdb:
         dir: /data/tsdb
+        head_compaction_interval: 15m
+        wal_replay_concurrency: 3
     compactor:
+      compaction_interval: 30m
       data_dir: /data
+      deletion_delay: 2h
+      first_level_compaction_wait_period: 25m
+      max_closing_blocks_concurrency: 2
+      max_opening_blocks_concurrency: 4
+      sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+        wait_stability_min_duration: 1m
+      symbols_flushers_concurrency: 4
+    distributor:
+      ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
     frontend:
-      align_queries_with_step: true
       cache_results: true
-      log_queries_longer_than: 10s
+      parallelize_shardable_queries: true
+      query_sharding_target_series_per_shard: 2500
       results_cache:
         backend: memcached
         memcached:
           addresses: dns+test-oss-values-mimir-results-cache.citestns.svc:11211
-          max_item_size: 1048576
+          max_item_size: 5242880
+          timeout: 500ms
+      scheduler_address: test-oss-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
-      frontend_address: test-oss-values-mimir-query-frontend-headless.citestns.svc:9095
+      grpc_client_config:
+        max_send_msg_size: 419430400
+      scheduler_address: test-oss-values-mimir-query-scheduler-headless.citestns.svc:9095
     ingester:
       ring:
         final_sleep: 0s
+        heartbeat_period: 2m
+        heartbeat_timeout: 10m
         num_tokens: 512
+        tokens_file_path: /data/tokens
         unregister_on_shutdown: false
     ingester_client:
       grpc_client_config:
         max_recv_msg_size: 104857600
         max_send_msg_size: 104857600
-    limits: {}
+    limits:
+      max_cache_freshness: 10m
+      max_query_parallelism: 240
+      max_total_query_length: 12000h
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false
       join_members:
-      - dns+test-oss-values-mimir-gossip-ring.citestns.svc.cluster.local:7946
+      - dns+test-oss-values-mimir-gossip-ring.citestns.svc.cluster.local.:7946
+    querier:
+      max_concurrent: 16
+    query_scheduler:
+      max_outstanding_requests_per_tenant: 800
     ruler:
-      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-oss-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-oss-values-mimir-alertmanager-headless.citestns.svc.cluster.local./alertmanager
       enable_api: true
       rule_path: /data
     ruler_storage:
       backend: s3
+      cache:
+        backend: memcached
+        memcached:
+          addresses: dns+test-oss-values-mimir-metadata-cache.citestns.svc:11211
+          max_item_size: 1048576
       s3:
         access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-ruler
@@ -96,5 +136,12 @@ data:
         secret_access_key: ${MINIO_ROOT_PASSWORD}
     runtime_config:
       file: /var/mimir/runtime.yaml
-    server:
-      grpc_server_max_concurrent_streams: 1000
+    store_gateway:
+      sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+        tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
+        wait_stability_min_duration: 1m
+    usage_stats:
+      installation_mode: helm

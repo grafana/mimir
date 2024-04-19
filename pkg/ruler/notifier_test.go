@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/discovery/dns"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -289,7 +289,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ncfg, err := buildNotifierConfig(tt.cfg, nil)
+			ncfg, err := buildNotifierConfig(tt.cfg, nil, nil)
 			if tt.err == nil {
 				require.NoError(t, err)
 				require.Equal(t, tt.ncfg, ncfg)

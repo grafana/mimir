@@ -3,6 +3,7 @@ local filename = 'mimir-overrides.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == '1e2c358600ac53f09faea133f811b5bb' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Overrides') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow(
@@ -14,7 +15,7 @@ local filename = 'mimir-overrides.json';
           datasource: '${datasource}',
           targets: [
             {
-              expr: 'max by(limit_name) (cortex_limits_defaults{%s=~"$cluster",namespace=~"$namespace"})' % $._config.per_cluster_label,
+              expr: 'max by(limit_name) (cortex_limits_defaults{%s=~"$cluster",%s=~"$namespace"})' % [$._config.per_cluster_label, $._config.per_namespace_label],
               instant: true,
               legendFormat: '',
               refId: 'A',
@@ -70,7 +71,7 @@ local filename = 'mimir-overrides.json';
           datasource: '${datasource}',
           targets: [
             {
-              expr: 'max by(user, limit_name) (cortex_limits_overrides{%s=~"$cluster",namespace=~"$namespace",user=~"${tenant_id}"})' % $._config.per_cluster_label,
+              expr: 'max by(user, limit_name) (cortex_limits_overrides{%s=~"$cluster",%s=~"$namespace",user=~"${tenant_id}"})' % [$._config.per_cluster_label, $._config.per_namespace_label],
               instant: true,
               legendFormat: '',
               refId: 'A',

@@ -1,0 +1,117 @@
+---
+# Source: mimir-distributed/templates/ruler/ruler-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-ruler
+  labels:
+    app: enterprise-metrics-ruler
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-metrics-ruler
+      release: test-enterprise-legacy-label-values
+  strategy:
+    rollingUpdate:
+      maxSurge: 50%
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: enterprise-metrics-ruler
+        name: ruler
+        gossip_ring_member: "true"
+        target: ruler
+        release: test-enterprise-legacy-label-values
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ruler
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=ruler"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-distributor.remote-timeout=10s"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
+            - name: runtime-config
+              mountPath: /var/enterprise-metrics
+            - name: storage
+              mountPath: "/data"
+              subPath: 
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
+          envFrom:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-ruler
+            release: test-enterprise-legacy-label-values
+      terminationGracePeriodSeconds: 600
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-config
+        - name: license
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-license
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-legacy-label-values-enterprise-metrics-runtime
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

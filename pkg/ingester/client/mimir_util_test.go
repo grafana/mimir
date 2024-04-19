@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -68,6 +69,7 @@ func TestSendQueryStream(t *testing.T) {
 	go func() {
 		require.NoError(t, server.Serve(listen))
 	}()
+	t.Cleanup(server.Stop)
 
 	client := NewIngesterClient(conn)
 	stream, err := client.QueryStream(clientCtx, &QueryRequest{})
@@ -76,7 +78,11 @@ func TestSendQueryStream(t *testing.T) {
 	// Try to receive the response and assert the error we get is the context.Canceled
 	// wrapped within a gRPC error.
 	_, err = stream.Recv()
-	assert.Equal(t, true, grpcutil.IsGRPCContextCanceled(err))
+	s, ok := grpcutil.ErrorToStatus(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Canceled, s.Code())
+
+	assert.Equal(t, true, grpcutil.IsCanceled(err))
 
 	// Wait until the assertions in the server mock have completed.
 	wg.Wait()

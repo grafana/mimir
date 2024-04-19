@@ -22,8 +22,8 @@ spec:
       app.kubernetes.io/component: ruler
   strategy:
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 50%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -39,9 +39,12 @@ spec:
     spec:
       serviceAccountName: test-enterprise-configmap-values-mimir
       securityContext:
-        {}
-      initContainers:
-        []
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: ruler
           imagePullPolicy: IfNotPresent
@@ -49,6 +52,7 @@ spec:
             - "-target=ruler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-distributor.remote-timeout=10s"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -59,6 +63,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: 
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -81,18 +87,27 @@ spec:
               cpu: 100m
               memory: 128Mi
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 180
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-configmap-values
+            app.kubernetes.io/component: ruler
+      terminationGracePeriodSeconds: 600
       volumes:
         - name: config
           configMap:
@@ -107,4 +122,6 @@ spec:
           configMap:
             name: test-enterprise-configmap-values-mimir-runtime
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}

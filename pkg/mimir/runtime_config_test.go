@@ -6,21 +6,27 @@
 package mimir
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func TestMain(m *testing.M) {
+	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
+	m.Run()
+}
+
 // Given limits are usually loaded via a config file, and that
 // a configmap is limited to 1MB, we need to minimise the limits file.
 // One way to do it is via YAML anchors.
-func TestLoadRuntimeConfig_ShouldLoadAnchoredYAML(t *testing.T) {
-	validation.SetDefaultLimitsForYAMLUnmarshalling(validation.Limits{})
-
+func TestRuntimeConfigLoader_ShouldLoadAnchoredYAML(t *testing.T) {
 	yamlFile := strings.NewReader(`
 overrides:
   '1234': &id001
@@ -33,40 +39,43 @@ overrides:
   '1235': *id001
   '1236': *id001
 `)
-	runtimeCfg, err := loadRuntimeConfig(yamlFile)
+
+	loader := &runtimeConfigLoader{}
+	runtimeCfg, err := loader.load(yamlFile)
 	require.NoError(t, err)
 
-	limits := validation.Limits{
-		IngestionRate:                       1500,
-		IngestionBurstSize:                  15000,
-		MaxGlobalSeriesPerUser:              15000,
-		MaxGlobalSeriesPerMetric:            7000,
-		RulerMaxRulesPerRuleGroup:           20,
-		RulerMaxRuleGroupsPerTenant:         20,
-		NotificationRateLimitPerIntegration: validation.NotificationRateLimitMap{},
-	}
+	expected := getDefaultLimits()
+	expected.IngestionRate = 1500
+	expected.IngestionBurstSize = 15000
+	expected.MaxGlobalSeriesPerUser = 15000
+	expected.MaxGlobalSeriesPerMetric = 7000
+	expected.RulerMaxRulesPerRuleGroup = 20
+	expected.RulerMaxRuleGroupsPerTenant = 20
 
 	loadedLimits := runtimeCfg.(*runtimeConfigValues).TenantLimits
 	require.Equal(t, 3, len(loadedLimits))
-	require.Equal(t, limits, *loadedLimits["1234"])
-	require.Equal(t, limits, *loadedLimits["1235"])
-	require.Equal(t, limits, *loadedLimits["1236"])
+	require.Equal(t, expected, *loadedLimits["1234"])
+	require.Equal(t, expected, *loadedLimits["1235"])
+	require.Equal(t, expected, *loadedLimits["1236"])
 }
 
-func TestLoadRuntimeConfig_ShouldLoadEmptyFile(t *testing.T) {
+func TestRuntimeConfigLoader_ShouldLoadEmptyFile(t *testing.T) {
 	yamlFile := strings.NewReader(`
 # This is an empty YAML.
 `)
-	actual, err := loadRuntimeConfig(yamlFile)
+
+	loader := &runtimeConfigLoader{}
+	actual, err := loader.load(yamlFile)
 	require.NoError(t, err)
 	assert.Equal(t, &runtimeConfigValues{}, actual)
 }
 
-func TestLoadRuntimeConfig_MissingPointerFieldsAreNil(t *testing.T) {
+func TestRuntimeConfigLoader_MissingPointerFieldsAreNil(t *testing.T) {
 	yamlFile := strings.NewReader(`
 # This is an empty YAML.
 `)
-	actual, err := loadRuntimeConfig(yamlFile)
+	loader := &runtimeConfigLoader{}
+	actual, err := loader.load(yamlFile)
 	require.NoError(t, err)
 
 	actualCfg, ok := actual.(*runtimeConfigValues)
@@ -76,7 +85,7 @@ func TestLoadRuntimeConfig_MissingPointerFieldsAreNil(t *testing.T) {
 	assert.Nil(t, actualCfg.IngesterLimits)
 }
 
-func TestLoadRuntimeConfig_ShouldReturnErrorOnMultipleDocumentsInTheConfig(t *testing.T) {
+func TestRuntimeConfigLoader_ShouldReturnErrorOnMultipleDocumentsInTheConfig(t *testing.T) {
 	cases := []string{
 		`
 ---
@@ -108,8 +117,56 @@ overrides:
 	}
 
 	for _, tc := range cases {
-		actual, err := loadRuntimeConfig(strings.NewReader(tc))
+		loader := &runtimeConfigLoader{}
+		actual, err := loader.load(strings.NewReader(tc))
 		assert.Equal(t, errMultipleDocuments, err)
 		assert.Nil(t, actual)
 	}
+}
+
+func TestRuntimeConfigLoader_RunsValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		validate func(limits validation.Limits) error
+		hasError bool
+	}{
+		{
+			name: "successful validate doesn't return error",
+			validate: func(validation.Limits) error {
+				return nil
+			},
+		},
+		{
+			name: "no validate function doesn't return error",
+		},
+		{
+			name: "unsuccessful validate returns error",
+			validate: func(validation.Limits) error {
+				return errors.New("validation failed")
+			},
+			hasError: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			loader := &runtimeConfigLoader{
+				validate: tc.validate,
+			}
+			_, err := loader.load(strings.NewReader(`
+overrides:
+  '1234':
+    ingestion_burst_size: 123
+`))
+			if tc.hasError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func getDefaultLimits() validation.Limits {
+	limits := validation.Limits{}
+	flagext.DefaultValues(&limits)
+	return limits
 }

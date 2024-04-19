@@ -1,0 +1,50 @@
+server:
+  log_level: debug
+
+prometheus:
+  global:
+    scrape_interval: 5s
+    external_labels:
+      scraped_by: grafana-agent
+  configs:
+    - name: local
+      host_filter: false
+      scrape_configs:
+        - job_name: mimir-microservices
+          static_configs:
+            - targets:
+                - 'distributor-1:8000'
+                - 'distributor-2:8001'
+                - 'ingester-1:8002'
+                - 'ingester-2:8003'
+                - 'ingester-3:8004'
+                - 'querier:8005'
+                - 'ruler-1:8021'
+                - 'ruler-2:8022'
+                - 'compactor:8006'
+                - 'query-frontend:8007'
+                - 'store-gateway-1:8008'
+                - 'store-gateway-2:8009'
+                - 'query-scheduler:8011'
+                - 'memcached-exporter:9150'
+                - 'load-generator:9900'
+              labels:
+                cluster: 'docker-compose'
+                namespace: 'mimir-microservices-mode'
+          relabel_configs:
+            - source_labels: ['__address__']
+              target_label: 'pod'
+              regex: '([^:]+)(:[0-9]+)?'
+              replacement: '${1}'
+            - source_labels: ['namespace', 'pod']
+              target_label: 'job'
+              separator: '/'
+              regex: '(.+?)(-\d+)?'
+              replacement: '${1}'
+            - source_labels: ['pod']
+              target_label: 'container'
+              regex: '(.+?)(-\d+)?'
+              replacement: '${1}'
+
+      remote_write:
+        - url: http://distributor-1:8000/api/v1/push

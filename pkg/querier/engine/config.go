@@ -28,6 +28,8 @@ type Config struct {
 	// LookbackDelta determines the time since the last sample after which a time
 	// series is considered stale.
 	LookbackDelta time.Duration `yaml:"lookback_delta" category:"advanced"`
+
+	PromQLExperimentalFunctionsEnabled bool `yaml:"promql_experimental_functions_enabled" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -39,19 +41,21 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 		return help + "This config option should be set on query-frontend too when query sharding is enabled."
 	}
 
-	f.IntVar(&cfg.MaxConcurrent, "querier.max-concurrent", 20, sharedWithQueryFrontend("The maximum number of concurrent queries."))
+	f.IntVar(&cfg.MaxConcurrent, "querier.max-concurrent", 20, "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.")
 	f.DurationVar(&cfg.Timeout, "querier.timeout", 2*time.Minute, sharedWithQueryFrontend("The timeout for a query.")+" This also applies to queries evaluated by the ruler (internally or remotely).")
 	f.IntVar(&cfg.MaxSamples, "querier.max-samples", 50e6, sharedWithQueryFrontend("Maximum number of samples a single query can load into memory."))
 	f.DurationVar(&cfg.DefaultEvaluationInterval, "querier.default-evaluation-interval", time.Minute, sharedWithQueryFrontend("The default evaluation interval or step size for subqueries."))
 	f.DurationVar(&cfg.LookbackDelta, "querier.lookback-delta", 5*time.Minute, sharedWithQueryFrontend("Time since the last sample after which a time series is considered stale and ignored by expression evaluations."))
+	f.BoolVar(&cfg.PromQLExperimentalFunctionsEnabled, "querier.promql-experimental-functions-enabled", false, sharedWithQueryFrontend("Enable experimental PromQL functions."))
 }
 
-// NewPromQLEngineOptions returns the PromQL engine options based on the provided config.
-func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer) promql.EngineOpts {
+// NewPromQLEngineOptions returns the PromQL engine options based on the provided config and a boolean
+// to indicate whether the experimental PromQL functions should be enabled.
+func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer) (promql.EngineOpts, bool) {
 	return promql.EngineOpts{
 		Logger:               logger,
 		Reg:                  reg,
-		ActiveQueryTracker:   newQueryTracker(cfg.MaxConcurrent, activityTracker),
+		ActiveQueryTracker:   newQueryTracker(activityTracker),
 		MaxSamples:           cfg.MaxSamples,
 		Timeout:              cfg.Timeout,
 		LookbackDelta:        cfg.LookbackDelta,
@@ -60,5 +64,5 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},
-	}
+	}, cfg.PromQLExperimentalFunctionsEnabled
 }

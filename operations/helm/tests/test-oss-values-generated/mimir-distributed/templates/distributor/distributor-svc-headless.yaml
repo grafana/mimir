@@ -18,6 +18,10 @@ spec:
   type: ClusterIP
   clusterIP: None
   ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
     - port: 9095
       protocol: TCP
       name: grpc

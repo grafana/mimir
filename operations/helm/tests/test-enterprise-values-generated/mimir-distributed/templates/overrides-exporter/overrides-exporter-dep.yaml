@@ -21,8 +21,8 @@ spec:
       app.kubernetes.io/component: overrides-exporter
   strategy:
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -36,9 +36,12 @@ spec:
     spec:
       serviceAccountName: test-enterprise-values-mimir
       securityContext:
-        {}
-      initContainers:
-        []
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: overrides-exporter
           imagePullPolicy: IfNotPresent
@@ -56,6 +59,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: 
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -78,16 +83,15 @@ spec:
               cpu: 100m
               memory: 128Mi
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
           envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      
+      terminationGracePeriodSeconds: 30
       volumes:
         - name: config
           secret:
@@ -99,4 +103,6 @@ spec:
           configMap:
             name: test-enterprise-values-mimir-runtime
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}

@@ -1,0 +1,27 @@
+---
+# Source: mimir-distributed/templates/query-scheduler/query-scheduler-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-query-scheduler
+  namespace: "citestns"
+  labels:
+    app: enterprise-metrics-query-scheduler
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  annotations:
+    {}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app: enterprise-metrics-query-scheduler
+    release: test-enterprise-legacy-label-values

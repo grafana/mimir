@@ -13,9 +13,11 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
+
+	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
 func TestRetry(t *testing.T) {
@@ -25,20 +27,23 @@ func TestRetry(t *testing.T) {
 		Code: http.StatusBadRequest,
 		Body: []byte("Bad Request"),
 	})
+	errUnprocessable := apierror.New(apierror.TypeBadData, "invalid expression type \"range vector\" for range query, must be Scalar or instant Vector\"")
 	errInternal := httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
 		Code: http.StatusInternalServerError,
 		Body: []byte("Internal Server Error"),
 	})
 
 	for _, tc := range []struct {
-		name    string
-		handler Handler
-		resp    Response
-		err     error
+		name            string
+		handler         MetricsQueryHandler
+		resp            Response
+		err             error
+		expectedRetries int
 	}{
 		{
-			name: "retry failures",
-			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			name:            "retry failures",
+			expectedRetries: 4,
+			handler: HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 				if try.Inc() == 5 {
 					return &PrometheusResponse{Status: "Hello World"}, nil
 				}
@@ -47,22 +52,33 @@ func TestRetry(t *testing.T) {
 			resp: &PrometheusResponse{Status: "Hello World"},
 		},
 		{
-			name: "don't retry 400s",
-			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			name:            "don't retry 400s",
+			expectedRetries: 0,
+			handler: HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 				return nil, errBadRequest
 			}),
 			err: errBadRequest,
 		},
 		{
-			name: "retry 500s",
-			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			name:            "don't retry bad-data",
+			expectedRetries: 0,
+			handler: HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
+				return nil, errUnprocessable
+			}),
+			err: errUnprocessable,
+		},
+		{
+			name:            "retry 500s",
+			expectedRetries: 5,
+			handler: HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 				return nil, errInternal
 			}),
 			err: errInternal,
 		},
 		{
-			name: "last error",
-			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			name:            "last error",
+			expectedRetries: 4,
+			handler: HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 				if try.Inc() == 5 {
 					return nil, errBadRequest
 				}
@@ -73,12 +89,22 @@ func TestRetry(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			try.Store(0)
-			h := newRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(tc.handler)
+			mockMetrics := mockRetryMetrics{}
+			h := newRetryMiddleware(log.NewNopLogger(), 5, &mockMetrics).Wrap(tc.handler)
 			resp, err := h.Do(context.Background(), nil)
 			require.Equal(t, tc.err, err)
 			require.Equal(t, tc.resp, resp)
+			require.Equal(t, float64(tc.expectedRetries), mockMetrics.retries)
 		})
 	}
+}
+
+type mockRetryMetrics struct {
+	retries float64
+}
+
+func (c *mockRetryMetrics) Observe(v float64) {
+	c.retries = v
 }
 
 func Test_RetryMiddlewareCancel(t *testing.T) {
@@ -86,7 +112,7 @@ func Test_RetryMiddlewareCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := newRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(
-		HandlerFunc(func(c context.Context, r Request) (Response, error) {
+		HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 			try.Inc()
 			return nil, ctx.Err()
 		}),
@@ -96,7 +122,7 @@ func Test_RetryMiddlewareCancel(t *testing.T) {
 
 	ctx, cancel = context.WithCancel(context.Background())
 	_, err = newRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(
-		HandlerFunc(func(c context.Context, r Request) (Response, error) {
+		HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 			try.Inc()
 			cancel()
 			return nil, errors.New("failed")

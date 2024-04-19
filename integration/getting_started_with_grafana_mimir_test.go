@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //go:build requires_docker
-// +build requires_docker
 
 package integration
 
 import (
 	"fmt"
-	"math"
 	"net/http"
 	"testing"
 	"time"
@@ -16,6 +14,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -32,7 +31,8 @@ func TestGettingStartedWithGrafanaMimir(t *testing.T) {
 	mimir := e2emimir.NewSingleBinary("mimir", nil, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile("demo.yaml"))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
-	runTestPushSeriesAndQueryBack(t, mimir)
+	runTestPushSeriesAndQueryBack(t, mimir, "series_1", generateFloatSeries)
+	runTestPushSeriesAndQueryBack(t, mimir, "hseries_1", generateHistogramSeries)
 }
 
 func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
@@ -40,29 +40,20 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	require.NoError(t, copyFileToSharedDir(s, "docs/sources/tutorials/play-with-grafana-mimir/config/mimir.yaml", "mimir.yaml"))
+	require.NoError(t, copyFileToSharedDir(s, "docs/sources/mimir/get-started/play-with-grafana-mimir/config/mimir.yaml", "mimir.yaml"))
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flags := map[string]string{
-		// Override the storage config.
-		"-blocks-storage.s3.access-key-id":           e2edb.MinioAccessKey,
-		"-blocks-storage.s3.secret-access-key":       e2edb.MinioSecretKey,
-		"-blocks-storage.s3.bucket-name":             blocksBucketName,
-		"-blocks-storage.s3.endpoint":                fmt.Sprintf("%s-minio-9000:9000", networkName),
-		"-blocks-storage.s3.insecure":                "true",
-		"-ruler-storage.s3.access-key-id":            e2edb.MinioAccessKey,
-		"-ruler-storage.s3.secret-access-key":        e2edb.MinioSecretKey,
-		"-ruler-storage.s3.bucket-name":              rulestoreBucketName,
-		"-ruler-storage.s3.endpoint":                 fmt.Sprintf("%s-minio-9000:9000", networkName),
-		"-ruler-storage.s3.insecure":                 "true",
-		"-alertmanager-storage.s3.access-key-id":     e2edb.MinioAccessKey,
-		"-alertmanager-storage.s3.secret-access-key": e2edb.MinioSecretKey,
-		"-alertmanager-storage.s3.bucket-name":       alertsBucketName,
-		"-alertmanager-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
-		"-alertmanager-storage.s3.insecure":          "true",
+		// Override storage config as Minio setup is different in integration tests.
+		"-common.storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
+		"-common.storage.s3.access-key-id":     e2edb.MinioAccessKey,
+		"-common.storage.s3.secret-access-key": e2edb.MinioSecretKey,
+		"-common.storage.s3.insecure":          "true",
+		"-common.storage.s3.bucket-name":       mimirBucketName,
+
 		// Override the list of members to join, setting the hostname we expect within the Docker network created by integration tests.
 		"-memberlist.join": networkName + "-mimir-1",
 	}
@@ -80,40 +71,38 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 			labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 	}
 
-	runTestPushSeriesAndQueryBack(t, mimir1)
+	runTestPushSeriesAndQueryBack(t, mimir1, "series_1", generateFloatSeries)
+	runTestPushSeriesAndQueryBack(t, mimir2, "hseries_1", generateHistogramSeries)
 }
 
-func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService) {
+func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService, seriesName string, genSeries generateSeriesFunc) {
 	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, expectedMatrix := genSeries(seriesName, now, prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	// Query the series.
-	result, err := c.Query("series_1", now)
+	result, err := c.Query(seriesName, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
 
-	// Work around the Prometheus client lib not having a way to omit the start and end params.
-	minTime := time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
-	maxTime := time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
-
-	labelValues, err := c.LabelValues("foo", minTime, maxTime, nil)
+	labelValues, err := c.LabelValues("foo", v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := c.LabelNames(minTime, maxTime)
+	labelNames, err := c.LabelNames(v1.MinTime, v1.MaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 
-	// Check that a range query does not return an error to sanity check the queryrange tripperware.
-	_, err = c.QueryRange("series_1", now.Add(-15*time.Minute), now, 15*time.Second)
+	rangeResult, err := c.QueryRange(seriesName, now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
+	require.Equal(t, model.ValMatrix, rangeResult.Type())
+	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 }

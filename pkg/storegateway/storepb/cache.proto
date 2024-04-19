@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package thanos;
+
+option go_package = "storepb";
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+
+option (gogoproto.sizer_all) = true;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_getters_all) = false;
+
+// Do not generate XXX fields to reduce memory footprint.
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+
+message CachedSeries {
+  repeated cortexpb.Metric series = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.PreallocatingMetric"];
+  reserved 2; // shard index; we don't need to store them in the cache entry because they are part of the cache key verbatim
+  reserved 3; // shard count; we don't need to store them in the cache entry because they are part of the cache key verbatim
+  reserved 4; // matchers key; we shouldn't cache by matchers key because same postings can be derived from different matchers
+  bytes diffEncodedPostings = 5;
+}

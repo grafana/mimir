@@ -14,6 +14,7 @@ metadata:
     {}
   namespace: "citestns"
 spec:
+  podManagementPolicy: OrderedReady
   replicas: 1
   selector:
     matchLabels:
@@ -37,24 +38,22 @@ spec:
     spec:
       serviceAccountName: test-oss-values-mimir
       securityContext:
-        {}
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-              - key: target
-                operator: In
-                values:
-                - store-gateway
-            topologyKey: kubernetes.io/hostname
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-oss-values
+            app.kubernetes.io/component: store-gateway
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:
@@ -66,6 +65,8 @@ spec:
           configMap:
             name: test-oss-values-mimir-runtime
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
       containers:
         - name: store-gateway
@@ -81,6 +82,8 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -99,12 +102,16 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            requests:
-              cpu: 100m
-              memory: 512Mi
+            limits: null
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
           envFrom:
             - secretRef:
                 name: mimir-minio-secret

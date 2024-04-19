@@ -13,6 +13,7 @@ metadata:
     {}
   namespace: "citestns"
 spec:
+  # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
   replicas: 1
   selector:
     matchLabels:
@@ -21,8 +22,8 @@ spec:
       app.kubernetes.io/component: query-frontend
   strategy:
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -36,9 +37,12 @@ spec:
     spec:
       serviceAccountName: test-enterprise-values-mimir
       securityContext:
-        {}
-      initContainers:
-        []
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: query-frontend
           imagePullPolicy: IfNotPresent
@@ -46,6 +50,9 @@ spec:
             - "-target=query-frontend"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Reduce the likelihood of queries hitting terminated query-frontends.
+            - "-server.grpc.keepalive.max-connection-age=30s"
+            - "-shutdown-delay=90s"
           volumeMounts:
             - name: runtime-config
               mountPath: /var/mimir
@@ -55,6 +62,8 @@ spec:
               mountPath: /etc/mimir
             - name: storage
               mountPath: /data
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -74,26 +83,25 @@ spec:
               cpu: 100m
               memory: 128Mi
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "5000"
           envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: target
-                  operator: In
-                  values:
-                  - query-frontend
-              topologyKey: kubernetes.io/hostname
-            weight: 100
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 180
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-values
+            app.kubernetes.io/component: query-frontend
+      terminationGracePeriodSeconds: 390
       volumes:
         - name: config
           secret:
@@ -105,4 +113,6 @@ spec:
           configMap:
             name: test-enterprise-values-mimir-runtime
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}

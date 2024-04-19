@@ -1,0 +1,63 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.20"
+
+alertmanager:
+  zoneAwareReplication:
+    enabled: true
+    topologyKey: 'kubernetes.io/hostname'
+
+ingester:
+  # Test that the calculated number of replicas per zone is ceil(20/3)=7
+  replicas: 20
+  zoneAwareReplication:
+    enabled: true
+    topologyKey: 'kubernetes.io/hostname'
+    zones:
+    - name: zone-a
+      extraAffinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: security
+                operator: In
+                values:
+                - S1
+            topologyKey: topology.kubernetes.io/zone
+    - name: zone-b
+      extraAffinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: security
+                operator: In
+                values:
+                - S1
+            topologyKey: topology.kubernetes.io/zone
+    - name: zone-c
+      extraAffinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: security
+                operator: In
+                values:
+                - S1
+            topologyKey: topology.kubernetes.io/zone
+
+store_gateway:
+  zoneAwareReplication:
+    enabled: true
+    topologyKey: 'kubernetes.io/hostname'
+    zones:
+    - name: zone-a
+      nodeSelector:
+        topology.kubernetes.io/zone: zone-a
+    - name: zone-b
+      nodeSelector:
+        topology.kubernetes.io/zone: zone-b
+    - name: zone-c
+      nodeSelector:
+        topology.kubernetes.io/zone: zone-c

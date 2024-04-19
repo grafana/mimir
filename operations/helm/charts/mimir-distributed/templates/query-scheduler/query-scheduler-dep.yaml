@@ -1,0 +1,140 @@
+{{- if .Values.query_scheduler.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "query-scheduler") }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "query-scheduler") | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.query_scheduler.annotations | nindent 4 }}
+spec:
+  replicas: {{ .Values.query_scheduler.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "query-scheduler") | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.query_scheduler.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "query-scheduler") | nindent 8 }}
+      annotations:
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "query-scheduler") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- if .Values.query_scheduler.priorityClassName }}
+      priorityClassName: {{ .Values.query_scheduler.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "query-scheduler") | nindent 8 }}
+      {{- with .Values.query_scheduler.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end}}
+      {{- end }}
+      containers:
+        - name: query-scheduler
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=query-scheduler"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          {{- range $key, $value := .Values.query_scheduler.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.query_scheduler.extraVolumeMounts }}
+              {{ toYaml .Values.query_scheduler.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: runtime-config
+              mountPath: /var/{{ include "mimir.name" . }}
+            {{- if .Values.enterprise.enabled }}
+            - name: license
+              mountPath: /license
+            {{- end }}
+            - name: config
+              mountPath: /etc/mimir
+            - name: storage
+              mountPath: /data
+              {{- if .Values.query_scheduler.persistence.subPath }}
+              subPath: {{ .Values.query_scheduler.persistence.subPath }}
+              {{- end }}
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: {{ include "mimir.serverHttpListenPort" . }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ include "mimir.serverGrpcListenPort" . }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.query_scheduler.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.query_scheduler.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.query_scheduler.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.query_scheduler.containerSecurityContext | nindent 12 }}
+          env:
+            {{- with .Values.global.extraEnv }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.query_scheduler.env }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.query_scheduler }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.query_scheduler.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+{{- if .Values.query_scheduler.extraContainers }}
+{{ toYaml .Values.query_scheduler.extraContainers | indent 8}}
+{{- end }}
+      {{- with .Values.query_scheduler.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.query_scheduler.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "query-scheduler") | nindent 6 }}
+      {{- with .Values.query_scheduler.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.query_scheduler.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          {{- include "mimir.configVolume" . | nindent 10 }}
+        {{- if .Values.enterprise.enabled }}
+        - name: license
+          secret:
+            secretName: {{ tpl .Values.license.secretName . }}
+        {{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "mimir.fullname" . }}-runtime
+{{- if .Values.query_scheduler.extraVolumes }}
+{{ toYaml .Values.query_scheduler.extraVolumes | indent 8}}
+{{- end }}
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+{{- end }}
