@@ -525,12 +525,12 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 			defer done()
 			require.NoError(t, err, "Failed to gather metrics from registry")
 
-			gotDuration := filterMetrics(got, []string{"cortex_querytee_backend_request_relative_duration_seconds"})
+			gotDuration := filterMetrics(got, []string{"cortex_querytee_backend_response_relative_duration_seconds"})
 			require.Equal(t, 1, len(gotDuration), "Expect only one metric after filtering")
 			require.Equal(t, scenario.expectedSampleCount, gotDuration[0].Metric[0].Histogram.GetSampleCount())
 			require.Equal(t, scenario.expectedDurationSampleSum, gotDuration[0].Metric[0].Histogram.GetSampleSum())
 
-			gotProportional := filterMetrics(got, []string{"cortex_querytee_backend_request_relative_duration_proportional"})
+			gotProportional := filterMetrics(got, []string{"cortex_querytee_backend_response_relative_duration_proportional"})
 			require.Equal(t, 1, len(gotProportional), "Expect only one metric after filtering")
 			require.Equal(t, scenario.expectedSampleCount, gotProportional[0].Metric[0].Histogram.GetSampleCount())
 			require.Equal(t, scenario.expectedProportionalSampleSum, gotProportional[0].Metric[0].Histogram.GetSampleSum())
