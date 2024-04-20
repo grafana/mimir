@@ -354,81 +354,67 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 	scenarios := map[string]struct {
 		slowResponseThreshold         time.Duration
-		latencyPairs                  []latencyPair
+		preferredResponseLatency      time.Duration
+		secondaryResponseLatency      time.Duration
 		expectLatencyExceedsThreshold bool
 		fastestBackend                string
 		slowestBackend                string
 	}{
 		"responses are below threshold": {
-			slowResponseThreshold: 100 * time.Millisecond,
-			latencyPairs: []latencyPair{{
-				preferredResponseLatency: 1 * time.Millisecond,
-				secondaryResponseLatency: 1 * time.Millisecond,
-			}},
+			slowResponseThreshold:         100 * time.Millisecond,
+			preferredResponseLatency:      1 * time.Millisecond,
+			secondaryResponseLatency:      1 * time.Millisecond,
 			expectLatencyExceedsThreshold: false,
 		},
 		"one response above threshold": {
-			slowResponseThreshold: 50 * time.Millisecond,
-			latencyPairs: []latencyPair{{
-				preferredResponseLatency: 1 * time.Millisecond,
-				secondaryResponseLatency: 70 * time.Millisecond,
-			}},
+			slowResponseThreshold:         50 * time.Millisecond,
+			preferredResponseLatency:      1 * time.Millisecond,
+			secondaryResponseLatency:      70 * time.Millisecond,
 			expectLatencyExceedsThreshold: true,
 			fastestBackend:                "preferred-backend",
 			slowestBackend:                "secondary-backend",
 		},
 		"responses are both above threshold, but lower than threshold between themselves": {
-			slowResponseThreshold: 50 * time.Millisecond,
-			latencyPairs: []latencyPair{{
-				preferredResponseLatency: 51 * time.Millisecond,
-				secondaryResponseLatency: 62 * time.Millisecond,
-			}},
+			slowResponseThreshold:         50 * time.Millisecond,
+			preferredResponseLatency:      51 * time.Millisecond,
+			secondaryResponseLatency:      62 * time.Millisecond,
 			expectLatencyExceedsThreshold: false,
 		},
 		"responses are both above threshold, and above threshold between themselves": {
-			slowResponseThreshold: 10 * time.Millisecond,
-			latencyPairs: []latencyPair{{
-				preferredResponseLatency: 11 * time.Millisecond,
-				secondaryResponseLatency: 52 * time.Millisecond,
-			}},
+			slowResponseThreshold:         10 * time.Millisecond,
+			preferredResponseLatency:      11 * time.Millisecond,
+			secondaryResponseLatency:      52 * time.Millisecond,
 			expectLatencyExceedsThreshold: true,
 			fastestBackend:                "preferred-backend",
 			slowestBackend:                "secondary-backend",
 		},
 		"secondary latency is faster than primary, and difference is below threshold": {
-			slowResponseThreshold: 50 * time.Millisecond,
-			latencyPairs: []latencyPair{{
-				preferredResponseLatency: 10 * time.Millisecond,
-				secondaryResponseLatency: 1 * time.Millisecond,
-			}},
+			slowResponseThreshold:         50 * time.Millisecond,
+			preferredResponseLatency:      10 * time.Millisecond,
+			secondaryResponseLatency:      1 * time.Millisecond,
 			expectLatencyExceedsThreshold: false,
 		},
 		"secondary latency is faster than primary, and difference is above threshold": {
-			slowResponseThreshold: 50 * time.Millisecond,
-			latencyPairs: []latencyPair{{
-				preferredResponseLatency: 71 * time.Millisecond,
-				secondaryResponseLatency: 1 * time.Millisecond,
-			}},
+			slowResponseThreshold:         50 * time.Millisecond,
+			preferredResponseLatency:      71 * time.Millisecond,
+			secondaryResponseLatency:      1 * time.Millisecond,
 			expectLatencyExceedsThreshold: true,
 			fastestBackend:                "secondary-backend",
 			slowestBackend:                "preferred-backend",
 		},
 		"slowest response threshold is disabled (0)": {
-			slowResponseThreshold: 0 * time.Millisecond,
-			latencyPairs: []latencyPair{{
-				preferredResponseLatency: 200 * time.Millisecond,
-				secondaryResponseLatency: 100 * time.Millisecond,
-			}},
+			slowResponseThreshold:         0 * time.Millisecond,
+			preferredResponseLatency:      200 * time.Millisecond,
+			secondaryResponseLatency:      100 * time.Millisecond,
 			expectLatencyExceedsThreshold: false,
 		},
 	}
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			preferredLatencies, secondaryLatencies := splitLatencyPairs(scenario.latencyPairs)
 			backends := []ProxyBackendInterface{
-				newMockProxyBackend("preferred-backend", time.Second, true, preferredLatencies),
-				newMockProxyBackend("secondary-backend", time.Second, false, secondaryLatencies),
+				newMockProxyBackend("preferred-backend", time.Second, true, []time.Duration{scenario.preferredResponseLatency}),
+				newMockProxyBackend("secondary-backend", time.Second, false, []time.Duration{scenario.secondaryResponseLatency}),
 			}
 
 			logger := newMockLogger()
@@ -446,7 +432,7 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 
 			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
 			// Wait for the response comparison to complete before checking the logged messages.
-			waitForResponseComparisonMetric(t, reg, ComparisonSuccess, uint64(len(scenario.latencyPairs)))
+			waitForResponseComparisonMetric(t, reg, ComparisonSuccess, 1)
 
 			if scenario.expectLatencyExceedsThreshold {
 				requireLogKeyValues(t, logger.messages, map[string]string{
