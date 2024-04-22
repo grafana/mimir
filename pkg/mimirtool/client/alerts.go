@@ -15,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const alertmanagerAPIPath = "/api/v1/alerts"
+const alertmanagerAPIPath = "/api/v2/alerts"
 
 type configCompat struct {
 	TemplateFiles      map[string]string `yaml:"template_files"`
