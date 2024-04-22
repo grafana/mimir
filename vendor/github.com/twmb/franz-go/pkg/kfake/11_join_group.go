@@ -6,7 +6,7 @@ import (
 
 func init() { regKey(11, 0, 9) }
 
-func (c *Cluster) handleJoinGroup(creq clientReq) (kmsg.Response, error) {
+func (c *Cluster) handleJoinGroup(creq *clientReq) (kmsg.Response, error) {
 	req := creq.kreq.(*kmsg.JoinGroupRequest)
 
 	if err := checkReqVersion(req.Key(), req.Version); err != nil {

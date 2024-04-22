@@ -1052,6 +1052,11 @@ rules:
 			router := mux.NewRouter()
 			router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
 			router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods("GET").HandlerFunc(a.GetRuleGroup)
+
+			// Pre-condition check: the ruler should have run the initial rules sync but not done a sync
+			// based on API mutations.
+			verifySyncRulesMetric(t, reg, 1, 0)
+
 			// POST
 			req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace", strings.NewReader(tt.input), "user1")
 			w := httptest.NewRecorder()
@@ -1060,9 +1065,6 @@ rules:
 			require.Equal(t, tt.status, w.Code)
 
 			if tt.err == nil {
-				// Pre-condition check: the ruler should have run the initial rules sync.
-				verifySyncRulesMetric(t, reg, 1, 0)
-
 				// GET
 				req = requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/config/v1/rules/namespace/test", nil, "user1")
 				w = httptest.NewRecorder()
