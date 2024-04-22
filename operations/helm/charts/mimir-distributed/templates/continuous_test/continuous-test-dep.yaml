@@ -45,7 +45,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=continuous-test"
-            - "-activity-tracker.filepath=/active-query-tracker/activity.log"
+            - "-activity-tracker.filepath="
             - "-server.http-listen-port={{ include "mimir.serverHttpListenPort" . }}"
             - "-tests.write-read-series-test.num-series={{ .Values.continuous_test.numSeries }}"
             - "-tests.write-read-series-test.max-query-age={{ .Values.continuous_test.maxQueryAge }}"
@@ -66,8 +66,6 @@ spec:
             - "-{{ $key }}={{ $value }}"
             {{- end }}
           volumeMounts:
-            - name: active-queries
-              mountPath: /active-query-tracker
             {{- if .Values.continuous_test.extraVolumeMounts }}
               {{ toYaml .Values.continuous_test.extraVolumeMounts | nindent 12}}
             {{- end }}
@@ -119,8 +117,6 @@ spec:
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.continuous_test.terminationGracePeriodSeconds }}
       volumes:
-        - name: active-queries
-          emptyDir: {}
         {{- if .Values.continuous_test.extraVolumes }}
         {{ toYaml .Values.continuous_test.extraVolumes | nindent 8}}
         {{- end }}
