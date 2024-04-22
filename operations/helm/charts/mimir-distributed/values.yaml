@@ -3902,11 +3902,8 @@ continuous_test:
   enabled: false
   # -- Number of replicas to start of continuous test
   replicas: 1
-  image:
-    repository: grafana/mimir-continuous-test
-    tag: 2.12.0
-    pullPolicy: IfNotPresent
-    # Note: optional pullSecrets are set in toplevel 'image' section, not here
+  # The image section has been removed as continuous test is now a module of the regular Mimir image.
+  # See settings for the image at the top image section.
 
   # -- Authentication settings of continuous test
   auth:
