@@ -7,7 +7,7 @@ import (
 
 func init() { regKey(17, 1, 1) }
 
-func (c *Cluster) handleSASLHandshake(creq clientReq) (kmsg.Response, error) {
+func (c *Cluster) handleSASLHandshake(creq *clientReq) (kmsg.Response, error) {
 	req := creq.kreq.(*kmsg.SASLHandshakeRequest)
 	resp := req.ResponseKind().(*kmsg.SASLHandshakeResponse)
 

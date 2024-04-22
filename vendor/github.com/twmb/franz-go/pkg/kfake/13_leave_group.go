@@ -7,7 +7,7 @@ import (
 
 func init() { regKey(13, 0, 5) }
 
-func (c *Cluster) handleLeaveGroup(creq clientReq) (kmsg.Response, error) {
+func (c *Cluster) handleLeaveGroup(creq *clientReq) (kmsg.Response, error) {
 	req := creq.kreq.(*kmsg.LeaveGroupRequest)
 	resp := req.ResponseKind().(*kmsg.LeaveGroupResponse)
 

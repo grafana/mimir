@@ -1028,8 +1028,8 @@ github.com/thanos-io/objstore/providers/gcs
 github.com/thanos-io/objstore/providers/s3
 github.com/thanos-io/objstore/providers/swift
 github.com/thanos-io/objstore/tracing/opentracing
-# github.com/twmb/franz-go v1.15.4
-## explicit; go 1.18
+# github.com/twmb/franz-go v1.16.1
+## explicit; go 1.19
 github.com/twmb/franz-go/pkg/kbin
 github.com/twmb/franz-go/pkg/kerr
 github.com/twmb/franz-go/pkg/kgo
@@ -1039,7 +1039,7 @@ github.com/twmb/franz-go/pkg/sasl
 # github.com/twmb/franz-go/pkg/kadm v1.10.0
 ## explicit; go 1.19
 github.com/twmb/franz-go/pkg/kadm
-# github.com/twmb/franz-go/pkg/kfake v0.0.0-20231206062516-c09dc92d2db1
+# github.com/twmb/franz-go/pkg/kfake v0.0.0-20240412162337-6a58760afaa7
 ## explicit; go 1.20
 github.com/twmb/franz-go/pkg/kfake
 # github.com/twmb/franz-go/pkg/kmsg v1.7.0

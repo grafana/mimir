@@ -32,14 +32,14 @@ import (
 func TestKafkaStartOffset(t *testing.T) {
 	t.Run("should match Kafka client start offset", func(t *testing.T) {
 		expected := kgo.NewOffset().AtStart().EpochOffset().Offset
-		assert.Equal(t, expected, kafkaStartOffset)
+		assert.Equal(t, expected, kafkaOffsetStart)
 	})
 }
 
 func TestKafkaEndOffset(t *testing.T) {
 	t.Run("should match Kafka client end offset", func(t *testing.T) {
 		expected := kgo.NewOffset().AtEnd().EpochOffset().Offset
-		assert.Equal(t, expected, kafkaEndOffset)
+		assert.Equal(t, expected, kafkaOffsetEnd)
 	})
 }
 
@@ -672,6 +672,99 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		}
 	})
 
+	t.Run("should consume partition from the timestamp if position=timestamp, and wait until max lag is honored", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+			fetchRequestsCount   = atomic.NewInt64(0)
+			fetchShouldFail      = atomic.NewBool(false)
+			consumedRecordsMx    sync.Mutex
+			consumedRecords      []string
+		)
+
+		consumer := consumerFunc(func(_ context.Context, records []record) error {
+			consumedRecordsMx.Lock()
+			defer consumedRecordsMx.Unlock()
+
+			for _, r := range records {
+				consumedRecords = append(consumedRecords, string(r.content))
+			}
+			return nil
+		})
+
+		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			fetchRequestsCount.Inc()
+
+			if fetchShouldFail.Load() {
+				return nil, errors.New("mocked error"), true
+			}
+
+			return nil, nil, false
+		})
+
+		writeClient := newKafkaProduceClient(t, clusterAddr)
+
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+
+		// Consume from after the records in the head. The sleep guaranties a full second gap between the head and tail of the topic.
+		time.Sleep(time.Second)
+		consumeFromTs := time.Now()
+
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-3"))
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-4"))
+
+		// Create and start the reader.
+		fetchShouldFail.Store(true)
+		fetchRequestsCount.Store(0)
+		consumedRecordsMx.Lock()
+		consumedRecords = nil
+		consumedRecordsMx.Unlock()
+
+		reg := prometheus.NewPedanticRegistry()
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromTimestampAtStartup(consumeFromTs.UnixMilli()), withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
+		require.NoError(t, reader.StartAsync(ctx))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		})
+
+		// Wait until the Kafka cluster received few Fetch requests.
+		test.Poll(t, 5*time.Second, true, func() interface{} {
+			return fetchRequestsCount.Load() > 0
+		})
+
+		// Since the mocked Kafka cluster is configured to fail any Fetch we expect the reader hasn't
+		// catched up yet, and it's still in Starting state.
+		assert.Equal(t, services.Starting, reader.State())
+
+		// Unblock the Fetch requests. Now they will succeed.
+		fetchShouldFail.Store(false)
+
+		// We expect the reader to catch up, and then switch to Running state.
+		test.Poll(t, 5*time.Second, services.Running, func() interface{} {
+			return reader.State()
+		})
+
+		// We expect the reader to have consumed the partition from the third record.
+		test.Poll(t, time.Second, []string{"record-3", "record-4"}, func() interface{} {
+			consumedRecordsMx.Lock()
+			defer consumedRecordsMx.Unlock()
+			return slices.Clone(consumedRecords)
+		})
+
+		// We expect the last consumed offset to be tracked in a metric.
+		expectedConsumedOffset := 3
+		test.Poll(t, time.Second, nil, func() interface{} {
+			return promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} %d
+			`, expectedConsumedOffset)), "cortex_ingest_storage_reader_last_consumed_offset")
+		})
+	})
+
 	t.Run("should consume partition from last committed offset if position=last-offset, and wait until max lag is honored", func(t *testing.T) {
 		t.Parallel()
 
@@ -958,7 +1051,8 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 			return res, nil, true
 		})
 
-		_, exists, err := reader.fetchLastCommittedOffset(ctx)
+		client := newKafkaProduceClient(t, clusterAddr)
+		_, exists, err := reader.fetchLastCommittedOffset(ctx, client)
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
@@ -998,12 +1092,13 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 			return res, nil, true
 		})
 
-		_, exists, err := reader.fetchLastCommittedOffset(ctx)
+		client := newKafkaProduceClient(t, clusterAddr)
+		_, exists, err := reader.fetchLastCommittedOffset(ctx, client)
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
 
-	t.Run("should return the committed offset to Kafka", func(t *testing.T) {
+	t.Run("should return the committed  to Kafka offset", func(t *testing.T) {
 		t.Parallel()
 
 		var (
@@ -1041,7 +1136,8 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 			return res, nil, true
 		})
 
-		offset, exists, err := reader.fetchLastCommittedOffset(ctx)
+		client := newKafkaProduceClient(t, clusterAddr)
+		offset, exists, err := reader.fetchLastCommittedOffset(ctx, client)
 		require.NoError(t, err)
 		assert.True(t, exists)
 		assert.Equal(t, int64(123), offset)
@@ -1277,6 +1373,13 @@ func withMaxConsumerLagAtStartup(maxLag time.Duration) func(cfg *readerTestCfg) 
 func withConsumeFromPositionAtStartup(position string) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
 		cfg.kafka.ConsumeFromPositionAtStartup = position
+	}
+}
+
+func withConsumeFromTimestampAtStartup(ts int64) func(cfg *readerTestCfg) {
+	return func(cfg *readerTestCfg) {
+		cfg.kafka.ConsumeFromPositionAtStartup = consumeFromTimestamp
+		cfg.kafka.ConsumeFromTimestampAtStartup = ts
 	}
 }
 

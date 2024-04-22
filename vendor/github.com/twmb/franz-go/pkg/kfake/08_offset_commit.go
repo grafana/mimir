@@ -7,7 +7,7 @@ import (
 
 func init() { regKey(8, 0, 8) }
 
-func (c *Cluster) handleOffsetCommit(creq clientReq) (kmsg.Response, error) {
+func (c *Cluster) handleOffsetCommit(creq *clientReq) (kmsg.Response, error) {
 	req := creq.kreq.(*kmsg.OffsetCommitRequest)
 	resp := req.ResponseKind().(*kmsg.OffsetCommitResponse)
 

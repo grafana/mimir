@@ -25,11 +25,11 @@ import (
 )
 
 const (
-	// kafkaStartOffset is a special offset value that means the beginning of the partition.
-	kafkaStartOffset = int64(-2)
+	// kafkaOffsetStart is a special offset value that means the beginning of the partition.
+	kafkaOffsetStart = int64(-2)
 
-	// kafkaEndOffset is a special offset value that means the end of the partition.
-	kafkaEndOffset = int64(-1)
+	// kafkaOffsetEnd is a special offset value that means the end of the partition.
+	kafkaOffsetEnd = int64(-1)
 )
 
 type record struct {
@@ -101,38 +101,9 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		}
 	}()
 
-	var (
-		lastConsumedOffset int64
-		startOffset        int64
-		err                error
-	)
-
-	// Find the offset from which we should start consuming.
-	switch r.kafkaCfg.ConsumeFromPositionAtStartup {
-	case consumeFromStart:
-		lastConsumedOffset = -1
-		startOffset = kafkaStartOffset
-		level.Info(r.logger).Log("msg", "starting consumption from partition start", "start_offset", startOffset, "consumer_group", r.consumerGroup)
-
-	case consumeFromEnd:
-		lastConsumedOffset = -1
-		startOffset = kafkaEndOffset
-		level.Warn(r.logger).Log("msg", "starting consumption from partition end (may cause data loss)", "start_offset", startOffset, "consumer_group", r.consumerGroup)
-
-	default:
-		var exists bool
-		lastConsumedOffset, exists, err = r.fetchLastCommittedOffsetWithRetries(ctx)
-
-		if err != nil {
-			return err
-		} else if exists {
-			startOffset = lastConsumedOffset + 1 // We'll have to start consuming from the next offset (included).
-			level.Info(r.logger).Log("msg", "starting consumption from last consumed offset", "last_consumed_offset", lastConsumedOffset, "start_offset", startOffset, "consumer_group", r.consumerGroup)
-		} else {
-			lastConsumedOffset = -1
-			startOffset = kafkaStartOffset
-			level.Info(r.logger).Log("msg", "starting consumption from partition start because no committed offset has been found", "start_offset", startOffset, "consumer_group", r.consumerGroup)
-		}
+	startOffset, lastConsumedOffset, err := r.getStartOffset(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Initialise the last consumed offset only if we've got an actual offset from the consumer group.
@@ -159,7 +130,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 
 	// Enforce the max consumer lag (if enabled).
 	if maxLag := r.kafkaCfg.MaxConsumerLagAtStartup; maxLag > 0 {
-		if startOffset != kafkaEndOffset {
+		if startOffset != kafkaOffsetEnd {
 			if err := r.processNextFetchesUntilMaxLagHonored(ctx, maxLag); err != nil {
 				return err
 			}
@@ -437,22 +408,71 @@ func (r *PartitionReader) newKafkaReader(at kgo.Offset) (*kgo.Client, error) {
 	return client, nil
 }
 
-func (r *PartitionReader) fetchLastCommittedOffsetWithRetries(ctx context.Context) (offset int64, exists bool, err error) {
-	var (
-		retry = backoff.New(ctx, backoff.Config{
-			MinBackoff: 100 * time.Millisecond,
-			MaxBackoff: 2 * time.Second,
-			MaxRetries: 10,
-		})
-	)
+func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, lastConsumedOffset int64, err error) {
+	switch r.kafkaCfg.ConsumeFromPositionAtStartup {
+	case consumeFromStart:
+		startOffset = kafkaOffsetStart
+		level.Info(r.logger).Log("msg", "starting consumption from partition start", "start_offset", startOffset, "consumer_group", r.consumerGroup)
+		return startOffset, -1, nil
 
-	for retry.Ongoing() {
-		offset, exists, err = r.fetchLastCommittedOffset(ctx)
-		if err == nil {
-			return offset, exists, nil
+	case consumeFromEnd:
+		startOffset = kafkaOffsetEnd
+		level.Warn(r.logger).Log("msg", "starting consumption from partition end (may cause data loss)", "start_offset", startOffset, "consumer_group", r.consumerGroup)
+		return startOffset, -1, nil
+	}
+
+	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
+	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
+	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
+	cl, err := kgo.NewClient(commonKafkaClientOptions(r.kafkaCfg, r.metrics.kprom, r.logger)...)
+	if err != nil {
+		return 0, -1, fmt.Errorf("unable to create bootstrap client: %w", err)
+	}
+	defer cl.Close()
+
+	fetchOffset := func(ctx context.Context) (offset, lastConsumedOffset int64, err error) {
+		if r.kafkaCfg.ConsumeFromPositionAtStartup == consumeFromTimestamp {
+			ts := time.UnixMilli(r.kafkaCfg.ConsumeFromTimestampAtStartup)
+			offset, exists, err := r.fetchFirstOffsetAfterTime(ctx, cl, ts)
+			if err != nil {
+				return 0, -1, err
+			}
+			if exists {
+				lastConsumedOffset = offset - 1 // Offset before the one we'll start the consumption from
+				level.Info(r.logger).Log("msg", "starting consumption from timestamp", "timestamp", ts.UnixMilli(), "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
+				return offset, lastConsumedOffset, nil
+			}
+		} else {
+			offset, exists, err := r.fetchLastCommittedOffset(ctx, cl)
+			if err != nil {
+				return 0, -1, err
+			}
+			if exists {
+				lastConsumedOffset = offset
+				offset = lastConsumedOffset + 1 // We'll start consuming from the next offset after the last consumed.
+				level.Info(r.logger).Log("msg", "starting consumption from last consumed offset", "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
+				return offset, lastConsumedOffset, nil
+			}
 		}
 
-		level.Warn(r.logger).Log("msg", "failed to fetch last committed offset", "err", err)
+		offset = kafkaOffsetStart
+		level.Info(r.logger).Log("msg", "starting consumption from partition start because no offset has been found", "start_offset", offset, "consumer_group", r.consumerGroup)
+
+		return offset, -1, err
+	}
+
+	retry := backoff.New(ctx, backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
+		MaxRetries: 10,
+	})
+	for retry.Ongoing() {
+		startOffset, lastConsumedOffset, err = fetchOffset(ctx)
+		if err == nil {
+			return startOffset, lastConsumedOffset, nil
+		}
+
+		level.Warn(r.logger).Log("msg", "failed to fetch offset", "err", err)
 		retry.Wait()
 	}
 
@@ -461,28 +481,18 @@ func (r *PartitionReader) fetchLastCommittedOffsetWithRetries(ctx context.Contex
 		err = retry.Err()
 	}
 
-	return 0, false, err
+	return 0, -1, err
 }
 
 // fetchLastCommittedOffset returns the last consumed offset which has been committed by the PartitionReader
 // to the consumer group.
-func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (offset int64, exists bool, _ error) {
-	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
-	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
-	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
-	cl, err := kgo.NewClient(commonKafkaClientOptions(r.kafkaCfg, r.metrics.kprom, r.logger)...)
-	if err != nil {
-		return 0, false, errors.Wrap(err, "unable to create admin client")
-	}
-	adm := kadm.NewClient(cl)
-	defer adm.Close()
-
-	offsets, err := adm.FetchOffsets(ctx, r.consumerGroup)
+func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context, cl *kgo.Client) (offset int64, exists bool, _ error) {
+	offsets, err := kadm.NewClient(cl).FetchOffsets(ctx, r.consumerGroup)
 	if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
 		return 0, false, nil
 	}
 	if err != nil {
-		return 0, false, errors.Wrap(err, "unable to fetch group offsets")
+		return 0, false, fmt.Errorf("unable to fetch group offsets: %w", err)
 	}
 
 	offsetRes, exists := offsets.Lookup(r.kafkaCfg.Topic, r.partitionID)
@@ -494,6 +504,27 @@ func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (offset 
 	}
 
 	return offsetRes.At, true, nil
+}
+
+// fetchFirstOffsetAfterMilli returns the first offset after the requested millisecond timestamp.
+func (r *PartitionReader) fetchFirstOffsetAfterTime(ctx context.Context, cl *kgo.Client, ts time.Time) (offset int64, exists bool, _ error) {
+	offsets, err := kadm.NewClient(cl).ListOffsetsAfterMilli(ctx, ts.UnixMilli(), r.kafkaCfg.Topic)
+	if errors.Is(err, kerr.UnknownTopicOrPartition) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("unable to list topic offsets: %w", err)
+	}
+
+	offsetRes, exists := offsets.Lookup(r.kafkaCfg.Topic, r.partitionID)
+	if !exists {
+		return 0, false, nil
+	}
+	if offsetRes.Err != nil {
+		return 0, false, offsetRes.Err
+	}
+
+	return offsetRes.Offset, true, nil
 }
 
 // WaitReadConsistency waits until all data produced up until now has been consumed by the reader.

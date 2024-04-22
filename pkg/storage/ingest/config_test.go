@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
@@ -47,6 +48,26 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: ErrInvalidConsumePosition,
 		},
+		"should fail if ingest storage is enabled and consume timestamp is set and consume position is not expected": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ConsumeFromPositionAtStartup = consumeFromEnd
+				cfg.KafkaConfig.ConsumeFromTimestampAtStartup = time.Now().UnixMilli()
+			},
+			expectedErr: ErrInvalidConsumePosition,
+		},
+		"should fail if ingest storage is enabled and consume position is expected but consume timestamp is invalid": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ConsumeFromPositionAtStartup = consumeFromTimestamp
+				cfg.KafkaConfig.ConsumeFromTimestampAtStartup = 0
+			},
+			expectedErr: ErrInvalidConsumePosition,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -55,7 +76,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(&cfg)
 			testData.setup(&cfg)
 
-			assert.Equal(t, testData.expectedErr, cfg.Validate())
+			assert.ErrorIs(t, cfg.Validate(), testData.expectedErr)
 		})
 	}
 }
