@@ -18,23 +18,24 @@ import (
 )
 
 const (
-	expectedTimeseries         = 100
-	expectedLabels             = 20
-	expectedSamplesPerSeries   = 10
-	expectedExemplarsPerSeries = 1
+	minPreallocatedTimeseries         = 100
+	minPreallocatedLabels             = 20
+	minPreallocatedSamplesPerSeries   = 10
+	minPreallocatedExemplarsPerSeries = 1
+	maxPreallocatedExemplarsPerSeries = 10
 )
 
 var (
 	preallocTimeseriesSlicePool = zeropool.New(func() []PreallocTimeseries {
-		return make([]PreallocTimeseries, 0, expectedTimeseries)
+		return make([]PreallocTimeseries, 0, minPreallocatedTimeseries)
 	})
 
 	timeSeriesPool = sync.Pool{
 		New: func() interface{} {
 			return &TimeSeries{
-				Labels:     make([]LabelAdapter, 0, expectedLabels),
-				Samples:    make([]Sample, 0, expectedSamplesPerSeries),
-				Exemplars:  make([]Exemplar, 0, expectedExemplarsPerSeries),
+				Labels:     make([]LabelAdapter, 0, minPreallocatedLabels),
+				Samples:    make([]Sample, 0, minPreallocatedSamplesPerSeries),
+				Exemplars:  make([]Exemplar, 0, minPreallocatedExemplarsPerSeries),
 				Histograms: nil,
 			}
 		},
@@ -447,6 +448,16 @@ func ReuseTimeseries(ts *TimeSeries) {
 
 // ClearExemplars safely removes exemplars from TimeSeries.
 func ClearExemplars(ts *TimeSeries) {
+	// When cleaning exemplars, retain the slice only if its capacity is not bigger than
+	// the desired max preallocated size. This allow us to ensure we don't put very large
+	// slices back to the pool (e.g. a few requests with an huge number of exemplars may cause
+	// in-use heap memory to significantly increase, because the slices allocated by such poison
+	// requests would be reused by other requests with a normal number of exemplars).
+	if cap(ts.Exemplars) > maxPreallocatedExemplarsPerSeries {
+		ts.Exemplars = nil
+		return
+	}
+
 	// Name and Value may point into a large gRPC buffer, so clear the reference in each exemplar to allow GC
 	for i := range ts.Exemplars {
 		for j := range ts.Exemplars[i].Labels {
