@@ -33,9 +33,9 @@ var (
 	timeSeriesPool = sync.Pool{
 		New: func() interface{} {
 			return &TimeSeries{
-				Labels:    make([]LabelAdapter, 0, minPreallocatedLabels),
-				Samples:   make([]Sample, 0, minPreallocatedSamplesPerSeries),
-				Exemplars: make([]Exemplar, 0, minPreallocatedExemplarsPerSeries),
+				Labels:     make([]LabelAdapter, 0, minPreallocatedLabels),
+				Samples:    make([]Sample, 0, minPreallocatedSamplesPerSeries),
+				Exemplars:  make([]Exemplar, 0, minPreallocatedExemplarsPerSeries),
 				Histograms: nil,
 			}
 		},
