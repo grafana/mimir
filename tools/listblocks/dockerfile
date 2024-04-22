@@ -16,6 +16,8 @@ RUN wget -O thanos.tar.gz ${THANOS_URL} && \
 # Set the working directory in the container
 WORKDIR /app
 
+RUN mkdir testbucket
+RUN chmod -R 777 /app/testbucket
 # Copy the executable from the builder stage
 COPY rewriteblock .
 COPY ./config ./config

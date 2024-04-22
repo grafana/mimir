@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -18,13 +19,10 @@ import (
 	gokitlog "github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/listblocks"
 )
 
@@ -49,12 +47,18 @@ type config struct {
 func main() {
 	// Clean up all flags registered via init() methods of 3rd-party libraries.
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	// crate log files
+	logFile, err := os.OpenFile("testbucket/logfile.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("Error create logfile:", err)
+	}
+	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 
 	logger := gokitlog.NewNopLogger()
 	cfg := config{}
 	cfg.bucket.RegisterFlags(flag.CommandLine)
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
-	flag.StringVar(&cfg.dataFolder, "data-folder", "./testbucket", "Writing temperary files to")
+	flag.StringVar(&cfg.dataFolder, "data-folder", "./testbucket/data", "Writing temperary files to")
 	flag.BoolVar(&cfg.showDeleted, "show-deleted", false, "Show deleted blocks")
 	flag.BoolVar(&cfg.showLabels, "show-labels", false, "Show block labels")
 	flag.BoolVar(&cfg.showUlidTime, "show-ulid-time", false, "Show time from ULID")
@@ -145,94 +149,101 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.UL
 	fmt.Fprintln(tabber)
 
 	var rewrite_block_total_time time.Time
+	log.Printf("the blocks length is %d", len(blocks))
+	list_of_blocks := make([]string, 0, len(blocks))
 	for _, b := range blocks {
-		if !cfg.showDeleted && deleteMarkerDetails[b.ULID].DeletionTime != 0 {
-			continue
-		}
+		list_of_blocks = append(list_of_blocks, b.ULID.String())
+	}
+	for i, b := range list_of_blocks {
+		// if !cfg.showDeleted && deleteMarkerDetails[b.ULID].DeletionTime != 0 {
+		// 	continue
+		// }
 
-		if !time.Time(cfg.minTime).IsZero() && util.TimeFromMillis(b.MinTime).Before(time.Time(cfg.minTime)) {
-			continue
-		}
-		if !time.Time(cfg.maxTime).IsZero() && util.TimeFromMillis(b.MaxTime).After(time.Time(cfg.maxTime)) {
-			continue
-		}
+		// if !time.Time(cfg.minTime).IsZero() && util.TimeFromMillis(b.MinTime).Before(time.Time(cfg.minTime)) {
+		// 	continue
+		// }
+		// if !time.Time(cfg.maxTime).IsZero() && util.TimeFromMillis(b.MaxTime).After(time.Time(cfg.maxTime)) {
+		// 	continue
+		// }
 
-		fmt.Fprintf(tabber, "%v\t", b.ULID)
-		if cfg.splitCount > 0 {
-			fmt.Fprintf(tabber, "%d\t", tsdb.HashBlockID(b.ULID)%uint32(cfg.splitCount))
-		}
-		if cfg.showUlidTime {
-			fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(int64(b.ULID.Time())).UTC().Format(time.RFC3339))
-		}
-		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MinTime).UTC().Format(time.RFC3339))
-		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).UTC().Format(time.RFC3339))
-		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).Sub(util.TimeFromMillis(b.MinTime)))
+		// fmt.Fprintf(tabber, "%v\t", b.ULID)
+		// if cfg.splitCount > 0 {
+		// 	fmt.Fprintf(tabber, "%d\t", tsdb.HashBlockID(b.ULID)%uint32(cfg.splitCount))
+		// }
+		// if cfg.showUlidTime {
+		// 	fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(int64(b.ULID.Time())).UTC().Format(time.RFC3339))
+		// }
+		// fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MinTime).UTC().Format(time.RFC3339))
+		// fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).UTC().Format(time.RFC3339))
+		// fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).Sub(util.TimeFromMillis(b.MinTime)))
 
-		if val, ok := noCompactMarkerDetails[b.ULID]; ok {
-			fmt.Fprintf(tabber, "%v\t", []string{
-				fmt.Sprintf("Time: %s", time.Unix(val.NoCompactTime, 0).UTC().Format(time.RFC3339)),
-				fmt.Sprintf("Reason: %s", val.Reason)})
-		} else {
-			fmt.Fprintf(tabber, "\t")
-		}
+		// if val, ok := noCompactMarkerDetails[b.ULID]; ok {
+		// 	fmt.Fprintf(tabber, "%v\t", []string{
+		// 		fmt.Sprintf("Time: %s", time.Unix(val.NoCompactTime, 0).UTC().Format(time.RFC3339)),
+		// 		fmt.Sprintf("Reason: %s", val.Reason)})
+		// } else {
+		// 	fmt.Fprintf(tabber, "\t")
+		// }
 
-		if cfg.showDeleted {
-			if deleteMarkerDetails[b.ULID].DeletionTime == 0 {
-				fmt.Fprintf(tabber, "\t") // no deletion time.
-			} else {
-				fmt.Fprintf(tabber, "%v\t", time.Unix(deleteMarkerDetails[b.ULID].DeletionTime, 0).UTC().Format(time.RFC3339))
-			}
-		}
+		// if cfg.showDeleted {
+		// 	if deleteMarkerDetails[b.ULID].DeletionTime == 0 {
+		// 		fmt.Fprintf(tabber, "\t") // no deletion time.
+		// 	} else {
+		// 		fmt.Fprintf(tabber, "%v\t", time.Unix(deleteMarkerDetails[b.ULID].DeletionTime, 0).UTC().Format(time.RFC3339))
+		// 	}
+		// }
 
-		if cfg.showCompactionLevel {
-			fmt.Fprintf(tabber, "%d\t", b.Compaction.Level)
-		}
+		// if cfg.showCompactionLevel {
+		// 	fmt.Fprintf(tabber, "%d\t", b.Compaction.Level)
+		// }
 
-		if cfg.showBlockSize {
-			fmt.Fprintf(tabber, "%s\t", listblocks.GetFormattedBlockSize(b))
-		}
+		// if cfg.showBlockSize {
+		// 	fmt.Fprintf(tabber, "%s\t", listblocks.GetFormattedBlockSize(b))
+		// }
 
-		if cfg.showStats {
-			fmt.Fprintf(tabber, "%d\t", b.Stats.NumSeries)
-			fmt.Fprintf(tabber, "%d\t", b.Stats.NumSamples)
-			fmt.Fprintf(tabber, "%d\t", b.Stats.NumChunks)
-		}
+		// if cfg.showStats {
+		// 	fmt.Fprintf(tabber, "%d\t", b.Stats.NumSeries)
+		// 	fmt.Fprintf(tabber, "%d\t", b.Stats.NumSamples)
+		// 	fmt.Fprintf(tabber, "%d\t", b.Stats.NumChunks)
+		// }
 
-		if cfg.showLabels {
-			if m := b.Thanos.Labels; m != nil {
-				fmt.Fprintf(tabber, "%s\t", labels.FromMap(b.Thanos.Labels))
-			} else {
-				fmt.Fprintf(tabber, "\t")
-			}
-		}
+		// if cfg.showLabels {
+		// 	if m := b.Thanos.Labels; m != nil {
+		// 		fmt.Fprintf(tabber, "%s\t", labels.FromMap(b.Thanos.Labels))
+		// 	} else {
+		// 		fmt.Fprintf(tabber, "\t")
+		// 	}
+		// }
 
-		if cfg.showSources {
-			// No tab at the end.
-			fmt.Fprintf(tabber, "%v", b.Compaction.Sources)
-		}
+		// if cfg.showSources {
+		// 	// No tab at the end.
+		// 	fmt.Fprintf(tabber, "%v", b.Compaction.Sources)
+		// }
 
-		if cfg.showParents {
-			var p []ulid.ULID
-			for _, pb := range b.Compaction.Parents {
-				p = append(p, pb.ULID)
-			}
-			// No tab at the end.
-			fmt.Fprintf(tabber, "%v", p)
-		}
+		// if cfg.showParents {
+		// 	var p []ulid.ULID
+		// 	for _, pb := range b.Compaction.Parents {
+		// 		p = append(p, pb.ULID)
+		// 	}
+		// 	// No tab at the end.
+		// 	fmt.Fprintf(tabber, "%v", p)
+		// }
 
-		fmt.Fprintln(tabber)
+		// fmt.Fprintln(tabber)
 
 		// rewrite block with filter
-
+		// if deleteMarkerDetails[b.ULID].DeletionTime == 0 {
 		startTime := time.Now()
-		new_block_uid, err := rewriteBlock(b.ULID.String(), cfg.dataFolder)
+		new_block_uid, err := rewriteBlock(b, cfg.dataFolder)
 		if err != nil {
-			log.Println("Failed to write new block, the block_uid is ", b.ULID.String(), err.Error())
+			log.Println("Failed to write new block, the block_uid is ", b, err.Error())
 			continue
 		}
 		endTime := time.Now()
 		rewrite_block_total_time = rewrite_block_total_time.Add(endTime.Sub(startTime))
-		log.Printf("Execution time of rewrite block %s to %s : %v, total time for rewrite %v", b.ULID.String(), new_block_uid, endTime.Sub(startTime), rewrite_block_total_time)
+		log.Printf("Execution time of rewrite block %s to %s : %v, total time for rewrite %v", b, new_block_uid, endTime.Sub(startTime), rewrite_block_total_time)
+		log.Println("the current rewrite block counter is ", i, " uid is: ", b)
+		// }
 	}
 }
 
@@ -242,7 +253,7 @@ func rewriteBlock(block_uid string, data_folder string) (string, error) {
 		"--id", block_uid,
 		"--objstore.config-file", "./config/objstore_config.yml",
 		"--rewrite.to-delete-config-file", "./config/matchers.yml",
-		"--tmp.dir", "./testbucket",
+		"--tmp.dir", "./testbucket/data",
 	)
 	// Run the command and capture its output
 	output, err := cmd.CombinedOutput()
