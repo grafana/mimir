@@ -517,3 +517,34 @@ func benchmarkSortLabelsIfNeeded(inputLabels []LabelAdapter) func(b *testing.B) 
 		}
 	}
 }
+
+func TestClearExemplars(t *testing.T) {
+	t.Run("should reset TimeSeries.Exemplars keeping the slices if there are <= 10 entries", func(t *testing.T) {
+		ts := &TimeSeries{Exemplars: []Exemplar{
+			{Labels: []LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 2},
+			{Labels: []LabelAdapter{{Name: "trace", Value: "2"}, {Name: "service", Value: "B"}}, Value: 2, TimestampMs: 3},
+		}}
+
+		ClearExemplars(ts)
+
+		assert.Equal(t, &TimeSeries{Exemplars: []Exemplar{}}, ts)
+		assert.Equal(t, 2, cap(ts.Exemplars))
+
+		ts.Exemplars = ts.Exemplars[:2]
+		require.Len(t, ts.Exemplars, 2)
+		assert.Equal(t, 2, cap(ts.Exemplars[0].Labels))
+		assert.Equal(t, 2, cap(ts.Exemplars[1].Labels))
+	})
+
+	t.Run("should reset TimeSeries.Exemplars releasing the slices if there are > 10 entries", func(t *testing.T) {
+		ts := &TimeSeries{Exemplars: make([]Exemplar, 11)}
+		for i := range ts.Exemplars {
+			ts.Exemplars[i] = Exemplar{Labels: []LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 2}
+		}
+
+		ClearExemplars(ts)
+
+		assert.Equal(t, &TimeSeries{Exemplars: nil}, ts)
+		assert.Equal(t, 0, cap(ts.Exemplars))
+	})
+}
