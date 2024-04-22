@@ -1,20 +1,20 @@
-{{- if .Values.ingress.enabled }}
+{{- if .Values.nginx.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "mimir.fullname" . }}
   labels:
     {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- with .Values.nginx.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- with .Values.ingress.ingressClassName }}
+  {{- with .Values.nginx.ingress.ingressClassName }}
   ingressClassName: {{ . }}
   {{- end -}}
-  {{- with .Values.ingress.tls }}
+  {{- with .Values.nginx.ingress.tls }}
   tls:
     {{- range . }}
     - hosts:
@@ -27,20 +27,18 @@ spec:
     {{- end }}
   {{- end }}
   rules:
-    {{- range $.Values.ingress.hosts }}
-    - host: {{ tpl . $ | quote }}
+    {{- range .Values.nginx.ingress.hosts }}
+    - host: {{ .host }}
       http:
         paths:
-          {{- range $svcName, $paths := $.Values.ingress.paths }}
-            {{- range $paths }}
+          {{- range .paths }}
           - path: {{ .path }}
             pathType: {{ .pathType | default "Prefix" }}
             backend:
               service:
-                name: {{ include "mimir.fullname" $ }}-{{ $svcName }}
+                name: {{ default (include "mimir.gateway.service.name" $) .service.name }}
                 port:
-                  number: {{ include "mimir.serverHttpListenPort" $ }}
-            {{- end }}
+                  number: {{ coalesce $.Values.gateway.service.port .service.port }}
           {{- end }}
     {{- end }}
 {{- end }}
