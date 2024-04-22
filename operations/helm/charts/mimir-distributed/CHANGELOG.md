@@ -41,6 +41,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   * Index-cache: changed from `60` to `30`
   * Metadata-cache: changed from `60` to `30`
   * Results-cache: changed from `60` to `30`
+* [CHANGE] Smoke-test: remove the `smoke_test.image` and `continuous_test.image` sections and reuse the main Mimir image from the top `image` section using the new `-target=continuous-test` CLI flag. #7923
 * [ENHANCEMENT] Dashboards: allow switching between using classic of native histograms in dashboards. #7627
   * Overview dashboard, Status panel, `cortex_request_duration_seconds` metric.
 * [ENHANCEMENT] Rollout-operator: upgrade to v0.14.0. #7886

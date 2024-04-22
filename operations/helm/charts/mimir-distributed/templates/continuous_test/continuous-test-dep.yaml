@@ -41,10 +41,12 @@ spec:
       {{- end }}
       containers:
         - name: continuous-test
-          image: {{ .Values.continuous_test.image.repository }}:{{ .Values.continuous_test.image.tag }}
-          imagePullPolicy: {{ .Values.continuous_test.image.pullPolicy }}
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
-            - "-server.metrics-port={{ include "mimir.serverHttpListenPort" . }}"
+            - "-target=continuous-test"
+            - "-activity-tracker.filepath="
+            - "-server.http-listen-port={{ include "mimir.serverHttpListenPort" . }}"
             - "-tests.write-read-series-test.num-series={{ .Values.continuous_test.numSeries }}"
             - "-tests.write-read-series-test.max-query-age={{ .Values.continuous_test.maxQueryAge }}"
             - "-tests.write-endpoint={{ template "mimir.gatewayUrl" . }}"
