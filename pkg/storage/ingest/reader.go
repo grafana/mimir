@@ -22,6 +22,8 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -532,6 +534,9 @@ func (r *PartitionReader) WaitReadConsistency(ctx context.Context) (returnErr er
 	startTime := time.Now()
 	r.metrics.strongConsistencyRequests.Inc()
 
+	spanLog := spanlogger.FromContext(ctx, r.logger)
+	spanLog.DebugLog("msg", "waiting for read consistency")
+
 	defer func() {
 		// Do not track failure or latency if the request was canceled (because the tracking would be incorrect).
 		if errors.Is(returnErr, context.Canceled) {
@@ -559,7 +564,8 @@ func (r *PartitionReader) WaitReadConsistency(ctx context.Context) (returnErr er
 		return err
 	}
 
-	// Then wait for it.
+	spanLog.DebugLog("msg", "catching up with last produced offset", "offset", lastProducedOffset)
+
 	return r.consumedOffsetWatcher.Wait(ctx, lastProducedOffset)
 }
 
