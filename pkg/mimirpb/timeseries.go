@@ -155,6 +155,10 @@ func (p *PreallocTimeseries) ClearExemplars() {
 	p.clearUnmarshalData()
 }
 
+func (p *PreallocTimeseries) HistogramsUpdated() {
+	p.clearUnmarshalData()
+}
+
 // DeleteExemplarByMovingLast deletes the exemplar by moving the last one on top and shortening the slice
 func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
 	last := len(p.Exemplars) - 1
