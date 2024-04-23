@@ -21,6 +21,8 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/mimir/pkg/ingester"
+
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/compactor"
@@ -315,6 +317,10 @@ func (a *API) RegisterIngester(i Ingester) {
 
 	a.RegisterRoute("/ingester/tenants", http.HandlerFunc(i.TenantsHandler), false, true, "GET")
 	a.RegisterRoute("/ingester/tsdb/{tenant}", http.HandlerFunc(i.TenantTSDBHandler), false, true, "GET")
+
+	a.RegisterRoute("/ingester/load/more", http.HandlerFunc(ingester.MoreLoadHandler), false, true, "GET")
+	a.RegisterRoute("/ingester/load/less", http.HandlerFunc(ingester.LessLoadHandler), false, true, "GET")
+
 }
 
 // RegisterRuler registers routes associated with the Ruler service.
