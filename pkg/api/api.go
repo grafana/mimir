@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -312,6 +313,9 @@ func (a *API) RegisterIngester(i Ingester) {
 
 	a.RegisterRoute("/ingester/tenants", http.HandlerFunc(i.TenantsHandler), false, true, "GET")
 	a.RegisterRoute("/ingester/tsdb/{tenant}", http.HandlerFunc(i.TenantTSDBHandler), false, true, "GET")
+	a.RegisterRoute("/ingester/load/more", http.HandlerFunc(ingester.MoreLoadHandler), false, true, "GET")
+	a.RegisterRoute("/ingester/load/less", http.HandlerFunc(ingester.LessLoadHandler), false, true, "GET")
+
 }
 
 // RegisterRuler registers routes associated with the Ruler service.

@@ -144,6 +144,7 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, record *kg
 	client.Produce(context.Background(), record, func(_ *kgo.Record, err error) {
 		errCh <- err
 	})
+	return client.ProduceSync(ctx, record).FirstErr()
 
 	// Wait for a response or until the context has done.
 	select {
