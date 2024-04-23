@@ -525,7 +525,7 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 				cfg.maxNativeHistogramBuckets = limit
 				ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 
-				err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", ls, &h)
+				_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", ls, &h)
 
 				if limit == 1 {
 					require.Error(t, err)
@@ -572,7 +572,7 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			hist.Schema = testCase.schema
-			err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", labels, hist)
+			_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", labels, hist)
 			require.Equal(t, testCase.expectedError, err)
 		})
 	}
