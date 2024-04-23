@@ -41,7 +41,7 @@ endif
 
 # Container image used to perform Hugo build.
 ifeq ($(origin DOCS_IMAGE), undefined)
-export DOCS_IMAGE := grafana/docs-base:latest
+export DOCS_IMAGE := grafana/docs-base:20240130
 endif
 
 # Container image used for doc-validator linting.
