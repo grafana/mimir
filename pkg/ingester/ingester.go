@@ -1522,6 +1522,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 						continue
 					}
 
+					// We track the failed exemplars ingestion, whatever is the reason. This way, the sum of successfully
+					// and failed ingested exemplars is equal to the total number of processed ones.
+					stats.failedExemplarsCount++
+
 					if errors.Is(err, storage.ErrOutOfOrderExemplar) {
 						outOfOrderExemplars++
 						// Only report out of order exemplars if all are out of order, otherwise this was a partial update
@@ -1535,7 +1539,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					updateFirstPartial(nil, func() softError {
 						return newTSDBIngestExemplarErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 					})
-					stats.failedExemplarsCount++
 				}
 			}
 		}
