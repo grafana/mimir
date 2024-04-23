@@ -1,6 +1,7 @@
 package ingester
 
 import (
+	"fmt"
 	"net/http"
 
 	"go.uber.org/atomic"
@@ -39,13 +40,25 @@ func init() {
 						stoppedLoad <- totalLoad.Load()
 						return
 					default:
-						sum := 0
+						/*sum := 0
 						for i := 0; i < 10000; i++ {
 							sum += i
-						}
+						}*/
+						n := fibonacci(40)
+						fmt.Println(n)
 					}
 				}
 			}(load)
 		}
 	}()
+}
+
+func fibonacci(n int) int {
+	if n == 0 {
+		return 0
+	}
+	if n == 1 || n == 2 {
+		return 1
+	}
+	return fibonacci(n-1) + fibonacci(n-2)
 }
