@@ -4735,11 +4735,11 @@ http:
 
     # (advanced) The client key file path.
     # CLI flag: -<prefix>.s3.http.tls.key-file
-    [key_file: <string> | default: ""]
+    [key_file: <string> | default = ""]
 
     # (advanced) The name of the server for verification.
     # CLI flag: -<prefix>.s3.http.tls.server-name
-    [server_name: <string> | default: ""]
+    [server_name: <string> | default = ""]
 ```
 
 ### gcs_storage_backend
