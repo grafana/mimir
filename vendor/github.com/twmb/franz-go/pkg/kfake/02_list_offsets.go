@@ -75,10 +75,11 @@ func (c *Cluster) handleListOffsets(b *broker, kreq kmsg.Request) (kmsg.Response
 					sp.Offset = pd.highWatermark
 				}
 			default:
+				// returns the index of the first batch _after_ the requested timestamp
 				idx, _ := sort.Find(len(pd.batches), func(idx int) int {
 					maxEarlier := pd.batches[idx].maxEarlierTimestamp
 					switch {
-					case maxEarlier < rp.Timestamp:
+					case maxEarlier > rp.Timestamp:
 						return -1
 					case maxEarlier == rp.Timestamp:
 						return 0

@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r285-aef4dab
+  tag: r287-d7f62c5
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -50,16 +50,24 @@ global:
   clusterDomain: cluster.local.
 
   # -- Common environment variables to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
   extraEnv: []
 
   # -- Common source of environment injections to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
   # For example to inject values from a Secret, use:
   # extraEnvFrom:
   #   - secretRef:
   #       name: mysecret
   extraEnvFrom: []
+
+  # -- Common volumes to add to all pods directly managed by this chart.
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
+  extraVolumes: []
+
+  # -- Common mount points to add to all pods directly managed by this chart.
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
+  extraVolumeMounts: []
 
   # -- Pod annotations for all pods directly managed by this chart. Usable for example to associate a version to 'global.extraEnv' and 'global.extraEnvFrom' and trigger a restart of the affected services.
   # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, tokengen
@@ -3372,7 +3380,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r285-f56950d1
+    tag: r287-1bbd4fcc
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3874,10 +3882,8 @@ gr-metricname-cache:
 # that writing and reading metrics works. Currently not supported for
 # installations using GEM token-based authentication.
 smoke_test:
-  image:
-    repository: grafana/mimir-continuous-test
-    tag: 2.12.0
-    pullPolicy: IfNotPresent
+  # The image section has been removed as continuous test is now a module of the regular Mimir image.
+  # See settings for the image at the top image section.
   tenantId: ""
   extraArgs: {}
   env: []
@@ -3894,11 +3900,8 @@ continuous_test:
   enabled: false
   # -- Number of replicas to start of continuous test
   replicas: 1
-  image:
-    repository: grafana/mimir-continuous-test
-    tag: 2.12.0
-    pullPolicy: IfNotPresent
-    # Note: optional pullSecrets are set in toplevel 'image' section, not here
+  # The image section has been removed as continuous test is now a module of the regular Mimir image.
+  # See settings for the image at the top image section.
 
   # -- Authentication settings of continuous test
   auth:

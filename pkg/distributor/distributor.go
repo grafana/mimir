@@ -135,7 +135,6 @@ type Distributor struct {
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
 	sampleDelayHistogram             prometheus.Histogram
-	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
 	hashCollisionCount               prometheus.Counter
 
@@ -353,10 +352,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 				60 * 60 * 24, // 24h
 			},
 		}),
-		replicationFactor: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_distributor_replication_factor",
-			Help: "The configured replication factor.",
-		}),
 		latestSeenSampleTimestampPerUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_distributor_latest_seen_sample_timestamp_seconds",
 			Help: "Unix timestamp of latest received sample per user.",
@@ -458,7 +453,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 
-	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
 	d.activeGroups = activeGroupsCleanupService
 
@@ -482,6 +476,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		subservices = append(subservices, d.ingestStorageWriter)
 	}
 
+	// Register each metric only if the corresponding storage is enabled.
+	// Some queries in the mixin use the presence of these metrics as indication whether Mimir is running with ingest storage or not.
+	exportStorageModeMetrics(reg, cfg.IngestStorageConfig.Enabled, ingestersRing.ReplicationFactor())
+
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
 		return nil, err
@@ -491,6 +489,24 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.Service = services.NewBasicService(d.starting, d.running, d.stopping)
 	return d, nil
+}
+
+func exportStorageModeMetrics(reg prometheus.Registerer, ingestStorageEnabled bool, classicStorageReplicationFactor int) {
+	ingestStorageEnabledVal := float64(0)
+	if ingestStorageEnabled {
+		ingestStorageEnabledVal = 1
+	}
+	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_distributor_ingest_storage_enabled",
+		Help: "Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.",
+	}).Set(ingestStorageEnabledVal)
+
+	if !ingestStorageEnabled {
+		promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_distributor_replication_factor",
+			Help: "The configured replication factor.",
+		}).Set(float64(classicStorageReplicationFactor))
+	}
 }
 
 // newRingAndLifecycler creates a new distributor ring and lifecycler with all required lifecycler delegates
@@ -648,13 +664,19 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 		}
 	}
 
+	histogramsUpdated := false
 	for i, h := range ts.Histograms {
 		delta := now - model.Time(h.Timestamp)
 		d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 
-		if err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i]); err != nil {
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i])
+		if err != nil {
 			return err
 		}
+		histogramsUpdated = histogramsUpdated || updated
+	}
+	if histogramsUpdated {
+		ts.HistogramsUpdated()
 	}
 
 	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
