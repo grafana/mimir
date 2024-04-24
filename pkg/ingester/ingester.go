@@ -3550,10 +3550,6 @@ func (i *Ingester) unsetPrepareShutdown() {
 	i.metrics.shutdownMarker.Set(0)
 }
 
-type prepareUnregisterBody struct {
-	Unregister *bool `json:"unregister"`
-}
-
 // PrepareUnregisterHandler manipulates whether an ingester will unregister from the ring on its next termination.
 //
 // The following methods are supported:
@@ -3573,6 +3569,10 @@ func (i *Ingester) PrepareUnregisterHandler(w http.ResponseWriter, r *http.Reque
 	if i.State() != services.Running {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
+	}
+
+	type prepareUnregisterBody struct {
+		Unregister *bool `json:"unregister"`
 	}
 
 	requestBody, err := io.ReadAll(r.Body)
