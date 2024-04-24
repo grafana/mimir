@@ -27,7 +27,7 @@
 * [BUGFIX] querier: Don't cache context.Canceled errors for bucket index. #7620
 * [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622
 * [BUGFIX] Query-frontend: Don't panic when using the `-query-frontend.downstream-url` flag. #7651
-* [BUGFIX] Ingester: when receiving multiple exemplars for a native histogram via remote write, sort them and only report an error if all are older than the latest exemplar as this could be a partial update. #7640
+* [BUGFIX] Ingester: when receiving multiple exemplars for a native histogram via remote write, sort them and only report an error if all are older than the latest exemplar as this could be a partial update. #7640 #7948
 * [BUGFIX] Ingester: don't retain blocks if they finish exactly on the boundary of the retention window. #7656
 * [BUGFIX] Bug-fixes and improvements to experimental native histograms. #7744 #7813
 * [BUGFIX] Querier: return an error when a query uses `label_join` with an invalid destination label name. #7744
@@ -36,6 +36,8 @@
 * [BUGFIX] Do not wrap error message with `sampled 1/<frequency>` if it's not actually sampled. #7784
 * [BUGFIX] Store-gateway: do not track cortex_querier_blocks_consistency_checks_failed_total metric if query has been canceled or interrued due to any error not related to blocks consistency check failed. #7752
 * [BUGFIX] Ingester: ignore instances with no tokens when calculating local limits to prevent discards during ingester scale-up #7881
+* [BUGFIX] Ingester: do not reuse exemplars slice in the write request if there are more than 10 exemplars per series. This should help to reduce the in-use memory in case of few requests with a very large number of exemplars. #7936
+* [BUGFIX] Distributor: fix down scaling of native histograms in the distributor when timeseries unmarshal cache is in use. #7947
 
 ### Mixin
 

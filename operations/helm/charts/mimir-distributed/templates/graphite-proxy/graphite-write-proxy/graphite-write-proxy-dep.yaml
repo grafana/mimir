@@ -56,6 +56,9 @@ spec:
             {{- if .Values.graphite.write_proxy.extraVolumeMounts }}
               {{ toYaml .Values.graphite.write_proxy.extraVolumeMounts | nindent 12}}
             {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
             - name: config
               mountPath: /etc/mimir
             - name: runtime-config
@@ -125,6 +128,9 @@ spec:
             name: {{ template "mimir.fullname" . }}-graphite-schemas
         {{- if .Values.graphite.write_proxy.extraVolumes }}
         {{ toYaml .Values.graphite.write_proxy.extraVolumes | indent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | indent 8}}
         {{- end }}
         - name: license
           secret:
