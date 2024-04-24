@@ -105,10 +105,10 @@ func (cfg *HTTPConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 
 // RegisterFlagsWithPrefix registers the flags for s3 storage with the provided prefix.
 func (cfg *TLSConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.CAPath, prefix+"s3.http.tls-ca-path", "", "The CA certificate file path.")
-	f.StringVar(&cfg.CertPath, prefix+"s3.http.tls-cert-path", "", "The client certificate file path.")
-	f.StringVar(&cfg.KeyPath, prefix+"s3.http.tls-key-path", "", "The client key file path.")
-	f.StringVar(&cfg.ServerName, prefix+"s3.http.tls-server-name", "", "The name of the server for verification.")
+	f.StringVar(&cfg.CAPath, prefix+"s3.http.tls-ca-path", "", "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.")
+	f.StringVar(&cfg.CertPath, prefix+"s3.http.tls-cert-path", "", "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.")
+	f.StringVar(&cfg.KeyPath, prefix+"s3.http.tls-key-path", "", "Path to the key for the client certificate. Also requires the client certificate to be configured.")
+	f.StringVar(&cfg.ServerName, prefix+"s3.http.tls-server-name", "", "Override the expected name on the server certificate.")
 }
 
 // Config holds the config options for an S3 backend
