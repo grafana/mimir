@@ -301,7 +301,7 @@ func (a *API) RegisterIngester(i Ingester) {
 	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/prepare-shutdown", http.HandlerFunc(i.PrepareShutdownHandler), false, true, "GET", "POST", "DELETE")
 	a.RegisterRoute("/ingester/prepare-partition-downscale", http.HandlerFunc(i.PreparePartitionDownscaleHandler), false, true, "GET", "POST", "DELETE")
-	a.RegisterRoute("/ingester/unregister-on-shutdown", http.HandlerFunc(i.PrepareUnregisterHandler), false, false, "GET", "POST", "DELETE")
+	a.RegisterRoute("/ingester/unregister-on-shutdown", http.HandlerFunc(i.PrepareUnregisterHandler), false, false, "GET", "PUT", "DELETE")
 	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "POST")
 	if a.cfg.GETRequestForIngesterShutdownEnabled {
 		a.RegisterDeprecatedRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "GET")
