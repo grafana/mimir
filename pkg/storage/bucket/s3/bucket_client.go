@@ -75,9 +75,9 @@ func newS3Config(cfg Config) (s3.Config, error) {
 			MaxConnsPerHost:       cfg.HTTP.MaxConnsPerHost,
 			Transport:             cfg.HTTP.Transport,
 			TLSConfig: exthttp.TLSConfig{
-				CAFile:     cfg.HTTP.TLSConfig.CAFile,
-				CertFile:   cfg.HTTP.TLSConfig.CertFile,
-				KeyFile:    cfg.HTTP.TLSConfig.KeyFile,
+				CAFile:     cfg.HTTP.TLSConfig.CAPath,
+				CertFile:   cfg.HTTP.TLSConfig.CertPath,
+				KeyFile:    cfg.HTTP.TLSConfig.KeyPath,
 				ServerName: cfg.HTTP.TLSConfig.ServerName,
 			},
 		},

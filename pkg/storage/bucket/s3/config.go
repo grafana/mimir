@@ -84,10 +84,10 @@ type HTTPConfig struct {
 
 // TLSConfig configures the options for TLS connections.
 type TLSConfig struct {
-	CAFile     string `yaml:"ca_file" category:"advanced"`
-	CertFile   string `yaml:"cert_file" category:"advanced"`
-	KeyFile    string `yaml:"key_file" category:"advanced"`
-	ServerName string `yaml:"server_name" category:"advanced"`
+	CAPath     string `yaml:"tls_ca_path" category:"advanced"`
+	CertPath   string `yaml:"tls_cert_path" category:"advanced"`
+	KeyPath    string `yaml:"tls_key_path" category:"advanced"`
+	ServerName string `yaml:"tls_server_name" category:"advanced"`
 }
 
 // RegisterFlagsWithPrefix registers the flags for s3 storage with the provided prefix
@@ -105,10 +105,10 @@ func (cfg *HTTPConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 
 // RegisterFlagsWithPrefix registers the flags for s3 storage with the provided prefix.
 func (cfg *TLSConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.CAFile, prefix+"s3.http.tls.ca-file", "", "The CA certificate file path.")
-	f.StringVar(&cfg.CertFile, prefix+"s3.http.tls.cert-file", "", "The client certificate file path.")
-	f.StringVar(&cfg.KeyFile, prefix+"s3.http.tls.key-file", "", "The client key file path.")
-	f.StringVar(&cfg.ServerName, prefix+"s3.http.tls.server-name", "", "The name of the server for verification.")
+	f.StringVar(&cfg.CAPath, prefix+"s3.http.tls-ca-path", "", "The CA certificate file path.")
+	f.StringVar(&cfg.CertPath, prefix+"s3.http.tls-cert-path", "", "The client certificate file path.")
+	f.StringVar(&cfg.KeyPath, prefix+"s3.http.tls-key-path", "", "The client key file path.")
+	f.StringVar(&cfg.ServerName, prefix+"s3.http.tls-server-name", "", "The name of the server for verification.")
 }
 
 // Config holds the config options for an S3 backend
