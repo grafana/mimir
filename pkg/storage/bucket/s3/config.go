@@ -79,7 +79,7 @@ type HTTPConfig struct {
 	// Allow upstream callers to inject a round tripper
 	Transport http.RoundTripper `yaml:"-"`
 
-	TLSConfig TLSConfig `yaml:"tls_config"`
+	TLSConfig TLSConfig `yaml:",inline"`
 }
 
 // TLSConfig configures the options for TLS connections.
