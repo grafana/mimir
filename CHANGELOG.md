@@ -21,6 +21,7 @@
 * [ENHANCEMENT] Query-frontend: use zero-allocation experimental decoder for active series queries via `-query-frontend.use-active-series-decoder`. #7665
 * [ENHANCEMENT] Go: updated to 1.22.2. #7802
 * [ENHANCEMENT] Query-frontend: support `limit` parameter on `/prometheus/api/v1/label/{name}/values` and `/prometheus/api/v1/labels` endpoints. #7722
+* [ENHANCEMENT] Expose TLS configiration for the S3 backend client. #2652
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 * [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
@@ -36,7 +37,6 @@
 * [BUGFIX] Do not wrap error message with `sampled 1/<frequency>` if it's not actually sampled. #7784
 * [BUGFIX] Store-gateway: do not track cortex_querier_blocks_consistency_checks_failed_total metric if query has been canceled or interrued due to any error not related to blocks consistency check failed. #7752
 * [BUGFIX] Ingester: ignore instances with no tokens when calculating local limits to prevent discards during ingester scale-up #7881
-* [ENHANCEMENT] Expose TLS configiration for the S3 backend client. #2652
 * [BUGFIX] Ingester: do not reuse exemplars slice in the write request if there are more than 10 exemplars per series. This should help to reduce the in-use memory in case of few requests with a very large number of exemplars. #7936
 * [BUGFIX] Distributor: fix down scaling of native histograms in the distributor when timeseries unmarshal cache is in use. #7947
 
