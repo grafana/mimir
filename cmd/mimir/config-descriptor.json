@@ -6056,58 +6056,48 @@
                   "fieldCategory": "advanced"
                 },
                 {
-                  "kind": "block",
-                  "name": "tls_config",
+                  "kind": "field",
+                  "name": "tls_ca_path",
                   "required": false,
-                  "desc": "",
-                  "blockEntries": [
-                    {
-                      "kind": "field",
-                      "name": "ca_file",
-                      "required": false,
-                      "desc": "The CA certificate file path.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.s3.http.tls.ca-file",
-                      "fieldType": "string",
-                      "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "cert_file",
-                      "required": false,
-                      "desc": "The client certificate file path.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.s3.http.tls.cert-file",
-                      "fieldType": "string",
-                      "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "key_file",
-                      "required": false,
-                      "desc": "The client key file path.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.s3.http.tls.key-file",
-                      "fieldType": "string",
-                      "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "server_name",
-                      "required": false,
-                      "desc": "The name of the server for verification.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "blocks-storage.s3.http.tls.server-name",
-                      "fieldType": "string",
-                      "fieldCategory": "advanced"
-                    }
-                  ],
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
                   "fieldValue": null,
-                  "fieldDefaultValue": null
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.s3.http.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.s3.http.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.s3.http.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.s3.http.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
@@ -11995,58 +11985,48 @@
                   "fieldCategory": "advanced"
                 },
                 {
-                  "kind": "block",
-                  "name": "tls_config",
+                  "kind": "field",
+                  "name": "tls_ca_path",
                   "required": false,
-                  "desc": "",
-                  "blockEntries": [
-                    {
-                      "kind": "field",
-                      "name": "ca_file",
-                      "required": false,
-                      "desc": "The CA certificate file path.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "ruler-storage.s3.http.tls.ca-file",
-                      "fieldType": "string",
-                      "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "cert_file",
-                      "required": false,
-                      "desc": "The client certificate file path.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "ruler-storage.s3.http.tls.cert-file",
-                      "fieldType": "string",
-                      "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "key_file",
-                      "required": false,
-                      "desc": "The client key file path.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "ruler-storage.s3.http.tls.key-file",
-                      "fieldType": "string",
-                      "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "server_name",
-                      "required": false,
-                      "desc": "The name of the server for verification.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "ruler-storage.s3.http.tls.server-name",
-                      "fieldType": "string",
-                      "fieldCategory": "advanced"
-                    }
-                  ],
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
                   "fieldValue": null,
-                  "fieldDefaultValue": null
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.s3.http.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.s3.http.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.s3.http.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.s3.http.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
@@ -14134,58 +14114,48 @@
                   "fieldCategory": "advanced"
                 },
                 {
-                  "kind": "block",
-                  "name": "tls_config",
+                  "kind": "field",
+                  "name": "tls_ca_path",
                   "required": false,
-                  "desc": "",
-                  "blockEntries": [
-                    {
-                      "kind": "field",
-                      "name": "ca_file",
-                      "required": false,
-                      "desc": "The CA certificate file path.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "alertmanager-storage.s3.http.tls.ca-file",
-                      "fieldType": "string",
-                      "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "cert_file",
-                      "required": false,
-                      "desc": "The client certificate file path.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "alertmanager-storage.s3.http.tls.cert-file",
-                      "fieldType": "string",
-                      "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "key_file",
-                      "required": false,
-                      "desc": "The client key file path.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "alertmanager-storage.s3.http.tls.key-file",
-                      "fieldType": "string",
-                      "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "server_name",
-                      "required": false,
-                      "desc": "The name of the server for verification.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "alertmanager-storage.s3.http.tls.server-name",
-                      "fieldType": "string",
-                      "fieldCategory": "advanced"
-                    }
-                  ],
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
                   "fieldValue": null,
-                  "fieldDefaultValue": null
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.s3.http.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.s3.http.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.s3.http.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.s3.http.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
@@ -16506,58 +16476,48 @@
                       "fieldCategory": "advanced"
                     },
                     {
-                      "kind": "block",
-                      "name": "tls_config",
+                      "kind": "field",
+                      "name": "tls_ca_path",
                       "required": false,
-                      "desc": "",
-                      "blockEntries": [
-                        {
-                          "kind": "field",
-                          "name": "ca_file",
-                          "required": false,
-                          "desc": "The CA certificate file path.",
-                          "fieldValue": null,
-                          "fieldDefaultValue": "",
-                          "fieldFlag": "common.storage.s3.http.tls.ca-file",
-                          "fieldType": "string",
-                          "fieldCategory": "advanced"
-                        },
-                        {
-                          "kind": "field",
-                          "name": "cert_file",
-                          "required": false,
-                          "desc": "The client certificate file path.",
-                          "fieldValue": null,
-                          "fieldDefaultValue": "",
-                          "fieldFlag": "common.storage.s3.http.tls.cert-file",
-                          "fieldType": "string",
-                          "fieldCategory": "advanced"
-                        },
-                        {
-                          "kind": "field",
-                          "name": "key_file",
-                          "required": false,
-                          "desc": "The client key file path.",
-                          "fieldValue": null,
-                          "fieldDefaultValue": "",
-                          "fieldFlag": "common.storage.s3.http.tls.key-file",
-                          "fieldType": "string",
-                          "fieldCategory": "advanced"
-                        },
-                        {
-                          "kind": "field",
-                          "name": "server_name",
-                          "required": false,
-                          "desc": "The name of the server for verification.",
-                          "fieldValue": null,
-                          "fieldDefaultValue": "",
-                          "fieldFlag": "common.storage.s3.http.tls.server-name",
-                          "fieldType": "string",
-                          "fieldCategory": "advanced"
-                        }
-                      ],
+                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
                       "fieldValue": null,
-                      "fieldDefaultValue": null
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.s3.http.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.s3.http.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.s3.http.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.s3.http.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
                     }
                   ],
                   "fieldValue": null,
