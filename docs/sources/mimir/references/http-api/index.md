@@ -422,7 +422,7 @@ This API endpoint is usually used by scale down automations.
 ### Prepare for unregister
 
 ```
-GET,PUT,DELETE /ingester/ingester/unregister-on-shutdown
+GET,PUT,DELETE /ingester/unregister-on-shutdown
 ```
 
 This endpoint controls whether an ingester should unregister from the ring on its next termination, that is, the next time it receives a `SIGINT` or `SIGTERM` signal.
