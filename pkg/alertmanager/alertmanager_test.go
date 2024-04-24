@@ -17,7 +17,6 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
-	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -85,7 +84,7 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := config.Load(cfgRaw)
+	cfg, err := loadConfig(cfgRaw)
 	require.NoError(t, err)
 	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
 
@@ -169,7 +168,7 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := config.Load(cfgRaw)
+	cfg, err := loadConfig(cfgRaw)
 	require.NoError(t, err)
 	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
 

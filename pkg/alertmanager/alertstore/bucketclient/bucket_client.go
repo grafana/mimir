@@ -8,6 +8,7 @@ package bucketclient
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -82,21 +83,38 @@ func (s *BucketAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
 	return userIDs, err
 }
 
+// TODO: name...
+type Coso struct {
+	Mimir   alertspb.AlertConfigDesc
+	Grafana alertspb.GrafanaAlertConfigDesc
+}
+
 // GetAlertConfigs implements alertstore.AlertStore.
-func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDesc, error) {
+func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string, fetchGrafanaConfig bool) (map[string]Coso, error) {
 	var (
 		cfgsMx = sync.Mutex{}
-		cfgs   = make(map[string]alertspb.AlertConfigDesc, len(userIDs))
+		cfgs   = make(map[string]Coso, len(userIDs))
 	)
 
 	err := concurrency.ForEachJob(ctx, len(userIDs), fetchConcurrency, func(ctx context.Context, idx int) error {
 		userID := userIDs[idx]
+		var cfg Coso
 
-		cfg, err := s.getAlertConfig(ctx, userID)
+		mimirCfg, err := s.getAlertConfig(ctx, userID)
 		if s.alertsBucket.IsObjNotFoundErr(err) {
 			return nil
 		} else if err != nil {
 			return errors.Wrapf(err, "failed to fetch alertmanager config for user %s", userID)
+		}
+		cfg.Mimir = mimirCfg
+
+		if fetchGrafanaConfig {
+			fmt.Println("Fetching Grafana config enabled!")
+			grafanaCfg, err := s.getGrafanaAlertConfig(ctx, userID)
+			if err != nil && !s.alertsBucket.IsObjNotFoundErr(err) {
+				return errors.Wrapf(err, "failed to fetch grafana alertmanager config for user %s", userID)
+			}
+			cfg.Grafana = grafanaCfg
 		}
 
 		cfgsMx.Lock()
@@ -141,8 +159,7 @@ func (s *BucketAlertStore) DeleteAlertConfig(ctx context.Context, userID string)
 }
 
 func (s *BucketAlertStore) GetGrafanaAlertConfig(ctx context.Context, userID string) (alertspb.GrafanaAlertConfigDesc, error) {
-	config := alertspb.GrafanaAlertConfigDesc{}
-	err := s.get(ctx, s.getGrafanaAlertmanagerUserBucket(userID), grafanaConfigName, &config)
+	config, err := s.getGrafanaAlertConfig(ctx, userID)
 	if s.grafanaAMBucket.IsObjNotFoundErr(err) {
 		return config, alertspb.ErrNotFound
 	}
@@ -254,6 +271,12 @@ func (s *BucketAlertStore) DeleteFullGrafanaState(ctx context.Context, userID st
 func (s *BucketAlertStore) getAlertConfig(ctx context.Context, userID string) (alertspb.AlertConfigDesc, error) {
 	config := alertspb.AlertConfigDesc{}
 	err := s.get(ctx, s.getUserBucket(userID), userID, &config)
+	return config, err
+}
+
+func (s *BucketAlertStore) getGrafanaAlertConfig(ctx context.Context, userID string) (alertspb.GrafanaAlertConfigDesc, error) {
+	config := alertspb.GrafanaAlertConfigDesc{}
+	err := s.get(ctx, s.getGrafanaAlertmanagerUserBucket(userID), grafanaConfigName, &config)
 	return config, err
 }
 

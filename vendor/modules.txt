@@ -539,7 +539,35 @@ github.com/gosimple/slug
 github.com/grafana-tools/sdk
 # github.com/grafana/alerting v0.0.0-20240411150018-adfb25200d3e
 ## explicit; go 1.21
+github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
+github.com/grafana/alerting/images
+github.com/grafana/alerting/logging
+github.com/grafana/alerting/models
+github.com/grafana/alerting/notify
+github.com/grafana/alerting/receivers
+github.com/grafana/alerting/receivers/alertmanager
+github.com/grafana/alerting/receivers/dinding
+github.com/grafana/alerting/receivers/discord
+github.com/grafana/alerting/receivers/email
+github.com/grafana/alerting/receivers/googlechat
+github.com/grafana/alerting/receivers/kafka
+github.com/grafana/alerting/receivers/line
+github.com/grafana/alerting/receivers/oncall
+github.com/grafana/alerting/receivers/opsgenie
+github.com/grafana/alerting/receivers/pagerduty
+github.com/grafana/alerting/receivers/pushover
+github.com/grafana/alerting/receivers/sensugo
+github.com/grafana/alerting/receivers/slack
+github.com/grafana/alerting/receivers/teams
+github.com/grafana/alerting/receivers/telegram
+github.com/grafana/alerting/receivers/testing
+github.com/grafana/alerting/receivers/threema
+github.com/grafana/alerting/receivers/victorops
+github.com/grafana/alerting/receivers/webex
+github.com/grafana/alerting/receivers/webhook
+github.com/grafana/alerting/receivers/wecom
+github.com/grafana/alerting/templates
 # github.com/grafana/dskit v0.0.0-20240411172511-de4086540f6f
 ## explicit; go 1.20
 github.com/grafana/dskit/backoff
@@ -1260,6 +1288,7 @@ golang.org/x/oauth2/jwt
 ## explicit; go 1.18
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
+golang.org/x/sync/singleflight
 # golang.org/x/sys v0.19.0
 ## explicit; go 1.18
 golang.org/x/sys/cpu

@@ -95,7 +95,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 
 	// The storage is empty.
 	{
-		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
+		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"}, false)
 		require.NoError(t, err)
 		assert.Empty(t, configs)
 	}
@@ -104,7 +104,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 	{
 		require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
 
-		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
+		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"}, false)
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.NotContains(t, configs, "user-2")
@@ -113,7 +113,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 		// Add another user config.
 		require.NoError(t, store.SetAlertConfig(ctx, user2Cfg))
 
-		configs, err = store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
+		configs, err = store.GetAlertConfigs(ctx, []string{"user-1", "user-2"}, false)
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.Contains(t, configs, "user-2")
