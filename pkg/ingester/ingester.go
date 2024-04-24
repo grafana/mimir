@@ -3553,15 +3553,9 @@ func (i *Ingester) unsetPrepareShutdown() {
 // PrepareUnregisterHandler manipulates whether an ingester will unregister from the ring on its next termination.
 //
 // The following methods are supported:
-//
-//   - GET
-//     Returns the ingester's current unregister state.
-//
-//   - PUT
-//     Sets the ingester's unregister state.
-//
-//   - DELETE
-//     Resets the ingester's unregister state to the value passed via the RingConfig.UnregisterOnShutdown ring
+//   - GET Returns the ingester's current unregister state.
+//   - PUT Sets the ingester's unregister state.
+//   - DELETE Resets the ingester's unregister state to the value passed via the RingConfig.UnregisterOnShutdown ring
 //     configuration option.
 //
 // All methods are idempotent.
