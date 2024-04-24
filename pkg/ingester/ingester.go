@@ -3569,27 +3569,11 @@ func (i *Ingester) PrepareUnregisterHandler(w http.ResponseWriter, r *http.Reque
 		Unregister *bool `json:"unregister"`
 	}
 
-	requestBody, err := io.ReadAll(r.Body)
-	if err != nil {
-		level.Error(i.logger).Log("msg", "failed to read prepare unregister request body", "err", err, "body", string(requestBody))
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	defer func() {
-		if err := r.Body.Close(); err != nil {
-			level.Error(i.logger).Log("msg", "failed to close prepare unregister request body", "err", err)
-		}
-	}()
-
 	switch r.Method {
 	case http.MethodPut:
-		if len(requestBody) == 0 {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
+		dec := json.NewDecoder(r.Body)
 		input := prepareUnregisterBody{}
-		if err := json.Unmarshal(requestBody, &input); err != nil {
+		if err := dec.Decode(&input); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -3600,21 +3584,8 @@ func (i *Ingester) PrepareUnregisterHandler(w http.ResponseWriter, r *http.Reque
 		}
 
 		i.lifecycler.SetUnregisterOnShutdown(*input.Unregister)
-	case http.MethodGet:
-		if len(requestBody) > 0 {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
 	case http.MethodDelete:
-		if len(requestBody) > 0 {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
 		i.lifecycler.SetUnregisterOnShutdown(i.cfg.IngesterRing.UnregisterOnShutdown)
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
 	}
 
 	shouldUnregister := i.lifecycler.ShouldUnregisterOnShutdown()
