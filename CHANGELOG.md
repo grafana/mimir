@@ -67,7 +67,7 @@
 * [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7364
   * Querier: changed from `30` to `180`
   * Query-scheduler: changed from `30` to `180`
-* [CHANGE] Change TCP port exposed by `mimir-continuous-test` deployment to match with updated defaults of its container image (see changes below).
+* [CHANGE] Change TCP port exposed by `mimir-continuous-test` deployment to match with updated defaults of its container image (see changes below). #7958
 * [ENHANCEMENT] Compactor: add `$._config.cortex_compactor_concurrent_rollout_enabled` option (disabled by default) that makes use of rollout-operator to speed up the rollout of compactors. #7783 #7878
 * [ENHANCEMENT] Shuffle-sharding: add `$._config.shuffle_sharding.ingest_storage_partitions_enabled` and `$._config.shuffle_sharding.ingester_partitions_shard_size` options, that allow configuring partitions shard size in ingest-storage mode. #7804
 * [ENHANCEMENT] Rollout-operator: upgrade to v0.14.0.
