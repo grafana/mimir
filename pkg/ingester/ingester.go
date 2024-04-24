@@ -3618,14 +3618,7 @@ func (i *Ingester) PrepareUnregisterHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	shouldUnregister := i.lifecycler.ShouldUnregisterOnShutdown()
-	responseBody, err := json.Marshal(&prepareUnregisterBody{Unregister: &shouldUnregister})
-	if err != nil {
-		level.Error(i.logger).Log("msg", "failed to marshal prepare unregister response body", "err", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	_, _ = w.Write(responseBody)
+	util.WriteJSONResponse(w, &prepareUnregisterBody{Unregister: &shouldUnregister})
 }
 
 // PreparePartitionDownscaleHandler prepares the ingester's partition downscaling. The partition owned by the
