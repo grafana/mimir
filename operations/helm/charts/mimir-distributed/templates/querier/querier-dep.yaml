@@ -68,6 +68,9 @@ spec:
             {{- if .Values.querier.extraVolumeMounts }}
               {{ toYaml .Values.querier.extraVolumeMounts | nindent 12}}
             {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
             - name: config
               mountPath: /etc/mimir
             {{- if .Values.enterprise.enabled }}
@@ -153,9 +156,12 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
-{{- if .Values.querier.extraVolumes }}
-{{ toYaml .Values.querier.extraVolumes | indent 8}}
-{{- end }}
+        {{- if .Values.querier.extraVolumes }}
+        {{ toYaml .Values.querier.extraVolumes | nindent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8}}
+        {{- end }}
         - name: storage
           emptyDir: {}
         - name: active-queries

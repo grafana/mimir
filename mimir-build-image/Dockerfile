@@ -3,8 +3,8 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM registry.k8s.io/kustomize/kustomize:v5.3.0 as kustomize
-FROM alpine/helm:3.14.3 as helm
+FROM registry.k8s.io/kustomize/kustomize:v5.4.1 as kustomize
+FROM alpine/helm:3.14.4 as helm
 FROM golang:1.22.2-bookworm
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}

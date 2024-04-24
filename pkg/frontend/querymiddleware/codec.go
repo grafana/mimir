@@ -138,6 +138,8 @@ type LabelsQueryRequest interface {
 	// to and from the http request format without needing to undo the Prometheus parser converting between formats
 	// like `up{job="prometheus"}` and `{__name__="up, job="prometheus"}`, or other idiosyncrasies.
 	GetLabelMatcherSets() []string
+	// GetLimit returns the limit of the number of items in the response.
+	GetLimit() uint64
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(opentracing.Span)
 }
@@ -268,7 +270,7 @@ func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryReq
 		return nil, err
 	}
 
-	result.Query = r.FormValue("query")
+	result.Query = reqValues.Get("query")
 	result.Path = r.URL.Path
 	decodeOptions(r, &result.Options)
 	return &result, nil
@@ -309,12 +311,21 @@ func (prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Reque
 
 	labelMatcherSets := reqValues["match[]"]
 
+	limit := uint64(0) // 0 means unlimited
+	if limitStr := reqValues.Get("limit"); limitStr != "" {
+		limit, err = strconv.ParseUint(limitStr, 10, 64)
+		if err != nil || limit == 0 {
+			return nil, apierror.New(apierror.TypeBadData, fmt.Sprintf("limit parameter must be a positive number: %s", limitStr))
+		}
+	}
+
 	if IsLabelNamesQuery(r.URL.Path) {
 		return &PrometheusLabelNamesQueryRequest{
 			Path:             r.URL.Path,
 			Start:            start,
 			End:              end,
 			LabelMatcherSets: labelMatcherSets,
+			Limit:            limit,
 		}, nil
 	}
 	// else, must be Label Values Request due to IsLabelsQuery check at beginning of func
@@ -324,6 +335,7 @@ func (prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Reque
 		Start:            start,
 		End:              end,
 		LabelMatcherSets: labelMatcherSets,
+		Limit:            limit,
 	}, nil
 }
 
@@ -524,6 +536,9 @@ func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req Label
 		if len(req.GetLabelMatcherSets()) > 0 {
 			urlValues["match[]"] = req.GetLabelMatcherSets()
 		}
+		if req.GetLimit() > 0 {
+			urlValues["limit"] = []string{strconv.FormatUint(req.GetLimit(), 10)}
+		}
 		u = &url.URL{
 			Path:     req.Path,
 			RawQuery: urlValues.Encode(),
@@ -540,6 +555,9 @@ func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req Label
 		}
 		if len(req.GetLabelMatcherSets()) > 0 {
 			urlValues["match[]"] = req.GetLabelMatcherSets()
+		}
+		if req.GetLimit() > 0 {
+			urlValues["limit"] = []string{strconv.FormatUint(req.GetLimit(), 10)}
 		}
 		u = &url.URL{
 			Path:     req.Path, // path still contains label name

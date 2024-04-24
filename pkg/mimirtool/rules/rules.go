@@ -204,8 +204,15 @@ func prepareBinaryExpr(e *parser.BinaryExpr, label string, rule string) error {
 		return nil
 	}
 
+	// Skip if the aggregation label is already present in the on() clause.
 	for _, lbl := range e.VectorMatching.MatchingLabels {
-		// It already has the label we want to add in the expression.
+		if lbl == label {
+			return nil
+		}
+	}
+
+	// Skip if the aggregation label is already present in the group_left/right() clause.
+	for _, lbl := range e.VectorMatching.Include {
 		if lbl == label {
 			return nil
 		}

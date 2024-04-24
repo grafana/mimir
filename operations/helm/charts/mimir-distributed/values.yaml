@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r284-1a35693
+  tag: r287-d7f62c5
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -50,16 +50,24 @@ global:
   clusterDomain: cluster.local.
 
   # -- Common environment variables to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
   extraEnv: []
 
   # -- Common source of environment injections to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
   # For example to inject values from a Secret, use:
   # extraEnvFrom:
   #   - secretRef:
   #       name: mysecret
   extraEnvFrom: []
+
+  # -- Common volumes to add to all pods directly managed by this chart.
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
+  extraVolumes: []
+
+  # -- Common mount points to add to all pods directly managed by this chart.
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
+  extraVolumeMounts: []
 
   # -- Pod annotations for all pods directly managed by this chart. Usable for example to associate a version to 'global.extraEnv' and 'global.extraEnvFrom' and trigger a restart of the affected services.
   # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, tokengen
@@ -507,7 +515,10 @@ rbac:
 
 # -- KEDA Autoscaling configuration
 kedaAutoscaling:
-  # -- A Prometheus-compatible URL. Cadvisor and Mimir metrics for the Mimir pods are expected in this server. For more information on the required metrics see [Monitor system health](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/) If empty, the helm chart uses the metamonitoring URL from metaMonitoring.grafanaAgent.metrics.remote.url. If that is empty, then the Mimir cluster is used.
+  # -- A Prometheus-compatible URL. Cadvisor and Mimir metrics for the Mimir pods are expected in this server.
+  # For more information on the required metrics see [Monitor system health](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/).
+  # If empty, the helm chart uses the metamonitoring URL from metaMonitoring.grafanaAgent.metrics.remote.url.
+  # If that is empty, then the Mimir cluster is used.
   prometheusAddress: ""
   customHeaders: {}
   pollingInterval: 10
@@ -645,7 +656,7 @@ alertmanager:
   statefulStrategy:
     type: RollingUpdate
 
-  terminationGracePeriodSeconds: 60
+  terminationGracePeriodSeconds: 900
 
   initContainers: []
   # Init containers to be added to the alertmanager pod.
@@ -767,8 +778,8 @@ distributor:
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
-  # from the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
-  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
+  # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
@@ -978,7 +989,7 @@ ingester:
   statefulStrategy:
     type: RollingUpdate
 
-  terminationGracePeriodSeconds: 240
+  terminationGracePeriodSeconds: 1200
 
   tolerations: []
   initContainers: []
@@ -1146,7 +1157,7 @@ overrides_exporter:
       cpu: 100m
       memory: 128Mi
 
-  terminationGracePeriodSeconds: 60
+  terminationGracePeriodSeconds: 30
 
   tolerations: []
   extraContainers: []
@@ -1165,8 +1176,8 @@ ruler:
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
-  # from the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
-  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
+  # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
@@ -1255,7 +1266,7 @@ ruler:
       maxSurge: 50%
       maxUnavailable: 0
 
-  terminationGracePeriodSeconds: 180
+  terminationGracePeriodSeconds: 600
 
   tolerations: []
   initContainers: []
@@ -1274,8 +1285,8 @@ querier:
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
-  # from the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
-  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
+  # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
@@ -1384,8 +1395,8 @@ query_frontend:
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
-  # from the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
-  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
+  # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
@@ -1675,7 +1686,7 @@ store_gateway:
   strategy:
     type: RollingUpdate
 
-  terminationGracePeriodSeconds: 240
+  terminationGracePeriodSeconds: 120
 
   tolerations: []
   initContainers: []
@@ -1868,7 +1879,7 @@ compactor:
   strategy:
     type: RollingUpdate
 
-  terminationGracePeriodSeconds: 240
+  terminationGracePeriodSeconds: 900
 
   tolerations: []
   initContainers: []
@@ -1985,7 +1996,7 @@ chunks-cache:
   # -- Management policy for chunks-cache pods
   podManagementPolicy: Parallel
   # -- Grace period to allow the chunks-cache to shutdown before it is killed
-  terminationGracePeriodSeconds: 60
+  terminationGracePeriodSeconds: 30
 
   # -- Stateful chunks-cache strategy
   statefulStrategy:
@@ -2077,7 +2088,7 @@ index-cache:
   # -- Management policy for index-cache pods
   podManagementPolicy: Parallel
   # -- Grace period to allow the index-cache to shutdown before it is killed
-  terminationGracePeriodSeconds: 60
+  terminationGracePeriodSeconds: 30
 
   # -- Stateful index-cache strategy
   statefulStrategy:
@@ -2169,7 +2180,7 @@ metadata-cache:
   # -- Management policy for metadata-cache pods
   podManagementPolicy: Parallel
   # -- Grace period to allow the metadata-cache to shutdown before it is killed
-  terminationGracePeriodSeconds: 60
+  terminationGracePeriodSeconds: 30
 
   # -- Stateful metadata-cache strategy
   statefulStrategy:
@@ -2261,7 +2272,7 @@ results-cache:
   # -- Management policy for results-cache pods
   podManagementPolicy: Parallel
   # -- Grace period to allow the results-cache to shutdown before it is killed
-  terminationGracePeriodSeconds: 60
+  terminationGracePeriodSeconds: 30
 
   # -- Stateful results-cache strategy
   statefulStrategy:
@@ -3210,6 +3221,11 @@ metaMonitoring:
       # -- Controls whether to create resources PodLogs and LogsInstance resources
       enabled: true
 
+      # -- To disable setting a 'cluster' label in logs, set to 'null'.
+      # To overwrite the 'cluster' label with your own value, set to a non-empty string.
+      # Keep empty string "" to have the default value in the 'cluster' label, which is the helm release name for Mimir and the actual cluster name for Enterprise Metrics.
+      clusterLabel: ""
+
       # -- Default destination for logs. The config here is translated to Promtail client
       # configuration to write logs to this Loki-compatible remote. Optional.
       remote:
@@ -3239,11 +3255,11 @@ metaMonitoring:
       # configuration to push metrics to this Prometheus-compatible remote. Optional.
       # Note that you need to configure serviceMonitor in order to have some metrics available.
       #
-      # If you leave the metamonitoring.grafanaAgent.metrics.remote.url field empty,
+      # If you leave the metaMonitoring.grafanaAgent.metrics.remote.url field empty,
       # then the chart automatically fills in the address of the GEM gateway Service
       # or the Mimir NGINX Service.
       #
-      # If you have deployed Mimir, and metamonitoring.grafanaAgent.metrics.remote.url is not set,
+      # If you have deployed Mimir, and metaMonitoring.grafanaAgent.metrics.remote.url is not set,
       # then the metamonitoring metrics are be sent to the Mimir cluster.
       # You can query these metrics using the HTTP header X-Scope-OrgID: metamonitoring
       #
@@ -3364,7 +3380,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r284-05515399
+    tag: r287-1bbd4fcc
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3866,10 +3882,8 @@ gr-metricname-cache:
 # that writing and reading metrics works. Currently not supported for
 # installations using GEM token-based authentication.
 smoke_test:
-  image:
-    repository: grafana/mimir-continuous-test
-    tag: r284-1a35693
-    pullPolicy: IfNotPresent
+  # The image section has been removed as continuous test is now a module of the regular Mimir image.
+  # See settings for the image at the top image section.
   tenantId: ""
   extraArgs: {}
   env: []
@@ -3886,11 +3900,8 @@ continuous_test:
   enabled: false
   # -- Number of replicas to start of continuous test
   replicas: 1
-  image:
-    repository: grafana/mimir-continuous-test
-    tag: r284-1a35693
-    pullPolicy: IfNotPresent
-    # Note: optional pullSecrets are set in toplevel 'image' section, not here
+  # The image section has been removed as continuous test is now a module of the regular Mimir image.
+  # See settings for the image at the top image section.
 
   # -- Authentication settings of continuous test
   auth:

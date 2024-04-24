@@ -325,6 +325,8 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
 				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -376,6 +378,14 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 1
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 0
 			`,
 		},
 		"should succeed on new float series and an exemplar": {
@@ -527,6 +537,8 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
 				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -578,6 +590,14 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 1
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 0
 			`,
 		},
 		"should succeed on new histogram series with an exemplar": {
@@ -619,6 +639,8 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
 				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -676,6 +698,14 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 1
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 0
 			`,
 		},
 		"should succeed on new histogram series and an exemplar": {
@@ -730,6 +760,8 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
 				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -787,6 +819,14 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 1
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 0
 			`,
 		},
 		"should succeed on existing histogram series with an exemplar": {
@@ -836,6 +876,8 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
 				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -893,6 +935,14 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 1
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 0
 			`,
 		},
 		"should succeed on existing histogram series with multiple exemplars": {
@@ -955,6 +1005,8 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
 				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -1012,6 +1064,14 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 2
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 0
 			`,
 		},
 		"should succeed on existing histogram series with partial updated exemplars": {
@@ -1113,6 +1173,8 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
 				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -1170,6 +1232,14 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 4
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 1
 			`,
 		},
 		"should soft fail if histogram has a bucket count vs overall count mismatch": {
@@ -1451,6 +1521,8 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
 				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -1508,6 +1580,14 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 2
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 2
 			`,
 		},
 		"successful push, active series disabled": {
@@ -2131,6 +2211,8 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
 				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -2179,6 +2261,14 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 0
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 1
 			`,
 		},
 		"should soft fail on exemplar with series later in the same write request": {
@@ -2220,6 +2310,8 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
 				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
 			},
 			expectedMetrics: `
 			    # HELP cortex_ingester_active_series Number of currently active series per user.
@@ -2271,6 +2363,14 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 0
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 1
 			`,
 		},
 		"should succeed with a request containing only metadata": {
@@ -10661,7 +10761,6 @@ func (i *failingIngester) startWaitAndCheck(ctx context.Context, t *testing.T) {
 		expectedHealthyIngesters = 1
 	} else {
 		require.Error(t, err)
-		require.ErrorIs(t, err, i.failingCause)
 		expectedHealthyIngesters = 0
 	}
 	test.Poll(t, 100*time.Millisecond, expectedHealthyIngesters, func() interface{} {
@@ -10681,9 +10780,7 @@ func (i *failingIngester) starting(parentCtx context.Context) error {
 	}
 	if errors.Is(i.failingCause, context.Canceled) {
 		ctx, cancel := context.WithCancel(parentCtx)
-		go func() {
-			cancel()
-		}()
+		cancel()
 		return i.Ingester.starting(ctx)
 	}
 	return i.Ingester.starting(&mockContext{ctx: parentCtx, err: i.failingCause})

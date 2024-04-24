@@ -449,9 +449,9 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}
 
-		partitionRingKV := cfg.IngesterPartitionRing.kvMock
+		partitionRingKV := cfg.IngesterPartitionRing.KVStore.Mock
 		if partitionRingKV == nil {
-			partitionRingKV, err = kv.NewClient(cfg.IngesterRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, PartitionRingName+"-lifecycler"), logger)
+			partitionRingKV, err = kv.NewClient(cfg.IngesterPartitionRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, PartitionRingName+"-lifecycler"), logger)
 			if err != nil {
 				return nil, errors.Wrap(err, "creating KV store for ingester partition ring")
 			}
@@ -1522,6 +1522,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 						continue
 					}
 
+					// We track the failed exemplars ingestion, whatever is the reason. This way, the sum of successfully
+					// and failed ingested exemplars is equal to the total number of processed ones.
+					stats.failedExemplarsCount++
+
 					if errors.Is(err, storage.ErrOutOfOrderExemplar) {
 						outOfOrderExemplars++
 						// Only report out of order exemplars if all are out of order, otherwise this was a partial update
@@ -1535,7 +1539,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					updateFirstPartial(nil, func() softError {
 						return newTSDBIngestExemplarErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 					})
-					stats.failedExemplarsCount++
 				}
 			}
 		}

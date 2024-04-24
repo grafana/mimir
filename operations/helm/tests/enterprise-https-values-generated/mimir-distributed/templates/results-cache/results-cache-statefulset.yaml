@@ -43,7 +43,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 30
       volumes:
         - name: tls-certs
           secret:

@@ -152,6 +152,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # CI workflow uses PUSH_MULTIARCH_TARGET="type=oci,dest=file.oci" to store images locally for next steps in the pipeline.
 PUSH_MULTIARCH_TARGET ?= type=registry
 PUSH_MULTIARCH_TARGET_DISTROLESS ?= type=registry
+PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST ?= type=registry
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
 # We don't do separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
@@ -168,7 +169,7 @@ push-multiarch-%/$(UPTODATE):
 	# Build Dockerfile.continuous-test
 	if [ -f $(DIR)/Dockerfile.continuous-test ]; then \
 		$(SUDO) docker buildx build -f $(DIR)/Dockerfile.continuous-test \
-			-o $(PUSH_MULTIARCH_TARGET) \
+			-o $(PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST) \
 			--platform linux/amd64,linux/arm64 \
 			--build-arg=revision=$(GIT_REVISION) \
 			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
@@ -259,7 +260,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr7802-42cedde636
+LATEST_BUILD_IMAGE_TAG ?= pr7831-88527a12da
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -382,11 +383,17 @@ lint: check-makefiles
 
 	# Ensure packages that no longer use a global logger don't reintroduce it
 	faillint -paths "github.com/grafana/mimir/pkg/util/log.{Logger}" \
-		./pkg/alertmanager/alertstore/... \
-		./pkg/ingester/... \
+		./pkg/alertmanager/... \
+		./pkg/compactor/... \
+		./pkg/distributor/... \
 		./pkg/flusher/... \
+		./pkg/frontend/... \
+		./pkg/ingester/... \
 		./pkg/querier/... \
-		./pkg/ruler/...
+		./pkg/ruler/... \
+		./pkg/scheduler/... \
+		./pkg/storage/... \
+		./pkg/storegateway/...
 
 	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
 	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged

@@ -709,7 +709,7 @@ type Mimir struct {
 	QuerierQueryable              prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable             prom_storage.ExemplarQueryable
 	MetadataSupplier              querier.MetadataSupplier
-	QuerierEngine                 *promql.Engine
+	QuerierEngine                 promql.QueryEngine
 	QueryFrontendTripperware      querymiddleware.Tripperware
 	QueryFrontendCodec            querymiddleware.Codec
 	Ruler                         *ruler.Ruler
@@ -820,6 +820,7 @@ func (t *Mimir) setupObjstoreTracing() {
 // Run starts Mimir running, and blocks until a Mimir stops.
 func (t *Mimir) Run() error {
 	mimirpb.TimeseriesUnmarshalCachingEnabled = t.Cfg.TimeseriesUnmarshalCachingOptimizationEnabled
+	defer util_log.Flush()
 
 	// Register custom process metrics.
 	if c, err := process.NewProcessCollector(); err == nil {

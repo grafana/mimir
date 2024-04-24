@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -55,12 +56,16 @@ type Config struct {
 	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"advanced"`
 	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
 
+	PromQLEngine string `yaml:"promql_engine" category:"experimental"`
+
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
 }
 
 const (
-	queryStoreAfterFlag = "querier.query-store-after"
+	queryStoreAfterFlag   = "querier.query-store-after"
+	standardPromQLEngine  = "standard"
+	streamingPromQLEngine = "streaming"
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -82,10 +87,16 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
 
+	f.StringVar(&cfg.PromQLEngine, "querier.promql-engine", standardPromQLEngine, fmt.Sprintf("PromQL engine to use, either '%v' or '%v'", standardPromQLEngine, streamingPromQLEngine))
+
 	cfg.EngineConfig.RegisterFlags(f)
 }
 
 func (cfg *Config) Validate() error {
+	if cfg.PromQLEngine != standardPromQLEngine && cfg.PromQLEngine != streamingPromQLEngine {
+		return fmt.Errorf("unknown PromQL engine '%s'", cfg.PromQLEngine)
+	}
+
 	return nil
 }
 
@@ -123,10 +134,10 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
-	distributorQueryable := newDistributorQueryable(distributor, limits, queryMetrics, logger)
+	distributorQueryable := NewDistributorQueryable(distributor, limits, queryMetrics, logger)
 
 	queryable := newQueryable(distributorQueryable, storeQueryable, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
@@ -139,13 +150,28 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	engineOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
-	engine := promql.NewEngine(engineOpts)
+	opts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
 
 	// Experimental functions can only be enabled globally, and not on a per-engine basis.
 	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
 
-	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, engine
+	var eng promql.QueryEngine
+
+	switch cfg.PromQLEngine {
+	case standardPromQLEngine:
+		eng = promql.NewEngine(opts)
+	case streamingPromQLEngine:
+		var err error
+
+		eng, err = streamingpromql.NewEngine(opts)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	default:
+		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.PromQLEngine))
+	}
+
+	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, nil
 }
 
 // NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a Queryable.
