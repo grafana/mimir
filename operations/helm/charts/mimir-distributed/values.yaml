@@ -2557,6 +2557,10 @@ nginx:
     serverSnippet: ""
     # -- Allows appending custom configuration to the http block
     httpSnippet: ""
+
+    # -- Allow to set client_max_body_size in the nginx configuration
+    clientMaxBodySize: null
+
     # -- Allows to set a custom resolver
     resolver: null
     # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating
@@ -2566,6 +2570,9 @@ nginx:
       error_log  /dev/stderr {{ .Values.nginx.nginxConfig.errorLogLevel }};
       pid        /tmp/nginx.pid;
       worker_rlimit_nofile 8192;
+      {{ if .Values.nginx.nginxConfig.clientMaxBodySize }}
+        client_max_body_size {{ .Values.nginx.nginxConfig.clientMaxBodySize }};
+      {{ end }}
 
       events {
         worker_connections  4096;  ## Default: 1024
@@ -2621,6 +2628,9 @@ nginx:
         server {
           listen 8080;
           listen [::]:8080;
+          {{ if .Values.nginx.nginxConfig.clientMaxBodySize }}
+          client_max_body_size {{ .Values.nginx.nginxConfig.clientMaxBodySize }};
+          {{ end }}
 
           {{- if .Values.nginx.basicAuth.enabled }}
           auth_basic           "Mimir";
