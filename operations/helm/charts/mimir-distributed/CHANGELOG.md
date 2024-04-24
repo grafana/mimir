@@ -29,7 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [ENHANCEMENT] Dashboards: allow switching between using classic of native histograms in dashboards. #7627 #7674
+* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7627 #7674
   * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
 
 ## 5.3.0-rc.0
