@@ -2557,10 +2557,8 @@ nginx:
     serverSnippet: ""
     # -- Allows appending custom configuration to the http block
     httpSnippet: ""
-
     # -- Allow to set client_max_body_size in the nginx configuration
     clientMaxBodySize: null
-
     # -- Allows to set a custom resolver
     resolver: null
     # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating
