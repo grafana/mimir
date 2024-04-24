@@ -4724,22 +4724,24 @@ http:
   # CLI flag: -<prefix>.s3.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
-  tls_config:
-    # (advanced) The CA certificate file path.
-    # CLI flag: -<prefix>.s3.http.tls.ca-file
-    [ca_file: <string> | default = ""]
+  # (advanced) Path to the CA certificates to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -<prefix>.s3.http.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
 
-    # (advanced) The client certificate file path.
-    # CLI flag: -<prefix>.s3.http.tls.cert-file
-    [cert_file: <string> | default = ""]
+  # (advanced) Path to the client certificate, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -<prefix>.s3.http.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
 
-    # (advanced) The client key file path.
-    # CLI flag: -<prefix>.s3.http.tls.key-file
-    [key_file: <string> | default = ""]
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
+  # CLI flag: -<prefix>.s3.http.tls-key-path
+  [tls_key_path: <string> | default = ""]
 
-    # (advanced) The name of the server for verification.
-    # CLI flag: -<prefix>.s3.http.tls.server-name
-    [server_name: <string> | default = ""]
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -<prefix>.s3.http.tls-server-name
+  [tls_server_name: <string> | default = ""]
 ```
 
 ### gcs_storage_backend
