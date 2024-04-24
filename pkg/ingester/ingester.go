@@ -10,6 +10,7 @@ package ingester
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -3547,6 +3548,48 @@ func (i *Ingester) unsetPrepareShutdown() {
 	i.lifecycler.SetUnregisterOnShutdown(i.cfg.IngesterRing.UnregisterOnShutdown)
 	i.lifecycler.SetFlushOnShutdown(i.cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown)
 	i.metrics.shutdownMarker.Set(0)
+}
+
+// PrepareUnregisterHandler manipulates whether an ingester will unregister from the ring on its next termination.
+//
+// The following methods are supported:
+//   - GET Returns the ingester's current unregister state.
+//   - PUT Sets the ingester's unregister state.
+//   - DELETE Resets the ingester's unregister state to the value passed via the RingConfig.UnregisterOnShutdown ring
+//     configuration option.
+//
+// All methods are idempotent.
+func (i *Ingester) PrepareUnregisterHandler(w http.ResponseWriter, r *http.Request) {
+	if i.State() != services.Running {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	type prepareUnregisterBody struct {
+		Unregister *bool `json:"unregister"`
+	}
+
+	switch r.Method {
+	case http.MethodPut:
+		dec := json.NewDecoder(r.Body)
+		input := prepareUnregisterBody{}
+		if err := dec.Decode(&input); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if input.Unregister == nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		i.lifecycler.SetUnregisterOnShutdown(*input.Unregister)
+	case http.MethodDelete:
+		i.lifecycler.SetUnregisterOnShutdown(i.cfg.IngesterRing.UnregisterOnShutdown)
+	}
+
+	shouldUnregister := i.lifecycler.ShouldUnregisterOnShutdown()
+	util.WriteJSONResponse(w, &prepareUnregisterBody{Unregister: &shouldUnregister})
 }
 
 // PreparePartitionDownscaleHandler prepares the ingester's partition downscaling. The partition owned by the
