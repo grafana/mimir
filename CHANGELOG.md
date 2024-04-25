@@ -83,7 +83,7 @@
 
 * [CHANGE] Deprecated `--rule-files` flag in favor of CLI arguments. #7756
 * [BUGFIX] Fix panic in `loadgen` subcommand. #7629
-* [ENHANCEMENT] mimirtool promql format: Format PromQL query with Prometheus' string or pretty-print formatter. #7742
+* [ENHANCEMENT] `mimirtool promql format`: Format PromQL query with Prometheus' string or pretty-print formatter. #7742
 * [BUGFIX] `mimirtool rules prepare`: do not add aggregation label to `on()` clause if already present in `group_left()` or `group_right()`. #7839
 
 ### Mimir Continuous Test
