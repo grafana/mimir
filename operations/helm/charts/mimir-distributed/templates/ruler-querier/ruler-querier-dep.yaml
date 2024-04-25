@@ -1,0 +1,171 @@
+{{- if .Values.ruler.remoteEvaluationDedicatedQueryPath }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ruler-querier") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "ruler-querier" "memberlist" true) | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ruler_querier.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  {{- if or (not .Values.ruler_querier.kedaAutoscaling.enabled) (.Values.ruler_querier.kedaAutoscaling.preserveReplicas) }}
+  # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
+  {{- if or (or (kindIs "int64" .Values.ruler_querier.replicas) (kindIs "float64" .Values.ruler_querier.replicas)) (.Values.ruler_querier.replicas) }}
+  replicas: {{ .Values.ruler_querier.replicas }}
+  {{- end }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler-querier" "memberlist" true) | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.ruler_querier.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "ruler-querier" "memberlist" true) | nindent 8 }}
+      annotations:
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "ruler-querier") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- if .Values.ruler_querier.priorityClassName }}
+      priorityClassName: {{ .Values.ruler_querier.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "ruler-querier") | nindent 8 }}
+      {{- with .Values.ruler_querier.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end}}
+      {{- end }}
+      containers:
+        - name: ruler-querier
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=querier"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-querier.scheduler-address={{ template "mimir.fullname" . }}-ruler-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}"
+          {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}
+            {{- if not .Values.ingester.zoneAwareReplication.migration.readPath }}
+            - "-ingester.ring.zone-awareness-enabled=false"
+            {{- end }}
+          {{- end }}
+          {{- if .Values.store_gateway.zoneAwareReplication.migration.enabled }}
+            {{- if not .Values.store_gateway.zoneAwareReplication.migration.readPath }}
+            - "-store-gateway.sharding-ring.prefix=collectors/"
+            - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
+            {{- end }}
+          {{- end }}
+          {{- range $key, $value := .Values.ruler_querier.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.ruler_querier.extraVolumeMounts }}
+              {{ toYaml .Values.ruler_querier.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/mimir
+            {{- if .Values.enterprise.enabled }}
+            - name: license
+              mountPath: /license
+            {{- end }}
+            - name: runtime-config
+              mountPath: /var/{{ include "mimir.name" . }}
+            - name: storage
+              mountPath: "/data"
+              subPath: {{ .Values.ruler_querier.persistence.subPath }}
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: {{ include "mimir.serverHttpListenPort" . }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ include "mimir.serverGrpcListenPort" . }}
+              protocol: TCP
+            - name: memberlist
+              containerPort: {{ include "mimir.memberlistBindPort" . }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.ruler_querier.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.ruler_querier.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.ruler_querier.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.ruler_querier.containerSecurityContext | nindent 12 }}
+          env:
+            {{- with .Values.global.extraEnv }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.ruler_querier.env }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- $cpu_request := dig "requests" "cpu" nil .Values.ruler_querier.resources }}
+            {{- if $cpu_request }}
+              {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+              {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
+            - name: "GOMAXPROCS"
+              value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
+            {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.querier }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.ruler_querier.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+{{- if .Values.ruler_querier.extraContainers }}
+{{ toYaml .Values.ruler_querier.extraContainers | indent 8}}
+{{- end }}
+      {{- with .Values.ruler_querier.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ruler_querier.affinity}}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ruler-querier") | nindent 6 }}
+      {{- with .Values.ruler_querier.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.ruler_querier.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          {{- include "mimir.configVolume" . | nindent 10 }}
+        {{- if .Values.enterprise.enabled }}
+        - name: license
+          secret:
+            secretName: {{ tpl .Values.license.secretName . }}
+        {{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "mimir.fullname" . }}-runtime
+        {{- if .Values.ruler_querier.extraVolumes }}
+        {{ toYaml .Values.ruler_querier.extraVolumes | nindent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8}}
+        {{- end }}
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+{{- end }}
