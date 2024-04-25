@@ -60,14 +60,14 @@ zones are unhealthy, Mimir's ability to serve reads and writes is compromised.
 The cost-conscious Mimir operator is now stuck between a rock and a hard place:
 
 |                                               | Single-zone eviction | Multi-zone eviction                                                                          | Rollout                                                                                                                                                                            |
-|-----------------------------------------------|----------------------|----------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| --------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `-ingester.ring.unregister-on-shutdown=false` | No problem.          | Guaranteed full loss of read path for all series. Loss of write path for overlapping series. | No problem. If an eviction happens in another zone than the one currently being rolled out, then we will see the same issues as a multi-zone eviction.                             |
 | `-ingester.ring.unregister-on-shutdown=true`  | No problem.          | Temporary loss of data for overlapping series. No loss of write path.                        | Series churn and ingester CPU problems. If an eviction happens in another zone than the one currently being rolled out, then we will see the same issues as a multi-zone eviction. |
 
 ## Goals
 
-* Provide a way to dynamically (i.e., _without_ re-starting the ingester) set whether an ingester should unregister or not on next shutdown.
-* Give Mimir operators more flexibility to choose between availability and consistency.
+- Provide a way to dynamically (i.e., _without_ re-starting the ingester) set whether an ingester should unregister or not on next shutdown.
+- Give Mimir operators more flexibility to choose between availability and consistency.
 
 ## Proposal
 
@@ -77,27 +77,34 @@ This endpoint can be used to control whether the ingester should unregister from
 The endpoint supports three HTTP methods: `GET`, `PUT` and `DELETE`.
 
 When called with the `GET` method, the endpoint returns the current unregister state in a JSON response body with a `200` status code:
+
 ```json
-{"unregister": true}
+{ "unregister": true }
 ```
 
 When called with the `PUT` method, the endpoint accepts a request body:
+
 ```json
-{"unregister": false}
+{ "unregister": false }
 ```
+
 The endpoint sets `i.lifecycler.SetUnregisterOnShutdown()` to the value passed in the request body. After doing so, it returns the current lifecycler unregister value with a `200` status code:
+
 ```json
-{"unregister": false}
+{ "unregister": false }
 ```
 
 Using a request body supports both of these use cases:
+
 1. Disabling unregister for an ingester that has it enabled by default.
 2. Enabling unregister for an ingester that has it disabled by default.
 
 When called with the `DELETE` method, the endpoint sets the ingester's unregister state to what was passed via the `unregister_on_shutdown` configuration option. After doing so, it returns the current unregister value with a `200` status code:
+
 ```json
-{"unregister": false}
+{ "unregister": false }
 ```
+
 The `DELETE` method is considered to "delete" any override, and can be used to ensure that the ingester's unregister state is set to the value that was set on ingester startup.
 
 All three behaviours of the endpoint are idempotent.
@@ -111,6 +118,7 @@ Most cloud platforms offer an "eviction notice" prior to node eviction. A helper
 the eviction notice by updating evicted ingesters to unregister from the ring.
 
 Concrete example:
+
 1. Ingesters `a-1` and `a-7` run on node `zone1-snkq`. Ingesters `b-4` and `b-9` run on node `zone2-iqmd`.
 2. An eviction notice is sent for nodes `zone1-snkq` and `zone2-iqmd` at the same time.
 3. Helper service picks up the eviction notice, figures out which ingesters run on the two nodes, and invokes the
@@ -120,10 +128,12 @@ Concrete example:
    is maintained.
 
 **Pros**:
-* Availability is maintained even during multi-zone evictions.
+
+- Availability is maintained even during multi-zone evictions.
 
 **Cons**:
-* Queries may return incomplete results as samples held by the evicted ingesters are temporarily inaccessible.
+
+- Queries may return incomplete results as samples held by the evicted ingesters are temporarily inaccessible.
   The samples become accessible again when the ingesters join the ring after having replayed their WAL.
-* Ownership of evicted series (i.e., series whose owner was evicted) is split between two ingesters. This is likely
+- Ownership of evicted series (i.e., series whose owner was evicted) is split between two ingesters. This is likely
   negligible unless the volume of evictions is extreme.
