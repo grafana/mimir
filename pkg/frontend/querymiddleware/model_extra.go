@@ -177,6 +177,18 @@ func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryReque
 	return &newRequest, nil
 }
 
+// WithExpr clones the current `PrometheusRangeQueryRequest` with a new query expression.
+func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.queryExpr = queryExpr
+	if newRequest.queryExpr != nil {
+		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
+			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
+		)
+	}
+	return &newRequest
+}
+
 // WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
 // added Hint value for TotalQueries.
 func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
@@ -348,6 +360,18 @@ func (r *PrometheusInstantQueryRequest) WithQuery(query string) (MetricsQueryReq
 		)
 	}
 	return &newRequest, nil
+}
+
+// WithExpr clones the current `PrometheusInstantQueryRequest` with a new query expression.
+func (r *PrometheusInstantQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.queryExpr = queryExpr
+	if newRequest.queryExpr != nil {
+		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
+			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
+		)
+	}
+	return &newRequest
 }
 
 func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {

@@ -398,18 +398,38 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			start := testCase.initialMetricsQuery.GetStart()
 			end := testCase.initialMetricsQuery.GetEnd()
+
+			// apply WithStartEnd
+			newStart := start
 			if testCase.updatedStartTime != nil {
-				start = testCase.updatedStartTime.UnixMilli()
+				newStart = testCase.updatedStartTime.UnixMilli()
 			}
+			newEnd := end
 			if testCase.updatedEndTime != nil {
-				end = testCase.updatedEndTime.UnixMilli()
+				newEnd = testCase.updatedEndTime.UnixMilli()
 			}
+			updatedMetricsQuery := testCase.initialMetricsQuery.WithStartEnd(newStart, newEnd)
 
-			updatedMetricsQuery := testCase.initialMetricsQuery.WithStartEnd(start, end)
-
+			// test WithQuery
 			if testCase.updatedQuery != "" {
 				updatedMetricsQuery, err = updatedMetricsQuery.WithQuery(testCase.updatedQuery)
 
+			}
+			if err != nil || testCase.expectedErr != nil {
+				require.IsType(t, testCase.expectedErr, err)
+			} else {
+				require.Equal(t, testCase.expectedUpdatedMinT, updatedMetricsQuery.GetMinT())
+				require.Equal(t, testCase.expectedUpdatedMaxT, updatedMetricsQuery.GetMaxT())
+			}
+
+			// test WithExpr on the same query as WithQuery
+			var queryExpr parser.Expr
+			if testCase.updatedQuery != "" {
+				// reset start and end
+				updatedMetricsQuery := testCase.initialMetricsQuery.WithStartEnd(start, end)
+
+				queryExpr, err = parser.ParseExpr(testCase.updatedQuery)
+				updatedMetricsQuery = updatedMetricsQuery.WithExpr(queryExpr)
 			}
 			if err != nil || testCase.expectedErr != nil {
 				require.IsType(t, testCase.expectedErr, err)
