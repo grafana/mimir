@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Add support for a dedicated query path for the ruler. This allows for the isolation of ruler and user query paths. #7964
 * [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7361 #7364
   * Alertmanager: changed from `60` to `900`
   * Distributor: changed from `60` to `100`
