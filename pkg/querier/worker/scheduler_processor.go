@@ -290,15 +290,17 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		MaxRetries: maxNotifyFrontendRetries,
 	})
 
+	var hasStreamHeader bool
+	response.Headers, hasStreamHeader = removeStreamingHeader(response.Headers)
+	shouldStream := hasStreamHeader && sp.streamingEnabled && len(response.Body) > responseStreamingBodyChunkSizeBytes
+
 	for bof.Ongoing() {
 		c, err = sp.frontendPool.GetClientFor(frontendAddress)
 		if err != nil {
 			break
 		}
 
-		var ok bool
-		response.Headers, ok = removeStreamingHeader(response.Headers)
-		if sp.streamingEnabled && ok && len(response.Body) > responseStreamingBodyChunkSizeBytes {
+		if shouldStream {
 			err = streamResponse(frontendCtx, ctx, c, queryID, response, stats, sp.log)
 		} else {
 			// Response is empty and uninteresting.
