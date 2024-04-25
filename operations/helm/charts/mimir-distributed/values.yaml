@@ -1286,7 +1286,7 @@ ruler:
 
   # -- If set to true, a dedicated query path will be deployed for the ruler and operational mode will be set to use remote evaluation. https://grafana.com/docs/mimir/latest/references/architecture/components/ruler/#remote
   # -- This is useful for isolating the ruler queries from other queriers (api/grafana).
-  remoteEvaluationDedicatedQueryPath: true
+  remoteEvaluationDedicatedQueryPath: false
 
 # -- Only deployed if .Values.remoteEvaluation.enabled && .Values.remoteEvaluation.dedicatedQueryPath
 ruler_querier:
