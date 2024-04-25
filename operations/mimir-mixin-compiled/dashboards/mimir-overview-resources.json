@@ -328,7 +328,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "max by(persistentvolumeclaim) (\n  kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"} /\n  kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n)\nand\ncount by(persistentvolumeclaim) (\n  kube_persistentvolumeclaim_labels{\n    cluster=~\"$cluster\", namespace=~\"$namespace\",\n    label_name=~\"(distributor|ingester|mimir-write).*\"\n  }\n)\n",
+                        "expr": "max by(persistentvolumeclaim) (\n  kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"} /\n  kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n)\nand\ncount by(persistentvolumeclaim) (\n  kube_persistentvolumeclaim_labels{\n    cluster=~\"$cluster\", namespace=~\"$namespace\",\n    label_app_kubernetes_io_component=~\"(distributor|ingester|mimir-write).*\"\n  }\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{persistentvolumeclaim}}",
                         "legendLink": null
@@ -799,7 +799,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "max by(persistentvolumeclaim) (\n  kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"} /\n  kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n)\nand\ncount by(persistentvolumeclaim) (\n  kube_persistentvolumeclaim_labels{\n    cluster=~\"$cluster\", namespace=~\"$namespace\",\n    label_name=~\"(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"\n  }\n)\n",
+                        "expr": "max by(persistentvolumeclaim) (\n  kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"} /\n  kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n)\nand\ncount by(persistentvolumeclaim) (\n  kube_persistentvolumeclaim_labels{\n    cluster=~\"$cluster\", namespace=~\"$namespace\",\n    label_app_kubernetes_io_component=~\"(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"\n  }\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{persistentvolumeclaim}}",
                         "legendLink": null

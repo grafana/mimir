@@ -535,7 +535,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided containerName should be a regexp from $._config.container_names.
   containerLabelNameMatcher(containerName)::
     // Check only the prefix so that a multi-zone deployment matches too.
-    'label_name=~"(%s).*"' % containerName,
+    'label_app_kubernetes_io_component=~"(%s).*"' % containerName,
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerNetworkingRowByComponent(title, componentName)::

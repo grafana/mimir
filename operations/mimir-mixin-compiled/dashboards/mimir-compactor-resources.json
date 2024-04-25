@@ -685,7 +685,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "max by(persistentvolumeclaim) (\n  kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"} /\n  kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n)\nand\ncount by(persistentvolumeclaim) (\n  kube_persistentvolumeclaim_labels{\n    cluster=~\"$cluster\", namespace=~\"$namespace\",\n    label_name=~\"(compactor).*\"\n  }\n)\n",
+                        "expr": "max by(persistentvolumeclaim) (\n  kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"} /\n  kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n)\nand\ncount by(persistentvolumeclaim) (\n  kube_persistentvolumeclaim_labels{\n    cluster=~\"$cluster\", namespace=~\"$namespace\",\n    label_app_kubernetes_io_component=~\"(compactor).*\"\n  }\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{persistentvolumeclaim}}",
                         "legendLink": null
