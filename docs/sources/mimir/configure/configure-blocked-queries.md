@@ -30,6 +30,40 @@ To set up runtime overrides, refer to [runtime configuration]({{< relref "./abou
 The order of patterns is preserved, so the first matching pattern will be used.
 {{% /admonition %}}
 
+## Formatting queries to block
+
+Queries received by Mimir are parsed into PromQL expressions before blocking is applied.
+The `pattern` from the blocked queries is compared against Prometheus' string format representation of the parsed query,
+in order to allow consistent query blocking behavior regardless of formatting differences in the submitted queries.
+
+Among other transformations, the Prometheus formatter may reorder operators, remove empty selector braces,
+and eliminate newlines and extraneous whitespace.
+
+You can use Mimirtool's `promql format <query>` command to apply the Prometheus string formatting to a query
+to ensure your provided blocked query `pattern` is correct:
+
+```shell
+$ mimirtool promql format 'foo{}'
+foo  # empty selector braces removed
+```
+
+```shell
+$ mimirtool promql format 'sum(container_memory_rss) by (namespace)'
+sum by (namespace) (container_memory_rss)  # `sum (x) by (y)` reordered to `sum by (x) (y)`
+```
+
+```shell
+$ mimirtool promql format '
+rate(
+  metric_counter[15m]
+) /
+rate(
+  other_counter[15m]
+)
+'
+rate(metric_counter[15m]) / rate(other_counter[15m])  # newlines and extra whitespace eliminated
+```
+
 ## View blocked queries
 
 Blocked queries are logged, as well as counted in the `cortex_query_frontend_rejected_queries_total` metric on a per-tenant basis.
