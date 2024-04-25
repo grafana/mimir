@@ -6054,6 +6054,50 @@
                   "fieldFlag": "blocks-storage.s3.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.s3.http.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.s3.http.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.s3.http.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.s3.http.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
@@ -11939,6 +11983,50 @@
                   "fieldFlag": "ruler-storage.s3.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.s3.http.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.s3.http.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.s3.http.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.s3.http.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
@@ -14023,6 +14111,50 @@
                   "fieldDefaultValue": 0,
                   "fieldFlag": "alertmanager-storage.s3.max-connections-per-host",
                   "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.s3.http.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.s3.http.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.s3.http.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.s3.http.tls-server-name",
+                  "fieldType": "string",
                   "fieldCategory": "advanced"
                 }
               ],
@@ -16341,6 +16473,50 @@
                       "fieldDefaultValue": 0,
                       "fieldFlag": "common.storage.s3.max-connections-per-host",
                       "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.s3.http.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.s3.http.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.s3.http.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.s3.http.tls-server-name",
+                      "fieldType": "string",
                       "fieldCategory": "advanced"
                     }
                   ],
