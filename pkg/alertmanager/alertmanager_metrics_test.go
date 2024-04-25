@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 var integrations = []string{
@@ -33,7 +35,7 @@ var integrations = []string{
 func TestAlertmanagerMetricsStore(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	alertmanangerMetrics := newAlertmanagerMetrics()
+	alertmanangerMetrics := newAlertmanagerMetrics(test.NewTestingLogger(t))
 	mainReg.MustRegister(alertmanangerMetrics)
 	alertmanangerMetrics.addUserRegistry("user1", populateAlertmanager(1))
 	alertmanangerMetrics.addUserRegistry("user2", populateAlertmanager(10))
@@ -353,7 +355,7 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 func TestAlertmanagerMetricsRemoval(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	alertmanagerMetrics := newAlertmanagerMetrics()
+	alertmanagerMetrics := newAlertmanagerMetrics(test.NewTestingLogger(t))
 	mainReg.MustRegister(alertmanagerMetrics)
 	alertmanagerMetrics.addUserRegistry("user1", populateAlertmanager(1))
 	alertmanagerMetrics.addUserRegistry("user2", populateAlertmanager(10))
@@ -1260,7 +1262,10 @@ func newNotifyMetrics(r prometheus.Registerer) *notifyMetrics {
 // Copied from github.com/alertmanager/notify/util.go
 // possibleFailureReasonCategory is a list of possible failure reason.
 var possibleFailureReasonCategory = []string{notify.DefaultReason.String(), notify.ClientErrorReason.String(), notify.ServerErrorReason.String()}
-var possibleSuppressedReason = []string{notify.SuppressedReasonSilence, notify.SuppressedReasonInhibition, notify.SuppressedReasonMuteTimeInterval, notify.SuppressedReasonActiveTimeInterval}
+
+// Copied from https://github.com/prometheus/alertmanager/blob/release-0.27/notify/notify.go
+// Should use consts from notify package when they are public again.
+var possibleSuppressedReason = []string{"silence", "inhibition", "mute_time_interval", "active_time_interval"} // notify.SuppressedReasonSilence, notify.SuppressedReasonInhibition, notify.SuppressedReasonMuteTimeInterval, notify.SuppressedReasonActiveTimeInterval
 
 type markerMetrics struct {
 	alerts *prometheus.GaugeVec

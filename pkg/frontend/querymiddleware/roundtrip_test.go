@@ -367,7 +367,7 @@ func TestTripperware_Metrics(t *testing.T) {
 
 	s := httptest.NewServer(
 		middleware.AuthenticateUser.Wrap(
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", jsonMimeType)
 				_, err := w.Write([]byte("{}"))
 				require.NoError(t, err)

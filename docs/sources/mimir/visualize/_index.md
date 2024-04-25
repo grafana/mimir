@@ -15,6 +15,8 @@ keywords:
 
 ## Before you begin
 
+> These steps are done in a local or on-premise instance of Grafana.
+
 1. Log in to your Grafana instance.
    If this is your first time running Grafana,
    the username and password are both `admin`.

@@ -61,7 +61,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 			tenantShardSize:   1,
 			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
 		},
-		"shard size 1, ingester gRPC streaming enabled, memcached index cache, query sharding enabled": {
+		"shard size 1, memcached index cache, query sharding enabled": {
 			tenantShardSize:      1,
 			indexCacheBackend:    tsdb.IndexCacheBackendMemcached,
 			queryShardingEnabled: true,
@@ -158,7 +158,6 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
 				"-query-frontend.query-stats-enabled":                          "true",
 				"-query-frontend.parallelize-shardable-queries":                strconv.FormatBool(testCfg.queryShardingEnabled),
-				"-querier.prefer-streaming-chunks-from-ingesters":              strconv.FormatBool(streamingEnabled),
 				"-querier.prefer-streaming-chunks-from-store-gateways":         strconv.FormatBool(streamingEnabled),
 			})
 
@@ -365,8 +364,10 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-blocks-storage.bucket-store.index-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 
 				// Ingester.
-				"-ingester.ring.store":           "consul",
-				"-ingester.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
+				"-ingester.ring.store":                     "consul",
+				"-ingester.ring.consul.hostname":           consul.NetworkHTTPEndpoint(),
+				"-ingester.partition-ring.store":           "consul",
+				"-ingester.partition-ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Distributor.
 				"-ingester.ring.replication-factor": strconv.FormatInt(seriesReplicationFactor, 10),
 				"-distributor.ring.store":           "consul",
@@ -513,6 +514,52 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			testMetadataQueriesWithBlocksStorage(t, c, series1[0], series2[0], series3[0], blockRangePeriod)
 		})
 	}
+}
+
+func TestStreamingPromQLEngine(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+		"-querier.promql-engine": "streaming",
+	})
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+
+	// Wait until the distributor and querier have updated the ring.
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring,
+	// and the querier should have 512 tokens for the ingester ring.
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	// Push a series to Mimir.
+	writeClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
+	require.NoError(t, err)
+
+	seriesName := "series_1"
+	seriesTimestamp := time.Now()
+	series, expectedVector, _ := generateFloatSeries(seriesName, seriesTimestamp, prompb.Label{Name: seriesName, Value: seriesName})
+
+	res, err := writeClient.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	// Query back the same series using the streaming PromQL engine.
+	c, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
+	require.NoError(t, err)
+
+	result, err := c.Query(seriesName, seriesTimestamp)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result.Type())
+	assert.Equal(t, expectedVector, result.(model.Vector))
 }
 
 func testMetadataQueriesWithBlocksStorage(
@@ -852,7 +899,7 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 	const blockRangePeriod = 5 * time.Second
 
 	for _, streamingEnabled := range []bool{true, false} {
-		t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
+		t.Run(fmt.Sprintf("store-gateway streaming enabled: %v", streamingEnabled), func(t *testing.T) {
 			s, err := e2e.NewScenario(networkName)
 			require.NoError(t, err)
 			defer s.Close()
@@ -865,7 +912,6 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 				"-blocks-storage.bucket-store.sync-interval":           "1s",
 				"-blocks-storage.tsdb.retention-period":                ((blockRangePeriod * 2) - 1).String(),
 				"-querier.max-fetched-series-per-query":                "3",
-				"-querier.prefer-streaming-chunks-from-ingesters":      strconv.FormatBool(streamingEnabled),
 				"-querier.prefer-streaming-chunks-from-store-gateways": strconv.FormatBool(streamingEnabled),
 			})
 

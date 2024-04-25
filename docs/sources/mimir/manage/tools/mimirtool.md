@@ -319,6 +319,12 @@ groups:
         expr: sum by (job) (http_inprogress_requests)
 ```
 
+This command, like the other `rules` subcommands, can load multiple rule groups at once:
+
+```bash
+mimirtool rules load ./example_rules_one.yaml ./example_rules_two.yaml
+```
+
 #### Delete a namespace
 
 The following command deletes all of the rule groups in a namespace, including the namespace itself:
@@ -360,10 +366,12 @@ mimirtool rules prepare <file_path>...
 
 ##### Configuration
 
-| Flag                      | Description                                                                                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `-i`, `--in-place`        | Edits the file in place. If not set, the system generates a new file with the extension `.result` that contains the results. |
-| `-l`, `--label="cluster"` | Specifies the label for aggregations. By default, the label is set to `cluster`.                                             |
+| Flag                           | Description                                                                                                                                    |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-i`, `--in-place`             | Edits the file in place. If not set, the system generates a new file with the extension `.result` that contains the results.                   |
+| `-l`, `--label="cluster"`      | Specifies the label for aggregations. By default, the label is set to `cluster`.                                                               |
+| `--label-excluded-rule-groups` | Comma separated list of rule group names to exclude when including the configured label to aggregations.                                       |
+| `--rule-dirs`                  | Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed. |
 
 ##### Example
 

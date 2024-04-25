@@ -70,21 +70,29 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" $args | nindent 8 }}
+      {{- with .Values.store_gateway.initContainers }}
       initContainers:
-        {{- toYaml .Values.store_gateway.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
         - name: {{ . }}
       {{- end }}
       {{- end }}
+      {{- with $rolloutZone.nodeSelector }}
       nodeSelector:
-        {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $rolloutZone.affinity }}
       affinity:
-        {{- $rolloutZone.affinity | toYaml | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "store-gateway") | nindent 6 }}
+      {{- with .Values.store_gateway.tolerations }}
       tolerations:
-        {{- toYaml .Values.store_gateway.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.store_gateway.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -103,6 +111,9 @@ spec:
         {{- end }}
         {{- if .Values.store_gateway.extraVolumes }}
         {{ toYaml .Values.store_gateway.extraVolumes | nindent 8 }}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8 }}
         {{- end }}
         - name: active-queries
           emptyDir: {}
@@ -131,6 +142,9 @@ spec:
           volumeMounts:
             {{- if .Values.store_gateway.extraVolumeMounts }}
             {{ toYaml .Values.store_gateway.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+            {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
               mountPath: /etc/mimir

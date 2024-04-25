@@ -60,8 +60,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       nodeSelector:
         topology.kubernetes.io/zone: zone-a
       affinity:
@@ -87,9 +85,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-multizone-values
             app.kubernetes.io/component: store-gateway
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:
@@ -216,8 +212,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       nodeSelector:
         topology.kubernetes.io/zone: zone-b
       affinity:
@@ -243,9 +237,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-multizone-values
             app.kubernetes.io/component: store-gateway
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:
@@ -372,8 +364,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       nodeSelector:
         topology.kubernetes.io/zone: zone-c
       affinity:
@@ -399,9 +389,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-multizone-values
             app.kubernetes.io/component: store-gateway
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:

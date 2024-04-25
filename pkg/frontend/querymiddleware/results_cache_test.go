@@ -15,6 +15,7 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -129,7 +130,7 @@ func TestIsRequestCachable(t *testing.T) {
 
 	for _, tc := range []struct {
 		name                      string
-		request                   Request
+		request                   MetricsQueryRequest
 		expected                  bool
 		expectedNotCachableReason string
 		cacheStepUnaligned        bool
@@ -372,9 +373,9 @@ func TestIsResponseCachable(t *testing.T) {
 func TestPartitionCacheExtents(t *testing.T) {
 	for _, tc := range []struct {
 		name                   string
-		input                  Request
+		input                  MetricsQueryRequest
 		prevCachedResponse     []Extent
-		expectedRequests       []Request
+		expectedRequests       []MetricsQueryRequest
 		expectedCachedResponse []Response
 	}{
 		{
@@ -402,7 +403,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			prevCachedResponse: []Extent{
 				mkExtent(110, 210),
 			},
-			expectedRequests: []Request{
+			expectedRequests: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{
 					Start: 0,
 					End:   100,
@@ -420,7 +421,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			prevCachedResponse: []Extent{
 				mkExtent(50, 100),
 			},
-			expectedRequests: []Request{
+			expectedRequests: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{
 					Start: 0,
 					End:   50,
@@ -442,7 +443,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				mkExtent(50, 120),
 				mkExtent(160, 250),
 			},
-			expectedRequests: []Request{
+			expectedRequests: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{
 					Start: 120,
 					End:   160,
@@ -465,7 +466,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				mkExtent(50, 120),
 				mkExtent(122, 130),
 			},
-			expectedRequests: []Request{
+			expectedRequests: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{
 					Start: 120,
 					End:   160,
@@ -486,7 +487,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			prevCachedResponse: []Extent{
 				mkExtent(50, 90),
 			},
-			expectedRequests: []Request{
+			expectedRequests: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{
 					Start: 100,
 					End:   100,
@@ -525,7 +526,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			expectedCachedResponse: []Response{
 				mkAPIResponse(486, 625, 33),
 			},
-			expectedRequests: []Request{
+			expectedRequests: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{Start: 123, End: 486, Step: 33},
 				&PrometheusRangeQueryRequest{
 					Start: 651,  // next number after 625 (end of extent) such that it is equal to input.Start + N * input.Step.
@@ -554,11 +555,14 @@ func TestPartitionCacheExtents(t *testing.T) {
 
 func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	t.Parallel()
+	reg := prometheus.NewPedanticRegistry()
+	codec := NewPrometheusCodec(reg, formatJSON)
+
 	ctx := context.Background()
 
 	tests := []struct {
 		name     string
-		r        Request
+		r        MetricsQueryRequest
 		interval time.Duration
 		want     string
 	}{
@@ -575,7 +579,7 @@ func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s - %s", tt.name, tt.interval), func(t *testing.T) {
-			if got := (DefaultCacheKeyGenerator{tt.interval}).QueryRequest(ctx, "fake", tt.r); got != tt.want {
+			if got := (DefaultCacheKeyGenerator{codec: codec, interval: tt.interval}).QueryRequest(ctx, "fake", tt.r); got != tt.want {
 				t.Errorf("generateKey() = %v, want %v", got, tt.want)
 			}
 		})

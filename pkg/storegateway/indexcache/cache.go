@@ -84,7 +84,7 @@ func (l *MapIterator[T]) Size() int {
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {
 	// StorePostings stores postings for a single series.
-	StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte)
+	StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte, ttl time.Duration)
 
 	// FetchMultiPostings fetches multiple postings - each identified by a label.
 	// The returned result should contain one item for each requested key.

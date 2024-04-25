@@ -42,7 +42,6 @@ func (pw *prometheusWriter) sendWriteRequest(ctx context.Context, req *prompb.Wr
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", "mimir-continuous-test")
 	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 
 	httpResp, err := pw.httpClient.Do(httpReq)

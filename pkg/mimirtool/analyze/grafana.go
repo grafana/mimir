@@ -217,7 +217,7 @@ func parseQuery(query string, metrics map[string]struct{}) error {
 		return err
 	}
 
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
 			// VectorSelector has .Name when it's explicitly set as `name{...}`.
 			// Otherwise we need to look into the matchers.

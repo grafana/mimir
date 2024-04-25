@@ -41,7 +41,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
       containers:
         - name: admin-api
           imagePullPolicy: IfNotPresent
@@ -90,10 +89,6 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -102,8 +97,6 @@ spec:
           matchLabels:
             app: enterprise-metrics-admin-api
             release: test-enterprise-legacy-label-values
-      tolerations:
-        []
       terminationGracePeriodSeconds: 60
       volumes:
         - name: config

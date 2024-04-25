@@ -637,7 +637,7 @@ Params:
 
 {{/*
 siToBytes is used to convert Kubernetes byte units to bytes.
-Only works for limited set of SI prefixes: Ki, Mi, Gi, Ti.
+Works for a sub set of SI suffixes: m, k, M, G, T, and their power-of-two equivalents: Ki, Mi, Gi, Ti.
 
 mimir.siToBytes takes 1 argument
   .value = the input value with SI unit
@@ -651,6 +651,16 @@ mimir.siToBytes takes 1 argument
         {{- trimSuffix "Gi" .value | float64 | mul 1073741824 | ceil | int64 -}}
     {{- else if (hasSuffix "Ti" .value) -}}
         {{- trimSuffix "Ti" .value | float64 | mul 1099511627776 | ceil | int64 -}}
+    {{- else if (hasSuffix "k" .value) -}}
+        {{- trimSuffix "k" .value | float64 | mul 1000 | ceil | int64 -}}
+    {{- else if (hasSuffix "M" .value) -}}
+        {{- trimSuffix "M" .value | float64 | mul 1000000 | ceil | int64 -}}
+    {{- else if (hasSuffix "G" .value) -}}
+        {{- trimSuffix "G" .value | float64 | mul 1000000000 | ceil | int64 -}}
+    {{- else if (hasSuffix "T" .value) -}}
+        {{- trimSuffix "T" .value | float64 | mul 1000000000000 | ceil | int64 -}}
+    {{- else if (hasSuffix "m" .value) -}}
+        {{- trimSuffix "m" .value | float64 | mulf 0.001 | ceil | int64 -}}
     {{- else -}}
         {{- .value }}
     {{- end -}}
@@ -669,5 +679,21 @@ mimir.parseCPU takes 1 argument
         {{ trimSuffix "m" $value_string | float64 | mulf 0.001 -}}
     {{- else -}}
         {{- $value_string }}
+    {{- end -}}
+{{- end -}}
+
+{{/*
+cpuToMilliCPU is used to convert Kubernetes CPU units to MilliCPU.
+The returned value is a string representation. If you need to do any math on it, please parse the string first.
+
+mimir.cpuToMilliCPU takes 1 argument
+  .value = the Kubernetes CPU request value
+*/}}
+{{- define "mimir.cpuToMilliCPU" -}}
+    {{- $value_string := .value | toString -}}
+    {{- if (hasSuffix "m" $value_string) -}}
+        {{ trimSuffix "m" $value_string -}}
+    {{- else -}}
+        {{- $value_string | float64 | mulf 1000 | toString }}
     {{- end -}}
 {{- end -}}

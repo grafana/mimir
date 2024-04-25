@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
@@ -56,7 +55,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		produceRequestProcessed := atomic.NewBool(false)
 
-		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
 			// Add a delay, so that if WriteSync() will not wait then the test will fail.
 			time.Sleep(time.Second)
 			produceRequestProcessed.Store(true)
@@ -239,7 +238,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
 		writer, _ := createTestWriter(t, kafkaCfg)
 
-		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
 			// Keep failing every request.
 			cluster.KeepControl()
 			return nil, errors.New("mock error"), true
@@ -268,7 +267,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		)
 
 		wg.Add(1)
-		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
 			// Ensure the test waits for this too, since the client request will fail earlier
 			// (if we don't wait, the test will end before this function and then goleak will
 			// report a goroutine leak).
@@ -396,8 +395,13 @@ func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gather
 
 func createTestKafkaClient(t *testing.T, cfg KafkaConfig) *kgo.Client {
 	metrics := kprom.NewMetrics("", kprom.Registerer(prometheus.NewPedanticRegistry()))
+	opts := commonKafkaClientOptions(cfg, metrics, test.NewTestingLogger(t))
 
-	client, err := kgo.NewClient(commonKafkaClientOptions(cfg, metrics, log.NewNopLogger())...)
+	// Use the manual partitioner because produceRecord() utility explicitly specifies
+	// the partition to write to in the kgo.Record itself.
+	opts = append(opts, kgo.RecordPartitioner(kgo.ManualPartitioner()))
+
+	client, err := kgo.NewClient(opts...)
 	require.NoError(t, err)
 
 	// Automatically close it at the end of the test.

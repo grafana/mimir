@@ -69,7 +69,7 @@ func (m MapperFunc) DoMap(source, target Parameters) error {
 }
 
 func RenameMapping(to string) Mapping {
-	return func(oldPath string, oldVal Value) (newPath string, newVal Value) {
+	return func(_ string, oldVal Value) (newPath string, newVal Value) {
 		newPath = to
 		newVal = oldVal
 		return

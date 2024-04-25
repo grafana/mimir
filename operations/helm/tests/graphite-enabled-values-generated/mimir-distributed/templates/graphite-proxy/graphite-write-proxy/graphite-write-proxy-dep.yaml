@@ -42,7 +42,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
       containers:
         - name: graphite-write-proxy
           imagePullPolicy: IfNotPresent
@@ -90,8 +89,6 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
-      nodeSelector:
-        {}
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -104,8 +101,6 @@ spec:
                   - graphite-write-proxy
               topologyKey: kubernetes.io/hostname
             weight: 100
-      tolerations:
-        []
       terminationGracePeriodSeconds: 180
       volumes:
         - name: config

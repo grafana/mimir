@@ -340,7 +340,7 @@ func TestBlockLabelNames(t *testing.T) {
 			onLabelNamesCalled: func() error {
 				return fmt.Errorf("not expected the LabelNames() calls with matchers")
 			},
-			onLabelValuesOffsetsCalled: func(name string) error {
+			onLabelValuesOffsetsCalled: func(string) error {
 				expectedCalls--
 				if expectedCalls < 0 {
 					return fmt.Errorf("didn't expect another index.Reader.LabelValues() call")
@@ -392,7 +392,7 @@ func TestBlockLabelValues(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
 			Reader:                     b.indexHeaderReader,
-			onLabelValuesOffsetsCalled: func(name string) error { return context.DeadlineExceeded },
+			onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
 		}
 		b.indexCache = cacheNotExpectingToStoreLabelValues{t: t}
 
@@ -405,7 +405,7 @@ func TestBlockLabelValues(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
 			Reader: b.indexHeaderReader,
-			onLabelValuesOffsetsCalled: func(name string) error {
+			onLabelValuesOffsetsCalled: func(string) error {
 				expectedCalls--
 				if expectedCalls < 0 {
 					return fmt.Errorf("didn't expect another index.Reader.LabelValues() call")
@@ -960,7 +960,7 @@ func (c *spyPostingsCache) StoreExpandedPostings(_ string, _ ulid.ULID, _ indexc
 	c.storedExpandedPostingsVal = v
 }
 
-func (c *spyPostingsCache) StorePostings(_ string, _ ulid.ULID, l labels.Label, v []byte) {
+func (c *spyPostingsCache) StorePostings(_ string, _ ulid.ULID, l labels.Label, v []byte, _ time.Duration) {
 	if c.storedExpandedPostingsVal == nil {
 		c.storedPostingsVal = make(map[labels.Label][]byte)
 	}
@@ -1006,7 +1006,7 @@ func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appenderFacto
 
 	id, minT, maxT := uploadTestBlock(tb, tmpDir, bkt, dataSetup)
 
-	r, err := indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, true, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
+	r, err := indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 	require.NoError(tb, err)
 
 	return func() *bucketBlock {
@@ -1347,7 +1347,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		seriesPerBlock = 1
 	}
 
-	// Create 4 blocks. Each will have seriesPerBlock number of series that have samplesPerSeriesPerBlock samples.
+	// Create numOfBlocks blocks. Each will have seriesPerBlock number of series that have samplesPerSeriesPerBlock samples.
 	// Timestamp will be counted for each new series and new sample, so each series will have unique timestamp.
 	// This allows to pick time range that will correspond to number of series picked 1:1.
 	for bi := 0; bi < numOfBlocks; bi++ {
@@ -1492,7 +1492,6 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 					EagerLoadingStartupEnabled: false,
 					LazyLoadingEnabled:         false,
 					LazyLoadingIdleTimeout:     0,
-					SparsePersistenceEnabled:   true,
 				},
 			},
 			selectAllStrategy{},
@@ -1621,7 +1620,6 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 								EagerLoadingStartupEnabled: false,
 								LazyLoadingEnabled:         false,
 								LazyLoadingIdleTimeout:     0,
-								SparsePersistenceEnabled:   true,
 							},
 						},
 						selectAllStrategy{},
@@ -1727,7 +1725,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, true, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
+		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
 	}
 
@@ -1765,7 +1763,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, true, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
+		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
 	}
 
@@ -1775,9 +1773,8 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		logger:     logger,
 		indexCache: indexCache,
 		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), indexheader.Config{
-			LazyLoadingEnabled:       false,
-			LazyLoadingIdleTimeout:   0,
-			SparsePersistenceEnabled: true,
+			LazyLoadingEnabled:     false,
+			LazyLoadingIdleTimeout: 0,
 		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil), indexheader.LazyLoadedHeadersSnapshotConfig{}),
 		metrics:  NewBucketStoreMetrics(nil),
 		blockSet: &bucketBlockSet{blocks: []*bucketBlock{b1, b2}},
@@ -1907,7 +1904,7 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 	tb, store, seriesSet1, seriesSet2, block1, block2, cleanup := setupStoreForHintsTest(t, 5000)
 	tb.Cleanup(cleanup)
 	for _, streamingBatchSize := range []int{0, 1, 5} {
-		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(*testing.T) {
 			runTestServerSeries(tb, store, streamingBatchSize, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
 		})
 	}
@@ -1946,7 +1943,6 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 				EagerLoadingStartupEnabled: false,
 				LazyLoadingEnabled:         false,
 				LazyLoadingIdleTimeout:     0,
-				SparsePersistenceEnabled:   true,
 			},
 		},
 		selectAllStrategy{},
@@ -2004,7 +2000,6 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 				EagerLoadingStartupEnabled: false,
 				LazyLoadingEnabled:         false,
 				LazyLoadingIdleTimeout:     0,
-				SparsePersistenceEnabled:   true,
 			},
 		},
 		selectAllStrategy{},
@@ -2070,7 +2065,6 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 				EagerLoadingStartupEnabled: false,
 				LazyLoadingEnabled:         false,
 				LazyLoadingIdleTimeout:     0,
-				SparsePersistenceEnabled:   true,
 			},
 		},
 		selectAllStrategy{},
@@ -2197,7 +2191,6 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 				EagerLoadingStartupEnabled: false,
 				LazyLoadingEnabled:         false,
 				LazyLoadingIdleTimeout:     0,
-				SparsePersistenceEnabled:   true,
 			},
 		},
 		selectAllStrategy{},
@@ -2363,7 +2356,6 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 								EagerLoadingStartupEnabled: false,
 								LazyLoadingEnabled:         false,
 								LazyLoadingIdleTimeout:     0,
-								SparsePersistenceEnabled:   true,
 							},
 						},
 						selectAllStrategy{},
@@ -2563,7 +2555,6 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 				EagerLoadingStartupEnabled: false,
 				LazyLoadingEnabled:         false,
 				LazyLoadingIdleTimeout:     0,
-				SparsePersistenceEnabled:   true,
 			},
 		},
 		selectAllStrategy{},
@@ -2960,11 +2951,14 @@ func runTestServerSeries(t test.TB, store *BucketStore, streamingBatchSize int, 
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
 				seriesSet, warnings, hints, _, err := srv.Series(context.Background(), c.Req)
-				require.NoError(t, err)
-				require.Equal(t, len(c.ExpectedWarnings), len(warnings), "%v", warnings)
-				require.Equal(t, len(c.ExpectedSeries), len(seriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)
-
+				if err != nil {
+					t.Fatal(err)
+				}
 				if !t.IsBenchmark() {
+					require.NoError(t, err)
+					require.Equal(t, len(c.ExpectedWarnings), len(warnings), "%v", warnings)
+					require.Equal(t, len(c.ExpectedSeries), len(seriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)
+
 					if len(c.ExpectedSeries) == 1 {
 						// For bucketStoreAPI chunks are not sorted within response. TODO: Investigate: Is this fine?
 						sort.Slice(seriesSet[0].Chunks, func(i, j int) bool {

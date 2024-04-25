@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
@@ -49,10 +50,11 @@ var (
 
 // HandlerConfig is a config for the handler.
 type HandlerConfig struct {
-	LogQueriesLongerThan   time.Duration          `yaml:"log_queries_longer_than"`
-	LogQueryRequestHeaders flagext.StringSliceCSV `yaml:"log_query_request_headers" category:"advanced"`
-	MaxBodySize            int64                  `yaml:"max_body_size" category:"advanced"`
-	QueryStatsEnabled      bool                   `yaml:"query_stats_enabled" category:"advanced"`
+	LogQueriesLongerThan     time.Duration          `yaml:"log_queries_longer_than"`
+	LogQueryRequestHeaders   flagext.StringSliceCSV `yaml:"log_query_request_headers" category:"advanced"`
+	MaxBodySize              int64                  `yaml:"max_body_size" category:"advanced"`
+	QueryStatsEnabled        bool                   `yaml:"query_stats_enabled" category:"advanced"`
+	ActiveSeriesWriteTimeout time.Duration          `yaml:"active_series_write_timeout" category:"experimental"`
 }
 
 func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
@@ -60,6 +62,7 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&cfg.LogQueryRequestHeaders, "query-frontend.log-query-request-headers", "Comma-separated list of request header names to include in query logs. Applies to both query stats and slow queries logs.")
 	f.Int64Var(&cfg.MaxBodySize, "query-frontend.max-body-size", 10*1024*1024, "Max body size for downstream prometheus.")
 	f.BoolVar(&cfg.QueryStatsEnabled, "query-frontend.query-stats-enabled", true, "False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query.")
+	f.DurationVar(&cfg.ActiveSeriesWriteTimeout, "query-frontend.active-series-write-timeout", 5*time.Minute, "Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used.")
 }
 
 // Handler accepts queries and forwards them to RoundTripper. It can wait on in-flight requests and log slow queries,
@@ -190,6 +193,19 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, r.Header.Get("User-Agent"), params) })
 	defer f.at.Delete(activityIndex)
 
+	if isActiveSeriesEndpoint(r) && f.cfg.ActiveSeriesWriteTimeout > 0 {
+		deadline := time.Now().Add(f.cfg.ActiveSeriesWriteTimeout)
+		err = http.NewResponseController(w).SetWriteDeadline(deadline)
+		if err != nil {
+			err := fmt.Errorf("failed to set write deadline for response writer: %w", err)
+			writeError(w, apierror.New(apierror.TypeInternal, err.Error()))
+			return
+		}
+		ctx, _ := context.WithDeadlineCause(r.Context(), deadline,
+			cancellation.NewErrorf("write deadline exceeded (timeout: %v)", f.cfg.ActiveSeriesWriteTimeout))
+		r = r.WithContext(ctx)
+	}
+
 	startTime := time.Now()
 	resp, err := f.roundTripper.RoundTrip(r)
 	queryResponseTime := time.Since(startTime)
@@ -199,6 +215,16 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, 0, err)
 		return
 	}
+
+	// Make sure to close the response body to release resources associated with this request.
+	defer func() {
+		if resp.Body != nil {
+			err = resp.Body.Close()
+			if err != nil {
+				level.Warn(f.log).Log("msg", "failed to close response body", "err", err)
+			}
+		}
+	}()
 
 	hs := w.Header()
 	for h, vs := range resp.Header {
@@ -440,4 +466,8 @@ func httpRequestActivity(request *http.Request, userAgent string, requestParams 
 
 	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
 	return fmt.Sprintf("user:%s UA:%s req:%s %s %s", tenantID, userAgent, request.Method, request.URL.Path, params)
+}
+
+func isActiveSeriesEndpoint(r *http.Request) bool {
+	return strings.HasSuffix(r.URL.Path, "api/v1/cardinality/active_series")
 }

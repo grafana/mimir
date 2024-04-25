@@ -61,6 +61,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1004,7 +1005,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			testReplica:     "instance1234567890123456789012345678901234567890",
 			cluster:         "cluster0",
 			samples:         5,
-			expectedError:   status.New(codes.FailedPrecondition, fmt.Sprintf(labelValueTooLongMsgFormat, "instance1234567890123456789012345678901234567890", mimirpb.FromLabelAdaptersToString(labelSetGenWithReplicaAndCluster("instance1234567890123456789012345678901234567890", "cluster0")(0)))),
+			expectedError:   status.New(codes.FailedPrecondition, fmt.Sprintf(labelValueTooLongMsgFormat, "__replica__", "instance1234567890123456789012345678901234567890", mimirpb.FromLabelAdaptersToString(labelSetGenWithReplicaAndCluster("instance1234567890123456789012345678901234567890", "cluster0")(0)))),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 	} {
@@ -1196,7 +1197,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			var m model.Matrix
 			if len(resp.Chunkseries) == 0 {
-				m, err = client.TimeSeriesChunksToMatrix(0, 10, nil)
+				m, err = client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
 			} else {
 				m, err = client.TimeSeriesChunksToMatrix(0, 10, resp.Chunkseries)
 			}
@@ -1885,7 +1886,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 		expectedErr   string
 	}{
 		"all samples successfully pushed": {
-			prepareConfig: func(limits *validation.Limits) {},
+			prepareConfig: func(*validation.Limits) {},
 			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
 				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
@@ -2075,7 +2076,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			limits.IngestionRate = float64(rate.Inf) // Unlimited.
 			testData.prepareConfig(&limits)
 
-			distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
+			distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
 				return &noopIngester{}, nil
 			})
 
@@ -4397,7 +4398,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 
 			nextCallCount := 0
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *Request) error {
+			next := func(_ context.Context, pushReq *Request) error {
 				nextCallCount++
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
@@ -4463,7 +4464,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
-	mockPush := func(ctx context.Context, pushReq *Request) error {
+	mockPush := func(_ context.Context, pushReq *Request) error {
 		defer pushReq.CleanUp()
 		writeReq, err := pushReq.WriteRequest()
 		require.NoError(t, err)
@@ -4646,7 +4647,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			}
 
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *Request) error {
+			next := func(_ context.Context, pushReq *Request) error {
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
@@ -4724,7 +4725,7 @@ func TestSortAndFilterMiddleware(t *testing.T) {
 			}
 
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *Request) error {
+			next := func(_ context.Context, pushReq *Request) error {
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
@@ -4798,6 +4799,13 @@ type ingesterZoneState struct {
 	ringStates []ring.InstanceState
 }
 
+type ingesterIngestionType string
+
+const (
+	ingesterIngestionTypeGRPC  = "grpc"
+	ingesterIngestionTypeKafka = "kafka"
+)
+
 type prepConfig struct {
 	// numIngesters, happyIngesters, and ingesterZones are superseded by ingesterStateByZone
 	numIngesters, happyIngesters int
@@ -4815,6 +4823,10 @@ type prepConfig struct {
 
 	// ingesterDataTenantID is the tenant under which ingesterDataByZone is pushed
 	ingesterDataTenantID string
+
+	// ingesterIngestionType allows to override how the ingester is expected to receive data.
+	// If empty, it defaults to the ingestion storage type configured in the test.
+	ingesterIngestionType ingesterIngestionType
 
 	queryDelay       time.Duration
 	pushDelay        time.Duration
@@ -4835,6 +4847,12 @@ type prepConfig struct {
 	ingestStorageEnabled    bool
 	ingestStoragePartitions int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
 	ingestStorageKafka      *kfake.Cluster
+
+	// We need this setting to simulate a response from ingesters that didn't support responding
+	// with a stream of chunks, and were responding with chunk series instead. This is needed to
+	// ensure backwards compatibility, i.e., that queriers can still correctly handle both types
+	// or responses.
+	disableStreamingResponse bool
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -4884,6 +4902,15 @@ func (c prepConfig) ingesterRingState(zone string, id int) ring.InstanceState {
 		return ring.ACTIVE
 	}
 	return c.ingesterStateByZone[zone].ringStates[id]
+}
+
+func (c prepConfig) ingesterShouldConsumeFromKafka() bool {
+	if c.ingesterIngestionType == "" {
+		// If the ingestion type has not been overridden then consume from Kafka when ingest storage is enabled.
+		return c.ingestStorageEnabled
+	}
+
+	return c.ingesterIngestionType == ingesterIngestionTypeKafka
 }
 
 func (c prepConfig) validate(t testing.TB) {
@@ -4973,11 +5000,12 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
 			circuitBreakerOpen:            cfg.circuitBreakerOpen,
+			disableStreamingResponse:      cfg.disableStreamingResponse,
 		}
 
-		// Init the partition reader if the ingest storage is enabled.
+		// Init the partition reader if the ingester should consume from Kafka.
 		// This is required to let each mocked ingester to consume their own partition.
-		if cfg.ingestStorageEnabled {
+		if cfg.ingesterShouldConsumeFromKafka() {
 			var err error
 
 			kafkaCfg := ingest.KafkaConfig{}
@@ -5003,7 +5031,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 	}
 
 	// Wait until all partition readers have started.
-	if cfg.ingestStorageEnabled {
+	if cfg.ingesterShouldConsumeFromKafka() {
 		for _, ingester := range ingesters {
 			require.NoError(t, ingester.partitionReader.AwaitRunning(context.Background()))
 		}
@@ -5563,14 +5591,35 @@ type mockIngester struct {
 	tokens                        []uint32
 	id                            int
 	circuitBreakerOpen            bool
+	disableStreamingResponse      bool
 
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
 	partitionReader *ingest.PartitionReader
+
+	// Hooks.
+	hooksMx        sync.Mutex
+	beforePushHook func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool)
+}
+
+func (i *mockIngester) registerBeforePushHook(fn func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool)) {
+	i.hooksMx.Lock()
+	defer i.hooksMx.Unlock()
+	i.beforePushHook = fn
+}
+
+func (i *mockIngester) getBeforePushHook() func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool) {
+	i.hooksMx.Lock()
+	defer i.hooksMx.Unlock()
+	return i.beforePushHook
 }
 
 func (i *mockIngester) instanceID() string {
-	return fmt.Sprintf("ingester-%s-%d", i.zone, i.id)
+	if i.zone != "" {
+		return fmt.Sprintf("ingester-%s-%d", i.zone, i.id)
+	}
+
+	return fmt.Sprintf("ingester-%d", i.id)
 }
 
 // partitionID returns the partition ID owned by this ingester when ingest storage is used.
@@ -5598,6 +5647,24 @@ func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
 	return result
 }
 
+// metricNames return a sorted list of ingested metric names.
+func (i *mockIngester) metricNames() []string {
+	i.Lock()
+	defer i.Unlock()
+
+	var out []string
+
+	for _, series := range i.timeseries {
+		if metricName, err := extract.UnsafeMetricNameFromLabelAdapters(series.Labels); err == nil && !slices.Contains(out, metricName) {
+			out = append(out, metricName)
+		}
+	}
+
+	slices.Sort(out)
+
+	return out
+}
+
 func (i *mockIngester) Check(context.Context, *grpc_health_v1.HealthCheckRequest, ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
 	i.trackCall("Check")
 
@@ -5612,6 +5679,12 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 	i.trackCall("Push")
 
 	time.Sleep(i.pushDelay)
+
+	if hook := i.getBeforePushHook(); hook != nil {
+		if res, err, handled := hook(ctx, req); handled {
+			return res, err
+		}
+	}
 
 	i.Lock()
 	defer i.Unlock()
@@ -5801,7 +5874,16 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			}
 		}
 
-		if req.StreamingChunksBatchSize > 0 {
+		if i.disableStreamingResponse || req.StreamingChunksBatchSize == 0 {
+			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
+				Chunkseries: []client.TimeSeriesChunk{
+					{
+						Labels: ts.Labels,
+						Chunks: wireChunks,
+					},
+				},
+			})
+		} else {
 			streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
 				StreamingSeries: []client.QueryStreamSeries{
 					{
@@ -5819,28 +5901,19 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 					},
 				},
 			})
-		} else {
-			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
-				Chunkseries: []client.TimeSeriesChunk{
-					{
-						Labels: ts.Labels,
-						Chunks: wireChunks,
-					},
-				},
-			})
 		}
 	}
 
 	var results []*client.QueryStreamResponse
 
-	if req.StreamingChunksBatchSize > 0 {
+	if i.disableStreamingResponse {
+		results = nonStreamingResponses
+	} else {
 		endOfLabelsMessage := &client.QueryStreamResponse{
 			IsEndOfSeriesStream: true,
 		}
 		results = append(streamingLabelResponses, endOfLabelsMessage)
 		results = append(results, streamingChunkResponses...)
-	} else {
-		results = nonStreamingResponses
 	}
 
 	return &stream{
@@ -6293,9 +6366,10 @@ func newMockIngesterPusherAdapter(ingester *mockIngester) *mockIngesterPusherAda
 	}
 }
 
-// Push implements ingest.Pusher.
-func (c *mockIngesterPusherAdapter) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	return c.ingester.Push(ctx, req)
+// PushToStorage implements ingest.Pusher.
+func (c *mockIngesterPusherAdapter) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
+	_, err := c.ingester.Push(ctx, req)
+	return err
 }
 
 // noopIngester is a mocked ingester which does nothing.
@@ -6676,7 +6750,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 	exemplarLabelGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{{Name: "exemplarLabel", Value: fmt.Sprintf("value_%d", sampleIdx)}}
 	}
-	metaDataGen := func(metricIdx int, metricName string) *mimirpb.MetricMetadata {
+	metaDataGen := func(_ int, metricName string) *mimirpb.MetricMetadata {
 		return &mimirpb.MetricMetadata{
 			Type:             mimirpb.COUNTER,
 			MetricFamilyName: metricName,
@@ -7030,7 +7104,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	exemplarLabelGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{{Name: "exemplarLabel", Value: fmt.Sprintf("value_%d", sampleIdx)}}
 	}
-	metaDataGen := func(metricIdx int, metricName string) *mimirpb.MetricMetadata {
+	metaDataGen := func(_ int, metricName string) *mimirpb.MetricMetadata {
 		return &mimirpb.MetricMetadata{
 			Type:             mimirpb.COUNTER,
 			MetricFamilyName: metricName,
@@ -7407,46 +7481,43 @@ func TestStartFinishRequest(t *testing.T) {
 	}
 }
 
-func TestSendMessageMetadata(t *testing.T) {
-	var distributorCfg Config
-	var clientConfig client.Config
-	var ringConfig ring.Config
-	flagext.DefaultValues(&distributorCfg, &clientConfig, &ringConfig)
+func TestDistributor_Push_SendMessageMetadata(t *testing.T) {
+	const userID = "test"
 
-	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-	ringConfig.KVStore.Mock = kvStore
-	ingestersRing, err := ring.New(ringConfig, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-
-	mock := &mockInstanceClient{}
-	distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
-		return mock, nil
+	distributors, ingesters, _, _ := prepare(t, prepConfig{
+		numIngesters:      1,
+		happyIngesters:    1,
+		numDistributors:   1,
+		replicationFactor: 1,
 	})
 
-	d, err := New(distributorCfg, clientConfig, validation.MockDefaultOverrides(), nil, ingestersRing, nil, false, nil, log.NewNopLogger())
-	require.NoError(t, err)
-	require.NotNil(t, d)
+	require.Len(t, distributors, 1)
+	require.Len(t, ingesters, 1)
 
 	ctx := context.Background()
-	ctx = user.InjectOrgID(ctx, "test")
+	ctx = user.InjectOrgID(ctx, userID)
 
 	req := &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
-			{TimeSeries: &mimirpb.TimeSeries{
-				Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test1"}},
-				Exemplars: []mimirpb.Exemplar{},
-			}},
+			makeTimeseries([]string{model.MetricNameLabel, "test1"}, makeSamples(time.Now().UnixMilli(), 1), nil),
 		},
 		Source: mimirpb.API,
 	}
 
-	err = d.sendToIngester(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req)
+	// Register a hook in the ingester's Push() to check whether the context contains the expected gRPC metadata.
+	ingesters[0].registerBeforePushHook(func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool) {
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		require.Equal(t, []string{strconv.Itoa(req.Size())}, md[grpcutil.MetadataMessageSize])
+
+		return nil, nil, false
+	})
+
+	_, err := distributors[0].Push(ctx, req)
 	require.NoError(t, err)
 
-	// Verify that d.sendToIngester added message size to metadata.
-	require.Equal(t, []string{strconv.Itoa(req.Size())}, mock.md[grpcutil.MetadataMessageSize])
+	// Ensure the ingester's Push() has been called.
+	require.Equal(t, 1, ingesters[0].countCalls("Push"))
 }
 
 func TestQueryIngestersRingZoneSorter(t *testing.T) {
@@ -7646,21 +7717,6 @@ func uniqueZones(instances []ring.InstanceDesc) []string {
 	})
 
 	return zones
-}
-
-type mockInstanceClient struct {
-	client.HealthAndIngesterClient
-
-	md metadata.MD
-}
-
-func (m *mockInstanceClient) Check(_ context.Context, _ *grpc_health_v1.HealthCheckRequest, _ ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
-	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
-}
-
-func (m *mockInstanceClient) Push(ctx context.Context, _ *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
-	m.md, _ = metadata.FromOutgoingContext(ctx)
-	return nil, nil
 }
 
 func cloneTimeseries(orig *mimirpb.TimeSeries) (*mimirpb.TimeSeries, error) {

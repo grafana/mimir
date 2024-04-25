@@ -420,7 +420,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.12.0
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -482,7 +482,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.13.0
+        image: grafana/rollout-operator:v0.14.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -547,8 +547,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -623,7 +621,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.12.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -717,8 +715,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -793,7 +789,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.12.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -887,8 +883,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -963,7 +957,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.12.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1101,7 +1095,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.12.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1239,7 +1233,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.12.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1377,7 +1371,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.12.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:

@@ -304,7 +304,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 		t.Run(fmt.Sprintf("consume with .Next() method, perform .At() after every %dth call to .Next()", callAtEvery), func(t *testing.T) {
 			t.Parallel()
 
-			advance := func(it chunkenc.Iterator, wantTs int64) chunkenc.ValueType { return it.Next() }
+			advance := func(it chunkenc.Iterator, _ int64) chunkenc.ValueType { return it.Next() }
 			ss := getSeriesSet()
 
 			verifyNextSeries(t, ss, labels.FromStrings("__name__", "first", "a", "a"), 3*time.Millisecond, []timeRange{

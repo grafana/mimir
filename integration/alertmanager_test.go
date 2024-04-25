@@ -979,6 +979,29 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 }
 
 func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
+	testGrafanaConfig := `{
+		"template_files": {},
+		"alertmanager_config": {
+			"route": {
+				"receiver": "test_receiver",
+				"group_by": ["alertname"]
+			},
+			"receivers": [{
+				"name": "test_receiver",
+				"grafana_managed_receiver_configs": [{
+					"uid": "",
+					"name": "email test",
+					"type": "email",
+					"disableResolveMessage": true,
+					"settings": {
+						"addresses": "test@test.com"
+					},
+					"secureSettings": null
+				}]
+			}],
+			"templates": null
+		}
+	}`
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -1011,13 +1034,12 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 
 			// Now, let's set a config.
 			now := time.Now().UnixMilli()
-			err = c.SetGrafanaAlertmanagerConfig(context.Background(), int64(1), now, "a grafana configuration", "bb788eaa294c05ec556c1ed87546b7a9", false)
+			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", false)
 			require.NoError(t, err)
 
 			// With that set, let's get it back.
 			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
 			require.NoError(t, err)
-			require.Equal(t, int64(1), cfg.ID)
 			require.Equal(t, now, cfg.CreatedAt)
 		}
 
@@ -1033,13 +1055,12 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 
 			// Now, let's set a config.
 			now := time.Now().UnixMilli()
-			err = c.SetGrafanaAlertmanagerConfig(context.Background(), int64(5), now, "a grafana configuration", "bb788eaa294c05ec556c1ed87546b7a9", false)
+			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", false)
 			require.NoError(t, err)
 
 			// With that set, let's get it back.
 			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
 			require.NoError(t, err)
-			require.Equal(t, int64(5), cfg.ID)
 			require.Equal(t, now, cfg.CreatedAt)
 
 			// Now, let's delete it.

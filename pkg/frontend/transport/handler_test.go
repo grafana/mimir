@@ -334,7 +334,7 @@ func TestHandler_Stop(t *testing.T) {
 	)
 	inProgress := make(chan int32)
 	var reqID atomic.Int32
-	roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+	roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
 		id := reqID.Inc()
 		t.Logf("request %d sending its ID", id)
 		inProgress <- id
@@ -464,7 +464,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			// the details aren't set by the query stats middleware if the request isn't a query
 			name:                         "not a query request",
 			requestFormFields:            []string{},
-			setQueryDetails:              func(d *querymiddleware.QueryDetails) {},
+			setQueryDetails:              func(*querymiddleware.QueryDetails) {},
 			expectedLoggedFields:         map[string]string{},
 			expectedApproximateDurations: map[string]time.Duration{},
 			expectedMissingFields:        []string{"length", "param_time", "time_since_param_start", "time_since_param_end"},
@@ -529,6 +529,79 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 				assert.NoError(t, err)
 				assert.InDelta(t, expectedDuration, actualDuration, float64(time.Second))
 			}
+		})
+	}
+}
+
+func TestHandler_ActiveSeriesWriteTimeout(t *testing.T) {
+	const serverWriteTimeout = 50 * time.Millisecond
+	const activeSeriesWriteTimeout = 150 * time.Millisecond
+
+	for _, tt := range []struct {
+		name            string
+		path            string
+		requestDuration time.Duration
+		wantError       bool
+		wantCtxCancel   bool
+	}{
+		{
+			name:            "deadline exceeded for non-streaming endpoint",
+			path:            "/api/v1/query",
+			requestDuration: 100 * time.Millisecond,
+			wantError:       true,
+		},
+		{
+			name:            "deadline not exceeded for active series endpoint",
+			path:            "/api/v1/cardinality/active_series",
+			requestDuration: 100 * time.Millisecond,
+		},
+		{
+			name:            "deadline exceeded for active series endpoint",
+			path:            "/api/v1/cardinality/active_series",
+			requestDuration: 200 * time.Millisecond,
+			wantError:       true,
+			wantCtxCancel:   true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+
+			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				// Simulate a request that takes longer than the server write timeout.
+				select {
+				case <-req.Context().Done():
+					assert.EqualError(t, context.Cause(req.Context()),
+						fmt.Sprintf("context canceled: write deadline exceeded (timeout: %v)", activeSeriesWriteTimeout))
+					return nil, req.Context().Err()
+				case <-time.After(tt.requestDuration):
+					if tt.wantCtxCancel {
+						assert.Fail(t, "request context should have been cancelled")
+					}
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+				}
+			})
+
+			handler := NewHandler(
+				HandlerConfig{ActiveSeriesWriteTimeout: activeSeriesWriteTimeout},
+				roundTripper, log.NewNopLogger(), nil, nil,
+			)
+
+			server := httptest.NewUnstartedServer(handler)
+			server.Config.WriteTimeout = serverWriteTimeout
+			server.Start()
+			defer server.Close()
+
+			req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s%s", server.URL, tt.path), nil)
+			require.NoError(t, err)
+			resp, err := http.DefaultClient.Do(req)
+			if tt.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			defer func() {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			}()
 		})
 	}
 }

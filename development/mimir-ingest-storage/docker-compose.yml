@@ -12,25 +12,31 @@
       - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards"
   "grafana-agent":
     "command":
-      - "-config.file=/etc/agent-config/grafana-agent.yaml"
-      - "-metrics.wal-directory=/tmp"
-      - "-server.http.address=127.0.0.1:9091"
-    "image": "grafana/agent:v0.37.3"
+      - "run"
+      - "--storage.path=/tmp"
+      - "--server.http.listen-addr=127.0.0.1:9091"
+      - "/etc/agent-config/grafana-agent.flow"
+    "environment":
+      "AGENT_MODE": "flow"
+    "image": "grafana/agent:v0.40.0"
     "ports":
       - "9091:9091"
     "volumes":
       - "./config:/etc/agent-config"
   "kafka":
-    "depends_on":
-      - "zookeeper"
     "environment":
+      - "CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg"
       - "KAFKA_BROKER_ID=1"
       - "KAFKA_NUM_PARTITIONS=100"
-      - "KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181"
-      - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,ORBSTACK://kafka.mimir-read-write-mode.orb.local:9091,PLAINTEXT_HOST://localhost:29092"
-      - "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,ORBSTACK:PLAINTEXT"
+      - "KAFKA_PROCESS_ROLES=broker,controller"
+      - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092"
+      - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092"
+      - "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
       - "KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT"
+      - "KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER"
+      - "KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093"
       - "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1"
+      - "KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000"
     "healthcheck":
       "interval": "1s"
       "retries": "30"
@@ -303,13 +309,4 @@
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
-  "zookeeper":
-    "environment":
-      - "ZOOKEEPER_CLIENT_PORT=2181"
-      - "ZOOKEEPER_TICK_TIME=2000"
-      - "ZOOKEEPER_AUTOPURGE_SNAPRETAINCOUNT=5"
-      - "ZOOKEEPER_AUTOPURGE_PURGEINTERVAL=1"
-    "image": "confluentinc/cp-zookeeper:latest"
-    "ports":
-      - "22181:22181"
 "version": "3.4"

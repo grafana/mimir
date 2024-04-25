@@ -42,19 +42,12 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       
-      tolerations:
-        []
       terminationGracePeriodSeconds: 60
+      volumes:
       containers:
         - name: memcached
-          image: memcached:1.6.23-alpine
+          image: memcached:1.6.26-alpine
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -80,8 +73,9 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          volumeMounts:
         - name: exporter
-          image: prom/memcached-exporter:v0.14.2
+          image: prom/memcached-exporter:v0.14.3
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9150

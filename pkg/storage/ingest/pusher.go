@@ -19,7 +19,7 @@ import (
 )
 
 type Pusher interface {
-	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
+	PushToStorage(context.Context, *mimirpb.WriteRequest) error
 }
 
 type pusherConsumer struct {
@@ -47,12 +47,13 @@ func newPusherConsumer(p Pusher, reg prometheus.Registerer, l log.Logger) *pushe
 	return &pusherConsumer{
 		p: p,
 		l: l,
-		processingTimeSeconds: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
-			Name:       "cortex_ingest_storage_reader_processing_time_seconds",
-			Help:       "Time taken to process a single record (write request).",
-			Objectives: latencySummaryObjectives,
-			MaxAge:     time.Minute,
-			AgeBuckets: 10,
+		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_ingest_storage_reader_processing_time_seconds",
+			Help:                            "Time taken to process a single record (write request).",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			Buckets:                         prometheus.DefBuckets,
 		}),
 		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
 		serverErrRequests: errRequestsCounter.WithLabelValues("server"),
@@ -88,17 +89,27 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 		processingStart := time.Now()
 
 		ctx := user.InjectOrgID(ctx, wr.tenantID)
-		_, err := c.p.Push(ctx, wr.WriteRequest)
+		err := c.p.PushToStorage(ctx, wr.WriteRequest)
 
 		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 		c.totalRequests.Inc()
+
 		if err != nil {
 			if !mimirpb.IsClientError(err) {
 				c.serverErrRequests.Inc()
 				return fmt.Errorf("consuming record at index %d for tenant %s: %w", recordIdx, wr.tenantID, err)
 			}
 			c.clientErrRequests.Inc()
-			level.Warn(c.l).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "err", err, "user", wr.tenantID)
+
+			// The error could be sampled or marked to be skipped in logs, so we check whether it should be
+			// logged before doing it.
+			if keep, reason := shouldLog(ctx, err); keep {
+				if reason != "" {
+					err = fmt.Errorf("%w (%s)", err, reason)
+				}
+
+				level.Warn(c.l).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "err", err, "user", wr.tenantID)
+			}
 		}
 	}
 	return nil

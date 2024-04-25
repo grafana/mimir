@@ -39,8 +39,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: query-scheduler
           imagePullPolicy: IfNotPresent
@@ -85,10 +83,6 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -97,8 +91,6 @@ spec:
           matchLabels:
             app: enterprise-metrics-query-scheduler
             release: test-enterprise-legacy-label-values
-      tolerations:
-        []
       terminationGracePeriodSeconds: 180
       volumes:
         - name: config
