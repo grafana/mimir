@@ -202,6 +202,7 @@ func (d *shardActiveSeriesResponseDecoder) streamData() error {
 		if cb.Len() >= activeSeriesChunkMaxBufferSize {
 			d.streamCh <- cb
 			cb = activeSeriesChunkBufferPool.Get().(*bytes.Buffer)
+			firstItem = true
 		}
 	}
 	d.checkContextCanceled()

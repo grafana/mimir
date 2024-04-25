@@ -5,7 +5,6 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -91,7 +90,6 @@ func TestShardActiveSeriesResponseDecoder(t *testing.T) {
 
 				// Drain the data channel.
 				for streamBuf := range streamCh {
-					fmt.Println(streamBuf.String())
 					dataStr.WriteString(streamBuf.String())
 				}
 			} else {
