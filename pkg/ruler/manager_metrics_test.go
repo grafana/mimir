@@ -136,7 +136,7 @@ cortex_prometheus_rule_group_rules{rule_group="group_one",user="user3"} 100000
 cortex_prometheus_rule_group_rules{rule_group="group_two",user="user1"} 1000
 cortex_prometheus_rule_group_rules{rule_group="group_two",user="user2"} 10000
 cortex_prometheus_rule_group_rules{rule_group="group_two",user="user3"} 100000
-# HELP cortex_prometheus_rule_group_last_restore_duration_seconds The duration of the last alert rules alerts restoration using the `+"`ALERTS_FOR_STATE`"+` series.
+# HELP cortex_prometheus_rule_group_last_restore_duration_seconds The duration of the last alert rules alerts restoration using the `+"`ALERTS_FOR_STATE`"+` series across all rule groups.
 # TYPE cortex_prometheus_rule_group_last_restore_duration_seconds gauge
 cortex_prometheus_rule_group_last_restore_duration_seconds{user="user1"} 20
 cortex_prometheus_rule_group_last_restore_duration_seconds{user="user2"} 200
