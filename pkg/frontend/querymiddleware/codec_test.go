@@ -426,7 +426,7 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 			var queryExpr parser.Expr
 			if testCase.updatedQuery != "" {
 				// reset start and end
-				updatedMetricsQuery := testCase.initialMetricsQuery.WithStartEnd(start, end)
+				updatedMetricsQuery = testCase.initialMetricsQuery.WithStartEnd(start, end)
 
 				queryExpr, err = parser.ParseExpr(testCase.updatedQuery)
 				updatedMetricsQuery = updatedMetricsQuery.WithExpr(queryExpr)
