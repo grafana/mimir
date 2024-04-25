@@ -91,7 +91,7 @@ func NewManagerMetrics(logger log.Logger) *ManagerMetrics {
 		),
 		GroupLastRestoreDuration: prometheus.NewDesc(
 			"cortex_prometheus_rule_group_last_restore_duration_seconds",
-			"The duration of the last alert rules alerts restoration using the `ALERTS_FOR_STATE` series.",
+			"The duration of the last alert rules alerts restoration using the `ALERTS_FOR_STATE` series across all rule groups.",
 			[]string{"user"},
 			nil,
 		),
