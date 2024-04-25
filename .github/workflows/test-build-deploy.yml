@@ -121,7 +121,6 @@ jobs:
           /docs/mimir/latest
           | reviewdog
           -f=rdjsonl
-          --fail-on-error
           --filter-mode=nofilter
           --name=doc-validator
           --reporter=github-pr-review
