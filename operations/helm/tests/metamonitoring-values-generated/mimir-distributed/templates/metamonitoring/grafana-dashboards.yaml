@@ -25627,7 +25627,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Replicas\nThe maximum and current number of ruler-querier replicas.\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
+                      "description": "### Replicas\nThe maximum and current number of ruler-querier replicas.<br /><br />\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -39419,7 +39419,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Replicas\nThe maximum and current number of distributor replicas.\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
+                      "description": "### Replicas\nThe maximum and current number of distributor replicas.<br /><br />\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -39679,7 +39679,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Distributor - autoscaling",
+                "title": "Distributor – autoscaling",
                 "titleSize": "h6"
              },
              {
