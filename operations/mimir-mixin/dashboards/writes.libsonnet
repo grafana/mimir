@@ -449,7 +449,7 @@ local filename = 'mimir-writes.json';
           'Replicas (ReplicaTemplate)',
           |||
             The maximum and current number of replicas for ReplicaTemplate object.
-            Rollout-operator will keep ingesters replicas updated based on this object.
+            Rollout-operator will keep ingester replicas updated based on this object.
             <br /><br />
             Note: The current number of replicas can still show 1 replica even when scaled to 0.
             Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
