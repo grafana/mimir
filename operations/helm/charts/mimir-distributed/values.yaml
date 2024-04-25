@@ -2569,7 +2569,7 @@ nginx:
       pid        /tmp/nginx.pid;
       worker_rlimit_nofile 8192;
       {{ if .Values.nginx.nginxConfig.clientMaxBodySize }}
-        client_max_body_size {{ .Values.nginx.nginxConfig.clientMaxBodySize }};
+      client_max_body_size {{ .Values.nginx.nginxConfig.clientMaxBodySize }};
       {{ end }}
 
       events {
