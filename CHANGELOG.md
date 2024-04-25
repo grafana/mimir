@@ -7,6 +7,9 @@
 * [CHANGE] Ingester: `/ingester/flush` endpoint is now only allowed to execute only while the ingester is in `Running` state. The 503 status code is returned if the endpoint is called while the ingester is not in `Running` state. #7486
 * [CHANGE] Distributor: Include label name in `err-mimir-label-value-too-long` error message: #7740
 * [CHANGE] Ingester: enabled 1 out 10 errors log sampling by default. All the discarded samples will still be tracked by the `cortex_discarded_samples_total` metric. The feature can be configured via `-ingester.error-sample-rate` (0 to log all errors). #7807
+* [CHANGE] Query-frontend: Query results caching and experimental query blocking now utilize the PromQL string-formatted query format rather than the unvalidated query as submitted to the frontend. #7742
+  * Query results caching should be more stable as all equivalent queries receive the same cache key, but there may be cache churn on first deploy with the updated format
+  * Query blocking can no longer be circumvented with an equivalent query in a different format; see [Configure queries to block](https://grafana.com/docs/mimir/latest/configure/configure-blocked-queries/)
 * [FEATURE] Continuous-test: now runable as a module with `mimir -target=continuous-test`. #7747
 * [FEATURE] Store-gateway: Allow specific tenants to be enabled or disabled via `-store-gateway.enabled-tenants` or `-store-gateway.disabled-tenants` CLI flags or their corresponding YAML settings. #7653
 * [FEATURE] New `-<prefix>.s3.bucket-lookup-type` flag configures lookup style type, used to access bucket in s3 compatible providers. #7684
@@ -39,6 +42,7 @@
 * [BUGFIX] Ingester: ignore instances with no tokens when calculating local limits to prevent discards during ingester scale-up #7881
 * [BUGFIX] Ingester: do not reuse exemplars slice in the write request if there are more than 10 exemplars per series. This should help to reduce the in-use memory in case of few requests with a very large number of exemplars. #7936
 * [BUGFIX] Distributor: fix down scaling of native histograms in the distributor when timeseries unmarshal cache is in use. #7947
+* [BUGFIX] Query-frontend: Experimental query queue splitting by query component now uses the query `minT` and `maxT` to predict query component rather than `start` and `end`. #7742
 
 ### Mixin
 
@@ -79,6 +83,7 @@
 
 * [CHANGE] Deprecated `--rule-files` flag in favor of CLI arguments. #7756
 * [BUGFIX] Fix panic in `loadgen` subcommand. #7629
+* [ENHANCEMENT] mimirtool promql format: Format PromQL query with Prometheus' string or pretty-print formatter. #7742
 * [BUGFIX] `mimirtool rules prepare`: do not add aggregation label to `on()` clause if already present in `group_left()` or `group_right()`. #7839
 
 ### Mimir Continuous Test
