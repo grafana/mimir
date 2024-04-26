@@ -178,7 +178,8 @@ func TestErrorWithStatus(t *testing.T) {
 			if data.doNotLog {
 				var optional middleware.OptionalLogging
 				require.ErrorAs(t, errWithStatus, &optional)
-				require.False(t, optional.ShouldLog(context.Background(), 0))
+				shouldLog, _ := optional.ShouldLog(context.Background())
+				require.False(t, shouldLog)
 			}
 		})
 	}
