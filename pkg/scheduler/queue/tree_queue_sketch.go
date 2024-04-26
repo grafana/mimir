@@ -32,6 +32,7 @@ type Tree struct {
 type ShuffleShardState struct {
 	tenantQuerierMap map[TenantID]map[QuerierID]struct{}
 	currentQuerier   *QuerierID
+	nodesChecked     int
 }
 
 func NewTree(nodeTypeByDepth []NodeType, shuffleShardState *ShuffleShardState) (*Tree, error) {
@@ -108,6 +109,11 @@ type RoundRobinNode struct {
 	queueOrder    []string // order for dequeueing from self/children
 	queueMap      map[string]TreeNodeIFace
 	depth         int
+	roundRobinState
+}
+
+type roundRobinState struct {
+	nodesChecked int
 }
 
 func (rrn *RoundRobinNode) enqueueBackByPath(t *Tree, pathFromNode QueuePath, v any) error {
@@ -129,7 +135,6 @@ func (rrn *RoundRobinNode) getOrAddNode(t *Tree, pathFromNode QueuePath) (TreeNo
 		return rrn, nil
 	}
 
-	// TODO (casie): make rrn.queueMap on node creation; why not?
 	var childNode TreeNodeIFace
 	var ok bool
 	if childNode, ok = rrn.queueMap[pathFromNode[0]]; !ok {
@@ -159,57 +164,79 @@ func (rrn *RoundRobinNode) Name() string {
 
 func (rrn *RoundRobinNode) dequeue() (QueuePath, any) {
 	var v any
+	var childPath QueuePath
 
-	initialLen := len(rrn.queueOrder)
 	path := QueuePath{rrn.name}
 
-	// iterate over all elements in rrn.queueOrder. If we ever find a valid value v, we'll return;
-	// otherwise, return nil if we iterate over all rrn.queueOrder and find nothing
-	for i := 0; i <= initialLen && v == nil; i++ {
-		if rrn.queuePosition == localQueueIndex {
-			// The next item should be dequeued from the local queue.
+	if rrn.IsEmpty() {
+		return path, nil
+	}
+
+	var checkedAllNodes bool
+	var dequeueNode TreeNodeIFace
+	// continue until we've found a value or checked all nodes that need checking
+	for v == nil && !checkedAllNodes {
+		dequeueNode, checkedAllNodes = rrn.dequeueGetNode()
+		// dequeueing from local queue
+		if dequeueNode == rrn {
 			if rrn.localQueue.Len() > 0 {
+				// dequeueNode is self, local queue non-empty
 				if elt := rrn.localQueue.Front(); elt != nil {
 					rrn.localQueue.Remove(elt)
 					v = elt.Value
 				}
 			}
-			rrn.queuePosition++
-			if rrn.queuePosition >= len(rrn.queueOrder) {
-				rrn.queuePosition = localQueueIndex
-			}
+		} else if dequeueNode == nil {
+			// no dequeue-able node found
+			return path, v
 		} else {
-			// dequeue from a child node
-			childNodeName := rrn.queueOrder[rrn.queuePosition]
-			childPath := QueuePath{}
-			childNode := rrn.queueMap[childNodeName]
-			childPath, v = childNode.dequeue()
-			path = append(path, childPath...)
-
-			if childNode.IsEmpty() {
-				// - delete child node from rrn.queueOrder
-				// - delete child node from rrn.queueMap
-				delete(rrn.queueMap, childNodeName)
-				// queueOrder may have been updated by another process? Make sure to only remove a node of matching name
+			// dequeue from a child
+			childPath, v = dequeueNode.dequeue()
+			if dequeueNode.IsEmpty() {
+				deleteNodeName := dequeueNode.Name()
+				delete(rrn.queueMap, deleteNodeName)
 				for idx, name := range rrn.queueOrder {
-					if name == childNodeName {
+					if name == deleteNodeName {
 						rrn.queueOrder = append(rrn.queueOrder[:idx], rrn.queueOrder[idx+1:]...)
 					}
 				}
-				// rrn.queuePosition only needs updated if it was originally at the end of the slice
-				if rrn.queuePosition >= len(rrn.queueOrder) {
-					rrn.queuePosition = localQueueIndex
-				}
-
-			} else { // the child node is either dequeued from or not, but is non-empty so we leave it be
-				rrn.queuePosition++
-				if rrn.queuePosition >= len(rrn.queueOrder) {
-					rrn.queuePosition = localQueueIndex
-				}
+				// removing an element sets our position one step forward; reset it to original queuePosition
+				rrn.queuePosition--
 			}
 		}
+		rrn.dequeueUpdateState(v)
 	}
-	return path, v
+	return append(path, childPath...), v
+}
+
+func (rrn *RoundRobinNode) dequeueGetNode() (TreeNodeIFace, bool) {
+	checkedAllNodes := rrn.nodesChecked == len(rrn.queueOrder)+1 // must check local queue as well
+	if rrn.queuePosition == localQueueIndex {
+		return rrn, checkedAllNodes
+	}
+	currentNodeName := rrn.queueOrder[rrn.queuePosition]
+	// if the node is in queueMap, return it
+	if node, ok := rrn.queueMap[currentNodeName]; ok {
+		return node, checkedAllNodes
+	}
+	// if not in queueMap, return nil
+	return nil, checkedAllNodes
+}
+
+func (rrn *RoundRobinNode) dequeueUpdateState(v any) {
+	// non-nil value dequeued; reset node check counter
+	if v != nil {
+		rrn.nodesChecked = 0
+	} else {
+		// v is still nil, increment node check counter
+		rrn.nodesChecked++
+	}
+
+	// either way, advance queue position
+	rrn.queuePosition++
+	if rrn.queuePosition >= len(rrn.queueOrder) {
+		rrn.queuePosition = localQueueIndex
+	}
 }
 
 func (rrn *RoundRobinNode) IsEmpty() bool {
@@ -231,62 +258,110 @@ func (ssn *ShuffleShardNode) Name() string {
 	return ssn.name
 }
 
-func (ssn *ShuffleShardNode) dequeue() (path QueuePath, v any) {
-	// start from ssn.queuePosition
-	// check that tenant for querierID against availabilityMap
-	// if exists, move element to "back" of queue
-	// if doesn't exist, check next child
-	// nothing here to dequeue
-	path = QueuePath{ssn.name}
+// start from ssn.queuePosition
+// check that tenant for querierID against availabilityMap
+// if exists, move element to "back" of queue
+// if doesn't exist, check next child
+// nothing here to dequeue
+func (ssn *ShuffleShardNode) dequeue() (QueuePath, any) {
+	var v any
+	var childPath QueuePath
+
+	path := QueuePath{ssn.name}
+
 	if ssn.IsEmpty() {
 		return path, nil
 	}
 
-	// can't get a tenant if no querier set
-	if ssn.currentQuerier == nil {
-		return path, nil
-	}
+	var checkedAllNodes bool
+	var dequeueNode TreeNodeIFace
 
-	// no children, but has a non-zero length local queue -- should probably never happen?
-	if len(ssn.queueOrder) == 0 {
-		if elt := ssn.localQueue.Front(); elt != nil {
-			ssn.localQueue.Remove(elt)
-			return path, elt.Value
+	for v == nil && !checkedAllNodes {
+		dequeueNode, checkedAllNodes = ssn.dequeueGetNode()
+		if dequeueNode == ssn {
+			if ssn.localQueue.Len() > 0 {
+				if elt := ssn.localQueue.Front(); elt != nil {
+					ssn.localQueue.Remove(elt)
+					v = elt.Value
+				}
+			}
+		} else if dequeueNode == nil {
+			// no node found for querier
+			return path, v
+		} else {
+			childPath, v = dequeueNode.dequeue()
+			if dequeueNode.IsEmpty() {
+				deleteNodeName := dequeueNode.Name()
+				delete(ssn.queueMap, deleteNodeName)
+				for idx, name := range ssn.queueOrder {
+					if name == deleteNodeName {
+						ssn.queueOrder = append(ssn.queueOrder[:idx], ssn.queueOrder[idx+1:]...)
+					}
+				}
+				// removing an element sets our position one step forward; reset to original
+				ssn.queuePosition--
+			}
 		}
+		ssn.dequeueUpdateState(v, dequeueNode.Name())
 	}
-
-	// node has children, dequeue from them first
-	// get the value
-	nodeName, dequeueNode := ssn.dequeueGetNode()
-
-	// no node for this querier
-	if dequeueNode == nil {
-		return path, v
-	}
-	childPath, v := dequeueNode.dequeue()
-	ssn.dequeueMoveToBack(nodeName)
-
-	// move the node in our order if appropriate
-
 	return append(path, childPath...), v
 }
 
+// move dequeueNode to the back of queueOrder, regardless of whether a value was found?
+func (ssn *ShuffleShardNode) dequeueUpdateState(v any, nodeName string) {
+	if v != nil {
+		ssn.nodesChecked = 0
+		ssn.queuePosition++
+		return
+	}
+
+	ssn.nodesChecked++
+
+	// if dequeueNode was self, advance queue position no matter what, and return
+	if ssn.queuePosition == localQueueIndex {
+		ssn.queuePosition++
+		return
+	}
+
+	// otherwise, don't change queuePosition, only move element to back
+	for i, child := range ssn.queueOrder {
+		if child == nodeName {
+			ssn.queueOrder = append(ssn.queueOrder[:i], append(ssn.queueOrder[i+1:], child)...) // ugly
+		}
+	}
+}
+
 // return a function which selects the tree node from which to dequeue; return fn passed to tree
-func (ssn *ShuffleShardNode) dequeueGetNode() (string, TreeNodeIFace) {
+func (ssn *ShuffleShardNode) dequeueGetNode() (TreeNodeIFace, bool) {
+	// can't get a tenant if no querier set
+	if ssn.currentQuerier == nil {
+		return nil, true
+	}
+
+	checkedAllNodes := ssn.nodesChecked == len(ssn.queueOrder)+1 // must check local queue as well
+	// no children
+	if len(ssn.queueOrder) == 0 || ssn.queuePosition == localQueueIndex {
+		return ssn, checkedAllNodes
+	}
+
 	checkIndex := ssn.queuePosition
+
 	for iters := 0; iters < len(ssn.queueOrder); iters++ {
-		if checkIndex > len(ssn.queueOrder) {
+		if checkIndex >= len(ssn.queueOrder) {
 			checkIndex = 0
 		}
 		tenantName := ssn.queueOrder[checkIndex]
+		// increment nodes checked even if not in tenant-querier map
+		ssn.nodesChecked++
+		checkedAllNodes = ssn.nodesChecked == len(ssn.queueOrder)
 		if tenantQuerierSet, ok := ssn.tenantQuerierMap[TenantID(tenantName)]; ok {
 			if _, ok := tenantQuerierSet[*ssn.currentQuerier]; ok {
-				return tenantName, ssn.queueMap[tenantName]
+				return ssn.queueMap[tenantName], checkedAllNodes
 			}
 		}
 		checkIndex++
 	}
-	return "", nil
+	return nil, checkedAllNodes
 }
 
 func (ssn *ShuffleShardNode) dequeueMoveToBack(name string) {
@@ -322,9 +397,9 @@ func (ssn *ShuffleShardNode) getOrAddNode(t *Tree, path QueuePath) (TreeNodeIFac
 			return nil, fmt.Errorf("cannot create a node at depth %v; greater than max depth %v", ssn.depth+1, len(t.nodeTypesByDepth)-1)
 		}
 		childNode = t.newNode(path[0], ssn.depth+1)
-		// add childNode to rrn.queueMap
+		// add childNode to ssn.queueMap
 		ssn.queueMap[childNode.Name()] = childNode
-		// update rrn.queueOrder to place childNode behind rrn.queuePosition
+		// update ssn.queueOrder to place childNode behind rrn.queuePosition
 		if ssn.queuePosition <= 0 {
 			ssn.queueOrder = append(ssn.queueOrder, childNode.Name())
 		} else {
