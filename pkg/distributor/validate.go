@@ -42,12 +42,13 @@ var (
 	reasonTooFarInFuture               = globalerror.SampleTooFarInFuture.LabelValue()
 
 	// Discarded exemplars reasons.
-	reasonExemplarLabelsMissing    = globalerror.ExemplarLabelsMissing.LabelValue()
-	reasonExemplarLabelsTooLong    = globalerror.ExemplarLabelsTooLong.LabelValue()
-	reasonExemplarTimestampInvalid = globalerror.ExemplarTimestampInvalid.LabelValue()
-	reasonExemplarLabelsBlank      = "exemplar_labels_blank"
-	reasonExemplarTooOld           = "exemplar_too_old"
-	reasonExemplarTooFarInFuture   = "exemplar_too_far_in_future"
+	reasonExemplarLabelsMissing           = globalerror.ExemplarLabelsMissing.LabelValue()
+	reasonExemplarLabelsTooLong           = globalerror.ExemplarLabelsTooLong.LabelValue()
+	reasonExemplarTimestampInvalid        = globalerror.ExemplarTimestampInvalid.LabelValue()
+	reasonExemplarLabelsBlank             = "exemplar_labels_blank"
+	reasonExemplarTooOld                  = "exemplar_too_old"
+	reasonExemplarTooFarInFuture          = "exemplar_too_far_in_future"
+	reasonExamplarTooManyExamplerPerSerie = "too_many_exemplars_per_serie"
 
 	// Discarded metadata reasons.
 	reasonMetadataMetricNameTooLong = globalerror.MetricMetadataMetricNameTooLong.LabelValue()
@@ -175,6 +176,7 @@ type exemplarValidationMetrics struct {
 	labelsBlank      *prometheus.CounterVec
 	tooOld           *prometheus.CounterVec
 	tooFarInFuture   *prometheus.CounterVec
+	tooManyExemplars *prometheus.CounterVec
 }
 
 func (m *exemplarValidationMetrics) deleteUserMetrics(userID string) {
@@ -184,6 +186,7 @@ func (m *exemplarValidationMetrics) deleteUserMetrics(userID string) {
 	m.labelsBlank.DeleteLabelValues(userID)
 	m.tooOld.DeleteLabelValues(userID)
 	m.tooFarInFuture.DeleteLabelValues(userID)
+	m.tooManyExemplars.DeleteLabelValues(userID)
 }
 
 func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMetrics {
@@ -194,6 +197,7 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 		labelsBlank:      validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
 		tooOld:           validation.DiscardedExemplarsCounter(r, reasonExemplarTooOld),
 		tooFarInFuture:   validation.DiscardedExemplarsCounter(r, reasonExemplarTooFarInFuture),
+		tooManyExemplars: validation.DiscardedExemplarsCounter(r, reasonExamplarTooManyExamplerPerSerie),
 	}
 }
 

@@ -1617,10 +1617,10 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
 			},
 			expectedMetrics: `
-                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
-                # TYPE cortex_discarded_exemplars_total counter
-                cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
-            `,
+			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+			# TYPE cortex_discarded_exemplars_total counter
+			cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+		`,
 		},
 		"should drop exemplars with timestamp lower than the accepted minimum, when multiple exemplars are specified for the same series": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -1648,10 +1648,10 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				},
 			},
 			expectedMetrics: `
-                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
-                # TYPE cortex_discarded_exemplars_total counter
-                cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
-            `,
+			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+			# TYPE cortex_discarded_exemplars_total counter
+			cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+		`,
 		},
 		"should drop exemplars with timestamp lower than the accepted minimum, when multiple exemplars are specified in the same series": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -1679,10 +1679,10 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				},
 			},
 			expectedMetrics: `
-                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
-                # TYPE cortex_discarded_exemplars_total counter
-                cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
-            `,
+			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+			# TYPE cortex_discarded_exemplars_total counter
+			cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+		`,
 		},
 		"should drop exemplars with timestamp greater than the accepted maximum, when multiple exemplars are specified in the same series": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -1710,9 +1710,43 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				},
 			},
 			expectedMetrics: `
+		        # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+		        # TYPE cortex_discarded_exemplars_total counter
+		        cortex_discarded_exemplars_total{reason="exemplar_too_far_in_future",user="user"} 1
+		    `,
+		},
+		"should drop exemplars more than the allowed exemplar per serie limit, when multiple exemplars are specified in the same series": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 2
+				limits.MaxExemplarsPerSeriesPerRequest = 2
+			},
+			minExemplarTS: 300000,
+			maxExemplarTS: math.MaxInt64,
+			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 600000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar3"}}, TimestampMs: 602000},
+					},
+				},
+			}),
+			expectedExemplars: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Exemplars: []mimirpb.Exemplar{
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 600000},
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+						},
+					},
+				},
+			},
+			expectedMetrics: `
                 # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
                 # TYPE cortex_discarded_exemplars_total counter
-                cortex_discarded_exemplars_total{reason="exemplar_too_far_in_future",user="user"} 1
+                cortex_discarded_exemplars_total{reason="too_many_exemplars_per_serie",user="user"} 1
             `,
 		},
 	}
