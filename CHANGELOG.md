@@ -366,6 +366,8 @@
 
 ### Tools
 
+* [FEATURE] kafkatool: add new CLI tool to operate Kafka. Support commands: #7983
+  * `create-partitions`
 * [ENHANCEMENT] ulidtime: add option to show random part of ULID, timestamp in milliseconds and header. #7615
 * [ENHANCEMENT] copyblocks: add a flag to configure part-size for multipart uploads in s3 client-side copying. #8292
 * [ENHANCEMENT] copyblocks: enable pprof HTTP endpoints. #8292
