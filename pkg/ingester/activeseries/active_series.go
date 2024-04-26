@@ -168,6 +168,11 @@ func (c *ActiveSeries) ContainsRef(ref storage.SeriesRef) bool {
 	return c.stripes[stripeID].containsRef(ref)
 }
 
+func (c *ActiveSeries) NativeHistoragramBuckets(ref storage.SeriesRef) (int, bool) {
+	stripeID := ref % numStripes
+	return c.stripes[stripeID].nativeHistoragramBuckets(ref)
+}
+
 // Active returns the total numbers of active series, active native
 // histogram series, and buckets of those native histogram series.
 // This method does not purge expired entries, so Purge should be
@@ -211,6 +216,17 @@ func (s *seriesStripe) containsRef(ref storage.SeriesRef) bool {
 
 	_, ok := s.refs[ref]
 	return ok
+}
+
+// nativeHistogramBuckets returns the the active buckets for a series if it is active and is a native histogram series.
+func (s *seriesStripe) nativeHistoragramBuckets(ref storage.SeriesRef) (int, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if entry, ok := s.refs[ref]; ok && entry.numNativeHistogramBuckets >= 0 {
+		return entry.numNativeHistogramBuckets, true
+	}
+
+	return 0, false
 }
 
 func (s *seriesStripe) markDeleted(ref storage.SeriesRef, lbls labels.Labels) {
