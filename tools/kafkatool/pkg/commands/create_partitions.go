@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package commands
 
 import (
@@ -37,7 +39,7 @@ func (c *CreatePartitionsCommand) createPartitions(_ *kingpin.ParseContext) erro
 		return err
 	}
 
-	fmt.Println(fmt.Sprintf("Number of partitions before creating additional partitions: %d", len(details.Partitions)))
+	fmt.Printf("Number of partitions before creating additional partitions: %d\n", len(details.Partitions))
 
 	// Create new partitions.
 	responses, err := adm.CreatePartitions(context.Background(), c.numPartitions, c.topic)
@@ -54,7 +56,7 @@ func (c *CreatePartitionsCommand) createPartitions(_ *kingpin.ParseContext) erro
 		return res.Err
 	}
 
-	fmt.Println(fmt.Sprintf("Created %d additional partitions to topic %s", c.numPartitions, c.topic))
+	fmt.Printf("Created %d additional partitions to topic %s\n", c.numPartitions, c.topic)
 
 	// Get the current number of partitions (just for logging purposes).
 	details, err = getTopicDetails(adm, c.topic)
@@ -62,7 +64,7 @@ func (c *CreatePartitionsCommand) createPartitions(_ *kingpin.ParseContext) erro
 		return err
 	}
 
-	fmt.Println(fmt.Sprintf("Number of partitions after creating additional partitions: %d", len(details.Partitions)))
+	fmt.Printf("Number of partitions after creating additional partitions: %d\n", len(details.Partitions))
 	return nil
 }
 
