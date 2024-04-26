@@ -123,6 +123,9 @@ func isOverLoaded(
 	overloadThreshold int,
 	req *queue.SchedulerRequest,
 ) bool {
+	if overloadThreshold <= 0 {
+		return false
+	}
 	isIngester, isStoreGateway := queryComponents(req)
 
 	mu.RLock()
@@ -185,7 +188,7 @@ func decrementQueryComponentInflightRequests(
 	req *queue.SchedulerRequest,
 ) {
 	updateQueryComponentInflightRequests(
-		mu, queryComponentInflightReqs, totalInflightReqs, req, 1,
+		mu, queryComponentInflightReqs, totalInflightReqs, req, -1,
 	)
 }
 
@@ -249,7 +252,11 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		log:    log,
 		limits: limits,
 
-		pendingRequests:    map[requestKey]*queue.SchedulerRequest{},
+		pendingRequests: map[requestKey]*queue.SchedulerRequest{},
+
+		queryComponentInflightRequestsMu: &sync.RWMutex{},
+		queryComponentInflightRequests:   map[QueryComponent]int{},
+
 		connectedFrontends: map[string]*connectedFrontend{},
 		subservicesWatcher: services.NewFailureWatcher(),
 	}
@@ -542,6 +549,8 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		  If this tenant meanwhile continued to queue requests,
 		  it's possible that its own queue would perpetually contain only expired requests.
 		*/
+		isIngester, isStoreGateway := queryComponents(r)
+		level.Info(s.log).Log("msg", "expected query component", "isIngester", isIngester, "isStoreGateway", isStoreGateway)
 		threshold := getOverloadThreshold(
 			s.queryComponentInflightRequestsMu,
 			s.queryComponentInflightRequests,
@@ -555,7 +564,9 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			r,
 		) {
 			// TODO do other stuff to increment or decrement
-			return errors.New("dropped")
+			s.cancelRequestAndRemoveFromPending(r.FrontendAddress, r.QueryID, "request dropped due to overloaded query component")
+
+			level.Warn(s.log).Log("msg", "request dropped due to overloaded query component", "isIngester", isIngester, "isStoreGateway", isStoreGateway)
 		}
 
 		if r.Ctx.Err() != nil {
@@ -585,7 +596,9 @@ func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.No
 }
 
 func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *queue.SchedulerRequest, queueTime time.Duration) error {
+	incrementQueryComponentInflightRequests(s.queryComponentInflightRequestsMu, s.queryComponentInflightRequests, s.totalInflightRequests, req)
 	// Make sure to cancel request at the end to clean up resources.
+	defer decrementQueryComponentInflightRequests(s.queryComponentInflightRequestsMu, s.queryComponentInflightRequests, s.totalInflightRequests, req)
 	defer s.cancelRequestAndRemoveFromPending(req.FrontendAddress, req.QueryID, "request complete")
 
 	// Handle the stream sending & receiving on a goroutine so we can
