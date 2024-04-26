@@ -2549,9 +2549,10 @@ func TestIngester_Push(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), userID)
 
-			// Wait until the ingester is healthy
-			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-				return i.lifecycler.HealthyInstancesCount()
+			// Wait until the ingester is healthy and owns tokens. Note that the timeout here is set
+			// such that it is longer than the MinReadyDuration configuration for the ingester ring.
+			test.Poll(t, time.Second, nil, func() interface{} {
+				return i.lifecycler.CheckReady(context.Background())
 			})
 
 			// Push timeseries
