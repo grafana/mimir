@@ -22,6 +22,8 @@
 * [ENHANCEMENT] Go: updated to 1.22.2. #7802
 * [ENHANCEMENT] Query-frontend: support `limit` parameter on `/prometheus/api/v1/label/{name}/values` and `/prometheus/api/v1/labels` endpoints. #7722
 * [ENHANCEMENT] Expose TLS configuration for the S3 backend client. #2652
+* [ENHANCEMENT] Rules: Support expansion of native histogram values when using rule templates #7974
+* [ENHANCEMENT] Rules: Add metric `cortex_prometheus_rule_group_last_restore_duration_seconds` which measures how long it takes to restore rule groups using the `ALERTS_FOR_STATE` series #7974
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 * [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624

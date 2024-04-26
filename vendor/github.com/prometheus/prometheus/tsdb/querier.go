@@ -330,7 +330,7 @@ func postingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *labels.M
 		return nil, err
 	}
 
-	var res []string
+	res := vals[:0]
 	for _, val := range vals {
 		if m.Matches(val) {
 			res = append(res, val)
@@ -367,7 +367,7 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *l
 		return nil, err
 	}
 
-	var res []string
+	res := vals[:0]
 	// If the inverse match is ="", we just want all the values.
 	if m.Type == labels.MatchEqual && m.Value == "" {
 		res = vals
@@ -958,7 +958,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 				return true
 			}
 		}
-
 	}
 	return false
 }
