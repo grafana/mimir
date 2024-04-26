@@ -2232,7 +2232,7 @@ func (r *activeSeriesResponse) result() []labels.Labels {
 	return result
 }
 
-// approximateFromZones computes a zonal value while factoring in replication.
+// approximateFromZones computes a zonal value while factoring in replication;
 // e.g. series cardinality or ingestion rate.
 //
 // If Mimir isn't deployed in a multi-zone configuration, approximateFromZones
@@ -2243,7 +2243,10 @@ func approximateFromZones[T ~float64 | ~uint64](isMultiZone bool, replicationFac
 	// other issues. Any inconsistency should always be an underestimation of
 	// the real value, so we take the max to get the best available
 	// approximation.
-	if isMultiZone {
+	// One caveat is when the number of zones is larger than the replication factor.
+	// In such a case it's more accurate to fall back to a single zone
+	// calculations below (ref grafana/mimir#7738 for details).
+	if isMultiZone && replicationFactor >= len(seriesCountMapByZone) {
 		var max T
 		for _, seriesCount := range seriesCountMapByZone {
 			if seriesCount > max {
@@ -2253,11 +2256,10 @@ func approximateFromZones[T ~float64 | ~uint64](isMultiZone bool, replicationFac
 		return max
 	}
 
-	// If we have a single zone: we can't return the value directly because
-	// series will be replicated randomly across ingesters, and there's no way
-	// here to know how many unique series really exist. In this case, dividing
-	// by the replication factor will give us an approximation of the real
-	// value.
+	// If we have a single zone or number of zones is larger than RF, we can't return
+	// the value directly. The series will be replicated randomly across ingesters, and there's no way
+	// here to know how many unique series really exist. In this case, dividing by the replication factor
+	// will give us an approximation of the real value.
 	var sum T
 	for _, seriesCount := range seriesCountMapByZone {
 		sum += seriesCount
