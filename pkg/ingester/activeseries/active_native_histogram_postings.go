@@ -8,7 +8,7 @@ import (
 )
 
 // NativeHistogramPostings is a wrapper around ActiveSeries and index.Postings.
-// Similar to Postings, but filters it's output to native histogram series.
+// Similar to Postings, but filters its output to native histogram series.
 // Implements index.Postings interface and returns only series references that
 // are active in ActiveSeries and are native histograms.
 // It is only valid to use NativeHistogramPostings if the postings are from the
@@ -48,7 +48,7 @@ func (a *NativeHistogramPostings) Err() error {
 // Next implements index.Postings.
 func (a *NativeHistogramPostings) Next() bool {
 	for a.postings.Next() {
-		if count, ok := a.activeSeries.NativeHistoragramBuckets(a.postings.At()); ok {
+		if count, ok := a.activeSeries.NativeHistogramBuckets(a.postings.At()); ok {
 			a.currentBucketCount = count
 			return true
 		}
@@ -65,7 +65,7 @@ func (a *NativeHistogramPostings) Seek(v storage.SeriesRef) bool {
 	}
 
 	// If the underlying postings contain a value, check if it's active.
-	if count, ok := a.activeSeries.NativeHistoragramBuckets(a.postings.At()); ok {
+	if count, ok := a.activeSeries.NativeHistogramBuckets(a.postings.At()); ok {
 		a.currentBucketCount = count
 		return true
 	}

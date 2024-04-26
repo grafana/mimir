@@ -168,9 +168,9 @@ func (c *ActiveSeries) ContainsRef(ref storage.SeriesRef) bool {
 	return c.stripes[stripeID].containsRef(ref)
 }
 
-func (c *ActiveSeries) NativeHistoragramBuckets(ref storage.SeriesRef) (int, bool) {
+func (c *ActiveSeries) NativeHistogramBuckets(ref storage.SeriesRef) (int, bool) {
 	stripeID := ref % numStripes
-	return c.stripes[stripeID].nativeHistoragramBuckets(ref)
+	return c.stripes[stripeID].nativeHistogramBuckets(ref)
 }
 
 // Active returns the total numbers of active series, active native
@@ -218,8 +218,8 @@ func (s *seriesStripe) containsRef(ref storage.SeriesRef) bool {
 	return ok
 }
 
-// nativeHistogramBuckets returns the the active buckets for a series if it is active and is a native histogram series.
-func (s *seriesStripe) nativeHistoragramBuckets(ref storage.SeriesRef) (int, bool) {
+// nativeHistogramBuckets returns the active buckets for a series if it is active and is a native histogram series.
+func (s *seriesStripe) nativeHistogramBuckets(ref storage.SeriesRef) (int, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if entry, ok := s.refs[ref]; ok && entry.numNativeHistogramBuckets >= 0 {

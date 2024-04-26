@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package activeseries
 
 import (
@@ -90,7 +92,7 @@ func TestNativeHistogramPostings_ExpandWithBucketCount(t *testing.T) {
 	require.Equal(t, []int{20, 30}, bucketCounts)
 }
 
-func TestNativeHistogramPostings_Seek(t *testing.T) {
+func TestNativeHistogramPostings_SeekSkipsNonNative(t *testing.T) {
 	ttl := 3
 	mockedTime := time.Unix(int64(ttl), 0)
 	series := []labels.Labels{
@@ -106,7 +108,7 @@ func TestNativeHistogramPostings_Seek(t *testing.T) {
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		buckets := 10
+		buckets := i * 10
 		if i+1 == 4 {
 			buckets = -1 // Make ref==4 not a native histogram to check that Seek skips it.
 		}
@@ -124,6 +126,47 @@ func TestNativeHistogramPostings_Seek(t *testing.T) {
 	require.True(t, activeSeriesPostings.Seek(3))
 	// The next active series is 4, but it's not a native histogram.
 	require.Equal(t, storage.SeriesRef(5), activeSeriesPostings.At())
+	// Check the bucket count as well.
+	ref, count := activeSeriesPostings.AtBucketCount()
+	require.Equal(t, storage.SeriesRef(5), ref)
+	require.Equal(t, 40, count)
+}
+
+func TestNativeHistogramPostings_Seek(t *testing.T) {
+	ttl := 3
+	mockedTime := time.Unix(int64(ttl), 0)
+	series := []labels.Labels{
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		labels.FromStrings("a", "3"),
+		labels.FromStrings("a", "4"),
+		labels.FromStrings("a", "5"),
+	}
+	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
+	storagePostings := index.NewListPostings(allStorageRefs)
+	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl))
+
+	// Update each series at a different time according to its index.
+	for i := range allStorageRefs {
+		buckets := i * 10
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets)
+	}
+
+	valid := activeSeries.Purge(mockedTime)
+	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
+	require.True(t, valid)
+	require.Equal(t, 2, allActive)
+
+	activeSeriesPostings := NewNativeHistogramPostings(activeSeries, storagePostings)
+
+	// Seek to a series that is active.
+	require.True(t, activeSeriesPostings.Seek(4))
+	// The next active series is 4.
+	require.Equal(t, storage.SeriesRef(4), activeSeriesPostings.At())
+	// Check the bucket count as well.
+	ref, count := activeSeriesPostings.AtBucketCount()
+	require.Equal(t, storage.SeriesRef(4), ref)
+	require.Equal(t, 30, count)
 }
 
 func TestNativeHistogramPostings_SeekToEnd(t *testing.T) {
