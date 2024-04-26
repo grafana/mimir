@@ -478,7 +478,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	// Register each metric only if the corresponding storage is enabled.
 	// Some queries in the mixin use the presence of these metrics as indication whether Mimir is running with ingest storage or not.
-	exportStorageModeMetrics(reg, cfg.IngestStorageConfig.Enabled, ingestersRing.ReplicationFactor())
+	exportStorageModeMetrics(reg, cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled || !cfg.IngestStorageConfig.Enabled, cfg.IngestStorageConfig.Enabled, ingestersRing.ReplicationFactor())
 
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
@@ -491,7 +491,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	return d, nil
 }
 
-func exportStorageModeMetrics(reg prometheus.Registerer, ingestStorageEnabled bool, classicStorageReplicationFactor int) {
+func exportStorageModeMetrics(reg prometheus.Registerer, classicStorageEnabled, ingestStorageEnabled bool, classicStorageReplicationFactor int) {
 	ingestStorageEnabledVal := float64(0)
 	if ingestStorageEnabled {
 		ingestStorageEnabledVal = 1
@@ -501,7 +501,7 @@ func exportStorageModeMetrics(reg prometheus.Registerer, ingestStorageEnabled bo
 		Help: "Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.",
 	}).Set(ingestStorageEnabledVal)
 
-	if !ingestStorageEnabled {
+	if classicStorageEnabled {
 		promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_distributor_replication_factor",
 			Help: "The configured replication factor.",
