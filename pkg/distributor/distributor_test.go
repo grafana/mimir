@@ -4844,9 +4844,10 @@ type prepConfig struct {
 	circuitBreakerOpen bool
 
 	// Ingest storage specific configuration.
-	ingestStorageEnabled    bool
-	ingestStoragePartitions int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
-	ingestStorageKafka      *kfake.Cluster
+	ingestStorageEnabled          bool
+	ingestStorageMigrationEnabled bool
+	ingestStoragePartitions       int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
+	ingestStorageKafka            *kfake.Cluster
 
 	// We need this setting to simulate a response from ingesters that didn't support responding
 	// with a stream of chunks, and were responding with chunk series instead. This is needed to
@@ -5190,6 +5191,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 			ingestCfg.KafkaConfig.Topic = kafkaTopic
 			ingestCfg.KafkaConfig.Address = cfg.ingestStorageKafka.ListenAddrs()[0]
 			ingestCfg.KafkaConfig.LastProducedOffsetPollInterval = 100 * time.Millisecond
+			ingestCfg.Migration.DistributorSendToIngestersEnabled = cfg.ingestStorageMigrationEnabled
 		}
 
 		distributorCfg.IngesterClientFactory = factory
@@ -7052,6 +7054,64 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			strings.NewReader(expectedMetrics),
 			metricNames...,
 		))
+	})
+}
+
+func TestDistributor_StorageConfigMetrics(t *testing.T) {
+	t.Run("classic storage", func(t *testing.T) {
+		t.Parallel()
+		_, _, regs, _ := prepare(t, prepConfig{
+			numDistributors:   1,
+			numIngesters:      3,
+			happyIngesters:    3,
+			replicationFactor: 3,
+		})
+		assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+			# HELP cortex_distributor_replication_factor The configured replication factor.
+			# TYPE cortex_distributor_replication_factor gauge
+			cortex_distributor_replication_factor 3
+
+			# HELP cortex_distributor_ingest_storage_enabled Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.
+			# TYPE cortex_distributor_ingest_storage_enabled gauge
+			cortex_distributor_ingest_storage_enabled 0
+		`), "cortex_distributor_replication_factor", "cortex_distributor_ingest_storage_enabled"))
+	})
+
+	t.Run("migration to ingest storage", func(t *testing.T) {
+		t.Parallel()
+		_, _, regs, _ := prepare(t, prepConfig{
+			ingestStorageEnabled:          true,
+			ingestStorageMigrationEnabled: true,
+			numDistributors:               1,
+			numIngesters:                  3,
+			happyIngesters:                3,
+			replicationFactor:             3,
+		})
+		assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+			# HELP cortex_distributor_replication_factor The configured replication factor.
+			# TYPE cortex_distributor_replication_factor gauge
+			cortex_distributor_replication_factor 3
+
+			# HELP cortex_distributor_ingest_storage_enabled Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.
+			# TYPE cortex_distributor_ingest_storage_enabled gauge
+			cortex_distributor_ingest_storage_enabled 1
+		`), "cortex_distributor_replication_factor", "cortex_distributor_ingest_storage_enabled"))
+	})
+
+	t.Run("ingest storage", func(t *testing.T) {
+		t.Parallel()
+		_, _, regs, _ := prepare(t, prepConfig{
+			ingestStorageEnabled: true,
+			numDistributors:      1,
+			numIngesters:         3,
+			happyIngesters:       3,
+			replicationFactor:    3,
+		})
+		assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+			# HELP cortex_distributor_ingest_storage_enabled Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.
+			# TYPE cortex_distributor_ingest_storage_enabled gauge
+			cortex_distributor_ingest_storage_enabled 1
+		`), "cortex_distributor_replication_factor", "cortex_distributor_ingest_storage_enabled"))
 	})
 }
 
