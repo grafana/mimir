@@ -1580,3 +1580,9 @@ type consumerFunc func(ctx context.Context, records []record) error
 func (c consumerFunc) consume(ctx context.Context, records []record) error {
 	return c(ctx, records)
 }
+
+func createTestContextWithTimeout(t *testing.T, timeout time.Duration) context.Context {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	t.Cleanup(cancel)
+	return ctx
+}
