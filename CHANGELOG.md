@@ -98,6 +98,8 @@
 
 ### Tools
 
+* [FEATURE] kafkatool: add new CLI tool to operate Kafka. Support commands: #7983
+  * `create-partitions`
 * [ENHANCEMENT] ulidtime: add option to show random part of ULID, timestamp in milliseconds and header. #7615
 
 ## 2.12.0
