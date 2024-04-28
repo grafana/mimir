@@ -464,6 +464,18 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectAnyError: true,
 		},
+		{
+			name: "should pass if ingester ring has token generation strategy set to spread-minimizing, and target is not ingester",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("distributor")
+				cfg.Ingester.IngesterRing.TokenGenerationStrategy = "spread-minimizing"
+				cfg.Ingester.IngesterRing.SpreadMinimizingZones = []string{"zone-1", "zone-2"}
+
+				return cfg
+			},
+			expectAnyError: false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.getTestConfig().Validate(log.NewNopLogger())
