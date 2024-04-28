@@ -3754,8 +3754,8 @@ func TestDistributor_UserStats(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "series_5", "series_1", "series_2"),
 				},
 			},
-			// We pushed 5 series but every series has been successfully replicated only to 3 ingesters (in different zones).
-			expectedSeries: 4,
+			// We pushed 5 series and every series has been replicated to 3 ingesters (in different zones).
+			expectedSeries: 5,
 		},
 	}
 
