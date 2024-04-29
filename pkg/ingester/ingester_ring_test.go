@@ -114,6 +114,7 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 
 func TestRingConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
+		instanceID                      string
 		zone                            string
 		tokenGenerationStrategy         string
 		spreadMinimizingJoinRingInOrder bool
@@ -122,50 +123,66 @@ func TestRingConfig_Validate(t *testing.T) {
 		tokensFilePath                  string
 	}{
 		"spread-minimizing and correct zones pass validation": {
+			instanceID:              instanceID,
 			zone:                    instanceZone,
 			tokenGenerationStrategy: tokenGenerationSpreadMinimizing,
 			spreadMinimizingZones:   spreadMinimizingZones,
 		},
+		"spread-minimizing and a wrong instance-id don't pass validation": {
+			instanceID:              "broken-instance-48pgb", // InstanceID is expected to end up with a number.
+			zone:                    instanceZone,
+			tokenGenerationStrategy: tokenGenerationSpreadMinimizing,
+			spreadMinimizingZones:   spreadMinimizingZones,
+			expectedError:           fmt.Errorf("%s: unable to extract instance id", ErrSpreadMinimizingValidation),
+		},
 		"spread-minimizing and no spread-minimizing-zones zone don't pass validation": {
+			instanceID:              instanceID,
 			zone:                    instanceZone,
 			tokenGenerationStrategy: tokenGenerationSpreadMinimizing,
 			expectedError:           fmt.Errorf("number of zones 0 is not correct: it must be greater than 0 and less or equal than 8"),
 		},
 		"spread-minimizing and a wrong zone don't pass validation": {
+			instanceID:              instanceID,
 			zone:                    wrongZone,
 			tokenGenerationStrategy: tokenGenerationSpreadMinimizing,
 			spreadMinimizingZones:   spreadMinimizingZones,
 			expectedError:           fmt.Errorf("zone %s is not valid", wrongZone),
 		},
 		"spread-minimizing and tokens-file-path set don't pass validation": {
+			instanceID:              instanceID,
 			zone:                    instanceZone,
 			tokenGenerationStrategy: tokenGenerationSpreadMinimizing,
 			spreadMinimizingZones:   spreadMinimizingZones,
 			tokensFilePath:          "/path/tokens",
-			expectedError:           fmt.Errorf("%q token generation strategy requires %q to be empty", tokenGenerationSpreadMinimizing, flagTokensFilePath),
+			expectedError:           fmt.Errorf("strategy requires %q to be empty", flagTokensFilePath),
 		},
 		"spread-minimizing and spread-minimizing-join-ring-in-order pass validation": {
+			instanceID:                      instanceID,
 			zone:                            instanceZone,
 			tokenGenerationStrategy:         tokenGenerationSpreadMinimizing,
 			spreadMinimizingZones:           spreadMinimizingZones,
 			spreadMinimizingJoinRingInOrder: true,
 		},
 		"random passes validation": {
+			instanceID:              instanceID,
 			zone:                    instanceZone,
 			tokenGenerationStrategy: tokenGenerationRandom,
 		},
 		"random and tokens-file-path set pass validation": {
+			instanceID:              instanceID,
 			zone:                    instanceZone,
 			tokenGenerationStrategy: tokenGenerationRandom,
 			tokensFilePath:          "/path/tokens",
 		},
 		"random and spread-minimizing-join-ring-in-order don't pass validation": {
+			instanceID:                      instanceID,
 			zone:                            instanceZone,
 			tokenGenerationStrategy:         tokenGenerationRandom,
 			spreadMinimizingJoinRingInOrder: true,
 			expectedError:                   fmt.Errorf("%q must be false when using %q token generation strategy", flagSpreadMinimizingJoinRingInOrder, tokenGenerationRandom),
 		},
 		"unknown token generation doesn't pass validation": {
+			instanceID:              instanceID,
 			zone:                    instanceZone,
 			tokenGenerationStrategy: "bla-bla-tokens",
 			expectedError:           fmt.Errorf("unsupported token generation strategy (%q) has been chosen for %s", "bla-bla-tokens", flagTokenGenerationStrategy),
@@ -174,7 +191,7 @@ func TestRingConfig_Validate(t *testing.T) {
 
 	for _, testData := range tests {
 		cfg := RingConfig{}
-		cfg.InstanceID = instanceID
+		cfg.InstanceID = testData.instanceID
 		cfg.InstanceZone = testData.zone
 		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
 		cfg.SpreadMinimizingJoinRingInOrder = testData.spreadMinimizingJoinRingInOrder
@@ -185,7 +202,7 @@ func TestRingConfig_Validate(t *testing.T) {
 			require.NoError(t, err)
 		} else {
 			require.Error(t, err)
-			require.Equal(t, testData.expectedError, err)
+			require.ErrorContains(t, err, testData.expectedError.Error())
 		}
 	}
 }

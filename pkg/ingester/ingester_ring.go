@@ -30,6 +30,10 @@ const (
 // set on the components running the ingester ring client.
 const sharedOptionWithRingClient = " This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."
 
+// ErrSpreadMinimizingValidation is a sentinel error that indicates a failure
+// in the validation of spread minimizing token generation config.
+var ErrSpreadMinimizingValidation = fmt.Errorf("%q token generation strategy is misconfigured", tokenGenerationSpreadMinimizing)
+
 type RingConfig struct {
 	KVStore              kv.Config              `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."`
 	HeartbeatPeriod      time.Duration          `yaml:"heartbeat_period" category:"advanced"`
@@ -75,10 +79,13 @@ func (cfg *RingConfig) Validate() error {
 
 	if cfg.TokenGenerationStrategy == tokenGenerationSpreadMinimizing {
 		if cfg.TokensFilePath != "" {
-			return fmt.Errorf("%q token generation strategy requires %q to be empty", tokenGenerationSpreadMinimizing, flagTokensFilePath)
+			return fmt.Errorf("%w: strategy requires %q to be empty", ErrSpreadMinimizingValidation, flagTokensFilePath)
 		}
 		_, err := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, cfg.SpreadMinimizingJoinRingInOrder)
-		return err
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrSpreadMinimizingValidation, err)
+		}
+		return nil
 	}
 
 	// at this point cfg.TokenGenerationStrategy is not tokenGenerationSpreadMinimizing
