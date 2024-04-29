@@ -2389,27 +2389,31 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 // No locks are held when function is called.
 //
 // Slice of hashes passed to the function is reused between calls.
-func (h *Head) ForEachSecondaryHash(fn func(secondaryHash []uint32)) {
-	buf := make([]uint32, 512)
+func (h *Head) ForEachSecondaryHash(fn func(ref []chunks.HeadSeriesRef, secondaryHash []uint32)) {
+	bufHash := make([]uint32, 512)
+	bufRef := make([]chunks.HeadSeriesRef, 512)
 
 	for i := 0; i < h.series.size; i++ {
-		buf = buf[:0]
+		bufHash = bufHash[:0]
+		bufRef = bufRef[:0]
 
 		h.series.locks[i].RLock()
 		for _, s := range h.series.hashes[i].unique {
 			// No need to lock series lock, as we're only accessing its immutable secondary hash.
-			buf = append(buf, s.secondaryHash)
+			bufHash = append(bufHash, s.secondaryHash)
+			bufRef = append(bufRef, s.ref)
 		}
 		for _, all := range h.series.hashes[i].conflicts {
 			for _, s := range all {
 				// No need to lock series lock, as we're only accessing its immutable secondary hash.
-				buf = append(buf, s.secondaryHash)
+				bufHash = append(bufHash, s.secondaryHash)
+				bufRef = append(bufRef, s.ref)
 			}
 		}
 		h.series.locks[i].RUnlock()
 
-		if len(buf) > 0 {
-			fn(buf)
+		if len(bufHash) > 0 {
+			fn(bufRef, bufHash)
 		}
 	}
 }
