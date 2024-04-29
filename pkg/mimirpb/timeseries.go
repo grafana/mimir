@@ -155,6 +155,21 @@ func (p *PreallocTimeseries) ClearExemplars() {
 	p.clearUnmarshalData()
 }
 
+func (p *PreallocTimeseries) ResizeExemplars(newSize int) {
+	if len(p.Exemplars) <= newSize {
+		return
+	}
+	// Name and Value may point into a large gRPC buffer, so clear the reference in each exemplar to allow GC
+	for i := newSize; i < len(p.Exemplars); i++ {
+		for j := range p.Exemplars[i].Labels {
+			p.Exemplars[i].Labels[j].Name = ""
+			p.Exemplars[i].Labels[j].Value = ""
+		}
+	}
+	p.Exemplars = p.Exemplars[:newSize]
+	p.clearUnmarshalData()
+}
+
 func (p *PreallocTimeseries) HistogramsUpdated() {
 	p.clearUnmarshalData()
 }
