@@ -54,6 +54,9 @@ spec:
             {{- if .Values.overrides_exporter.extraVolumeMounts }}
               {{ toYaml .Values.overrides_exporter.extraVolumeMounts | nindent 12}}
             {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
             - name: config
               mountPath: /etc/mimir
             {{- if .Values.enterprise.enabled }}
@@ -131,6 +134,9 @@ spec:
             name: {{ template "mimir.fullname" . }}-runtime
         {{- if .Values.overrides_exporter.extraVolumes }}
         {{ toYaml .Values.overrides_exporter.extraVolumes | nindent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8}}
         {{- end }}
         - name: storage
           emptyDir: {}

@@ -43,6 +43,14 @@ Usage of ./cmd/mimir/mimir:
     	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
   -alertmanager-storage.s3.http.response-header-timeout duration
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -alertmanager-storage.s3.http.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -alertmanager-storage.s3.http.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -alertmanager-storage.s3.http.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -alertmanager-storage.s3.http.tls-server-name string
+    	Override the expected name on the server certificate.
   -alertmanager-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
   -alertmanager-storage.s3.list-objects-version string
@@ -279,6 +287,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended to check both alertmanager_matchers_disagree_total and alertmanager_matchers_incompatible_total metrics before using this mode as otherwise some tenant configurations might fail to load.
   -alertmanager.web.external-url string
     	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
+  -api.get-request-for-ingester-shutdown-enabled
+    	[deprecated] Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.
   -api.skip-label-name-validation-header-enabled
     	Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.
   -auth.multitenancy-enabled
@@ -683,6 +693,14 @@ Usage of ./cmd/mimir/mimir:
     	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
   -blocks-storage.s3.http.response-header-timeout duration
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -blocks-storage.s3.http.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.s3.http.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.s3.http.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.s3.http.tls-server-name string
+    	Override the expected name on the server certificate.
   -blocks-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
   -blocks-storage.s3.list-objects-version string
@@ -853,6 +871,14 @@ Usage of ./cmd/mimir/mimir:
     	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
   -common.storage.s3.http.response-header-timeout duration
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -common.storage.s3.http.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -common.storage.s3.http.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -common.storage.s3.http.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -common.storage.s3.http.tls-server-name string
+    	Override the expected name on the server certificate.
   -common.storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
   -common.storage.s3.list-objects-version string
@@ -2275,6 +2301,14 @@ Usage of ./cmd/mimir/mimir:
     	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
   -ruler-storage.s3.http.response-header-timeout duration
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -ruler-storage.s3.http.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ruler-storage.s3.http.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler-storage.s3.http.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ruler-storage.s3.http.tls-server-name string
+    	Override the expected name on the server certificate.
   -ruler-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
   -ruler-storage.s3.list-objects-version string

@@ -58,6 +58,9 @@ spec:
             {{- if .Values.alertmanager.extraVolumeMounts }}
               {{ toYaml .Values.alertmanager.extraVolumeMounts | nindent 12}}
             {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
             - name: config
               mountPath: /etc/mimir
             {{- if .Values.enterprise.enabled }}
@@ -137,9 +140,12 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
-{{- if .Values.alertmanager.extraVolumes }}
-{{ toYaml .Values.alertmanager.extraVolumes | indent 8}}
-{{- end }}
+        {{- if .Values.alertmanager.extraVolumes }}
+        {{ toYaml .Values.alertmanager.extraVolumes | indent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | indent 8}}
+        {{- end }}
         - name: storage
           emptyDir: {}
         - name: tmp

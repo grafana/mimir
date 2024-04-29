@@ -54,6 +54,9 @@ spec:
             {{- if .Values.admin_api.extraVolumeMounts }}
               {{ toYaml .Values.admin_api.extraVolumeMounts | nindent 12}}
             {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
             - name: config
               mountPath: /etc/mimir
             - name: runtime-config
@@ -127,6 +130,9 @@ spec:
             name: {{ template "mimir.fullname" . }}-runtime
         {{- if .Values.admin_api.extraVolumes }}
         {{ toYaml .Values.admin_api.extraVolumes | nindent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8}}
         {{- end }}
         - name: license
           secret:

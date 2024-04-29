@@ -41,10 +41,17 @@ Entries should include a reference to the Pull Request that introduced the chang
   * Index-cache: changed from `60` to `30`
   * Metadata-cache: changed from `60` to `30`
   * Results-cache: changed from `60` to `30`
+* [CHANGE] Smoke-test: remove the `smoke_test.image` and `continuous_test.image` sections and reuse the main Mimir image from the top `image` section using the new `-target=continuous-test` CLI flag. #7923
+* [ENHANCEMENT] Dashboards: allow switching between using classic of native histograms in dashboards. #7627
+  * Overview dashboard, Status panel, `cortex_request_duration_seconds` metric.
+* [ENHANCEMENT] Rollout-operator: upgrade to v0.14.0. #7886
+* [ENHANCEMENT] Alerts: exclude `529` and `598` status codes from failure codes in `MimirRequestsError`. #7889
+* [ENHANCEMENT] The new value `metaMonitoring.grafanaAgent.logs.clusterLabel` controls whether to add a `cluster` label and with what content to PodLogs logs. #7764
+* [ENHANCEMENT] The new values `global.extraVolumes` and `global.extraVolumeMounts` adds volumes and volumeMounts to all pods directly managed by mimir-distributed. #7922
 
-## 5.3.0-rc.0
+## 5.3.0
 
-* [CHANGE] Do not render resource blocks for `initContainers`, `nodeSelector`, `affinity` and `tolerations` if they are empty.
+* [CHANGE] Do not render resource blocks for `initContainers`, `nodeSelector`, `affinity` and `tolerations` if they are empty. #7559
 * [CHANGE] Rollout-operator: remove default CPU limit. #7125
 * [CHANGE] Ring: relaxed the hash ring heartbeat period and timeout for distributor, ingester, store-gateway and compactor: #6860
   * `-distributor.ring.heartbeat-period` set to `1m`
@@ -58,7 +65,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Ruler: Set `-distributor.remote-timeout` to 10s in order to accommodate writing large rule results to the ingester. #7143
 * [CHANGE] Remove `-server.grpc.keepalive.max-connection-age` and `-server.grpc.keepalive.max-connection-age-grace` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7269
 * [CHANGE] Remove `-server.grpc.keepalive.max-connection-idle` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7298
-* [CHANGE] Distributor: termination grace period increased from 60s to 100s.
+* [CHANGE] Distributor: termination grace period increased from 60s to 100s. #7361
 * [CHANGE] Memcached: Change default read timeout for chunks and index caches to `750ms` from `450ms`. #7778
 * [FEATURE] Added experimental feature for deploying [KEDA](https://keda.sh) ScaledObjects as part of the helm chart for the components: distributor, querier, query-frontend and ruler. #7282 #7392 #7431 #7679
   * Autoscaling can be enabled via `distributor.kedaAutoscaling`, `ruler.kedaAutoscaling`, `query_frontend.kedaAutoscaling`, and `querier.kedaAutoscaling`.
@@ -70,15 +77,14 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Rollout-operator: upgraded to v0.13.0. #7469
 * [ENHANCEMENT] Query-frontend: configured `-shutdown-delay`, `-server.grpc.keepalive.max-connection-age` and termination grace period to reduce the likelihood of queries hitting terminated query-frontends. #7129
 * [ENHANCEMENT] Distributor: reduced `-server.grpc.keepalive.max-connection-age` from `2m` to `60s` and configured `-shutdown-delay` to `90s` in order to reduce the chances of failed gRPC write requests when distributors gracefully shutdown. #7361
-* [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the `ruler` component by setting `ruler.serivceAcount.create` to true in the values. #7132
+* [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the `ruler` component by setting `ruler.serviceAccount.create` to true in the values. #7132
 * [ENHANCEMENT] nginx, Gateway: set `proxy_http_version: 1.1` to proxy to HTTP 1.1. #5040
 * [ENHANCEMENT] Gateway: make Ingress/Route host templateable. #7218
 * [ENHANCEMENT] Make the PSP template configurable via `rbac.podSecurityPolicy`. #7190
 * [ENHANCEMENT] Recording rules: add native histogram recording rules to `cortex_request_duration_seconds`. #7528
 * [ENHANCEMENT] Make the port used in ServiceMonitor for kube-state-metrics configurable. #7507
 * [ENHANCEMENT] Produce a clearer error messages when multiple X-Scope-OrgID headers are present. #7704
-* [ENHANCEMENT] Dashboards: allow switching between using classic of native histograms in dashboards. #7627
-  * Overview dashboard, Status panel, `cortex_request_duration_seconds` metric.
+* [ENHANCEMENT] Add `querier.kedaAutoscaling.predictiveScalingEnabled` to scale querier based on inflight queries 7 days ago. #7775
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
 * [BUGFIX] Recording rules: drop rules for metrics removed in 2.0: `cortex_memcache_request_duration_seconds` and `cortex_cache_request_duration_seconds`. #7514
 * [BUGFIX] Store-gateway: setting "resources.requests.memory" with a quantity that used power-of-ten SI suffix, caused an error. #7506

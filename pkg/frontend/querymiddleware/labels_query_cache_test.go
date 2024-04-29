@@ -177,6 +177,7 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 		labelName        string
 		matcherSets      [][]*labels.Matcher
 		expectedCacheKey string
+		limit            uint64
 	}{
 		"start and end time are aligned to 2h boundaries": {
 			startTime: mustParseTime("2023-07-05T00:00:00Z"),
@@ -256,11 +257,32 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 				`{first="1",second!="2"},{first!="0"}`,
 			}, string(stringParamSeparator)),
 		},
+		"multiple label matcher sets, label name, and limit": {
+			startTime: mustParseTime("2023-07-05T00:00:00Z"),
+			endTime:   mustParseTime("2023-07-05T06:00:00Z"),
+			labelName: "test",
+			matcherSets: [][]*labels.Matcher{
+				{
+					labels.MustNewMatcher(labels.MatchEqual, "first", "1"),
+					labels.MustNewMatcher(labels.MatchNotEqual, "second", "2"),
+				}, {
+					labels.MustNewMatcher(labels.MatchNotEqual, "first", "0"),
+				},
+			},
+			limit: 10,
+			expectedCacheKey: strings.Join([]string{
+				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
+				fmt.Sprintf("%d", mustParseTime("2023-07-05T06:00:00Z")),
+				"test",
+				`{first="1",second!="2"},{first!="0"}`,
+				"10",
+			}, string(stringParamSeparator)),
+		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expectedCacheKey, generateLabelsQueryRequestCacheKey(testData.startTime, testData.endTime, testData.labelName, testData.matcherSets))
+			assert.Equal(t, testData.expectedCacheKey, generateLabelsQueryRequestCacheKey(testData.startTime, testData.endTime, testData.labelName, testData.matcherSets, testData.limit))
 		})
 	}
 }

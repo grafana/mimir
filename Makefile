@@ -349,7 +349,6 @@ lint: check-makefiles
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/storage/sharding/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/api/...
-	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/util/globalerror
 
 	# Ensure all errors are report as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
@@ -383,11 +382,17 @@ lint: check-makefiles
 
 	# Ensure packages that no longer use a global logger don't reintroduce it
 	faillint -paths "github.com/grafana/mimir/pkg/util/log.{Logger}" \
-		./pkg/alertmanager/alertstore/... \
-		./pkg/ingester/... \
+		./pkg/alertmanager/... \
+		./pkg/compactor/... \
+		./pkg/distributor/... \
 		./pkg/flusher/... \
+		./pkg/frontend/... \
+		./pkg/ingester/... \
 		./pkg/querier/... \
-		./pkg/ruler/...
+		./pkg/ruler/... \
+		./pkg/scheduler/... \
+		./pkg/storage/... \
+		./pkg/storegateway/...
 
 	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
 	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged

@@ -216,6 +216,53 @@ overrides:
 			// By disabling exemplars via runtime config, distributor will stop sending them to ingester.
 			runtimeConfig: overridesWithExemplars(0),
 		},
+
+		"reduce native histogram buckets via down scaling": {
+			runtimeConfig: `
+overrides:
+  "` + userID + `":
+    native_histograms_ingestion_enabled: true
+    max_native_histogram_buckets: 7
+`,
+			inSeries: [][]prompb.TimeSeries{{{
+				Labels: []prompb.Label{{Name: "__name__", Value: "histogram_down_scaling_series"}},
+				Histograms: []prompb.Histogram{{
+					// This histogram has 4+4=8 buckets (without zero bucket), but only 7 are allowed by the runtime config.
+					Count:          &prompb.Histogram_CountInt{CountInt: 12},
+					ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 2},
+					ZeroThreshold:  0.001,
+					Sum:            18.4,
+					Schema:         0,
+					NegativeSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+					NegativeDeltas: []int64{1, 1, -1, 0},
+					PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+					PositiveDeltas: []int64{1, 1, -1, 0},
+					Timestamp:      queryStart.UnixMilli(),
+				}},
+			}}},
+			queries: map[string]model.Matrix{
+				"histogram_down_scaling_series": {{
+					Metric: model.Metric{
+						"__name__": "histogram_down_scaling_series",
+					},
+					Histograms: []model.SampleHistogramPair{{Timestamp: model.Time(queryStart.UnixMilli()), Histogram: &model.SampleHistogram{
+						Count: 12,
+						Sum:   18.4,
+						Buckets: model.HistogramBuckets{
+							// This histogram has 3+3=6 buckets (without zero bucket), which was down scaled from 4+4=8 buckets.
+							&model.HistogramBucket{Boundaries: 1, Lower: -16, Upper: -4, Count: 2},
+							&model.HistogramBucket{Boundaries: 1, Lower: -4, Upper: -1, Count: 2},
+							&model.HistogramBucket{Boundaries: 1, Lower: -1, Upper: -0.25, Count: 1},
+							&model.HistogramBucket{Boundaries: 3, Lower: -0.001, Upper: 0.001, Count: 2},
+							&model.HistogramBucket{Boundaries: 0, Lower: 0.25, Upper: 1, Count: 1},
+							&model.HistogramBucket{Boundaries: 0, Lower: 1, Upper: 4, Count: 2},
+							&model.HistogramBucket{Boundaries: 0, Lower: 4, Upper: 16, Count: 2},
+						},
+					},
+					}},
+				}},
+			},
+		},
 	}
 
 	s, err := e2e.NewScenario(networkName)
