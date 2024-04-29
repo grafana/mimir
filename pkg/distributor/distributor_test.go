@@ -3729,6 +3729,34 @@ func TestDistributor_UserStats(t *testing.T) {
 			shardSize:      1, // Tenant's shard made of: ingester-zone-a-0, ingester-zone-b-0 and ingester-zone-c-0.
 			expectedSeries: 5,
 		},
+		"multi zone, 5 ingesters, every series successfully replicated to 3 ingesters across 5 zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 1, happyIngesters: 1},
+				"zone-b": {numIngesters: 1, happyIngesters: 1},
+				"zone-c": {numIngesters: 1, happyIngesters: 1},
+				"zone-d": {numIngesters: 1, happyIngesters: 1},
+				"zone-e": {numIngesters: 1, happyIngesters: 1},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_2", "series_3", "series_4"),
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_3", "series_4", "series_5"),
+				},
+				"zone-d": {
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_1"),
+				},
+				"zone-e": {
+					makeWriteRequest(0, 1, 0, false, false, "series_5", "series_1", "series_2"),
+				},
+			},
+			// We pushed 5 series and every series has been replicated to 3 ingesters (in different zones).
+			expectedSeries: 5,
+		},
 	}
 
 	for testName, testData := range tests {
