@@ -1927,11 +1927,16 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	if len(replicationSets) > 0 {
 		zonesTotal = replicationSets[0].ZoneCount()
 	}
-	// When the ingest storage is enabled a partition is owned by only 1 ingester per zone,
-	// so regardless the number of zones we have it's behaving like multi-zone is always enabled.
-	isMultiZone := d.cfg.IngestStorageConfig.Enabled || zonesTotal > 1
+	approximateFromZonesFunc := func(countByZone map[string]uint64) uint64 {
+		return approximateFromZones(zonesTotal, d.ingestersRing.ReplicationFactor(), countByZone)
+	}
+	// When the ingest storage is enabled a partition is owned by only 1 ingester per zone.
+	// So we always approximate the resulting stats as max of what a single zone has.
+	if d.cfg.IngestStorageConfig.Enabled {
+		approximateFromZonesFunc = maxFromZones[uint64]
+	}
 
-	return cardinalityConcurrentMap.toResponse(isMultiZone, zonesTotal, d.ingestersRing.ReplicationFactor()), nil
+	return cardinalityConcurrentMap.toResponse(approximateFromZonesFunc), nil
 }
 
 func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelValuesCardinalityRequest, error) {
@@ -2021,7 +2026,7 @@ func (cm *labelValuesCardinalityConcurrentMap) processMessage(replicationSetIdx 
 
 // toResponse adjust builds and returns LabelValuesCardinalityResponse containing the count of series by label name
 // and value.
-func (cm *labelValuesCardinalityConcurrentMap) toResponse(isMultiZone bool, zonesTotal, replicationFactor int) *ingester_client.LabelValuesCardinalityResponse {
+func (cm *labelValuesCardinalityConcurrentMap) toResponse(approximateFromZonesFunc func(countByZone map[string]uint64) uint64) *ingester_client.LabelValuesCardinalityResponse {
 	// we need to acquire the lock to prevent concurrent read/write to the map
 	cm.labelValuesCountersMx.Lock()
 	defer cm.labelValuesCountersMx.Unlock()
@@ -2038,7 +2043,7 @@ func (cm *labelValuesCardinalityConcurrentMap) toResponse(isMultiZone bool, zone
 			total := uint64(0)
 
 			for _, countByZone := range dataByReplicationSet {
-				total += approximateFromZones(isMultiZone, zonesTotal, replicationFactor, countByZone)
+				total += approximateFromZonesFunc(countByZone)
 			}
 
 			countByLabelValue[labelValue] = total
@@ -2241,27 +2246,22 @@ func (r *activeSeriesResponse) result() []labels.Labels {
 //
 // If Mimir isn't deployed in a multi-zone configuration, approximateFromZones
 // divides the sum of all values by the replication factor to come up with an approximation.
-func approximateFromZones[T ~float64 | ~uint64](isMultiZone bool, zonesTotal, replicationFactor int, seriesCountMapByZone map[string]T) T {
+func approximateFromZones[T ~float64 | ~uint64](zonesTotal, replicationFactor int, seriesCountByZone map[string]T) T {
 	// If we have more than one zone, we return the max value across zones.
 	// Values can be different across zones due to incomplete replication or
 	// other issues. Any inconsistency should always be an underestimation of
 	// the real value, so we take the max to get the best available
 	// approximation.
-	if isMultiZone {
-		var max T
-		for _, seriesCount := range seriesCountMapByZone {
-			if seriesCount > max {
-				max = seriesCount
-			}
-		}
+	if zonesTotal > 1 {
+		val := maxFromZones(seriesCountByZone)
 		if zonesTotal <= replicationFactor {
-			return max
+			return val
 		}
 		// When the number of zones is larger than the replication factor, we factor
 		// that into the approximation. We multiply the max of all zones to a ratio
 		// of number of zones to the replication factor to approximate how series
 		// are spread across zones.
-		return T(math.Round(float64(max) * float64(zonesTotal) / float64(replicationFactor)))
+		return T(math.Round(float64(val) * float64(zonesTotal) / float64(replicationFactor)))
 	}
 
 	// If we have a single zone or number of zones is larger than RF, we can't return
@@ -2269,10 +2269,19 @@ func approximateFromZones[T ~float64 | ~uint64](isMultiZone bool, zonesTotal, re
 	// here to know how many unique series really exist. In this case, dividing by the replication factor
 	// will give us an approximation of the real value.
 	var sum T
-	for _, seriesCount := range seriesCountMapByZone {
+	for _, seriesCount := range seriesCountByZone {
 		sum += seriesCount
 	}
 	return T(math.Round(float64(sum) / float64(replicationFactor)))
+}
+
+func maxFromZones[T ~float64 | ~uint64](seriesCountByZone map[string]T) (val T) {
+	for _, seriesCount := range seriesCountByZone {
+		if seriesCount > val {
+			val = seriesCount
+		}
+	}
+	return val
 }
 
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching
@@ -2478,14 +2487,19 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 			zoneNumSeries[r.zone] += r.resp.NumSeries
 		}
 
-		// When the ingest storage is enabled a partition is owned by only 1 ingester per zone,
-		// so regardless the number of zones we have it's behaving like multi-zone is always enabled.
-		isMultiZone := d.cfg.IngestStorageConfig.Enabled || replicationSet.ZoneCount() > 1
-
-		totalStats.IngestionRate += approximateFromZones(isMultiZone, replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneIngestionRate)
-		totalStats.APIIngestionRate += approximateFromZones(isMultiZone, replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneAPIIngestionRate)
-		totalStats.RuleIngestionRate += approximateFromZones(isMultiZone, replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneRuleIngestionRate)
-		totalStats.NumSeries += approximateFromZones(isMultiZone, replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneNumSeries)
+		// When the ingest storage is enabled, a partition is owned by only 1 ingester per zone.
+		// So we always approximate the resulting stats as max of what a single zone has.
+		if d.cfg.IngestStorageConfig.Enabled {
+			totalStats.IngestionRate += maxFromZones(zoneIngestionRate)
+			totalStats.APIIngestionRate += maxFromZones(zoneAPIIngestionRate)
+			totalStats.RuleIngestionRate += maxFromZones(zoneRuleIngestionRate)
+			totalStats.NumSeries += maxFromZones(zoneNumSeries)
+		} else {
+			totalStats.IngestionRate += approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneIngestionRate)
+			totalStats.APIIngestionRate += approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneAPIIngestionRate)
+			totalStats.RuleIngestionRate += approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneRuleIngestionRate)
+			totalStats.NumSeries += approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneNumSeries)
+		}
 	}
 
 	return totalStats, nil
