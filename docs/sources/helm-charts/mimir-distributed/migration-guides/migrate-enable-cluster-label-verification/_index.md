@@ -9,11 +9,11 @@ weight: 110
 
 ## Introduction
 
-Grafana Mimir uses memberlist to decide where the series should go when ingesting series. Memberlist encodes the replica information in data structure called hash ring, this is a consistent hashing in which different ingesters instance is placed around the ring and each ingester will have tokens. The combination of token and ingester position determines which ingester should handle a request. The information of this hash ring is delivered to different components by using gossip protocol.
+Grafana Mimir uses [memberlist] to share works and deciding which component replica to send the workload such as when ingesting series. Memberlist encodes the replica information in data structure called [hash ring], this is a consistent hashing in which different ingesters instance tokens are placed around the ring. The token position in the ring determines which ingester should handle a request. The information of this hash ring is delivered to different components by using gossip protocol.
 
-By default hash ring is global. If we also have Grafana Tempo and Grafana Loki in the same Kubernetes cluster, their components can unintentionally talk and sending data with each other (which is not compatible), because Loki and Tempo also uses memberlist. (TODO: More generally in any cluster where the pods may reuse each other's IPs after churning).
+By default, hash ring is global. If we also have Grafana Tempo and Grafana Loki in the same Kubernetes cluster, their components can unintentionally talk and sending data with each other, because Loki and Tempo also uses memberlist. This possibility to happen increases in cluster where the pods may reuse each other's IPs after churning.
 
-In this document we will describe the step on how to migrate a Mimir installation to prevent non Mimir installation to talk to its memberlist cluster.
+In this document we will describe the step on how to migrate a Mimir installation to prevent two separate memberlist gossip hash ring to join into one.
 
 There are three steps of the migration which we will describe in details in the migration section. But in brief summary the steps are:
 
@@ -25,7 +25,7 @@ The migration should take around 30 minutes. The risk of not doing this migratio
 
 ## How The Migration Solve The Issue
 
-Non-Mimir component can merge with Mimir memberlist because by default memberlist applies globally. As an example, consider a loki pod is terminated and the IP address reused by a new mimir pod in the same cluster. This might cause other Loki components try to talk and sending data to this new Mimir pod.
+Non-Mimir component can merge with Mimir memberlist because by default, memberlist is not namespaced and applies globally. As an example, consider a Loki pod is terminated and the IP address reused by a new Mimir pod in the same cluster. This might cause other Loki components try to talk and sending data to this new Mimir pod.
 
 Cluster label will prevent such situation by only allowing communication for components that has same cluster label. Once that is enabled, before memberlist try to communicate with other components, it will verify whether that new components are having same cluster label and only allowing memberlist to communicate if the parties are having the same cluster label.
 
@@ -33,7 +33,7 @@ Cluster label will prevent such situation by only allowing communication for com
 
 ### 1. Disable memberlist cluster label verification
 
-By default memberlist will verify the cluster label. But by default too, all cluster labels are an empty string which means, if different systems that using memberlist and not setting the cluster label, they can talk with each other. The very first step is for us to disable cluster label verification flag. In helm we do this by setting the following structured config. In mimir-distributed helm chart version x.x.x this value will be the default hence you don't have to do this step at all.
+Cluster label verification flag is enabled by default. However, cluster label default value is an empty string. If different systems that using memberlist and not setting the cluster label, they can talk with each other. To disable cluster label verification flag, set the following structured config.
 
 ```
 mimir
@@ -42,11 +42,11 @@ mimir
       cluster_label_verification_disabled: true
 ```
 
-Make sure to rollout the installation to apply the configuration changes by running `helm upgrade mimir-distributed -f values.yaml`.
+Rollout the installation to apply the configuration changes by running `helm upgrade mimir-distributed -f values.yaml`.
 
 ### 2. Set cluster label to all mimir components
 
-Set cluster label to all mimir components by setting the following configuration. Later after applying this configuration changes, and enabling cluster label verification again, all Mimir components will only communicate via memberlist if the other component is having the same cluster label.
+Set cluster label to all Mimir components by setting the following configuration. Once the configuration is applied, all Mimir components will only communicate via memberlist if the other component is having the same cluster label.
 
 ```
 mimir
@@ -60,7 +60,7 @@ Apply the configuration changes by running `helm upgrade mimir-distributed -f va
 
 ### 3. Enable memberlist cluster label verification
 
-Set `memberlist.cluster_label_verification_disabled` to false to enable again memberlist cluster label verification.
+Set `memberlist.cluster_label_verification_disabled` to false, to re-enable memberlist cluster label verification.
 
 ```
 mimir
@@ -74,10 +74,10 @@ Apply the configuration changes by running `helm upgrade mimir-distributed -f va
 
 ## Verifying The Migration
 
-Once the rollout has been done run the following helm command to verify if we have successfully migrate the Mimir memberlist to check the cluster label.
+Once the rollout has been done run the following helm command to verify if we have successfully migrated the Mimir memberlist to check the cluster label.
 
 ```
-helm --kube-context=k3d-mimir --namespace=x-mimir get values [your-mimir-release-name]
+helm --kube-context=k3d-mimir --namespace=[your-mimir-namespace] get values [your-mimir-release-name]
 ```
 
 You should see the following values as what we have set above.
@@ -89,3 +89,8 @@ mimir
       cluster_label_verification_disabled: false
       cluster_label: "$helm-release-name"
 ```
+
+{{% docs/reference %}}
+[memberlist]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/memberlist-and-the-gossip-protocol"
+[hash ring]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/hash-ring"
+{{% /docs/reference %}}
