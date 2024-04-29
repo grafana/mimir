@@ -136,6 +136,11 @@ cortex_prometheus_rule_group_rules{rule_group="group_one",user="user3"} 100000
 cortex_prometheus_rule_group_rules{rule_group="group_two",user="user1"} 1000
 cortex_prometheus_rule_group_rules{rule_group="group_two",user="user2"} 10000
 cortex_prometheus_rule_group_rules{rule_group="group_two",user="user3"} 100000
+# HELP cortex_prometheus_rule_group_last_restore_duration_seconds The duration of the last alert rules alerts restoration using the `+"`ALERTS_FOR_STATE`"+` series across all rule groups.
+# TYPE cortex_prometheus_rule_group_last_restore_duration_seconds gauge
+cortex_prometheus_rule_group_last_restore_duration_seconds{user="user1"} 20
+cortex_prometheus_rule_group_last_restore_duration_seconds{user="user2"} 200
+cortex_prometheus_rule_group_last_restore_duration_seconds{user="user3"} 2000
 `))
 	require.NoError(t, err)
 }
@@ -168,6 +173,9 @@ func populateManager(base float64) *prometheus.Registry {
 
 	metrics.GroupSamples.WithLabelValues("group_one").Add(base * 1000)
 	metrics.GroupSamples.WithLabelValues("group_two").Add(base * 1000)
+
+	metrics.GroupLastRestoreDuration.WithLabelValues("group_one").Add(base * 10)
+	metrics.GroupLastRestoreDuration.WithLabelValues("group_two").Add(base * 10)
 
 	return r
 }
