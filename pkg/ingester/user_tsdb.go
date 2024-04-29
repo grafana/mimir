@@ -144,6 +144,12 @@ type userTSDB struct {
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 }
 
+func (u *userTSDB) IsOwned(_ storage.SeriesRef, hash uint32) bool {
+	u.ownedStateMtx.Lock()
+	defer u.ownedStateMtx.Unlock()
+	return u.ownedTokenRanges.IncludesKey(hash)
+}
+
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
 	return u.db.Appender(ctx)
 }
@@ -605,6 +611,9 @@ func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason strin
 //
 // This method and recomputeOwnedSeries should be only called from the same goroutine. (ownedSeries service)
 func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
+	u.ownedStateMtx.Lock()
+	defer u.ownedStateMtx.Unlock()
+
 	prev := u.ownedTokenRanges
 	u.ownedTokenRanges = newTokenRanges
 
@@ -613,6 +622,9 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 
 func (u *userTSDB) computeOwnedSeries() int {
 	// This can happen if ingester doesn't own this tenant anymore.
+	u.ownedStateMtx.Lock()
+	defer u.ownedStateMtx.Unlock()
+
 	if len(u.ownedTokenRanges) == 0 {
 		return 0
 	}

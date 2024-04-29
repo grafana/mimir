@@ -50,6 +50,8 @@ type ActiveSeries struct {
 	// The duration after which series become inactive.
 	// Also used to determine if enough time has passed since configuration reload for valid results.
 	timeout time.Duration
+
+	owner SeriesOwner
 }
 
 // seriesStripe holds a subset of the series timestamps for a single tenant.
@@ -57,6 +59,7 @@ type seriesStripe struct {
 	matchers *Matchers
 
 	deleted *deletedSeries
+	owner SeriesOwner
 
 	// Unix nanoseconds. Only used by purge. Zero = unknown.
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
@@ -78,16 +81,29 @@ type seriesEntry struct {
 	nanos                     *atomic.Int64        // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
 	matches                   preAllocDynamicSlice //  Index of the matcher matching
 	numNativeHistogramBuckets int                  // Number of buckets in native histogram series, -1 if not a native histogram.
+	hash uint32
 
 	deleted bool // This series was marked as deleted, so before purging we need to remove the refence to it from the deletedSeries.
 }
 
+type SeriesOwner interface {
+	IsOwned(ref storage.SeriesRef, hash uint32) bool
+}
+
 func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
-	c := &ActiveSeries{matchers: asm, timeout: timeout}
+	return NewActiveSeriesWithOwner(asm, timeout, nil)
+}
+
+func NewActiveSeriesWithOwner(asm *Matchers, timeout time.Duration, owner SeriesOwner) *ActiveSeries {
+	c := &ActiveSeries{
+		matchers: asm,
+		timeout:  timeout,
+		owner:    owner,
+	}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted)
+		c.stripes[i].reinitialize(asm, &c.deleted, owner)
 	}
 
 	return c
@@ -104,7 +120,7 @@ func (c *ActiveSeries) ReloadMatchers(asm *Matchers, now time.Time) {
 	defer c.matchersMutex.Unlock()
 
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted)
+		c.stripes[i].reinitialize(asm, &c.deleted, c.owner)
 	}
 	c.matchers = asm
 	c.lastMatchersUpdate = now
@@ -118,10 +134,10 @@ func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
 // Pass -1 in numNativeHistogramBuckets if the series is not a native histogram series.
-func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef, now time.Time, numNativeHistogramBuckets int) {
+func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef, hash uint32, now time.Time, numNativeHistogramBuckets int) {
 	stripeID := ref % numStripes
 
-	created := c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, numNativeHistogramBuckets)
+	created := c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, hash, numNativeHistogramBuckets)
 	if created {
 		if deleted, ok := c.deleted.find(series); ok {
 			deletedStripeID := deleted.ref % numStripes
@@ -275,13 +291,13 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int, matchingNativeH
 	return s.active, s.activeNativeHistograms, s.activeNativeHistogramBuckets
 }
 
-func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref storage.SeriesRef, numNativeHistogramBuckets int) bool {
+func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref storage.SeriesRef, hash uint32, numNativeHistogramBuckets int) bool {
 	nowNanos := now.UnixNano()
 
 	e, needsUpdating := s.findEntryForSeries(ref, numNativeHistogramBuckets)
 	created := false
 	if e == nil || needsUpdating {
-		e, created = s.findAndUpdateOrCreateEntryForSeries(ref, series, nowNanos, numNativeHistogramBuckets)
+		e, created = s.findAndUpdateOrCreateEntryForSeries(ref, hash, series, nowNanos, numNativeHistogramBuckets)
 	}
 
 	entryTimeSet := created
@@ -311,7 +327,7 @@ func (s *seriesStripe) findEntryForSeries(ref storage.SeriesRef, numNativeHistog
 	return entry.nanos, entry.numNativeHistogramBuckets != numNativeHistogramBuckets
 }
 
-func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef, series labels.Labels, nowNanos int64, numNativeHistogramBuckets int) (entryTime *atomic.Int64, created bool) {
+func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef, hash uint32, series labels.Labels, nowNanos int64, numNativeHistogramBuckets int) (entryTime *atomic.Int64, created bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -375,6 +391,7 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 		nanos:                     atomic.NewInt64(nowNanos),
 		matches:                   matches,
 		numNativeHistogramBuckets: numNativeHistogramBuckets,
+		hash: hash,
 	}
 
 	s.refs[ref] = e
@@ -399,7 +416,7 @@ func (s *seriesStripe) clear() {
 }
 
 // Reinitialize assigns new matchers and corresponding size activeMatching slices.
-func (s *seriesStripe) reinitialize(asm *Matchers, deleted *deletedSeries) {
+func (s *seriesStripe) reinitialize(asm *Matchers, deleted *deletedSeries, owner SeriesOwner) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -413,6 +430,7 @@ func (s *seriesStripe) reinitialize(asm *Matchers, deleted *deletedSeries) {
 	s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
 	s.activeMatchingNativeHistograms = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistograms)
 	s.activeMatchingNativeHistogramBuckets = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistogramBuckets)
+	s.owner = owner
 }
 
 func (s *seriesStripe) purge(keepUntil time.Time) {
@@ -435,7 +453,7 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 	oldest := int64(math.MaxInt64)
 	for ref, entry := range s.refs {
 		ts := entry.nanos.Load()
-		if ts < keepUntilNanos {
+		if ts < keepUntilNanos || !s.owner.IsOwned(ref, entry.hash) {
 			if entry.deleted {
 				s.deleted.purge(ref)
 			}

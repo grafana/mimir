@@ -49,7 +49,7 @@ func TestIsLabelValueActive(t *testing.T) {
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], 0, time.Unix(int64(i), 0), -1)
 	}
 
 	valid := activeSeries.Purge(mockedTime)

@@ -1480,7 +1480,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets)
+			// TODO estimate impact of calling secondaryTSDBHashFunctionForUser for every series
+			activeSeries.UpdateSeries(nonCopiedLabels, ref, secondaryTSDBHashFunctionForUser(userID)(nonCopiedLabels), startAppend, numNativeHistogramBuckets)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
@@ -2563,7 +2564,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	userDB := &userTSDB{
 		userID:                  userID,
-		activeSeries:            activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples:     util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
@@ -2578,6 +2578,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			localSeriesLimit: initialLocalLimit,
 		},
 	}
+	userDB.activeSeries = activeseries.NewActiveSeriesWithOwner(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout, userDB)
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
