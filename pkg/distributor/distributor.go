@@ -687,7 +687,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	allowedExemplars := d.limits.MaxExemplarsPerSeriesPerRequest(userID)
 	if allowedExemplars > 0 && len(ts.Exemplars) > allowedExemplars {
 		d.exemplarValidationMetrics.tooManyExemplars.WithLabelValues(userID).Add(float64(len(ts.Exemplars) - allowedExemplars))
-		ts.ResizeExamplers(allowedExemplars)
+		ts.ResizeExemplars(allowedExemplars)
 	}
 
 	for i := 0; i < len(ts.Exemplars); {

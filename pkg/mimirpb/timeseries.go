@@ -155,7 +155,7 @@ func (p *PreallocTimeseries) ClearExemplars() {
 	p.clearUnmarshalData()
 }
 
-func (p *PreallocTimeseries) ResizeExamplers(newSize int) {
+func (p *PreallocTimeseries) ResizeExemplars(newSize int) {
 	if len(p.Exemplars) <= newSize {
 		return
 	}

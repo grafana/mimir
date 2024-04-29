@@ -1715,7 +1715,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 		        cortex_discarded_exemplars_total{reason="exemplar_too_far_in_future",user="user"} 1
 		    `,
 		},
-		"should drop exemplars more than the allowed exemplar per serie limit, when multiple exemplars are specified in the same series": {
+		"should drop exemplars above the allowed exemplars per series limit, when multiple exemplars are specified in the same series": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxGlobalExemplarsPerUser = 2
 				limits.MaxExemplarsPerSeriesPerRequest = 2
@@ -1746,7 +1746,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			expectedMetrics: `
                 # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
                 # TYPE cortex_discarded_exemplars_total counter
-                cortex_discarded_exemplars_total{reason="too_many_exemplars_per_serie",user="user"} 1
+                cortex_discarded_exemplars_total{reason="too_many_exemplars_per_series",user="user"} 1
             `,
 		},
 	}

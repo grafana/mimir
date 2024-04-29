@@ -465,7 +465,7 @@ func TestPreallocTimeseries_SetLabels(t *testing.T) {
 	require.Nil(t, p.marshalledData)
 }
 
-func TestTestPreallocTimeseries_ResizeExemplars(t *testing.T) {
+func TestPreallocTimeseries_ResizeExemplars(t *testing.T) {
 	t.Run("should resize Exemplars when size is bigger than target size", func(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
@@ -477,7 +477,7 @@ func TestTestPreallocTimeseries_ResizeExemplars(t *testing.T) {
 		for i := range p.Exemplars {
 			p.Exemplars[i] = Exemplar{Labels: []LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: int64(i)}
 		}
-		p.ResizeExamplers(5)
+		p.ResizeExemplars(5)
 		require.Len(t, p.Exemplars, 5)
 		require.Nil(t, p.marshalledData)
 	})

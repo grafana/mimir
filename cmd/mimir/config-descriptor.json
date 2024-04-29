@@ -3295,9 +3295,9 @@
           "kind": "field",
           "name": "max_exemplars_per_series_per_request",
           "required": false,
-          "desc": "Maximum ratio of exemplars to series per request. 0 to disable limit in request. The exceeding exemplars are dropped.",
+          "desc": "Maximum number of exemplars per series per request. 0 to disable limit in request. The exceeding exemplars are dropped.",
           "fieldValue": null,
-          "fieldDefaultValue": 100,
+          "fieldDefaultValue": 0,
           "fieldFlag": "distributor.max-exemplars-per-series-per-request",
           "fieldType": "int",
           "fieldCategory": "experimental"

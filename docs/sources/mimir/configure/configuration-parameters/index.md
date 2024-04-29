@@ -3007,10 +3007,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-native-histogram-buckets
 [max_native_histogram_buckets: <int> | default = 0]
 
-# (experimental) Maximum ratio of exemplars to series per request. 0 to disable
-# limit in request. The exceeding exemplars are dropped.
+# (experimental) Maximum number of exemplars per series per request. 0 to
+# disable limit in request. The exceeding exemplars are dropped.
 # CLI flag: -distributor.max-exemplars-per-series-per-request
-[max_exemplars_per_series_per_request: <int> | default = 100]
+[max_exemplars_per_series_per_request: <int> | default = 0]
 
 # Whether to reduce or reject native histogram samples with more buckets than
 # the configured limit.
