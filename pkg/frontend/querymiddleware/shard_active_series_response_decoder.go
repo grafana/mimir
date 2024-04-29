@@ -19,14 +19,14 @@ import (
 )
 
 const (
-	activeSeriesChunkMaxBufferSize = 1024 * 1024 // 1MB
+	defaultActiveSeriesChunkMaxBufferSize = 1024 * 1024 // 1MB
 
 	checkContextCancelledBytesInterval = 256
 )
 
 var activeSeriesChunkBufferPool = sync.Pool{
 	New: func() any {
-		return bytes.NewBuffer(make([]byte, 0, activeSeriesChunkMaxBufferSize))
+		return bytes.NewBuffer(make([]byte, 0, defaultActiveSeriesChunkMaxBufferSize))
 	},
 }
 
@@ -56,13 +56,14 @@ func reuseActiveSeriesDataStreamBuffer(buf *bytes.Buffer) {
 }
 
 type shardActiveSeriesResponseDecoder struct {
-	ctx            context.Context
-	rc             io.ReadCloser
-	br             *bufio.Reader
-	strBuff        []byte
-	streamCh       chan<- *bytes.Buffer
-	readBytesCount int
-	err            error
+	ctx                context.Context
+	rc                 io.ReadCloser
+	br                 *bufio.Reader
+	strBuff            []byte
+	streamCh           chan<- *bytes.Buffer
+	readBytesCount     int
+	err                error
+	chunkBufferMaxSize int
 }
 
 func (d *shardActiveSeriesResponseDecoder) reset(ctx context.Context, rc io.ReadCloser, streamCh chan<- *bytes.Buffer) {
@@ -74,6 +75,7 @@ func (d *shardActiveSeriesResponseDecoder) reset(ctx context.Context, rc io.Read
 	d.strBuff = d.strBuff[:0]
 	d.readBytesCount = 0
 	d.err = nil
+	d.chunkBufferMaxSize = defaultActiveSeriesChunkMaxBufferSize
 }
 
 func (d *shardActiveSeriesResponseDecoder) stickError(err error) {
@@ -199,7 +201,7 @@ func (d *shardActiveSeriesResponseDecoder) streamData() error {
 			return d.err
 		}
 
-		if cb.Len() >= activeSeriesChunkMaxBufferSize {
+		if cb.Len() >= d.chunkBufferMaxSize {
 			d.streamCh <- cb
 			cb = activeSeriesChunkBufferPool.Get().(*bytes.Buffer)
 			firstItem = true

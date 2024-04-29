@@ -14,10 +14,11 @@ import (
 
 func TestShardActiveSeriesResponseDecoder(t *testing.T) {
 	tcs := []struct {
-		name           string
-		input          string
-		expectedOutput string
-		expectedError  string
+		name               string
+		input              string
+		expectedOutput     string
+		expectedError      string
+		chunkBufferMaxSize int
 	}{
 		{
 			name:          "empty response",
@@ -38,6 +39,12 @@ func TestShardActiveSeriesResponseDecoder(t *testing.T) {
 			name:           "multiple labels",
 			input:          `{"data":[{"__name__":"metric","shard":"1"},{"__name__":"metric","shard":"2"}]}`,
 			expectedOutput: `{"__name__":"metric","shard":"1"},{"__name__":"metric","shard":"2"}`,
+		},
+		{
+			name:               "reach max buffer size",
+			input:              `{"data":[{"__name__":"metric","shard":"1"},{"__name__":"metric","shard":"2"},{"__name__":"metric","shard":"3"}]}`,
+			expectedOutput:     `{"__name__":"metric","shard":"1"},{"__name__":"metric","shard":"2"},{"__name__":"metric","shard":"3"}`,
+			chunkBufferMaxSize: 16,
 		},
 		{
 			name:          "unexpected comma",
@@ -80,6 +87,9 @@ func TestShardActiveSeriesResponseDecoder(t *testing.T) {
 
 			r := strings.NewReader(tc.input)
 			d := borrowShardActiveSeriesResponseDecoder(context.Background(), io.NopCloser(r), streamCh)
+			if tc.chunkBufferMaxSize > 0 {
+				d.chunkBufferMaxSize = tc.chunkBufferMaxSize
+			}
 
 			err := d.decode()
 			if err == nil {
@@ -89,7 +99,13 @@ func TestShardActiveSeriesResponseDecoder(t *testing.T) {
 				}()
 
 				// Drain the data channel.
+				firstItem := true
 				for streamBuf := range streamCh {
+					if !firstItem {
+						dataStr.WriteString(",")
+					} else {
+						firstItem = false
+					}
 					dataStr.WriteString(streamBuf.String())
 				}
 			} else {
