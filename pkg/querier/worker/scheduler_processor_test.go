@@ -354,12 +354,13 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	streamingEnabledHeader := &httpgrpc.Header{Key: ResponseStreamingEnabledHeader, Values: []string{"true"}}
 
 	for _, tc := range []struct {
-		name                    string
-		responseBodyBytes       []byte
-		expectMetadataCalls     int
-		expectBodyCalls         int
-		expectNonStreamingCalls int
-		wantFrontendStreamError bool
+		name                        string
+		responseBodyBytes           []byte
+		expectMetadataCalls         int
+		expectBodyCalls             int
+		expectNonStreamingCalls     int
+		wantFrontendStreamError     bool
+		frontendStreamInitialErrors int
 	}{
 		{
 			name:                "should stream response metadata followed by response body chunks",
@@ -380,6 +381,15 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			// Would expect 3 chunks to transfer the whole body, but expect stream to be interrupted.
 			expectBodyCalls: 2,
 		},
+		{
+			name:                    "should stream even on frontend retries",
+			responseBodyBytes:       bytes.Repeat([]byte("a"), 2*responseStreamingBodyChunkSizeBytes+1),
+			wantFrontendStreamError: false,
+			expectMetadataCalls:     1,
+			// Would expect 3 chunks to transfer the whole body, but expect stream to be interrupted.
+			expectBodyCalls:             3,
+			frontendStreamInitialErrors: 2,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reqProcessor, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
@@ -390,6 +400,8 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 			if tc.wantFrontendStreamError {
 				frontend.queryResultStreamErrorAfter = 1
+			} else {
+				frontend.queryResultStreamInitial = tc.frontendStreamInitialErrors
 			}
 
 			queryID := uint64(1)
@@ -685,6 +697,7 @@ type frontendForQuerierMockServer struct {
 
 	responseStreamStarted          chan struct{}
 	queryResultStreamErrorAfter    int
+	queryResultStreamInitial       int
 	queryResultStreamMetadataCalls atomic.Int64
 	queryResultStreamBodyCalls     atomic.Int64
 	queryResultStreamReturned      atomic.Int64
@@ -729,9 +742,11 @@ func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.Frontend
 					close(f.responseStreamStarted)
 				}
 			})
-			f.queryResultStreamBodyCalls.Inc()
-			if f.queryResultStreamErrorAfter > 0 && int(f.queryResultStreamBodyCalls.Load()) > f.queryResultStreamErrorAfter {
+			calls := int(f.queryResultStreamBodyCalls.Inc())
+			if f.queryResultStreamErrorAfter > 0 && calls > f.queryResultStreamErrorAfter {
 				return errors.New("something went wrong")
+			} else if f.queryResultStreamInitial > 0 && calls <= f.queryResultStreamInitial {
+				return errors.New("something went wrong - try again!")
 			}
 			if !metadataSent {
 				return errors.New("expected metadata to be sent before body")
