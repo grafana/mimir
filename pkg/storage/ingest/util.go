@@ -16,6 +16,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
 )
 
@@ -68,6 +69,7 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		kgo.MetadataMaxAge(10 * time.Second),
 
 		kgo.WithLogger(newKafkaLogger(logger)),
+		kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(kotel.NewTracer())).Hooks()...),
 
 		kgo.RetryTimeoutFn(func(key int16) time.Duration {
 			switch key {

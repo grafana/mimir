@@ -15,8 +15,7 @@ import (
 )
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
-	db := newTestDB(t)
-	opts := newTestEngineOpts()
+	opts := NewTestEngineOpts()
 	engine, err := NewEngine(opts)
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -38,13 +37,13 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
-			qry, err := engine.NewRangeQuery(ctx, db, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
+			qry, err := engine.NewRangeQuery(ctx, nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
 			require.Error(t, err)
 			require.ErrorIs(t, err, NotSupportedError{})
 			require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
 			require.Nil(t, qry)
 
-			qry, err = engine.NewInstantQuery(ctx, db, nil, expression, time.Now())
+			qry, err = engine.NewInstantQuery(ctx, nil, nil, expression, time.Now())
 			require.Error(t, err)
 			require.ErrorIs(t, err, NotSupportedError{})
 			require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
@@ -65,7 +64,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 	for expression, expectedError := range unsupportedInstantQueryExpressions {
 		t.Run(expression, func(t *testing.T) {
-			qry, err := engine.NewInstantQuery(ctx, db, nil, expression, time.Now())
+			qry, err := engine.NewInstantQuery(ctx, nil, nil, expression, time.Now())
 			require.Error(t, err)
 			require.ErrorIs(t, err, NotSupportedError{})
 			require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
@@ -75,7 +74,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 }
 
 func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
-	opts := newTestEngineOpts()
+	opts := NewTestEngineOpts()
 	engine, err := NewEngine(opts)
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -89,7 +88,7 @@ func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
 }
 
 func TestNewRangeQuery_InvalidExpressionTypes(t *testing.T) {
-	opts := newTestEngineOpts()
+	opts := NewTestEngineOpts()
 	engine, err := NewEngine(opts)
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -105,7 +104,7 @@ func TestNewRangeQuery_InvalidExpressionTypes(t *testing.T) {
 // Test cases that are not supported by the streaming engine are commented out (or, if the entire file is not supported, .disabled is appended to the file name).
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
 func TestUpstreamTestCases(t *testing.T) {
-	opts := newTestEngineOpts()
+	opts := NewTestEngineOpts()
 	engine, err := NewEngine(opts)
 	require.NoError(t, err)
 
@@ -128,7 +127,7 @@ func TestUpstreamTestCases(t *testing.T) {
 }
 
 func TestOurTestCases(t *testing.T) {
-	opts := newTestEngineOpts()
+	opts := NewTestEngineOpts()
 	streamingEngine, err := NewEngine(opts)
 	require.NoError(t, err)
 
@@ -158,16 +157,5 @@ func TestOurTestCases(t *testing.T) {
 				promql.RunTest(t, testScript, prometheusEngine)
 			})
 		})
-	}
-}
-
-func newTestEngineOpts() promql.EngineOpts {
-	return promql.EngineOpts{
-		Logger:               nil,
-		Reg:                  nil,
-		MaxSamples:           50000000,
-		Timeout:              100 * time.Second,
-		EnableAtModifier:     true,
-		EnableNegativeOffset: true,
 	}
 }

@@ -17,10 +17,14 @@ groups:
         The route {{ $labels.route }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrequesterrors
     expr: |
-      100 * sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",route!~"ready|debug_pprof"}[1m]))
+      # The following 5xx errors considered as non-error:
+      # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
+      # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
+      (
+        sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",status_code!~"529|598",route!~"ready|debug_pprof"}[1m]))
         /
-      sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{route!~"ready|debug_pprof"}[1m]))
-        > 1
+        sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{route!~"ready|debug_pprof"}[1m]))
+      ) * 100 > 1
     for: 15m
     labels:
       severity: critical
@@ -789,7 +793,7 @@ groups:
         }}.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirbucketindexnotupdated
     expr: |
-      min by(cluster, namespace, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 7200
+      min by(cluster, namespace, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 2100
     labels:
       severity: critical
 - name: mimir_compactor_alerts

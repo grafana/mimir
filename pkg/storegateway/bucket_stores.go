@@ -125,7 +125,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		allowedTenants:     allowedTenants,
 		stores:             map[string]*BucketStore{},
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
-		metaFetcherMetrics: NewMetadataFetcherMetrics(),
+		metaFetcherMetrics: NewMetadataFetcherMetrics(logger),
 		queryGate:          queryGate,
 		lazyLoadingGate:    lazyLoadingGate,
 		partitioners:       newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),

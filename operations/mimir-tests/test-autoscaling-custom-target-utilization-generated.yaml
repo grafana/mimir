@@ -2140,6 +2140,14 @@ spec:
       threshold: "7"
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus
+  - metadata:
+      metricName: cortex_querier_hpa_default_7d_offset
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5"}[30m]
+        offset 6d23h30m))
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "7"
+    name: cortex_querier_hpa_default_7d_offset
+    type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject

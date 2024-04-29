@@ -66,10 +66,13 @@ spec:
         - name: {{ . }}
       {{- end }}
       {{- end }}
-      {{- if .extraVolumes }}
       volumes:
-        {{- toYaml .extraVolumes | nindent 8 }}
-      {{- end }}
+        {{- with .extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $.ctx.Values.global.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end}}
       containers:
         {{- if .extraContainers }}
         {{ toYaml .extraContainers | nindent 8 }}
@@ -114,10 +117,13 @@ spec:
             {{- end }}
           securityContext:
             {{- toYaml $.ctx.Values.memcached.containerSecurityContext | nindent 12 }}
-          {{- if .extraVolumeMounts }}
           volumeMounts:
-            {{- toYaml .extraVolumeMounts | nindent 12 }}
-          {{- end }}
+            {{- with .extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with $.ctx.Values.global.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end}}
 
       {{- if $.ctx.Values.memcachedExporter.enabled }}
         - name: exporter

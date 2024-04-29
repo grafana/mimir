@@ -48,7 +48,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [HA tracker status](#ha-tracker-status) | Distributor | `GET /distributor/ha_tracker` |
 | [Flush chunks / blocks](#flush-chunks--blocks) | Ingester | `GET,POST /ingester/flush` |
 | [Prepare for Shutdown](#prepare-for-shutdown) | Ingester | `GET,POST,DELETE /ingester/prepare-shutdown` |
-| [Shutdown](#shutdown) | Ingester | `GET,POST /ingester/shutdown` |
+| [Shutdown](#shutdown) | Ingester | `POST /ingester/shutdown` |
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
 | [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
@@ -409,7 +409,7 @@ This API endpoint is usually used by Kubernetes-specific scale down automations 
 ### Shutdown
 
 ```
-GET,POST /ingester/shutdown
+POST /ingester/shutdown
 ```
 
 This endpoint flushes in-memory time series data from ingesters to the long-term storage, and then shuts down the ingester service.
@@ -418,6 +418,32 @@ During this time, `/ready` does not return 200.
 This endpoint unregisters the ingester from the ring even if you disable `-ingester.ring.unregister-on-shutdown`.
 
 This API endpoint is usually used by scale down automations.
+
+### Prepare for unregister
+
+```
+GET,PUT,DELETE /ingester/unregister-on-shutdown
+```
+
+This endpoint controls whether an ingester should unregister from the ring on its next termination, that is, the next time it receives a `SIGINT` or `SIGTERM` signal.
+Via this endpoint, Mimir operators can dynamically control an ingester's `-ingester.ring.unregister-on-shutdown` state without having to restart the ingester.
+
+A `PUT` sets the ingester's unregister state. When invoked with the `PUT` method, the endpoint takes a request body:
+
+```
+{"unregister": true}
+```
+
+A `GET` returns the ingester's current unregister state.
+
+A `DELETE` resets the ingester's unregister state to the value that was passed via the `-ingester.ring.unregister-on-shutdown`
+configuration option.
+
+Regardless of the HTTP method used, the endpoint always returns a response body with the ingester's current unregister state:
+
+```
+{"unregister": true}
+```
 
 ### TSDB Metrics
 

@@ -676,6 +676,25 @@ How to **investigate**:
 
 - Ensure the compactor is successfully running
 - Look for any error in the compactor logs
+- Check how long compactor cleanup tasks have been failing for
+  ```
+  sum(rate(cortex_compactor_block_cleanup_failed_total{namespace="<namespace>"}[$__rate_interval]))
+  ```
+- Check for object storage failures for the compactor
+  ```
+  sum(rate(thanos_objstore_bucket_operation_failures_total{namespace="<namespace>", component="compactor"}[$__rate_interval]))
+  ```
+
+How to **fix** it:
+
+- Temporarily increase the tolerance for stale bucket indexes on queriers:
+  ```
+  -blocks-storage.bucket-store.bucket-index.max-stale-period=2h
+  ```
+- Temporarily increase the frequency at which compactors perform cleanup tasks like updating bucket indexes:
+  ```
+  -compactor.cleanup-interval=5m
+  ```
 
 ### MimirInconsistentRuntimeConfig
 

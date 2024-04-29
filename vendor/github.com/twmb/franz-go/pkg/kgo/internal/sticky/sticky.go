@@ -2,7 +2,7 @@
 // complete overhaul to be faster, more understandable, and optimal.
 //
 // For some points on how Java's strategy is flawed, see
-// https://github.com/Shopify/sarama/pull/1416/files/b29086bdaae0da7ce71eae3f854d50685fd6b631#r315005878
+// https://github.com/IBM/sarama/pull/1416/files/b29086bdaae0da7ce71eae3f854d50685fd6b631#r315005878
 package sticky
 
 import (

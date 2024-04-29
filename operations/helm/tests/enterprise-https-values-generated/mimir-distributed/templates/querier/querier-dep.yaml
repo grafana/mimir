@@ -124,6 +124,7 @@ spec:
         - name: runtime-config
           configMap:
             name: enterprise-https-values-mimir-runtime
+        
         - name: tls-certs
           secret:
             secretName: tls-certs

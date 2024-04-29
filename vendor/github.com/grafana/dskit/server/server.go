@@ -101,6 +101,8 @@ type Config struct {
 	ExcludeRequestInLog                      bool `yaml:"-"`
 	DisableRequestSuccessLog                 bool `yaml:"-"`
 
+	PerTenantDurationInstrumentation middleware.PerTenantCallback `yaml:"-"`
+
 	ServerGracefulShutdownTimeout time.Duration `yaml:"graceful_shutdown_timeout"`
 	HTTPServerReadTimeout         time.Duration `yaml:"http_server_read_timeout"`
 	HTTPServerReadHeaderTimeout   time.Duration `yaml:"http_server_read_header_timeout"`
@@ -371,22 +373,29 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		WithRequest:              !cfg.ExcludeRequestInLog,
 		DisableRequestSuccessLog: cfg.DisableRequestSuccessLog,
 	}
-	var reportGRPCStatusesOptions []middleware.InstrumentationOption
+	var grpcInstrumentationOptions []middleware.InstrumentationOption
 	if cfg.ReportGRPCCodesInInstrumentationLabel {
-		reportGRPCStatusesOptions = []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
+		grpcInstrumentationOptions = append(grpcInstrumentationOptions, middleware.ReportGRPCStatusOption)
+	}
+	if cfg.PerTenantDurationInstrumentation != nil {
+		grpcInstrumentationOptions = append(grpcInstrumentationOptions,
+			middleware.WithPerTenantInstrumentation(
+				metrics.PerTenantRequestDuration,
+				cfg.PerTenantDurationInstrumentation,
+			))
 	}
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,
 		otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
 		middleware.HTTPGRPCTracingInterceptor(router), // This must appear after the OpenTracingServerInterceptor.
-		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, reportGRPCStatusesOptions...),
+		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
 	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
 
 	grpcStreamMiddleware := []grpc.StreamServerInterceptor{
 		serverLog.StreamServerInterceptor,
 		otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer()),
-		middleware.StreamServerInstrumentInterceptor(metrics.RequestDuration, reportGRPCStatusesOptions...),
+		middleware.StreamServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
 	}
 	grpcStreamMiddleware = append(grpcStreamMiddleware, cfg.GRPCStreamMiddleware...)
 
@@ -514,11 +523,13 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		},
 		defaultLogMiddleware,
 		middleware.Instrument{
-			RouteMatcher:     router,
-			Duration:         metrics.RequestDuration,
-			RequestBodySize:  metrics.ReceivedMessageSize,
-			ResponseBodySize: metrics.SentMessageSize,
-			InflightRequests: metrics.InflightRequests,
+			RouteMatcher:      router,
+			Duration:          metrics.RequestDuration,
+			PerTenantDuration: metrics.PerTenantRequestDuration,
+			PerTenantCallback: cfg.PerTenantDurationInstrumentation,
+			RequestBodySize:   metrics.ReceivedMessageSize,
+			ResponseBodySize:  metrics.SentMessageSize,
+			InflightRequests:  metrics.InflightRequests,
 		},
 	}
 	var httpMiddleware []middleware.Interface

@@ -364,8 +364,10 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-blocks-storage.bucket-store.index-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 
 				// Ingester.
-				"-ingester.ring.store":           "consul",
-				"-ingester.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
+				"-ingester.ring.store":                     "consul",
+				"-ingester.ring.consul.hostname":           consul.NetworkHTTPEndpoint(),
+				"-ingester.partition-ring.store":           "consul",
+				"-ingester.partition-ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Distributor.
 				"-ingester.ring.replication-factor": strconv.FormatInt(seriesReplicationFactor, 10),
 				"-distributor.ring.store":           "consul",
@@ -442,10 +444,6 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// may be greater than expected if the compactor is running (there may have been compacted).
 			const shippedBlocks = 2
 			require.NoError(t, cluster.WaitSumMetrics(e2e.GreaterOrEqual(float64(shippedBlocks*seriesReplicationFactor)), "cortex_bucket_store_blocks_loaded"))
-
-			// Start the compactor to have the bucket index created before querying.
-			compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, s.StartAndWaitReady(compactor))
 
 			var expectedCacheRequests int
 

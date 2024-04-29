@@ -213,16 +213,16 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 // validateSampleHistogram returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram) error {
+func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram) (bool, error) {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-		return fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
+		return false, fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
 	}
 
 	if s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema {
 		m.invalidNativeHistogramSchema.WithLabelValues(userID, group).Inc()
-		return fmt.Errorf(invalidSchemaNativeHistogramMsgFormat, s.Schema)
+		return false, fmt.Errorf(invalidSchemaNativeHistogramMsgFormat, s.Schema)
 	}
 
 	if bucketLimit := cfg.MaxNativeHistogramBuckets(userID); bucketLimit > 0 {
@@ -235,23 +235,25 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 		if bucketCount > bucketLimit {
 			if !cfg.ReduceNativeHistogramOverMaxBuckets(userID) {
 				m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
-				return fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
+				return false, fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 			}
 
 			for {
 				bc, err := s.ReduceResolution()
 				if err != nil {
 					m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
-					return fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
+					return false, fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 				}
 				if bc < bucketLimit {
 					break
 				}
 			}
+
+			return true, nil
 		}
 	}
 
-	return nil
+	return false, nil
 }
 
 // validateExemplar returns an error if the exemplar is invalid.

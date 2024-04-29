@@ -139,7 +139,7 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
-	distributorQueryable := newDistributorQueryable(distributor, limits, queryMetrics, logger)
+	distributorQueryable := NewDistributorQueryable(distributor, limits, queryMetrics, logger)
 
 	queryable := newQueryable(distributorQueryable, storeQueryable, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)

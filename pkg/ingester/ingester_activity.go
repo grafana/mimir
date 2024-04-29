@@ -161,6 +161,15 @@ func (i *ActivityTrackerWrapper) PreparePartitionDownscaleHandler(w http.Respons
 	i.ing.PreparePartitionDownscaleHandler(w, r)
 }
 
+func (i *ActivityTrackerWrapper) PrepareUnregisterHandler(w http.ResponseWriter, r *http.Request) {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(r.Context(), "Ingester/PrepareUnregisterHandler", nil)
+	})
+	defer i.tracker.Delete(ix)
+
+	i.ing.PrepareUnregisterHandler(w, r)
+}
+
 func (i *ActivityTrackerWrapper) ShutdownHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/ShutdownHandler", nil)
