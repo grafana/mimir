@@ -210,6 +210,11 @@ func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, tot
 	return
 }
 
+func (c *ActiveSeries) Delete(ref chunks.HeadSeriesRef) {
+	stripeID := storage.SeriesRef(ref) % numStripes
+	c.stripes[stripeID].remove(storage.SeriesRef(ref))
+}
+
 func (s *seriesStripe) containsRef(ref storage.SeriesRef) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
