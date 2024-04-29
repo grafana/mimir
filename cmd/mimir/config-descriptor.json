@@ -3293,6 +3293,17 @@
         },
         {
           "kind": "field",
+          "name": "max_exemplars_per_series_per_request",
+          "required": false,
+          "desc": "Maximum number of exemplars per series per request. 0 to disable limit in request. The exceeding exemplars are dropped.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.max-exemplars-per-series-per-request",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "reduce_native_histogram_over_max_buckets",
           "required": false,
           "desc": "Whether to reduce or reject native histogram samples with more buckets than the configured limit.",
