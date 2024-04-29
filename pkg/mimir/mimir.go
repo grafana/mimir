@@ -267,13 +267,15 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngesterClient.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
-	// We check for "ingester" module here because, as of today, its config has a special mode, that assumes
-	// passing a unique set of per instance flags, e.g. "-ingester.ring.instance-id". Such scenario breaks
-	// the validation of other modules, if those flags aren't also passed to each instance (ref grafana/mimir#7822).
-	if c.isAnyModuleEnabled(Ingester, Write, All) {
-		if err := c.Ingester.Validate(log); err != nil {
+	if err := c.Ingester.Validate(log); err != nil {
+		// We check for "ingester" module here because, as of today, its config has a special mode, that assumes
+		// passing a unique set of per instance flags, e.g. "-ingester.ring.instance-id".
+		// Such a scenario breaks the validation of other modules if those flags aren't also passed to each instance (ref
+		// grafana/mimir#7822). Otherwise, log the fact and move on.
+		if c.isAnyModuleEnabled(Ingester, Write, All) || !errors.Is(err, ingester.ErrSpreadMinimizingValidation) {
 			return errors.Wrap(err, "invalid ingester config")
 		}
+		level.Debug(log).Log("ingester config is invalid; moving on because the \"ingester\" module is not in this process's targets", "err", err.Error())
 	}
 	if err := c.Worker.Validate(); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")
