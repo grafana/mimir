@@ -36,6 +36,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/alertmanager/types"
@@ -94,7 +95,7 @@ func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
 	return cfg
 }
 
-func setupSingleMultitenantAlertmanager(t *testing.T, cfg *MultitenantAlertmanagerConfig, store alertstore.AlertStore, limits Limits, logger log.Logger, registerer prometheus.Registerer) *MultitenantAlertmanager {
+func setupSingleMultitenantAlertmanager(t *testing.T, cfg *MultitenantAlertmanagerConfig, store alertstore.AlertStore, limits Limits, features featurecontrol.Flagger, logger log.Logger, registerer prometheus.Registerer) *MultitenantAlertmanager {
 	// The mock ring store means we do not need a real e.g. Consul running.
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() {
@@ -105,7 +106,7 @@ func setupSingleMultitenantAlertmanager(t *testing.T, cfg *MultitenantAlertmanag
 	amCfg, err := ComputeFallbackConfig("")
 	require.NoError(t, err)
 
-	am, err := createMultitenantAlertmanager(cfg, amCfg, store, ringStore, limits, logger, registerer)
+	am, err := createMultitenantAlertmanager(cfg, amCfg, store, ringStore, limits, features, logger, registerer)
 	require.NoError(t, err)
 
 	// The mock client pool allows the distributor to talk to the instance
@@ -131,7 +132,7 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 		expected error
 	}{
 		"should pass with default config": {
-			setup:    func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {},
+			setup:    func(*testing.T, *MultitenantAlertmanagerConfig) {},
 			expected: nil,
 		},
 		"should fail with empty external URL": {
@@ -141,13 +142,13 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			expected: errEmptyExternalURL,
 		},
 		"should fail if persistent interval is 0": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+			setup: func(_ *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.Persister.Interval = 0
 			},
 			expected: errInvalidPersistInterval,
 		},
 		"should fail if persistent interval is negative": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+			setup: func(_ *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.Persister.Interval = -1
 			},
 			expected: errInvalidPersistInterval,
@@ -177,7 +178,7 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			expected: errInvalidExternalURLMissingHostname,
 		},
 		"should fail if zone aware is enabled but zone is not set": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+			setup: func(_ *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.ShardingRing.ZoneAwarenessEnabled = true
 			},
 			expected: errZoneAwarenessEnabledWithoutZoneInfo,
@@ -237,7 +238,7 @@ templates:
 	require.NoError(t, err)
 	cfg.DataDir, err = filepath.Rel(cwd, cfg.DataDir)
 	require.NoError(t, err)
-	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, log.NewNopLogger(), reg)
+	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
 	// Ensure the configs are synced correctly and persist across several syncs
 	for i := 0; i < 3; i++ {
@@ -273,7 +274,7 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	cfg := mockAlertmanagerConfig(t)
-	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, log.NewNopLogger(), reg)
+	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
 	// Ensure the configs are synced correctly
 	err := am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
@@ -574,6 +575,21 @@ receivers:
 `, backendURL)
 			},
 		},
+		"msteams": {
+			getAlertmanagerConfig: func(backendURL string) string {
+				return fmt.Sprintf(`
+route:
+  receiver: msteams
+  group_wait: 0s
+  group_interval: 1s
+
+receivers:
+  - name: msteams
+    msteams_configs:
+      - webhook_url: %s
+`, backendURL)
+			},
+		},
 		// We expect requests against the HTTP proxy to be blocked too.
 		"HTTP proxy": {
 			getAlertmanagerConfig: func(backendURL string) string {
@@ -608,7 +624,7 @@ receivers:
 				serverInvoked := atomic.NewBool(false)
 
 				// Create a local HTTP server to test whether the request is received.
-				server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 					serverInvoked.Store(true)
 					writer.WriteHeader(http.StatusOK)
 				}))
@@ -635,11 +651,13 @@ receivers:
 				overrides, err := validation.NewOverrides(limits, nil)
 				require.NoError(t, err)
 
+				features := featurecontrol.NoopFlags{}
+
 				// Start the alertmanager.
 				reg := prometheus.NewPedanticRegistry()
 				logs := &concurrency.SyncBuffer{}
 				logger := log.NewLogfmtLogger(logs)
-				am := setupSingleMultitenantAlertmanager(t, cfg, store, overrides, logger, reg)
+				am := setupSingleMultitenantAlertmanager(t, cfg, store, overrides, features, logger, reg)
 
 				// Ensure the configs are synced correctly.
 				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
@@ -663,7 +681,7 @@ receivers:
 				require.NoError(t, err)
 
 				// Push an alert.
-				req := httptest.NewRequest(http.MethodPost, cfg.ExternalURL.String()+"/api/v1/alerts", bytes.NewReader(alertsPayload))
+				req := httptest.NewRequest(http.MethodPost, cfg.ExternalURL.String()+"/api/v2/alerts", bytes.NewReader(alertsPayload))
 				req.Header.Set("content-type", "application/json")
 				reqCtx := user.InjectOrgID(req.Context(), userID)
 				{
@@ -733,7 +751,7 @@ func TestMultitenantAlertmanager_deleteUnusedLocalUserState(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	cfg := mockAlertmanagerConfig(t)
-	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, log.NewNopLogger(), reg)
+	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
 	createFile(t, filepath.Join(cfg.DataDir, user1, notificationLogSnapshot))
 	createFile(t, filepath.Join(cfg.DataDir, user1, silencesSnapshot))
@@ -780,7 +798,7 @@ func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 		cfg.ShardingRing.ZoneAwarenessEnabled = true
 		cfg.ShardingRing.InstanceZone = zone
 
-		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -852,7 +870,7 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserState(t *testing.T) {
 		// Increase state write interval so that state gets written sooner, making test faster.
 		cfg.Persister.Interval = 500 * time.Millisecond
 
-		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -948,7 +966,7 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserStateDisabled(t *testing.
 		// Disable state cleanup.
 		cfg.EnableStateCleanup = false
 
-		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -1041,7 +1059,7 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 
 	// Create the Multitenant Alertmanager.
 	reg := prometheus.NewPedanticRegistry()
-	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, log.NewNopLogger(), reg)
+	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
 	// Request when fallback user configuration is used, as user hasn't
 	// created a configuration yet.
@@ -1148,12 +1166,12 @@ receivers:
 	amConfig.ExternalURL = externalURL
 
 	// Create the Multitenant Alertmanager.
-	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, log.NewNopLogger(), nil)
+	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	am.fallbackConfig = fallbackCfg
 
 	// Request when no user configuration is present.
-	req := httptest.NewRequest("GET", externalURL.String()+"/api/v1/status", nil)
+	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
 	w := httptest.NewRecorder()
 
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), "user1")))
@@ -1219,7 +1237,7 @@ receivers:
 	amConfig.ExternalURL = externalURL
 
 	// Create the Multitenant Alertmanager.
-	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, log.NewNopLogger(), nil)
+	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
 	am.fallbackConfig = fallbackCfg
 
 	// Upload config for the user.
@@ -1230,7 +1248,7 @@ receivers:
 	}))
 
 	// Request before the user configuration loaded by polling loop.
-	req := httptest.NewRequest("GET", externalURL.String()+"/api/v1/status", nil)
+	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
 	w := httptest.NewRecorder()
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), "user1")))
 	resp := w.Result()
@@ -1319,7 +1337,7 @@ func TestMultitenantAlertmanager_InitialSync(t *testing.T) {
 				}))
 			}
 
-			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, log.NewNopLogger(), nil)
+			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1424,7 +1442,7 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 				defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1579,7 +1597,7 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 			alertStore := prepareInMemoryAlertStore()
 
 			reg := prometheus.NewPedanticRegistry()
-			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, log.NewNopLogger(), reg)
+			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 
 			require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
@@ -1630,7 +1648,7 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 
 	alertStore := prepareInMemoryAlertStore()
 
-	am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, log.NewNopLogger(), nil)
+	am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, am))
 	defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
@@ -1667,7 +1685,7 @@ func TestMultitenantAlertmanager_InitialSyncFailure(t *testing.T) {
 	bkt.MockIter("alertmanager/", nil, nil)
 	store := bucketclient.NewBucketAlertStore(bkt, nil, log.NewNopLogger())
 
-	am, err := createMultitenantAlertmanager(amConfig, nil, store, ringStore, nil, log.NewNopLogger(), nil)
+	am, err := createMultitenantAlertmanager(amConfig, nil, store, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1710,7 +1728,7 @@ func TestAlertmanager_ReplicasPosition(t *testing.T) {
 		amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 		reg := prometheus.NewPedanticRegistry()
-		am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
+		am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 		require.NoError(t, err)
 		defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1816,7 +1834,7 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 				defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1995,7 +2013,7 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 
 				clientPool.setServer(amConfig.ShardingRing.Common.InstanceAddr+":0", am)
@@ -2236,11 +2254,12 @@ receivers:
 		emailNotificationRateLimit: 0,
 		emailNotificationBurst:     0,
 	}
+	features := featurecontrol.NoopFlags{}
 
 	reg := prometheus.NewPedanticRegistry()
 	cfg := mockAlertmanagerConfig(t)
 
-	am := setupSingleMultitenantAlertmanager(t, cfg, store, &limits, log.NewNopLogger(), reg)
+	am := setupSingleMultitenantAlertmanager(t, cfg, store, &limits, features, log.NewNopLogger(), reg)
 
 	err := am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)

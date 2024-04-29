@@ -37,8 +37,6 @@ type Executor[R any] interface {
 type BaseExecutor[R any] struct {
 	Executor[R]
 	*BaseFailurePolicy[R]
-	// Index of the policy relative to other policies in a composition, starting at 0 with the innermost policy.
-	PolicyIndex int
 }
 
 var _ Executor[any] = &BaseExecutor[any]{}

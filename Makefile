@@ -97,6 +97,18 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # in that case.
 %/$(UPTODATE): GOOS=linux
 %/$(UPTODATE): %/Dockerfile
+	if [ -f $(@D)/Dockerfile.continuous-test ]; then \
+		$(SUDO) docker build -f $(@D)/Dockerfile.continuous-test \
+			--build-arg=revision=$(GIT_REVISION) \
+			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
+			-t $(IMAGE_PREFIX)$(shell basename $(@D))-continuous-test:$(IMAGE_TAG) $(@D)/; \
+	fi;
+	if [ -f $(@D)/Dockerfile.distroless ]; then \
+		$(SUDO) docker build -f $(@D)/Dockerfile.distroless \
+			--build-arg=revision=$(GIT_REVISION) \
+			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
+			-t $(IMAGE_PREFIX)$(shell basename $(@D))-distroless:$(IMAGE_TAG) $(@D)/; \
+	fi;
 	@echo
 	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG) $(@D)/
 	@echo
@@ -104,6 +116,8 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG)
+	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))-continuous-test:$(IMAGE_TAG)
+	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))-distroless:$(IMAGE_TAG)
 	@echo
 	@echo Please use '"make push-multiarch-build-image"' to build and push build image.
 	@echo Please use '"make push-multiarch-mimir"' to build and push Mimir image.
@@ -112,6 +126,16 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 
 %/$(UPTODATE_RACE): GOOS=linux
 %/$(UPTODATE_RACE): %/Dockerfile
+	# Build Dockerfile.distroless if it exists, we use distroless/base-nossl-debian12 as base image since race detector needs glibc packages.
+	if [ -f $(@D)/Dockerfile.distroless ]; then \
+		$(SUDO) docker build -f $(@D)/Dockerfile.distroless \
+			--build-arg=revision=$(GIT_REVISION) \
+			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
+			--build-arg=USE_BINARY_SUFFIX=true \
+			--build-arg=BINARY_SUFFIX=_race \
+			--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian12" \
+			-t $(IMAGE_PREFIX)$(shell basename $(@D))-distroless:$(IMAGE_TAG_RACE) $(@D)/; \
+	fi;
 	@echo
 	# We need gcompat -- compatibility layer with glibc, as race-detector currently requires glibc, but Alpine uses musl libc instead.
 	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true --build-arg=BINARY_SUFFIX=_race --build-arg=EXTRA_PACKAGES="gcompat" -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
@@ -119,6 +143,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
 	@echo
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE)
+	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))-distroless:$(IMAGE_TAG_RACE)
 	@echo
 	@touch $@
 
@@ -126,6 +151,8 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # Other options are documented in https://docs.docker.com/engine/reference/commandline/buildx_build/#output.
 # CI workflow uses PUSH_MULTIARCH_TARGET="type=oci,dest=file.oci" to store images locally for next steps in the pipeline.
 PUSH_MULTIARCH_TARGET ?= type=registry
+PUSH_MULTIARCH_TARGET_DISTROLESS ?= type=registry
+PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST ?= type=registry
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
 # We don't do separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
@@ -138,6 +165,27 @@ push-multiarch-%/$(UPTODATE):
 		$(MAKE) GOOS=linux GOARCH=arm64 BINARY_SUFFIX=_linux_arm64 $(DIR)/$(shell basename $(DIR)); \
 	fi
 	$(SUDO) docker buildx build -o $(PUSH_MULTIARCH_TARGET) --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
+
+	# Build Dockerfile.continuous-test
+	if [ -f $(DIR)/Dockerfile.continuous-test ]; then \
+		$(SUDO) docker buildx build -f $(DIR)/Dockerfile.continuous-test \
+			-o $(PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST) \
+			--platform linux/amd64,linux/arm64 \
+			--build-arg=revision=$(GIT_REVISION) \
+			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
+			--build-arg=USE_BINARY_SUFFIX=true \
+			-t $(IMAGE_PREFIX)$(shell basename $(DIR))-continuous-test:$(IMAGE_TAG) $(DIR)/; \
+	fi;
+	# Build Dockerfile.distroless if it exists
+	if [ -f $(DIR)/Dockerfile.distroless ]; then \
+		$(SUDO) docker buildx build -f $(DIR)/Dockerfile.distroless \
+			-o $(PUSH_MULTIARCH_TARGET_DISTROLESS) \
+			--platform linux/amd64,linux/arm64 \
+			--build-arg=revision=$(GIT_REVISION) \
+			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
+			--build-arg=USE_BINARY_SUFFIX=true \
+			-t $(IMAGE_PREFIX)$(shell basename $(DIR))-distroless:$(IMAGE_TAG) $(DIR)/; \
+	fi;
 
 push-multiarch-mimir: ## Push mimir docker image.
 push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
@@ -212,7 +260,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr6868-e4be452cf9
+LATEST_BUILD_IMAGE_TAG ?= pr7831-88527a12da
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -301,10 +349,28 @@ lint: check-makefiles
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/storage/sharding/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/api/...
-	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/util/globalerror
 
 	# Ensure all errors are report as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
+
+	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
+	# on errors wrapped by golang standard errors package. In Mimir we currently use github.com/pkg/errors
+	# but other vendors we depend on (e.g. Prometheus) just uses the standard errors package.
+	# For this reason, we recommend to not use errors.Cause() anywhere, so that we don't have to
+	# question whether the usage is safe or not.
+	faillint -paths "github.com/pkg/errors.{Cause}" ./pkg/... ./cmd/... ./tools/... ./integration/...
+
+	# gogo/status allows to easily customize error details while grpc/status doesn't:
+	# for this reason we use gogo/status in several places. However, gogo/status.FromError()
+	# doesn't support wrapped errors, while grpc/status.FromError() does.
+	#
+	# Since we want support for errors wrapping everywhere, to avoid subtle bugs depending
+	# on which status package is imported, we don't allow .FromError() from both packages
+	# and we require to use grpcutil.ErrorToStatus() instead.
+	faillint -paths "\
+		google.golang.org/grpc/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus,\
+		github.com/gogo/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure the query path is supporting multiple tenants
 	faillint -paths "\
@@ -316,11 +382,17 @@ lint: check-makefiles
 
 	# Ensure packages that no longer use a global logger don't reintroduce it
 	faillint -paths "github.com/grafana/mimir/pkg/util/log.{Logger}" \
-		./pkg/alertmanager/alertstore/... \
-		./pkg/ingester/... \
+		./pkg/alertmanager/... \
+		./pkg/compactor/... \
+		./pkg/distributor/... \
 		./pkg/flusher/... \
+		./pkg/frontend/... \
+		./pkg/ingester/... \
 		./pkg/querier/... \
-		./pkg/ruler/...
+		./pkg/ruler/... \
+		./pkg/scheduler/... \
+		./pkg/storage/... \
+		./pkg/storegateway/...
 
 	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
 	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
@@ -367,6 +439,16 @@ lint: check-makefiles
 	faillint -paths \
 		"github.com/grafana/mimir/pkg/storegateway/storegatewaypb.{NewStoreGatewayClient}=github.com/grafana/mimir/pkg/storegateway/storegatewaypb.NewCustomStoreGatewayClient" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
+
+	# Prefer using WithCancelCause in production code, so that cancelled contexts have more information available from context.Cause(ctx).
+	faillint -ignore-tests -paths \
+		"context.{WithCancel}=context.WithCancelCause" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
+	# Do not use the object storage client intended only for tools within Mimir itself
+	faillint -paths \
+		"github.com/grafana/mimir/pkg/util/objtools" \
+		./pkg/... ./cmd/... ./integration/...
 
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
@@ -556,10 +638,10 @@ check-doc-validator: ## Check documentation using doc-validator tool
 
 .PHONY: reference-help
 reference-help: ## Generates the reference help documentation.
-reference-help: cmd/mimir/mimir
+reference-help: cmd/mimir/mimir tools/config-inspector/config-inspector
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
-	@(go run ./tools/config-inspector || true) > cmd/mimir/config-descriptor.json
+	@(./tools/config-inspector/config-inspector || true) > cmd/mimir/config-descriptor.json
 
 clean-white-noise: ## Clean the white noise in the markdown files.
 	@find . -path ./.pkg -prune -o -path ./.cache -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \
@@ -652,8 +734,8 @@ integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
 	go test -tags=requires_docker,stringlabels ./integration/...
 
-integration-tests-race: ## Run all integration tests with race-enabled Mimir docker image.
-integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir:$(IMAGE_TAG_RACE)
+integration-tests-race: ## Run all integration tests with race-enabled Mimir-distroless docker image.
+integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir-distroless:$(IMAGE_TAG_RACE)
 integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
 	go test -timeout 30m -tags=requires_docker,stringlabels ./integration/...
 

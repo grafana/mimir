@@ -4,7 +4,6 @@ package v2
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -12,9 +11,11 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -66,31 +67,36 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 		return nil, err
 	}
 
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(httpRequest)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
 	switch {
 	case querymiddleware.IsRangeQuery(httpRequest.URL.Path):
-		start, end, _, err := querymiddleware.DecodeRangeQueryTimeParams(httpRequest)
+		start, end, _, err := querymiddleware.DecodeRangeQueryTimeParams(&reqValues)
 		if err != nil {
 			return nil, err
 		}
 		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
 	case querymiddleware.IsInstantQuery(httpRequest.URL.Path):
-		time, err := querymiddleware.DecodeInstantQueryTimeParams(httpRequest)
+		time, err := querymiddleware.DecodeInstantQueryTimeParams(&reqValues, time.Now)
 		if err != nil {
 			return nil, err
 		}
 		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, time, time, now), nil
 	case querymiddleware.IsLabelsQuery(httpRequest.URL.Path):
-		start, end, err := querymiddleware.DecodeLabelsQueryTimeParams(httpRequest)
+		start, end, err := querymiddleware.DecodeLabelsQueryTimeParams(&reqValues, true)
 		if err != nil {
 			return nil, err
 		}
 		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
-	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path):
+	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path):
 		// cardinality only hits ingesters
 		return []string{ShouldQueryIngestersQueueDimension}, nil
 	default:
 		// no query time params to parse; cannot infer query component
-		level.Warn(a.log).Log("msg", "unsupported request type", "query", fmt.Sprintf("%+v", httpRequest))
+		level.Debug(a.log).Log("msg", "unsupported request type for additional queue dimensions", "query", httpRequest.URL.String())
 		return nil, nil
 	}
 }

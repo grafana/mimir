@@ -4,7 +4,6 @@
 package integration
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"testing"
@@ -494,114 +493,13 @@ func TestIngesterQuerying(t *testing.T) {
 
 	for testName, tc := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			for _, streamingEnabled := range []bool{true, false} {
-				t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
-					s, err := e2e.NewScenario(networkName)
-					require.NoError(t, err)
-					defer s.Close()
-
-					baseFlags := map[string]string{
-						"-distributor.ingestion-tenant-shard-size":        "0",
-						"-ingester.ring.heartbeat-period":                 "1s",
-						"-querier.prefer-streaming-chunks-from-ingesters": strconv.FormatBool(streamingEnabled),
-					}
-
-					flags := mergeFlags(
-						BlocksStorageFlags(),
-						BlocksStorageS3Flags(),
-						baseFlags,
-					)
-
-					// Start dependencies.
-					consul := e2edb.NewConsul()
-					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-					require.NoError(t, s.StartAndWaitReady(consul, minio))
-
-					// Start Mimir components.
-					distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-					ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-					querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
-					require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
-
-					// Wait until distributor has updated the ring.
-					require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-						labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-						labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
-					// Wait until querier has updated the ring.
-					require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-						labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-						labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
-					client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
-					require.NoError(t, err)
-
-					res, err := client.Push(tc.inSeries)
-					require.NoError(t, err)
-					require.Equal(t, http.StatusOK, res.StatusCode)
-
-					result, err := client.QueryRange(query, queryStart, queryEnd, queryStep)
-					require.NoError(t, err)
-					require.Equal(t, tc.expectedQueryResult, result)
-
-					// The PromQL engine does some special handling for the timestamp() function which previously
-					// caused queries to fail when streaming chunks was enabled, so check that this regression
-					// has not been reintroduced.
-					result, err = client.QueryRange(timestampQuery, queryStart, queryEnd, queryStep)
-					require.NoError(t, err)
-					require.Equal(t, tc.expectedTimestampQueryResult, result)
-
-					queryRequestCount := func(status string) (float64, error) {
-						counts, err := querier.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
-							e2e.WithLabelMatchers(
-								labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/QueryStream"),
-								labels.MustNewMatcher(labels.MatchRegexp, "status_code", status),
-							),
-							e2e.WithMetricCount,
-							e2e.SkipMissingMetrics,
-						)
-
-						if err != nil {
-							return 0, err
-						}
-
-						require.Len(t, counts, 1)
-						return counts[0], nil
-					}
-
-					successfulQueryRequests, err := queryRequestCount("2xx")
-					require.NoError(t, err)
-
-					cancelledQueryRequests, err := queryRequestCount("cancel")
-					require.NoError(t, err)
-
-					totalQueryRequests, err := queryRequestCount(".*")
-					require.NoError(t, err)
-
-					// We expect two query requests: the first query request and the timestamp query request
-					require.Equalf(t, 2.0, totalQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
-					require.Equalf(t, 2.0, successfulQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
-					require.Equalf(t, 0.0, cancelledQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
-				})
-			}
-		})
-	}
-}
-
-func TestIngesterQueryingWithRequestMinimization(t *testing.T) {
-	for _, streamingEnabled := range []bool{true, false} {
-		t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
 			s, err := e2e.NewScenario(networkName)
 			require.NoError(t, err)
 			defer s.Close()
 
 			baseFlags := map[string]string{
-				"-distributor.ingestion-tenant-shard-size":        "0",
-				"-ingester.ring.heartbeat-period":                 "1s",
-				"-ingester.ring.zone-awareness-enabled":           "true",
-				"-ingester.ring.replication-factor":               "3",
-				"-querier.minimize-ingester-requests":             "true",
-				"-querier.prefer-streaming-chunks-from-ingesters": strconv.FormatBool(streamingEnabled),
+				"-distributor.ingestion-tenant-shard-size": "0",
+				"-ingester.ring.heartbeat-period":          "1s",
 			}
 
 			flags := mergeFlags(
@@ -615,68 +513,159 @@ func TestIngesterQueryingWithRequestMinimization(t *testing.T) {
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-			ingesterFlags := func(zone string) map[string]string {
-				return mergeFlags(flags, map[string]string{
-					"-ingester.ring.instance-availability-zone": zone,
-				})
-			}
-
 			// Start Mimir components.
 			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), ingesterFlags("zone-a"))
-			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), ingesterFlags("zone-b"))
-			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), ingesterFlags("zone-c"))
+			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3, querier))
+			require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
 
-			// Wait until distributor and querier have updated the ring.
-			for _, component := range []*e2emimir.MimirService{distributor, querier} {
-				require.NoError(t, component.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-					labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-					labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-			}
+			// Wait until distributor has updated the ring.
+			require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+			// Wait until querier has updated the ring.
+			require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
 			require.NoError(t, err)
 
-			// Push some data to the cluster.
-			seriesName := "test_series"
-			now := time.Now()
-			series, expectedVector, _ := generateFloatSeries(seriesName, now, prompb.Label{Name: "foo", Value: "bar"})
-
-			res, err := client.Push(series)
+			res, err := client.Push(tc.inSeries)
 			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
+			require.Equal(t, http.StatusOK, res.StatusCode)
 
-			// Verify we can query the data we just pushed.
-			queryResult, err := client.Query(seriesName, now)
+			result, err := client.QueryRange(query, queryStart, queryEnd, queryStep)
 			require.NoError(t, err)
-			require.Equal(t, model.ValVector, queryResult.Type())
-			require.Equal(t, expectedVector, queryResult.(model.Vector))
+			require.Equal(t, tc.expectedQueryResult, result)
 
-			// Check that we only queried two of the three ingesters.
-			totalQueryRequests := 0.0
+			// The PromQL engine does some special handling for the timestamp() function which previously
+			// caused queries to fail when streaming chunks was enabled, so check that this regression
+			// has not been reintroduced.
+			result, err = client.QueryRange(timestampQuery, queryStart, queryEnd, queryStep)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedTimestampQueryResult, result)
 
-			for _, ingester := range []*e2emimir.MimirService{ingester1, ingester2, ingester3} {
-				sums, err := ingester.SumMetrics(
-					[]string{"cortex_request_duration_seconds"},
+			queryRequestCount := func(status string) (float64, error) {
+				counts, err := querier.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
 					e2e.WithLabelMatchers(
-						labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/QueryStream"),
-						labels.MustNewMatcher(labels.MatchEqual, "status_code", "success"),
+						labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/QueryStream"),
+						labels.MustNewMatcher(labels.MatchRegexp, "status_code", status),
 					),
-					e2e.SkipMissingMetrics,
 					e2e.WithMetricCount,
+					e2e.SkipMissingMetrics,
 				)
 
-				require.NoError(t, err)
-				queryRequests := sums[0]
-				require.LessOrEqual(t, queryRequests, 1.0)
-				totalQueryRequests += queryRequests
+				if err != nil {
+					return 0, err
+				}
+
+				require.Len(t, counts, 1)
+				return counts[0], nil
 			}
 
-			require.Equal(t, 2.0, totalQueryRequests)
+			successfulQueryRequests, err := queryRequestCount("OK")
+			require.NoError(t, err)
+
+			cancelledQueryRequests, err := queryRequestCount("cancel")
+			require.NoError(t, err)
+
+			totalQueryRequests, err := queryRequestCount(".*")
+			require.NoError(t, err)
+
+			// We expect two query requests: the first query request and the timestamp query request
+			require.Equalf(t, 2.0, totalQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+			require.Equalf(t, 2.0, successfulQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+			require.Equalf(t, 0.0, cancelledQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
 		})
 	}
+}
+
+func TestIngesterQueryingWithRequestMinimization(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	baseFlags := map[string]string{
+		"-distributor.ingestion-tenant-shard-size": "0",
+		"-ingester.ring.heartbeat-period":          "1s",
+		"-ingester.ring.zone-awareness-enabled":    "true",
+		"-ingester.ring.replication-factor":        "3",
+		"-querier.minimize-ingester-requests":      "true",
+	}
+
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		baseFlags,
+	)
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	ingesterFlags := func(zone string) map[string]string {
+		return mergeFlags(flags, map[string]string{
+			"-ingester.ring.instance-availability-zone": zone,
+		})
+	}
+
+	// Start Mimir components.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), ingesterFlags("zone-a"))
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), ingesterFlags("zone-b"))
+	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), ingesterFlags("zone-c"))
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3, querier))
+
+	// Wait until distributor and querier have updated the ring.
+	for _, component := range []*e2emimir.MimirService{distributor, querier} {
+		require.NoError(t, component.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+			labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+	}
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+
+	// Push some data to the cluster.
+	seriesName := "test_series"
+	now := time.Now()
+	series, expectedVector, _ := generateFloatSeries(seriesName, now, prompb.Label{Name: "foo", Value: "bar"})
+
+	res, err := client.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	// Verify we can query the data we just pushed.
+	queryResult, err := client.Query(seriesName, now)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, queryResult.Type())
+	require.Equal(t, expectedVector, queryResult.(model.Vector))
+
+	// Check that we only queried two of the three ingesters.
+	totalQueryRequests := 0.0
+
+	for _, ingester := range []*e2emimir.MimirService{ingester1, ingester2, ingester3} {
+		sums, err := ingester.SumMetrics(
+			[]string{"cortex_request_duration_seconds"},
+			e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/QueryStream"),
+				labels.MustNewMatcher(labels.MatchEqual, "status_code", "OK"),
+			),
+			e2e.SkipMissingMetrics,
+			e2e.WithMetricCount,
+		)
+
+		require.NoError(t, err)
+		queryRequests := sums[0]
+		require.LessOrEqual(t, queryRequests, 1.0)
+		totalQueryRequests += queryRequests
+	}
+
+	require.Equal(t, 2.0, totalQueryRequests)
 }
 
 func TestIngesterReportGRPCStatusCodes(t *testing.T) {
@@ -686,31 +675,16 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 	queryStep := 10 * time.Minute
 
 	testCases := map[string]struct {
-		serverReportGRPCStatusCodes         bool
 		ingesterClientReportGRPCStatusCodes bool
 		expectedPushStatusCode              string
 		expectedQueryStatusCode             string
 	}{
-		"when server and ingester client do not report grpc codes, successful push and query give success and 2xx": {
-			serverReportGRPCStatusCodes:         false,
-			ingesterClientReportGRPCStatusCodes: false,
-			expectedPushStatusCode:              "success",
-			expectedQueryStatusCode:             "2xx",
-		},
-		"when server does not report and ingester client reports grpc codes, successful push and query give success and OK": {
-			serverReportGRPCStatusCodes:         false,
-			ingesterClientReportGRPCStatusCodes: true,
-			expectedPushStatusCode:              "success",
-			expectedQueryStatusCode:             "OK",
-		},
-		"when server reports and ingester client does not report grpc codes, successful push and query give OK and 2xx": {
-			serverReportGRPCStatusCodes:         true,
+		"when ingester client does not report grpc codes, successful push and query give OK and 2xx": {
 			ingesterClientReportGRPCStatusCodes: false,
 			expectedPushStatusCode:              "OK",
 			expectedQueryStatusCode:             "2xx",
 		},
-		"when server and ingester client report grpc codes, successful push and query give OK and OK": {
-			serverReportGRPCStatusCodes:         true,
+		"when ingester client report grpc codes, successful push and query give OK and OK": {
 			ingesterClientReportGRPCStatusCodes: true,
 			expectedPushStatusCode:              "OK",
 			expectedQueryStatusCode:             "OK",
@@ -745,7 +719,6 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 				"-distributor.ingestion-tenant-shard-size":                            "0",
 				"-ingester.ring.heartbeat-period":                                     "1s",
 				"-ingester.client.report-grpc-codes-in-instrumentation-label-enabled": strconv.FormatBool(testData.ingesterClientReportGRPCStatusCodes),
-				"-server.report-grpc-codes-in-instrumentation-label-enabled":          strconv.FormatBool(testData.serverReportGRPCStatusCodes),
 			}
 
 			flags := mergeFlags(

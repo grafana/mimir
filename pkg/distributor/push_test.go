@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -35,6 +36,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -217,7 +219,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  30,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(t *testing.T, pushReq *Request) error {
+			verifyFunc: func(_ *testing.T, pushReq *Request) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
@@ -230,7 +232,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize: 100000,
 			series:     sampleSeries,
 			metadata:   sampleMetadata,
-			verifyFunc: func(t *testing.T, pushReq *Request) error {
+			verifyFunc: func(_ *testing.T, pushReq *Request) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
@@ -293,7 +295,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 				validation.NewMockTenantLimits(map[string]*validation.Limits{}),
 			)
 			require.NoError(t, err)
-			pusher := func(ctx context.Context, pushReq *Request) error {
+			pusher := func(_ context.Context, pushReq *Request) error {
 				t.Helper()
 				t.Cleanup(pushReq.CleanUp)
 				return tt.verifyFunc(t, pushReq)
@@ -359,7 +361,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(ctx context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 3)
@@ -405,7 +407,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(ctx context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 2)
@@ -431,7 +433,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req = createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(ctx context.Context, pushReq *Request) error {
+	handler = OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 10) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
@@ -470,7 +472,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
-	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
+	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
 	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
@@ -479,7 +481,7 @@ func TestHandler_mimirWriteRequest(t *testing.T) {
 func TestHandler_contextCanceledRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
-	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
+	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
 	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, func(_ context.Context, req *Request) error {
 		defer req.CleanUp()
 		return fmt.Errorf("the request failed: %w", context.Canceled)
@@ -501,7 +503,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			name:                         "config flag set to false means SkipLabelNameValidation is false",
 			allowSkipLabelNameValidation: false,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, false)),
-			verifyReqHandler: func(ctx context.Context, pushReq *Request) error {
+			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
@@ -519,7 +521,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			name:                         "config flag set to false means SkipLabelNameValidation is always false even if write requests sets it to true",
 			allowSkipLabelNameValidation: false,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, true)),
-			verifyReqHandler: func(ctx context.Context, pushReq *Request) error {
+			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
 				request, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 				t.Cleanup(pushReq.CleanUp)
@@ -537,7 +539,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			name:                         "config flag set to true but write request set to false means SkipLabelNameValidation is false",
 			allowSkipLabelNameValidation: true,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, false)),
-			verifyReqHandler: func(ctx context.Context, pushReq *Request) error {
+			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
@@ -554,7 +556,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			name:                         "config flag set to true and write request set to true means SkipLabelNameValidation is true",
 			allowSkipLabelNameValidation: true,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, true)),
-			verifyReqHandler: func(ctx context.Context, pushReq *Request) error {
+			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
@@ -571,7 +573,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			name:                         "config flag set to true and write request set to true but header not sent means SkipLabelNameValidation is false",
 			allowSkipLabelNameValidation: true,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, true)),
-			verifyReqHandler: func(ctx context.Context, pushReq *Request) error {
+			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
@@ -601,7 +603,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 
 func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceEnum) PushFunc {
 	t.Helper()
-	return func(ctx context.Context, pushReq *Request) error {
+	return func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		require.NoError(t, err)
 		t.Cleanup(pushReq.CleanUp)
@@ -616,7 +618,7 @@ func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceE
 
 func readBodyPushFunc(t *testing.T) PushFunc {
 	t.Helper()
-	return func(ctx context.Context, req *Request) error {
+	return func(_ context.Context, req *Request) error {
 		_, err := req.WriteRequest()
 		return err
 	}
@@ -704,7 +706,7 @@ func BenchmarkPushHandler(b *testing.B) {
 	protobuf := createPrometheusRemoteWriteProtobuf(b)
 	buf := bytes.NewBuffer(snappy.Encode(nil, protobuf))
 	req := createRequest(b, protobuf)
-	pushFunc := func(ctx context.Context, pushReq *Request) error {
+	pushFunc := func(_ context.Context, pushReq *Request) error {
 		if _, err := pushReq.WriteRequest(); err != nil {
 			return err
 		}
@@ -762,7 +764,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			parserFunc := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) error {
 				return tc.err
 			}
-			pushFunc := func(ctx context.Context, req *Request) error {
+			pushFunc := func(_ context.Context, req *Request) error {
 				_, err := req.WriteRequest() // just read the body so we can trigger the parser
 				return err
 			}
@@ -829,7 +831,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			parserFunc := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) error {
 				return nil
 			}
-			pushFunc := func(ctx context.Context, req *Request) error {
+			pushFunc := func(_ context.Context, req *Request) error {
 				_, err := req.WriteRequest() // just read the body so we can trigger the parser
 				if err != nil {
 					return err
@@ -1089,6 +1091,16 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
+		"an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID),
+			expectedHTTPStatus: http.StatusNotImplemented,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID)},
+			expectedHTTPStatus: http.StatusNotImplemented,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
 		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
@@ -1133,6 +1145,16 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, context.DeadlineExceeded),
+		},
+		"a circuitBreakerOpenError gets translated into an HTTP 503": {
+			err:                newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}),
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedErrorMsg:   circuitbreaker.ErrOpen.Error(),
+		},
+		"a wrapped circuitBreakerOpenError gets translated into an HTTP 503": {
+			err:                errors.Wrap(newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}), fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, circuitbreaker.ErrOpen),
 		},
 	}
 	for name, tc := range testCases {

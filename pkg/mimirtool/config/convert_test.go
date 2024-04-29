@@ -323,7 +323,7 @@ func TestConvert_Cortex(t *testing.T) {
 				flags:              loadFlags(t, tc.inFlagsFile),
 			}
 
-			assertion := func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+			assertion := func(t *testing.T, outYAML []byte, outFlags []string, _ ConversionNotices, err error) {
 				assert.NoError(t, err)
 				assert.ElementsMatch(t, expectedOutFlags, outFlags)
 				assert.YAMLEq(t, string(expectedOut), string(outYAML))
@@ -396,7 +396,7 @@ func TestConvert_GEM(t *testing.T) {
 				flags:              loadFlags(t, tc.inFlagsFile),
 			}
 
-			testConvertGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+			testConvertGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, _ ConversionNotices, err error) {
 				assert.NoError(t, err)
 				assert.ElementsMatch(t, expectedOutFlags, outFlags)
 				assert.YAMLEq(t, string(expectedOut), string(outYAML))
@@ -434,7 +434,7 @@ func TestConvert_InvalidConfigs(t *testing.T) {
 				yaml:               loadFile(t, tc.inFile),
 				dontLoadCommonOpts: true,
 			}
-			testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+			testConvertCortexAndGEM(t, in, func(t *testing.T, _ []byte, _ []string, _ ConversionNotices, err error) {
 				assert.EqualError(t, err, tc.expectedErr)
 			})
 		})
@@ -604,7 +604,7 @@ func TestChangedCortexDefaults(t *testing.T) {
 		yaml:           config,
 	}
 
-	testConvertCortex(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+	testConvertCortex(t, in, func(t *testing.T, _ []byte, _ []string, notices ConversionNotices, err error) {
 		require.NoError(t, err)
 		assert.ElementsMatch(t, changedCortexDefaults, notices.ChangedDefaults)
 	})
@@ -670,7 +670,7 @@ func TestChangedGEMDefaults(t *testing.T) {
 		yaml:           config,
 	}
 
-	testConvertGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+	testConvertGEM(t, in, func(t *testing.T, _ []byte, _ []string, notices ConversionNotices, err error) {
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expectedChangedDefaults, notices.ChangedDefaults)
 	})
@@ -726,7 +726,7 @@ func TestConvert_UseNewDefaults(t *testing.T) {
 				useNewDefaults: tc.useNewDefaults,
 			}
 
-			testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+			testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, _ []string, notices ConversionNotices, err error) {
 				require.NoError(t, err)
 
 				assert.YAMLEq(t, string(tc.expectedYAML), string(outYAML))
@@ -753,7 +753,7 @@ func TestConvert_NotInYAMLIsNotPrinted(t *testing.T) {
 					outputDefaults:     showDefaults,
 					dontLoadCommonOpts: true,
 				}
-				testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+				testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, _ []string, _ ConversionNotices, err error) {
 					assert.NoError(t, err)
 					assert.NotContains(t, string(outYAML), notInYaml)
 				})
@@ -770,7 +770,7 @@ func TestConvert_PassingOnlyYAMLReturnsOnlyYAML(t *testing.T) {
 		yaml: inYAML,
 	}
 
-	testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+	testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, _ ConversionNotices, err error) {
 		assert.NoError(t, err)
 		assert.YAMLEq(t, string(expectedOutYAML), string(outYAML))
 		assert.Empty(t, outFlags)
@@ -785,7 +785,7 @@ func TestConvert_PassingOnlyFlagsReturnsOnlyFlags(t *testing.T) {
 		flags: inFlags,
 	}
 
-	testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error) {
+	testConvertCortexAndGEM(t, in, func(t *testing.T, outYAML []byte, outFlags []string, _ ConversionNotices, err error) {
 		assert.NoError(t, err)
 		assert.Empty(t, outYAML)
 		assert.ElementsMatch(t, expectedOutFlags, outFlags)
@@ -809,7 +809,7 @@ func TestRemovedParamsAndFlagsAreCorrect(t *testing.T) {
 
 	allCLIFlagsNames := func(p Parameters) map[string]bool {
 		flags := map[string]bool{}
-		assert.NoError(t, p.Walk(func(path string, v Value) error {
+		assert.NoError(t, p.Walk(func(path string, _ Value) error {
 			flagName, err := p.GetFlag(path)
 			assert.NoError(t, err)
 			flags[flagName] = true

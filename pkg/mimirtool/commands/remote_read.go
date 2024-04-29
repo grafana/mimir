@@ -206,7 +206,7 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 			},
 		},
 		Headers: map[string]string{
-			"User-Agent": client.UserAgent,
+			"User-Agent": client.UserAgent(),
 		},
 	})
 	if err != nil {

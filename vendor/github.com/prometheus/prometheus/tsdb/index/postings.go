@@ -18,12 +18,14 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 
-	"golang.org/x/exp/slices"
+	"github.com/bboreham/go-loser"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -525,7 +527,7 @@ func (it *intersectPostings) Err() error {
 }
 
 // Merge returns a new iterator over the union of the input iterators.
-func Merge(ctx context.Context, its ...Postings) Postings {
+func Merge(_ context.Context, its ...Postings) Postings {
 	if len(its) == 0 {
 		return EmptyPostings()
 	}
@@ -533,122 +535,48 @@ func Merge(ctx context.Context, its ...Postings) Postings {
 		return its[0]
 	}
 
-	p, ok := newMergedPostings(ctx, its)
+	p, ok := newMergedPostings(its)
 	if !ok {
 		return EmptyPostings()
 	}
 	return p
 }
 
-type postingsHeap []Postings
-
-func (h postingsHeap) Len() int           { return len(h) }
-func (h postingsHeap) Less(i, j int) bool { return h[i].At() < h[j].At() }
-func (h *postingsHeap) Swap(i, j int)     { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
-
-func (h *postingsHeap) Push(x interface{}) {
-	*h = append(*h, x.(Postings))
-}
-
-func (h *postingsHeap) Pop() interface{} {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}
-
 type mergedPostings struct {
-	h           postingsHeap
-	initialized bool
-	cur         storage.SeriesRef
-	err         error
+	p   []Postings
+	h   *loser.Tree[storage.SeriesRef, Postings]
+	cur storage.SeriesRef
 }
 
-func newMergedPostings(ctx context.Context, p []Postings) (m *mergedPostings, nonEmpty bool) {
-	ph := make(postingsHeap, 0, len(p))
-
-	for _, it := range p {
-		// NOTE: mergedPostings struct requires the user to issue an initial Next.
-		switch {
-		case ctx.Err() != nil:
-			return &mergedPostings{err: ctx.Err()}, true
-		case it.Next():
-			ph = append(ph, it)
-		case it.Err() != nil:
-			return &mergedPostings{err: it.Err()}, true
-		}
-	}
-
-	if len(ph) == 0 {
-		return nil, false
-	}
-	return &mergedPostings{h: ph}, true
+func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
+	const maxVal = storage.SeriesRef(math.MaxUint64) // This value must be higher than all real values used in the tree.
+	lt := loser.New(p, maxVal)
+	return &mergedPostings{p: p, h: lt}, true
 }
 
 func (it *mergedPostings) Next() bool {
-	if it.h.Len() == 0 || it.err != nil {
-		return false
-	}
-
-	// The user must issue an initial Next.
-	if !it.initialized {
-		heap.Init(&it.h)
-		it.cur = it.h[0].At()
-		it.initialized = true
-		return true
-	}
-
 	for {
-		cur := it.h[0]
-		if !cur.Next() {
-			heap.Pop(&it.h)
-			if cur.Err() != nil {
-				it.err = cur.Err()
-				return false
-			}
-			if it.h.Len() == 0 {
-				return false
-			}
-		} else {
-			// Value of top of heap has changed, re-heapify.
-			heap.Fix(&it.h, 0)
+		if !it.h.Next() {
+			return false
 		}
-
-		if it.h[0].At() != it.cur {
-			it.cur = it.h[0].At()
+		// Remove duplicate entries.
+		newItem := it.h.At()
+		if newItem != it.cur {
+			it.cur = newItem
 			return true
 		}
 	}
 }
 
 func (it *mergedPostings) Seek(id storage.SeriesRef) bool {
-	if it.h.Len() == 0 || it.err != nil {
+	for !it.h.IsEmpty() && it.h.At() < id {
+		finished := !it.h.Winner().Seek(id)
+		it.h.Fix(finished)
+	}
+	if it.h.IsEmpty() {
 		return false
 	}
-	if !it.initialized {
-		if !it.Next() {
-			return false
-		}
-	}
-	for it.cur < id {
-		cur := it.h[0]
-		if !cur.Seek(id) {
-			heap.Pop(&it.h)
-			if cur.Err() != nil {
-				it.err = cur.Err()
-				return false
-			}
-			if it.h.Len() == 0 {
-				return false
-			}
-		} else {
-			// Value of top of heap has changed, re-heapify.
-			heap.Fix(&it.h, 0)
-		}
-
-		it.cur = it.h[0].At()
-	}
+	it.cur = it.h.At()
 	return true
 }
 
@@ -657,7 +585,12 @@ func (it mergedPostings) At() storage.SeriesRef {
 }
 
 func (it mergedPostings) Err() error {
-	return it.err
+	for _, p := range it.p {
+		if err := p.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Without returns a new postings list that contains all elements from the full list that
@@ -892,6 +825,42 @@ func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int,
 			return indexes, p.Err()
 		}
 		if p.At() == h.at() {
+			indexes = append(indexes, h.popIndex())
+		} else if err := h.next(); err != nil {
+			return nil, err
+		}
+	}
+
+	return indexes, nil
+}
+
+// findNonContainedPostings checks whether candidates[i] for each i in candidates is contained in p.
+// If not contained, i is added to the indexes returned.
+// The idea is the need to find postings iterators not fully contained in a set you wish to exclude.
+// Returned indexes are not sorted.
+func findNonContainedPostings(p Postings, candidates []Postings) (indexes []int, err error) {
+	h := make(postingsWithIndexHeap, 0, len(candidates))
+	for idx, it := range candidates {
+		switch {
+		case it.Next():
+			h = append(h, postingsWithIndex{index: idx, p: it})
+		case it.Err() != nil:
+			return nil, it.Err()
+		}
+	}
+	if h.empty() {
+		return nil, nil
+	}
+	heap.Init(&h)
+
+	for !h.empty() {
+		// Find the first posting >= h.at()
+		if !p.Seek(h.at()) && p.Err() != nil {
+			return nil, p.Err()
+		}
+
+		// If p.At() != h.at(), we can keep h.at(), otherwise we skip past it
+		if p.At() != h.at() {
 			indexes = append(indexes, h.popIndex())
 		} else if err := h.next(); err != nil {
 			return nil, err

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -33,145 +35,247 @@ func TestMain(m *testing.M) {
 
 // cannot import constants from frontend/v2 due to import cycle,
 // but content of the strings should not matter as much as the number of options
+const ingesterQueueDimension = "ingester"
+const storeGatewayQueueDimension = "store-gateway"
+const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
+
 var secondQueueDimensionOptions = []string{
-	"ingester",
-	"store-gateway",
-	"ingester-and-store-gateway",
+	ingesterQueueDimension,
+	storeGatewayQueueDimension,
+	ingesterAndStoreGatewayQueueDimension,
 }
 
-func randAdditionalQueueDimension() []string {
-	idx := rand.Intn(len(secondQueueDimensionOptions) + 1)
+func randAdditionalQueueDimension(allowEmpty bool) []string {
+	maxIdx := len(secondQueueDimensionOptions)
+	if allowEmpty {
+		maxIdx++
+	}
+
+	idx := rand.Intn(maxIdx)
 	if idx == len(secondQueueDimensionOptions) {
-		// randomly don't add a second queue dimension at all to ensure the items still get dequeued
 		return nil
 	}
 	return secondQueueDimensionOptions[idx : idx+1]
 }
 
+// makeSchedulerRequest is intended to create a query request with a nontrivial size.
+//
+// When running benchmarks for memory usage, we want a relatively representative request size.
+// The size of the requests in a queue of nontrivial depth should significantly outweigh the memory
+// used by the queue mechanics, in order get a more meaningful % delta between competing queue implementations.
+func makeSchedulerRequest(tenantID string, additionalQueueDimensions []string) *SchedulerRequest {
+	return &SchedulerRequest{
+		Ctx:             context.Background(),
+		FrontendAddress: "http://query-frontend:8007",
+		UserID:          tenantID,
+		Request: &httpgrpc.HTTPRequest{
+			Method: "GET",
+			Headers: []*httpgrpc.Header{
+				{Key: "QueryId", Values: []string{"12345678901234567890"}},
+				{Key: "Accept", Values: []string{"application/vnd.mimir.queryresponse+protobuf", "application/json"}},
+				{Key: "X-Scope-OrgId", Values: []string{tenantID}},
+				{Key: "uber-trace-id", Values: []string{"48475050943e8e05:70e8b02d28e4337b:077cd9b649b6ac02:1"}},
+			},
+			Url: "/prometheus/api/v1/query_range?end=1701720000&query=rate%28go_goroutines%7Bcluster%3D%22docker-compose-local%22%2Cjob%3D%22mimir-microservices-mode%2Fquery-scheduler%22%2Cnamespace%3D%22mimir-microservices-mode%22%7D%5B10m15s%5D%29&start=1701648000&step=60",
+		},
+		AdditionalQueueDimensions: additionalQueueDimensions,
+		EnqueueTime:               time.Now(),
+	}
+}
+
+// TestMultiDimensionalQueueFairnessSlowConsumerEffects emulates a simplified queue slowdown scenario
+// which the scheduler's additional queue dimensions features are intended to solve for.
+//
+// In this scenario, one category of queue item causes the queue consumer to slow down, introducing a
+// significant delay while the queue consumer processes it and before the consumer can dequeue the next item.
+// This emulates a situation where one of the query components - the ingesters or store-gateways - is under load.
+//
+// If queue items belonging to the slow category are in the same queue in front of the normal queue items,
+// the normal queue items must wait for all slow queue items to be cleared before they can be serviced.
+// In this way, the degraded performance of the slow query component equally degrades the performance of the
+// queries which *could* be serviced quickly, but are waiting behind the slow queries in the queue.
+//
+// With the additional queue dimensions enabled, the queues are split by which query component the query will utilize.
+// The queue broker then round-robins between the split queues, which has the effect of alternating between
+// dequeuing the slow queries and normal queries rather than blocking normal queries behind slow queries.
+func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
+	promRegistry := prometheus.NewPedanticRegistry()
+
+	maxQueriersPerTenant := 0 // disable shuffle sharding
+	forgetQuerierDelay := time.Duration(0)
+	maxOutstandingRequestsPerTenant := 1000
+
+	totalRequests := 100
+	numTenants := 1
+	numProducers := 10
+	numConsumers := 1
+
+	normalQueueDimension := "normal-request"
+	slowConsumerLatency := 20 * time.Millisecond
+	slowConsumerQueueDimension := "slow-request"
+	normalQueueDimensionFunc := func() []string { return []string{normalQueueDimension} }
+	slowQueueDimensionFunc := func() []string { return []string{slowConsumerQueueDimension} }
+
+	additionalQueueDimensionsEnabledCases := []bool{false, true}
+	queueDurationTotals := map[bool]map[string]float64{
+		false: {normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0},
+		true:  {normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0},
+	}
+
+	for _, additionalQueueDimensionsEnabled := range additionalQueueDimensionsEnabledCases {
+
+		// Scheduler code uses a histogram for queue duration, but a counter is a more direct metric
+		// for this test, as we are concerned with the total or average wait time for all queue items.
+		// Prometheus histograms also lack support for test assertions via prometheus/testutil.
+		queueDuration := promauto.With(promRegistry).NewCounterVec(prometheus.CounterOpts{
+			Name: "test_query_scheduler_queue_duration_total_seconds",
+			Help: "[test] total time spent by items in queue before getting picked up by a consumer",
+		}, []string{"additional_queue_dimensions"})
+
+		queue := NewRequestQueue(
+			log.NewNopLogger(),
+			maxOutstandingRequestsPerTenant,
+			additionalQueueDimensionsEnabled,
+			forgetQuerierDelay,
+			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"tenant"}),
+			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"tenant"}),
+			promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		)
+
+		ctx := context.Background()
+		require.NoError(t, queue.starting(ctx))
+		t.Cleanup(func() {
+			require.NoError(t, queue.stop(nil))
+		})
+
+		// fill queue first with the slow queries, then the normal queries
+		for _, queueDimensionFunc := range []func() []string{slowQueueDimensionFunc, normalQueueDimensionFunc} {
+			startProducersChan := make(chan struct{})
+			producersErrGroup, _ := errgroup.WithContext(ctx)
+
+			runProducer := runQueueProducerIters(
+				queue, maxQueriersPerTenant, totalRequests/2, numProducers, numTenants, startProducersChan, queueDimensionFunc,
+			)
+			for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
+				producerIdx := producerIdx
+				producersErrGroup.Go(func() error {
+					return runProducer(producerIdx)
+				})
+			}
+			close(startProducersChan)
+			err := producersErrGroup.Wait()
+			require.NoError(t, err)
+		}
+
+		// emulate delay when consuming the slow queries
+		consumeFunc := func(request Request) error {
+			schedulerRequest := request.(*SchedulerRequest)
+			if schedulerRequest.AdditionalQueueDimensions[0] == slowConsumerQueueDimension {
+				time.Sleep(slowConsumerLatency)
+			}
+
+			queueTime := time.Since(schedulerRequest.EnqueueTime)
+			additionalQueueDimensionLabels := strings.Join(schedulerRequest.AdditionalQueueDimensions, ":")
+			queueDuration.With(prometheus.Labels{"additional_queue_dimensions": additionalQueueDimensionLabels}).Add(queueTime.Seconds())
+			return nil
+		}
+
+		// consume queries
+		queueConsumerErrGroup, ctx := errgroup.WithContext(ctx)
+		startConsumersChan := make(chan struct{})
+		runConsumer := runQueueConsumerIters(ctx, queue, totalRequests, numConsumers, startConsumersChan, consumeFunc)
+
+		for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
+			consumerIdx := consumerIdx
+			queueConsumerErrGroup.Go(func() error {
+				return runConsumer(consumerIdx)
+			})
+		}
+
+		close(startConsumersChan)
+		err := queueConsumerErrGroup.Wait()
+		require.NoError(t, err)
+
+		// record total queue duration by queue dimensions and whether the queue splitting was enabled
+		for _, queueDimension := range []string{normalQueueDimension, slowConsumerQueueDimension} {
+			queueDurationTotals[additionalQueueDimensionsEnabled][queueDimension] = promtest.ToFloat64(
+				queueDuration.With(prometheus.Labels{"additional_queue_dimensions": queueDimension}),
+			)
+		}
+
+		promRegistry.Unregister(queueDuration)
+	}
+
+	// total or average time in queue for a normal queue item should be roughly cut in half
+	// when queue splitting is enabled, as the average normal queue item waits behind
+	// half of the slow queue items, instead of waiting behind all the slow queue items.
+	expected := queueDurationTotals[false][normalQueueDimension] / 2
+	actual := queueDurationTotals[true][normalQueueDimension]
+	// some variance allowed due to actual time processing needed beyond the slow consumer delay;
+	// variance is also a function of the number of consumers and the consumer delay chosen.
+	// variance can be tighter if the test runs longer but there is a tradeoff for testing and CI speed
+	delta := expected * 0.10
+	require.InDelta(t, expected, actual, delta)
+
+}
+
 func BenchmarkConcurrentQueueOperations(b *testing.B) {
-	maxQueriers := 0
+	maxQueriersPerTenant := 0 // disable shuffle sharding
+	forgetQuerierDelay := time.Duration(0)
+	maxOutstandingRequestsPerTenant := 100
 
 	for _, numTenants := range []int{1, 10, 1000} {
 		b.Run(fmt.Sprintf("%v tenants", numTenants), func(b *testing.B) {
-			for _, numProducers := range []int{10, 25} { // Query-frontends run 5 parallel streams per scheduler by default, and we typically see 2-5 frontends running at any one time.
-				b.Run(fmt.Sprintf("%v concurrent producers", numProducers), func(b *testing.B) {
-					for _, numConsumers := range []int{16, 160, 1600} { // Queriers run with parallelism of 16 when query sharding is enabled.
-						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
-							queueLength := promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"})
-							discardedRequests := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
-							enqueueDuration := promauto.With(nil).NewHistogram(prometheus.HistogramOpts{})
-							queue := NewRequestQueue(log.NewNopLogger(), 100, true, 0, queueLength, discardedRequests, enqueueDuration)
 
-							start := make(chan struct{})
-							producersAndConsumers, ctx := errgroup.WithContext(context.Background())
+			// Query-frontends run 5 parallel streams per scheduler by default,
+			// and we typically see 2-5 frontends running at any one time.
+			for _, numProducers := range []int{10, 25} {
+				b.Run(fmt.Sprintf("%v concurrent producers", numProducers), func(b *testing.B) {
+
+					// Queriers run with parallelism of 16 when query sharding is enabled.
+					for _, numConsumers := range []int{16, 160, 1600} {
+						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
+							queue := NewRequestQueue(
+								log.NewNopLogger(),
+								maxOutstandingRequestsPerTenant,
+								true,
+								forgetQuerierDelay,
+								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"tenant"}),
+								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"tenant"}),
+								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+							)
+
+							startSignalChan := make(chan struct{})
+							queueActorsErrGroup, ctx := errgroup.WithContext(context.Background())
+
 							require.NoError(b, queue.starting(ctx))
 							b.Cleanup(func() {
 								require.NoError(b, queue.stop(nil))
 							})
 
-							requestCount := func(total int, instanceCount int, instanceIdx int) int {
-								count := total / instanceCount
-								totalCountWithoutAdjustment := count * instanceCount
-
-								if totalCountWithoutAdjustment >= total {
-									return count
-								}
-
-								additionalRequests := total - totalCountWithoutAdjustment
-
-								if instanceIdx < additionalRequests {
-									// If we can't perfectly spread requests across all instances, assign remaining requests to the first instances.
-									return count + 1
-								}
-
-								return count
-							}
-
-							runProducer := func(producerIdx int) error {
-								requestCount := requestCount(b.N, numProducers, producerIdx)
-								tenantID := producerIdx % numTenants
-								tenantIDStr := strconv.Itoa(tenantID)
-								<-start
-
-								for i := 0; i < requestCount; i++ {
-									for {
-										// when running this benchmark for memory usage comparison,
-										// we want to have a relatively representative size of request
-										// in order not to skew the % delta between queue implementations.
-										// Unless the request starts to get copied, the size of the requests in the queue
-										// should significantly outweigh the memory used to implement the queue mechanics.
-										req := &SchedulerRequest{
-											Ctx:             context.Background(),
-											FrontendAddress: "http://query-frontend:8007",
-											UserID:          tenantIDStr,
-											Request: &httpgrpc.HTTPRequest{
-												Method: "GET",
-												Headers: []*httpgrpc.Header{
-													{Key: "QueryId", Values: []string{"12345678901234567890"}},
-													{Key: "Accept", Values: []string{"application/vnd.mimir.queryresponse+protobuf", "application/json"}},
-													{Key: "X-Scope-OrgId", Values: []string{tenantIDStr}},
-													{Key: "uber-trace-id", Values: []string{"48475050943e8e05:70e8b02d28e4337b:077cd9b649b6ac02:1"}},
-												},
-												Url: "/prometheus/api/v1/query_range?end=1701720000&query=rate%28go_goroutines%7Bcluster%3D%22docker-compose-local%22%2Cjob%3D%22mimir-microservices-mode%2Fquery-scheduler%22%2Cnamespace%3D%22mimir-microservices-mode%22%7D%5B10m15s%5D%29&start=1701648000&step=60",
-											},
-											AdditionalQueueDimensions: randAdditionalQueueDimension(),
-										}
-										//req.AdditionalQueueDimensions = randAdditionalQueueDimension()
-										err := queue.EnqueueRequestToDispatcher(strconv.Itoa(tenantID), req, maxQueriers, func() {})
-										if err == nil {
-											break
-										}
-
-										// Keep retrying if we've hit the max queue length, otherwise give up immediately.
-										if !errors.Is(err, ErrTooManyRequests) {
-											return err
-										}
-									}
-
-									tenantID = (tenantID + 1) % numTenants
-								}
-
-								return nil
-							}
+							runProducer := runQueueProducerIters(
+								queue, maxQueriersPerTenant, b.N, numProducers, numTenants, startSignalChan, nil,
+							)
 
 							for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
 								producerIdx := producerIdx
-								producersAndConsumers.Go(func() error {
+								queueActorsErrGroup.Go(func() error {
 									return runProducer(producerIdx)
 								})
 							}
 
-							runConsumer := func(consumerIdx int) error {
-								requestCount := requestCount(b.N, numConsumers, consumerIdx)
-								lastTenantIndex := FirstUser()
-								querierID := fmt.Sprintf("consumer-%v", consumerIdx)
-								queue.RegisterQuerierConnection(querierID)
-								defer queue.UnregisterQuerierConnection(querierID)
-
-								<-start
-
-								for i := 0; i < requestCount; i++ {
-									_, idx, err := queue.GetNextRequestForQuerier(ctx, lastTenantIndex, querierID)
-									if err != nil {
-										return err
-									}
-
-									lastTenantIndex = idx
-								}
-
-								return nil
-							}
+							runConsumer := runQueueConsumerIters(ctx, queue, b.N, numConsumers, startSignalChan, nil)
 
 							for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
 								consumerIdx := consumerIdx
-								producersAndConsumers.Go(func() error {
+								queueActorsErrGroup.Go(func() error {
 									return runConsumer(consumerIdx)
 								})
 							}
 
 							b.ResetTimer()
-							close(start)
-							err := producersAndConsumers.Wait()
+							close(startSignalChan)
+							err := queueActorsErrGroup.Wait()
 							if err != nil {
 								require.NoError(b, err)
 							}
@@ -181,6 +285,121 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 			}
 		})
 	}
+}
+
+func queueActorIterationCount(totalIters int, numActors int, actorIdx int) int {
+	actorIters := totalIters / numActors
+	remainderIters := totalIters % numActors
+
+	if remainderIters == 0 {
+		// iterations are spread equally across actors without a remainder
+		return actorIters
+	}
+
+	// If we can't perfectly spread iterations across all actors,
+	// assign remaining iterations to the actors at the beginning of the list.
+	if actorIdx < remainderIters {
+		// this actor is early enough in the list to get one of the remaining iterations
+		return actorIters + 1
+	}
+
+	return actorIters
+}
+
+func runQueueProducerIters(
+	queue *RequestQueue,
+	maxQueriersPerTenant int,
+	totalIters int,
+	numProducers int,
+	numTenants int,
+	start chan struct{},
+	additionalQueueDimensionFunc func() []string,
+) func(producerIdx int) error {
+	return func(producerIdx int) error {
+		producerIters := queueActorIterationCount(totalIters, numProducers, producerIdx)
+		tenantID := producerIdx % numTenants
+		tenantIDStr := strconv.Itoa(tenantID)
+		<-start
+
+		for i := 0; i < producerIters; i++ {
+			err := queueProduce(queue, maxQueriersPerTenant, tenantIDStr, additionalQueueDimensionFunc)
+			if err != nil {
+				return err
+			}
+
+			tenantID = (tenantID + 1) % numTenants
+		}
+
+		return nil
+	}
+}
+
+func queueProduce(
+	queue *RequestQueue, maxQueriersPerTenant int, tenantID string, additionalQueueDimensionFunc func() []string,
+) error {
+	var additionalQueueDimensions []string
+	if additionalQueueDimensionFunc != nil {
+		additionalQueueDimensions = additionalQueueDimensionFunc()
+	}
+	req := makeSchedulerRequest(tenantID, additionalQueueDimensions)
+	for {
+		err := queue.EnqueueRequestToDispatcher(tenantID, req, maxQueriersPerTenant, func() {})
+		if err == nil {
+			break
+		}
+		// Keep retrying if we've hit the max queue length, otherwise give up immediately.
+		if !errors.Is(err, ErrTooManyRequests) {
+			return err
+		}
+	}
+	return nil
+}
+
+func runQueueConsumerIters(
+	ctx context.Context,
+	queue *RequestQueue,
+	totalIters int,
+	numConsumers int,
+	start chan struct{},
+	consumeFunc consumeRequest,
+) func(consumerIdx int) error {
+	return func(consumerIdx int) error {
+		consumerIters := queueActorIterationCount(totalIters, numConsumers, consumerIdx)
+		lastTenantIndex := FirstUser()
+		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
+		queue.RegisterQuerierConnection(querierID)
+		defer queue.UnregisterQuerierConnection(querierID)
+
+		<-start
+
+		for i := 0; i < consumerIters; i++ {
+			idx, err := queueConsume(ctx, queue, querierID, lastTenantIndex, consumeFunc)
+			if err != nil {
+				return err
+			}
+
+			lastTenantIndex = idx
+		}
+
+		return nil
+	}
+}
+
+type consumeRequest func(request Request) error
+
+func queueConsume(
+	ctx context.Context, queue *RequestQueue, querierID string, lastTenantIndex UserIndex, consumeFunc consumeRequest,
+) (UserIndex, error) {
+	request, idx, err := queue.GetNextRequestForQuerier(ctx, lastTenantIndex, querierID)
+	if err != nil {
+		return lastTenantIndex, err
+	}
+	lastTenantIndex = idx
+
+	if consumeFunc != nil {
+		err = consumeFunc(request)
+	}
+	return lastTenantIndex, err
 }
 
 func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBecauseQuerierHasBeenForgotten(t *testing.T) {
@@ -223,7 +442,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	req := &SchedulerRequest{
 		Ctx:                       context.Background(),
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
-		AdditionalQueueDimensions: randAdditionalQueueDimension(),
+		AdditionalQueueDimensions: randAdditionalQueueDimension(true),
 	}
 	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", req, 1, nil))
 
@@ -324,7 +543,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	req := &SchedulerRequest{
 		Ctx:                       context.Background(),
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
-		AdditionalQueueDimensions: randAdditionalQueueDimension(),
+		AdditionalQueueDimensions: randAdditionalQueueDimension(true),
 	}
 	tr := tenantRequest{
 		tenantID: TenantID("tenant-1"),

@@ -7,6 +7,8 @@ package kversion
 import (
 	"bytes"
 	"fmt"
+	"regexp"
+	"sync"
 	"text/tabwriter"
 
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -27,6 +29,80 @@ type Versions struct {
 	// for 52, 53, 54, 55, but it was not a part of the 2.7.0 release,
 	// so ApiVersionsResponse goes from 51 to 56.
 	k2v []int16
+}
+
+var (
+	reFromString     *regexp.Regexp
+	reFromStringOnce sync.Once
+)
+
+var versions = []struct {
+	name string
+	v    *Versions
+}{
+	{"v0.8.0", V0_8_0()},
+	{"v0.8.1", V0_8_1()},
+	{"v0.8.2", V0_8_2()},
+	{"v0.9.0", V0_9_0()},
+	{"v0.10.0", V0_10_0()},
+	{"v0.10.1", V0_10_1()},
+	{"v0.10.2", V0_10_2()},
+	{"v0.11.0", V0_11_0()},
+	{"v1.0", V1_0_0()},
+	{"v1.1", V1_1_0()},
+	{"v2.0", V2_0_0()},
+	{"v2.1", V2_1_0()},
+	{"v2.2", V2_2_0()},
+	{"v2.3", V2_3_0()},
+	{"v2.4", V2_4_0()},
+	{"v2.5", V2_5_0()},
+	{"v2.6", V2_6_0()},
+	{"v2.7", V2_7_0()},
+	{"v2.8", V2_8_0()},
+	{"v3.0", V3_0_0()},
+	{"v3.1", V3_1_0()},
+	{"v3.2", V3_2_0()},
+	{"v3.3", V3_3_0()},
+	{"v3.4", V3_4_0()},
+	{"v3.5", V3_5_0()},
+	{"v3.6", V3_6_0()},
+}
+
+// VersionStrings returns all recognized versions, minus any patch, that can be
+// used as input to FromString.
+func VersionStrings() []string {
+	var vs []string
+	for _, v := range versions {
+		vs = append(vs, v.name)
+	}
+	return vs
+}
+
+// FromString returns a Versions from v.
+// The expected input is:
+//   - for v0, v0.#.# or v0.#.#.#
+//   - for v1, v1.# or v1.#.#
+func FromString(v string) *Versions {
+	reFromStringOnce.Do(func() {
+		// 0: entire string
+		// 1: v1+ match, minus patch
+		// 2: v0 match, minus subpatch
+		reFromString = regexp.MustCompile(`^(?:(v[1-9]+\.\d+)(?:\.\d+)?|(v0\.\d+\.\d+)(?:\.\d+)?)$`)
+	})
+	m := reFromString.FindStringSubmatch(v)
+	if m == nil {
+		return nil
+	}
+	v = m[1]
+	if m[2] != "" {
+		v = m[2]
+	}
+	for _, v2 := range versions {
+		if v2.name == v {
+			return v2.v
+		}
+	}
+	return nil
 }
 
 // FromApiVersionsResponse returns a Versions from a kmsg.ApiVersionsResponse.
@@ -445,10 +521,7 @@ func V3_2_0() *Versions  { return zkBrokerOf(max320) }
 func V3_3_0() *Versions  { return zkBrokerOf(max330) }
 func V3_4_0() *Versions  { return zkBrokerOf(max340) }
 func V3_5_0() *Versions  { return zkBrokerOf(max350) }
-
-/* TODO wait for franz-go v1.16
 func V3_6_0() *Versions  { return zkBrokerOf(max360) }
-*/
 
 func zkBrokerOf(lks listenerKeys) *Versions {
 	return &Versions{lks.filter(zkBroker)}

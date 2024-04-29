@@ -61,7 +61,8 @@ func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStrea
 }
 
 // Close cleans up all resources associated with this SeriesChunksStreamReader.
-// This method should only be called if StartBuffering is not called.
+// This method should only be directly called if StartBuffering is not called,
+// otherwise StartBuffering will call it once done.
 func (s *SeriesChunksStreamReader) Close() {
 	if err := util.CloseAndExhaust[*QueryStreamResponse](s.client); err != nil {
 		level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)
@@ -233,7 +234,7 @@ func (s *SeriesChunksStreamReader) readNextBatch(seriesIndex uint64) error {
 		select {
 		case err, haveError := <-s.errorChan:
 			if haveError {
-				if _, ok := err.(validation.LimitError); ok {
+				if validation.IsLimitError(err) {
 					return err
 				}
 				return fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)

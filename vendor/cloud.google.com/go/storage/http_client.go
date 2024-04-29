@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -74,9 +75,10 @@ func newHTTPStorageClient(ctx context.Context, opts ...storageOption) (storageCl
 		// Prepend default options to avoid overriding options passed by the user.
 		o = append([]option.ClientOption{option.WithScopes(ScopeFullControl, "https://www.googleapis.com/auth/cloud-platform"), option.WithUserAgent(userAgent)}, o...)
 
-		o = append(o, internaloption.WithDefaultEndpoint("https://storage.googleapis.com/storage/v1/"))
-		o = append(o, internaloption.WithDefaultMTLSEndpoint("https://storage.mtls.googleapis.com/storage/v1/"))
-
+		o = append(o, internaloption.WithDefaultEndpointTemplate("https://storage.UNIVERSE_DOMAIN/storage/v1/"),
+			internaloption.WithDefaultMTLSEndpoint("https://storage.mtls.googleapis.com/storage/v1/"),
+			internaloption.WithDefaultUniverseDomain("googleapis.com"),
+		)
 		// Don't error out here. The user may have passed in their own HTTP
 		// client which does not auth with ADC or other common conventions.
 		c, err := transport.Creds(ctx, o...)
@@ -159,7 +161,7 @@ func (c *httpStorageClient) GetServiceAccount(ctx context.Context, project strin
 	return res.EmailAddress, nil
 }
 
-func (c *httpStorageClient) CreateBucket(ctx context.Context, project, bucket string, attrs *BucketAttrs, opts ...storageOption) (*BucketAttrs, error) {
+func (c *httpStorageClient) CreateBucket(ctx context.Context, project, bucket string, attrs *BucketAttrs, enableObjectRetention *bool, opts ...storageOption) (*BucketAttrs, error) {
 	s := callSettings(c.settings, opts...)
 	var bkt *raw.Bucket
 	if attrs != nil {
@@ -180,6 +182,9 @@ func (c *httpStorageClient) CreateBucket(ctx context.Context, project, bucket st
 	}
 	if attrs != nil && attrs.PredefinedDefaultObjectACL != "" {
 		req.PredefinedDefaultObjectAcl(attrs.PredefinedDefaultObjectACL)
+	}
+	if enableObjectRetention != nil {
+		req.EnableObjectRetention(*enableObjectRetention)
 	}
 	var battrs *BucketAttrs
 	err := run(ctx, func(ctx context.Context) error {
@@ -345,6 +350,7 @@ func (c *httpStorageClient) ListObjects(ctx context.Context, bucket string, q *Q
 		req.Versions(it.query.Versions)
 		req.IncludeTrailingDelimiter(it.query.IncludeTrailingDelimiter)
 		req.MatchGlob(it.query.MatchGlob)
+		req.IncludeFoldersAsPrefixes(it.query.IncludeFoldersAsPrefixes)
 		if selection := it.query.toFieldSelection(); selection != "" {
 			req.Fields("nextPageToken", googleapi.Field(selection))
 		}
@@ -431,7 +437,8 @@ func (c *httpStorageClient) GetObject(ctx context.Context, bucket, object string
 	return newObject(obj), nil
 }
 
-func (c *httpStorageClient) UpdateObject(ctx context.Context, bucket, object string, uattrs *ObjectAttrsToUpdate, gen int64, encryptionKey []byte, conds *Conditions, opts ...storageOption) (*ObjectAttrs, error) {
+func (c *httpStorageClient) UpdateObject(ctx context.Context, params *updateObjectParams, opts ...storageOption) (*ObjectAttrs, error) {
+	uattrs := params.uattrs
 	s := callSettings(c.settings, opts...)
 
 	var attrs ObjectAttrs
@@ -496,11 +503,21 @@ func (c *httpStorageClient) UpdateObject(ctx context.Context, bucket, object str
 		// we don't append to nullFields here.
 		forceSendFields = append(forceSendFields, "Acl")
 	}
-	rawObj := attrs.toRawObject(bucket)
+	if uattrs.Retention != nil {
+		// For ObjectRetention it's an error to send empty fields.
+		// Instead we send a null as the user's intention is to remove.
+		if uattrs.Retention.Mode == "" && uattrs.Retention.RetainUntil.IsZero() {
+			nullFields = append(nullFields, "Retention")
+		} else {
+			attrs.Retention = uattrs.Retention
+			forceSendFields = append(forceSendFields, "Retention")
+		}
+	}
+	rawObj := attrs.toRawObject(params.bucket)
 	rawObj.ForceSendFields = forceSendFields
 	rawObj.NullFields = nullFields
-	call := c.raw.Objects.Patch(bucket, object, rawObj).Projection("full")
-	if err := applyConds("Update", gen, conds, call); err != nil {
+	call := c.raw.Objects.Patch(params.bucket, params.object, rawObj).Projection("full")
+	if err := applyConds("Update", params.gen, params.conds, call); err != nil {
 		return nil, err
 	}
 	if s.userProject != "" {
@@ -509,9 +526,14 @@ func (c *httpStorageClient) UpdateObject(ctx context.Context, bucket, object str
 	if uattrs.PredefinedACL != "" {
 		call.PredefinedAcl(uattrs.PredefinedACL)
 	}
-	if err := setEncryptionHeaders(call.Header(), encryptionKey, false); err != nil {
+	if err := setEncryptionHeaders(call.Header(), params.encryptionKey, false); err != nil {
 		return nil, err
 	}
+
+	if params.overrideRetention != nil {
+		call.OverrideUnlockedRetention(*params.overrideRetention)
+	}
+
 	var obj *raw.Object
 	var err error
 	err = run(ctx, func(ctx context.Context) error { obj, err = call.Context(ctx).Do(); return err }, s.retry, s.idempotent)
@@ -864,7 +886,7 @@ func (c *httpStorageClient) OpenWriter(params *openWriterParams, opts ...storage
 	mediaOpts := []googleapi.MediaOption{
 		googleapi.ChunkSize(params.chunkSize),
 	}
-	if c := attrs.ContentType; c != "" {
+	if c := attrs.ContentType; c != "" || params.forceEmptyContentType {
 		mediaOpts = append(mediaOpts, googleapi.ContentType(c))
 	}
 	if params.chunkRetryDeadline != 0 {
@@ -1197,9 +1219,12 @@ func (c *httpStorageClient) DeleteNotification(ctx context.Context, bucket strin
 }
 
 type httpReader struct {
-	body   io.ReadCloser
-	seen   int64
-	reopen func(seen int64) (*http.Response, error)
+	body     io.ReadCloser
+	seen     int64
+	reopen   func(seen int64) (*http.Response, error)
+	checkCRC bool   // should we check the CRC?
+	wantCRC  uint32 // the CRC32c value the server sent in the header
+	gotCRC   uint32 // running crc
 }
 
 func (r *httpReader) Read(p []byte) (int, error) {
@@ -1208,7 +1233,22 @@ func (r *httpReader) Read(p []byte) (int, error) {
 		m, err := r.body.Read(p[n:])
 		n += m
 		r.seen += int64(m)
-		if err == nil || err == io.EOF {
+		if r.checkCRC {
+			r.gotCRC = crc32.Update(r.gotCRC, crc32cTable, p[:n])
+		}
+		if err == nil {
+			return n, nil
+		}
+		if err == io.EOF {
+			// Check CRC here. It would be natural to check it in Close, but
+			// everybody defers Close on the assumption that it doesn't return
+			// anything worth looking at.
+			if r.checkCRC {
+				if r.gotCRC != r.wantCRC {
+					return n, fmt.Errorf("storage: bad CRC on read: got %d, want %d",
+						r.gotCRC, r.wantCRC)
+				}
+			}
 			return n, err
 		}
 		// Read failed (likely due to connection issues), but we will try to reopen
@@ -1414,11 +1454,12 @@ func parseReadResponse(res *http.Response, params *newRangeReaderParams, reopen 
 		Attrs:    attrs,
 		size:     size,
 		remain:   remain,
-		wantCRC:  crc,
 		checkCRC: checkCRC,
 		reader: &httpReader{
-			reopen: reopen,
-			body:   body,
+			reopen:   reopen,
+			body:     body,
+			wantCRC:  crc,
+			checkCRC: checkCRC,
 		},
 	}, nil
 }

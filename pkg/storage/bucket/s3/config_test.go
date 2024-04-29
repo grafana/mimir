@@ -117,6 +117,35 @@ func TestConfig_Validate(t *testing.T) {
 				}
 			},
 		},
+		"should pass with using sts endpoint": {
+			setup: func() *Config {
+				sseCfg := &SSEConfig{}
+				flagext.DefaultValues(sseCfg)
+				cfg := &Config{
+					BucketName:       "mimir-block",
+					SSE:              *sseCfg,
+					SignatureVersion: SignatureVersionV4,
+					StorageClass:     s3_service.StorageClassStandard,
+					STSEndpoint:      "https://sts.eu-central-1.amazonaws.com",
+				}
+				return cfg
+			},
+		},
+		"should not pass with using sts endpoint as its using an invalid url": {
+			setup: func() *Config {
+				sseCfg := &SSEConfig{}
+				flagext.DefaultValues(sseCfg)
+				cfg := &Config{
+					BucketName:       "mimir-block",
+					SSE:              *sseCfg,
+					SignatureVersion: SignatureVersionV4,
+					StorageClass:     s3_service.StorageClassStandard,
+					STSEndpoint:      "sts.eu-central-1.amazonaws.com",
+				}
+				return cfg
+			},
+			expected: errInvalidSTSEndpoint,
+		},
 	}
 
 	for testName, testData := range tests {

@@ -69,13 +69,13 @@ type StreamBinaryReader struct {
 }
 
 // NewStreamBinaryReader loads or builds new index-header if not present on disk.
-func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, sparsePersistenceEnabled bool, postingOffsetsInMemSampling int, metrics *StreamBinaryReaderMetrics, cfg Config) (*StreamBinaryReader, error) {
+func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, metrics *StreamBinaryReaderMetrics, cfg Config) (*StreamBinaryReader, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "indexheader.NewStreamBinaryReader")
 	defer spanLog.Finish()
 
 	binPath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 	sparseHeadersPath := filepath.Join(dir, id.String(), block.SparseIndexHeaderFilename)
-	br, err := newFileStreamBinaryReader(binPath, id, sparseHeadersPath, sparsePersistenceEnabled, postingOffsetsInMemSampling, spanLog, metrics, cfg)
+	br, err := newFileStreamBinaryReader(binPath, id, sparseHeadersPath, postingOffsetsInMemSampling, spanLog, metrics, cfg)
 	if err == nil {
 		return br, nil
 	}
@@ -88,11 +88,11 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 	}
 
 	level.Debug(spanLog).Log("msg", "built index-header file", "path", binPath, "elapsed", time.Since(start))
-	return newFileStreamBinaryReader(binPath, id, sparseHeadersPath, sparsePersistenceEnabled, postingOffsetsInMemSampling, spanLog, metrics, cfg)
+	return newFileStreamBinaryReader(binPath, id, sparseHeadersPath, postingOffsetsInMemSampling, spanLog, metrics, cfg)
 }
 
 // newFileStreamBinaryReader loads sparse index-headers from disk or constructs it from the index-header if not available.
-func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath string, sparsePersistenceEnabled bool, postingOffsetsInMemSampling int, logger *spanlogger.SpanLogger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
+func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath string, postingOffsetsInMemSampling int, logger *spanlogger.SpanLogger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	r := &StreamBinaryReader{
 		factory: streamencoding.NewDecbufFactory(binPath, cfg.MaxIdleFileHandles, metrics.decbufFactory),
 	}
@@ -138,8 +138,8 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
 	}
 
-	// Load in sparse symbols and postings offset table; from disk if sparse persistence is enabled and v2.
-	if sparsePersistenceEnabled && r.indexVersion == index.FormatV2 {
+	// Load in sparse symbols and postings offset table; from disk if this is a v2 index.
+	if r.indexVersion == index.FormatV2 {
 		sparseData, err := os.ReadFile(sparseHeadersPath)
 		if err != nil && !os.IsNotExist(err) {
 			level.Warn(logger).Log("msg", "failed to read sparse index-headers from disk; recreating", "id", id, "err", err)
@@ -190,7 +190,7 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger *spanlogger.SpanLo
 		level.Info(logger).Log("msg", "loaded sparse index-header from disk", "id", id, "path", sparseHeadersPath, "elapsed", time.Since(start))
 	}()
 
-	level.Info(logger).Log("msg", "loading from sparse index-header from disk", "id", id, "path", sparseHeadersPath)
+	level.Info(logger).Log("msg", "loading sparse index-header from disk", "id", id, "path", sparseHeadersPath)
 	sparseHeaders := &indexheaderpb.Sparse{}
 
 	gzipped := bytes.NewReader(sparseData)
@@ -305,11 +305,11 @@ func newBinaryTOCFromFile(d streamencoding.Decbuf, indexHeaderSize int) (*Binary
 	}, nil
 }
 
-func (r *StreamBinaryReader) IndexVersion(_ context.Context) (int, error) {
+func (r *StreamBinaryReader) IndexVersion() (int, error) {
 	return r.indexVersion, nil
 }
 
-func (r *StreamBinaryReader) PostingsOffset(_ context.Context, name, value string) (index.Range, error) {
+func (r *StreamBinaryReader) PostingsOffset(name, value string) (index.Range, error) {
 	rng, found, err := r.postingsOffsetTable.PostingsOffset(name, value)
 	if err != nil {
 		return index.Range{}, err
@@ -320,7 +320,7 @@ func (r *StreamBinaryReader) PostingsOffset(_ context.Context, name, value strin
 	return rng, nil
 }
 
-func (r *StreamBinaryReader) LookupSymbol(_ context.Context, o uint32) (string, error) {
+func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 	if r.indexVersion == index.FormatV1 {
 		// For v1 little trick is needed. Refs are actual offset inside index, not index-header. This is different
 		// of the header length difference between two files.
@@ -369,18 +369,18 @@ func (c cachedLabelNamesSymbolsReader) Read(u uint32) (string, error) {
 	return c.r.Read(u)
 }
 
-func (r *StreamBinaryReader) SymbolsReader(_ context.Context) (streamindex.SymbolsReader, error) {
+func (r *StreamBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) {
 	return cachedLabelNamesSymbolsReader{
 		labelNames: r.nameSymbols,
 		r:          r.symbols.Reader(),
 	}, nil
 }
 
-func (r *StreamBinaryReader) LabelValuesOffsets(_ context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
+func (r *StreamBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
 	return r.postingsOffsetTable.LabelValuesOffsets(name, prefix, filter)
 }
 
-func (r *StreamBinaryReader) LabelNames(_ context.Context) ([]string, error) {
+func (r *StreamBinaryReader) LabelNames() ([]string, error) {
 	return r.postingsOffsetTable.LabelNames()
 }
 

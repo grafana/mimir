@@ -6,10 +6,9 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/grafana/mimir/pkg/util/servicediscovery"
 )
 
 func New(cfg Config, schedulerAddress string, lookupPeriod time.Duration, component string, receiver servicediscovery.Notifications, logger log.Logger, reg prometheus.Registerer) (services.Service, error) {
@@ -20,7 +19,7 @@ func New(cfg Config, schedulerAddress string, lookupPeriod time.Duration, compon
 	case ModeRing:
 		return newRing(cfg, component, receiver, logger, reg)
 	default:
-		return servicediscovery.NewDNS(schedulerAddress, lookupPeriod, receiver)
+		return servicediscovery.NewDNS(logger, schedulerAddress, lookupPeriod, receiver)
 	}
 }
 

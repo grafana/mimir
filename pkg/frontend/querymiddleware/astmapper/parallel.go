@@ -29,9 +29,14 @@ var NonParallelFuncs = []string{
 	"absent_over_time",
 	"histogram_quantile",
 	"sort_desc",
+	"sort_by_label",
+	"sort_by_label_desc",
 	"sort",
 	"time",
 	"vector",
+
+	// The following function may be parallelized using a strategy similar to avg().
+	"histogram_avg",
 }
 
 // FuncsWithDefaultTimeArg is the list of functions that extract date information from a variadic list of params,

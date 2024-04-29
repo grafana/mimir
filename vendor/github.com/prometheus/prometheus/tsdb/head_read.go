@@ -15,12 +15,13 @@ package tsdb
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math"
+	"slices"
 	"sync"
 
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -137,7 +138,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 		}
 	}
 	if err := p.Err(); err != nil {
-		return index.ErrPostings(errors.Wrap(err, "expand postings"))
+		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
 	}
 
 	slices.SortFunc(series, func(a, b *memSeries) int {
@@ -152,7 +153,13 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
+// ShardedPostings implements IndexReader. This function returns an failing postings list if sharding
+// has not been enabled in the Head.
 func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	if !h.head.opts.EnableSharding {
+		return index.ErrPostings(errors.New("sharding is disabled"))
+	}
+
 	out := make([]storage.SeriesRef, 0, 128)
 
 	for p.Next() {
@@ -173,7 +180,19 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	return index.NewListPostings(out)
 }
 
+// LabelValuesFor returns LabelValues for the given label name in the series referred to by postings.
+func (h *headIndexReader) LabelValuesFor(postings index.Postings, name string) storage.LabelValues {
+	return h.head.postings.LabelValuesFor(postings, name)
+}
+
+// LabelValuesExcluding returns LabelValues for the given label name in all other series than those referred to by postings.
+// This is useful for obtaining label values for other postings than the ones you wish to exclude.
+func (h *headIndexReader) LabelValuesExcluding(postings index.Postings, name string) storage.LabelValues {
+	return h.head.postings.LabelValuesExcluding(postings, name)
+}
+
 // Series returns the series for the given reference.
+// Chunks are skipped if chks is nil.
 func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s := h.head.series.getByID(chunks.HeadSeriesRef(ref))
 
@@ -417,7 +436,8 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, cdm chunkDiskMapper, memChunkPo
 	if ix < len(s.mmappedChunks) {
 		chk, err := cdm.Chunk(s.mmappedChunks[ix].ref)
 		if err != nil {
-			if _, ok := err.(*chunks.CorruptionErr); ok {
+			var cerr *chunks.CorruptionErr
+			if errors.As(err, &cerr) {
 				panic(err)
 			}
 			return nil, false, false, err
@@ -545,14 +565,15 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm chunkDiskMapper, mint,
 				xor, err = s.ooo.oooHeadChunk.chunk.ToXORBetweenTimestamps(meta.OOOLastMinTime, meta.OOOLastMaxTime)
 			}
 			if err != nil {
-				return nil, errors.Wrap(err, "failed to convert ooo head chunk to xor chunk")
+				return nil, fmt.Errorf("failed to convert ooo head chunk to xor chunk: %w", err)
 			}
 			iterable = xor
 		} else {
 			chk, err := cdm.Chunk(c.ref)
 			if err != nil {
-				if _, ok := err.(*chunks.CorruptionErr); ok {
-					return nil, errors.Wrap(err, "invalid ooo mmapped chunk")
+				var cerr *chunks.CorruptionErr
+				if errors.As(err, &cerr) {
+					return nil, fmt.Errorf("invalid ooo mmapped chunk: %w", err)
 				}
 				return nil, err
 			}
@@ -574,17 +595,6 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm chunkDiskMapper, mint,
 	}
 
 	return mc, nil
-}
-
-var _ chunkenc.Iterable = &mergedOOOChunks{}
-
-// mergedOOOChunks holds the list of iterables for overlapping chunks.
-type mergedOOOChunks struct {
-	chunkIterables []chunkenc.Iterable
-}
-
-func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
-	return storage.ChainSampleIteratorFromIterables(iterator, o.chunkIterables)
 }
 
 var _ chunkenc.Iterable = &boundedIterable{}
@@ -708,7 +718,7 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 
 		// Removing the extra transactionIDs that are relevant for samples that
 		// come after this chunk, from the total transactionIDs.
-		appendIDsToConsider := s.txs.txIDCount - (totalSamples - (previousSamples + numSamples))
+		appendIDsToConsider := int(s.txs.txIDCount) - (totalSamples - (previousSamples + numSamples))
 
 		// Iterate over the appendIDs, find the first one that the isolation state says not
 		// to return.

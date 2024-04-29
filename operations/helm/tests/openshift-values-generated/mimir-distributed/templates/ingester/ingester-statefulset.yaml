@@ -57,12 +57,6 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -72,9 +66,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: openshift-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -137,6 +129,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
           envFrom:
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
@@ -197,12 +191,6 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -212,9 +200,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: openshift-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -277,6 +263,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
           envFrom:
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
@@ -337,12 +325,6 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -352,9 +334,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: openshift-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -417,4 +397,6 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
           envFrom:

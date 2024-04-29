@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -195,7 +195,6 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 				EagerLoadingStartupEnabled: true,
 				LazyLoadingEnabled:         true,
 				LazyLoadingIdleTimeout:     time.Minute,
-				SparsePersistenceEnabled:   true,
 			},
 		},
 		cfg.postingsStrategy,
@@ -460,10 +459,12 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
 
 		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_request_stage_duration_seconds", metrics))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_blocks_queried", metrics, "source", "test", "level", "1"))
 	}
 	if numChunksPerSeries > 0 {
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "chunks"))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "chunks"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_blocks_queried", metrics, "source", "test", "level", "1"))
 	}
 }
 
@@ -664,7 +665,7 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 					} else {
 						assert.Error(t, err)
 						assert.Contains(t, err.Error(), testData.expectedErr)
-						status, ok := status.FromError(err)
+						status, ok := grpcutil.ErrorToStatus(err)
 						assert.Equal(t, true, ok)
 						assert.Equal(t, testData.expectedCode, status.Code())
 					}

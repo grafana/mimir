@@ -165,6 +165,77 @@ func TestLoader_GetIndex_ShouldCacheIndexNotFoundError(t *testing.T) {
 	))
 }
 
+func TestLoader_GetIndex_ShouldNotCacheContextCanceled(t *testing.T) {
+	ctx := context.Background()
+	reg := prometheus.NewPedanticRegistry()
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
+
+	// Create a bucket index.
+	idx := &Index{
+		Version: IndexVersion1,
+		Blocks: Blocks{
+			{ID: ulid.MustNew(1, nil), MinTime: 10, MaxTime: 20},
+		},
+		BlockDeletionMarks: nil,
+		UpdatedAt:          time.Now().Unix(),
+	}
+	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, idx))
+
+	// Create the loader.
+	loader := NewLoader(prepareLoaderConfig(), bkt, nil, log.NewNopLogger(), reg)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, loader))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, loader))
+	})
+
+	// Request the index multiple times.
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	for i := 0; i < 10; i++ {
+		_, err := loader.GetIndex(canceledCtx, "user-1")
+		assert.ErrorIs(t, err, context.Canceled)
+	}
+
+	// Ensure metrics have been updated accordingly.
+	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP cortex_bucket_index_load_failures_total Total number of bucket index loading failures.
+		# TYPE cortex_bucket_index_load_failures_total counter
+		cortex_bucket_index_load_failures_total 10
+		# HELP cortex_bucket_index_loaded Number of bucket indexes currently loaded in-memory.
+		# TYPE cortex_bucket_index_loaded gauge
+		cortex_bucket_index_loaded 0
+		# HELP cortex_bucket_index_loads_total Total number of bucket index loading attempts.
+		# TYPE cortex_bucket_index_loads_total counter
+		cortex_bucket_index_loads_total 10
+	`),
+		"cortex_bucket_index_loads_total",
+		"cortex_bucket_index_load_failures_total",
+		"cortex_bucket_index_loaded",
+	))
+
+	// Getting it once again with a working context should trigger a load.
+	_, err := loader.GetIndex(ctx, "user-1")
+	assert.NoError(t, err)
+
+	// Ensure metrics have been updated accordingly.
+	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP cortex_bucket_index_load_failures_total Total number of bucket index loading failures.
+		# TYPE cortex_bucket_index_load_failures_total counter
+		cortex_bucket_index_load_failures_total 10
+		# HELP cortex_bucket_index_loaded Number of bucket indexes currently loaded in-memory.
+		# TYPE cortex_bucket_index_loaded gauge
+		cortex_bucket_index_loaded 1
+		# HELP cortex_bucket_index_loads_total Total number of bucket index loading attempts.
+		# TYPE cortex_bucket_index_loads_total counter
+		cortex_bucket_index_loads_total 11
+	`),
+		"cortex_bucket_index_loads_total",
+		"cortex_bucket_index_load_failures_total",
+		"cortex_bucket_index_loaded",
+	))
+
+}
+
 func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousLoadSuccess(t *testing.T) {
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()
@@ -413,9 +484,9 @@ func TestLoader_ShouldCacheIndexNotFoundOnBackgroundUpdates(t *testing.T) {
 
 	// Create the loader.
 	cfg := LoaderConfig{
-		CheckInterval:         time.Second,
-		UpdateOnStaleInterval: time.Second,
-		UpdateOnErrorInterval: time.Second,
+		CheckInterval:         100 * time.Millisecond,
+		UpdateOnStaleInterval: 100 * time.Millisecond,
+		UpdateOnErrorInterval: time.Hour, // Intentionally high to not hit it.
 		IdleTimeout:           time.Hour, // Intentionally high to not hit it.
 	}
 
@@ -433,22 +504,19 @@ func TestLoader_ShouldCacheIndexNotFoundOnBackgroundUpdates(t *testing.T) {
 	require.NoError(t, DeleteIndex(ctx, bkt, "user-1", nil))
 
 	// Wait until the next index load attempt occurs.
-	prevLoads := testutil.ToFloat64(loader.loadAttempts)
-	test.Poll(t, 3*time.Second, true, func() interface{} {
-		return testutil.ToFloat64(loader.loadAttempts) > prevLoads
-	})
-
 	// We expect the bucket index is not considered loaded because of the error.
-	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+	test.Poll(t, 3*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 			# HELP cortex_bucket_index_loaded Number of bucket indexes currently loaded in-memory.
 			# TYPE cortex_bucket_index_loaded gauge
 			cortex_bucket_index_loaded 0
 		`),
-		"cortex_bucket_index_loaded",
-	))
+			"cortex_bucket_index_loaded",
+		)
+	})
 
 	// Try to get the index again. We expect no load attempt because the error has been cached.
-	prevLoads = testutil.ToFloat64(loader.loadAttempts)
+	prevLoads := testutil.ToFloat64(loader.loadAttempts)
 	actualIdx, err = loader.GetIndex(ctx, "user-1")
 	assert.Equal(t, ErrIndexNotFound, err)
 	assert.Nil(t, actualIdx)

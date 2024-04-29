@@ -14,6 +14,7 @@
 package labels
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -21,7 +22,6 @@ import (
 	"github.com/dgraph-io/ristretto"
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -284,7 +284,8 @@ func findSetMatchesFromAlternate(re *syntax.Regexp, base string) (matches []stri
 // clearCapture removes capture operation as they are not used for matching.
 func clearCapture(regs ...*syntax.Regexp) {
 	for _, r := range regs {
-		if r.Op == syntax.OpCapture {
+		// Iterate on the regexp because capture groups could be nested.
+		for r.Op == syntax.OpCapture {
 			*r = *r.Sub[0]
 		}
 	}
@@ -365,7 +366,7 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 	// If there are no alternates, check if the string is a literal
 	if estimatedAlternates == 1 {
 		if regexp.QuoteMeta(s) == s {
-			return &equalStringMatcher{s: s, caseSensitive: true}, nil
+			return &equalStringMatcher{s: s, caseSensitive: true}, []string{s}
 		}
 		return nil, nil
 	}
@@ -442,7 +443,6 @@ type StringMatcher interface {
 
 // stringMatcherFromRegexp attempts to replace a common regexp with a string matcher.
 // It returns nil if the regexp is not supported.
-// For examples, it will replace `.*foo` with `foo.*` and `.*foo.*` with `(?i)foo`.
 func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 	clearBeginEndText(re)
 
@@ -598,7 +598,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 				suffixCaseSensitive: matchesCaseSensitive,
 			}
 
-		// We found literals in the middle. We can triggered the fast path only if
+		// We found literals in the middle. We can trigger the fast path only if
 		// the matches are case sensitive because containsStringMatcher doesn't
 		// support case insensitive.
 		case matchesCaseSensitive:
@@ -615,7 +615,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 // containsStringMatcher matches a string if it contains any of the substrings.
 // If left and right are not nil, it's a contains operation where left and right must match.
 // If left is nil, it's a hasPrefix operation and right must match.
-// Finally if right is nil it's a hasSuffix operation and left must match.
+// Finally, if right is nil it's a hasSuffix operation and left must match.
 type containsStringMatcher struct {
 	// The matcher that must match the left side. Can be nil.
 	left StringMatcher

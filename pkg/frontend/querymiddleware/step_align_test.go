@@ -9,7 +9,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
@@ -53,17 +52,16 @@ func TestStepAlignMiddleware_SingleUser(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var result *PrometheusRangeQueryRequest
 
-			next := HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			next := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 				result = req.(*PrometheusRangeQueryRequest)
 				return nil, nil
 			})
 
 			limits := mockLimits{alignQueriesWithStep: true}
-			resolver := tenant.NewMultiResolver()
 			log := test.NewTestingLogger(t)
 			ctx := user.InjectOrgID(context.Background(), "123")
 
-			s := newStepAlignMiddleware(limits, resolver, log, prometheus.NewPedanticRegistry()).Wrap(next)
+			s := newStepAlignMiddleware(limits, log, prometheus.NewPedanticRegistry()).Wrap(next)
 			_, err := s.Do(ctx, tc.input)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, result)
@@ -138,16 +136,15 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var result *PrometheusRangeQueryRequest
 
-			next := HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			next := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 				result = req.(*PrometheusRangeQueryRequest)
 				return nil, nil
 			})
 
-			resolver := tenant.NewMultiResolver()
 			log := test.NewTestingLogger(t)
 			ctx := user.InjectOrgID(context.Background(), "123|456")
 
-			s := newStepAlignMiddleware(tc.limits, resolver, log, prometheus.NewPedanticRegistry()).Wrap(next)
+			s := newStepAlignMiddleware(tc.limits, log, prometheus.NewPedanticRegistry()).Wrap(next)
 			_, err := s.Do(ctx, tc.input)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, result)
@@ -157,7 +154,7 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 
 func TestIsRequestStepAligned(t *testing.T) {
 	tests := map[string]struct {
-		req      Request
+		req      MetricsQueryRequest
 		expected bool
 	}{
 		"should return true if start and end are aligned to step": {

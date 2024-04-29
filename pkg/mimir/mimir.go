@@ -30,7 +30,7 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
-	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/spanprofiler"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -48,6 +48,7 @@ import (
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -57,12 +58,12 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	rulebucketclient "github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
-	rulestorelocal "github.com/grafana/mimir/pkg/ruler/rulestore/local"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -135,6 +136,7 @@ type Config struct {
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
+	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
 	Common CommonConfig `yaml:"common"`
@@ -192,6 +194,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
+	c.ContinuousTest.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
 
 	c.Common.RegisterFlags(f)
@@ -240,10 +243,15 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngestStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
-	if c.IngestStorage.Enabled && !c.Ingester.ReturnOnlyGRPCErrors {
-		return errors.New("to use ingest storage (-ingest-storage.enabled) also enable -ingester.return-only-grpc-errors")
+	if c.isAnyModuleEnabled(Ingester, Write, All) {
+		if c.IngestStorage.Enabled && !c.Ingester.DeprecatedReturnOnlyGRPCErrors {
+			return errors.New("to use ingest storage (-ingest-storage.enabled) also enable -ingester.return-only-grpc-errors")
+		}
+		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
+			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
+		}
 	}
-	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics, log); err != nil {
+	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
 	if err := c.Distributor.Validate(c.LimitsConfig); err != nil {
@@ -256,10 +264,10 @@ func (c *Config) Validate(log log.Logger) error {
 		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
 			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
 	}
-	if err := c.IngesterClient.Validate(); err != nil {
+	if err := c.IngesterClient.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
-	if err := c.Ingester.Validate(); err != nil {
+	if err := c.Ingester.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid ingester config")
 	}
 	if err := c.Worker.Validate(); err != nil {
@@ -271,7 +279,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.StoreGateway.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid store-gateway config")
 	}
-	if err := c.Compactor.Validate(); err != nil {
+	if err := c.Compactor.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid compactor config")
 	}
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
@@ -333,7 +341,7 @@ func (c *Config) validateBucketConfigs() error {
 	}
 
 	// Validate ruler bucket config.
-	if c.isAnyModuleEnabled(All, Ruler, Backend) && c.RulerStorage.Backend != rulestorelocal.Name {
+	if c.isAnyModuleEnabled(All, Ruler, Backend) && c.RulerStorage.Backend != rulestore.BackendLocal {
 		errs.Add(errors.Wrap(validateBucketConfig(c.RulerStorage.Config, c.BlocksStorage.Bucket), "ruler storage"))
 	}
 
@@ -441,7 +449,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 				checkValue: filepath.Join(c.RulerStorage.Filesystem.Directory, rulebucketclient.RulesPrefix),
 			})
 		}
-		if c.RulerStorage.Backend == rulestorelocal.Name {
+		if c.RulerStorage.Backend == rulestore.BackendLocal {
 			paths = append(paths, pathConfig{
 				name:       "ruler storage local directory",
 				cfgValue:   c.RulerStorage.Local.Directory,
@@ -537,12 +545,14 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	c.Server.RegisterFlags(throwaway)
 
 	defaultsOverrides := map[string]string{
-		"server.http-write-timeout":                         "2m",
-		"server.grpc.keepalive.min-time-between-pings":      "10s",
-		"server.grpc.keepalive.ping-without-stream-allowed": "true",
-		"server.http-listen-port":                           "8080",
-		"server.grpc-max-recv-msg-size-bytes":               strconv.Itoa(100 * 1024 * 1024),
-		"server.grpc-max-send-msg-size-bytes":               strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc-max-recv-msg-size-bytes":                       strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc-max-send-msg-size-bytes":                       strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc.keepalive.min-time-between-pings":              "10s",
+		"server.grpc.keepalive.ping-without-stream-allowed":         "true",
+		"server.grpc.num-workers":                                   "100",
+		"server.http-listen-port":                                   "8080",
+		"server.http-write-timeout":                                 "2m",
+		"server.report-grpc-codes-in-instrumentation-label-enabled": "true",
 	}
 
 	throwaway.VisitAll(func(f *flag.Flag) {
@@ -683,35 +693,38 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                      *api.API
-	Server                   *server.Server
-	IngesterRing             *ring.Ring
-	TenantLimits             validation.TenantLimits
-	Overrides                *validation.Overrides
-	ActiveGroupsCleanup      *util.ActiveGroupsCleanupService
-	Distributor              *distributor.Distributor
-	Ingester                 *ingester.Ingester
-	Flusher                  *flusher.Flusher
-	FrontendV1               *frontendv1.Frontend
-	RuntimeConfig            *runtimeconfig.Manager
-	QuerierQueryable         prom_storage.SampleAndChunkQueryable
-	ExemplarQueryable        prom_storage.ExemplarQueryable
-	MetadataSupplier         querier.MetadataSupplier
-	QuerierEngine            *promql.Engine
-	QueryFrontendTripperware querymiddleware.Tripperware
-	QueryFrontendCodec       querymiddleware.Codec
-	Ruler                    *ruler.Ruler
-	RulerDirectStorage       rulestore.RuleStore
-	RulerCachedStorage       rulestore.RuleStore
-	Alertmanager             *alertmanager.MultitenantAlertmanager
-	Compactor                *compactor.MultitenantCompactor
-	StoreGateway             *storegateway.StoreGateway
-	StoreQueryable           prom_storage.Queryable
-	MemberlistKV             *memberlist.KVInitService
-	ActivityTracker          *activitytracker.ActivityTracker
-	Vault                    *vault.Vault
-	UsageStatsReporter       *usagestats.Reporter
-	BuildInfoHandler         http.Handler
+	API                           *api.API
+	Server                        *server.Server
+	IngesterRing                  *ring.Ring
+	IngesterPartitionRingWatcher  *ring.PartitionRingWatcher
+	IngesterPartitionInstanceRing *ring.PartitionInstanceRing
+	TenantLimits                  validation.TenantLimits
+	Overrides                     *validation.Overrides
+	ActiveGroupsCleanup           *util.ActiveGroupsCleanupService
+	Distributor                   *distributor.Distributor
+	Ingester                      *ingester.Ingester
+	Flusher                       *flusher.Flusher
+	FrontendV1                    *frontendv1.Frontend
+	RuntimeConfig                 *runtimeconfig.Manager
+	QuerierQueryable              prom_storage.SampleAndChunkQueryable
+	ExemplarQueryable             prom_storage.ExemplarQueryable
+	MetadataSupplier              querier.MetadataSupplier
+	QuerierEngine                 promql.QueryEngine
+	QueryFrontendTripperware      querymiddleware.Tripperware
+	QueryFrontendCodec            querymiddleware.Codec
+	Ruler                         *ruler.Ruler
+	RulerDirectStorage            rulestore.RuleStore
+	RulerCachedStorage            rulestore.RuleStore
+	Alertmanager                  *alertmanager.MultitenantAlertmanager
+	Compactor                     *compactor.MultitenantCompactor
+	StoreGateway                  *storegateway.StoreGateway
+	StoreQueryable                prom_storage.Queryable
+	MemberlistKV                  *memberlist.KVInitService
+	ActivityTracker               *activitytracker.ActivityTracker
+	Vault                         *vault.Vault
+	UsageStatsReporter            *usagestats.Reporter
+	ContinuousTestManager         *continuoustest.Manager
+	BuildInfoHandler              http.Handler
 }
 
 // New makes a new Mimir.
@@ -725,16 +738,16 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 
 	setUpGoRuntimeMetrics(cfg, reg)
 
-	// Swap out the default resolver to support multiple tenant IDs separated by a '|'
-	if cfg.TenantFederation.Enabled {
-		tenant.WithDefaultResolver(tenant.NewMultiResolver())
-
-		if cfg.Ruler.TenantFederation.Enabled {
-			util_log.WarnExperimentalUse("ruler.tenant-federation")
-		}
+	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
+		util_log.WarnExperimentalUse("ruler.tenant-federation")
 	}
+	cfg.Server.GRPCMiddleware = append(cfg.Server.GRPCMiddleware, querierapi.ReadConsistencyServerUnaryInterceptor)
+	cfg.Server.GRPCStreamMiddleware = append(cfg.Server.GRPCStreamMiddleware, querierapi.ReadConsistencyServerStreamInterceptor)
 
-	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(&cfg.Server, cfg.MultitenancyEnabled,
+	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(
+		&cfg.Server,
+		cfg.MultitenancyEnabled,
+		cfg.NoAuthTenant,
 		// Also don't check auth for these gRPC methods, since single call is used for multiple users (or no user like health check).
 		[]string{
 			"/grpc.health.v1.Health/Check",
@@ -744,7 +757,11 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
-		}, cfg.NoAuthTenant)
+		})
+
+	// Do not allow to configure potentially unsafe options until we've properly tested them in Mimir.
+	// These configuration options are hidden in the auto-generated documentation (see pkg/util/configdoc).
+	cfg.Server.GRPCServerRecvBufferPoolsEnabled = false
 
 	// Inject the registerer in the Server config too.
 	cfg.Server.Registerer = reg
@@ -755,7 +772,14 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	}
 
 	mimir.setupObjstoreTracing()
-	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
+
+	// Injects span profiler into the tracer for cross-referencing between traces and profiles.
+	// Note, for performance reasons, span profiler only labels root spans.
+	tracer := spanprofiler.NewTracer(opentracing.GlobalTracer())
+	// We are passing the wrapped tracer to both opentracing and opentelemetry until after the ecosystem
+	// gets converged into the latter.
+	opentracing.SetGlobalTracer(tracer)
+	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(tracer))
 
 	mimir.Cfg.Server.Router = mux.NewRouter()
 
@@ -796,6 +820,7 @@ func (t *Mimir) setupObjstoreTracing() {
 // Run starts Mimir running, and blocks until a Mimir stops.
 func (t *Mimir) Run() error {
 	mimirpb.TimeseriesUnmarshalCachingEnabled = t.Cfg.TimeseriesUnmarshalCachingOptimizationEnabled
+	defer util_log.Flush()
 
 	// Register custom process metrics.
 	if c, err := process.NewProcessCollector(); err == nil {
@@ -827,9 +852,9 @@ func (t *Mimir) Run() error {
 	// implementation provided by module.Ring over the BasicLifecycler
 	// available in ingesters
 	if t.IngesterRing != nil {
-		t.API.RegisterRing(t.IngesterRing)
+		t.API.RegisterIngesterRing(t.IngesterRing)
 	} else if t.Ingester != nil {
-		t.API.RegisterRing(t.Ingester.RingHandler())
+		t.API.RegisterIngesterRing(t.Ingester.RingHandler())
 	}
 
 	// get all services, create service manager and tell it to start

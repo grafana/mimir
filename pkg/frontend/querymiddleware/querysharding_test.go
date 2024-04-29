@@ -50,8 +50,8 @@ var (
 	lookbackDelta = 5 * time.Minute
 )
 
-func mockHandlerWith(resp *PrometheusResponse, err error) Handler {
-	return HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
+func mockHandlerWith(resp *PrometheusResponse, err error) MetricsQueryHandler {
+	return HandlerFunc(func(ctx context.Context, _ MetricsQueryRequest) (Response, error) {
 		if expired := ctx.Err(); expired != nil {
 			return nil, expired
 		}
@@ -681,7 +681,7 @@ func TestQuerySharding_Correctness(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-			reqs := []Request{
+			reqs := []MetricsQueryRequest{
 				&PrometheusInstantQueryRequest{
 					Path:  "/query",
 					Time:  util.TimeToMillis(end),
@@ -965,6 +965,10 @@ type queryShardingFunctionCorrectnessTest struct {
 // TestQuerySharding_FunctionCorrectness is the old test that probably at some point inspired the TestQuerySharding_Correctness,
 // we keep it here since it adds more test cases.
 func TestQuerySharding_FunctionCorrectness(t *testing.T) {
+	// We want to test experimental functions too.
+	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
+	parser.EnableExperimentalFunctions = true
+
 	testsForBoth := []queryShardingFunctionCorrectnessTest{
 		{fn: "count_over_time", rangeQuery: true},
 		{fn: "days_in_month"},
@@ -980,6 +984,8 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "resets", rangeQuery: true},
 		{fn: "sort"},
 		{fn: "sort_desc"},
+		{fn: "sort_by_label"},
+		{fn: "sort_by_label_desc"},
 		{fn: "last_over_time", rangeQuery: true},
 		{fn: "present_over_time", rangeQuery: true},
 		{fn: "timestamp"},
@@ -1026,6 +1032,7 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "sum_over_time", rangeQuery: true},
 		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.5,bar1{}))`},
 		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.99,bar1{}))`},
+		{fn: "mad_over_time", rangeQuery: true, tpl: `(<fn>(bar1{}))`},
 		{fn: "sgn"},
 		{fn: "predict_linear", args: []string{"1"}, rangeQuery: true},
 		{fn: "holt_winters", args: []string{"0.5", "0.7"}, rangeQuery: true},
@@ -1349,7 +1356,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 					ResultType: string(parser.ValueTypeVector),
 				},
 			}, nil).Run(func(args mock.Arguments) {
-				req := args[1].(Request)
+				req := args[1].(MetricsQueryRequest)
 				reqShard := regexp.MustCompile(`__query_shard__="[^"]+"`).FindString(req.GetQuery())
 
 				uniqueShardsMx.Lock()
@@ -1442,7 +1449,7 @@ func TestQuerySharding_ShouldSupportMaxRegexpSizeBytes(t *testing.T) {
 					ResultType: string(parser.ValueTypeVector),
 				},
 			}, nil).Run(func(args mock.Arguments) {
-				req := args[1].(Request)
+				req := args[1].(MetricsQueryRequest)
 				reqShard := regexp.MustCompile(`__query_shard__="[^"]+"`).FindString(req.GetQuery())
 
 				uniqueShardsMx.Lock()
@@ -1492,7 +1499,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			LookbackDelta:        lookbackDelta,
 			EnableAtModifier:     true,
 			EnableNegativeOffset: true,
-			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
+			NoStepSubqueryIntervalFn: func(int64) int64 {
 				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 			},
 		})
@@ -1505,14 +1512,14 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			LookbackDelta:        lookbackDelta,
 			EnableAtModifier:     true,
 			EnableNegativeOffset: true,
-			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
+			NoStepSubqueryIntervalFn: func(int64) int64 {
 				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 			},
 		})
-		queryableInternalErr = storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+		queryableInternalErr = storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 			return nil, apierror.New(apierror.TypeInternal, "some internal error")
 		})
-		queryablePrometheusExecErr = storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+		queryablePrometheusExecErr = storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 			return nil, apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour))
 		})
 		queryable = storageSeriesQueryable([]*promql.StorageSeries{
@@ -1626,7 +1633,7 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 		series = append(series, newSeries(newTestCounterLabels(i), start.Add(-lookbackDelta), end, step, factor(float64(i)*0.1)))
 	}
 
-	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+	queryable := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 		return &querierMock{series: series}, nil
 	})
 
@@ -1674,7 +1681,7 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		req           Request
+		req           MetricsQueryRequest
 		expectedCalls int
 	}{
 		{
@@ -2140,7 +2147,7 @@ type downstreamHandler struct {
 	queryable storage.Queryable
 }
 
-func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error) {
+func (h *downstreamHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	qry, err := newQuery(ctx, r, h.engine, h.queryable)
 	if err != nil {
 		return nil, err
@@ -2167,7 +2174,7 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 }
 
 func storageSeriesQueryable(series []*promql.StorageSeries) storage.Queryable {
-	return storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+	return storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 		return &querierMock{series: series}, nil
 	})
 }
@@ -2384,7 +2391,7 @@ func stale(from, to time.Time, wrap generator) generator {
 
 // constant returns a generator that generates a constant value
 func constant(value float64) generator {
-	return func(ts int64) float64 {
+	return func(int64) float64 {
 		return value
 	}
 }
@@ -2433,7 +2440,7 @@ func newEngine() *promql.Engine {
 		LookbackDelta:        lookbackDelta,
 		EnableAtModifier:     true,
 		EnableNegativeOffset: true,
-		NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
+		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 		},
 	})

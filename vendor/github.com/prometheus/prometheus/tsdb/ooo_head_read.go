@@ -17,9 +17,9 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 
 	"github.com/oklog/ulid"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -40,6 +40,17 @@ var _ IndexReader = &OOOHeadIndexReader{}
 type OOOHeadIndexReader struct {
 	*headIndexReader            // A reference to the headIndexReader so we can reuse as many interface implementation as possible.
 	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
+}
+
+var _ chunkenc.Iterable = &mergedOOOChunks{}
+
+// mergedOOOChunks holds the list of iterables for overlapping chunks.
+type mergedOOOChunks struct {
+	chunkIterables []chunkenc.Iterable
+}
+
+func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
+	return storage.ChainSampleIteratorFromIterables(iterator, o.chunkIterables)
 }
 
 func NewOOOHeadIndexReader(head *Head, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) *OOOHeadIndexReader {
@@ -448,6 +459,14 @@ func (ir *OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.P
 
 func (ir *OOOCompactionHeadIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	return ir.ch.oooIR.ShardedPostings(p, shardIndex, shardCount)
+}
+
+func (ir *OOOCompactionHeadIndexReader) LabelValuesFor(postings index.Postings, name string) storage.LabelValues {
+	return ir.ch.oooIR.LabelValuesFor(postings, name)
+}
+
+func (ir *OOOCompactionHeadIndexReader) LabelValuesExcluding(postings index.Postings, name string) storage.LabelValues {
+	return ir.ch.oooIR.LabelValuesExcluding(postings, name)
 }
 
 func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {

@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-// Package noauth provides middlewares thats injects a tenant ID, so the rest of the code
+// Package noauth provides middlewares that injects a tenant ID so the rest of the code
 // can continue to be multitenant.
 package noauth
 
@@ -18,8 +18,8 @@ import (
 )
 
 // SetupAuthMiddleware for the given server config.
-func SetupAuthMiddleware(config *server.Config, enabled bool, noGRPCAuthOn []string, noAuthTenant string) middleware.Interface {
-	if enabled {
+func SetupAuthMiddleware(config *server.Config, multitenancyEnabled bool, noMultitenancyTenant string, noGRPCAuthOn []string) middleware.Interface {
+	if multitenancyEnabled {
 		ignoredMethods := map[string]bool{}
 		for _, m := range noGRPCAuthOn {
 			ignoredMethods[m] = true
@@ -45,14 +45,14 @@ func SetupAuthMiddleware(config *server.Config, enabled bool, noGRPCAuthOn []str
 	}
 
 	config.GRPCMiddleware = append(config.GRPCMiddleware,
-		func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-			ctx = user.InjectOrgID(ctx, noAuthTenant)
+		func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+			ctx = user.InjectOrgID(ctx, noMultitenancyTenant)
 			return handler(ctx, req)
 		},
 	)
 	config.GRPCStreamMiddleware = append(config.GRPCStreamMiddleware,
 		func(srv interface{}, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-			ctx := user.InjectOrgID(ss.Context(), noAuthTenant)
+			ctx := user.InjectOrgID(ss.Context(), noMultitenancyTenant)
 
 			return handler(srv, serverStream{
 				ctx:          ctx,
@@ -62,7 +62,7 @@ func SetupAuthMiddleware(config *server.Config, enabled bool, noGRPCAuthOn []str
 	)
 	return middleware.Func(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := user.InjectOrgID(r.Context(), noAuthTenant)
+			ctx := user.InjectOrgID(r.Context(), noMultitenancyTenant)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	})

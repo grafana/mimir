@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -50,33 +51,6 @@ var (
 		New: nil,
 	})
 )
-
-// seriesChunkRefsSetIterator is the interface implemented by an iterator returning a sequence of seriesChunkRefsSet.
-type seriesChunkRefsSetIterator interface {
-	Next() bool
-
-	// At returns the current seriesChunkRefsSet. The caller should (but NOT must) invoke seriesChunkRefsSet.release()
-	// on the returned set once it's guaranteed it will not be used anymore.
-	At() seriesChunkRefsSet
-
-	Err() error
-}
-
-// seriesChunkRefsIterator is the interface implemented by an iterator returning a sequence of seriesChunkRefs.
-type seriesChunkRefsIterator interface {
-	Next() bool
-	At() seriesChunkRefs
-	Err() error
-}
-
-// seriesChunkRefsSet holds a set of a set of series (sorted by labels) and their chunk references.
-type seriesChunkRefsSet struct {
-	// series sorted by labels.
-	series []seriesChunkRefs
-
-	// releasable holds whether the series slice (but not its content) can be released to a memory pool.
-	releasable bool
-}
 
 type symbolizedSeriesChunkRefsSet struct {
 	// series sorted by labels.
@@ -114,6 +88,15 @@ func (b symbolizedSeriesChunkRefsSet) release() {
 type symbolizedSeriesChunkRefs struct {
 	lset []symbolizedLabel
 	refs []seriesChunkRef
+}
+
+// seriesChunkRefsSet holds a set of series (sorted by labels) with their chunk references.
+type seriesChunkRefsSet struct {
+	// series sorted by labels.
+	series []seriesChunkRefs
+
+	// releasable holds whether the series slice (but not its content) can be released to a memory pool.
+	releasable bool
 }
 
 // newSeriesChunkRefsSet creates a new seriesChunkRefsSet with the given capacity.
@@ -198,14 +181,14 @@ func (r seriesChunkRef) ref() chunks.ChunkRef {
 	return chunkRef(r.segmentFile, r.segFileOffset)
 }
 
-// seriesChunkRefsIteratorImpl implements an iterator returning a sequence of seriesChunkRefs.
-type seriesChunkRefsIteratorImpl struct {
+// seriesChunkRefsIterator implements an iterator returning a sequence of seriesChunkRefs.
+type seriesChunkRefsIterator struct {
 	currentOffset int
 	set           seriesChunkRefsSet
 }
 
-func newSeriesChunkRefsIterator(set seriesChunkRefsSet) *seriesChunkRefsIteratorImpl {
-	c := &seriesChunkRefsIteratorImpl{}
+func newSeriesChunkRefsIterator(set seriesChunkRefsSet) *seriesChunkRefsIterator {
+	c := &seriesChunkRefsIterator{}
 	c.reset(set)
 
 	return c
@@ -216,7 +199,7 @@ func newSeriesChunkRefsIterator(set seriesChunkRefsSet) *seriesChunkRefsIterator
 //
 // This function just reset the internal state and it does NOT invoke release()
 // on the previous seriesChunkRefsSet.
-func (c *seriesChunkRefsIteratorImpl) reset(set seriesChunkRefsSet) {
+func (c *seriesChunkRefsIterator) reset(set seriesChunkRefsSet) {
 	c.set = set
 	c.currentOffset = -1
 }
@@ -224,12 +207,12 @@ func (c *seriesChunkRefsIteratorImpl) reset(set seriesChunkRefsSet) {
 // resetIteratorAndReleasePreviousSet is like reset() but also release the previous seriesChunkRefsSet
 // hold internally. Invoke this function if none else except this iterator is holding a
 // reference to the previous seriesChunkRefsSet.
-func (c *seriesChunkRefsIteratorImpl) resetIteratorAndReleasePreviousSet(set seriesChunkRefsSet) {
+func (c *seriesChunkRefsIterator) resetIteratorAndReleasePreviousSet(set seriesChunkRefsSet) {
 	c.set.release()
 	c.reset(set)
 }
 
-func (c *seriesChunkRefsIteratorImpl) Next() bool {
+func (c *seriesChunkRefsIterator) Next() bool {
 	c.currentOffset++
 	return !c.Done()
 }
@@ -237,28 +220,28 @@ func (c *seriesChunkRefsIteratorImpl) Next() bool {
 // Done returns true if the iterator trespassed the end and the item returned by At()
 // is the zero value. If the iterator is on the last item, the value returned by At()
 // is the actual item and Done() returns false.
-func (c *seriesChunkRefsIteratorImpl) Done() bool {
+func (c *seriesChunkRefsIterator) Done() bool {
 	setLength := c.set.len()
 	return setLength == 0 || c.currentOffset >= setLength
 }
 
-func (c *seriesChunkRefsIteratorImpl) At() seriesChunkRefs {
+func (c *seriesChunkRefsIterator) At() seriesChunkRefs {
 	if c.currentOffset < 0 || c.currentOffset >= c.set.len() {
 		return seriesChunkRefs{}
 	}
 	return c.set.series[c.currentOffset]
 }
 
-func (c *seriesChunkRefsIteratorImpl) Err() error {
+func (c *seriesChunkRefsIterator) Err() error {
 	return nil
 }
 
 type flattenedSeriesChunkRefsIterator struct {
-	from     seriesChunkRefsSetIterator
-	iterator *seriesChunkRefsIteratorImpl
+	from     iterator[seriesChunkRefsSet]
+	iterator *seriesChunkRefsIterator
 }
 
-func newFlattenedSeriesChunkRefsIterator(from seriesChunkRefsSetIterator) seriesChunkRefsIterator {
+func newFlattenedSeriesChunkRefsIterator(from iterator[seriesChunkRefsSet]) *flattenedSeriesChunkRefsIterator {
 	return &flattenedSeriesChunkRefsIterator{
 		from:     from,
 		iterator: newSeriesChunkRefsIterator(seriesChunkRefsSet{}), // start with an empty set and initialize on the first call to Next()
@@ -303,7 +286,7 @@ func (emptySeriesChunkRefsSetIterator) Next() bool             { return false }
 func (emptySeriesChunkRefsSetIterator) At() seriesChunkRefsSet { return seriesChunkRefsSet{} }
 func (emptySeriesChunkRefsSetIterator) Err() error             { return nil }
 
-func mergedSeriesChunkRefsSetIterators(mergedBatchSize int, all ...seriesChunkRefsSetIterator) seriesChunkRefsSetIterator {
+func mergedSeriesChunkRefsSetIterators(mergedBatchSize int, all ...iterator[seriesChunkRefsSet]) iterator[seriesChunkRefsSet] {
 	switch len(all) {
 	case 0:
 		return emptySeriesChunkRefsSetIterator{}
@@ -322,13 +305,13 @@ func mergedSeriesChunkRefsSetIterators(mergedBatchSize int, all ...seriesChunkRe
 type mergedSeriesChunkRefsSet struct {
 	batchSize int
 
-	a, b     seriesChunkRefsSetIterator
-	aAt, bAt *seriesChunkRefsIteratorImpl
+	a, b     iterator[seriesChunkRefsSet]
+	aAt, bAt *seriesChunkRefsIterator
 	current  seriesChunkRefsSet
 	done     bool
 }
 
-func newMergedSeriesChunkRefsSet(mergedBatchSize int, a, b seriesChunkRefsSetIterator) *mergedSeriesChunkRefsSet {
+func newMergedSeriesChunkRefsSet(mergedBatchSize int, a, b iterator[seriesChunkRefsSet]) *mergedSeriesChunkRefsSet {
 	return &mergedSeriesChunkRefsSet{
 		batchSize: mergedBatchSize,
 		a:         a,
@@ -363,14 +346,8 @@ func (s *mergedSeriesChunkRefsSet) Next() bool {
 	next := newSeriesChunkRefsSet(s.batchSize, true)
 
 	for i := 0; i < s.batchSize; i++ {
-		if err := s.ensureItemAvailableToRead(s.aAt, s.a); err != nil {
-			// Stop iterating on first error encountered.
-			s.current = seriesChunkRefsSet{}
-			s.done = true
-			return false
-		}
-
-		if err := s.ensureItemAvailableToRead(s.bAt, s.b); err != nil {
+		err := s.ensureCursors(s.aAt, s.bAt, s.a, s.b)
+		if err != nil {
 			// Stop iterating on first error encountered.
 			s.current = seriesChunkRefsSet{}
 			s.done = true
@@ -397,10 +374,31 @@ func (s *mergedSeriesChunkRefsSet) Next() bool {
 	return true
 }
 
+func (s *mergedSeriesChunkRefsSet) ensureCursors(curr1, curr2 *seriesChunkRefsIterator, set1, set2 iterator[seriesChunkRefsSet]) error {
+	// When both cursors are empty, we advance their set iterators concurrently to reduce total waiting time for the
+	// IO from underlying set iterators (see grafana/mimir#4596).
+	// If either of cursors are already populated with data (or completed), the cost of goroutine switch outweigh
+	// the cost of single call to ensureItemAvailableToRead, thus below we call them sequentially.
+	if curr1.Done() && curr2.Done() {
+		var g errgroup.Group
+		g.Go(func() error { return s.ensureItemAvailableToRead(curr1, set1) })
+		g.Go(func() error { return s.ensureItemAvailableToRead(curr2, set2) })
+		return g.Wait()
+	}
+
+	if err := s.ensureItemAvailableToRead(curr1, set1); err != nil {
+		return err
+	}
+	if err := s.ensureItemAvailableToRead(curr2, set2); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ensureItemAvailableToRead ensures curr has an item available to read, unless we reached the
 // end of all sets. If curr has no item available to read, it will advance the iterator, eventually
 // picking the next one from the set.
-func (s *mergedSeriesChunkRefsSet) ensureItemAvailableToRead(curr *seriesChunkRefsIteratorImpl, set seriesChunkRefsSetIterator) error {
+func (s *mergedSeriesChunkRefsSet) ensureItemAvailableToRead(curr *seriesChunkRefsIterator, set iterator[seriesChunkRefsSet]) error {
 	// Ensure curr has an item available, otherwise fetch the next set.
 	for curr.Done() {
 		if set.Next() {
@@ -430,7 +428,7 @@ func (s *mergedSeriesChunkRefsSet) ensureItemAvailableToRead(curr *seriesChunkRe
 
 // nextUniqueEntry returns the next unique entry from both a and b. If a.At() and b.At() have the same
 // label set, nextUniqueEntry merges their chunks refs. The merged refs are sorted by their MinTime and then by MaxTime.
-func (s *mergedSeriesChunkRefsSet) nextUniqueEntry(a, b *seriesChunkRefsIteratorImpl) (toReturn seriesChunkRefs, _ bool) {
+func (s *mergedSeriesChunkRefsSet) nextUniqueEntry(a, b *seriesChunkRefsIterator) (toReturn seriesChunkRefs, _ bool) {
 	if a.Done() && b.Done() {
 		return toReturn, false
 	} else if a.Done() {
@@ -498,21 +496,21 @@ Outer:
 }
 
 type seriesChunkRefsSeriesSet struct {
-	from seriesChunkRefsSetIterator
+	from iterator[seriesChunkRefsSet]
 
-	currentIterator *seriesChunkRefsIteratorImpl
+	currentIterator *seriesChunkRefsIterator
 }
 
-func newSeriesChunkRefsSeriesSet(from seriesChunkRefsSetIterator) storepb.SeriesSet {
+func newSeriesChunkRefsSeriesSet(from iterator[seriesChunkRefsSet]) storepb.SeriesSet {
 	return &seriesChunkRefsSeriesSet{
 		from:            from,
 		currentIterator: newSeriesChunkRefsIterator(seriesChunkRefsSet{}),
 	}
 }
 
-func newSeriesSetWithoutChunks(ctx context.Context, iterator seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
-	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunkRefsSet](ctx, 1, iterator, stats)
-	return newSeriesChunkRefsSeriesSet(iterator)
+func newSeriesSetWithoutChunks(ctx context.Context, from iterator[seriesChunkRefsSet], stats *safeQueryStats) storepb.SeriesSet {
+	from = newPreloadingAndStatsTrackingSetIterator(ctx, 1, from, stats)
+	return newSeriesChunkRefsSeriesSet(from)
 }
 
 func (s *seriesChunkRefsSeriesSet) Next() bool {
@@ -549,20 +547,19 @@ func (s *seriesChunkRefsSeriesSet) Err() error {
 	return s.from.Err()
 }
 
-// deduplicatingSeriesChunkRefsSetIterator implements seriesChunkRefsSetIterator, and merges together consecutive
-// series in an underlying seriesChunkRefsSetIterator.
+// deduplicatingSeriesChunkRefsSetIterator merges together consecutive series in the underlying iterator.
 type deduplicatingSeriesChunkRefsSetIterator struct {
 	batchSize int
 
-	from    seriesChunkRefsIterator
+	from    iterator[seriesChunkRefs]
 	peek    *seriesChunkRefs
 	current seriesChunkRefsSet
 }
 
-func newDeduplicatingSeriesChunkRefsSetIterator(batchSize int, wrapped seriesChunkRefsSetIterator) seriesChunkRefsSetIterator {
+func newDeduplicatingSeriesChunkRefsSetIterator(batchSize int, from iterator[seriesChunkRefsSet]) *deduplicatingSeriesChunkRefsSetIterator {
 	return &deduplicatingSeriesChunkRefsSetIterator{
 		batchSize: batchSize,
-		from:      newFlattenedSeriesChunkRefsIterator(wrapped),
+		from:      newFlattenedSeriesChunkRefsIterator(from),
 	}
 }
 
@@ -615,7 +612,7 @@ func (s *deduplicatingSeriesChunkRefsSetIterator) Next() bool {
 }
 
 type limitingSeriesChunkRefsSetIterator struct {
-	from          seriesChunkRefsSetIterator
+	from          iterator[seriesChunkRefsSet]
 	chunksLimiter ChunksLimiter
 	seriesLimiter SeriesLimiter
 
@@ -623,7 +620,7 @@ type limitingSeriesChunkRefsSetIterator struct {
 	currentBatch seriesChunkRefsSet
 }
 
-func newLimitingSeriesChunkRefsSetIterator(from seriesChunkRefsSetIterator, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter) *limitingSeriesChunkRefsSetIterator {
+func newLimitingSeriesChunkRefsSetIterator(from iterator[seriesChunkRefsSet], chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter) *limitingSeriesChunkRefsSetIterator {
 	return &limitingSeriesChunkRefsSetIterator{
 		from:          from,
 		chunksLimiter: chunksLimiter,
@@ -704,7 +701,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	stats *safeQueryStats,
 	reuse *reusedPostingsAndMatchers, // If this is not nil, these posting and matchers are used as it is without fetching new ones.
 	logger log.Logger,
-) (seriesChunkRefsSetIterator, error) {
+) (iterator[seriesChunkRefsSet], error) {
 	if batchSize <= 0 {
 		return nil, errors.New("set size must be a positive number")
 	}
@@ -730,8 +727,8 @@ func openBlockSeriesChunkRefsSetsIterator(
 		}
 	}
 
-	var iterator seriesChunkRefsSetIterator
-	iterator = newLoadingSeriesChunkRefsSetIterator(
+	var it iterator[seriesChunkRefsSet]
+	it = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
 		newPostingsSetsIterator(ps, batchSize),
 		indexr,
@@ -747,10 +744,10 @@ func openBlockSeriesChunkRefsSetsIterator(
 		logger,
 	)
 	if len(pendingMatchers) > 0 {
-		iterator = newFilteringSeriesChunkRefsSetIterator(pendingMatchers, iterator, stats)
+		it = newFilteringSeriesChunkRefsSetIterator(pendingMatchers, it, stats)
 	}
 
-	return iterator, nil
+	return it, nil
 }
 
 // reusedPostings is used to share the postings and matches across function calls for re-use
@@ -891,7 +888,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	// Track the series loading statistics in a not synchronized data structure to avoid locking for each series
 	// and then merge before returning from the function.
-	loadStats := &queryStats{}
+	loadStats := newQueryStats()
 	defer s.stats.merge(loadStats)
 
 	// We can't compute the series hash yet because we're still missing the series labels.
@@ -1137,7 +1134,7 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet sy
 	}
 	slices.Sort(allSymbols)
 
-	symReader, err := s.indexr.indexHeaderReader.SymbolsReader(s.ctx)
+	symReader, err := s.indexr.indexHeaderReader.SymbolsReader()
 	if err != nil {
 		return seriesChunkRefsSet{}, err
 	}
@@ -1189,13 +1186,13 @@ func (s *loadingSeriesChunkRefsSetIterator) multiLookupStringify(symbolizedSet s
 
 type filteringSeriesChunkRefsSetIterator struct {
 	stats    *safeQueryStats
-	from     seriesChunkRefsSetIterator
+	from     iterator[seriesChunkRefsSet]
 	matchers []*labels.Matcher
 
 	current seriesChunkRefsSet
 }
 
-func newFilteringSeriesChunkRefsSetIterator(matchers []*labels.Matcher, from seriesChunkRefsSetIterator, stats *safeQueryStats) *filteringSeriesChunkRefsSetIterator {
+func newFilteringSeriesChunkRefsSetIterator(matchers []*labels.Matcher, from iterator[seriesChunkRefsSet], stats *safeQueryStats) *filteringSeriesChunkRefsSetIterator {
 	return &filteringSeriesChunkRefsSetIterator{
 		stats:    stats,
 		from:     from,

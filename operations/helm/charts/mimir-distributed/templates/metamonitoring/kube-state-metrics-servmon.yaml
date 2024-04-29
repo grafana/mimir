@@ -17,7 +17,7 @@ metadata:
   {{- end }}
 spec:
   endpoints:
-    - port: http-metrics
+    - port: {{ $.Values.metaMonitoring.grafanaAgent.metrics.scrapeK8s.kubeStateMetrics.service.port }}
       metricRelabelings:
         - action: keep
           regex: "(^|.*;){{ include "mimir.resourceName" (dict "ctx"  $) }}.*"

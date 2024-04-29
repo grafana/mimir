@@ -322,7 +322,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-			require.NoError(t, ringStore.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
+			require.NoError(t, ringStore.CAS(ctx, "test", func(interface{}) (interface{}, bool, error) {
 				d := ring.NewDesc()
 				testData.setup(d)
 				return d, true, nil
@@ -389,7 +389,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	require.NoError(t, ringStore.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
+	require.NoError(t, ringStore.CAS(ctx, "test", func(interface{}) (interface{}, bool, error) {
 		d := ring.NewDesc()
 		for n := 1; n <= numInstances; n++ {
 			d.AddIngester(fmt.Sprintf("instance-%d", n), fmt.Sprintf("127.0.0.%d", n), "", []uint32{uint32(n)}, ring.ACTIVE, registeredAt)

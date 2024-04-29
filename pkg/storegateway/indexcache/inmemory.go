@@ -8,6 +8,7 @@ import (
 	"context"
 	"reflect"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/go-kit/log"
@@ -290,7 +291,7 @@ func copyLabel(l labels.Label) labels.Label {
 
 // StorePostings sets the postings identified by the ulid and label to the value v,
 // if the postings already exists in the cache it is not mutated.
-func (c *InMemoryIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
+func (c *InMemoryIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte, _ time.Duration) {
 	c.set(cacheKeyPostings{userID, blockID, copyLabel(l)}, v)
 }
 
@@ -313,7 +314,7 @@ func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string
 
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v,
 // if the series already exists in the cache it is not mutated.
-func (c *InMemoryIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+func (c *InMemoryIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte, _ time.Duration) {
 	c.set(cacheKeySeriesForRef{userID, blockID, id}, v)
 }
 

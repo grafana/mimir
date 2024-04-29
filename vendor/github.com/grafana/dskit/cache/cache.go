@@ -15,23 +15,30 @@ import (
 
 // RemoteCacheClient is a high level client to interact with remote cache.
 type RemoteCacheClient interface {
-	// GetMulti fetches multiple keys at once from remoteCache. In case of error,
+	// GetMulti fetches multiple keys at once from a cache. In case of error,
 	// an empty map is returned and the error tracked/logged. One or more Option
 	// instances may be passed to modify the behavior of this GetMulti call.
 	GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte
 
-	// SetAsync enqueues an asynchronous operation to store a key into memcached.
-	// Returns an error in case it fails to enqueue the operation. In case the
-	// underlying async operation will fail, the error will be tracked/logged.
-	SetAsync(key string, value []byte, ttl time.Duration) error
+	// SetAsync enqueues an asynchronous operation to store a key into a cache.
+	// In case the underlying async operation fails, the error will be tracked/logged.
+	SetAsync(key string, value []byte, ttl time.Duration)
 
-	// Delete deletes a key from memcached.
+	// SetMultiAsync enqueues asynchronous operations to store a keys and values
+	// into a cache. In case the underlying async operations fail, the error will
+	// be tracked/logged.
+	SetMultiAsync(data map[string][]byte, ttl time.Duration)
+
+	// Delete deletes a key from a cache.
 	// This is a synchronous operation. If an asynchronous set operation for key is still
 	// pending to be processed, it will wait for it to complete before performing deletion.
 	Delete(ctx context.Context, key string) error
 
 	// Stop client and release underlying resources.
 	Stop()
+
+	// Name returns the name of this particular cache instance.
+	Name() string
 }
 
 // Cache is a generic interface.
@@ -49,6 +56,7 @@ type Cache interface {
 	// Delete cache entry with the given key if it exists.
 	Delete(ctx context.Context, key string) error
 
+	// Name returns the name of this particular cache instance.
 	Name() string
 }
 
@@ -121,13 +129,13 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create memcached client")
 		}
-		return NewMemcachedCache(cacheName, logger, client, reg), nil
+		return NewRemoteCacheAdapter(client), nil
 	case BackendRedis:
 		client, err := NewRedisClient(logger, cacheName, cfg.Redis, reg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create redis client")
 		}
-		return NewRedisCache(cacheName, logger, client, reg), nil
+		return NewRemoteCacheAdapter(client), nil
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)
 	}

@@ -28,6 +28,10 @@ func TestMimirClient_X(t *testing.T) {
 		Address: ts.URL,
 		ID:      "my-id",
 		Key:     "my-key",
+		ExtraHeaders: map[string]string{
+			"key1": "value1",
+			"key2": "value2",
+		},
 	})
 	require.NoError(t, err)
 
@@ -74,6 +78,13 @@ func TestMimirClient_X(t *testing.T) {
 
 			req := <-requestCh
 			require.Equal(t, tc.expURLPath, req.URL.EscapedPath())
+
+			require.Equal(t, "value1", req.Header.Get("key1"))
+			require.Equal(t, "value2", req.Header.Get("key2"))
+			user, pass, ok := req.BasicAuth()
+			require.True(t, ok)
+			require.Equal(t, "my-id", user)
+			require.Equal(t, "my-key", pass)
 		})
 	}
 

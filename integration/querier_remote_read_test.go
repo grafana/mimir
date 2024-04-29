@@ -7,22 +7,15 @@
 package integration
 
 import (
-	"bytes"
-	"context"
-	"errors"
-	"io"
 	"math/rand"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
@@ -79,68 +72,27 @@ func runTestPushSeriesForQuerierRemoteRead(t *testing.T, c *e2emimir.Client, que
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", seriesName)
+	startMs := now.Add(-1 * time.Minute)
+	endMs := now.Add(time.Minute)
+
+	client, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
-
-	startMs := now.Add(-1*time.Minute).Unix() * 1000
-	endMs := now.Add(time.Minute).Unix() * 1000
-
-	q, err := remote.ToQuery(startMs, endMs, []*labels.Matcher{matcher}, &storage.SelectHints{
-		Step:  1,
-		Start: startMs,
-		End:   endMs,
-	})
-	require.NoError(t, err)
-
-	req := &prompb.ReadRequest{
-		Queries:               []*prompb.Query{q},
-		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_SAMPLES},
-	}
-
-	data, err := proto.Marshal(req)
-	require.NoError(t, err)
-	compressed := snappy.Encode(nil, data)
-
-	// Call the remote read API endpoint with a timeout.
-	httpReqCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	httpReq, err := http.NewRequestWithContext(httpReqCtx, "POST", "http://"+querier.HTTPEndpoint()+"/prometheus/api/v1/read", bytes.NewReader(compressed))
-	require.NoError(t, err)
-	httpReq.Header.Set("X-Scope-OrgID", "user-1")
-	httpReq.Header.Add("Content-Encoding", "snappy")
-	httpReq.Header.Add("Accept-Encoding", "snappy")
-	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", "Prometheus/1.8.2")
-	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
-
-	httpResp, err := http.DefaultClient.Do(httpReq)
-	require.NoError(t, err)
+	httpResp, resp, _, err := client.RemoteRead(seriesName, startMs, endMs)
 	require.Equal(t, http.StatusOK, httpResp.StatusCode)
-
-	compressed, err = io.ReadAll(httpResp.Body)
-	require.NoError(t, err)
-
-	uncompressed, err := snappy.Decode(nil, compressed)
-	require.NoError(t, err)
-
-	var resp prompb.ReadResponse
-	err = proto.Unmarshal(uncompressed, &resp)
 	require.NoError(t, err)
 
 	// Validate the returned remote read data matches what was written
-	require.Len(t, resp.Results, 1)
-	require.Len(t, resp.Results[0].Timeseries, 1)
-	require.Len(t, resp.Results[0].Timeseries[0].Labels, 1)
-	require.Equal(t, seriesName, resp.Results[0].Timeseries[0].Labels[0].GetValue())
-	isSeriesFloat := len(resp.Results[0].Timeseries[0].Samples) == 1
-	isSeriesHistogram := len(resp.Results[0].Timeseries[0].Histograms) == 1
+	require.Len(t, resp.Timeseries, 1)
+	require.Len(t, resp.Timeseries[0].Labels, 1)
+	require.Equal(t, seriesName, resp.Timeseries[0].Labels[0].GetValue())
+	isSeriesFloat := len(resp.Timeseries[0].Samples) == 1
+	isSeriesHistogram := len(resp.Timeseries[0].Histograms) == 1
 	require.Equal(t, isSeriesFloat, !isSeriesHistogram)
 	if isSeriesFloat {
-		require.Equal(t, int64(expectedVectors[0].Timestamp), resp.Results[0].Timeseries[0].Samples[0].Timestamp)
-		require.Equal(t, float64(expectedVectors[0].Value), resp.Results[0].Timeseries[0].Samples[0].Value)
+		require.Equal(t, int64(expectedVectors[0].Timestamp), resp.Timeseries[0].Samples[0].Timestamp)
+		require.Equal(t, float64(expectedVectors[0].Value), resp.Timeseries[0].Samples[0].Value)
 	} else if isSeriesHistogram {
-		require.Equal(t, expectedVectors[0].Histogram, mimirpb.FromHistogramToPromHistogram(remote.HistogramProtoToHistogram(resp.Results[0].Timeseries[0].Histograms[0])))
+		require.Equal(t, expectedVectors[0].Histogram, mimirpb.FromHistogramToPromHistogram(remote.HistogramProtoToHistogram(resp.Timeseries[0].Histograms[0])))
 	}
 }
 
@@ -228,16 +180,16 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 			require.NoError(t, err)
 
 			// Generate the series
-			startMs := now.Add(-time.Minute).Unix() * 1000
-			endMs := now.Add(time.Minute).Unix() * 1000
+			startMs := now.Add(-time.Minute)
+			endMs := now.Add(time.Minute)
 
 			var samples []prompb.Sample
 			if tc.floats != nil {
-				samples = tc.floats(startMs, endMs)
+				samples = tc.floats(startMs.UnixMilli(), endMs.UnixMilli())
 			}
 			var histograms []prompb.Histogram
 			if tc.histograms != nil {
-				histograms = tc.histograms(startMs, endMs)
+				histograms = tc.histograms(startMs.UnixMilli(), endMs.UnixMilli())
 			}
 
 			var series []prompb.TimeSeries
@@ -253,52 +205,11 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, 200, res.StatusCode)
 
-			matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "series_1")
+			client, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
 			require.NoError(t, err)
-
-			q, err := remote.ToQuery(startMs, endMs, []*labels.Matcher{matcher}, &storage.SelectHints{
-				Step:  1,
-				Start: startMs,
-				End:   endMs,
-			})
-			require.NoError(t, err)
-
-			req := &prompb.ReadRequest{
-				Queries:               []*prompb.Query{q},
-				AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
-			}
-
-			data, err := proto.Marshal(req)
-			require.NoError(t, err)
-			compressed := snappy.Encode(nil, data)
-
-			// Call the remote read API endpoint with a timeout.
-			httpReqCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			httpReq, err := http.NewRequestWithContext(httpReqCtx, "POST", "http://"+querier.HTTPEndpoint()+"/prometheus/api/v1/read", bytes.NewReader(compressed))
-			require.NoError(t, err)
-			httpReq.Header.Add("Accept-Encoding", "snappy")
-			httpReq.Header.Set("X-Scope-OrgID", "user-1")
-			httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
-
-			httpResp, err := http.DefaultClient.Do(httpReq)
-			require.NoError(t, err)
+			httpResp, results, _, err := client.RemoteReadChunks("series_1", startMs, endMs)
 			require.Equal(t, http.StatusOK, httpResp.StatusCode)
-
-			// Fetch streaming response
-			stream := remote.NewChunkedReader(httpResp.Body, remote.DefaultChunkedReadLimit, nil)
-
-			var results []prompb.ChunkedReadResponse
-			for {
-				var res prompb.ChunkedReadResponse
-				err := stream.NextProto(&res)
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				require.NoError(t, err)
-				results = append(results, res)
-			}
+			require.NoError(t, err)
 
 			// Validate the returned remote read data
 			sampleIdx := 0
@@ -333,13 +244,13 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 							require.Equal(t, samples[sampleIdx].Timestamp, ts)
 							require.Equal(t, samples[sampleIdx].Value, val)
 						case chunkenc.ValHistogram:
-							ts, h := chkItr.AtHistogram()
+							ts, h := chkItr.AtHistogram(nil)
 							require.Equal(t, histograms[sampleIdx].Timestamp, ts)
 
 							expected := remote.HistogramProtoToHistogram(histograms[sampleIdx])
 							test.RequireHistogramEqual(t, expected, h)
 						case chunkenc.ValFloatHistogram:
-							ts, fh := chkItr.AtFloatHistogram()
+							ts, fh := chkItr.AtFloatHistogram(nil)
 							require.Equal(t, histograms[sampleIdx].Timestamp, ts)
 
 							expected := remote.FloatHistogramProtoToFloatHistogram(histograms[sampleIdx])

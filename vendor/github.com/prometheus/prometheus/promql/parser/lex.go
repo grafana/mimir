@@ -519,7 +519,7 @@ func lexHistogram(l *Lexer) stateFn {
 		return lexHistogram
 	case r == '-':
 		l.emit(SUB)
-		return lexNumber
+		return lexHistogram
 	case r == 'x':
 		l.emit(TIMES)
 		return lexNumber
@@ -566,13 +566,18 @@ Loop:
 				if l.peek() == ':' {
 					l.emit(desc)
 					return lexHistogram
-				} else {
-					l.errorf("missing `:` for histogram descriptor")
 				}
-			} else {
-				l.errorf("bad histogram descriptor found: %q", word)
+				l.errorf("missing `:` for histogram descriptor")
+				break Loop
 			}
-
+			// Current word is Inf or NaN.
+			if desc, ok := key[strings.ToLower(word)]; ok {
+				if desc == NUMBER {
+					l.emit(desc)
+					return lexHistogram
+				}
+			}
+			l.errorf("bad histogram descriptor found: %q", word)
 			break Loop
 		}
 	}

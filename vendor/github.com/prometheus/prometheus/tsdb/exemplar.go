@@ -15,11 +15,12 @@ package tsdb
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -363,7 +364,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 
 	err := ce.validateExemplar(seriesLabels, e, true)
 	if err != nil {
-		if err == storage.ErrDuplicateExemplar {
+		if errors.Is(err, storage.ErrDuplicateExemplar) {
 			// Duplicate exemplar, noop.
 			return nil
 		}

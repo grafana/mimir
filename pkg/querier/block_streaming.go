@@ -132,6 +132,7 @@ type storeGatewayStreamReader struct {
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
 	stats               *stats.Stats
+	metrics             *blocksStoreQueryableMetrics
 	log                 log.Logger
 
 	chunkCountEstimateChan chan int
@@ -141,13 +142,14 @@ type storeGatewayStreamReader struct {
 	err                    error
 }
 
-func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, log log.Logger) *storeGatewayStreamReader {
+func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, metrics *blocksStoreQueryableMetrics, log log.Logger) *storeGatewayStreamReader {
 	return &storeGatewayStreamReader{
 		ctx:                 ctx,
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
 		queryLimiter:        queryLimiter,
 		stats:               stats,
+		metrics:             metrics,
 		log:                 log,
 	}
 }
@@ -193,6 +195,9 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error {
 	totalSeries := 0
 	totalChunks := 0
+	defer func() {
+		s.metrics.chunksTotal.Add(float64(totalChunks))
+	}()
 
 	translateReceivedError := func(err error) error {
 		if errors.Is(err, context.Canceled) {
@@ -259,10 +264,10 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 		}
 		totalChunks += numChunks
 		if err := s.queryLimiter.AddChunks(numChunks); err != nil {
-			return validation.LimitError(err.Error())
+			return err
 		}
 		if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
-			return validation.LimitError(err.Error())
+			return err
 		}
 
 		s.stats.AddFetchedChunks(uint64(numChunks))
@@ -365,7 +370,7 @@ func (s *storeGatewayStreamReader) readNextBatch(seriesIndex uint64) error {
 		select {
 		case err, haveError := <-s.errorChan:
 			if haveError {
-				if _, ok := err.(validation.LimitError); ok {
+				if validation.IsLimitError(err) {
 					return err
 				}
 				return errors.Wrapf(err, "attempted to read series at index %v from store-gateway chunks stream, but the stream has failed", seriesIndex)

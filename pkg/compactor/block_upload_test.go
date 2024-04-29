@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid"
@@ -301,6 +302,22 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 				},
 			},
 			expBadRequest: fmt.Sprintf("version must be %d", block.TSDBVersion1),
+		},
+		{
+			name:            "block in the future",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			setUpBucketMock: setUpPartialBlock,
+			meta: &block.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    bULID,
+					Version: block.TSDBVersion1,
+					// Timestamps in microseconds will be converted to very distant future.
+					MinTime: 1704915591000000,
+					MaxTime: 1704915597000001,
+				},
+			},
+			expBadRequest: "block time(s) greater than the present: minTime=1704915591000000 (55996-08-16T08:10:00Z), maxTime=1704915597000001 (55996-08-16T09:50:00Z)",
 		},
 		{
 			name:            "ignore retention period if == 0",
@@ -1752,7 +1769,7 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 		},
 		{
 			name: "updating validation file succeeds",
-			assertions: func(t *testing.T, ctx context.Context, bkt objstore.Bucket) {
+			assertions: func(t *testing.T, _ context.Context, bkt objstore.Bucket) {
 				test.Poll(t, heartbeatInterval*2, true, func() interface{} {
 					return validationExists(t, bkt)
 				})
@@ -1770,7 +1787,7 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 		{
 			name:          "context cancelled before update",
 			cancelContext: true,
-			assertions: func(t *testing.T, ctx context.Context, bkt objstore.Bucket) {
+			assertions: func(t *testing.T, _ context.Context, bkt objstore.Bucket) {
 				require.False(t, validationExists(t, bkt))
 			},
 		},
@@ -1795,11 +1812,11 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 				cfgProvider:  cfgProvider,
 			}
 			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancelCause(context.Background())
 
 			heartbeatInterval := heartbeatInterval
 			if tc.cancelContext {
-				cancel()
+				cancel(cancellation.NewErrorf("testing context cancellation behaviour"))
 				heartbeatInterval = 1 * time.Hour // to avoid racing a heartbeat
 			}
 
@@ -1816,7 +1833,7 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 
 			tc.assertions(t, ctx, bkt)
 
-			cancel()
+			cancel(cancellation.NewErrorf("test finished"))
 			wg.Wait()
 		})
 	}

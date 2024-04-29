@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
@@ -28,6 +29,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -46,12 +48,13 @@ var (
 	errRequestEntityTooLarge = httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "http: request body too large")
 )
 
-// Config for a Handler.
+// HandlerConfig is a config for the handler.
 type HandlerConfig struct {
-	LogQueriesLongerThan   time.Duration          `yaml:"log_queries_longer_than"`
-	LogQueryRequestHeaders flagext.StringSliceCSV `yaml:"log_query_request_headers" category:"advanced"`
-	MaxBodySize            int64                  `yaml:"max_body_size" category:"advanced"`
-	QueryStatsEnabled      bool                   `yaml:"query_stats_enabled" category:"advanced"`
+	LogQueriesLongerThan     time.Duration          `yaml:"log_queries_longer_than"`
+	LogQueryRequestHeaders   flagext.StringSliceCSV `yaml:"log_query_request_headers" category:"advanced"`
+	MaxBodySize              int64                  `yaml:"max_body_size" category:"advanced"`
+	QueryStatsEnabled        bool                   `yaml:"query_stats_enabled" category:"advanced"`
+	ActiveSeriesWriteTimeout time.Duration          `yaml:"active_series_write_timeout" category:"experimental"`
 }
 
 func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
@@ -59,6 +62,7 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&cfg.LogQueryRequestHeaders, "query-frontend.log-query-request-headers", "Comma-separated list of request header names to include in query logs. Applies to both query stats and slow queries logs.")
 	f.Int64Var(&cfg.MaxBodySize, "query-frontend.max-body-size", 10*1024*1024, "Max body size for downstream prometheus.")
 	f.BoolVar(&cfg.QueryStatsEnabled, "query-frontend.query-stats-enabled", true, "False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query.")
+	f.DurationVar(&cfg.ActiveSeriesWriteTimeout, "query-frontend.active-series-write-timeout", 5*time.Minute, "Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used.")
 }
 
 // Handler accepts queries and forwards them to RoundTripper. It can wait on in-flight requests and log slow queries,
@@ -186,8 +190,21 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, params) })
+	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, r.Header.Get("User-Agent"), params) })
 	defer f.at.Delete(activityIndex)
+
+	if isActiveSeriesEndpoint(r) && f.cfg.ActiveSeriesWriteTimeout > 0 {
+		deadline := time.Now().Add(f.cfg.ActiveSeriesWriteTimeout)
+		err = http.NewResponseController(w).SetWriteDeadline(deadline)
+		if err != nil {
+			err := fmt.Errorf("failed to set write deadline for response writer: %w", err)
+			writeError(w, apierror.New(apierror.TypeInternal, err.Error()))
+			return
+		}
+		ctx, _ := context.WithDeadlineCause(r.Context(), deadline,
+			cancellation.NewErrorf("write deadline exceeded (timeout: %v)", f.cfg.ActiveSeriesWriteTimeout))
+		r = r.WithContext(ctx)
+	}
 
 	startTime := time.Now()
 	resp, err := f.roundTripper.RoundTrip(r)
@@ -195,9 +212,19 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		writeError(w, err)
-		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, err)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, 0, err)
 		return
 	}
+
+	// Make sure to close the response body to release resources associated with this request.
+	defer func() {
+		if resp.Body != nil {
+			err = resp.Body.Close()
+			if err != nil {
+				level.Warn(f.log).Log("msg", "failed to close response body", "err", err)
+			}
+		}
+	}()
 
 	hs := w.Header()
 	for h, vs := range resp.Header {
@@ -216,13 +243,13 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.reportSlowQuery(r, params, queryResponseTime, queryDetails)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, nil)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, nil)
 	}
 }
 
 // reportSlowQuery reports slow queries.
 func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querymiddleware.QueryDetails) {
-	logMessage := append([]interface{}{
+	logMessage := append([]any{
 		"msg", "slow query detected",
 		"method", r.Method,
 		"host", r.Host,
@@ -237,7 +264,16 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryStartTime time.Time, queryResponseTime time.Duration, queryResponseSizeBytes int64, details *querymiddleware.QueryDetails, queryErr error) {
+func (f *Handler) reportQueryStats(
+	r *http.Request,
+	queryString url.Values,
+	queryStartTime time.Time,
+	queryResponseTime time.Duration,
+	queryResponseSizeBytes int64,
+	details *querymiddleware.QueryDetails,
+	queryResponseStatusCode int,
+	queryErr error,
+) {
 	tenantIDs, err := tenant.TenantIDs(r.Context())
 	if err != nil {
 		return
@@ -265,12 +301,13 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	}
 
 	// Log stats.
-	logMessage := append([]interface{}{
+	logMessage := append([]any{
 		"msg", "query stats",
 		"component", "query-frontend",
 		"method", r.Method,
 		"path", r.URL.Path,
 		"user_agent", r.UserAgent(),
+		"status_code", queryResponseStatusCode,
 		"response_time", queryResponseTime,
 		"response_size_bytes", queryResponseSizeBytes,
 		"query_wall_time_seconds", wallTime.Seconds(),
@@ -301,8 +338,19 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 			"results_cache_miss_bytes", details.ResultsCacheMissBytes,
 		)
 	}
+
+	// Log the read consistency only when explicitly defined.
+	if consistency, ok := querierapi.ReadConsistencyFromContext(r.Context()); ok {
+		logMessage = append(logMessage, "read_consistency", consistency)
+	}
+
 	if len(f.cfg.LogQueryRequestHeaders) != 0 {
 		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
+	}
+
+	if queryErr == nil && queryResponseStatusCode/100 != 2 {
+		// If downstream replied with non-2xx, log this as a failure.
+		queryErr = fmt.Errorf("downstream replied with %s", http.StatusText(queryResponseStatusCode))
 	}
 
 	if queryErr != nil {
@@ -325,7 +373,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 }
 
 // formatQueryString prefers printing start, end, and step from details if they are not nil.
-func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Values) (fields []interface{}) {
+func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Values) (fields []any) {
 	for k, v := range queryString {
 		var formattedValue string
 		if details != nil {
@@ -361,7 +409,7 @@ func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName stri
 	return ""
 }
 
-func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []interface{}) {
+func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) {
 	for _, s := range headersToLog {
 		if v := h.Get(s); v != "" {
 			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)
@@ -405,7 +453,7 @@ func statsValue(name string, d time.Duration) string {
 	return name + ";dur=" + durationInMs
 }
 
-func httpRequestActivity(request *http.Request, requestParams url.Values) string {
+func httpRequestActivity(request *http.Request, userAgent string, requestParams url.Values) string {
 	tenantID := "(unknown)"
 	if tenantIDs, err := tenant.TenantIDs(request.Context()); err == nil {
 		tenantID = tenant.JoinTenantIDs(tenantIDs)
@@ -417,5 +465,9 @@ func httpRequestActivity(request *http.Request, requestParams url.Values) string
 	}
 
 	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
-	return strings.Join([]string{tenantID, request.Method, request.URL.Path, params}, " ")
+	return fmt.Sprintf("user:%s UA:%s req:%s %s %s", tenantID, userAgent, request.Method, request.URL.Path, params)
+}
+
+func isActiveSeriesEndpoint(r *http.Request) bool {
+	return strings.HasSuffix(r.URL.Path, "api/v1/cardinality/active_series")
 }

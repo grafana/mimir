@@ -18,34 +18,32 @@ import (
 )
 
 type stepAlignMiddleware struct {
-	next     Handler
-	limits   Limits
-	resolver tenant.Resolver
-	logger   log.Logger
-	aligned  *prometheus.CounterVec
+	next    MetricsQueryHandler
+	limits  Limits
+	logger  log.Logger
+	aligned *prometheus.CounterVec
 }
 
 // newStepAlignMiddleware creates a middleware that aligns the start and end of request to the step to
 // improve the cacheability of the query results based on per-tenant configuration.
-func newStepAlignMiddleware(limits Limits, resolver tenant.Resolver, logger log.Logger, registerer prometheus.Registerer) Middleware {
+func newStepAlignMiddleware(limits Limits, logger log.Logger, registerer prometheus.Registerer) MetricsQueryMiddleware {
 	aligned := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_queries_step_aligned_total",
 		Help: "Number of queries whose start or end times have been adjusted to be step-aligned.",
 	}, []string{"user"})
 
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &stepAlignMiddleware{
-			next:     next,
-			limits:   limits,
-			resolver: resolver,
-			logger:   logger,
-			aligned:  aligned,
+			next:    next,
+			limits:  limits,
+			logger:  logger,
+			aligned: aligned,
 		}
 	})
 }
 
-func (s *stepAlignMiddleware) Do(ctx context.Context, r Request) (Response, error) {
-	tenants, err := s.resolver.TenantIDs(ctx)
+func (s *stepAlignMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
+	tenants, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return s.next.Do(ctx, r)
 	}
@@ -77,9 +75,9 @@ func (s *stepAlignMiddleware) Do(ctx context.Context, r Request) (Response, erro
 	return s.next.Do(ctx, r)
 }
 
-// isRequestStepAligned returns whether the Request start and end timestamps are aligned
+// isRequestStepAligned returns whether the MetricsQueryRequest start and end timestamps are aligned
 // with the step.
-func isRequestStepAligned(req Request) bool {
+func isRequestStepAligned(req MetricsQueryRequest) bool {
 	if req.GetStep() == 0 {
 		return true
 	}

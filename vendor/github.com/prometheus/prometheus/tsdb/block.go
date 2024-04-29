@@ -17,18 +17,18 @@ package tsdb
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -105,6 +105,13 @@ type IndexReader interface {
 	// If the series couldn't be found or the series doesn't have the requested label a
 	// storage.ErrNotFound is returned as error.
 	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
+
+	// LabelValuesFor returns LabelValues for the given label name in the series referred to by postings.
+	LabelValuesFor(p index.Postings, name string) storage.LabelValues
+
+	// LabelValuesExcluding returns LabelValues for the given label name in all other series than those referred to by postings.
+	// This is useful for obtaining label values for other postings than the ones you wish to exclude.
+	LabelValuesExcluding(p index.Postings, name string) storage.LabelValues
 
 	// LabelNamesFor returns all the label names for the series referred to by IDs.
 	// The names returned are sorted.
@@ -501,14 +508,19 @@ func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, ma
 			slices.Sort(st)
 		}
 	}
-
-	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+	if err != nil {
+		return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
+	}
+	return st, nil
 }
 
 func (r blockIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
 		st, err := r.ir.LabelValues(ctx, name)
-		return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+		if err != nil {
+			return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
+		}
+		return st, nil
 	}
 
 	return labelValuesWithMatchers(ctx, r.ir, name, matchers...)
@@ -525,7 +537,7 @@ func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Ma
 func (r blockIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	p, err := r.ir.Postings(ctx, name, values...)
 	if err != nil {
-		return p, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+		return p, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 	}
 	return p, nil
 }
@@ -542,9 +554,20 @@ func (r blockIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	return r.ir.ShardedPostings(p, shardIndex, shardCount)
 }
 
+// LabelValuesFor returns LabelValues for the given label name in the series referred to by postings.
+func (r blockIndexReader) LabelValuesFor(postings index.Postings, name string) storage.LabelValues {
+	return r.ir.LabelValuesFor(postings, name)
+}
+
+// LabelValuesExcluding returns LabelValues for the given label name in all other series than those referred to by postings.
+// This is useful for obtaining label values for other postings than the ones you wish to exclude.
+func (r blockIndexReader) LabelValuesExcluding(postings index.Postings, name string) storage.LabelValues {
+	return r.ir.LabelValuesExcluding(postings, name)
+}
+
 func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	if err := r.ir.Series(ref, builder, chks); err != nil {
-		return errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+		return fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 	}
 	return nil
 }
@@ -596,7 +619,7 @@ func (pb *Block) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Mat
 
 	p, err := pb.indexr.PostingsForMatchers(ctx, false, ms...)
 	if err != nil {
-		return errors.Wrap(err, "select series")
+		return fmt.Errorf("select series: %w", err)
 	}
 
 	ir := pb.indexr
@@ -684,12 +707,12 @@ func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, bool, er
 func (pb *Block) Snapshot(dir string) error {
 	blockDir := filepath.Join(dir, pb.meta.ULID.String())
 	if err := os.MkdirAll(blockDir, 0o777); err != nil {
-		return errors.Wrap(err, "create snapshot block dir")
+		return fmt.Errorf("create snapshot block dir: %w", err)
 	}
 
 	chunksDir := chunkDir(blockDir)
 	if err := os.MkdirAll(chunksDir, 0o777); err != nil {
-		return errors.Wrap(err, "create snapshot chunk dir")
+		return fmt.Errorf("create snapshot chunk dir: %w", err)
 	}
 
 	// Hardlink meta, index and tombstones
@@ -699,7 +722,7 @@ func (pb *Block) Snapshot(dir string) error {
 		tombstones.TombstonesFilename,
 	} {
 		if err := os.Link(filepath.Join(pb.dir, fname), filepath.Join(blockDir, fname)); err != nil {
-			return errors.Wrapf(err, "create snapshot %s", fname)
+			return fmt.Errorf("create snapshot %s: %w", fname, err)
 		}
 	}
 
@@ -707,13 +730,13 @@ func (pb *Block) Snapshot(dir string) error {
 	curChunkDir := chunkDir(pb.dir)
 	files, err := os.ReadDir(curChunkDir)
 	if err != nil {
-		return errors.Wrap(err, "ReadDir the current chunk dir")
+		return fmt.Errorf("ReadDir the current chunk dir: %w", err)
 	}
 
 	for _, f := range files {
 		err := os.Link(filepath.Join(curChunkDir, f.Name()), filepath.Join(chunksDir, f.Name()))
 		if err != nil {
-			return errors.Wrap(err, "hardlink a chunk")
+			return fmt.Errorf("hardlink a chunk: %w", err)
 		}
 	}
 

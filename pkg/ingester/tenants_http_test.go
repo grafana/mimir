@@ -21,7 +21,7 @@ func TestIngester_TenantsHandlers(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))

@@ -71,9 +71,6 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
        > **Note:** Unlike the Mimir image tags, GEM image tags start with `v`. For example, `v2.6.0` instead of `2.6.0`.
 
-     - `smoke_test.image.tag` (Smoke test; usually the same as Mimir)
-     - `continuous_test.image.tag` (Continuous test; usually the same as Mimir)
-
    - Set the `version` field, in the [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml) file, to the desired release candidate version.
 
      For example, `4.5.0-rc.0`.
