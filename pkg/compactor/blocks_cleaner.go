@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
@@ -264,7 +265,8 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDel
 		if isDeleted[userID] {
 			return errors.Wrapf(c.deleteUserMarkedForDeletion(ctx, userID, userLogger), "failed to delete user marked for deletion: %s", userID)
 		}
-		return errors.Wrapf(c.cleanUser(ctx, userID, userLogger), "failed to delete blocks for user: %s", userID)
+
+		return errors.Wrapf(c.cleanUserWithRetries(ctx, userID, userLogger), "failed to delete blocks for user: %s", userID)
 	})
 }
 
@@ -397,10 +399,8 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	return nil
 }
 
-func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
-	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
+func (c *BlocksCleaner) cleanUserWithRetries(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
 	startTime := time.Now()
-
 	level.Info(userLogger).Log("msg", "started blocks cleanup and maintenance")
 	defer func() {
 		if returnErr != nil {
@@ -410,15 +410,35 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		}
 	}()
 
-	// Read the bucket index.
+	retries := backoff.New(ctx, backoff.Config{
+		MaxRetries: 5,
+	})
+	var lastErr error
+
+	for retries.Ongoing() {
+		if err := c.cleanUser(ctx, userID, userLogger); err != nil {
+			level.Warn(userLogger).Log("msg", "failed single cleanUser call", "err", err)
+			lastErr = err
+			retries.NumRetries()
+		} else {
+			return nil
+		}
+		retries.Wait()
+	}
+
+	return fmt.Errorf("cleanUserWithRetries %s: %w (%w)", userID, retries.Err(), lastErr)
+}
+
+func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
 	idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, userLogger)
 	if errors.Is(err, bucketindex.ErrIndexCorrupted) {
 		level.Warn(userLogger).Log("msg", "found a corrupted bucket index, recreating it")
-	} else if err != nil && !errors.Is(err, bucketindex.ErrIndexNotFound) {
-		return err
+	} else {
+		return fmt.Errorf("read index: %w", err)
 	}
 
 	level.Info(userLogger).Log("msg", "fetched existing bucket index")
+	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 
 	// Mark blocks for future deletion based on the retention period for the user.
 	// Note doing this before UpdateIndex, so it reads in the deletion marks.
@@ -435,7 +455,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, userLogger)
 	idx, partials, err := w.UpdateIndex(ctx, idx)
 	if err != nil {
-		return err
+		return fmt.Errorf("update index: %w", err)
 	}
 
 	c.deleteBlocksMarkedForDeletion(ctx, idx, userBucket, userLogger)
@@ -459,11 +479,11 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	// Otherwise upload the updated index to the storage.
 	if c.cfg.NoBlocksFileCleanupEnabled && len(idx.Blocks) == 0 {
 		if err := c.deleteRemainingData(ctx, userBucket, userID, userLogger); err != nil {
-			return err
+			return fmt.Errorf("delete remaining: %w", err)
 		}
 	} else {
 		if err := bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx); err != nil {
-			return err
+			return fmt.Errorf("write index: %w", err)
 		}
 	}
 
