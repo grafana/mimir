@@ -222,7 +222,7 @@ func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (prom
 func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, logger log.Logger) (promql.Vector, error) {
 	req, err := q.createRequest(ctx, query, ts)
 	if err != nil {
-		return promql.Vector{}, nil
+		return promql.Vector{}, err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, q.timeout)
