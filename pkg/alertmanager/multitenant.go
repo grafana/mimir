@@ -679,6 +679,10 @@ func (am *MultitenantAlertmanager) setConfig(cfgs bucketclient.Coso) error {
 	// TODO: move!
 	var cfg alertspb.AlertConfigDesc
 	switch {
+	case !cfgs.Grafana.Promoted:
+		// Grafana config is not promoted, no need to merge.
+		am.logger.Log("msg", "Grafana configuration is not promoted, using Mimir's", "user", cfgs.Mimir.User)
+		cfg = cfgs.Mimir
 	case cfgs.Grafana.RawConfig == "":
 		// No Grafana config, no need to merge.
 		am.logger.Log("msg", "No Grafana configuration, using Mimir's", "user", cfgs.Mimir.User)
