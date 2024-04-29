@@ -150,6 +150,10 @@ func (u *userTSDB) IsOwned(_ storage.SeriesRef, hash uint32) bool {
 	return u.ownedTokenRanges.IncludesKey(hash)
 }
 
+func (u *userTSDB) Hash(l labels.Labels) uint32 {
+	return secondaryTSDBHashFunctionForUser(u.userID)(l)
+}
+
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
 	return u.db.Appender(ctx)
 }

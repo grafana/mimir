@@ -88,6 +88,7 @@ type seriesEntry struct {
 
 type SeriesOwner interface {
 	IsOwned(ref storage.SeriesRef, hash uint32) bool
+	Hash(labels.Labels) uint32
 }
 
 func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
@@ -134,10 +135,10 @@ func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
 // Pass -1 in numNativeHistogramBuckets if the series is not a native histogram series.
-func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef, hash uint32, now time.Time, numNativeHistogramBuckets int) {
+func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef, now time.Time, numNativeHistogramBuckets int) {
 	stripeID := ref % numStripes
 
-	created := c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, hash, numNativeHistogramBuckets)
+	created := c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, numNativeHistogramBuckets)
 	if created {
 		if deleted, ok := c.deleted.find(series); ok {
 			deletedStripeID := deleted.ref % numStripes
@@ -291,13 +292,13 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int, matchingNativeH
 	return s.active, s.activeNativeHistograms, s.activeNativeHistogramBuckets
 }
 
-func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref storage.SeriesRef, hash uint32, numNativeHistogramBuckets int) bool {
+func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref storage.SeriesRef, numNativeHistogramBuckets int) bool {
 	nowNanos := now.UnixNano()
 
 	e, needsUpdating := s.findEntryForSeries(ref, numNativeHistogramBuckets)
 	created := false
 	if e == nil || needsUpdating {
-		e, created = s.findAndUpdateOrCreateEntryForSeries(ref, hash, series, nowNanos, numNativeHistogramBuckets)
+		e, created = s.findAndUpdateOrCreateEntryForSeries(ref, series, nowNanos, numNativeHistogramBuckets)
 	}
 
 	entryTimeSet := created
@@ -327,7 +328,7 @@ func (s *seriesStripe) findEntryForSeries(ref storage.SeriesRef, numNativeHistog
 	return entry.nanos, entry.numNativeHistogramBuckets != numNativeHistogramBuckets
 }
 
-func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef, hash uint32, series labels.Labels, nowNanos int64, numNativeHistogramBuckets int) (entryTime *atomic.Int64, created bool) {
+func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef, series labels.Labels, nowNanos int64, numNativeHistogramBuckets int) (entryTime *atomic.Int64, created bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -391,7 +392,7 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 		nanos:                     atomic.NewInt64(nowNanos),
 		matches:                   matches,
 		numNativeHistogramBuckets: numNativeHistogramBuckets,
-		hash: hash,
+		hash: s.owner.Hash(series),
 	}
 
 	s.refs[ref] = e

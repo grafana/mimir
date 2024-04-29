@@ -32,7 +32,7 @@ func TestNativeHistogramPostings_Expand(t *testing.T) {
 		if i+1 == 3 || i+1 == 4 {
 			buckets = 10 // Native histogram with 10 buckets.
 		}
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], 0, time.Unix(int64(i), 0), buckets)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets)
 	}
 
 	valid := activeSeries.Purge(mockedTime)
@@ -68,7 +68,7 @@ func TestNativeHistogramPostings_ExpandWithBucketCount(t *testing.T) {
 		if i == 2 || i == 3 {
 			buckets = i * 10 // Native histogram with i*10 buckets.
 		}
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], 0, time.Unix(int64(i), 0), buckets)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets)
 	}
 
 	valid := activeSeries.Purge(mockedTime)
@@ -112,7 +112,7 @@ func TestNativeHistogramPostings_SeekSkipsNonNative(t *testing.T) {
 		if i+1 == 4 {
 			buckets = -1 // Make ref==4 not a native histogram to check that Seek skips it.
 		}
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], 0, time.Unix(int64(i), 0), buckets)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets)
 	}
 
 	valid := activeSeries.Purge(mockedTime)
@@ -149,7 +149,7 @@ func TestNativeHistogramPostings_Seek(t *testing.T) {
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
 		buckets := i * 10
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], 0, time.Unix(int64(i), 0), buckets)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets)
 	}
 
 	valid := activeSeries.Purge(mockedTime)
@@ -185,7 +185,7 @@ func TestNativeHistogramPostings_SeekToEnd(t *testing.T) {
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], 0, time.Unix(int64(i), 0), 10)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), 10)
 	}
 
 	valid := activeSeries.Purge(mockedTime)
