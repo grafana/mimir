@@ -46,10 +46,10 @@ func TestEngineWithFallback(t *testing.T) {
 				require.False(t, fallbackEngine.wasCalled, "should not call fallback engine if expression is supported by preferred engine")
 
 				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-					# HELP cortex_querier_streaming_promql_engine_supported_queries_total Total number of queries that were supported by the streaming engine.
-					# TYPE cortex_querier_streaming_promql_engine_supported_queries_total counter
-					cortex_querier_streaming_promql_engine_supported_queries_total 1
-				`), "cortex_querier_streaming_promql_engine_supported_queries_total", "cortex_querier_streaming_promql_engine_unsupported_queries_total"))
+					# HELP cortex_streaming_promql_engine_supported_queries_total Total number of queries that were supported by the streaming engine.
+					# TYPE cortex_streaming_promql_engine_supported_queries_total counter
+					cortex_streaming_promql_engine_supported_queries_total 1
+				`), "cortex_streaming_promql_engine_supported_queries_total", "cortex_streaming_promql_engine_unsupported_queries_total"))
 			})
 
 			t.Run("should fall back for unsupported expressions", func(t *testing.T) {
@@ -63,13 +63,13 @@ func TestEngineWithFallback(t *testing.T) {
 				require.Equal(t, fallbackEngine.query, query, "should return query from fallback engine if expression is not supported by preferred engine")
 
 				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-					# HELP cortex_querier_streaming_promql_engine_supported_queries_total Total number of queries that were supported by the streaming engine.
-					# TYPE cortex_querier_streaming_promql_engine_supported_queries_total counter
-					cortex_querier_streaming_promql_engine_supported_queries_total 0
-					# HELP cortex_querier_streaming_promql_engine_unsupported_queries_total Total number of queries that were not supported by the streaming engine and so fell back to Prometheus' engine.
-					# TYPE cortex_querier_streaming_promql_engine_unsupported_queries_total counter
-					cortex_querier_streaming_promql_engine_unsupported_queries_total{reason="this expression is not supported"} 1
-				`), "cortex_querier_streaming_promql_engine_supported_queries_total", "cortex_querier_streaming_promql_engine_unsupported_queries_total"))
+					# HELP cortex_streaming_promql_engine_supported_queries_total Total number of queries that were supported by the streaming engine.
+					# TYPE cortex_streaming_promql_engine_supported_queries_total counter
+					cortex_streaming_promql_engine_supported_queries_total 0
+					# HELP cortex_streaming_promql_engine_unsupported_queries_total Total number of queries that were not supported by the streaming engine and so fell back to Prometheus' engine.
+					# TYPE cortex_streaming_promql_engine_unsupported_queries_total counter
+					cortex_streaming_promql_engine_unsupported_queries_total{reason="this expression is not supported"} 1
+				`), "cortex_streaming_promql_engine_supported_queries_total", "cortex_streaming_promql_engine_unsupported_queries_total"))
 			})
 
 			t.Run("should not fall back if creating query fails for another reason", func(t *testing.T) {

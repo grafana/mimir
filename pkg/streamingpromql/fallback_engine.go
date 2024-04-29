@@ -33,11 +33,11 @@ func NewEngineWithFallback(preferred, fallback promql.QueryEngine, reg prometheu
 		fallback:  fallback,
 
 		supportedQueries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_querier_streaming_promql_engine_supported_queries_total",
+			Name: "cortex_streaming_promql_engine_supported_queries_total",
 			Help: "Total number of queries that were supported by the streaming engine.",
 		}),
 		unsupportedQueries: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_querier_streaming_promql_engine_unsupported_queries_total",
+			Name: "cortex_streaming_promql_engine_unsupported_queries_total",
 			Help: "Total number of queries that were not supported by the streaming engine and so fell back to Prometheus' engine.",
 		}, []string{"reason"}),
 
