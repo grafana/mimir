@@ -25,12 +25,15 @@ import (
 )
 
 type config struct {
-	bucketConfig   objtools.BucketConfig
-	blocksFrom     string
-	inputFile      string
-	includeTenants flagext.StringSliceCSV
-	excludeTenants flagext.StringSliceCSV
-	dryRun         bool
+	bucketConfig     objtools.BucketConfig
+	blocksFrom       string
+	inputFile        string
+	includeTenants   flagext.StringSliceCSV
+	excludeTenants   flagext.StringSliceCSV
+	minBlockDuration time.Duration
+	minTime          flagext.Time
+	maxTime          flagext.Time
+	dryRun           bool
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
@@ -39,6 +42,9 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 	f.StringVar(&c.inputFile, "input-file", "-", "The file path to read when --blocks-from is json or lines, otherwise ignored. The default (\"-\") assumes reading from standard input.")
 	f.Var(&c.includeTenants, "include-tenants", "A comma separated list of what tenants to target.")
 	f.Var(&c.excludeTenants, "exclude-tenants", "A comma separated list of what tenants to ignore. Has precedence over included tenants.")
+	f.Var(&c.minTime, "min-time", fmt.Sprintf("If set, only blocks with MinTime >= this value are undeleted. The supported time format is %q.", time.RFC3339))
+	f.Var(&c.maxTime, "max-time", fmt.Sprintf("If set, only blocks with MaxTime <= this value are undeleted. The supported time format is %q.", time.RFC3339))
+	f.DurationVar(&c.minBlockDuration, "min-duration", 0, "The minimum duration a block must be to undelete it")
 	f.BoolVar(&c.dryRun, "dry-run", false, "When set the changes that would be made to object storage are only logged rather than performed.")
 }
 
@@ -78,7 +84,9 @@ func run(ctx context.Context, cfg config) error {
 		return errors.Wrap(err, "failed to get blocks")
 	}
 
-	undeleteBlocks(ctx, bucket, blocks, cfg.dryRun)
+	mf := newMetaFilter(cfg)
+
+	undeleteBlocks(ctx, bucket, blocks, mf, cfg.dryRun)
 	return nil
 }
 
@@ -102,6 +110,35 @@ func newTenantFilter(cfg config) tenantFilter {
 		}
 		_, ok := excludeTenants[tenantID]
 		return !ok
+	}
+}
+
+type metaFilter func(meta *block.Meta, logger *slog.Logger) bool
+
+func newMetaFilter(cfg config) metaFilter {
+	return func(meta *block.Meta, logger *slog.Logger) bool {
+		if cfg.minBlockDuration > 0 {
+			duration := time.Millisecond * time.Duration(meta.MaxTime-meta.MinTime)
+			if duration < cfg.minBlockDuration {
+				logger.Info("skipping block since it has a duration less than the minDuration", "duration", duration, "configuredMinDuration", cfg.minBlockDuration)
+				return false
+			}
+		}
+
+		blockMinTime := time.Unix(0, meta.MinTime*int64(time.Millisecond)).UTC()
+		blockMaxTime := time.Unix(0, meta.MaxTime*int64(time.Millisecond)).UTC()
+
+		if filterMinTime := time.Time(cfg.minTime); !filterMinTime.IsZero() && blockMinTime.Before(filterMinTime) {
+			logger.Info("msg", "skipping block, block min time is less than the configured min time filter", "minTime", blockMinTime, "configuredMinTime", filterMinTime)
+			return false
+		}
+
+		// If the max time filter is set, only blocks with MaxTime <= the configured value are copied.
+		if filterMaxTime := time.Time(cfg.maxTime); !filterMaxTime.IsZero() && blockMaxTime.After(filterMaxTime) {
+			logger.Info("msg", "skipping block, block max time is greater than the configured max time filter", "maxTime", blockMaxTime, "configuredMaxTime", filterMaxTime)
+			return false
+		}
+		return true
 	}
 }
 
@@ -300,7 +337,7 @@ func listGlobalMarkers(ctx context.Context, bucket objtools.Bucket, tenantID str
 	return m, nil
 }
 
-func undeleteBlocks(ctx context.Context, bucket objtools.Bucket, blocks map[string][]ulid.ULID, dryRun bool) {
+func undeleteBlocks(ctx context.Context, bucket objtools.Bucket, blocks map[string][]ulid.ULID, metaFilter metaFilter, dryRun bool) {
 	succeeded, notNeeded, failed := 0, 0, 0
 	defer func() {
 		slog.Info("undelete operations summary", "succeeded", succeeded, "notNeeded", notNeeded, "failed", failed, "dryRun", dryRun)
@@ -323,7 +360,7 @@ func undeleteBlocks(ctx context.Context, bucket objtools.Bucket, blocks map[stri
 				return
 			}
 
-			undeleted, err := undeleteBlock(ctx, bucket, tenantID, blockID, globalMarkerState[blockID], logger, dryRun)
+			undeleted, err := undeleteBlock(ctx, bucket, tenantID, blockID, globalMarkerState[blockID], metaFilter, logger, dryRun)
 			if err != nil {
 				failed++
 				logger.Error("failed to undelete block", "err", err)
@@ -347,7 +384,7 @@ type version struct {
 	info         objtools.VersionInfo
 }
 
-func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, blockID ulid.ULID, globalState globalMarkerState, logger *slog.Logger, dryRun bool) (bool, error) {
+func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, blockID ulid.ULID, globalState globalMarkerState, keepMeta metaFilter, logger *slog.Logger, dryRun bool) (bool, error) {
 	/*
 	 Lifecycle of a block:
 	 1. Files without meta.json added
@@ -391,6 +428,9 @@ func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, bl
 	m, metaVersion, err := getMeta(ctx, bkt, metaName, objVersions[metaName])
 	if err != nil {
 		return false, errors.Wrap(err, "failed reading the block meta file")
+	}
+	if !keepMeta(m, logger) {
+		return false, nil
 	}
 
 	restoreTargets, err := targetsToRestore(m, objVersions, blockPrefix)
