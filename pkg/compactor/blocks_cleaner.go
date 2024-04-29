@@ -265,7 +265,6 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDel
 		if isDeleted[userID] {
 			return errors.Wrapf(c.deleteUserMarkedForDeletion(ctx, userID, userLogger), "failed to delete user marked for deletion: %s", userID)
 		}
-
 		return errors.Wrapf(c.cleanUserWithRetries(ctx, userID, userLogger), "failed to delete blocks for user: %s", userID)
 	})
 }
