@@ -7,6 +7,13 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
+type BucketCountPostings interface {
+	index.Postings
+	// NativeHistogramBuckets returns the number of buckets for the series reference.
+	// If the series reference is not active, it returns false.
+	AtBucketCount() (storage.SeriesRef, int)
+}
+
 // NativeHistogramPostings is a wrapper around ActiveSeries and index.Postings.
 // Similar to Postings, but filters its output to native histogram series.
 // Implements index.Postings interface and returns only series references that
@@ -29,6 +36,7 @@ func NewNativeHistogramPostings(activeSeries *ActiveSeries, postings index.Posti
 
 // Type check.
 var _ index.Postings = &NativeHistogramPostings{}
+var _ BucketCountPostings = &NativeHistogramPostings{}
 
 // At implements index.Postings.
 func (a *NativeHistogramPostings) At() storage.SeriesRef {

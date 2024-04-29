@@ -136,6 +136,11 @@ message ExemplarQueryRequest {
 
 message ActiveSeriesRequest {
   repeated LabelMatcher matchers = 1;
+  enum RequestType {
+    SERIES = 0;
+    NATIVE_HISTOGRAM_SERIES = 1;
+  }
+  RequestType type = 2;
 }
 
 message QueryResponse {
