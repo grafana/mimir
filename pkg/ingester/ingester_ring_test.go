@@ -71,7 +71,7 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	cfg.MinReadyDuration = 3 * time.Minute
 	cfg.FinalSleep = 2 * time.Minute
 	cfg.ListenPort = 10
-	cfg.TokenGenerationStrategy = spreadMinimizingTokenGeneration
+	cfg.TokenGenerationStrategy = tokenGenerationSpreadMinimizing
 	cfg.SpreadMinimizingZones = []string{"zone-a", "zone-b", "zone-c"}
 	cfg.SpreadMinimizingJoinRingInOrder = true
 
@@ -123,52 +123,52 @@ func TestRingConfig_Validate(t *testing.T) {
 	}{
 		"spread-minimizing and correct zones pass validation": {
 			zone:                    instanceZone,
-			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
+			tokenGenerationStrategy: tokenGenerationSpreadMinimizing,
 			spreadMinimizingZones:   spreadMinimizingZones,
 		},
 		"spread-minimizing and no spread-minimizing-zones zone don't pass validation": {
 			zone:                    instanceZone,
-			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
+			tokenGenerationStrategy: tokenGenerationSpreadMinimizing,
 			expectedError:           fmt.Errorf("number of zones 0 is not correct: it must be greater than 0 and less or equal than 8"),
 		},
 		"spread-minimizing and a wrong zone don't pass validation": {
 			zone:                    wrongZone,
-			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
+			tokenGenerationStrategy: tokenGenerationSpreadMinimizing,
 			spreadMinimizingZones:   spreadMinimizingZones,
 			expectedError:           fmt.Errorf("zone %s is not valid", wrongZone),
 		},
 		"spread-minimizing and tokens-file-path set don't pass validation": {
 			zone:                    instanceZone,
-			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
+			tokenGenerationStrategy: tokenGenerationSpreadMinimizing,
 			spreadMinimizingZones:   spreadMinimizingZones,
 			tokensFilePath:          "/path/tokens",
-			expectedError:           fmt.Errorf("%q token generation strategy requires %q to be empty", spreadMinimizingTokenGeneration, tokensFilePathFlag),
+			expectedError:           fmt.Errorf("%q token generation strategy requires %q to be empty", tokenGenerationSpreadMinimizing, flagTokensFilePath),
 		},
 		"spread-minimizing and spread-minimizing-join-ring-in-order pass validation": {
 			zone:                            instanceZone,
-			tokenGenerationStrategy:         spreadMinimizingTokenGeneration,
+			tokenGenerationStrategy:         tokenGenerationSpreadMinimizing,
 			spreadMinimizingZones:           spreadMinimizingZones,
 			spreadMinimizingJoinRingInOrder: true,
 		},
 		"random passes validation": {
 			zone:                    instanceZone,
-			tokenGenerationStrategy: randomTokenGeneration,
+			tokenGenerationStrategy: tokenGenerationRandom,
 		},
 		"random and tokens-file-path set pass validation": {
 			zone:                    instanceZone,
-			tokenGenerationStrategy: randomTokenGeneration,
+			tokenGenerationStrategy: tokenGenerationRandom,
 			tokensFilePath:          "/path/tokens",
 		},
 		"random and spread-minimizing-join-ring-in-order don't pass validation": {
 			zone:                            instanceZone,
-			tokenGenerationStrategy:         randomTokenGeneration,
+			tokenGenerationStrategy:         tokenGenerationRandom,
 			spreadMinimizingJoinRingInOrder: true,
-			expectedError:                   fmt.Errorf("%q must be false when using %q token generation strategy", spreadMinimizingJoinRingInOrderFlag, randomTokenGeneration),
+			expectedError:                   fmt.Errorf("%q must be false when using %q token generation strategy", flagSpreadMinimizingJoinRingInOrder, tokenGenerationRandom),
 		},
 		"unknown token generation doesn't pass validation": {
 			zone:                    instanceZone,
 			tokenGenerationStrategy: "bla-bla-tokens",
-			expectedError:           fmt.Errorf("unsupported token generation strategy (%q) has been chosen for %s", "bla-bla-tokens", tokenGenerationStrategyFlag),
+			expectedError:           fmt.Errorf("unsupported token generation strategy (%q) has been chosen for %s", "bla-bla-tokens", flagTokenGenerationStrategy),
 		},
 	}
 
@@ -199,14 +199,14 @@ func TestRingConfig_CustomTokenGenerator(t *testing.T) {
 	}{
 		"spread-minimizing and correct zones give a SpreadMinimizingTokenGenerator": {
 			zone:                    instanceZone,
-			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
+			tokenGenerationStrategy: tokenGenerationSpreadMinimizing,
 			spreadMinimizingZones:   spreadMinimizingZones,
-			expectedResultStrategy:  spreadMinimizingTokenGeneration,
+			expectedResultStrategy:  tokenGenerationSpreadMinimizing,
 		},
 		"random gives a RandomTokenGenerator": {
 			zone:                    instanceZone,
-			tokenGenerationStrategy: randomTokenGeneration,
-			expectedResultStrategy:  randomTokenGeneration,
+			tokenGenerationStrategy: tokenGenerationRandom,
+			expectedResultStrategy:  tokenGenerationRandom,
 		},
 	}
 
@@ -217,11 +217,11 @@ func TestRingConfig_CustomTokenGenerator(t *testing.T) {
 		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
 		cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
 		lifecyclerConfig := cfg.ToLifecyclerConfig()
-		if testData.expectedResultStrategy == randomTokenGeneration {
+		if testData.expectedResultStrategy == tokenGenerationRandom {
 			tokenGenerator, ok := lifecyclerConfig.RingTokenGenerator.(*ring.RandomTokenGenerator)
 			assert.True(t, ok)
 			assert.NotNil(t, tokenGenerator)
-		} else if testData.expectedResultStrategy == spreadMinimizingTokenGeneration {
+		} else if testData.expectedResultStrategy == tokenGenerationSpreadMinimizing {
 			tokenGenerator, ok := lifecyclerConfig.RingTokenGenerator.(*ring.SpreadMinimizingTokenGenerator)
 			assert.True(t, ok)
 			assert.NotNil(t, tokenGenerator)
@@ -240,19 +240,19 @@ func TestRingConfig_SpreadMinimizingJoinRingInOrder(t *testing.T) {
 	}{
 		"spread-minimizing and spread-minimizing-join-ring-in-order allow can join": {
 			zone:                            instanceZone,
-			tokenGenerationStrategy:         spreadMinimizingTokenGeneration,
+			tokenGenerationStrategy:         tokenGenerationSpreadMinimizing,
 			spreadMinimizingJoinRingInOrder: true,
 			expectedCanJoinEnabled:          true,
 		},
 		"spread-minimizing without spread-minimizing-join-ring-in-order doesn't allow can join": {
 			zone:                            instanceZone,
-			tokenGenerationStrategy:         spreadMinimizingTokenGeneration,
+			tokenGenerationStrategy:         tokenGenerationSpreadMinimizing,
 			spreadMinimizingJoinRingInOrder: false,
 			expectedCanJoinEnabled:          false,
 		},
 		"random doesn't allow can join": {
 			zone:                    instanceZone,
-			tokenGenerationStrategy: randomTokenGeneration,
+			tokenGenerationStrategy: tokenGenerationRandom,
 			expectedCanJoinEnabled:  false,
 		},
 	}
