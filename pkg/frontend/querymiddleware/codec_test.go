@@ -157,7 +157,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 	stepDurationStr := "60s"
 	stepDuration, _ := time.ParseDuration(stepDurationStr)
 
-	rangeVectorDurationStr := "5m"
+	rangeVectorDurationStr := "10m"
 	rangeVectorDuration, _ := time.ParseDuration(rangeVectorDurationStr)
 	rangeVectorDurationMS := rangeVectorDuration.Milliseconds()
 
@@ -165,12 +165,16 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 	offsetDuration, _ := time.ParseDuration(offsetDurationStr)
 	offsetDurationMS := offsetDuration.Milliseconds()
 
+	loobackDurationStr := "5m"
+	lookbackDuration, _ := time.ParseDuration(loobackDurationStr)
+	lookbackDurationMS := lookbackDuration.Milliseconds()
+
 	rangeRequest := NewPrometheusRangeQueryRequest(
 		"/api/v1/query_range",
 		startTime.UnixMilli(),
 		endTime.UnixMilli(),
 		stepDuration.Milliseconds(),
-		time.Duration(0),
+		lookbackDuration,
 		parseQuery(t, "go_goroutines{}"),
 		Options{},
 		nil,
@@ -178,7 +182,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 	instantRequest := NewPrometheusInstantQueryRequest(
 		"/api/v1/query",
 		endTime.UnixMilli(),
-		time.Duration(0),
+		lookbackDuration,
 		parseQuery(t, "go_goroutines{}"),
 		Options{},
 		nil,
@@ -194,48 +198,52 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		{
 			name:         "range query: without range vector, without offset",
 			metricsQuery: rangeRequest,
-			expectedMinT: startTime.UnixMilli(),
+			expectedMinT: startTime.UnixMilli() - lookbackDurationMS,
 			expectedMaxT: endTime.UnixMilli(),
 		},
 		{
 			name:         "instant query: without range vector, without offset",
 			metricsQuery: instantRequest,
-			expectedMinT: endTime.UnixMilli(),
+			expectedMinT: endTime.UnixMilli() - lookbackDurationMS,
 			expectedMaxT: endTime.UnixMilli(),
 		},
 		{
 			name:         "range query: with range vector, without offset",
 			metricsQuery: withQuery(t, rangeRequest, fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr)),
+			// range vector time exceeds lookback; no change from lookback duration
 			expectedMinT: startTime.UnixMilli() - rangeVectorDurationMS,
 			expectedMaxT: endTime.UnixMilli(),
 		},
 		{
 			name:         "instant query: with range vector, without offset",
 			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr)),
+			// range vector time exceeds lookback; no change from lookback duration
 			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS,
 			expectedMaxT: endTime.UnixMilli(),
 		},
 		{
 			name:         "range query: without range vector, with offset",
 			metricsQuery: withQuery(t, rangeRequest, fmt.Sprintf("go_goroutines{} offset %s", offsetDurationStr)),
-			expectedMinT: startTime.UnixMilli() - offsetDurationMS,
+			expectedMinT: startTime.UnixMilli() - offsetDurationMS - lookbackDurationMS,
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 		},
 		{
 			name:         "instant query: without range vector, with offset",
 			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("go_goroutines{} offset %s", offsetDurationStr)),
-			expectedMinT: endTime.UnixMilli() - offsetDurationMS,
+			expectedMinT: endTime.UnixMilli() - offsetDurationMS - lookbackDurationMS,
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 		},
 		{
 			name:         "range query: with range vector, with offset",
 			metricsQuery: withQuery(t, rangeRequest, fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr)),
+			// range vector time exceeds lookback; no change from lookback duration
 			expectedMinT: startTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 		},
 		{
 			name:         "instant query: with range vector, with offset",
 			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr)),
+			// range vector time exceeds lookback; no change from lookback duration
 			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 		},
@@ -243,24 +251,26 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		{
 			name:         "range query: with @ modifer",
 			metricsQuery: withQuery(t, rangeRequest, fmt.Sprintf("go_goroutines{} @ %d", endTime.Add(-atModifierDuration).Unix())),
-			expectedMinT: endTime.Add(-atModifierDuration).UnixMilli(),
+			expectedMinT: endTime.Add(-atModifierDuration).UnixMilli() - lookbackDurationMS,
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
 		},
 		{
 			name:         "instant query: with @ modifer",
 			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("go_goroutines{} @ %d", endTime.Add(-atModifierDuration).Unix())),
-			expectedMinT: endTime.Add(-atModifierDuration).UnixMilli(),
+			expectedMinT: endTime.Add(-atModifierDuration).UnixMilli() - lookbackDurationMS,
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
 		},
 		{
 			name:         "range query: with range vector, with @ modifer",
 			metricsQuery: withQuery(t, rangeRequest, fmt.Sprintf("go_goroutines{}[%s] @ %d", rangeVectorDurationStr, endTime.Add(-atModifierDuration).Unix())),
+			// range vector time exceeds lookback; no change from lookback duration
 			expectedMinT: endTime.Add(-(atModifierDuration + rangeVectorDuration)).UnixMilli(),
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
 		},
 		{
 			name:         "instant query: with range vector, with @ modifer",
 			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("go_goroutines{}[%s] @ %d", rangeVectorDurationStr, endTime.Add(-atModifierDuration).Unix())),
+			// range vector time exceeds lookback; no change from lookback duration
 			expectedMinT: endTime.Add(-(atModifierDuration + rangeVectorDuration)).UnixMilli(),
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
 		},
