@@ -262,9 +262,11 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 }
 
 func otelMetricsToTimeseries(tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
-	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{
+	converter := prometheusremotewrite.NewPrometheusConverter()
+	errs := converter.FromMetrics(md, prometheusremotewrite.Settings{
 		AddMetricSuffixes: addSuffixes,
 	})
+	promTS := converter.TimeSeries()
 	if errs != nil {
 		dropped := len(multierr.Errors(errs))
 		discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(dropped)) // Group is empty here as metrics couldn't be parsed
@@ -274,19 +276,19 @@ func otelMetricsToTimeseries(tenantID string, addSuffixes bool, discardedDueToOt
 			parseErrs = parseErrs[:maxErrMsgLen]
 		}
 
-		if len(tsMap) == 0 {
+		if len(promTS) == 0 {
 			return nil, errors.New(parseErrs)
 		}
 
 		level.Warn(logger).Log("msg", "OTLP parse error", "err", parseErrs)
 	}
 
-	mimirTs := mimirpb.PreallocTimeseriesSliceFromPool()
-	for _, promTs := range tsMap {
-		mimirTs = append(mimirTs, promToMimirTimeseries(promTs))
+	mimirTS := mimirpb.PreallocTimeseriesSliceFromPool()
+	for _, ts := range promTS {
+		mimirTS = append(mimirTS, promToMimirTimeseries(&ts))
 	}
 
-	return mimirTs, nil
+	return mimirTS, nil
 }
 
 func promToMimirTimeseries(promTs *prompb.TimeSeries) mimirpb.PreallocTimeseries {
