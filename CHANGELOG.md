@@ -66,6 +66,7 @@
 * [ENHANCEMENT] Alerts: exclude `529` and `598` status codes from failure codes in `MimirRequestsError`. #7889
 * [BUGFIX] Dashboards: Fix regular expression for matching read-path gRPC ingester methods to include querying of exemplars, label-related queries, or active series queries. #7676
 * [BUGFIX] Dashboards: Fix user id abbreviations and column heads for Top Tenants dashboard. #7724
+* [BUGFIX] Dashboards: fix incorrect query used for "queue length" panel on "Ruler" dashboard. #8006
 
 ### Jsonnet
 
