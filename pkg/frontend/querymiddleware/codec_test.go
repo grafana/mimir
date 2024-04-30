@@ -276,7 +276,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 	}
 }
 
-func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
+func TestMetricsQuery_WithStartEnd_TransformConsistency(t *testing.T) {
 
 	startTime, err := time.Parse(time.RFC3339, "2024-02-21T00:00:00-08:00")
 	require.NoError(t, err)
@@ -286,6 +286,88 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 	updatedStartTime, err := time.Parse(time.RFC3339, "2024-02-21T00:00:00Z")
 	require.NoError(t, err)
 	updatedEndTime, err := time.Parse(time.RFC3339, "2024-02-22T00:00:00Z")
+	require.NoError(t, err)
+
+	stepDurationStr := "60s"
+	stepDuration, _ := time.ParseDuration(stepDurationStr)
+
+	rangeRequest := NewPrometheusRangeQueryRequest(
+		"/api/v1/query_range",
+		startTime.UnixMilli(),
+		endTime.UnixMilli(),
+		stepDuration.Milliseconds(),
+		time.Duration(0),
+		parseQuery(t, "go_goroutines{}"),
+		Options{},
+		nil,
+	)
+	instantRequest := NewPrometheusInstantQueryRequest(
+		"/api/v1/query",
+		endTime.UnixMilli(),
+		time.Duration(0),
+		parseQuery(t, "go_goroutines{}"),
+		Options{},
+		nil,
+	)
+
+	for _, testCase := range []struct {
+		name                string
+		initialMetricsQuery MetricsQueryRequest
+
+		updatedStartTime *time.Time
+		updatedEndTime   *time.Time
+
+		expectedUpdatedMinT int64
+		expectedUpdatedMaxT int64
+		expectedErr         parser.ParseErrors
+	}{
+		{
+			name:                "range query: transform with start and end changes minT and maxT",
+			initialMetricsQuery: rangeRequest,
+			updatedStartTime:    &updatedStartTime,
+			updatedEndTime:      &updatedEndTime,
+
+			expectedUpdatedMinT: updatedStartTime.UnixMilli(),
+			expectedUpdatedMaxT: updatedEndTime.UnixMilli(),
+			expectedErr:         nil,
+		},
+		{
+			name:                "instant query: transform with start and end changes minT and maxT",
+			initialMetricsQuery: instantRequest,
+			updatedStartTime:    &updatedEndTime,
+			updatedEndTime:      &updatedEndTime,
+
+			expectedUpdatedMinT: updatedEndTime.UnixMilli(),
+			expectedUpdatedMaxT: updatedEndTime.UnixMilli(),
+			expectedErr:         nil,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			start := testCase.initialMetricsQuery.GetStart()
+			end := testCase.initialMetricsQuery.GetEnd()
+
+			// apply WithStartEnd
+			newStart := start
+			if testCase.updatedStartTime != nil {
+				newStart = testCase.updatedStartTime.UnixMilli()
+			}
+			newEnd := end
+			if testCase.updatedEndTime != nil {
+				newEnd = testCase.updatedEndTime.UnixMilli()
+			}
+			updatedMetricsQuery := testCase.initialMetricsQuery.WithStartEnd(newStart, newEnd)
+
+			require.Equal(t, testCase.expectedUpdatedMinT, updatedMetricsQuery.GetMinT())
+			require.Equal(t, testCase.expectedUpdatedMaxT, updatedMetricsQuery.GetMaxT())
+		})
+	}
+}
+
+func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
+
+	startTime, err := time.Parse(time.RFC3339, "2024-02-21T00:00:00-08:00")
+	require.NoError(t, err)
+	endTime, err := time.Parse(time.RFC3339, "2024-02-22T00:00:00-08:00")
 	require.NoError(t, err)
 
 	stepDurationStr := "60s"
@@ -322,41 +404,15 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 		name                string
 		initialMetricsQuery MetricsQueryRequest
 
-		updatedStartTime *time.Time
-		updatedEndTime   *time.Time
-		updatedQuery     string
+		updatedQuery string
 
 		expectedUpdatedMinT int64
 		expectedUpdatedMaxT int64
 		expectedErr         parser.ParseErrors
 	}{
 		{
-			name:                "range query: transform with start and end changes minT and maxT",
-			initialMetricsQuery: rangeRequest,
-			updatedStartTime:    &updatedStartTime,
-			updatedEndTime:      &updatedEndTime,
-			updatedQuery:        "",
-
-			expectedUpdatedMinT: updatedStartTime.UnixMilli(),
-			expectedUpdatedMaxT: updatedEndTime.UnixMilli(),
-			expectedErr:         nil,
-		},
-		{
-			name:                "instant query: transform with start and end changes minT and maxT",
-			initialMetricsQuery: instantRequest,
-			updatedStartTime:    &updatedEndTime,
-			updatedEndTime:      &updatedEndTime,
-			updatedQuery:        "",
-
-			expectedUpdatedMinT: updatedEndTime.UnixMilli(),
-			expectedUpdatedMaxT: updatedEndTime.UnixMilli(),
-			expectedErr:         nil,
-		},
-		{
 			name:                "range query: transform with query changes minT and maxT",
 			initialMetricsQuery: rangeRequest,
-			updatedStartTime:    nil,
-			updatedEndTime:      nil,
 			updatedQuery:        fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr),
 
 			expectedUpdatedMinT: startTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
@@ -366,8 +422,6 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 		{
 			name:                "instant query: transform with query changes minT and maxT",
 			initialMetricsQuery: instantRequest,
-			updatedStartTime:    nil,
-			updatedEndTime:      nil,
 			updatedQuery:        fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr),
 
 			expectedUpdatedMinT: endTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
@@ -379,8 +433,6 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 		{
 			name:                "range query: transform with malformed query returns error",
 			initialMetricsQuery: rangeRequest,
-			updatedStartTime:    nil,
-			updatedEndTime:      nil,
 			updatedQuery:        "go_goroutines{}[",
 
 			expectedErr: parser.ParseErrors{},
@@ -388,33 +440,16 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 		{
 			name:                "instant query: transform with malformed query returns error",
 			initialMetricsQuery: instantRequest,
-			updatedStartTime:    nil,
-			updatedEndTime:      nil,
 			updatedQuery:        "go_goroutines{} offset",
 
 			expectedErr: parser.ParseErrors{},
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			start := testCase.initialMetricsQuery.GetStart()
-			end := testCase.initialMetricsQuery.GetEnd()
-
-			// apply WithStartEnd
-			newStart := start
-			if testCase.updatedStartTime != nil {
-				newStart = testCase.updatedStartTime.UnixMilli()
-			}
-			newEnd := end
-			if testCase.updatedEndTime != nil {
-				newEnd = testCase.updatedEndTime.UnixMilli()
-			}
-			updatedMetricsQuery := testCase.initialMetricsQuery.WithStartEnd(newStart, newEnd)
 
 			// test WithQuery
-			if testCase.updatedQuery != "" {
-				updatedMetricsQuery, err = updatedMetricsQuery.WithQuery(testCase.updatedQuery)
+			updatedMetricsQuery, err := testCase.initialMetricsQuery.WithQuery(testCase.updatedQuery)
 
-			}
 			if err != nil || testCase.expectedErr != nil {
 				require.IsType(t, testCase.expectedErr, err)
 			} else {
@@ -423,14 +458,9 @@ func TestMetricsQuery_MinMaxTime_TransformConsistency(t *testing.T) {
 			}
 
 			// test WithExpr on the same query as WithQuery
-			var queryExpr parser.Expr
-			if testCase.updatedQuery != "" {
-				// reset start and end
-				updatedMetricsQuery = testCase.initialMetricsQuery.WithStartEnd(start, end)
+			queryExpr, err := parser.ParseExpr(testCase.updatedQuery)
+			updatedMetricsQuery = testCase.initialMetricsQuery.WithExpr(queryExpr)
 
-				queryExpr, err = parser.ParseExpr(testCase.updatedQuery)
-				updatedMetricsQuery = updatedMetricsQuery.WithExpr(queryExpr)
-			}
 			if err != nil || testCase.expectedErr != nil {
 				require.IsType(t, testCase.expectedErr, err)
 			} else {
