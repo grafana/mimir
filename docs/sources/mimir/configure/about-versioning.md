@@ -69,6 +69,8 @@ The following features are currently experimental:
     - `-distributor.retry-after-header.enabled`
     - `-distributor.retry-after-header.base-seconds`
     - `-distributor.retry-after-header.max-backoff-exponent`
+  - Limit exemplars per series per request
+    - `-distributor.max-exemplars-per-series-per-request`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -126,7 +128,7 @@ The following features are currently experimental:
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
-  - Streaming PromQL engine (`-querier.promql-engine=streaming`)
+  - Streaming PromQL engine (`-querier.promql-engine=streaming` and `-querier.enable-promql-engine-fallback`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
