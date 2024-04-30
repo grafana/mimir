@@ -1749,6 +1749,33 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
                 cortex_discarded_exemplars_total{reason="too_many_exemplars_per_series",user="user"} 1
             `,
 		},
+		"should sort exemplars if they are not sorted": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 3
+			},
+			minExemplarTS: 600000,
+			maxExemplarTS: math.MaxInt64,
+			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 602000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+					},
+				},
+			}),
+			expectedExemplars: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Exemplars: []mimirpb.Exemplar{
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 602000},
+						},
+					},
+				},
+			},
+		},
 	}
 	now := mtime.Now()
 	for testName, tc := range tests {
