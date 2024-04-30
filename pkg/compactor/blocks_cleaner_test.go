@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -1250,6 +1251,21 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 		return errors.New("mocked delete failure")
 	}
 	return m.Bucket.Delete(ctx, name)
+}
+
+type mockBucketGetTimeout struct {
+	objstore.Bucket
+
+	calls           int
+	initialTimeouts int
+}
+
+func (m *mockBucketGetTimeout) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	m.calls++
+	//if m.calls <= m.initialTimeouts {
+	//	return nil, context.DeadlineExceeded
+	//}
+	return m.Bucket.Get(ctx, name)
 }
 
 type mockConfigProvider struct {
