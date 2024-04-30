@@ -25,6 +25,8 @@
 * [ENHANCEMENT] Expose TLS configuration for the S3 backend client. #2652
 * [ENHANCEMENT] Rules: Support expansion of native histogram values when using rule templates #7974
 * [ENHANCEMENT] Rules: Add metric `cortex_prometheus_rule_group_last_restore_duration_seconds` which measures how long it takes to restore rule groups using the `ALERTS_FOR_STATE` series #7974
+* [ENHANCEMENT] OTLP: Improve remote write format translation performance by using label set hashes for metric identifiers instead of string based ones. #8012
+* [ENHANCEMENT] Querying: Remove OpEmptyMatch from regex concatenations. #8012
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 * [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
@@ -45,6 +47,8 @@
 * [BUGFIX] Distributor: fix cardinality API to return more accurate number of in-memory series when number of zones is larger than replication factor. #7984
 * [BUGFIX] All: fix config validation for non-ingester modules, when ingester's ring is configured with spread-minimizing token generation strategy. #7990
 * [BUGFIX] Ingester: copy LabelValues strings out of mapped memory to avoid a segmentation fault if the region becomes unmapped before the result is marshaled. #8003
+* [BUGFIX] OTLP: Don't generate target_info unless at least one identifying label is defined. #8012
+* [BUGFIX] OTLP: Don't generate target_info unless there are metrics. #8012
 
 ### Mixin
 
