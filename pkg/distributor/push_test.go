@@ -409,10 +409,10 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
-		assert.NoError(t, err)
-		assert.Len(t, request.Timeseries, 2)
+		t.Cleanup(pushReq.CleanUp)
+		require.NoError(t, err)
+		assert.Len(t, request.Timeseries, 1)
 		assert.False(t, request.SkipLabelNameValidation)
-		pushReq.CleanUp()
 		return nil
 	}, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
@@ -435,10 +435,10 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	resp = httptest.NewRecorder()
 	handler = OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
-		assert.NoError(t, err)
-		assert.Len(t, request.Timeseries, 10) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
+		t.Cleanup(pushReq.CleanUp)
+		require.NoError(t, err)
+		assert.Len(t, request.Timeseries, 9) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
 		assert.False(t, request.SkipLabelNameValidation)
-		pushReq.CleanUp()
 		return nil
 	}, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
