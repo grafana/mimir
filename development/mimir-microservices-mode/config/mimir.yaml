@@ -143,6 +143,7 @@ frontend:
   cache_results: true
   additional_query_queue_dimensions_enabled: true
   shard_active_series_queries: true
+  max_outstanding_per_tenant: 10000
 
   # Uncomment when using "dns" service discovery mode for query-scheduler.
   # scheduler_address: "query-scheduler:9011"
@@ -161,12 +162,13 @@ frontend_worker:
   # frontend_address: "query-frontend:9007"
 
 querier:
-  query_store_after: 15m
+  query_store_after: 10m
 
 query_scheduler:
   # Change to "dns" to switch to query-scheduler DNS-based service discovery.
   service_discovery_mode: "ring"
   additional_query_queue_dimensions_enabled: true
+  max_outstanding_requests_per_tenant: 10000
 
 limits:
   # Limit max query time range to 31d
@@ -177,6 +179,7 @@ limits:
   ingestion_rate: 50000
   native_histograms_ingestion_enabled: true
   cardinality_analysis_enabled: true
+  query_ingesters_within: 15m
 
 runtime_config:
   file: ./config/runtime.yaml
