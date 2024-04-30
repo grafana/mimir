@@ -1746,7 +1746,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			expectedMetrics: `
                 # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
                 # TYPE cortex_discarded_exemplars_total counter
-                cortex_discarded_exemplars_total{reason="too_many_exemplars_per_series",user="user"} 1
+                cortex_discarded_exemplars_total{reason="too_many_exemplars_per_series_per_request",user="user"} 1
             `,
 		},
 	}
