@@ -65,6 +65,7 @@ sum by (namespace) (container_memory_rss)
 ```
 
 Newlines, extra whitespace, and comments eliminated:
+
 ```bash
 mimirtool promql format '
 rate(
