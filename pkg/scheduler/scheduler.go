@@ -117,9 +117,9 @@ func queryComponents(req *queue.SchedulerRequest) (isIngester, isStoreGateway bo
 	return isIngester, isStoreGateway
 }
 
-func isOverLoaded(
-	mu *sync.RWMutex,
-	queryComponentInflightReqs map[QueryComponent]int,
+func (s *Scheduler) isOverLoaded(
+	//mu *sync.RWMutex,
+	//queryComponentInflightReqs map[QueryComponent]int,
 	overloadThreshold int,
 	req *queue.SchedulerRequest,
 ) bool {
@@ -128,26 +128,29 @@ func isOverLoaded(
 	}
 	isIngester, isStoreGateway := queryComponents(req)
 
-	mu.RLock()
-	defer mu.RUnlock()
+	s.queryComponentInflightRequestsMu.RLock()
+	defer s.queryComponentInflightRequestsMu.RUnlock()
+	level.Info(s.log).Log(
+		"msg", "isOverloaded",
+		"inflightReqs:Ingester", s.queryComponentInflightRequests[Ingester],
+		"inflightReqs:StoreGateway", s.queryComponentInflightRequests[StoreGateway],
+	)
+	//fmt.Sprintf("inflightReqs: %+v\n", queryComponentInflightReqs)
 
 	if isIngester {
-		if queryComponentInflightReqs[Ingester] >= overloadThreshold {
+		if s.queryComponentInflightRequests[Ingester] >= overloadThreshold {
 			return true
 		}
 	}
 	if isStoreGateway {
-		if queryComponentInflightReqs[StoreGateway] >= overloadThreshold {
+		if s.queryComponentInflightRequests[StoreGateway] >= overloadThreshold {
 			return true
 		}
 	}
 	return false
 }
 
-func getOverloadThreshold(
-	mu *sync.RWMutex,
-	queryComponentInflightReqs map[QueryComponent]int,
-	totalInflightReqs int,
+func (s *Scheduler) getOverloadThreshold(
 	overloadedFactor float64,
 ) int {
 	// Overload factor is expected to be > 1.
@@ -155,61 +158,55 @@ func getOverloadThreshold(
 		return 0
 	}
 
-	mu.RLock()
-	defer mu.RUnlock()
+	s.queryComponentInflightRequestsMu.RLock()
+	defer s.queryComponentInflightRequestsMu.RUnlock()
 
+	level.Info(s.log).Log("msg", "getOverloadThreshold", "totalInflightReqs", s.totalInflightRequests)
 	// No overloaded connection if there are no connections or no inflight requests at all.
-	if totalInflightReqs == 0 {
+	if s.totalInflightRequests == 0 {
 		return 0
 	}
 
 	// Compute the average number of inflight requests per connection.
-	avg := float64(totalInflightReqs) / float64(len(queryComponentInflightReqs))
+	avg := float64(s.totalInflightRequests) / float64(len(s.queryComponentInflightRequests))
 
 	// Compute the overload threshold.
-	return int(math.Ceil(avg * overloadedFactor))
+	overloadThreshold := int(math.Ceil(avg * overloadedFactor))
+	level.Info(s.log).Log("msg", "getOverloadThreshold", "overloadThreshold", overloadThreshold)
+	return overloadThreshold
 }
 
-func incrementQueryComponentInflightRequests(
-	mu *sync.RWMutex,
-	queryComponentInflightReqs map[QueryComponent]int,
-	totalInflightReqs int,
+func (s *Scheduler) incrementQueryComponentInflightRequests(
 	req *queue.SchedulerRequest,
 ) {
-	updateQueryComponentInflightRequests(
-		mu, queryComponentInflightReqs, totalInflightReqs, req, 1,
+	s.updateQueryComponentInflightRequests(
+		req, 1,
 	)
 }
 
-func decrementQueryComponentInflightRequests(
-	mu *sync.RWMutex,
-	queryComponentInflightReqs map[QueryComponent]int,
-	totalInflightReqs int,
+func (s *Scheduler) decrementQueryComponentInflightRequests(
 	req *queue.SchedulerRequest,
 ) {
-	updateQueryComponentInflightRequests(
-		mu, queryComponentInflightReqs, totalInflightReqs, req, -1,
+	s.updateQueryComponentInflightRequests(
+		req, -1,
 	)
 }
 
-func updateQueryComponentInflightRequests(
-	mu *sync.RWMutex,
-	queryComponentInflightReqs map[QueryComponent]int,
-	totalInflightReqs int,
+func (s *Scheduler) updateQueryComponentInflightRequests(
 	req *queue.SchedulerRequest,
 	updateIncrement int,
 ) {
 	isIngester, isStoreGateway := queryComponents(req)
 
-	mu.Lock()
-	defer mu.Unlock()
+	s.queryComponentInflightRequestsMu.Lock()
+	defer s.queryComponentInflightRequestsMu.Unlock()
 	if isIngester {
-		queryComponentInflightReqs[Ingester] += updateIncrement
+		s.queryComponentInflightRequests[Ingester] += updateIncrement
 	}
 	if isStoreGateway {
-		queryComponentInflightReqs[StoreGateway] += updateIncrement
+		s.queryComponentInflightRequests[StoreGateway] += updateIncrement
 	}
-	totalInflightReqs += updateIncrement
+	s.totalInflightRequests += updateIncrement
 }
 
 type connectedFrontend struct {
@@ -551,15 +548,17 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		*/
 		isIngester, isStoreGateway := queryComponents(r)
 		level.Info(s.log).Log("msg", "expected query component", "isIngester", isIngester, "isStoreGateway", isStoreGateway)
-		threshold := getOverloadThreshold(
-			s.queryComponentInflightRequestsMu,
-			s.queryComponentInflightRequests,
-			s.totalInflightRequests,
-			2.0,
+		threshold := s.getOverloadThreshold(
+			//s.log,
+			//s.queryComponentInflightRequestsMu,
+			//s.queryComponentInflightRequests,
+			//s.totalInflightRequests,
+			2.1,
 		)
-		if isOverLoaded(
-			s.queryComponentInflightRequestsMu,
-			s.queryComponentInflightRequests,
+		if s.isOverLoaded(
+			//s.log,
+			//s.queryComponentInflightRequestsMu,
+			//s.queryComponentInflightRequests,
 			threshold,
 			r,
 		) {
@@ -596,9 +595,9 @@ func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.No
 }
 
 func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *queue.SchedulerRequest, queueTime time.Duration) error {
-	incrementQueryComponentInflightRequests(s.queryComponentInflightRequestsMu, s.queryComponentInflightRequests, s.totalInflightRequests, req)
+	s.incrementQueryComponentInflightRequests(req)
 	// Make sure to cancel request at the end to clean up resources.
-	defer decrementQueryComponentInflightRequests(s.queryComponentInflightRequestsMu, s.queryComponentInflightRequests, s.totalInflightRequests, req)
+	defer s.decrementQueryComponentInflightRequests(req)
 	defer s.cancelRequestAndRemoveFromPending(req.FrontendAddress, req.QueryID, "request complete")
 
 	// Handle the stream sending & receiving on a goroutine so we can
