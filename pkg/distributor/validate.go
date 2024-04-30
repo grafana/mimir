@@ -42,13 +42,13 @@ var (
 	reasonTooFarInFuture               = globalerror.SampleTooFarInFuture.LabelValue()
 
 	// Discarded exemplars reasons.
-	reasonExemplarLabelsMissing     = globalerror.ExemplarLabelsMissing.LabelValue()
-	reasonExemplarLabelsTooLong     = globalerror.ExemplarLabelsTooLong.LabelValue()
-	reasonExemplarTimestampInvalid  = globalerror.ExemplarTimestampInvalid.LabelValue()
-	reasonExemplarLabelsBlank       = "exemplar_labels_blank"
-	reasonExemplarTooOld            = "exemplar_too_old"
-	reasonExemplarTooFarInFuture    = "exemplar_too_far_in_future"
-	reasonTooManyExemplarsPerSeries = "too_many_exemplars_per_series"
+	reasonExemplarLabelsMissing               = globalerror.ExemplarLabelsMissing.LabelValue()
+	reasonExemplarLabelsTooLong               = globalerror.ExemplarLabelsTooLong.LabelValue()
+	reasonExemplarTimestampInvalid            = globalerror.ExemplarTimestampInvalid.LabelValue()
+	reasonExemplarLabelsBlank                 = "exemplar_labels_blank"
+	reasonExemplarTooOld                      = "exemplar_too_old"
+	reasonExemplarTooFarInFuture              = "exemplar_too_far_in_future"
+	reasonTooManyExemplarsPerSeriesPerRequest = "too_many_exemplars_per_series_per_request"
 
 	// Discarded metadata reasons.
 	reasonMetadataMetricNameTooLong = globalerror.MetricMetadataMetricNameTooLong.LabelValue()
@@ -197,7 +197,7 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 		labelsBlank:      validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
 		tooOld:           validation.DiscardedExemplarsCounter(r, reasonExemplarTooOld),
 		tooFarInFuture:   validation.DiscardedExemplarsCounter(r, reasonExemplarTooFarInFuture),
-		tooManyExemplars: validation.DiscardedExemplarsCounter(r, reasonTooManyExemplarsPerSeries),
+		tooManyExemplars: validation.DiscardedExemplarsCounter(r, reasonTooManyExemplarsPerSeriesPerRequest),
 	}
 }
 
