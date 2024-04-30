@@ -7,8 +7,18 @@ import (
 	"fmt"
 )
 
-var ErrNotSupported = errors.New("not supported by streaming engine")
+type NotSupportedError struct {
+	reason string
+}
 
-func NewNotSupportedError(detail string) error {
-	return fmt.Errorf("%w: %s", ErrNotSupported, detail)
+func NewNotSupportedError(reason string) error {
+	return NotSupportedError{reason}
+}
+
+func (e NotSupportedError) Error() string {
+	return fmt.Sprintf("not supported by streaming engine: %v", e.reason)
+}
+
+func (e NotSupportedError) Is(target error) bool {
+	return errors.As(target, &NotSupportedError{})
 }

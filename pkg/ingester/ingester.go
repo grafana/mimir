@@ -1652,6 +1652,13 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 		return nil, err
 	}
 
+	// The label value strings are sometimes pointing to memory mapped file
+	// regions that may become unmapped anytime after Querier.Close is called.
+	// So we copy those strings.
+	for i, s := range vals {
+		vals[i] = strings.Clone(s)
+	}
+
 	return &client.LabelValuesResponse{
 		LabelValues: vals,
 	}, nil
