@@ -1900,6 +1900,17 @@
         },
         {
           "kind": "field",
+          "name": "enable_promql_engine_fallback",
+          "required": false,
+          "desc": "If set to true and the streaming engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the streaming engine.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "querier.enable-promql-engine-fallback",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
