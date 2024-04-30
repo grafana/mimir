@@ -1335,6 +1335,12 @@ store_gateway_client:
 # CLI flag: -querier.promql-engine
 [promql_engine: <string> | default = "standard"]
 
+# (experimental) If set to true and the streaming engine is in use, fall back to
+# using the Prometheus PromQL engine for any queries not supported by the
+# streaming engine.
+# CLI flag: -querier.enable-promql-engine-fallback
+[enable_promql_engine_fallback: <boolean> | default = true]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
 # CLI flag: -querier.max-concurrent
@@ -3006,6 +3012,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Maximum number of buckets per native histogram sample. 0 to disable the limit.
 # CLI flag: -validation.max-native-histogram-buckets
 [max_native_histogram_buckets: <int> | default = 0]
+
+# (experimental) Maximum number of exemplars per series per request. 0 to
+# disable limit in request. The exceeding exemplars are dropped.
+# CLI flag: -distributor.max-exemplars-per-series-per-request
+[max_exemplars_per_series_per_request: <int> | default = 0]
 
 # Whether to reduce or reject native histogram samples with more buckets than
 # the configured limit.

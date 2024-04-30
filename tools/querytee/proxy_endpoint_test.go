@@ -450,7 +450,6 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 	scenarios := map[string]struct {
 		latencyPairs                  []latencyPair
-		expectedSampleCount           uint64
 		expectedDurationSampleSum     float64
 		expectedProportionalSampleSum float64
 	}{
@@ -463,7 +462,6 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 				secondaryResponseLatency: 2 * time.Second,
 			},
 			},
-			expectedSampleCount:           2,
 			expectedDurationSampleSum:     5,
 			expectedProportionalSampleSum: (3.0/1 + 5.0/2),
 		},
@@ -473,7 +471,6 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 				secondaryResponseLatency: 7 * time.Second,
 			},
 			},
-			expectedSampleCount:           1,
 			expectedDurationSampleSum:     -5,
 			expectedProportionalSampleSum: (2.0 / 7),
 		},
@@ -498,14 +495,14 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
 			require.NoError(t, err)
-			for range scenario.latencyPairs {
+			for i := range scenario.latencyPairs {
 				// This is just in serial to keep the tests simple
 				endpoint.ServeHTTP(resp, req)
+				// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
+				// Wait for the response comparison to complete the number of requests we have.
+				// We do this for each latencyPair to avoid a race where the second request would consume a result expected for the first request.
+				waitForResponseComparisonMetric(t, reg, ComparisonSuccess, uint64(i+1))
 			}
-
-			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
-			// Wait for the response comparison to complete the number of requests we have
-			waitForResponseComparisonMetric(t, reg, ComparisonSuccess, scenario.expectedSampleCount)
 
 			got, done, err := prometheus.ToTransactionalGatherer(reg).Gather()
 			defer done()
@@ -513,12 +510,12 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 
 			gotDuration := filterMetrics(got, []string{"cortex_querytee_backend_response_relative_duration_seconds"})
 			require.Equal(t, 1, len(gotDuration), "Expect only one metric after filtering")
-			require.Equal(t, scenario.expectedSampleCount, gotDuration[0].Metric[0].Histogram.GetSampleCount())
+			require.Equal(t, uint64(len(scenario.latencyPairs)), gotDuration[0].Metric[0].Histogram.GetSampleCount())
 			require.Equal(t, scenario.expectedDurationSampleSum, gotDuration[0].Metric[0].Histogram.GetSampleSum())
 
 			gotProportional := filterMetrics(got, []string{"cortex_querytee_backend_response_relative_duration_proportional"})
 			require.Equal(t, 1, len(gotProportional), "Expect only one metric after filtering")
-			require.Equal(t, scenario.expectedSampleCount, gotProportional[0].Metric[0].Histogram.GetSampleCount())
+			require.Equal(t, uint64(len(scenario.latencyPairs)), gotProportional[0].Metric[0].Histogram.GetSampleCount())
 			require.Equal(t, scenario.expectedProportionalSampleSum, gotProportional[0].Metric[0].Histogram.GetSampleSum())
 		})
 	}

@@ -10,9 +10,10 @@
 * [FEATURE] Continuous-test: now runable as a module with `mimir -target=continuous-test`. #7747
 * [FEATURE] Store-gateway: Allow specific tenants to be enabled or disabled via `-store-gateway.enabled-tenants` or `-store-gateway.disabled-tenants` CLI flags or their corresponding YAML settings. #7653
 * [FEATURE] New `-<prefix>.s3.bucket-lookup-type` flag configures lookup style type, used to access bucket in s3 compatible providers. #7684
-* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.promql-engine=streaming`. #7693 #7899
+* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.promql-engine=streaming`. #7693 #7898 #7899
 * [FEATURE] New `/ingester/unregister-on-shutdown` HTTP endpoint allows dynamic access to ingesters' `-ingester.ring.unregister-on-shutdown` configuration. #7739
 * [FEATURE] Server: added experimental [PROXY protocol support](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt). The PROXY protocol support can be enabled via `-server.proxy-protocol-enabled=true`. When enabled, the support is added both to HTTP and gRPC listening ports. #7698
+* [ENHANCEMENT] Distributor: add experimental limit for exemplars per series per request, enabled with `-distributor.max-exemplars-per-series-per-request`, the number of discarded exemplars are tracked with `cortex_discarded_exemplars_total{reason="too_many_exemplars_per_series"}` #7989
 * [ENHANCEMENT] Store-gateway: merge series from different blocks concurrently. #7456
 * [ENHANCEMENT] Store-gateway: Add `stage="wait_max_concurrent"` to `cortex_bucket_store_series_request_stage_duration_seconds` which records how long the query had to wait for its turn for `-blocks-storage.bucket-store.max-concurrent`. #7609
 * [ENHANCEMENT] Querier: add `cortex_querier_federation_upstream_query_wait_duration_seconds` to observe time from when a querier picks up a cross-tenant query to when work begins on its single-tenant counterparts. #7209
@@ -42,6 +43,7 @@
 * [BUGFIX] Ingester: do not reuse exemplars slice in the write request if there are more than 10 exemplars per series. This should help to reduce the in-use memory in case of few requests with a very large number of exemplars. #7936
 * [BUGFIX] Distributor: fix down scaling of native histograms in the distributor when timeseries unmarshal cache is in use. #7947
 * [BUGFIX] Distributor: fix cardinality API to return more accurate number of in-memory series when number of zones is larger than replication factor. #7984
+* [BUGFIX] All: fix config validation for non-ingester modules, when ingester's ring is configured with spread-minimizing token generation strategy. #7990
 * [BUGFIX] Ingester: copy LabelValues strings out of mapped memory to avoid a segmentation fault if the region becomes unmapped before the result is marshaled. #8003
 
 ### Mixin
@@ -66,6 +68,7 @@
 * [ENHANCEMENT] Alerts: exclude `529` and `598` status codes from failure codes in `MimirRequestsError`. #7889
 * [BUGFIX] Dashboards: Fix regular expression for matching read-path gRPC ingester methods to include querying of exemplars, label-related queries, or active series queries. #7676
 * [BUGFIX] Dashboards: Fix user id abbreviations and column heads for Top Tenants dashboard. #7724
+* [BUGFIX] Dashboards: fix incorrect query used for "queue length" panel on "Ruler" dashboard. #8006
 
 ### Jsonnet
 
@@ -96,7 +99,7 @@
 ### Query-tee
 
 * [ENHANCEMENT] Log queries that take longer than `proxy.log-slow-query-response-threshold` when compared to other backends. #7346
-* [ENHANCEMENT] Add two new metrics for measuring the relative duration between backends: #7782
+* [ENHANCEMENT] Add two new metrics for measuring the relative duration between backends: #7782 #8013
   * `cortex_querytee_backend_response_relative_duration_seconds`
   * `cortex_querytee_backend_response_relative_duration_proportional`
 

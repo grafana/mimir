@@ -1181,6 +1181,8 @@ Usage of ./cmd/mimir/mimir:
     	Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
   -distributor.limit-inflight-requests-using-grpc-method-limiter
     	[deprecated] When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed. (default true)
+  -distributor.max-exemplars-per-series-per-request int
+    	[experimental] Maximum number of exemplars per series per request. 0 to disable limit in request. The exceeding exemplars are dropped.
   -distributor.max-recv-msg-size int
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.metric-relabeling-enabled
@@ -1669,6 +1671,8 @@ Usage of ./cmd/mimir/mimir:
     	The default evaluation interval or step size for subqueries. This config option should be set on query-frontend too when query sharding is enabled. (default 1m0s)
   -querier.dns-lookup-period duration
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
+  -querier.enable-promql-engine-fallback
+    	[experimental] If set to true and the streaming engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the streaming engine. (default true)
   -querier.frontend-address string
     	Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.
   -querier.frontend-client.backoff-max-period duration
