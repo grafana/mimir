@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
@@ -397,6 +398,16 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	return nil
 }
 
+func shouldRetry(err error) bool {
+	// For a cleanUser failure, we want to retry DeadlineExceeded and other
+	// things like 5xx errors from blob storage.
+	var tempErr interface{ Temporary() bool }
+
+	return (
+		(errors.As(err, &tempErr) && tempErr.Temporary()) || errors.Is(err, context.DeadlineExceeded)
+	)
+}
+
 func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
 	startTime := time.Now()
 	level.Info(userLogger).Log("msg", "started blocks cleanup and maintenance")
@@ -408,36 +419,34 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		}
 	}()
 
-	return c.cleanUserInternal(ctx, userID, userLogger)
+	retries := backoff.New(ctx, backoff.Config{
+		MaxRetries: 5,
+	})
+	var lastErr error
 
-	/*
-		retries := backoff.New(ctx, backoff.Config{
-			MaxRetries: 5,
-		})
-		var lastErr error
-
-		for retries.Ongoing() {
-			if err := c.cleanUserInternal(ctx, userID, userLogger); err != nil {
-				level.Warn(userLogger).Log("msg", "failed single cleanUser call", "err", err)
-				lastErr = err
-				retries.NumRetries()
-			} else {
-				return nil
+	for retries.Ongoing() {
+		if err := c.cleanUserInternal(ctx, userID, userLogger); err != nil {
+			level.Warn(userLogger).Log("msg", "failed single cleanUser call", "err", err)
+			if !shouldRetry(err) {
+				return err
 			}
-			retries.Wait()
+			lastErr = err
+		} else {
+			return nil
 		}
+		retries.Wait()
+	}
 
-		retryErr := retries.Err()
-		level.Warn(userLogger).Log("msg", "exhausted retries while cleaning user", "retry_err", retryErr)
-		return fmt.Errorf("clean user %s: %w (%w)", userID, retryErr, lastErr)
-	*/
+	retryErr := retries.Err()
+	level.Warn(userLogger).Log("msg", "exhausted retries while cleaning user", "retry_err", retryErr)
+	return fmt.Errorf("clean user %s: %w (%w)", userID, retryErr, lastErr)
 }
 
 func (c *BlocksCleaner) cleanUserInternal(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
 	idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, userLogger)
 	if errors.Is(err, bucketindex.ErrIndexCorrupted) {
 		level.Warn(userLogger).Log("msg", "found a corrupted bucket index, recreating it")
-	} else {
+	} else if err != nil && !errors.Is(err, bucketindex.ErrIndexNotFound) {
 		return fmt.Errorf("read index: %w", err)
 	}
 
