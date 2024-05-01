@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
@@ -53,6 +54,11 @@ func OTLPHandler(
 	logger log.Logger,
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
+
+	otlpRequestsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_distributor_otlp_requests_total",
+		Help: "The total number of OTLP requests that have come in to the distributor.",
+	}, []string{"user"})
 
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
@@ -148,6 +154,8 @@ func OTLPHandler(
 			return err
 		}
 		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
+
+		otlpRequestsCounter.WithLabelValues(tenantID).Inc()
 
 		metrics, err := otelMetricsToTimeseries(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
@@ -254,9 +262,11 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 }
 
 func otelMetricsToTimeseries(tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
-	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{
+	converter := prometheusremotewrite.NewPrometheusConverter()
+	errs := converter.FromMetrics(md, prometheusremotewrite.Settings{
 		AddMetricSuffixes: addSuffixes,
 	})
+	promTS := converter.TimeSeries()
 	if errs != nil {
 		dropped := len(multierr.Errors(errs))
 		discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(dropped)) // Group is empty here as metrics couldn't be parsed
@@ -266,19 +276,19 @@ func otelMetricsToTimeseries(tenantID string, addSuffixes bool, discardedDueToOt
 			parseErrs = parseErrs[:maxErrMsgLen]
 		}
 
-		if len(tsMap) == 0 {
+		if len(promTS) == 0 {
 			return nil, errors.New(parseErrs)
 		}
 
 		level.Warn(logger).Log("msg", "OTLP parse error", "err", parseErrs)
 	}
 
-	mimirTs := mimirpb.PreallocTimeseriesSliceFromPool()
-	for _, promTs := range tsMap {
-		mimirTs = append(mimirTs, promToMimirTimeseries(promTs))
+	mimirTS := mimirpb.PreallocTimeseriesSliceFromPool()
+	for _, ts := range promTS {
+		mimirTS = append(mimirTS, promToMimirTimeseries(&ts))
 	}
 
-	return mimirTs, nil
+	return mimirTS, nil
 }
 
 func promToMimirTimeseries(promTs *prompb.TimeSeries) mimirpb.PreallocTimeseries {

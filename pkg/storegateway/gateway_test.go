@@ -23,13 +23,13 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/consul"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	dstest "github.com/grafana/dskit/test"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -63,17 +63,17 @@ func TestConfig_Validate(t *testing.T) {
 		expected error
 	}{
 		"should pass by default": {
-			setup:    func(cfg *Config, limits *validation.Limits) {},
+			setup:    func(*Config, *validation.Limits) {},
 			expected: nil,
 		},
 		"should fail if shard size is negative": {
-			setup: func(cfg *Config, limits *validation.Limits) {
+			setup: func(_ *Config, limits *validation.Limits) {
 				limits.StoreGatewayTenantShardSize = -3
 			},
 			expected: errInvalidTenantShardSize,
 		},
 		"should pass if shard size has been set": {
-			setup: func(cfg *Config, limits *validation.Limits) {
+			setup: func(_ *Config, limits *validation.Limits) {
 				limits.StoreGatewayTenantShardSize = 3
 			},
 			expected: nil,
@@ -193,7 +193,7 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	bucketClient := &bucket.ErrorInjectedBucketClient{Injector: func(operation bucket.Operation, s string) error { return assert.AnError }}
+	bucketClient := &bucket.ErrorInjectedBucketClient{Injector: func(bucket.Operation, string) error { return assert.AnError }}
 
 	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), nil, nil)
 	require.NoError(t, err)
@@ -1481,9 +1481,9 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 					if testData.expectedErr != nil {
 						require.Error(t, err)
 						assert.IsType(t, testData.expectedErr, err)
-						s1, ok := status.FromError(errors.Cause(err))
+						s1, ok := grpcutil.ErrorToStatus(err)
 						assert.True(t, ok)
-						s2, ok := status.FromError(errors.Cause(testData.expectedErr))
+						s2, ok := grpcutil.ErrorToStatus(testData.expectedErr)
 						assert.True(t, ok)
 						assert.Contains(t, s1.Message(), s2.Message())
 						assert.Equal(t, s1.Code(), s2.Code())

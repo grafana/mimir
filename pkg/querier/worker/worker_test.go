@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
@@ -20,7 +21,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
-	"github.com/grafana/mimir/pkg/util/servicediscovery"
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -29,7 +29,7 @@ func TestConfig_Validate(t *testing.T) {
 		expectedErr string
 	}{
 		"should pass with default config": {
-			setup: func(cfg *Config) {},
+			setup: func(*Config) {},
 		},
 		"should pass if frontend address is configured, but not scheduler address": {
 			setup: func(cfg *Config) {

@@ -15,7 +15,6 @@ package chunks
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -23,13 +22,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 
 	"github.com/dennwc/varint"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -109,6 +108,10 @@ type CorruptionErr struct {
 
 func (e *CorruptionErr) Error() string {
 	return fmt.Errorf("corruption in head chunk file %s: %w", segmentFile(e.Dir, e.FileIndex), e.Err).Error()
+}
+
+func (e *CorruptionErr) Unwrap() error {
+	return e.Err
 }
 
 // chunkPos keeps track of the position in the head chunk files.
@@ -400,7 +403,7 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 
 	buf := make([]byte, MagicChunksSize)
 	size, err := f.Read(buf)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return files, fmt.Errorf("failed to read magic number during last head chunk file repair: %w", err)
 	}
 	if err := f.Close(); err != nil {
@@ -687,7 +690,6 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 	sgmIndex, chkStart := ref.Unpack()
 	// We skip the series ref and the mint/maxt beforehand.
 	chkStart += SeriesRefSize + (2 * MintMaxtSize)
-	chkCRC32 := newCRC32()
 
 	// If it is the current open file, then the chunks can be in the buffer too.
 	if sgmIndex == cdm.curFileSequence {
@@ -752,18 +754,11 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 
 	// Check the CRC.
 	sum := mmapFile.byteSlice.Range(chkDataEnd, chkDataEnd+CRCSize)
-	if _, err := chkCRC32.Write(mmapFile.byteSlice.Range(chkStart-(SeriesRefSize+2*MintMaxtSize), chkDataEnd)); err != nil {
+	if err := checkCRC32(mmapFile.byteSlice.Range(chkStart-(SeriesRefSize+2*MintMaxtSize), chkDataEnd), sum); err != nil {
 		return nil, &CorruptionErr{
 			Dir:       cdm.dir.Name(),
 			FileIndex: sgmIndex,
 			Err:       err,
-		}
-	}
-	if act := chkCRC32.Sum(nil); !bytes.Equal(act, sum) {
-		return nil, &CorruptionErr{
-			Dir:       cdm.dir.Name(),
-			FileIndex: sgmIndex,
-			Err:       fmt.Errorf("checksum mismatch expected:%x, actual:%x", sum, act),
 		}
 	}
 
@@ -799,8 +794,6 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 		cdm.fileMaxtSet = true
 	}()
 
-	chkCRC32 := newCRC32()
-
 	// Iterate files in ascending order.
 	segIDs := make([]int, 0, len(cdm.mmappedChunkFiles))
 	for seg := range cdm.mmappedChunkFiles {
@@ -835,7 +828,6 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 						" - required:%v, available:%v, file:%d", idx+MaxHeadChunkMetaSize, fileEnd, segID),
 				}
 			}
-			chkCRC32.Reset()
 			chunkRef := newChunkDiskMapperRef(uint64(segID), uint64(idx))
 
 			startIdx := idx
@@ -874,14 +866,11 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 
 			// Check CRC.
 			sum := mmapFile.byteSlice.Range(idx, idx+CRCSize)
-			if _, err := chkCRC32.Write(mmapFile.byteSlice.Range(startIdx, idx)); err != nil {
-				return err
-			}
-			if act := chkCRC32.Sum(nil); !bytes.Equal(act, sum) {
+			if err := checkCRC32(mmapFile.byteSlice.Range(startIdx, idx), sum); err != nil {
 				return &CorruptionErr{
 					Dir:       cdm.dir.Name(),
 					FileIndex: segID,
-					Err:       fmt.Errorf("checksum mismatch expected:%x, actual:%x", sum, act),
+					Err:       err,
 				}
 			}
 			idx += CRCSize
@@ -893,7 +882,8 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 			// Extract the encoding from the byte. ChunkDiskMapper uses only the last 7 bits for the encoding.
 			chkEnc = cdm.RemoveMasks(chkEnc)
 			if err := f(seriesRef, chunkRef, mint, maxt, numSamples, chkEnc, isOOO); err != nil {
-				if cerr, ok := err.(*CorruptionErr); ok {
+				var cerr *CorruptionErr
+				if errors.As(err, &cerr) {
 					cerr.Dir = cdm.dir.Name()
 					cerr.FileIndex = segID
 					return cerr

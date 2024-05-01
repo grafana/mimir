@@ -44,8 +44,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: query-frontend
           imagePullPolicy: IfNotPresent
@@ -53,6 +51,9 @@ spec:
             - "-target=query-frontend"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Reduce the likelihood of queries hitting terminated query-frontends.
+            - "-server.grpc.keepalive.max-connection-age=30s"
+            - "-shutdown-delay=90s"
           volumeMounts:
             - name: runtime-config
               mountPath: /var/mimir
@@ -87,13 +88,11 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "5000"
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -103,9 +102,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-configmap-values
             app.kubernetes.io/component: query-frontend
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 180
+      terminationGracePeriodSeconds: 390
       volumes:
         - name: config
           configMap:

@@ -166,7 +166,6 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 		require.NoError(t, services.StartAndAwaitRunning(ctx, w))
 
 		wg := sync.WaitGroup{}
-		wg.Add(2)
 
 		runAsync(&wg, func() {
 			assert.Equal(t, errPartitionOffsetWatcherStopped, w.Wait(ctx, 1))
@@ -208,7 +207,6 @@ func TestPartitionOffsetWatcher_Concurrency(t *testing.T) {
 	t.Cleanup(cancelCtx)
 
 	wg := sync.WaitGroup{}
-	wg.Add(numWatchingGoroutines + numNotifyingGoroutines)
 
 	// Start all watching goroutines.
 	for i := 0; i < numWatchingGoroutines; i++ {
@@ -228,7 +226,12 @@ func TestPartitionOffsetWatcher_Concurrency(t *testing.T) {
 				// Notify an offset between the last notified offset and the last watched offset.
 				// The update to lastNotifiedOffset by multiple goroutines suffer a race condition
 				// but it's fine for the purpose of this test.
-				offset := lastNotifiedOffset.Load() + rand.Int63n(lastWatchedOffset.Load()-lastNotifiedOffset.Load())
+				maxOffsetRange := lastWatchedOffset.Load() - lastNotifiedOffset.Load()
+				if maxOffsetRange <= 0 {
+					continue
+				}
+
+				offset := lastNotifiedOffset.Load() + rand.Int63n(maxOffsetRange)
 				lastNotifiedOffset.Store(offset)
 
 				w.Notify(offset)
@@ -259,7 +262,6 @@ func BenchmarkPartitionOffsetWatcher(b *testing.B) {
 
 		// Start all watching goroutines.
 		wg := sync.WaitGroup{}
-		wg.Add(numWatchingGoroutines)
 
 		for i := 0; i < numWatchingGoroutines; i++ {
 			runAsync(&wg, func() {
@@ -300,7 +302,6 @@ func BenchmarkPartitionOffsetWatcher(b *testing.B) {
 
 		// Start all watching goroutines.
 		wg := sync.WaitGroup{}
-		wg.Add(numWatchingGoroutines)
 
 		for i := 0; i < numWatchingGoroutines; i++ {
 			runAsync(&wg, func() {

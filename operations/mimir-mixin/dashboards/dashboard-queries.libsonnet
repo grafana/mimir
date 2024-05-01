@@ -1,4 +1,30 @@
+local utils = import 'mixin-utils/utils.libsonnet';
+
 {
+  // Helper function to produce failure rate in percentage queries for native and classic histograms.
+  // Takes a metric name and a selector as strings and returns a dictionary with classic and native queries.
+  nativeClassicFailureRate(metric, selector):: {
+    local template = |||
+      (
+          # gRPC errors are not tracked as 5xx but "error".
+          sum(%(countFailQuery)s)
+          or
+          # Handle the case no failure has been tracked yet.
+          vector(0)
+      )
+      /
+      sum(%(countQuery)s)
+    |||,
+    classic: template % {
+      countFailQuery: utils.nativeClassicHistogramCountRate(metric, selector + ',status_code=~"5.*|error"').classic,
+      countQuery: utils.nativeClassicHistogramCountRate(metric, selector).classic,
+    },
+    native: template % {
+      countFailQuery: utils.nativeClassicHistogramCountRate(metric, selector + ',status_code=~"5.*|error"').native,
+      countQuery: utils.nativeClassicHistogramCountRate(metric, selector).native,
+    },
+  },
+
   // This object contains common queries used in the Mimir dashboards.
   // These queries are NOT intended to be configurable or overriddeable via jsonnet,
   // but they're defined in a common place just to share them between different dashboards.
@@ -25,76 +51,94 @@
     query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
 
     gateway: {
+      // deprecated, will be removed
       writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}' % variables,
       readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
 
+      local p = self,
+      requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      writeRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"' % variables,
+      readRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
+
       // Write failures rate as percentage of total requests.
-      writeFailuresRate: |||
-        (
-            sum(rate(cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s",status_code=~"5.*"}[$__rate_interval]))
-            or
-            # Handle the case no failure has been tracked yet.
-            vector(0)
-        )
-        /
-        sum(rate(cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}[$__rate_interval]))
-      ||| % variables,
+      writeFailuresRate: $.nativeClassicFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
 
       // Read failures rate as percentage of total requests.
-      readFailuresRate: |||
-        (
-            sum(rate(cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s",status_code=~"5.*"}[$__rate_interval]))
-            or
-            # Handle the case no failure has been tracked yet.
-            vector(0)
-        )
-        /
-        sum(rate(cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}[$__rate_interval]))
-      ||| % variables,
+      readFailuresRate: $.nativeClassicFailureRate(p.requestsPerSecondMetric, p.readRequestsPerSecondSelector),
     },
 
     distributor: {
+      // deprecated, will be removed
       writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}' % variables,
+
+      local p = self,
+      requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"' % variables,
       samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
 
       // Write failures rate as percentage of total requests.
-      writeFailuresRate: |||
-        (
-            # gRPC errors are not tracked as 5xx but "error".
-            sum(rate(cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s",status_code=~"5.*|error"}[$__rate_interval]))
-            or
-            # Handle the case no failure has been tracked yet.
-            vector(0)
-        )
-        /
-        sum(rate(cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}[$__rate_interval]))
-      ||| % variables,
+      writeFailuresRate: $.nativeClassicFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
     },
 
     query_frontend: {
+      // deprecated, will be removed
       readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
-      instantQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query"}[$__rate_interval]))' % variables,
-      rangeQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query_range"}[$__rate_interval]))' % variables,
-      labelNamesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_labels"}[$__rate_interval]))' % variables,
-      labelValuesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_label_name_values"}[$__rate_interval]))' % variables,
-      seriesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_series"}[$__rate_interval]))' % variables,
-      remoteReadQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_read"}[$__rate_interval]))' % variables,
-      metadataQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_metadata"}[$__rate_interval]))' % variables,
-      exemplarsQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query_exemplars"}[$__rate_interval]))' % variables,
-      otherQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~".*(query|query_range|label.*|series|read|metadata|query_exemplars)"}[$__rate_interval]))' % variables,
+
+      local p = self,
+      readRequestsPerSecondMetric: 'cortex_request_duration_seconds',
+      readRequestsPerSecondSelector: '%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
+      // These query routes are used in the overview and other dashboard, everythign else is considered "other" queries.
+      // Has to be a list to keep the same colors as before, see overridesNonErrorColorsPalette.
+      local overviewRoutes = [
+        { name: 'instantQuery', displayName: 'instant queries', route: '/api/v1/query', routeLabel: '_api_v1_query' },
+        { name: 'rangeQuery', displayName: 'range queries', route: '/api/v1/query_range', routeLabel: '_api_v1_query_range' },
+        { name: 'labelNames', displayName: '"label names" queries', route: '/api/v1/labels', routeLabel: '_api_v1_labels' },
+        { name: 'labelValues', displayName: '"label values" queries', route: '/api/v1/label_name_values', routeLabel: '_api_v1_label_name_values' },
+        { name: 'series', displayName: 'series queries', route: '/api/v1/series', routeLabel: '_api_v1_series' },
+        { name: 'remoteRead', displayName: 'remote read queries', route: '/api/v1/read', routeLabel: '_api_v1_read' },
+        { name: 'metadata', displayName: 'metadata queries', route: '/api/v1/metadata', routeLabel: '_api_v1_metadata' },
+        { name: 'exemplars', displayName: 'exemplar queries', route: '/api/v1/query_exemplars', routeLabel: '_api_v1_query_exemplars' },
+        { name: 'activeSeries', displayName: '"active series" queries', route: '/api/v1/cardinality_active_series', routeLabel: '_api_v1_cardinality_active_series' },
+        { name: 'labelNamesCardinality', displayName: '"label name cardinality" queries', route: '/api/v1/cardinality_label_names', routeLabel: '_api_v1_cardinality_label_names' },
+        { name: 'labelValuesCardinality', displayName: '"label value cardinality" queries', route: '/api/v1/cardinality_label_values', routeLabel: '_api_v1_cardinality_label_values' },
+      ],
+      local overviewRoutesRegex = '(prometheus|api_prom)(%s)' % std.join('|', [r.routeLabel for r in overviewRoutes]),
+      overviewRoutesOverrides: [
+        {
+          matcher: {
+            id: 'byRegexp',
+            // To distinguish between query and query_range, we need to match the route with a negative lookahead.
+            options: '/.*%s($|[^_])/' % r.routeLabel,
+          },
+          properties: [
+            {
+              id: 'displayName',
+              value: r.displayName,
+            },
+          ],
+        }
+        for r in overviewRoutes
+      ],
+      overviewRoutesPerSecond: 'sum by (route) (rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"%(overviewRoutesRegex)s"}[$__rate_interval]))' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
+      nonOverviewRoutesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~"%(overviewRoutesRegex)s"}[$__rate_interval]))' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
+
+      local queryPerSecond(name) = 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)%(route)s"}[$__rate_interval]))' %
+                                   (variables { route: std.filter(function(r) r.name == name, overviewRoutes)[0].routeLabel }),
+      instantQueriesPerSecond: queryPerSecond('instantQuery'),
+      rangeQueriesPerSecond: queryPerSecond('rangeQuery'),
+      labelNamesQueriesPerSecond: queryPerSecond('labelNames'),
+      labelValuesQueriesPerSecond: queryPerSecond('labelValues'),
+      seriesQueriesPerSecond: queryPerSecond('series'),
+      remoteReadQueriesPerSecond: queryPerSecond('remoteRead'),
+      metadataQueriesPerSecond: queryPerSecond('metadata'),
+      exemplarsQueriesPerSecond: queryPerSecond('exemplars'),
+      activeSeriesQueriesPerSecond: queryPerSecond('activeSeries'),
+      labelNamesCardinalityQueriesPerSecond: queryPerSecond('labelNamesCardinality'),
+      labelValuesCardinalityQueriesPerSecond: queryPerSecond('labelValuesCardinality'),
 
       // Read failures rate as percentage of total requests.
-      readFailuresRate: |||
-        (
-            sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s",status_code=~"5.*"}[$__rate_interval]))
-            or
-            # Handle the case no failure has been tracked yet.
-            vector(0)
-        )
-        /
-        sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}[$__rate_interval]))
-      ||| % variables,
+      readFailuresRate: $.nativeClassicFailureRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector),
     },
 
     ruler: {

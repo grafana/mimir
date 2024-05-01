@@ -1144,7 +1144,7 @@ func (recBuf *recBuf) bufferRecord(pr promisedRec, abortOnNewBatch bool) bool {
 	defer recBuf.mu.Unlock()
 
 	// We truncate to milliseconds to avoid some accumulated rounding error
-	// problems (see Shopify/sarama#1455)
+	// problems (see IBM/sarama#1455)
 	if pr.Timestamp.IsZero() {
 		pr.Timestamp = time.Now()
 	}

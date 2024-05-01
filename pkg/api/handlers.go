@@ -32,6 +32,7 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
@@ -75,6 +76,18 @@ func (pc *IndexPageContent) AddLinks(weight int, groupDesc string, links []Index
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 
+	// Append the links to the group if already existing.
+	for i, group := range pc.elements {
+		if group.Desc != groupDesc {
+			continue
+		}
+
+		group.Links = append(group.Links, links...)
+		pc.elements[i] = group
+		return
+	}
+
+	// The group hasn't been found. We create a new one.
 	pc.elements = append(pc.elements, IndexPageLinkGroup{weight: weight, Desc: groupDesc, Links: links})
 }
 
@@ -112,7 +125,7 @@ func indexHandler(httpPathPrefix string, content *IndexPageContent) http.Handler
 	})
 	template.Must(templ.Parse(indexPageHTML))
 
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		err := templ.Execute(w, indexPageContents{LinkGroups: content.GetContent()})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -167,7 +180,7 @@ type configResponse struct {
 }
 
 func (cfg *Config) statusConfigHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		response := configResponse{
 			Status: "success",
 			Config: map[string]string{},
@@ -182,7 +195,7 @@ type flagsResponse struct {
 }
 
 func (cfg *Config) statusFlagsHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		response := flagsResponse{
 			Status: "success",
 			Flags:  map[string]string{},
@@ -199,7 +212,7 @@ func NewQuerierHandler(
 	queryable storage.SampleAndChunkQueryable,
 	exemplarQueryable storage.ExemplarQueryable,
 	metadataSupplier querier.MetadataSupplier,
-	engine *promql.Engine,
+	engine promql.QueryEngine,
 	distributor Distributor,
 	reg prometheus.Registerer,
 	logger log.Logger,
@@ -282,6 +295,8 @@ func NewQuerierHandler(
 		InflightRequests: inflightRequests,
 	}
 	router.Use(instrumentMiddleware.Wrap)
+	// Since we don't use the regular RegisterQueryAPI, we need to add the consistency middleware manually.
+	router.Use(querierapi.ConsistencyMiddleware().Wrap)
 
 	// Define the prefixes for all routes
 	prefix := path.Join(cfg.ServerPrefix, cfg.PrometheusHTTPPrefix)

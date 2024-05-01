@@ -3,7 +3,9 @@
 package distributor
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
@@ -11,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -19,9 +22,10 @@ import (
 
 const (
 	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
-	StatusServiceOverloaded        = 529
-	deadlineExceededWrapMessage    = "exceeded configured distributor remote timeout"
-	failedPushingToIngesterMessage = "failed pushing to ingester"
+	StatusServiceOverloaded         = 529
+	deadlineExceededWrapMessage     = "exceeded configured distributor remote timeout"
+	failedPushingToIngesterMessage  = "failed pushing to ingester"
+	failedPushingToPartitionMessage = "failed pushing to partition"
 )
 
 var (
@@ -195,6 +199,30 @@ func (e ingesterPushError) errorCause() mimirpb.ErrorCause {
 // Ensure that ingesterPushError implements distributorError.
 var _ distributorError = ingesterPushError{}
 
+type circuitBreakerOpenError struct {
+	err client.ErrCircuitBreakerOpen
+}
+
+// newCircuitBreakerOpenError creates a circuitBreakerOpenError wrapping the passed client.ErrCircuitBreakerOpen.
+func newCircuitBreakerOpenError(err client.ErrCircuitBreakerOpen) circuitBreakerOpenError {
+	return circuitBreakerOpenError{err: err}
+}
+
+func (e circuitBreakerOpenError) Error() string {
+	return e.err.Error()
+}
+
+func (e circuitBreakerOpenError) RemainingDelay() time.Duration {
+	return e.err.RemainingDelay()
+}
+
+func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.CIRCUIT_BREAKER_OPEN
+}
+
+// Ensure that circuitBreakerOpenError implements distributorError.
+var _ distributorError = circuitBreakerOpenError{}
+
 // toGRPCError converts the given error into an appropriate gRPC error.
 func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 	var (
@@ -219,8 +247,20 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 			errCode = codes.AlreadyExists
 		case mimirpb.TOO_MANY_CLUSTERS:
 			errCode = codes.FailedPrecondition
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			errCode = codes.Unavailable
+		case mimirpb.METHOD_NOT_ALLOWED:
+			errCode = codes.Unimplemented
 		}
 	}
+	return errorWithStatus(pushErr, errCode, errDetails)
+}
+
+// errorWithStatus is slightly different from globalerror.NewErrorWithGRPCStatus. It returns status.Err() instead of an error with the status message.
+// The actual difference is between "rpc error: code = XYZ desc = message" and just "message".
+// At the time of writing this should be purely a cosmetic difference, but it's hard to verify.
+// Because of this difference, the function is used instead of globalerror.NewErrorWithGRPCStatus.
+func errorWithStatus(pushErr error, errCode codes.Code, errDetails *mimirpb.ErrorDetails) error {
 	stat := status.New(errCode, pushErr.Error())
 	if errDetails != nil {
 		statWithDetails, err := stat.WithDetails(errDetails)
@@ -238,7 +278,12 @@ func wrapIngesterPushError(err error, ingesterID string) error {
 
 	stat, ok := grpcutil.ErrorToStatus(err)
 	if !ok {
-		return errors.Wrap(err, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID))
+		pushErr := err
+		var errCircuitBreakerOpen client.ErrCircuitBreakerOpen
+		if errors.As(pushErr, &errCircuitBreakerOpen) {
+			pushErr = newCircuitBreakerOpenError(errCircuitBreakerOpen)
+		}
+		return errors.Wrap(pushErr, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID))
 	}
 	statusCode := stat.Code()
 	if util.IsHTTPStatusCode(statusCode) {
@@ -251,7 +296,23 @@ func wrapIngesterPushError(err error, ingesterID string) error {
 	return newIngesterPushError(stat, ingesterID)
 }
 
-func isClientError(err error) bool {
+func wrapPartitionPushError(err error, partitionID int32) error {
+	if err == nil {
+		return nil
+	}
+
+	return errors.Wrap(err, fmt.Sprintf("%s %d", failedPushingToPartitionMessage, partitionID))
+}
+
+func wrapDeadlineExceededPushError(err error) error {
+	if err != nil && errors.Is(err, context.DeadlineExceeded) {
+		return errors.Wrap(err, deadlineExceededWrapMessage)
+	}
+
+	return err
+}
+
+func isIngesterClientError(err error) bool {
 	var ingesterPushErr ingesterPushError
 	if errors.As(err, &ingesterPushErr) {
 		return ingesterPushErr.errorCause() == mimirpb.BAD_DATA

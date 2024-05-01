@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
@@ -28,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -39,26 +41,32 @@ import (
 // Config contains the configuration require to create a querier
 type Config struct {
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
-	QueryStoreAfter    time.Duration `yaml:"query_store_after" category:"advanced"`
-	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future" category:"advanced"`
+	QueryStoreAfter time.Duration `yaml:"query_store_after" category:"advanced"`
+	// Deprecated in Mimir 2.12, remove in Mimir 2.14
+	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future" category:"deprecated"`
 
 	StoreGatewayClient ClientConfig `yaml:"store_gateway_client"`
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
-	PreferStreamingChunksFromIngesters             bool          `yaml:"prefer_streaming_chunks_from_ingesters" category:"experimental"` // Enabled by default as of Mimir 2.11, remove altogether in 2.12.
 	PreferStreamingChunksFromStoreGateways         bool          `yaml:"prefer_streaming_chunks_from_store_gateways" category:"experimental"`
+	PreferAvailabilityZone                         string        `yaml:"prefer_availability_zone" category:"experimental" doc:"hidden"`
 	StreamingChunksPerIngesterSeriesBufferSize     uint64        `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"advanced"`
 	StreamingChunksPerStoreGatewaySeriesBufferSize uint64        `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"experimental"`
-	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"experimental"` // Enabled by default as of Mimir 2.11, remove altogether in 2.12.
+	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"advanced"`
 	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
+
+	PromQLEngine               string `yaml:"promql_engine" category:"experimental"`
+	EnablePromQLEngineFallback bool   `yaml:"enable_promql_engine_fallback" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
 }
 
 const (
-	queryStoreAfterFlag = "querier.query-store-after"
+	queryStoreAfterFlag   = "querier.query-store-after"
+	standardPromQLEngine  = "standard"
+	streamingPromQLEngine = "streaming"
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -68,8 +76,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
-	f.BoolVar(&cfg.PreferStreamingChunksFromIngesters, "querier.prefer-streaming-chunks-from-ingesters", true, "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.")
 	f.BoolVar(&cfg.PreferStreamingChunksFromStoreGateways, "querier.prefer-streaming-chunks-from-store-gateways", false, "Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.")
+	f.StringVar(&cfg.PreferAvailabilityZone, "querier.prefer-availability-zone", "", "Preferred availability zone to query ingesters from when using the ingest storage.")
 
 	const minimiseIngesterRequestsFlagName = "querier.minimize-ingester-requests"
 	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlagName, true, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
@@ -80,10 +88,17 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
 
+	f.StringVar(&cfg.PromQLEngine, "querier.promql-engine", standardPromQLEngine, fmt.Sprintf("PromQL engine to use, either '%v' or '%v'", standardPromQLEngine, streamingPromQLEngine))
+	f.BoolVar(&cfg.EnablePromQLEngineFallback, "querier.enable-promql-engine-fallback", true, "If set to true and the streaming engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the streaming engine.")
+
 	cfg.EngineConfig.RegisterFlags(f)
 }
 
 func (cfg *Config) Validate() error {
+	if cfg.PromQLEngine != standardPromQLEngine && cfg.PromQLEngine != streamingPromQLEngine {
+		return fmt.Errorf("unknown PromQL engine '%s'", cfg.PromQLEngine)
+	}
+
 	return nil
 }
 
@@ -121,10 +136,10 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
-	distributorQueryable := newDistributorQueryable(distributor, limits, queryMetrics, logger)
+	distributorQueryable := NewDistributorQueryable(distributor, limits, queryMetrics, logger)
 
 	queryable := newQueryable(distributorQueryable, storeQueryable, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
@@ -137,8 +152,33 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	engine := promql.NewEngine(engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg))
-	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, engine
+	opts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
+
+	// Experimental functions can only be enabled globally, and not on a per-engine basis.
+	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
+
+	var eng promql.QueryEngine
+
+	switch cfg.PromQLEngine {
+	case standardPromQLEngine:
+		eng = promql.NewEngine(opts)
+	case streamingPromQLEngine:
+		streamingEngine, err := streamingpromql.NewEngine(opts)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		if cfg.EnablePromQLEngineFallback {
+			prometheusEngine := promql.NewEngine(opts)
+			eng = streamingpromql.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
+		} else {
+			eng = streamingEngine
+		}
+	default:
+		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.PromQLEngine))
+	}
+
+	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, nil
 }
 
 // NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a Queryable.
@@ -239,6 +279,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 			return nil, nil, err
 		}
 		queriers = append(queriers, q)
+		mq.queryMetrics.QueriesExecutedTotal.WithLabelValues("ingester").Inc()
 	}
 
 	if mq.blockStore != nil && ShouldQueryBlockStore(mq.cfg.QueryStoreAfter, now, mq.minT) {
@@ -247,6 +288,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 			return nil, nil, err
 		}
 		queriers = append(queriers, q)
+		mq.queryMetrics.QueriesExecutedTotal.WithLabelValues("store-gateway").Inc()
 	}
 
 	return ctx, queriers, nil

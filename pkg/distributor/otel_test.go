@@ -54,7 +54,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	}
 	exportReq := TimeseriesToOTLPRequest(sampleSeries, sampleMetadata)
 
-	pushFunc := func(ctx context.Context, pushReq *Request) error {
+	pushFunc := func(_ context.Context, pushReq *Request) error {
 		if _, err := pushReq.WriteRequest(); err != nil {
 			return err
 		}

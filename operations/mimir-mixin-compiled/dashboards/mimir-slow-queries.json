@@ -35,421 +35,336 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 1,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 1,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p99",
                         "legendLink": null
                      },
                      {
                         "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p50",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Response time",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "s",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 2,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 2,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p99",
                         "legendLink": null
                      },
                      {
                         "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p50",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Fetched series",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 3,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 3,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p99",
                         "legendLink": null
                      },
                      {
                         "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p50",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Fetched chunks",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "bytes",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 4,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 4,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p99",
                         "legendLink": null
                      },
                      {
                         "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p50",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Response size",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "bytes",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 5,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 5,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p99",
                         "legendLink": null
                      },
                      {
                         "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p50",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Time span",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "s",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "description": "### Query wall time\nSeconds per second spent by queriers evaluating queries.\nThis is roughly the product of the number of subqueries for a query and how long they took.\nIn increase in this metric means that queries take more resources from the query path to evaluate.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
                         "min": 0,
-                        "show": true
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 6,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p99",
+                        "legendLink": null
                      },
                      {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
+                        "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p50",
+                        "legendLink": null
                      }
-                  ]
+                  ],
+                  "title": "Query wall time",
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Accross tenants",
+            "title": "Across tenants",
             "titleSize": "h6"
          },
          {
@@ -457,379 +372,293 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 6,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 7,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by (user))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user}}",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "P99 response time",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "s",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 7,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 8,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by (user))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user}}",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "P99 fetched series",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 8,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 9,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by (user))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user}}",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "P99 fetched chunks",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "bytes",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 9,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 10,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by (user))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user}}",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "P99 response size",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "bytes",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 10,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 11,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by (user))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user}}",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "P99 time span",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "s",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "description": "### Query wall time\nSeconds per second spent by queriers evaluating queries.\nThis is roughly the product of the number of subqueries for a query and how long they took.\nIn increase in this metric means that queries take more resources from the query path to evaluate.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
                         "min": 0,
-                        "show": true
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
                      },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
+                     "overrides": [ ]
+                  },
+                  "id": 12,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
                      }
-                  ]
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by (user))",
+                        "format": "time_series",
+                        "legendFormat": "{{user}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 query wall time",
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
@@ -844,379 +673,293 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 11,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 13,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by (user_agent))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user_agent}}",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "P99 response time",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "s",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 12,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 14,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by (user_agent))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user_agent}}",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "P99 fetched series",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 13,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 15,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by (user_agent))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user_agent}}",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "P99 fetched chunks",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "bytes",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 14,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 16,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by (user_agent))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user_agent}}",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "P99 response size",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "bytes",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 15,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 17,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                     }
+                  },
                   "span": 2,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by (user_agent))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user_agent}}",
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "P99 time span",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "s",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "description": "### Query wall time\nSeconds per second spent by queriers evaluating queries.\nThis is roughly the product of the number of subqueries for a query and how long they took.\nIn increase in this metric means that queries take more resources from the query path to evaluate.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
                         "min": 0,
-                        "show": true
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
                      },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
+                     "overrides": [ ]
+                  },
+                  "id": 18,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
                      }
-                  ]
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by (user_agent))",
+                        "format": "time_series",
+                        "legendFormat": "{{user_agent}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 query wall time",
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
@@ -1231,7 +974,7 @@
             "height": "250px",
             "panels": [
                {
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fieldConfig": {
                      "overrides": [
                         {
@@ -1377,15 +1120,27 @@
                                  "value": "s"
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "query_wall_time_seconds"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "s"
+                              }
+                           ]
                         }
                      ]
                   },
                   "height": "500px",
-                  "id": 16,
+                  "id": 19,
                   "span": 12,
                   "targets": [
                      {
-                        "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | label_format response_time_seconds=\"{{ duration .response_time }}\",param_step_seconds=\"{{ div .param_step 1000 }}\",length_seconds=\"{{ duration .length }}\"",
+                        "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | label_format response_time_seconds=\"{{ if .response_time }} {{ duration .response_time }} {{ end }}\",param_step_seconds=\"{{ if .param_step }} {{ div .param_step 1000 }} {{ end }}\",length_seconds=\"{{ if .length }} {{ duration .length }} {{ end }}\"",
                         "instant": false,
                         "legendFormat": "",
                         "range": true,
@@ -1426,7 +1181,6 @@
                               "path": true,
                               "pod": true,
                               "pod_template_hash": true,
-                              "query_wall_time_seconds": true,
                               "response_time": true,
                               "stream": true,
                               "traceID": true,
@@ -1465,7 +1219,11 @@
                            "conversions": [
                               {
                                  "destinationType": "number",
-                                 "targetField": "estimated_series_count"
+                                 "targetField": "sharded_queries"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "split_queries"
                               },
                               {
                                  "destinationType": "number",
@@ -1473,19 +1231,7 @@
                               },
                               {
                                  "destinationType": "number",
-                                 "targetField": "fetched_chunks_count"
-                              },
-                              {
-                                 "destinationType": "number",
                                  "targetField": "fetched_index_bytes"
-                              },
-                              {
-                                 "destinationType": "number",
-                                 "targetField": "fetched_series_count"
-                              },
-                              {
-                                 "destinationType": "number",
-                                 "targetField": "queue_time_seconds"
                               },
                               {
                                  "destinationType": "number",
@@ -1501,11 +1247,15 @@
                               },
                               {
                                  "destinationType": "number",
-                                 "targetField": "sharded_queries"
+                                 "targetField": "estimated_series_count"
                               },
                               {
                                  "destinationType": "number",
-                                 "targetField": "split_queries"
+                                 "targetField": "fetched_chunks_count"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "fetched_series_count"
                               },
                               {
                                  "destinationType": "number",
@@ -1522,6 +1272,10 @@
                               {
                                  "destinationType": "number",
                                  "targetField": "queue_time_seconds"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "query_wall_time_seconds"
                               }
                            ]
                         }
@@ -1551,7 +1305,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": "Data Source",
+               "label": "Data source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",
@@ -1608,9 +1362,9 @@
             {
                "hide": 0,
                "includeAll": false,
-               "label": "Logs datasource",
+               "label": "Loki data source",
                "multi": false,
-               "name": "lokidatasource",
+               "name": "loki_datasource",
                "query": "loki",
                "type": "datasource"
             },

@@ -14,7 +14,9 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/servicediscovery"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -35,6 +36,9 @@ const (
 	// per scheduler (after splitting and sharding) in order to allow all of them being canceled while scheduler worker is busy.
 	schedulerWorkerCancelChanCapacity = 1000
 )
+
+var errFrontendSchedulerWorkerLoopIterationStopping = cancellation.NewErrorf("frontend scheduler worker loop iteration stopping")
+var errFrontendSchedulerWorkerStopping = cancellation.NewErrorf("frontend scheduler worker stopping")
 
 type frontendSchedulerWorkers struct {
 	services.Service
@@ -239,7 +243,7 @@ type frontendSchedulerWorker struct {
 
 	// Context and cancellation used by individual goroutines.
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 	wg     sync.WaitGroup
 
 	// Shared between all frontend workers.
@@ -276,7 +280,7 @@ func newFrontendSchedulerWorker(
 		cancelCh:           make(chan uint64, schedulerWorkerCancelChanCapacity),
 		enqueueDuration:    enqueueDuration,
 	}
-	w.ctx, w.cancel = context.WithCancel(context.Background())
+	w.ctx, w.cancel = context.WithCancelCause(context.Background())
 
 	return w
 }
@@ -293,7 +297,7 @@ func (w *frontendSchedulerWorker) start() {
 }
 
 func (w *frontendSchedulerWorker) stop() {
-	w.cancel()
+	w.cancel(errFrontendSchedulerWorkerStopping)
 	w.wg.Wait()
 	if err := w.conn.Close(); err != nil {
 		level.Error(w.log).Log("msg", "error while closing connection to scheduler", "err", err)
@@ -303,8 +307,8 @@ func (w *frontendSchedulerWorker) stop() {
 func (w *frontendSchedulerWorker) runOne(ctx context.Context, client schedulerpb.SchedulerForFrontendClient) {
 	// attemptLoop returns false if there was any error with forwarding requests to scheduler.
 	attemptLoop := func() bool {
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel() // cancel the stream after we are done to release resources
+		ctx, cancel := context.WithCancelCause(ctx)
+		defer cancel(errFrontendSchedulerWorkerLoopIterationStopping) // cancel the stream after we are done to release resources
 
 		loop, loopErr := client.FrontendLoop(ctx)
 		if loopErr != nil {
@@ -439,22 +443,24 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 	case schedulerpb.ERROR:
 		level.Warn(spanLogger).Log("msg", "scheduler returned error", "err", resp.Error)
 		req.enqueue <- enqueueResult{status: waitForResponse}
-		req.response <- &frontendv2pb.QueryResultRequest{
-			HttpResponse: &httpgrpc.HTTPResponse{
-				Code: http.StatusInternalServerError,
-				Body: []byte(resp.Error),
-			},
-		}
+		req.response <- queryResultWithBody{
+			queryResult: &frontendv2pb.QueryResultRequest{
+				HttpResponse: &httpgrpc.HTTPResponse{
+					Code: http.StatusInternalServerError,
+					Body: []byte(resp.Error),
+				},
+			}}
 
 	case schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
 		level.Warn(spanLogger).Log("msg", "scheduler reported it has too many outstanding requests")
 		req.enqueue <- enqueueResult{status: waitForResponse}
-		req.response <- &frontendv2pb.QueryResultRequest{
-			HttpResponse: &httpgrpc.HTTPResponse{
-				Code: http.StatusTooManyRequests,
-				Body: []byte("too many outstanding requests"),
-			},
-		}
+		req.response <- queryResultWithBody{
+			queryResult: &frontendv2pb.QueryResultRequest{
+				HttpResponse: &httpgrpc.HTTPResponse{
+					Code: http.StatusTooManyRequests,
+					Body: []byte("too many outstanding requests"),
+				},
+			}}
 
 	default:
 		level.Error(spanLogger).Log("msg", "unknown response status from the scheduler", "resp", resp, "queryID", req.queryID)

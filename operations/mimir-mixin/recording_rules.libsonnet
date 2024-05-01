@@ -12,17 +12,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
       {
         name: 'mimir_api_1',
         rules:
-          utils.histogramRules('cortex_request_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval),
+          utils.histogramRules('cortex_request_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true),
       },
       {
         name: 'mimir_api_2',
         rules:
-          utils.histogramRules('cortex_request_duration_seconds', [$._config.per_cluster_label, 'job', 'route'], $._config.recording_rules_range_interval),
+          utils.histogramRules('cortex_request_duration_seconds', [$._config.per_cluster_label, 'job', 'route'], $._config.recording_rules_range_interval, record_native=true),
       },
       {
         name: 'mimir_api_3',
         rules:
-          utils.histogramRules('cortex_request_duration_seconds', $._config.job_labels + ['route'], $._config.recording_rules_range_interval),
+          utils.histogramRules('cortex_request_duration_seconds', $._config.job_labels + ['route'], $._config.recording_rules_range_interval, record_native=true),
       },
       {
         name: 'mimir_querier_api',
@@ -30,13 +30,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           utils.histogramRules('cortex_querier_request_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval) +
           utils.histogramRules('cortex_querier_request_duration_seconds', [$._config.per_cluster_label, 'job', 'route'], $._config.recording_rules_range_interval) +
           utils.histogramRules('cortex_querier_request_duration_seconds', $._config.job_labels + ['route'], $._config.recording_rules_range_interval),
-      },
-      {
-        name: 'mimir_cache',
-        rules:
-          utils.histogramRules('cortex_memcache_request_duration_seconds', [$._config.per_cluster_label, 'job', 'method'], $._config.recording_rules_range_interval) +
-          utils.histogramRules('cortex_cache_request_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval) +
-          utils.histogramRules('cortex_cache_request_duration_seconds', [$._config.per_cluster_label, 'job', 'method'], $._config.recording_rules_range_interval),
       },
       {
         name: 'mimir_storage',
@@ -340,9 +333,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         rules: [
           {
             // cortex_ingester_ingested_samples_total is per user, in this rule we want to see the sum per cluster/namespace/instance
-            record: '%s_%s:cortex_ingester_ingested_samples_total:rate1m' % [$._config.alert_aggregation_rule_prefix, $._config.per_instance_label],
+            record: '%s_%s:cortex_ingester_ingested_samples_total:rate%s' % [$._config.alert_aggregation_rule_prefix, $._config.per_instance_label, $._config.recording_rules_range_interval],
             expr: |||
-              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingester_ingested_samples_total[1m]))
+              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingester_ingested_samples_total[%(recording_rules_range_interval)s]))
             ||| % $._config,
           },
         ],

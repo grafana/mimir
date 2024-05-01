@@ -6,69 +6,45 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/regexp"
+	"github.com/pkg/errors"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
 )
 
 var (
 	// Regular expression used to parse the ingester numeric ID.
-	ingesterIDRegexp = regexp.MustCompile("-(zone-.-)?([0-9]+)$")
-
-	// The Prometheus summary objectives used when tracking latency.
-	latencySummaryObjectives = map[float64]float64{
-		0.5:   0.05,
-		0.90:  0.01,
-		0.99:  0.001,
-		0.995: 0.001,
-		0.999: 0.001,
-		1:     0.001,
-	}
+	ingesterIDRegexp = regexp.MustCompile("-([0-9]+)$")
 )
 
-// IngesterPartition returns the partition ID to use to write to a specific ingester partition.
-// The input ingester ID is expected to end either with "zone-X-Y" or only "-Y" where "X" is a letter in the range [a,d]
-// and "Y" is a positive integer number. This means that this function supports up to 4 zones starting
-// with letter "a" or no zones at all.
-func IngesterPartition(ingesterID string) (int32, error) {
+// IngesterPartitionID returns the partition ID owner the the given ingester.
+func IngesterPartitionID(ingesterID string) (int32, error) {
 	match := ingesterIDRegexp.FindStringSubmatch(ingesterID)
 	if len(match) == 0 {
-		return 0, fmt.Errorf("name doesn't match regular expression %s %q", ingesterID, ingesterIDRegexp.String())
-	}
-
-	// Convert the zone ID to a number starting from 0.
-	var zoneID int32
-	if wholeZoneStr := match[1]; len(wholeZoneStr) > 1 {
-		if !strings.HasPrefix(wholeZoneStr, "zone-") {
-			return 0, fmt.Errorf("invalid zone ID %s in %s", wholeZoneStr, ingesterID)
-		}
-
-		zoneID = rune(wholeZoneStr[len(wholeZoneStr)-2]) - 'a'
-		if zoneID < 0 || zoneID > 4 {
-			return 0, fmt.Errorf("zone ID is not between a and d %s", ingesterID)
-		}
+		return 0, fmt.Errorf("ingester ID %s doesn't match regular expression %q", ingesterID, ingesterIDRegexp.String())
 	}
 
 	// Parse the ingester sequence number.
-	ingesterSeq, err := strconv.Atoi(match[2])
+	ingesterSeq, err := strconv.Atoi(match[1])
 	if err != nil {
-		return 0, fmt.Errorf("no ingester sequence in name %s", ingesterID)
+		return 0, fmt.Errorf("no ingester sequence number in ingester ID %s", ingesterID)
 	}
 
-	partitionID := int32(ingesterSeq<<2) | (zoneID & 0b11)
-	return partitionID, nil
+	return int32(ingesterSeq), nil
 }
 
 func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger) []kgo.Opt {
-	return []kgo.Opt{
+	opts := []kgo.Opt{
 		kgo.ClientID(cfg.ClientID),
 		kgo.SeedBrokers(cfg.Address),
-		kgo.AllowAutoTopicCreation(),
 		kgo.DialTimeout(cfg.DialTimeout),
 
 		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and
@@ -92,8 +68,8 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		kgo.MetadataMinAge(10 * time.Second),
 		kgo.MetadataMaxAge(10 * time.Second),
 
-		kgo.WithHooks(metrics),
 		kgo.WithLogger(newKafkaLogger(logger)),
+		kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(kotel.NewTracer())).Hooks()...),
 
 		kgo.RetryTimeoutFn(func(key int16) time.Duration {
 			switch key {
@@ -105,6 +81,16 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 			return 30 * time.Second
 		}),
 	}
+
+	if cfg.AutoCreateTopicEnabled {
+		opts = append(opts, kgo.AllowAutoTopicCreation())
+	}
+
+	if metrics != nil {
+		opts = append(opts, kgo.WithHooks(metrics))
+	}
+
+	return opts
 }
 
 // resultPromise is a simple utility to have multiple goroutines waiting for a result from another one.
@@ -138,4 +124,47 @@ func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
 	case <-w.done:
 		return w.resultValue, w.resultErr
 	}
+}
+
+// shouldLog returns whether err should be logged.
+func shouldLog(ctx context.Context, err error) (bool, string) {
+	var optional middleware.OptionalLogging
+	if !errors.As(err, &optional) {
+		return true, ""
+	}
+
+	return optional.ShouldLog(ctx)
+}
+
+// setDefaultNumberOfPartitionsForAutocreatedTopics tries to set num.partitions config option on brokers.
+// This is best-effort, if setting the option fails, error is logged, but not returned.
+func setDefaultNumberOfPartitionsForAutocreatedTopics(cfg KafkaConfig, logger log.Logger) {
+	if cfg.AutoCreateTopicDefaultPartitions <= 0 {
+		return
+	}
+
+	cl, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, logger)...)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to create kafka client", "err", err)
+		return
+	}
+
+	adm := kadm.NewClient(cl)
+	defer adm.Close()
+
+	defaultNumberOfPartitions := fmt.Sprintf("%d", cfg.AutoCreateTopicDefaultPartitions)
+	_, err = adm.AlterBrokerConfigsState(context.Background(), []kadm.AlterConfig{
+		{
+			Op:    kadm.SetConfig,
+			Name:  "num.partitions",
+			Value: &defaultNumberOfPartitions,
+		},
+	})
+
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to alter default number of partitions", "err", err)
+		return
+	}
+
+	level.Info(logger).Log("msg", "configured Kafka-wide default number of partitions for auto-created topics (num.partitions)", "value", cfg.AutoCreateTopicDefaultPartitions)
 }

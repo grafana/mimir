@@ -35,7 +35,6 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/rules"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -225,10 +224,10 @@ func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ..
 func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *DefaultMultiTenantManager {
 	options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID, opts...)
 
-	noopQueryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+	noopQueryable := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 		return storage.NoopQuerier(), nil
 	})
-	noopQueryFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
+	noopQueryFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
 		return nil, nil
 	}
 
@@ -250,7 +249,7 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 
 	// We do expect 1 API call for the user create with the getOrCreateNotifier()
 	wg.Add(1)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		userID, _, err := tenant.ExtractTenantIDFromHTTPRequest(r)
 		require.NoError(t, err)
 		assert.Equal(t, "1", userID)
@@ -1020,7 +1019,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				rulerCfg.Ring.Common.InstanceAddr = rulerAddr
 				rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
 
-				limits := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 					defaults.RulerTenantShardSize = rulerShardSize
 				})
 
@@ -1641,7 +1640,7 @@ func TestSendAlerts(t *testing.T) {
 				}
 				require.Equal(t, tc.exp, alerts)
 			})
-			rules.SendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
+			promRules.SendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
 		})
 	}
 }
@@ -1675,7 +1674,7 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits["user-1"] = validation.MockDefaultLimits()
 				tenantLimits["user-1"].RulerRecordingRulesEvaluationEnabled = true
 				tenantLimits["user-1"].RulerAlertingRulesEvaluationEnabled = false
@@ -1705,7 +1704,7 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits["user-1"] = validation.MockDefaultLimits()
 				tenantLimits["user-1"].RulerRecordingRulesEvaluationEnabled = false
 				tenantLimits["user-1"].RulerAlertingRulesEvaluationEnabled = true
@@ -1735,7 +1734,7 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits["user-1"] = validation.MockDefaultLimits()
 				tenantLimits["user-1"].RulerRecordingRulesEvaluationEnabled = false
 				tenantLimits["user-1"].RulerAlertingRulesEvaluationEnabled = false
@@ -1761,7 +1760,7 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 				defaults.RulerRecordingRulesEvaluationEnabled = false
 				defaults.RulerAlertingRulesEvaluationEnabled = false
 			}),
@@ -1910,17 +1909,17 @@ func BenchmarkFilterRuleGroupsByEnabled(b *testing.B) {
 			limits: validation.MockDefaultOverrides(),
 		},
 		"recording rules disabled": {
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 				defaults.RulerRecordingRulesEvaluationEnabled = false
 			}),
 		},
 		"alerting rules disabled": {
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 				defaults.RulerAlertingRulesEvaluationEnabled = false
 			}),
 		},
 		"all rules disabled": {
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 				defaults.RulerRecordingRulesEvaluationEnabled = false
 				defaults.RulerAlertingRulesEvaluationEnabled = false
 			}),

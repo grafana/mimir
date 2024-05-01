@@ -14,6 +14,7 @@
 package labels
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -21,7 +22,6 @@ import (
 	"github.com/dgraph-io/ristretto"
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -291,6 +291,14 @@ func clearCapture(regs ...*syntax.Regexp) {
 	}
 }
 
+// removeEmptyMatches returns the slice with syntax.OpEmptyMatch regexps removed.
+// Note: it modifies the input slice (the returned slice is a sub-slice of the input).
+func removeEmptyMatches(regs []*syntax.Regexp) []*syntax.Regexp {
+	return slices.DeleteFunc(regs, func(r *syntax.Regexp) bool {
+		return r.Op == syntax.OpEmptyMatch
+	})
+}
+
 // clearBeginEndText removes the begin and end text from the regexp. Prometheus regexp are anchored to the beginning and end of the string.
 func clearBeginEndText(re *syntax.Regexp) {
 	// Do not clear begin/end text from an alternate operator because it could
@@ -366,7 +374,7 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 	// If there are no alternates, check if the string is a literal
 	if estimatedAlternates == 1 {
 		if regexp.QuoteMeta(s) == s {
-			return &equalStringMatcher{s: s, caseSensitive: true}, nil
+			return &equalStringMatcher{s: s, caseSensitive: true}, []string{s}
 		}
 		return nil, nil
 	}
@@ -443,7 +451,6 @@ type StringMatcher interface {
 
 // stringMatcherFromRegexp attempts to replace a common regexp with a string matcher.
 // It returns nil if the regexp is not supported.
-// For examples, it will replace `.*foo` with `foo.*` and `.*foo.*` with `(?i)foo`.
 func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 	clearBeginEndText(re)
 
@@ -513,6 +520,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 		return orStringMatcher(or)
 	case syntax.OpConcat:
 		clearCapture(re.Sub...)
+		re.Sub = removeEmptyMatches(re.Sub)
 
 		if len(re.Sub) == 0 {
 			return emptyStringMatcher{}
@@ -599,7 +607,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 				suffixCaseSensitive: matchesCaseSensitive,
 			}
 
-		// We found literals in the middle. We can triggered the fast path only if
+		// We found literals in the middle. We can trigger the fast path only if
 		// the matches are case sensitive because containsStringMatcher doesn't
 		// support case insensitive.
 		case matchesCaseSensitive:
@@ -616,7 +624,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 // containsStringMatcher matches a string if it contains any of the substrings.
 // If left and right are not nil, it's a contains operation where left and right must match.
 // If left is nil, it's a hasPrefix operation and right must match.
-// Finally if right is nil it's a hasSuffix operation and left must match.
+// Finally, if right is nil it's a hasSuffix operation and left must match.
 type containsStringMatcher struct {
 	// The matcher that must match the left side. Can be nil.
 	left StringMatcher

@@ -8,7 +8,9 @@ package distributor
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,23 +30,25 @@ const (
 
 var (
 	// Discarded series / samples reasons.
-	reasonMissingMetricName         = globalerror.MissingMetricName.LabelValue()
-	reasonInvalidMetricName         = globalerror.InvalidMetricName.LabelValue()
-	reasonMaxLabelNamesPerSeries    = globalerror.MaxLabelNamesPerSeries.LabelValue()
-	reasonInvalidLabel              = globalerror.SeriesInvalidLabel.LabelValue()
-	reasonLabelNameTooLong          = globalerror.SeriesLabelNameTooLong.LabelValue()
-	reasonLabelValueTooLong         = globalerror.SeriesLabelValueTooLong.LabelValue()
-	reasonMaxNativeHistogramBuckets = globalerror.MaxNativeHistogramBuckets.LabelValue()
-	reasonDuplicateLabelNames       = globalerror.SeriesWithDuplicateLabelNames.LabelValue()
-	reasonTooFarInFuture            = globalerror.SampleTooFarInFuture.LabelValue()
+	reasonMissingMetricName            = globalerror.MissingMetricName.LabelValue()
+	reasonInvalidMetricName            = globalerror.InvalidMetricName.LabelValue()
+	reasonMaxLabelNamesPerSeries       = globalerror.MaxLabelNamesPerSeries.LabelValue()
+	reasonInvalidLabel                 = globalerror.SeriesInvalidLabel.LabelValue()
+	reasonLabelNameTooLong             = globalerror.SeriesLabelNameTooLong.LabelValue()
+	reasonLabelValueTooLong            = globalerror.SeriesLabelValueTooLong.LabelValue()
+	reasonMaxNativeHistogramBuckets    = globalerror.MaxNativeHistogramBuckets.LabelValue()
+	reasonInvalidNativeHistogramSchema = globalerror.InvalidSchemaNativeHistogram.LabelValue()
+	reasonDuplicateLabelNames          = globalerror.SeriesWithDuplicateLabelNames.LabelValue()
+	reasonTooFarInFuture               = globalerror.SampleTooFarInFuture.LabelValue()
 
 	// Discarded exemplars reasons.
-	reasonExemplarLabelsMissing    = globalerror.ExemplarLabelsMissing.LabelValue()
-	reasonExemplarLabelsTooLong    = globalerror.ExemplarLabelsTooLong.LabelValue()
-	reasonExemplarTimestampInvalid = globalerror.ExemplarTimestampInvalid.LabelValue()
-	reasonExemplarLabelsBlank      = "exemplar_labels_blank"
-	reasonExemplarTooOld           = "exemplar_too_old"
-	reasonExemplarTooFarInFuture   = "exemplar_too_far_in_future"
+	reasonExemplarLabelsMissing               = globalerror.ExemplarLabelsMissing.LabelValue()
+	reasonExemplarLabelsTooLong               = globalerror.ExemplarLabelsTooLong.LabelValue()
+	reasonExemplarTimestampInvalid            = globalerror.ExemplarTimestampInvalid.LabelValue()
+	reasonExemplarLabelsBlank                 = "exemplar_labels_blank"
+	reasonExemplarTooOld                      = "exemplar_too_old"
+	reasonExemplarTooFarInFuture              = "exemplar_too_far_in_future"
+	reasonTooManyExemplarsPerSeriesPerRequest = "too_many_exemplars_per_series_per_request"
 
 	// Discarded metadata reasons.
 	reasonMetadataMetricNameTooLong = globalerror.MetricMetadataMetricNameTooLong.LabelValue()
@@ -62,7 +66,7 @@ var (
 		validation.MaxLabelNameLengthFlag,
 	)
 	labelValueTooLongMsgFormat = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
-		"received a series whose label value length exceeds the limit, value: '%.200s' (truncated) series: '%.200s'",
+		"received a series whose label value length exceeds the limit, label: '%s', value: '%.200s' (truncated) series: '%.200s'",
 		validation.MaxLabelValueLengthFlag,
 	)
 	invalidLabelMsgFormat   = globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
@@ -71,17 +75,12 @@ var (
 		"received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'",
 		validation.MaxLabelNamesPerSeriesFlag,
 	)
-	noMetricNameMsgFormat              = globalerror.MissingMetricName.Message("received series has no metric name")
-	invalidMetricNameMsgFormat         = globalerror.InvalidMetricName.Message("received a series with invalid metric name: '%.200s'")
-	maxNativeHistogramBucketsMsgFormat = fmt.Sprintf(
-		"received a native histogram sample with too many buckets, timestamp: %%d series: %%s, buckets: %%d, limit: %%d (%s)",
-		globalerror.MaxNativeHistogramBuckets,
-	)
-	notReducibleNativeHistogramMsgFormat = fmt.Sprintf(
-		"received a native histogram sample with too many buckets and cannot reduce, timestamp: %%d series: %%s, buckets: %%d, limit: %%d (%s)",
-		globalerror.NotReducibleNativeHistogram,
-	)
-	sampleTimestampTooNewMsgFormat = globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
+	noMetricNameMsgFormat                 = globalerror.MissingMetricName.Message("received series has no metric name")
+	invalidMetricNameMsgFormat            = globalerror.InvalidMetricName.Message("received a series with invalid metric name: '%.200s'")
+	maxNativeHistogramBucketsMsgFormat    = globalerror.MaxNativeHistogramBuckets.Message("received a native histogram sample with too many buckets, timestamp: %d series: %s, buckets: %d, limit: %d")
+	notReducibleNativeHistogramMsgFormat  = globalerror.NotReducibleNativeHistogram.Message("received a native histogram sample with too many buckets and cannot reduce, timestamp: %d series: %s, buckets: %d, limit: %d")
+	invalidSchemaNativeHistogramMsgFormat = globalerror.InvalidSchemaNativeHistogram.Message("received a native histogram sample with an invalid schema: %d")
+	sampleTimestampTooNewMsgFormat        = globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
 		"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
 		validation.CreationGracePeriodFlag,
 	)
@@ -115,15 +114,16 @@ type sampleValidationConfig interface {
 
 // sampleValidationMetrics is a collection of metrics used during sample validation.
 type sampleValidationMetrics struct {
-	missingMetricName         *prometheus.CounterVec
-	invalidMetricName         *prometheus.CounterVec
-	maxLabelNamesPerSeries    *prometheus.CounterVec
-	invalidLabel              *prometheus.CounterVec
-	labelNameTooLong          *prometheus.CounterVec
-	labelValueTooLong         *prometheus.CounterVec
-	maxNativeHistogramBuckets *prometheus.CounterVec
-	duplicateLabelNames       *prometheus.CounterVec
-	tooFarInFuture            *prometheus.CounterVec
+	missingMetricName            *prometheus.CounterVec
+	invalidMetricName            *prometheus.CounterVec
+	maxLabelNamesPerSeries       *prometheus.CounterVec
+	invalidLabel                 *prometheus.CounterVec
+	labelNameTooLong             *prometheus.CounterVec
+	labelValueTooLong            *prometheus.CounterVec
+	maxNativeHistogramBuckets    *prometheus.CounterVec
+	invalidNativeHistogramSchema *prometheus.CounterVec
+	duplicateLabelNames          *prometheus.CounterVec
+	tooFarInFuture               *prometheus.CounterVec
 }
 
 func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
@@ -135,6 +135,7 @@ func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
 	m.labelNameTooLong.DeletePartialMatch(filter)
 	m.labelValueTooLong.DeletePartialMatch(filter)
 	m.maxNativeHistogramBuckets.DeletePartialMatch(filter)
+	m.invalidNativeHistogramSchema.DeletePartialMatch(filter)
 	m.duplicateLabelNames.DeletePartialMatch(filter)
 	m.tooFarInFuture.DeletePartialMatch(filter)
 }
@@ -147,21 +148,23 @@ func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string
 	m.labelNameTooLong.DeleteLabelValues(userID, group)
 	m.labelValueTooLong.DeleteLabelValues(userID, group)
 	m.maxNativeHistogramBuckets.DeleteLabelValues(userID, group)
+	m.invalidNativeHistogramSchema.DeleteLabelValues(userID, group)
 	m.duplicateLabelNames.DeleteLabelValues(userID, group)
 	m.tooFarInFuture.DeleteLabelValues(userID, group)
 }
 
 func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetrics {
 	return &sampleValidationMetrics{
-		missingMetricName:         validation.DiscardedSamplesCounter(r, reasonMissingMetricName),
-		invalidMetricName:         validation.DiscardedSamplesCounter(r, reasonInvalidMetricName),
-		maxLabelNamesPerSeries:    validation.DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
-		invalidLabel:              validation.DiscardedSamplesCounter(r, reasonInvalidLabel),
-		labelNameTooLong:          validation.DiscardedSamplesCounter(r, reasonLabelNameTooLong),
-		labelValueTooLong:         validation.DiscardedSamplesCounter(r, reasonLabelValueTooLong),
-		maxNativeHistogramBuckets: validation.DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
-		duplicateLabelNames:       validation.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
-		tooFarInFuture:            validation.DiscardedSamplesCounter(r, reasonTooFarInFuture),
+		missingMetricName:            validation.DiscardedSamplesCounter(r, reasonMissingMetricName),
+		invalidMetricName:            validation.DiscardedSamplesCounter(r, reasonInvalidMetricName),
+		maxLabelNamesPerSeries:       validation.DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
+		invalidLabel:                 validation.DiscardedSamplesCounter(r, reasonInvalidLabel),
+		labelNameTooLong:             validation.DiscardedSamplesCounter(r, reasonLabelNameTooLong),
+		labelValueTooLong:            validation.DiscardedSamplesCounter(r, reasonLabelValueTooLong),
+		maxNativeHistogramBuckets:    validation.DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
+		invalidNativeHistogramSchema: validation.DiscardedSamplesCounter(r, reasonInvalidNativeHistogramSchema),
+		duplicateLabelNames:          validation.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
+		tooFarInFuture:               validation.DiscardedSamplesCounter(r, reasonTooFarInFuture),
 	}
 }
 
@@ -173,6 +176,7 @@ type exemplarValidationMetrics struct {
 	labelsBlank      *prometheus.CounterVec
 	tooOld           *prometheus.CounterVec
 	tooFarInFuture   *prometheus.CounterVec
+	tooManyExemplars *prometheus.CounterVec
 }
 
 func (m *exemplarValidationMetrics) deleteUserMetrics(userID string) {
@@ -182,6 +186,7 @@ func (m *exemplarValidationMetrics) deleteUserMetrics(userID string) {
 	m.labelsBlank.DeleteLabelValues(userID)
 	m.tooOld.DeleteLabelValues(userID)
 	m.tooFarInFuture.DeleteLabelValues(userID)
+	m.tooManyExemplars.DeleteLabelValues(userID)
 }
 
 func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMetrics {
@@ -192,6 +197,7 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 		labelsBlank:      validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
 		tooOld:           validation.DiscardedExemplarsCounter(r, reasonExemplarTooOld),
 		tooFarInFuture:   validation.DiscardedExemplarsCounter(r, reasonExemplarTooFarInFuture),
+		tooManyExemplars: validation.DiscardedExemplarsCounter(r, reasonTooManyExemplarsPerSeriesPerRequest),
 	}
 }
 
@@ -211,11 +217,16 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 // validateSampleHistogram returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram) error {
+func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram) (bool, error) {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-		return fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
+		return false, fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
+	}
+
+	if s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema {
+		m.invalidNativeHistogramSchema.WithLabelValues(userID, group).Inc()
+		return false, fmt.Errorf(invalidSchemaNativeHistogramMsgFormat, s.Schema)
 	}
 
 	if bucketLimit := cfg.MaxNativeHistogramBuckets(userID); bucketLimit > 0 {
@@ -228,22 +239,25 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 		if bucketCount > bucketLimit {
 			if !cfg.ReduceNativeHistogramOverMaxBuckets(userID) {
 				m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
-				return fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
+				return false, fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 			}
+
 			for {
 				bc, err := s.ReduceResolution()
 				if err != nil {
 					m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
-					return fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
+					return false, fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 				}
 				if bc < bucketLimit {
 					break
 				}
 			}
+
+			return true, nil
 		}
 	}
 
-	return nil
+	return false, nil
 }
 
 // validateExemplar returns an error if the exemplar is invalid.
@@ -310,6 +324,25 @@ type labelValidationConfig interface {
 	MaxLabelValueLength(userID string) int
 }
 
+func removeNonASCIIChars(in string) (out string) {
+	foundNonASCII := false
+
+	out = strings.Map(func(r rune) rune {
+		if r <= unicode.MaxASCII {
+			return r
+		}
+
+		foundNonASCII = true
+		return -1
+	}, in)
+
+	if foundNonASCII {
+		out = out + " (non-ascii characters removed)"
+	}
+
+	return out
+}
+
 // validateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
 func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) error {
@@ -321,7 +354,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 
 	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
 		m.invalidMetricName.WithLabelValues(userID, group).Inc()
-		return fmt.Errorf(invalidMetricNameMsgFormat, unsafeMetricName)
+		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
 	}
 
 	numLabelNames := len(ls)
@@ -343,7 +376,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if len(l.Value) > maxLabelValueLength {
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(labelValueTooLongMsgFormat, l.Value, mimirpb.FromLabelAdaptersToString(ls))
+			return fmt.Errorf(labelValueTooLongMsgFormat, l.Name, l.Value, mimirpb.FromLabelAdaptersToString(ls))
 		} else if lastLabelName == l.Name {
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(duplicateLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))

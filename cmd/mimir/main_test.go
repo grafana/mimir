@@ -20,7 +20,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
-	"github.com/grafana/mimir/pkg/util/fieldcategory"
+	"github.com/grafana/mimir/pkg/util/configdoc"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -443,7 +443,7 @@ func TestParseConfigFileParameter(t *testing.T) {
 
 func TestFieldCategoryOverridesNotStale(t *testing.T) {
 	overrides := make(map[string]struct{})
-	fieldcategory.VisitOverrides(func(s string) {
+	configdoc.VisitCategoryOverrides(func(s string) {
 		overrides[s] = struct{}{}
 	})
 

@@ -19,6 +19,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
@@ -29,7 +30,9 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -50,7 +53,6 @@ const (
 	formatProtobuf = "protobuf"
 )
 
-var userAgent = fmt.Sprintf("mimir/%s", version.Version)
 var allFormats = []string{formatJSON, formatProtobuf}
 
 // QueryFrontendConfig defines query-frontend transport configuration.
@@ -162,13 +164,13 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 		Method: http.MethodPost,
 		Url:    q.promHTTPPrefix + readEndpointPath,
 		Body:   snappy.Encode(nil, data),
-		Headers: []*httpgrpc.Header{
+		Headers: injectHTTPGrpcReadConsistencyHeader(ctx, []*httpgrpc.Header{
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Encoding"), Values: []string{"snappy"}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Accept-Encoding"), Values: []string{"snappy"}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{"application/x-protobuf"}},
-			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
+			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{version.UserAgent()}},
 			{Key: textproto.CanonicalMIMEHeaderKey("X-Prometheus-Remote-Read-Version"), Values: []string{"0.1.0"}},
-		},
+		}),
 	}
 
 	for _, mdw := range q.middlewares {
@@ -182,7 +184,9 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 
 	resp, err := q.client.Handle(ctx, &req)
 	if err != nil {
-		level.Warn(log).Log("msg", "failed to perform remote read", "err", err, "qs", query)
+		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
+			level.Warn(log).Log("msg", "failed to perform remote read", "err", err, "qs", query)
+		}
 		return nil, err
 	}
 	if resp.Code/100 != 2 {
@@ -218,7 +222,7 @@ func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (prom
 func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, logger log.Logger) (promql.Vector, error) {
 	req, err := q.createRequest(ctx, query, ts)
 	if err != nil {
-		return promql.Vector{}, nil
+		return promql.Vector{}, err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, q.timeout)
@@ -226,7 +230,9 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 
 	resp, err := q.sendRequest(ctx, &req, logger)
 	if err != nil {
-		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
+		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
+			level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
+		}
 		return promql.Vector{}, err
 	}
 	if resp.Code/100 != 2 {
@@ -265,12 +271,12 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 		Method: http.MethodPost,
 		Url:    q.promHTTPPrefix + queryEndpointPath,
 		Body:   body,
-		Headers: []*httpgrpc.Header{
-			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
+		Headers: injectHTTPGrpcReadConsistencyHeader(ctx, []*httpgrpc.Header{
+			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{version.UserAgent()}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{mimeTypeFormPost}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Length"), Values: []string{strconv.Itoa(len(body))}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Accept"), Values: []string{acceptHeader}},
-		},
+		}),
 	}
 
 	for _, mdw := range q.middlewares {
@@ -295,8 +301,33 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 	for {
 		resp, err := q.client.Handle(ctx, req)
 		if err == nil {
+			// Responses with status codes 4xx should always be considered erroneous.
+			// These errors shouldn't be retried because it is expected that
+			// running the same query gives rise to the same 4xx error.
+			if resp.Code/100 == 4 {
+				return nil, httpgrpc.ErrorFromHTTPResponse(resp)
+			}
 			return resp, nil
 		}
+
+		// Bail out if the error is known to be not retriable.
+		switch code := grpcutil.ErrorToStatusCode(err); code {
+		case codes.ResourceExhausted:
+			// In case the server is configured with "grpc-max-send-msg-size-bytes",
+			// and the response exceeds this limit, there is no point retrying the request.
+			// This is a special case, refer to grafana/mimir#7216.
+			if strings.Contains(err.Error(), "message larger than max") {
+				return nil, err
+			}
+		default:
+			// In case the error was a wrapped HTTPResponse, its code represents HTTP status;
+			// 4xx errors shouldn't be retried because it is expected that
+			// running the same query gives rise to the same 4xx error.
+			if code/100 == 4 {
+				return nil, err
+			}
+		}
+
 		if !retry.Ongoing() {
 			return nil, err
 		}
@@ -333,4 +364,18 @@ func getHeader(headers []*httpgrpc.Header, name string) string {
 	}
 
 	return ""
+}
+
+// injectHTTPGrpcReadConsistencyHeader reads the read consistency level from the ctx and, if defined, injects
+// it as an HTTP header to the list of input headers. This is required to propagate the read consistency
+// through the network when issuing an HTTPgRPC request.
+func injectHTTPGrpcReadConsistencyHeader(ctx context.Context, headers []*httpgrpc.Header) []*httpgrpc.Header {
+	if level, ok := api.ReadConsistencyFromContext(ctx); ok {
+		headers = append(headers, &httpgrpc.Header{
+			Key:    textproto.CanonicalMIMEHeaderKey(api.ReadConsistencyHeader),
+			Values: []string{level},
+		})
+	}
+
+	return headers
 }

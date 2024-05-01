@@ -15,4 +15,4 @@ Fixes #<issue number>
 - [ ] Tests updated.
 - [ ] Documentation added.
 - [ ] `CHANGELOG.md` updated - the order of entries should be `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[BUGFIX]`.
-- [ ] [`about-versioning.md`](/docs/sources/mimir/configure/about-versioning.md) updated with experimental features.
+- [ ] [`about-versioning.md`](https://github.com/grafana/mimir/blob/main/docs/sources/mimir/configure/about-versioning.md) updated with experimental features.

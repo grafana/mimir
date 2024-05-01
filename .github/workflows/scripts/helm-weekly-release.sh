@@ -98,9 +98,7 @@ new_chart_version=$(calculate_next_chart_version $current_chart_version $latest_
 validate_version_update $new_chart_version $current_chart_version $latest_gem_tag $latest_mimir_tag
 
 update_yaml_node $values_file .image.tag $latest_mimir_tag
-update_yaml_node $values_file .smoke_test.image.tag $latest_mimir_tag
 update_yaml_node $values_file .enterprise.image.tag $latest_gem_tag
-update_yaml_node $values_file .continuous_test.image.tag $latest_mimir_tag
 update_yaml_node $chart_file .appVersion $(extract_r_version $latest_mimir_tag)
 update_yaml_node $chart_file .version $new_chart_version
 

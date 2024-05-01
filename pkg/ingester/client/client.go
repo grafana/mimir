@@ -17,7 +17,11 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util"
 )
+
+const deprecatedReportGRPCStatusCodesFlag = "ingester.client.report-grpc-codes-in-instrumentation-label-enabled" // Deprecated. TODO: Remove in Mimir 2.14.
 
 // HealthAndIngesterClient is the union of IngesterClient and grpc_health_v1.HealthClient.
 type HealthAndIngesterClient interface {
@@ -36,13 +40,15 @@ type closableHealthAndIngesterClient struct {
 func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, logger log.Logger) (HealthAndIngesterClient, error) {
 	logger = log.With(logger, "component", "ingester-client")
 	var reportGRPCStatusesOptions []middleware.InstrumentationOption
-	if cfg.ReportGRPCStatusCodes {
+	if cfg.DeprecatedReportGRPCStatusCodes {
 		reportGRPCStatusesOptions = []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
 	}
 	unary, stream := grpcclient.Instrument(metrics.requestDuration, reportGRPCStatusesOptions...)
 	if cfg.CircuitBreaker.Enabled {
 		unary = append([]grpc.UnaryClientInterceptor{NewCircuitBreaker(inst, cfg.CircuitBreaker, metrics, logger)}, unary...)
 	}
+	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor)
+	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor)
 
 	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream)
 	if err != nil {
@@ -69,21 +75,29 @@ func (c *closableHealthAndIngesterClient) Close() error {
 
 // Config is the configuration struct for the ingester client
 type Config struct {
-	GRPCClientConfig      grpcclient.Config    `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
-	CircuitBreaker        CircuitBreakerConfig `yaml:"circuit_breaker"`
-	ReportGRPCStatusCodes bool                 `yaml:"report_grpc_codes_in_instrumentation_label_enabled" category:"advanced"`
+	GRPCClientConfig                grpcclient.Config    `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
+	CircuitBreaker                  CircuitBreakerConfig `yaml:"circuit_breaker"`
+	DeprecatedReportGRPCStatusCodes bool                 `yaml:"report_grpc_codes_in_instrumentation_label_enabled" category:"deprecated"` // Deprecated: Deprecated in Mimir 2.12, remove in Mimir 2.14 (https://github.com/grafana/mimir/issues/6008#issuecomment-1854320098)
 }
 
 // RegisterFlags registers configuration settings used by the ingester client config.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ingester.client", f)
 	cfg.CircuitBreaker.RegisterFlagsWithPrefix("ingester.client", f)
-	f.BoolVar(&cfg.ReportGRPCStatusCodes, "ingester.client.report-grpc-codes-in-instrumentation-label-enabled", false, "If set to true, gRPC status codes will be reported in \"status_code\" label of \"cortex_ingester_client_request_duration_seconds\" metric. Otherwise, they will be reported as \"error\"")
+	// The ingester.client.report-grpc-codes-in-instrumentation-label-enabled flag has been deprecated.
+	// According to the migration plan (https://github.com/grafana/mimir/issues/6008#issuecomment-1854320098)
+	// the default behaviour of Mimir should be as this flag were set to true.
+	// TODO: Remove in Mimir 2.14.0
+	f.BoolVar(&cfg.DeprecatedReportGRPCStatusCodes, deprecatedReportGRPCStatusCodesFlag, true, "If set to true, gRPC status codes will be reported in \"status_code\" label of \"cortex_ingester_client_request_duration_seconds\" metric. Otherwise, they will be reported as \"error\"")
 }
 
-func (cfg *Config) Validate() error {
+func (cfg *Config) Validate(logger log.Logger) error {
 	if err := cfg.GRPCClientConfig.Validate(); err != nil {
 		return err
+	}
+
+	if !cfg.DeprecatedReportGRPCStatusCodes {
+		util.WarnDeprecatedConfig(deprecatedReportGRPCStatusCodesFlag, logger)
 	}
 
 	return cfg.CircuitBreaker.Validate()
@@ -102,7 +116,7 @@ func (cfg *CircuitBreakerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.
 	f.UintVar(&cfg.FailureThreshold, prefix+".circuit-breaker.failure-threshold", 10, "Max percentage of requests that can fail over period before the circuit breaker opens")
 	f.UintVar(&cfg.FailureExecutionThreshold, prefix+".circuit-breaker.failure-execution-threshold", 100, "How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures")
 	f.DurationVar(&cfg.ThresholdingPeriod, prefix+".circuit-breaker.thresholding-period", time.Minute, "Moving window of time that the percentage of failed requests is computed over")
-	f.DurationVar(&cfg.CooldownPeriod, prefix+".circuit-breaker.cooldown-period", time.Minute, "How long the circuit breaker will stay in the open state before allowing some requests")
+	f.DurationVar(&cfg.CooldownPeriod, prefix+".circuit-breaker.cooldown-period", 10*time.Second, "How long the circuit breaker will stay in the open state before allowing some requests")
 }
 
 func (cfg *CircuitBreakerConfig) Validate() error {

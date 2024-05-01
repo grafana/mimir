@@ -212,7 +212,7 @@ func (opts PutObjectOptions) Header() (header http.Header) {
 	}
 
 	for k, v := range opts.UserMetadata {
-		if isAmzHeader(k) || isStandardHeader(k) || isStorageClassHeader(k) {
+		if isAmzHeader(k) || isStandardHeader(k) || isStorageClassHeader(k) || isValidReplicationEncryptionHeader(k) {
 			header.Set(k, v)
 		} else {
 			header.Set("x-amz-meta-"+k, v)
@@ -230,7 +230,7 @@ func (opts PutObjectOptions) Header() (header http.Header) {
 // validate() checks if the UserMetadata map has standard headers or and raises an error if so.
 func (opts PutObjectOptions) validate() (err error) {
 	for k, v := range opts.UserMetadata {
-		if !httpguts.ValidHeaderFieldName(k) || isStandardHeader(k) || isSSEHeader(k) || isStorageClassHeader(k) {
+		if !httpguts.ValidHeaderFieldName(k) || isStandardHeader(k) || isSSEHeader(k) || isStorageClassHeader(k) || isValidReplicationEncryptionHeader(k) {
 			return errInvalidArgument(k + " unsupported user defined metadata name")
 		}
 		if !httpguts.ValidHeaderFieldValue(v) {

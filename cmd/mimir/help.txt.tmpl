@@ -37,6 +37,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -alertmanager-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -alertmanager-storage.s3.sts-endpoint string
+    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -alertmanager-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -alertmanager-storage.swift.auth-url string
@@ -195,6 +197,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -blocks-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -blocks-storage.s3.sts-endpoint string
+    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -blocks-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -blocks-storage.swift.auth-url string
@@ -265,6 +269,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -common.storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -common.storage.s3.sts-endpoint string
+    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -common.storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -common.storage.swift.auth-version int
@@ -450,11 +456,11 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-concurrent int
     	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. (default 20)
   -querier.max-fetched-chunk-bytes-per-query int
-    	The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.
+    	The maximum size of all chunks in bytes that a query can fetch from ingesters and store-gateways. This limit is enforced in the querier and ruler. 0 to disable.
   -querier.max-fetched-chunks-per-query int
-    	Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable. (default 2000000)
+    	Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable. (default 2000000)
   -querier.max-fetched-series-per-query int
-    	The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable
+    	The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable
   -querier.max-partial-query-length duration
     	Limit the time range for partial queries at the querier level.
   -querier.max-query-lookback duration
@@ -585,6 +591,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -ruler-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -ruler-storage.s3.sts-endpoint string
+    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -ruler-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -ruler-storage.swift.auth-url string
@@ -673,8 +681,10 @@ Usage of ./cmd/mimir/mimir:
     	Optionally log request headers.
   -server.log-request-headers-exclude-list string
     	Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.
+  -server.log-source-ips-full
+    	Log all source IPs instead of only the originating one. Only used if server.log-source-ips-enabled is true
   -server.report-grpc-codes-in-instrumentation-label-enabled
-    	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error".
+    	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error". (default true)
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string
@@ -709,6 +719,38 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
+  -tests.basic-auth-password string
+    	The password to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
+  -tests.basic-auth-user string
+    	The username to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
+  -tests.bearer-token string
+    	The bearer token to use for HTTP bearer authentication. (mutually exclusive with tenant-id flag or basic-auth flags)
+  -tests.read-endpoint string
+    	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
+  -tests.read-timeout duration
+    	The timeout for a single read request. (default 1m0s)
+  -tests.run-interval duration
+    	How frequently tests should run. (default 5m0s)
+  -tests.smoke-test
+    	Run a smoke test, i.e. run all tests once and exit.
+  -tests.tenant-id string
+    	The tenant ID to use to write and read metrics in tests. (mutually exclusive with basic-auth or bearer-token flags) (default "anonymous")
+  -tests.write-batch-size int
+    	The maximum number of series to write in a single request. (default 1000)
+  -tests.write-endpoint string
+    	The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.
+  -tests.write-protocol string
+    	The protocol to use to write series data. Supported values are: prometheus, otlp-http (default "prometheus")
+  -tests.write-read-series-test.float-samples-enabled
+    	Set to true to use float samples (default true)
+  -tests.write-read-series-test.histogram-samples-enabled
+    	Set to true to use native histogram samples
+  -tests.write-read-series-test.max-query-age duration
+    	How back in the past metrics can be queried at most. (default 168h0m0s)
+  -tests.write-read-series-test.num-series int
+    	Number of series used for the test. (default 10000)
+  -tests.write-timeout duration
+    	The timeout for a single write request. (default 5s)
   -usage-stats.enabled
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string

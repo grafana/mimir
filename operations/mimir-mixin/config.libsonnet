@@ -57,11 +57,13 @@
     },
 
     // Some dashboards show panels grouping together multiple components of a given "path".
-    // This mapping configures which components belong to each group.
+    // This mapping configures which components belong to each group. A component can belong
+    // to multiple groups.
     local componentGroups = {
       write: ['distributor', 'ingester', 'mimir_write'],
       read: ['query_frontend', 'querier', 'ruler_query_frontend', 'ruler_querier', 'mimir_read'],
       backend: ['query_scheduler', 'ruler_query_scheduler', 'ruler', 'store_gateway', 'compactor', 'alertmanager', 'overrides_exporter', 'mimir_backend'],
+      remote_ruler_read: ['ruler_query_frontend', 'ruler_query_scheduler', 'ruler_querier'],
     },
 
     // These are used by the dashboards and allow for the simultaneous display of
@@ -133,6 +135,7 @@
       write: componentsGroupMatcher(componentGroups.write),
       read: componentsGroupMatcher(componentGroups.read),
       backend: componentsGroupMatcher(componentGroups.backend),
+      remote_ruler_read: componentsGroupMatcher(componentGroups.remote_ruler_read),
     },
     all_instances: std.join('|', std.map(function(name) componentNameRegexp[name], componentGroups.write + componentGroups.read + componentGroups.backend)),
 
@@ -187,6 +190,15 @@
       cluster_query: 'cortex_build_info',
       namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
     },
+
+    // Used to add extra labels to all alerts. Careful: takes precedence over default labels.
+    alert_extra_labels: {},
+
+    // Used to add extra annotations to all alerts, Careful: takes precedence over default annotations.
+    alert_extra_annotations: {},
+
+    // Whether alerts for experimental ingest storage are enabled.
+    ingest_storage_enabled: true,
 
     cortex_p99_latency_threshold_seconds: 2.5,
 
@@ -272,7 +284,7 @@
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 label_replace(
-                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[1m])),
+                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[%(recording_rules_range_interval)s])),
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
                 # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -581,6 +593,16 @@
       },
     },
 
+    rollout_dashboard: {
+      // workload_label_replaces is used to create label_replace(...) calls on the statefulset and deployment series when rendering the Rollout Dashboard.
+      // Extendable to allow grouping multiple workloads into a single one.
+      workload_label_replaces: [
+        { src_label: 'deployment', regex: '(.+)', replacement: '$1' },
+        { src_label: 'statefulset', regex: '(.+)', replacement: '$1' },
+        { src_label: 'workload', regex: '(.*?)(?:-zone-[a-z])?', replacement: '$1' },
+      ],
+    },
+
     // The label used to differentiate between different nodes (i.e. servers).
     per_node_label: 'instance',
 
@@ -625,6 +647,10 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'cortex-gw.*',
       },
+      ingester: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a',
+      },
     },
 
 
@@ -632,6 +658,9 @@
     alert_excluded_routes: [
       'debug_pprof',
     ],
+
+    // All query methods from IngesterServer interface. Basically everything except Push.
+    ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
 
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',
@@ -641,6 +670,10 @@
     // Set to at least twice the scrape interval; otherwise, recording rules will output no data.
     // Set to four times the scrape interval to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
     recording_rules_range_interval: '1m',
+
+    // Used to calculate range interval in alerts with default range selector under 10 minutes.
+    // Needed to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
+    base_alerts_range_interval_minutes: 1,
 
     // Used to inject rows into dashboards at specific places that support it.
     injectRows: {},
@@ -655,5 +688,11 @@
     // Disabled by default, because when -ingester.limit-inflight-requests-using-grpc-method-limiter and -distributor.limit-inflight-requests-using-grpc-method-limiter is
     // not used (default), then rejected requests are already counted as failures.
     show_rejected_requests_on_writes_dashboard: false,
+
+    // Show panels that use queries for gRPC-based ingestion (distributor -> ingester)
+    show_grpc_ingestion_panels: true,
+
+    // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
+    show_ingest_storage_panels: false,
   },
 }

@@ -341,7 +341,7 @@
   // Rollout operator.
   //
 
-  local rollout_operator_enabled = $._config.multi_zone_ingester_enabled || $._config.multi_zone_store_gateway_enabled,
+  local rollout_operator_enabled = $._config.multi_zone_ingester_enabled || $._config.multi_zone_store_gateway_enabled || $._config.cortex_compactor_concurrent_rollout_enabled,
 
   rollout_operator_args:: {
     'kubernetes.namespace': $._config.namespace,
@@ -356,11 +356,12 @@
       $.core.v1.containerPort.new('http-metrics', 8001),
     ]) +
     $.util.resourcesRequests('100m', '100Mi') +
-    $.util.resourcesLimits('1', '200Mi') +
+    $.util.resourcesLimits(null, '200Mi') +
     container.mixin.readinessProbe.httpGet.withPath('/ready') +
     container.mixin.readinessProbe.httpGet.withPort(8001) +
     container.mixin.readinessProbe.withInitialDelaySeconds(5) +
-    container.mixin.readinessProbe.withTimeoutSeconds(1),
+    container.mixin.readinessProbe.withTimeoutSeconds(1) +
+    $.jaeger_mixin,
 
   rollout_operator_deployment: if !rollout_operator_enabled then null else
     deployment.new('rollout-operator', 1, [$.rollout_operator_container]) +

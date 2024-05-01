@@ -15,7 +15,11 @@ weight: 10
 As an operator, you can migrate a Jsonnet deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
 The overview includes the steps required for any environment. To migrate deployment environments with Jsonnet, see [Migrate to Grafana Mimir using Jsonnet]({{< relref "#migrate-to-grafana-mimir-using-jsonnet" >}}).
 
-> **Note:** This document was tested with Cortex versions 1.10 and 1.11. It might work with more recent versions of Cortex, but that is not guaranteed.
+{{< admonition type="warning" >}}
+This document was tested with Cortex versions 1.10 and 1.11.
+
+It might work with more recent versions of Cortex, but it's not guaranteed.
+{{< /admonition >}}
 
 To migrate a Helm deployment of Cortex refer to [Migrate from Cortex](/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-cortex).
 
@@ -46,7 +50,9 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
 ## Notable changes
 
-> **Note:** For the full list of changes, refer to Mimir’s [CHANGELOG](https://github.com/grafana/mimir/blob/main/CHANGELOG.md).
+{{< admonition type="note" >}}
+For the full list of changes, refer to Mimir’s [CHANGELOG](https://github.com/grafana/mimir/blob/main/CHANGELOG.md).
+{{< /admonition >}}
 
 - The Grafana Mimir HTTP server defaults to listening on port 8080; Cortex defaults to listening on port 80.
   To maintain port 80 as the listening port, set `-server.http-listen-port=80`.
@@ -161,8 +167,10 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
 
    a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
 
-   > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
-   > To understand the required metrics sources, refer to [Additional resources metrics]({{< relref "../../manage/monitor-grafana-mimir/requirements#additional-resources-metrics" >}}).
+   {{< admonition type="note" >}}
+   Resource dashboards are enabled by default and require additional metrics sources.
+   To understand the required metrics sources, refer to [Additional resources metrics]({{< relref "../../manage/monitor-grafana-mimir/requirements#additional-resources-metrics" >}}).
+   {{< /admonition >}}
 
    b. Install the recording and alerting rules into the ruler or a Prometheus server.
 

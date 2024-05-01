@@ -6,6 +6,9 @@
     autoscaling_querier_min_replicas: error 'you must set autoscaling_querier_min_replicas in the _config',
     autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
     autoscaling_querier_target_utilization: 0.75,  // Target to utilize 75% querier workers on peak traffic, so we have 25% room for higher peaks.
+    autoscaling_querier_predictive_scaling_enabled: false,  // Use inflight queries from the past to predict the number of queriers needed.
+    autoscaling_querier_predictive_scaling_period: '6d23h30m',  // The period to consider when considering scheduler metrics for predictive scaling. This is usually slightly lower than the period of the repeating query events to give scaling up lead time.
+    autoscaling_querier_predictive_scaling_lookback: '30m',  // The time range to consider when considering scheduler metrics for predictive scaling. For example: if lookback is 30m and period is 6d23h30m, the querier will scale based on the maximum inflight queries between 6d23h30m and 7d0h0m ago.
 
     autoscaling_ruler_querier_enabled: false,
     autoscaling_ruler_querier_min_replicas: error 'you must set autoscaling_ruler_querier_min_replicas in the _config',
@@ -136,7 +139,20 @@
             //
             // We also have to ensure that the threshold is an integer (represented as a string)
             threshold: std.toString(std.parseInt(trigger.threshold)),
-          },
+          } + (
+            // Add support for KEDA's "ignoreNullValues" option. This defaults to "true", which means that if query
+            // returns no results, KEDA will ignore that and return value 0. By setting this value to "false",
+            // KEDA will return error in such case.
+            //
+            // Note that since our triggers use snake_case for fields, we check for "ignore_null_values", but KEDA
+            // expects camelCase (ie. "ignoreNullValues"), and string value, not boolean.
+            if std.objectHas(trigger, 'ignore_null_values') then {
+              ignoreNullValues:
+                if std.isBoolean(trigger.ignore_null_values)
+                then (if trigger.ignore_null_values then 'true' else 'false')
+                else trigger.ignore_null_values,  // not boolean
+            } else {}
+          ),
         } + (
           // Be aware that the default value for the trigger "metricType" field is "AverageValue"
           // (see https://keda.sh/docs/2.9/concepts/scaling-deployments/#triggers), which means that KEDA will
@@ -157,31 +173,47 @@
     min_replica_count: replicasWithWeight(min_replicas, weight),
     max_replica_count: replicasWithWeight(max_replicas, weight),
 
-    triggers: [
-      {
-        metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+    triggers:
+      [
+        {
+          metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        // Each query scheduler tracks *at regular intervals* the number of inflight requests
-        // (both enqueued and processing queries) as a summary. With the following query we target
-        // to have enough querier workers to run the max observed inflight requests 50% of time.
-        //
-        // This metric covers the case queries are piling up in the query-scheduler queue.
-        query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[1m]))' % [query_scheduler_container_name, $._config.namespace], weight),
+          // Each query scheduler tracks *at regular intervals* the number of inflight requests
+          // (both enqueued and processing queries) as a summary. With the following query we target
+          // to have enough querier workers to run the max observed inflight requests 50% of time.
+          //
+          // This metric covers the case queries are piling up in the query-scheduler queue.
+          query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[1m]))' % [query_scheduler_container_name, $._config.namespace], weight),
 
-        threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
-      },
-      {
-        metric_name: 'cortex_%s_hpa_%s_requests_duration' % [std.strReplace(name, '-', '_'), $._config.namespace],
+          threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+        },
+        {
+          metric_name: 'cortex_%s_hpa_%s_requests_duration' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        // The total requests duration / second is a good approximation of the number of querier workers used.
-        //
-        // This metric covers the case queries are not necessarily piling up in the query-scheduler queue,
-        // but queriers are busy.
-        query: metricWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%s",namespace="%s"}[1m]))' % [querier_container_name, $._config.namespace], weight),
+          // The total requests duration / second is a good approximation of the number of querier workers used.
+          //
+          // This metric covers the case queries are not necessarily piling up in the query-scheduler queue,
+          // but queriers are busy.
+          query: metricWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%s",namespace="%s"}[1m]))' % [querier_container_name, $._config.namespace], weight),
 
-        threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
-      },
-    ],
+          threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+        },
+      ]
+      + if !$._config.autoscaling_querier_predictive_scaling_enabled then [] else [
+        {
+          metric_name: 'cortex_%s_hpa_%s_7d_offset' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+          // Scale queriers according to how many queriers would have been sufficient to handle the load $period ago.
+          // We use the query scheduler metric which includes active queries and queries in the queue.
+          query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(container)s",namespace="%(namespace)s",quantile="0.5"}[%(lookback)s] offset %(period)s))' % {
+            container: query_scheduler_container_name,
+            namespace: $._config.namespace,
+            lookback: $._config.autoscaling_querier_predictive_scaling_lookback,
+            period: $._config.autoscaling_querier_predictive_scaling_period,
+          }, weight),
+          threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+        },
+      ],
   }) + {
     spec+: {
       advanced: {
@@ -239,7 +271,9 @@
   // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
   // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the CPU utilization
   // of containers there are running at any given time, without suffering the PromQL lookback period.
-
+  //
+  // The second section of the query ensures that it only returns a result if all expected samples were
+  // present for the CPU metric over the last 15 minutes.
   local cpuHPAQuery = |||
     max_over_time(
       sum(
@@ -248,6 +282,14 @@
         max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
       )[15m:]
     ) * 1000
+    and
+    count (
+      count_over_time(
+        present_over_time(
+          container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"}[1m]
+        )[15m:1m]
+      ) >= 15
+    )
   |||,
 
   // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across
@@ -255,8 +297,11 @@
   // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
   // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
   // of containers there are running at any given time, without suffering the PromQL lookback period.
-  // If a pod is terminated because it OOMs, we still want to scale up -- add the memory resource request of OOMing
-  //  pods to the memory metric calculation.
+  //
+  // The second section of the query adds pods that were terminated due to an OOM in the memory calculation.
+  //
+  // The third section of the query ensures that it only returns a result if all expected samples were
+  // present for the memory metric over the last 15 minutes.
   local memoryHPAQuery = |||
     max_over_time(
       sum(
@@ -275,6 +320,14 @@
       and
       max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"})
       or vector(0)
+    )
+    and
+    count (
+      count_over_time(
+        present_over_time(
+          container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"}[1m]
+        )[15m:1m]
+      ) >= 15
     )
   |||,
 
@@ -308,6 +361,9 @@
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization)),
+          // Disable ignoring null values. This allows HPAs to effectively pause when metrics are unavailable rather than scaling
+          // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
+          ignore_null_values: false,
         },
         {
           metric_name: '%s%s_memory_hpa_%s' %
@@ -320,6 +376,9 @@
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
+          // Disable ignoring null values. This allows HPAs to effectively pause when metrics are unavailable rather than scaling
+          // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
+          ignore_null_values: false,
         },
       ],
     },
@@ -354,7 +413,7 @@
     // This is due to KEDA requiring an integer.
 
     if (std.isString(str) && std.endsWith(str, 'm')) then (
-      std.rstripChars(str, 'm')
+      std.parseInt(std.rstripChars(str, 'm'))
     ) else (
       std.parseJson(str + '') * 1000
     )

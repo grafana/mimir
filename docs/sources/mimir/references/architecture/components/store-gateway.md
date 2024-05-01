@@ -66,13 +66,19 @@ When the querier queries blocks via a store-gateway, the response contains the l
 If a querier attempts to query a block that the store-gateway has not loaded, the querier retries the query on a different store-gateway up to the `-store-gateway.sharding-ring.replication-factor` value, which by default is `3`.
 The query fails if the block can't be successfully queried from any replica.
 
-> **Note:** You must configure the [hash ring]({{< relref "../hash-ring" >}}) via the `-store-gateway.sharding-ring.*` flags or their respective YAML configuration parameters.
+{{< admonition type="note" >}}
+You must configure the [hash ring]({{< relref "../hash-ring" >}}) via the `-store-gateway.sharding-ring.*` flags or their respective YAML configuration parameters.
+{{< /admonition >}}
 
 ### Sharding strategy
 
 The store-gateway uses shuffle-sharding to divide the blocks of each tenant across a subset of store-gateway instances.
 
-> **Note:** When shuffle-sharding is in use, the number of store-gateway instances that load the blocks of a tenant is limited, which means that the blast radius of issues introduced by the tenant's workload is confined to its shard instances.
+{{< admonition type="note" >}}
+When shuffle-sharding is in use, only a subset of store-gateway instances load the blocks of a tenant.
+
+This confines blast radius of issues introduced by the tenant's workload to its shard instances.
+{{< /admonition >}}
 
 The `-store-gateway.tenant-shard-size` flag (or their respective YAML configuration parameters) determines the default number of store-gateway instances per tenant.
 The `store_gateway_tenant_shard_size` in the limits overrides can override the shard size on a per-tenant basis.
@@ -188,7 +194,9 @@ Chunks can only be cached in Memcached.
 To enable chunks cache, set `-blocks-storage.bucket-store.chunks-cache.backend=memcached`.
 You can configure the Memcached client via flags that include the prefix `-blocks-storage.bucket-store.chunks-cache.memcached.*`.
 
-> **Note:** There are additional low-level flags that begin with the prefix `-blocks-storage.bucket-store.chunks-cache.*` that you can use to configure chunks cache.
+{{< admonition type="note" >}}
+There are additional low-level flags that begin with the prefix `-blocks-storage.bucket-store.chunks-cache.*` that you can use to configure chunks cache.
+{{< /admonition >}}
 
 ### Metadata cache
 
@@ -204,11 +212,17 @@ Using the metadata cache reduces the number of API calls to long-term storage an
 
 To enable metadata cache, set `-blocks-storage.bucket-store.metadata-cache.backend`.
 
-> **Note**: Currently, only `memcached` backend is supported. The Memcached client includes additional configuration available via flags that begin with the prefix `-blocks-storage.bucket-store.metadata-cache.memcached.*`.
+{{< admonition type="note" >}}
+Mimir only supports the `memcached` backend for the metadata cache.
+
+The Memcached client includes additional configuration available via flags that begin with the prefix `-blocks-storage.bucket-store.metadata-cache.memcached.*`.
+{{< /admonition >}}
 
 Additional flags for configuring metadata cache begin with the prefix `-blocks-storage.bucket-store.metadata-cache.*`. By configuring TTL to zero or a negative value, caching of given item type is disabled.
 
-> **Note:** The same memcached backend cluster should be shared between store-gateways and queriers.\_
+{{< admonition type="note" >}}
+You should use the same Memcached backend cluster for both the store-gateways and queriers.
+{{< /admonition >}}
 
 ## Store-gateway HTTP endpoints
 

@@ -6,13 +6,12 @@
 package storegateway
 
 import (
+	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-// This struct aggregates metrics exported by Thanos MetaFetcher
+// MetadataFetcherMetrics aggregates metrics exported by Thanos MetaFetcher
 // and re-exports those aggregates as Mimir metrics.
 type MetadataFetcherMetrics struct {
 	regs *dskit_metrics.TenantRegistries
@@ -24,9 +23,9 @@ type MetadataFetcherMetrics struct {
 	synced       *prometheus.Desc
 }
 
-func NewMetadataFetcherMetrics() *MetadataFetcherMetrics {
+func NewMetadataFetcherMetrics(logger log.Logger) *MetadataFetcherMetrics {
 	return &MetadataFetcherMetrics{
-		regs: dskit_metrics.NewTenantRegistries(util_log.Logger),
+		regs: dskit_metrics.NewTenantRegistries(logger),
 
 		// When mapping new metadata fetcher metrics from Thanos, please remember to add these metrics
 		// to our internal fetcherMetrics implementation too.

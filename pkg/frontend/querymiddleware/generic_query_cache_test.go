@@ -131,7 +131,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 			expectedStoredToCache:    false, // Should not store anything to the cache.
 		},
 		"should fetch the response from the downstream and overwrite the cached response if corrupted": {
-			init: func(t *testing.T, c cache.Cache, _, reqHashedCacheKey string) {
+			init: func(_ *testing.T, c cache.Cache, _, reqHashedCacheKey string) {
 				c.StoreAsync(map[string][]byte{reqHashedCacheKey: []byte("corrupted")}, time.Minute)
 			},
 			cacheTTL:                 time.Minute,
@@ -226,7 +226,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 						initialStoreCallsCount := cacheBackend.CountStoreCalls()
 
 						reg := prometheus.NewPedanticRegistry()
-						rt := newRoundTripper(cacheBackend, DefaultCacheKeyGenerator{}, limits, downstream, testutil.NewLogger(t), reg)
+						rt := newRoundTripper(cacheBackend, DefaultCacheKeyGenerator{codec: NewPrometheusCodec(reg, 0*time.Minute, formatJSON)}, limits, downstream, testutil.NewLogger(t), reg)
 						res, err := rt.RoundTrip(req)
 						require.NoError(t, err)
 

@@ -3,6 +3,7 @@ The following are the main/default maintainers:
 - Andy Asp [@andyasp](https://github.com/andyasp) ([Grafana Labs](https://grafana.com/))
 - Arve Knudsen — [@aknuds1](https://github.com/aknuds1) ([Grafana Labs](https://grafana.com/))
 - Bryan Boreham — [@bboreham](https://github.com/bboreham) ([Grafana Labs](https://grafana.com/))
+- Casie Chen — [@chencs](https://github.com/chencs) ([Grafana Labs](https://grafana.com/))
 - Charles Korn — [@charleskorn](https://github.com/charleskorn) ([Grafana Labs](https://grafana.com/))
 - Dimitar Dimitrov - [@dimitarvdimitrov](https://github.com/dimitarvdimitrov) ([Grafana Labs](https://grafana.com/))
 - Fayzal Ghantiwala [@fayzal-g](https://github.com/fayzal) ([Grafana Labs](https://grafana.com/))
@@ -32,7 +33,6 @@ Some parts of the codebase have other maintainers, the package paths also includ
 
 - `docs`:
   - Jack Baldry - [@jdbaldry](https://github.com/jdbaldry) ([Grafana Labs](https://grafana.com/))
-  - Ursula Kallio — [@osg-grafana](https://github.com/osg-grafana) ([Grafana Labs](https://grafana.com/))
 - `pkg/alertmanager`:
   - Josh Abreu Mesa — [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
   - Steve Simpson - [@stevesg](https://github.com/stevesg) ([Grafana Labs](https://grafana.com/))

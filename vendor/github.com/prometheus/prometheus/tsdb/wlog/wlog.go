@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -32,7 +33,6 @@ import (
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
@@ -114,6 +114,10 @@ func (e *CorruptionErr) Error() string {
 		return fmt.Sprintf("corruption after %d bytes: %s", e.Offset, e.Err)
 	}
 	return fmt.Sprintf("corruption in segment %s at %d: %s", SegmentName(e.Dir, e.Segment), e.Offset, e.Err)
+}
+
+func (e *CorruptionErr) Unwrap() error {
+	return e.Err
 }
 
 // OpenWriteSegment opens segment k in dir. The returned segment is ready for new appends.
@@ -224,10 +228,28 @@ type wlMetrics struct {
 	currentSegment  prometheus.Gauge
 	writesFailed    prometheus.Counter
 	walFileSize     prometheus.GaugeFunc
+
+	r prometheus.Registerer
+}
+
+func (w *wlMetrics) Unregister() {
+	if w.r == nil {
+		return
+	}
+	w.r.Unregister(w.fsyncDuration)
+	w.r.Unregister(w.pageFlushes)
+	w.r.Unregister(w.pageCompletions)
+	w.r.Unregister(w.truncateFail)
+	w.r.Unregister(w.truncateTotal)
+	w.r.Unregister(w.currentSegment)
+	w.r.Unregister(w.writesFailed)
+	w.r.Unregister(w.walFileSize)
 }
 
 func newWLMetrics(w *WL, r prometheus.Registerer) *wlMetrics {
-	m := &wlMetrics{}
+	m := &wlMetrics{
+		r: r,
+	}
 
 	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
 		Name:       "fsync_duration_seconds",
@@ -873,6 +895,8 @@ func (w *WL) Close() (err error) {
 	if err := w.segment.Close(); err != nil {
 		level.Error(w.logger).Log("msg", "close previous segment", "err", err)
 	}
+
+	w.metrics.Unregister()
 	w.closed = true
 	return nil
 }
@@ -970,7 +994,7 @@ type segmentBufReader struct {
 	off  int // Offset of read data into current segment.
 }
 
-func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
+func NewSegmentBufReader(segs ...*Segment) io.ReadCloser {
 	if len(segs) == 0 {
 		return &segmentBufReader{}
 	}
@@ -981,15 +1005,16 @@ func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	}
 }
 
-func NewSegmentBufReaderWithOffset(offset int, segs ...*Segment) (sbr *segmentBufReader, err error) {
+func NewSegmentBufReaderWithOffset(offset int, segs ...*Segment) (io.ReadCloser, error) {
 	if offset == 0 || len(segs) == 0 {
 		return NewSegmentBufReader(segs...), nil
 	}
 
-	sbr = &segmentBufReader{
+	sbr := &segmentBufReader{
 		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
 		segs: segs,
 	}
+	var err error
 	if offset > 0 {
 		_, err = sbr.buf.Discard(offset)
 	}

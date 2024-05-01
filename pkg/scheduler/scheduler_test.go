@@ -135,14 +135,6 @@ func TestSchedulerEnqueueWithCancel(t *testing.T) {
 	verifyNoPendingRequestsLeft(t, scheduler)
 }
 
-func initQuerierLoop(t *testing.T, querierClient schedulerpb.SchedulerForQuerierClient, querier string) schedulerpb.SchedulerForQuerier_QuerierLoopClient {
-	querierLoop, err := querierClient.QuerierLoop(context.Background())
-	require.NoError(t, err)
-	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: querier}))
-
-	return querierLoop
-}
-
 func TestSchedulerEnqueueByMultipleFrontendsWithCancel(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
 
@@ -552,6 +544,13 @@ func initFrontendLoop(t *testing.T, client schedulerpb.SchedulerForFrontendClien
 	return loop
 }
 
+func initQuerierLoop(t *testing.T, querierClient schedulerpb.SchedulerForQuerierClient, querier string) schedulerpb.SchedulerForQuerier_QuerierLoopClient {
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: querier}))
+
+	return querierLoop
+}
 func frontendToScheduler(t *testing.T, frontendLoop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *schedulerpb.FrontendToScheduler) {
 	require.NoError(t, frontendLoop.Send(req))
 	msg, err := frontendLoop.Recv()
@@ -607,6 +606,11 @@ func (f *frontendMock) QueryResult(_ context.Context, request *frontendv2pb.Quer
 
 	f.resp[request.QueryID] = request.HttpResponse
 	return &frontendv2pb.QueryResultResponse{}, nil
+}
+
+// satisfy frontendv2pb.FrontendForQuerierServer interface
+func (f *frontendMock) QueryResultStream(_ frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	panic("unexpected call to QueryResultStream")
 }
 
 func (f *frontendMock) getRequest(queryID uint64) *httpgrpc.HTTPResponse {

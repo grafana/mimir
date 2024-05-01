@@ -15,7 +15,7 @@ var CompactionOrders = []string{CompactionOrderOldestFirst, CompactionOrderNewes
 
 type JobsOrderFunc func(jobs []*Job) []*Job
 
-// GetJobsOrderFunction returns jobs ordering function, or nil, if name doesn't refer to any function.
+// GetJobsOrderFunction returns a jobs ordering function, or nil, if name doesn't refer to any function.
 func GetJobsOrderFunction(name string) JobsOrderFunc {
 	switch name {
 	case CompactionOrderNewestFirst:

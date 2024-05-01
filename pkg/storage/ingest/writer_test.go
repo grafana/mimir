@@ -11,14 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kprom"
@@ -26,6 +24,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
 func TestMain(m *testing.M) {
@@ -51,12 +50,12 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should block until data has been committed to storage", func(t *testing.T) {
 		t.Parallel()
 
-		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		produceRequestProcessed := atomic.NewBool(false)
 
-		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
 			// Add a delay, so that if WriteSync() will not wait then the test will fail.
 			time.Sleep(time.Second)
 			produceRequestProcessed.Store(true)
@@ -111,7 +110,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			receivedBatchesLength   []int
 		)
 
-		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -133,11 +132,10 @@ func TestWriter_WriteSync(t *testing.T) {
 		})
 
 		wg := sync.WaitGroup{}
-		wg.Add(3)
 
 		// Write the first record, which is expected to be sent immediately.
 		runAsync(&wg, func() {
-			require.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		// Once the 1st Produce request is received by the server but still processing (there's a 1s sleep),
@@ -147,17 +145,17 @@ func TestWriter_WriteSync(t *testing.T) {
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 			defer cancel()
 
-			require.Equal(t, context.DeadlineExceeded, writer.WriteSync(ctxWithTimeout, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
+			assert.Equal(t, context.DeadlineExceeded, writer.WriteSync(ctxWithTimeout, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			require.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		wg.Wait()
 
 		// Cancelling the context doesn't actually prevent that data from being sent to the wire.
-		assert.Equal(t, []int{1, 2}, receivedBatchesLength)
+		require.Equal(t, []int{1, 2}, receivedBatchesLength)
 	})
 
 	t.Run("should batch multiple subsequent records together while sending the previous batches to Kafka once max in-flight Produce requests limit has been reached", func(t *testing.T) {
@@ -171,7 +169,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			receivedBatchesLength   []int
 		)
 
-		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		// Allow only 1 in-flight Produce request in this test, to easily reproduce the scenario.
@@ -188,7 +186,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			}
 
 			numRecords, err := getProduceRequestRecordsCount(request.(*kmsg.ProduceRequest))
-			require.NoError(t, err)
+			assert.NoError(t, err)
 
 			receivedBatchesLengthMx.Lock()
 			receivedBatchesLength = append(receivedBatchesLength, numRecords)
@@ -198,35 +196,34 @@ func TestWriter_WriteSync(t *testing.T) {
 		})
 
 		wg := sync.WaitGroup{}
-		wg.Add(3)
 
 		runAsync(&wg, func() {
-			require.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			require.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			// Ensure the 3rd call to WriteSync() is issued slightly after the 2nd one,
+			// Ensure the 3rd call to Write() is issued slightly after the 2nd one,
 			// otherwise records may be batched just because of concurrent append to it
 			// and not because it's waiting for the 1st call to complete.
 			time.Sleep(100 * time.Millisecond)
 
-			require.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		wg.Wait()
 
 		// We expect that the next 2 records have been appended to the next batch.
-		assert.Equal(t, []int{1, 2}, receivedBatchesLength)
+		require.Equal(t, []int{1, 2}, receivedBatchesLength)
 	})
 
 	t.Run("should return error on non existing partition", func(t *testing.T) {
 		t.Parallel()
 
-		_, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		// Write to a non-existing partition.
@@ -237,11 +234,11 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should return an error and stop retrying sending a record once the write timeout expires", func(t *testing.T) {
 		t.Parallel()
 
-		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
 		writer, _ := createTestWriter(t, kafkaCfg)
 
-		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
 			// Keep failing every request.
 			cluster.KeepControl()
 			return nil, errors.New("mock error"), true
@@ -251,27 +248,26 @@ func TestWriter_WriteSync(t *testing.T) {
 		require.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
 		elapsedTime := time.Since(startTime)
 
-		assert.Greater(t, elapsedTime, kafkaCfg.WriteTimeout/2)
-		assert.Less(t, elapsedTime, kafkaCfg.WriteTimeout*3) // High tolerance because the client does a backoff and timeout is evaluated after the backoff.
+		require.Greater(t, elapsedTime, kafkaCfg.WriteTimeout/2)
+		require.Less(t, elapsedTime, kafkaCfg.WriteTimeout*3) // High tolerance because the client does a backoff and timeout is evaluated after the backoff.
 	})
 
 	// This test documents how the Kafka client works. It's not what we ideally want, but it's how it works.
 	t.Run("should fail all buffered records and close the connection on timeout while waiting for Produce response", func(t *testing.T) {
 		t.Parallel()
 
-		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
 		writer, _ := createTestWriter(t, kafkaCfg)
 
 		var (
 			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
+			wg                   = sync.WaitGroup{}
 		)
 
-		wg := sync.WaitGroup{}
-		wg.Add(3)
-
-		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		wg.Add(1)
+		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
 			// Ensure the test waits for this too, since the client request will fail earlier
 			// (if we don't wait, the test will end before this function and then goleak will
 			// report a goroutine leak).
@@ -292,7 +288,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		// The 1st request is expected to fail because Kafka will take longer than the configured timeout.
 		runAsync(&wg, func() {
 			startTime := time.Now()
-			require.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
+			assert.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
 			elapsedTime := time.Since(startTime)
 
 			// It should take nearly the client's write timeout.
@@ -310,7 +306,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			time.Sleep(kafkaCfg.WriteTimeout + writerRequestTimeoutOverhead - delay)
 
 			startTime := time.Now()
-			require.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
+			assert.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
 			elapsedTime := time.Since(startTime)
 
 			// We expect to fail once the previous request fails, so it should take nearly the client's write timeout
@@ -349,6 +345,8 @@ func getProduceRequestRecordsCount(req *kmsg.ProduceRequest) (int, error) {
 }
 
 func runAsync(wg *sync.WaitGroup, fn func()) {
+	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
 		fn()
@@ -356,49 +354,13 @@ func runAsync(wg *sync.WaitGroup, fn func()) {
 }
 
 func runAsyncAfter(wg *sync.WaitGroup, waitFor chan struct{}, fn func()) {
+	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
 		<-waitFor
 		fn()
 	}()
-}
-
-// runAsyncAndAssertCompletionOrder runs all executors functions concurrently and asserts that the functions
-// completes in the given order.
-func runAsyncAndAssertCompletionOrder(t *testing.T, executors ...func()) {
-	wg := sync.WaitGroup{}
-	wg.Add(len(executors))
-
-	// Keep track of the actual execution order.
-	var (
-		actualOrderMx = sync.Mutex{}
-		actualOrder   = make([]int, 0, len(executors))
-		expectedOrder = make([]int, 0, len(executors))
-	)
-
-	for i, executor := range executors {
-		i := i
-		executor := executor
-		expectedOrder = append(expectedOrder, i)
-
-		runAsync(&wg, func() {
-			executor()
-
-			actualOrderMx.Lock()
-			actualOrder = append(actualOrder, i)
-			actualOrderMx.Unlock()
-		})
-	}
-
-	wg.Wait()
-
-	assert.Equal(t, expectedOrder, actualOrder)
-}
-
-func createTestContextWithTimeout(t *testing.T, timeout time.Duration) context.Context {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	t.Cleanup(cancel)
-	return ctx
 }
 
 func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
@@ -410,19 +372,6 @@ func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
 	cfg.WriteTimeout = 2 * time.Second
 
 	return cfg
-}
-
-func createTestCluster(t *testing.T, numPartitions int32, topicName string) (*kfake.Cluster, string) {
-	cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(numPartitions, topicName))
-	require.NoError(t, err)
-	t.Cleanup(cluster.Close)
-
-	addrs := cluster.ListenAddrs()
-	require.Len(t, addrs, 1)
-
-	addSupportForConsumerGroups(t, cluster, topicName, numPartitions)
-
-	return cluster, addrs[0]
 }
 
 func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gatherer) {
@@ -440,8 +389,13 @@ func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gather
 
 func createTestKafkaClient(t *testing.T, cfg KafkaConfig) *kgo.Client {
 	metrics := kprom.NewMetrics("", kprom.Registerer(prometheus.NewPedanticRegistry()))
+	opts := commonKafkaClientOptions(cfg, metrics, test.NewTestingLogger(t))
 
-	client, err := kgo.NewClient(commonKafkaClientOptions(cfg, metrics, log.NewNopLogger())...)
+	// Use the manual partitioner because produceRecord() utility explicitly specifies
+	// the partition to write to in the kgo.Record itself.
+	opts = append(opts, kgo.RecordPartitioner(kgo.ManualPartitioner()))
+
+	client, err := kgo.NewClient(opts...)
 	require.NoError(t, err)
 
 	// Automatically close it at the end of the test.

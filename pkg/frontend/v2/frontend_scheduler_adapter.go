@@ -4,7 +4,6 @@ package v2
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -22,6 +21,7 @@ type frontendToSchedulerAdapter struct {
 	log    log.Logger
 	cfg    Config
 	limits Limits
+	codec  querymiddleware.Codec
 }
 
 func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
@@ -67,30 +67,30 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 	}
 
 	switch {
-	case querymiddleware.IsRangeQuery(httpRequest.URL.Path):
-		start, end, _, err := querymiddleware.DecodeRangeQueryTimeParams(httpRequest)
+	case querymiddleware.IsRangeQuery(httpRequest.URL.Path), querymiddleware.IsInstantQuery(httpRequest.URL.Path):
+		decodedRequest, err := a.codec.DecodeMetricsQueryRequest(httpRequest.Context(), httpRequest)
 		if err != nil {
 			return nil, err
 		}
-		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
-	case querymiddleware.IsInstantQuery(httpRequest.URL.Path):
-		time, err := querymiddleware.DecodeInstantQueryTimeParams(httpRequest, time.Now)
-		if err != nil {
-			return nil, err
-		}
-		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, time, time, now), nil
+		minT := decodedRequest.GetMinT()
+		maxT := decodedRequest.GetMaxT()
+
+		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, minT, maxT, now), nil
 	case querymiddleware.IsLabelsQuery(httpRequest.URL.Path):
-		start, end, err := querymiddleware.DecodeLabelsQueryTimeParams(httpRequest)
+		decodedRequest, err := a.codec.DecodeLabelsQueryRequest(httpRequest.Context(), httpRequest)
 		if err != nil {
 			return nil, err
 		}
-		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
-	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path):
+
+		return a.queryComponentQueueDimensionFromTimeParams(
+			tenantIDs, decodedRequest.GetStart(), decodedRequest.GetEnd(), now,
+		), nil
+	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path):
 		// cardinality only hits ingesters
 		return []string{ShouldQueryIngestersQueueDimension}, nil
 	default:
 		// no query time params to parse; cannot infer query component
-		level.Warn(a.log).Log("msg", "unsupported request type", "query", fmt.Sprintf("%+v", httpRequest))
+		level.Debug(a.log).Log("msg", "unsupported request type for additional queue dimensions", "query", httpRequest.URL.String())
 		return nil, nil
 	}
 }

@@ -8,11 +8,14 @@ package storegateway
 import (
 	"sync"
 	"time"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 // queryStats holds query statistics. This data structure is NOT concurrency safe.
 type queryStats struct {
-	blocksQueried int
+	blocksQueried            int
+	blocksQueriedByBlockMeta map[blockQueriedMeta]int
 
 	postingsTouched          int
 	postingsTouchedSizeSum   int
@@ -67,17 +70,43 @@ type queryStats struct {
 	streamingSeriesWaitBatchLoadedDuration time.Duration
 
 	// The Series() request timing breakdown.
-	streamingSeriesExpandPostingsDuration  time.Duration
-	streamingSeriesEncodeResponseDuration  time.Duration
-	streamingSeriesSendResponseDuration    time.Duration
-	streamingSeriesIndexHeaderLoadDuration time.Duration
+	streamingSeriesExpandPostingsDuration       time.Duration
+	streamingSeriesEncodeResponseDuration       time.Duration
+	streamingSeriesSendResponseDuration         time.Duration
+	streamingSeriesIndexHeaderLoadDuration      time.Duration
+	streamingSeriesConcurrencyLimitWaitDuration time.Duration
 
 	// streamingSeriesAmbientTime is the total wall clock time spent serving the request. It includes all other durations.
 	streamingSeriesAmbientTime time.Duration
 }
 
+func newQueryStats() *queryStats {
+	return &queryStats{
+		blocksQueriedByBlockMeta: make(map[blockQueriedMeta]int),
+	}
+}
+
+// blockQueriedMeta encapsulate a block's thanos source, compaction level, and if it
+// was created from out-or-order samples
+type blockQueriedMeta struct {
+	source     block.SourceType
+	level      int
+	outOfOrder bool
+}
+
+func newBlockQueriedMeta(meta *block.Meta) blockQueriedMeta {
+	return blockQueriedMeta{
+		source:     meta.Thanos.Source,
+		level:      meta.Compaction.Level,
+		outOfOrder: meta.Compaction.FromOutOfOrder(),
+	}
+}
+
 func (s queryStats) merge(o *queryStats) *queryStats {
 	s.blocksQueried += o.blocksQueried
+	for m, count := range o.blocksQueriedByBlockMeta {
+		s.blocksQueriedByBlockMeta[m] += count
+	}
 
 	s.postingsTouched += o.postingsTouched
 	s.postingsTouchedSizeSum += o.postingsTouchedSizeSum
@@ -130,6 +159,7 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.streamingSeriesAmbientTime += o.streamingSeriesAmbientTime
 
 	s.streamingSeriesIndexHeaderLoadDuration += o.streamingSeriesIndexHeaderLoadDuration
+	s.streamingSeriesConcurrencyLimitWaitDuration += o.streamingSeriesConcurrencyLimitWaitDuration
 
 	return &s
 }
@@ -142,7 +172,7 @@ type safeQueryStats struct {
 
 func newSafeQueryStats() *safeQueryStats {
 	return &safeQueryStats{
-		unsafeStats: &queryStats{},
+		unsafeStats: newQueryStats(),
 	}
 }
 

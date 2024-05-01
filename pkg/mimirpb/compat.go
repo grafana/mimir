@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
 
@@ -89,13 +88,23 @@ func (req *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []
 	return req
 }
 
+// AddExemplarsAt appends exemplars to the timeseries at index i.
+// This is needed as the Add*Series functions only allow for a single exemplar
+// to be added per time series for simplicity.
+func (req *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteRequest {
+	for _, e := range exemplars {
+		req.Timeseries[i].Exemplars = append(req.Timeseries[i].Exemplars, *e)
+	}
+	return req
+}
+
 // FromLabelAdaptersToMetric converts []LabelAdapter to a model.Metric.
 // Don't do this on any performance sensitive paths.
 func FromLabelAdaptersToMetric(ls []LabelAdapter) model.Metric {
 	return util.LabelsToMetric(FromLabelAdaptersToLabels(ls))
 }
 
-// formatLabelSet formats label adapters as a metric name with labels, while preserving
+// FromLabelAdaptersToString formats label adapters as a metric name with labels, while preserving
 // label order, and keeping duplicates. If there are multiple "__name__" labels, only
 // first one is used as metric name, other ones will be included as regular labels.
 func FromLabelAdaptersToString(ls []LabelAdapter) string {
@@ -266,6 +275,7 @@ func fromSpansProtoToSpans(s []BucketSpan) []histogram.Span {
 	return *(*[]histogram.Span)(unsafe.Pointer(&s))
 }
 
+// FromHistogramToHistogramProto does not make a deepcopy, slices are referenced
 func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Histogram {
 	if h == nil {
 		panic("FromHistogramToHistogramProto called on nil histogram")
@@ -287,6 +297,7 @@ func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Hist
 	}
 }
 
+// FromFloatHistogramToHistogramProto does not make a deepcopy, slices are referenced
 func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) Histogram {
 	if fh == nil {
 		panic("FromFloatHistogramToHistogramProto called on nil histogram")
@@ -352,7 +363,7 @@ func FromFloatHistogramToPromHistogram(h *histogram.FloatHistogram) *model.Sampl
 }
 
 func FromHistogramToPromHistogram(h *histogram.Histogram) *model.SampleHistogram {
-	return FromFloatHistogramToPromHistogram(h.ToFloat())
+	return FromFloatHistogramToPromHistogram(h.ToFloat(nil))
 }
 
 type byLabel []LabelAdapter
@@ -363,26 +374,26 @@ func (s byLabel) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 
 // MetricMetadataMetricTypeToMetricType converts a metric type from our internal client
 // to a Prometheus one.
-func MetricMetadataMetricTypeToMetricType(mt MetricMetadata_MetricType) textparse.MetricType {
+func MetricMetadataMetricTypeToMetricType(mt MetricMetadata_MetricType) model.MetricType {
 	switch mt {
 	case UNKNOWN:
-		return textparse.MetricTypeUnknown
+		return model.MetricTypeUnknown
 	case COUNTER:
-		return textparse.MetricTypeCounter
+		return model.MetricTypeCounter
 	case GAUGE:
-		return textparse.MetricTypeGauge
+		return model.MetricTypeGauge
 	case HISTOGRAM:
-		return textparse.MetricTypeHistogram
+		return model.MetricTypeHistogram
 	case GAUGEHISTOGRAM:
-		return textparse.MetricTypeGaugeHistogram
+		return model.MetricTypeGaugeHistogram
 	case SUMMARY:
-		return textparse.MetricTypeSummary
+		return model.MetricTypeSummary
 	case INFO:
-		return textparse.MetricTypeInfo
+		return model.MetricTypeInfo
 	case STATESET:
-		return textparse.MetricTypeStateset
+		return model.MetricTypeStateset
 	default:
-		return textparse.MetricTypeUnknown
+		return model.MetricTypeUnknown
 	}
 }
 

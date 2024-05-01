@@ -6,7 +6,6 @@
 package indexheader
 
 import (
-	"context"
 	"flag"
 	"io"
 	"time"
@@ -34,20 +33,20 @@ type Reader interface {
 	io.Closer
 
 	// IndexVersion returns version of index.
-	IndexVersion(ctx context.Context) (int, error)
+	IndexVersion() (int, error)
 
 	// PostingsOffset returns start and end offsets of postings for given name and value.
 	// The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
 	// The End is exclusive and is typically the byte offset of the CRC32 field.
 	// The End might be bigger than the actual posting ending, but not larger than the whole index file.
 	// NotFoundRangeErr is returned when no index can be found for given name and value.
-	PostingsOffset(ctx context.Context, name string, value string) (index.Range, error)
+	PostingsOffset(name string, value string) (index.Range, error)
 
 	// LookupSymbol returns string based on given reference.
 	// Error is return if the symbol can't be found.
-	LookupSymbol(ctx context.Context, o uint32) (string, error)
+	LookupSymbol(o uint32) (string, error)
 
-	SymbolsReader(ctx context.Context) (streamindex.SymbolsReader, error)
+	SymbolsReader() (streamindex.SymbolsReader, error)
 
 	// LabelValuesOffsets returns all label values and the offsets for their posting lists for given label name or error.
 	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
@@ -56,25 +55,24 @@ type Reader interface {
 	// then empty slice is returned and no error.
 	// If non-empty prefix is provided, only posting lists starting with the prefix are returned.
 	// If non-nil filter is provided, then only posting lists for which filter returns true are returned.
-	LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error)
+	LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error)
 
 	// LabelNames returns all label names in sorted order.
-	LabelNames(ctx context.Context) ([]string, error)
+	LabelNames() ([]string, error)
 }
 
 type Config struct {
 	MaxIdleFileHandles         uint `yaml:"max_idle_file_handles" category:"advanced"`
 	EagerLoadingStartupEnabled bool `yaml:"eager_loading_startup_enabled" category:"experimental"`
+
 	// Controls whether index-header lazy loading is enabled.
 	LazyLoadingEnabled     bool          `yaml:"lazy_loading_enabled" category:"advanced"`
 	LazyLoadingIdleTimeout time.Duration `yaml:"lazy_loading_idle_timeout" category:"advanced"`
 
 	// Maximum index-headers loaded into store-gateway concurrently
-	LazyLoadingConcurrency int `yaml:"lazy_loading_concurrency" category:"experimental"`
+	LazyLoadingConcurrency int `yaml:"lazy_loading_concurrency" category:"advanced"`
 
-	// Controls whether persisting a sparse version of the index-header to disk is enabled.
-	SparsePersistenceEnabled bool `yaml:"sparse_persistence_enabled" category:"experimental"`
-	VerifyOnLoad             bool `yaml:"verify_on_load" category:"advanced"`
+	VerifyOnLoad bool `yaml:"verify_on_load" category:"advanced"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -83,7 +81,6 @@ func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.DurationVar(&cfg.LazyLoadingIdleTimeout, prefix+"lazy-loading-idle-timeout", DefaultIndexHeaderLazyLoadingIdleTimeout, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.IntVar(&cfg.LazyLoadingConcurrency, prefix+"lazy-loading-concurrency", 4, "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.")
 	f.BoolVar(&cfg.EagerLoadingStartupEnabled, prefix+"eager-loading-startup-enabled", true, "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. Ignored if index-header lazy loading is disabled.")
-	f.BoolVar(&cfg.SparsePersistenceEnabled, prefix+"sparse-persistence-enabled", true, "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.")
 	f.BoolVar(&cfg.VerifyOnLoad, prefix+"verify-on-load", false, "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.")
 }
 

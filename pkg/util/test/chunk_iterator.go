@@ -28,14 +28,14 @@ func RequireIteratorIthFloat(t *testing.T, i int64, iter chunkenc.Iterator, valu
 // histogram value and type at the position. Also test automatic conversion to float histogram.
 func RequireIteratorHistogram(t *testing.T, expectedTs int64, expectedV *histogram.Histogram, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
 	require.Equal(t, chunkenc.ValHistogram, valueType)
-	ts, h := iter.AtHistogram()
+	ts, h := iter.AtHistogram(nil)
 	require.Equal(t, expectedTs, ts)
 	RequireHistogramEqual(t, expectedV, h)
 	require.NoError(t, iter.Err())
 	// check auto type conversion for PromQL
-	ts2, fh := iter.AtFloatHistogram()
+	ts2, fh := iter.AtFloatHistogram(nil)
 	require.Equal(t, expectedTs, ts2)
-	RequireFloatHistogramEqual(t, expectedV.ToFloat(), fh)
+	RequireFloatHistogramEqual(t, expectedV.ToFloat(nil), fh)
 	require.NoError(t, iter.Err())
 }
 
@@ -47,7 +47,7 @@ func RequireIteratorIthHistogram(t *testing.T, i int64, iter chunkenc.Iterator, 
 // float histogram value and type at the position.
 func RequireIteratorFloatHistogram(t *testing.T, expectedTs int64, expectedV *histogram.FloatHistogram, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
 	require.Equal(t, chunkenc.ValFloatHistogram, valueType)
-	ts, h := iter.AtFloatHistogram()
+	ts, h := iter.AtFloatHistogram(nil)
 	require.Equal(t, expectedTs, ts)
 	RequireFloatHistogramEqual(t, expectedV, h)
 	require.NoError(t, iter.Err())

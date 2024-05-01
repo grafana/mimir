@@ -39,6 +39,9 @@
       // requested just because it spikes during the WAL replay. Therefore, the WAL replay
       // concurrency is chosen in such a way that it is always less than the current CPU request.
       'blocks-storage.tsdb.wal-replay-concurrency': std.max(1, std.floor($.util.parseCPU($.ingester_container.resources.requests.cpu) - 1)),
+
+      // Relax pressure on KV store when running at scale.
+      'ingester.ring.heartbeat-period': '2m',
     } + (
       // Optionally configure the TSDB head early compaction (only when enabled).
       if !$._config.ingester_tsdb_head_early_compaction_enabled then {} else {
@@ -51,7 +54,9 @@
 
   local name = 'ingester',
 
-  ingester_env_map:: {},
+  ingester_env_map:: {
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1000',
+  },
 
   ingester_node_affinity_matchers:: [],
 

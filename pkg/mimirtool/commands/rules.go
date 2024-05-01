@@ -116,11 +116,13 @@ type RuleCommand struct {
 
 // Register rule related commands and flags with the kingpin application
 func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, reg prometheus.Registerer) {
-	rulesCmd := app.Command("rules", "View and edit rules stored in Grafan Mimir.").PreAction(func(k *kingpin.ParseContext) error { return r.setup(k, reg) })
+	rulesCmd := app.Command("rules", "View and edit rules stored in Grafana Mimir.").PreAction(func(k *kingpin.ParseContext) error { return r.setup(k, reg) })
 	rulesCmd.Flag("user", fmt.Sprintf("Basic auth username to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&r.ClientConfig.User)
 	rulesCmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
 	rulesCmd.Flag("auth-token", "Authentication token for bearer token or JWT auth, alternatively set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&r.ClientConfig.AuthToken)
+	r.ClientConfig.ExtraHeaders = map[string]string{}
+	rulesCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&r.ClientConfig.ExtraHeaders)
 
 	// Register rule commands
 	listCmd := rulesCmd.
@@ -216,7 +218,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 	diffRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a diff. Cannot be used together with other namespaces options.").StringVar(&r.IgnoredNamespaces)
 	diffRulesCmd.Flag("namespaces-regex", "regex matching namespaces to check during a diff. Cannot be used together with other namespaces options.").RegexpVar(&r.NamespacesRegex)
 	diffRulesCmd.Flag("ignored-namespaces-regex", "regex matching namespaces to ignore during a diff. Cannot be used together with other namespaces options.").RegexpVar(&r.IgnoredNamespacesRegex)
-	diffRulesCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
+	diffRulesCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").Hidden().StringVar(&r.RuleFiles) // TODO: Remove flag in Mimir 2.14.
 	diffRulesCmd.Flag(
 		"rule-dirs",
 		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
@@ -230,7 +232,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 	syncRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a sync. Cannot be used together with other namespaces options.").StringVar(&r.IgnoredNamespaces)
 	syncRulesCmd.Flag("namespaces-regex", "regex matching namespaces to check during a sync. Cannot be used together with other namespaces options.").RegexpVar(&r.NamespacesRegex)
 	syncRulesCmd.Flag("ignored-namespaces-regex", "regex matching namespaces to ignore during a sync. Cannot be used together with other namespaces options.").RegexpVar(&r.IgnoredNamespacesRegex)
-	syncRulesCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
+	syncRulesCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").Hidden().StringVar(&r.RuleFiles) // TODO: Remove flag in Mimir 2.14.
 	syncRulesCmd.Flag(
 		"rule-dirs",
 		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
@@ -242,7 +244,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 
 	// Prepare Command
 	prepareCmd.Arg("rule-files", "The rule files to check.").ExistingFilesVar(&r.RuleFilesList)
-	prepareCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
+	prepareCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").Hidden().StringVar(&r.RuleFiles) // TODO: Remove flag in Mimir 2.14.
 	prepareCmd.Flag(
 		"rule-dirs",
 		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
@@ -256,7 +258,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 
 	// Lint Command
 	lintCmd.Arg("rule-files", "The rule files to check.").ExistingFilesVar(&r.RuleFilesList)
-	lintCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
+	lintCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").Hidden().StringVar(&r.RuleFiles) // TODO: Remove flag in Mimir 2.14.
 	lintCmd.Flag(
 		"rule-dirs",
 		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
@@ -265,7 +267,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 
 	// Check Command
 	checkCmd.Arg("rule-files", "The rule files to check.").ExistingFilesVar(&r.RuleFilesList)
-	checkCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
+	checkCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").Hidden().StringVar(&r.RuleFiles) // TODO: Remove flag in Mimir 2.14.
 	checkCmd.Flag(
 		"rule-dirs",
 		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
@@ -337,12 +339,16 @@ func (r *RuleCommand) setupArgs() error {
 		}
 	}
 
-	for _, file := range strings.Split(r.RuleFiles, ",") {
-		if file != "" {
-			log.WithFields(log.Fields{
-				"file": file,
-			}).Debugf("adding file")
-			r.RuleFilesList = append(r.RuleFilesList, file)
+	// TODO: Remove statement in Mimir 2.14.
+	if r.RuleFiles != "" {
+		log.Warn("flag --rule-files is deprecated, use the argument instead")
+		for _, file := range strings.Split(r.RuleFiles, ",") {
+			if file != "" {
+				log.WithFields(log.Fields{
+					"file": file,
+				}).Debugf("adding file")
+				r.RuleFilesList = append(r.RuleFilesList, file)
+			}
 		}
 	}
 
@@ -678,7 +684,7 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 	}
 
 	// Do not apply the aggregation label to excluded rule groups.
-	applyTo := func(group rwrulefmt.RuleGroup, rule rulefmt.RuleNode) bool {
+	applyTo := func(group rwrulefmt.RuleGroup, _ rulefmt.RuleNode) bool {
 		_, excluded := r.aggregationLabelExcludedRuleGroupsList[group.Name]
 		return !excluded
 	}
