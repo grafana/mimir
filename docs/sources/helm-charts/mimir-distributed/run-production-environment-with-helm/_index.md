@@ -6,6 +6,28 @@ aliases:
 menuTitle: "Run Mimir in production"
 description: "Learn how to run Grafana Mimir in production using the mimir-distributed Helm chart."
 weight: 40
+refs:
+  replication-across-availability-zones:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-zone-aware-replication/
+  planning-grafana-mimir-capacity:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/manage/run-production-environment/planning-capacity/
+  ingesters-failure-and-data-loss:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/ingester/#ingesters-failure-and-data-loss
+  store-gateway:-blocks-sharding-and-replication:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/store-gateway/#blocks-sharding-and-replication
+  installing-grafana-mimir-dashboards-and-alerts:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/
+  collecting-metrics-and-logs-from-grafana-mimir:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/collecting-metrics-and-logs/
+  configure-grafana-mimir-object-storage-backend:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-object-storage-backend/
 ---
 
 # Run Grafana Mimir in production using the Helm chart
@@ -342,12 +364,3 @@ rollout_operator:
 >   --set 'mimir-distributed.rollout_operator.podSecurityContext.runAsGroup=null'
 > ```
 
-{{% docs/reference %}}
-[Planning Grafana Mimir capacity]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/manage/run-production-environment/planning-capacity"
-[Ingesters failure and data loss]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/ingester#ingesters-failure-and-data-loss"
-[Collecting metrics and logs from Grafana Mimir]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/collecting-metrics-and-logs"
-[Store-gateway: Blocks sharding and replication]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/store-gateway#blocks-sharding-and-replication"
-[replication across availability zones]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-zone-aware-replication"
-[Configure Grafana Mimir object storage backend]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-object-storage-backend"
-[Installing Grafana Mimir dashboards and alerts]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts"
-{{% /docs/reference %}}

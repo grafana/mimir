@@ -5,6 +5,13 @@ description: Learn how to collect metrics and logs from Grafana Mimir or GEM its
 menuTitle: Monitor system health
 title: Monitor the health of your system
 weight: 60
+refs:
+  collect-metrics-and-logs-without-the-helm-chart:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-without-the-helm-chart
+  installing-grafana-mimir-dashboards-and-alerts:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/
 ---
 
 # Monitor the health of your system
@@ -139,7 +146,3 @@ metaMonitoring:
           passwordSecretKey: metamonitoring
 ```
 
-{{% docs/reference %}}
-[Installing Grafana Mimir dashboards and alerts]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts"
-[Collect metrics and logs without the Helm chart]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/collecting-metrics-and-logs#collect-metrics-and-logs-without-the-helm-chart"
-{{% /docs/reference %}}
