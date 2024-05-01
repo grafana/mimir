@@ -771,3 +771,11 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 
 docs: doc
 	cd docs && $(MAKE) docs
+
+.PHONY: generate-otlp
+generate-otlp:
+	cd pkg/distributor/otlp && go generate
+
+.PHONY: check-generated-otlp-code
+check-generated-otlp-code:
+	cd pkg/distributor/otlp && go run ./cmd/generate --check

@@ -14,7 +14,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: Copyright The OpenTelemetry Authors.
 
-package {{.Package}}
+package prometheusremotewrite
 
 import (
 	"encoding/hex"
@@ -61,7 +61,7 @@ const (
 )
 
 type bucketBoundsData struct {
-	ts    *{{.PbPackage}}.TimeSeries
+	ts    *prompb.TimeSeries
 	bound float64
 }
 
@@ -73,7 +73,7 @@ func (m byBucketBoundsData) Less(i, j int) bool { return m[i].bound < m[j].bound
 func (m byBucketBoundsData) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 
 // ByLabelName enables the usage of sort.Sort() with a slice of labels
-type ByLabelName []{{.PbPackage}}.{{.LabelType}}
+type ByLabelName []prompb.Label
 
 func (a ByLabelName) Len() int           { return len(a) }
 func (a ByLabelName) Less(i, j int) bool { return a[i].Name < a[j].Name }
@@ -83,7 +83,7 @@ func (a ByLabelName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 // The label slice should not contain duplicate label names; this method sorts the slice by label name before creating
 // the signature.
 // The algorithm is the same as in Prometheus' labels.StableHash function.
-func timeSeriesSignature(labels []{{.PbPackage}}.{{.LabelType}}) uint64 {
+func timeSeriesSignature(labels []prompb.Label) uint64 {
 	sort.Sort(ByLabelName(labels))
 
 	// Use xxhash.Sum64(b) for fast path as it's faster.
@@ -116,16 +116,18 @@ var seps = []byte{'\xff'}
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externalLabels map[string]string,
-	ignoreAttrs []string, logOnOverwrite bool, extras ...string) []{{.PbPackage}}.{{.LabelType}} {
+	ignoreAttrs []string, logOnOverwrite bool, extras ...string) []prompb.Label {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
 
 	// Calculate the maximum possible number of labels we could return so we can preallocate l
 	maxLabelCount := attributes.Len() + len(externalLabels) + len(extras)/2
+
 	if haveServiceName {
 		maxLabelCount++
 	}
+
 	if haveInstanceID {
 		maxLabelCount++
 	}
@@ -133,17 +135,17 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 	// map ensures no duplicate label name
 	l := make(map[string]string, maxLabelCount)
 
-	labels := make([]{{.PbPackage}}.{{.LabelType}}, 0, maxLabelCount)
+	// Ensure attributes are sorted by key for consistent merging of keys which
+	// collide when sanitized.
+	labels := make([]prompb.Label, 0, maxLabelCount)
 	// XXX: Should we always drop service namespace/service name/service instance ID from the labels
 	// (as they get mapped to other Prometheus labels)?
 	attributes.Range(func(key string, value pcommon.Value) bool {
 		if !slices.Contains(ignoreAttrs, key) {
-			labels = append(labels, {{.PbPackage}}.{{.LabelType}}{Name: key, Value: value.AsString()})
+			labels = append(labels, prompb.Label{Name: key, Value: value.AsString()})
 		}
 		return true
 	})
-	// Ensure attributes are sorted by key for consistent merging of keys which
-	// collide when sanitized.
 	sort.Stable(ByLabelName(labels))
 
 	for _, label := range labels {
@@ -194,7 +196,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 
 	labels = labels[:0]
 	for k, v := range l {
-		labels = append(labels, {{.PbPackage}}.{{.LabelType}}{Name: k, Value: v})
+		labels = append(labels, prompb.Label{Name: k, Value: v})
 	}
 
 	return labels
@@ -217,7 +219,7 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 	return false
 }
 
-func (c *{{.Name}}Converter) addHistogramDataPoints(dataPoints pmetric.HistogramDataPointSlice,
+func (c *PrometheusConverter) addHistogramDataPoints(dataPoints pmetric.HistogramDataPointSlice,
 	resource pcommon.Resource, settings Settings, baseName string) {
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
@@ -228,9 +230,9 @@ func (c *{{.Name}}Converter) addHistogramDataPoints(dataPoints pmetric.Histogram
 		// omitted
 		if pt.HasSum() {
 			// treat sum as a sample in an individual TimeSeries
-			sum := &{{.PbPackage}}.Sample{
+			sum := &prompb.Sample{
 				Value:     pt.Sum(),
-				{{.SampleTimestampField}}: timestamp,
+				Timestamp: timestamp,
 			}
 			if pt.Flags().NoRecordedValue() {
 				sum.Value = math.Float64frombits(value.StaleNaN)
@@ -242,9 +244,9 @@ func (c *{{.Name}}Converter) addHistogramDataPoints(dataPoints pmetric.Histogram
 		}
 
 		// treat count as a sample in an individual TimeSeries
-		count := &{{.PbPackage}}.Sample{
+		count := &prompb.Sample{
 			Value:     float64(pt.Count()),
-			{{.SampleTimestampField}}: timestamp,
+			Timestamp: timestamp,
 		}
 		if pt.Flags().NoRecordedValue() {
 			count.Value = math.Float64frombits(value.StaleNaN)
@@ -262,9 +264,9 @@ func (c *{{.Name}}Converter) addHistogramDataPoints(dataPoints pmetric.Histogram
 		for i := 0; i < pt.ExplicitBounds().Len() && i < pt.BucketCounts().Len(); i++ {
 			bound := pt.ExplicitBounds().At(i)
 			cumulativeCount += pt.BucketCounts().At(i)
-			bucket := &{{.PbPackage}}.Sample{
+			bucket := &prompb.Sample{
 				Value:     float64(cumulativeCount),
-				{{.SampleTimestampField}}: timestamp,
+				Timestamp: timestamp,
 			}
 			if pt.Flags().NoRecordedValue() {
 				bucket.Value = math.Float64frombits(value.StaleNaN)
@@ -276,8 +278,8 @@ func (c *{{.Name}}Converter) addHistogramDataPoints(dataPoints pmetric.Histogram
 			bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: bound})
 		}
 		// add le=+Inf bucket
-		infBucket := &{{.PbPackage}}.Sample{
-			{{.SampleTimestampField}}: timestamp,
+		infBucket := &prompb.Sample{
+			Timestamp: timestamp,
 		}
 		if pt.Flags().NoRecordedValue() {
 			infBucket.Value = math.Float64frombits(value.StaleNaN)
@@ -303,20 +305,20 @@ type exemplarType interface {
 	Exemplars() pmetric.ExemplarSlice
 }
 
-func getPromExemplars[T exemplarType](pt T) []{{.PbPackage}}.Exemplar {
-	promExemplars := make([]{{.PbPackage}}.Exemplar, 0, pt.Exemplars().Len())
+func getPromExemplars[T exemplarType](pt T) []prompb.Exemplar {
+	promExemplars := make([]prompb.Exemplar, 0, pt.Exemplars().Len())
 	for i := 0; i < pt.Exemplars().Len(); i++ {
 		exemplar := pt.Exemplars().At(i)
 		exemplarRunes := 0
 
-		promExemplar := {{.PbPackage}}.Exemplar{
+		promExemplar := prompb.Exemplar{
 			Value:     exemplar.DoubleValue(),
-			{{.ExemplarTimestampField}}: timestamp.FromTime(exemplar.Timestamp().AsTime()),
+			Timestamp: timestamp.FromTime(exemplar.Timestamp().AsTime()),
 		}
 		if traceID := exemplar.TraceID(); !traceID.IsEmpty() {
 			val := hex.EncodeToString(traceID[:])
 			exemplarRunes += utf8.RuneCountInString(traceIDKey) + utf8.RuneCountInString(val)
-			promLabel := {{.PbPackage}}.{{.LabelType}}{
+			promLabel := prompb.Label{
 				Name:  traceIDKey,
 				Value: val,
 			}
@@ -325,7 +327,7 @@ func getPromExemplars[T exemplarType](pt T) []{{.PbPackage}}.Exemplar {
 		if spanID := exemplar.SpanID(); !spanID.IsEmpty() {
 			val := hex.EncodeToString(spanID[:])
 			exemplarRunes += utf8.RuneCountInString(spanIDKey) + utf8.RuneCountInString(val)
-			promLabel := {{.PbPackage}}.{{.LabelType}}{
+			promLabel := prompb.Label{
 				Name:  spanIDKey,
 				Value: val,
 			}
@@ -333,11 +335,11 @@ func getPromExemplars[T exemplarType](pt T) []{{.PbPackage}}.Exemplar {
 		}
 
 		attrs := exemplar.FilteredAttributes()
-		labelsFromAttributes := make([]{{.PbPackage}}.{{.LabelType}}, 0, attrs.Len())
+		labelsFromAttributes := make([]prompb.Label, 0, attrs.Len())
 		attrs.Range(func(key string, value pcommon.Value) bool {
 			val := value.AsString()
 			exemplarRunes += utf8.RuneCountInString(key) + utf8.RuneCountInString(val)
-			promLabel := {{.PbPackage}}.{{.LabelType}}{
+			promLabel := prompb.Label{
 				Name:  key,
 				Value: val,
 			}
@@ -393,7 +395,7 @@ func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 	return ts
 }
 
-func (c *{{.Name}}Converter) addSummaryDataPoints(dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
+func (c *PrometheusConverter) addSummaryDataPoints(dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
 	settings Settings, baseName string) {
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
@@ -401,9 +403,9 @@ func (c *{{.Name}}Converter) addSummaryDataPoints(dataPoints pmetric.SummaryData
 		baseLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels, nil, false)
 
 		// treat sum as a sample in an individual TimeSeries
-		sum := &{{.PbPackage}}.Sample{
+		sum := &prompb.Sample{
 			Value:     pt.Sum(),
-			{{.SampleTimestampField}}: timestamp,
+			Timestamp: timestamp,
 		}
 		if pt.Flags().NoRecordedValue() {
 			sum.Value = math.Float64frombits(value.StaleNaN)
@@ -413,9 +415,9 @@ func (c *{{.Name}}Converter) addSummaryDataPoints(dataPoints pmetric.SummaryData
 		c.addSample(sum, sumlabels)
 
 		// treat count as a sample in an individual TimeSeries
-		count := &{{.PbPackage}}.Sample{
+		count := &prompb.Sample{
 			Value:     float64(pt.Count()),
-			{{.SampleTimestampField}}: timestamp,
+			Timestamp: timestamp,
 		}
 		if pt.Flags().NoRecordedValue() {
 			count.Value = math.Float64frombits(value.StaleNaN)
@@ -426,9 +428,9 @@ func (c *{{.Name}}Converter) addSummaryDataPoints(dataPoints pmetric.SummaryData
 		// process each percentile/quantile
 		for i := 0; i < pt.QuantileValues().Len(); i++ {
 			qt := pt.QuantileValues().At(i)
-			quantile := &{{.PbPackage}}.Sample{
+			quantile := &prompb.Sample{
 				Value:     qt.Value(),
-				{{.SampleTimestampField}}: timestamp,
+				Timestamp: timestamp,
 			}
 			if pt.Flags().NoRecordedValue() {
 				quantile.Value = math.Float64frombits(value.StaleNaN)
@@ -449,24 +451,24 @@ func (c *{{.Name}}Converter) addSummaryDataPoints(dataPoints pmetric.SummaryData
 // createLabels returns a copy of baseLabels, adding to it the pair model.MetricNameLabel=name.
 // If extras are provided, corresponding label pairs are also added to the returned slice.
 // If extras is uneven length, the last (unpaired) extra will be ignored.
-func createLabels(name string, baseLabels []{{.PbPackage}}.{{.LabelType}}, extras ...string) []{{.PbPackage}}.{{.LabelType}} {
+func createLabels(name string, baseLabels []prompb.Label, extras ...string) []prompb.Label {
 	extraLabelCount := len(extras) / 2
-	labels := make([]{{.PbPackage}}.{{.LabelType}}, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
+	labels := make([]prompb.Label, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
 	copy(labels, baseLabels)
 
 	n := len(extras)
 	n -= n % 2
 	for extrasIdx := 0; extrasIdx < n; extrasIdx += 2 {
-		labels = append(labels, {{.PbPackage}}.{{.LabelType}}{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
+		labels = append(labels, prompb.Label{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
 	}
 
-	labels = append(labels, {{.PbPackage}}.{{.LabelType}}{Name: model.MetricNameLabel, Value: name})
+	labels = append(labels, prompb.Label{Name: model.MetricNameLabel, Value: name})
 	return labels
 }
 
 // getOrCreateTimeSeries returns the time series corresponding to the label set if existent, and false.
 // Otherwise it creates a new one and returns that, and true.
-func (c *{{.Name}}Converter) getOrCreateTimeSeries(lbls []{{.PbPackage}}.{{.LabelType}}) (*{{.PbPackage}}.TimeSeries, bool) {
+func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*prompb.TimeSeries, bool) {
 	h := timeSeriesSignature(lbls)
 	ts := c.unique[h]
 	if ts != nil {
@@ -484,7 +486,7 @@ func (c *{{.Name}}Converter) getOrCreateTimeSeries(lbls []{{.PbPackage}}.{{.Labe
 		}
 
 		// New conflict
-		ts = &{{.PbPackage}}.TimeSeries{
+		ts = &prompb.TimeSeries{
 			Labels: lbls,
 		}
 		c.conflicts[h] = append(c.conflicts[h], ts)
@@ -492,7 +494,7 @@ func (c *{{.Name}}Converter) getOrCreateTimeSeries(lbls []{{.PbPackage}}.{{.Labe
 	}
 
 	// This metric is new
-	ts = &{{.PbPackage}}.TimeSeries{
+	ts = &prompb.TimeSeries{
 		Labels: lbls,
 	}
 	c.unique[h] = ts
@@ -502,21 +504,21 @@ func (c *{{.Name}}Converter) getOrCreateTimeSeries(lbls []{{.PbPackage}}.{{.Labe
 // addTimeSeriesIfNeeded adds a corresponding time series if it doesn't already exist.
 // If the time series doesn't already exist, it gets added with startTimestamp for its value and timestamp for its timestamp,
 // both converted to milliseconds.
-func (c *{{.Name}}Converter) addTimeSeriesIfNeeded(lbls []{{.PbPackage}}.{{.LabelType}}, startTimestamp pcommon.Timestamp, timestamp pcommon.Timestamp) {
+func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTimestamp pcommon.Timestamp, timestamp pcommon.Timestamp) {
 	ts, created := c.getOrCreateTimeSeries(lbls)
 	if created {
-		ts.Samples = []{{.PbPackage}}.Sample{
+		ts.Samples = []prompb.Sample{
 			{
 				// convert ns to ms
 				Value:     float64(convertTimeStamp(startTimestamp)),
-				{{.SampleTimestampField}}: convertTimeStamp(timestamp),
+				Timestamp: convertTimeStamp(timestamp),
 			},
 		}
 	}
 }
 
 // addResourceTargetInfo converts the resource to the target info metric.
-func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, converter *{{.Name}}Converter) {
+func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, converter *PrometheusConverter) {
 	if settings.DisableTargetInfo || timestamp == 0 {
 		return
 	}
@@ -558,10 +560,10 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		return
 	}
 
-	sample := &{{.PbPackage}}.Sample{
+	sample := &prompb.Sample{
 		Value: float64(1),
 		// convert ns to ms
-		{{.SampleTimestampField}}: convertTimeStamp(timestamp),
+		Timestamp: convertTimeStamp(timestamp),
 	}
 	converter.addSample(sample, labels)
 }

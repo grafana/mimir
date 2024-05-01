@@ -1,4 +1,4 @@
-// Code generated from templates/*.go.tmpl - DO NOT EDIT.
+// Code generated from Prometheus sources - DO NOT EDIT.
 
 // Copyright 2024 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,9 +25,9 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
-	"github.com/prometheus/prometheus/model/value"
-
 	"github.com/grafana/mimir/pkg/mimirpb"
+
+	"github.com/prometheus/prometheus/model/value"
 )
 
 func (c *MimirConverter) addGaugeNumberDataPoints(dataPoints pmetric.NumberDataPointSlice,

@@ -1,4 +1,4 @@
-// Code generated from templates/*.go.tmpl - DO NOT EDIT.
+// Code generated from Prometheus sources - DO NOT EDIT.
 
 // Copyright 2024 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,7 +39,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
-
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 )
 
@@ -126,9 +125,11 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 
 	// Calculate the maximum possible number of labels we could return so we can preallocate l
 	maxLabelCount := attributes.Len() + len(externalLabels) + len(extras)/2
+
 	if haveServiceName {
 		maxLabelCount++
 	}
+
 	if haveInstanceID {
 		maxLabelCount++
 	}
@@ -136,6 +137,8 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 	// map ensures no duplicate label name
 	l := make(map[string]string, maxLabelCount)
 
+	// Ensure attributes are sorted by key for consistent merging of keys which
+	// collide when sanitized.
 	labels := make([]mimirpb.LabelAdapter, 0, maxLabelCount)
 	// XXX: Should we always drop service namespace/service name/service instance ID from the labels
 	// (as they get mapped to other Prometheus labels)?
@@ -145,8 +148,6 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 		}
 		return true
 	})
-	// Ensure attributes are sorted by key for consistent merging of keys which
-	// collide when sanitized.
 	sort.Stable(ByLabelName(labels))
 
 	for _, label := range labels {

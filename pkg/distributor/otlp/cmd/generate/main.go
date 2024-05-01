@@ -5,44 +5,101 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
+	"runtime"
 	"strings"
-	"text/template"
 
-	"github.com/google/go-github/v61/github"
+	"github.com/alecthomas/kingpin/v2"
+	"github.com/grafana/regexp"
+
+	"github.com/google/go-github/v57/github"
 )
 
-type templateContext struct {
-	Name                    string
-	PbPackagePath           string
-	PbPackage               string
-	Package                 string
-	LabelType               string
-	SampleTimestampField    string
-	ExemplarTimestampField  string
-	HistogramTimestampField string
-	UnknownType             string
-	GaugeType               string
-	CounterType             string
-	HistogramType           string
-	SummaryType             string
-}
-
 const (
+	dpath = "storage/remote/otlptranslator/prometheusremotewrite"
 	owner = "grafana"
 	repo  = "mimir-prometheus"
-	dpath = "storage/remote/otlptranslator/prometheusremotewrite/templates"
 )
 
 func main() {
+	app := kingpin.New("generate", "Generate OTLP translation code.")
+	checkFlag := app.Flag("check", "Verify that generated OTLP translation code corresponds to mimir-prometheus version.").Bool()
+
+	generate := func(*kingpin.ParseContext) error {
+		sourceRefPath := filepath.Join("cmd", "generate", ".source-ref")
+
+		if *checkFlag {
+			return check(sourceRefPath)
+		}
+
+		sources, sourceRef, err := downloadSources(sourceRefPath)
+		if err != nil {
+			return err
+		}
+		if sourceRef == "" {
+			// The source hasn't changed since last time
+			return nil
+		}
+
+		if err := patchSources(sources); err != nil {
+			return err
+		}
+
+		if err := os.WriteFile(sourceRefPath, []byte(sourceRef+"\n"), 0644); err != nil {
+			return fmt.Errorf("couldn't write to %s: %w", sourceRefPath, err)
+		}
+
+		return nil
+	}
+
+	app = app.Action(generate)
+	kingpin.MustParse(app.Parse(os.Args[1:]))
+}
+
+func patchSources(sources []string) error {
+	if out, err := exec.Command("gopatch", "-p", "cmd/generate/mimirpb.patch", "./").CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to execute gopatch: %s", out)
+	}
+	sed := "sed"
+	if runtime.GOOS == "darwin" {
+		sed = "gsed"
+	}
+	for _, fname := range sources {
+		if out, err := exec.Command(sed, "-i", "s/PrometheusConverter/MimirConverter/g", fname).CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to execute sed: %s", out)
+		}
+		if out, err := exec.Command(sed, "-i", "s/Prometheus remote write format/Mimir remote write format/g", fname).CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to execute sed: %s", out)
+		}
+		if out, err := exec.Command("goimports", "-w", "-local", "github.com/grafana/mimir", fname).CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to execute goimports: %s", out)
+		}
+	}
+
+	return nil
+}
+
+// getSourceRef gets the mimir-prometheus source GitHub reference hash,
+// and whether it's different from the source ref the code was generated from.
+func getSourceRef(sourceRefPath string) (string, bool, error) {
+	var curSourceRef string
+	data, err := os.ReadFile(sourceRefPath)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", false, fmt.Errorf("couldn't read file %s: %w", sourceRefPath, err)
+		}
+	} else {
+		curSourceRef = strings.TrimSpace(string(data))
+	}
+
 	f, err := os.Open(filepath.Join("..", "..", "..", "go.mod"))
 	if err != nil {
-		panic(err)
+		return "", false, err
 	}
 	defer f.Close()
 
@@ -59,16 +116,31 @@ func main() {
 		ref = ms[1]
 	}
 	if err := scanner.Err(); err != nil {
-		panic(err)
+		return "", false, err
 	}
 
 	if ref == "" {
-		panic(fmt.Errorf("Couldn't find mimir-prometheus replace directive in go.mod"))
+		return "", false, fmt.Errorf("couldn't find mimir-prometheus replace directive in go.mod")
+	}
+
+	return ref, ref != curSourceRef, nil
+}
+
+func downloadSources(sourceRefPath string) ([]string, string, error) {
+	ref, changed, err := getSourceRef(sourceRefPath)
+	if err != nil {
+		return nil, "", err
+	}
+	if !changed {
+		return nil, "", nil
 	}
 
 	ctx := context.Background()
 
 	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		return nil, "", fmt.Errorf("$GITHUB_TOKEN must be set")
+	}
 	client := github.NewClient(nil).WithAuthToken(token)
 	_, contents, _, err := client.Repositories.GetContents(
 		ctx, owner, repo, dpath, &github.RepositoryContentGetOptions{
@@ -76,58 +148,26 @@ func main() {
 		},
 	)
 	if err != nil {
-		panic(fmt.Errorf("getting repo dir contents: %w", err))
+		return nil, "", fmt.Errorf("getting repo dir contents: %w", err)
 	}
 
-	if err := os.MkdirAll("templates", 0755); err != nil {
-		panic(err)
-	}
-
-	var templateFiles []string
+	var sources []string
 	for _, c := range contents {
-		if *c.Type != "file" || !strings.HasSuffix(*c.Name, ".go.tmpl") {
+		if *c.Type != "file" || !strings.HasSuffix(*c.Name, ".go") || *c.Name == "timeseries.go" || strings.HasSuffix(*c.Name, "_test.go") {
 			continue
 		}
 
-		if err := downloadFile(ctx, client, ref, *c.Name); err != nil {
-			panic(err)
-		}
-		templateFiles = append(templateFiles, filepath.Join("templates", *c.Name))
-	}
-
-	c := templateContext{
-		Name:                    "Mimir",
-		Package:                 "otlp",
-		PbPackagePath:           "github.com/grafana/mimir/pkg/mimirpb",
-		PbPackage:               "mimirpb",
-		LabelType:               "LabelAdapter",
-		SampleTimestampField:    "TimestampMs",
-		ExemplarTimestampField:  "TimestampMs",
-		HistogramTimestampField: "Timestamp",
-		UnknownType:             "UNKNOWN",
-		GaugeType:               "GAUGE",
-		CounterType:             "COUNTER",
-		HistogramType:           "HISTOGRAM",
-		SummaryType:             "SUMMARY",
-	}
-
-	for _, fpath := range templateFiles {
-		t, err := template.ParseFiles(fpath)
+		fname, err := downloadFile(ctx, client, ref, *c.Name)
 		if err != nil {
-			panic(err)
+			return nil, "", err
 		}
-
-		name, _, found := strings.Cut(filepath.Base(fpath), ".")
-		if !found {
-			panic(fmt.Errorf("invalid filename %q", fpath))
-		}
-		if err := executeTemplate(t, name, c); err != nil {
-			panic(err)
-		}
+		sources = append(sources, fname)
 	}
+
+	return sources, ref, nil
 }
 
-func downloadFile(ctx context.Context, client *github.Client, ref, fname string) (err error) {
+func downloadFile(ctx context.Context, client *github.Client, ref, fname string) (string, error) {
 	ghFpath := path.Join(dpath, fname)
 	r, _, err := client.Repositories.DownloadContents(
 		ctx, owner, repo, ghFpath, &github.RepositoryContentGetOptions{
@@ -135,54 +175,47 @@ func downloadFile(ctx context.Context, client *github.Client, ref, fname string)
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("download %s: %w", ghFpath, err)
+		return "", fmt.Errorf("download %s: %w", ghFpath, err)
 	}
 	defer r.Close()
 
-	fpath := filepath.Join("templates", fname)
-	f, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	reFilename := regexp.MustCompile(`^(.+)\.go$`)
+	ms := reFilename.FindStringSubmatch(fname)
+	outputFname := fmt.Sprintf("%s_generated.go", ms[1])
+
+	f, err := os.OpenFile(outputFname, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("open file %s: %w", fpath, err)
+		return "", fmt.Errorf("open file %s: %w", outputFname, err)
 	}
 	defer func() {
 		if closeErr := f.Close(); closeErr != nil && err == nil {
-			err = fmt.Errorf("close %s: %w", fpath, closeErr)
+			err = fmt.Errorf("close %s: %w", outputFname, closeErr)
 		}
 	}()
 
 	wr := bufio.NewWriter(f)
+	if _, err := wr.WriteString("// Code generated from Prometheus sources - DO NOT EDIT.\n\n"); err != nil {
+		return "", fmt.Errorf("write to %s: %w", outputFname, err)
+	}
 	if _, err := wr.ReadFrom(r); err != nil {
-		return fmt.Errorf("read from GitHub repo file %s: %w", fpath, err)
+		return "", fmt.Errorf("read from GitHub repo file %s: %w", ghFpath, err)
 	}
 	if err := wr.Flush(); err != nil {
-		return fmt.Errorf("write to file: %w", err)
+		return "", fmt.Errorf("write to file %s: %w", outputFname, err)
 	}
 
-	return nil
+	return outputFname, nil
 }
 
-func executeTemplate(t *template.Template, name string, c templateContext) (err error) {
-	fname := fmt.Sprintf("%s_generated.go", name)
-	f, err := os.OpenFile(fname, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+// check verifies that the generated OTLP translation sources correspond to the current mimir-promethus version depended on.
+func check(sourceRefPath string) error {
+	_, changed, err := getSourceRef(sourceRefPath)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if closeErr := f.Close(); closeErr != nil && err == nil {
-			err = fmt.Errorf("close %s: %w", fname, closeErr)
-		}
-	}()
-
-	if _, err := f.WriteString("// Code generated from templates/*.go.tmpl - DO NOT EDIT.\n\n"); err != nil {
-		return err
-	}
-
-	if err := t.Execute(f, c); err != nil {
-		return fmt.Errorf("execute template: %w", err)
-	}
-
-	if out, err := exec.Command("goimports", "-w", "-local", "github.com/grafana/mimir", fname).CombinedOutput(); err != nil {
-		return fmt.Errorf("execute goimports on %s: %s", fname, out)
+	if changed {
+		return fmt.Errorf("the OTLP translation code was generated from an older version of mimir-prometheus - " +
+			"please regenerate and commit: make generate-otlp")
 	}
 
 	return nil

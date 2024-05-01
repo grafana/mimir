@@ -1,4 +1,4 @@
-// Code generated from templates/*.go.tmpl - DO NOT EDIT.
+// Code generated from Prometheus sources - DO NOT EDIT.
 
 // Copyright 2024 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,7 +41,7 @@ type Settings struct {
 	SendMetadata        bool
 }
 
-// MimirConverter converts from OTel write format to Mimir write format.
+// MimirConverter converts from OTel write format to Mimir remote write format.
 type MimirConverter struct {
 	unique    map[uint64]*mimirpb.TimeSeries
 	conflicts map[uint64][]*mimirpb.TimeSeries
@@ -130,7 +130,7 @@ func (c *MimirConverter) FromMetrics(md pmetric.Metrics, settings Settings) (err
 		addResourceTargetInfo(resource, settings, mostRecentTimestamp, c)
 	}
 
-	return errs
+	return
 }
 
 func isSameMetric(ts *mimirpb.TimeSeries, lbls []mimirpb.LabelAdapter) bool {

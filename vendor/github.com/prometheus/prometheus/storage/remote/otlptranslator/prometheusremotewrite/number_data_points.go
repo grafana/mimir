@@ -14,7 +14,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: Copyright The OpenTelemetry Authors.
 
-package {{.Package}}
+package prometheusremotewrite
 
 import (
 	"math"
@@ -24,10 +24,10 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/model/value"
-	"{{.PbPackagePath}}"
+	"github.com/prometheus/prometheus/prompb"
 )
 
-func (c *{{.Name}}Converter) addGaugeNumberDataPoints(dataPoints pmetric.NumberDataPointSlice,
+func (c *PrometheusConverter) addGaugeNumberDataPoints(dataPoints pmetric.NumberDataPointSlice,
 	resource pcommon.Resource, settings Settings, name string) {
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
@@ -40,9 +40,9 @@ func (c *{{.Name}}Converter) addGaugeNumberDataPoints(dataPoints pmetric.NumberD
 			model.MetricNameLabel,
 			name,
 		)
-		sample := &{{.PbPackage}}.Sample{
+		sample := &prompb.Sample{
 			// convert ns to ms
-			{{.SampleTimestampField}}: convertTimeStamp(pt.Timestamp()),
+			Timestamp: convertTimeStamp(pt.Timestamp()),
 		}
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
@@ -57,7 +57,7 @@ func (c *{{.Name}}Converter) addGaugeNumberDataPoints(dataPoints pmetric.NumberD
 	}
 }
 
-func (c *{{.Name}}Converter) addSumNumberDataPoints(dataPoints pmetric.NumberDataPointSlice,
+func (c *PrometheusConverter) addSumNumberDataPoints(dataPoints pmetric.NumberDataPointSlice,
 	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string) {
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
@@ -70,9 +70,9 @@ func (c *{{.Name}}Converter) addSumNumberDataPoints(dataPoints pmetric.NumberDat
 			model.MetricNameLabel,
 			name,
 		)
-		sample := &{{.PbPackage}}.Sample{
+		sample := &prompb.Sample{
 			// convert ns to ms
-			{{.SampleTimestampField}}: convertTimeStamp(pt.Timestamp()),
+			Timestamp: convertTimeStamp(pt.Timestamp()),
 		}
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
@@ -96,7 +96,7 @@ func (c *{{.Name}}Converter) addSumNumberDataPoints(dataPoints pmetric.NumberDat
 				return
 			}
 
-			createdLabels := make([]{{.PbPackage}}.{{.LabelType}}, len(lbls))
+			createdLabels := make([]prompb.Label, len(lbls))
 			copy(createdLabels, lbls)
 			for i, l := range createdLabels {
 				if l.Name == model.MetricNameLabel {
