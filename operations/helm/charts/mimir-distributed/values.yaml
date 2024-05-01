@@ -1115,7 +1115,7 @@ ingester:
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling : https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: false
-        # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-c
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
         # nodeSelector:
@@ -1836,7 +1836,7 @@ store_gateway:
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling : https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: false
-        # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-c
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
         # nodeSelector:
