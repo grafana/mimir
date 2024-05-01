@@ -714,7 +714,7 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // initQueryFrontendCodec initializes query frontend codec.
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
-	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat)
+	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.FrontendV2.LookBackDelta, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat)
 	return nil, nil
 }
 
@@ -745,9 +745,18 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
+	t.Cfg.Frontend.FrontendV2.LookBackDelta = t.Cfg.Querier.EngineConfig.LookbackDelta
 	t.Cfg.Frontend.FrontendV2.QueryStoreAfter = t.Cfg.Querier.QueryStoreAfter
 
-	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer)
+	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(
+		t.Cfg.Frontend,
+		t.Overrides,
+		t.Overrides,
+		t.Cfg.Server.GRPCListenPort,
+		util_log.Logger,
+		t.Registerer,
+		t.QueryFrontendCodec,
+	)
 	if err != nil {
 		return nil, err
 	}
