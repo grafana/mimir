@@ -2,6 +2,13 @@
 title: "Configure native histograms"
 menuTitle: "Native histograms"
 description: "Learn how to configure Grafana Mimir to ingest and query native histograms."
+refs:
+  grafana-mimir-query-sharding:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/query-sharding/
+  remote-write-api:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/http-api/#remote-write
 ---
 
 # Configure native histograms
@@ -35,7 +42,3 @@ remote_write:
     send_native_histograms: true
 ```
 
-{{% docs/reference %}}
-[remote write API]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/http-api#remote-write"
-[Grafana Mimir query sharding]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/query-sharding"
-{{% /docs/reference %}}

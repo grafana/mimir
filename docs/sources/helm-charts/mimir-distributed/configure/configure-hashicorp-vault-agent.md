@@ -2,6 +2,10 @@
 title: "Configure Grafana Mimir to allow Vault Agent to inject certificates and keys into Pods"
 menuTitle: "Vault Agent"
 description: "Learn how to configure Grafana Mimir to receive client and server certificates and keys via Hashicorp Vault Agent"
+refs:
+  securing-grafana-mimir-communications-with-tls:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/manage/secure/securing-communications-with-tls/
 ---
 
 # Configure Grafana Mimir to allow Vault Agent to inject certificates and keys into Pods
@@ -67,6 +71,3 @@ For more information about Vault and Vault Agent, see [Injecting Vault Secrets I
 
 To configure TLS in Mimir, refer to [Securing Grafana Mimir communications with TLS].
 
-{{% docs/reference %}}
-[Securing Grafana Mimir communications with TLS]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/manage/secure/securing-communications-with-tls"
-{{% /docs/reference %}}

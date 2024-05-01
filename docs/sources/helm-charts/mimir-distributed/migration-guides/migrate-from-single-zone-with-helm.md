@@ -3,6 +3,22 @@ title: "Migrate from single zone to zone-aware replication in Mimir Helm chart v
 menuTitle: "Migrate from single zone to zone-aware replication in Mimir Helm chart version 4.0"
 description: "Learn how to migrate from having a single availability zone to full zone-aware replication using the Grafana Mimir Helm chart"
 weight: 10
+refs:
+  zone-aware-replication:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-zone-aware-replication/
+  ingester:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/ingester/
+  shuffle-sharding:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-shuffle-sharding/
+  store-gateway:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/store-gateway/
+  alertmanager:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/alertmanager/
 ---
 
 # Migrate from single zone to zone-aware replication in Mimir Helm chart version 4.0
@@ -789,10 +805,3 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
-{{% docs/reference %}}
-[zone-aware replication]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-zone-aware-replication"
-[alertmanager]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/alertmanager"
-[store-gateway]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/store-gateway"
-[ingester]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/ingester"
-[shuffle sharding]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-shuffle-sharding"
-{{% /docs/reference %}}

@@ -9,6 +9,13 @@ title:
   Configuring Grafana Mimir-Distributed Helm Chart for high-availability deduplication
   with Consul
 weight: 70
+refs:
+  configure-high-availability:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-high-availability-deduplication/
+  distributor:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/distributor/
 ---
 
 # Configuring Grafana Mimir-Distributed Helm Chart for high-availability deduplication with Consul
@@ -164,7 +171,3 @@ select Format = Table. In the result you can see the several time series with di
 The most important thing is you will not find `__replica__` label (or any label that you set in `ha_replica_label`
 config) anymore. This means you have configured the deduplication successfully.
 
-{{% docs/reference %}}
-[Configure high availability]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-high-availability-deduplication"
-[distributor]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/distributor"
-{{% /docs/reference %}}

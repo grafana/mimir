@@ -3,6 +3,25 @@ title: "Migrate from Cortex to Grafana Mimir"
 menuTitle: "Migrate from Cortex"
 description: "Learn how to migrate your deployment of Cortex to Grafana Mimir to simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage."
 weight: 10
+refs:
+  mimirtool_rules:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR DOCS VERSION>/manage/tools/mimirtool/#rules
+  additional-resources-metrics:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR DOCS VERSION>/manage/monitor-grafana-mimir/requirements/#additional-resources-metrics
+  convert:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR DOCS VERSION>/manage/tools/mimirtool/#convert
+  mimirtool-config-convert:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR DOCS VERSION>/manage/tools/mimirtool/#convert
+  monitoring-mixin-dashboards:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR DOCS VERSION>/manage/monitor-grafana-mimir/dashboards/
+  migrate-from-cortex:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR DOCS VERSION>/set-up/migrate/migrate-from-cortex/
 ---
 
 # Migrate from Cortex to Grafana Mimir
@@ -255,11 +274,3 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
 
 To verify that the cluster is operating correctly, use the [monitoring mixin dashboards].
 
-{{% docs/reference %}}
-[Migrate from Cortex]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/set-up/migrate/migrate-from-cortex"
-[mimirtool_rules]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/manage/tools/mimirtool#rules"
-[`mimirtool config convert`]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/manage/tools/mimirtool#convert"
-[convert]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/manage/tools/mimirtool#convert"
-[Additional resources metrics]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/manage/monitor-grafana-mimir/requirements#additional-resources-metrics"
-[monitoring mixin dashboards]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/manage/monitor-grafana-mimir/dashboards"
-{{% /docs/reference %}}
