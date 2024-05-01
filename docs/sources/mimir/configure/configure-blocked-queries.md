@@ -32,11 +32,11 @@ The order of patterns is preserved, so the first matching pattern will be used.
 
 ## Format queries to block
 
-You can use Mimirtool's `promql format <query>` command to apply Prometheus string formatting to a query
-to ensure your provided blocked query `pattern` is correct.
+Use Mimirtool's `mimirtool promql format <query>` command to apply the Prometheus formatter to a query
+for use in a blocked query `pattern`.
 
 Queries received by Mimir are parsed into PromQL expressions before blocking is applied.
-The `pattern` from the blocked queries is compared against Prometheus' string format representation of the parsed query,
+The `pattern` from the blocked queries is compared against the formatted representation of the parsed query,
 in order to allow consistent query blocking behavior regardless of formatting differences in the submitted queries.
 
 Among other transformations the Prometheus formatter may reorder operators, remove empty selector braces,
