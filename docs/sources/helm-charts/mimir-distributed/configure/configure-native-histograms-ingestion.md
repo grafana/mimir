@@ -2,6 +2,22 @@
 title: "Configure native histograms"
 menuTitle: "Native histograms"
 description: "Learn how to configure Grafana Mimir to ingest and query native histograms."
+refs:
+  remote-write-api:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/http-api/#remote-write
+  visualize-native-histograms:
+    - pattern: /
+      destination: https://grafana.com/docs/mimir/<MIMIR_DOCS_VERSION>/visualize/native-histograms/
+  configure-native-histograms:
+    - pattern: /
+      destination: https://grafana.com/docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-native-histograms-ingestion/
+  send-native-histograms-to-mimir:
+    - pattern: /
+      destination: https://grafana.com/docs/mimir/<MIMIR_DOCS_VERSION>/send/native-histograms/
+  grafana-mimir-query-sharding:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/query-sharding/
 ---
 
 # Configure native histograms
@@ -31,10 +47,3 @@ To configure Grafana Agent or Prometheus to write native histograms to Grafana M
 
 To visualize native histograms in Mimir, refer to [Visualize native histograms].
 
-{{% docs/reference %}}
-[remote write API]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/http-api#remote-write"
-[Grafana Mimir query sharding]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/query-sharding"
-[Configure native histograms]: "/ -> https://grafana.com/docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-native-histograms-ingestion"
-[Send native histograms to Mimir]: "/ -> https://grafana.com/docs/mimir/<MIMIR_DOCS_VERSION>/send/native-histograms/"
-[Visualize native histograms]: "/ -> https://grafana.com/docs/mimir/<MIMIR_DOCS_VERSION>/visualize/native-histograms/"
-{{% /docs/reference %}}

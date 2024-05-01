@@ -2,6 +2,10 @@
 title: "Configure Redis cache"
 menuTitle: "Redis cache"
 description: "Learn how to configure Grafana Mimir to use external Redis as cache"
+refs:
+  the-configuration-parameters-reference:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configuration-parameters/#redis
 ---
 
 # Configure Redis cache
@@ -48,6 +52,3 @@ mimir:
           endpoint: <redis-url>:6379
 ```
 
-{{% docs/reference %}}
-[the configuration parameters reference]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configuration-parameters#redis"
-{{% /docs/reference %}}

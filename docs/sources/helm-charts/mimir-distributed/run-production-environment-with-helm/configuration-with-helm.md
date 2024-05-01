@@ -6,6 +6,10 @@ weight: 80
 aliases:
   - docs/mimir/latest/operators-guide/run-production-environment-with-helm/configuration-with-helm
   - docs/mimir/latest/operators-guide/running-production-environment-with-helm/configuration-with-helm
+refs:
+  configuration-parameters:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configuration-parameters/
 ---
 
 # Manage the configuration of Grafana Mimir with Helm
@@ -535,6 +539,3 @@ The example is generated with the following steps:
 
    Lines starting with "`-`" were removed and lines starting with "`+`" were added. The change to the annotation `checksum/config` means the pods will be restarted when this change is applied.
 
-{{% docs/reference %}}
-[configuration parameters]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configuration-parameters"
-{{% /docs/reference %}}
