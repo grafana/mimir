@@ -210,15 +210,13 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		{
 			name:         "range query: with range vector, without offset",
 			metricsQuery: withQuery(t, rangeRequest, fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr)),
-			// range vector time exceeds lookback; no change from lookback duration
-			expectedMinT: startTime.UnixMilli() - rangeVectorDurationMS,
+			expectedMinT: startTime.UnixMilli() - rangeVectorDurationMS, // lookback duration not used with range vectors
 			expectedMaxT: endTime.UnixMilli(),
 		},
 		{
 			name:         "instant query: with range vector, without offset",
 			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("rate(go_goroutines{}[%s])", rangeVectorDurationStr)),
-			// range vector time exceeds lookback; no change from lookback duration
-			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS,
+			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS, // lookback duration not used with range vectors
 			expectedMaxT: endTime.UnixMilli(),
 		},
 		{
@@ -236,15 +234,13 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		{
 			name:         "range query: with range vector, with offset",
 			metricsQuery: withQuery(t, rangeRequest, fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr)),
-			// range vector time exceeds lookback; no change from lookback duration
-			expectedMinT: startTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
+			expectedMinT: startTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS, // lookback duration not used with range vectors
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 		},
 		{
 			name:         "instant query: with range vector, with offset",
 			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("rate(go_goroutines{}[%s] offset %s)", rangeVectorDurationStr, offsetDurationStr)),
-			// range vector time exceeds lookback; no change from lookback duration
-			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS,
+			expectedMinT: endTime.UnixMilli() - rangeVectorDurationMS - offsetDurationMS, // lookback duration not used with range vectors
 			expectedMaxT: endTime.UnixMilli() - offsetDurationMS,
 		},
 		// permutations with and without range vectors and @ modifiers
@@ -257,21 +253,19 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		{
 			name:         "instant query: with @ modifer",
 			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("go_goroutines{} @ %d", endTime.Add(-atModifierDuration).Unix())),
-			expectedMinT: endTime.Add(-atModifierDuration).UnixMilli() - lookbackDurationMS,
+			expectedMinT: endTime.Add(-atModifierDuration).UnixMilli() - lookbackDurationMS, // lookback duration not used with range vectors
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
 		},
 		{
 			name:         "range query: with range vector, with @ modifer",
 			metricsQuery: withQuery(t, rangeRequest, fmt.Sprintf("go_goroutines{}[%s] @ %d", rangeVectorDurationStr, endTime.Add(-atModifierDuration).Unix())),
-			// range vector time exceeds lookback; no change from lookback duration
-			expectedMinT: endTime.Add(-(atModifierDuration + rangeVectorDuration)).UnixMilli(),
+			expectedMinT: endTime.Add(-(atModifierDuration + rangeVectorDuration)).UnixMilli(), // lookback duration not used with range vectors
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
 		},
 		{
 			name:         "instant query: with range vector, with @ modifer",
 			metricsQuery: withQuery(t, instantRequest, fmt.Sprintf("go_goroutines{}[%s] @ %d", rangeVectorDurationStr, endTime.Add(-atModifierDuration).Unix())),
-			// range vector time exceeds lookback; no change from lookback duration
-			expectedMinT: endTime.Add(-(atModifierDuration + rangeVectorDuration)).UnixMilli(),
+			expectedMinT: endTime.Add(-(atModifierDuration + rangeVectorDuration)).UnixMilli(), // lookback duration not used with range vectors
 			expectedMaxT: endTime.Add(-atModifierDuration).UnixMilli(),
 		},
 	} {
@@ -324,47 +318,35 @@ func TestMetricsQuery_WithStartEnd_TransformConsistency(t *testing.T) {
 		name                string
 		initialMetricsQuery MetricsQueryRequest
 
-		updatedStartTime *time.Time
-		updatedEndTime   *time.Time
+		updatedStartTime time.Time
+		updatedEndTime   time.Time
 
 		expectedUpdatedMinT int64
 		expectedUpdatedMaxT int64
-		expectedErr         parser.ParseErrors
 	}{
 		{
 			name:                "range query: transform with start and end changes minT and maxT",
 			initialMetricsQuery: rangeRequest,
-			updatedStartTime:    &updatedStartTime,
-			updatedEndTime:      &updatedEndTime,
+			updatedStartTime:    updatedStartTime,
+			updatedEndTime:      updatedEndTime,
 
 			expectedUpdatedMinT: updatedStartTime.UnixMilli(),
 			expectedUpdatedMaxT: updatedEndTime.UnixMilli(),
-			expectedErr:         nil,
 		},
 		{
 			name:                "instant query: transform with start and end changes minT and maxT",
 			initialMetricsQuery: instantRequest,
-			updatedStartTime:    &updatedEndTime,
-			updatedEndTime:      &updatedEndTime,
+			updatedStartTime:    updatedEndTime,
+			updatedEndTime:      updatedEndTime,
 
 			expectedUpdatedMinT: updatedEndTime.UnixMilli(),
 			expectedUpdatedMaxT: updatedEndTime.UnixMilli(),
-			expectedErr:         nil,
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			start := testCase.initialMetricsQuery.GetStart()
-			end := testCase.initialMetricsQuery.GetEnd()
-
 			// apply WithStartEnd
-			newStart := start
-			if testCase.updatedStartTime != nil {
-				newStart = testCase.updatedStartTime.UnixMilli()
-			}
-			newEnd := end
-			if testCase.updatedEndTime != nil {
-				newEnd = testCase.updatedEndTime.UnixMilli()
-			}
+			newStart := testCase.updatedStartTime.UnixMilli()
+			newEnd := testCase.updatedEndTime.UnixMilli()
 			updatedMetricsQuery := testCase.initialMetricsQuery.WithStartEnd(newStart, newEnd)
 
 			require.Equal(t, testCase.expectedUpdatedMinT, updatedMetricsQuery.GetMinT())
