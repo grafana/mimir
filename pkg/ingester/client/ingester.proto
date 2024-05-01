@@ -242,6 +242,7 @@ message MetricsMetadataResponse {
 
 message ActiveSeriesResponse {
   repeated cortexpb.Metric metric = 1;
+  repeated uint64 bucket_count = 2;
 }
 
 message TimeSeriesChunk {

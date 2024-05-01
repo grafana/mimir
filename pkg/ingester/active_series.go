@@ -78,11 +78,11 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 		if err != nil {
 			return fmt.Errorf("error getting series: %w", err)
 		}
-		if isNativeHistogram {
-			buf.Add("__nh_bucket_count__", fmt.Sprintf("%d", count))
-		}
 		m := &mimirpb.Metric{Labels: mimirpb.FromLabelsToLabelAdapters(buf.Labels())}
 		mSize := m.Size()
+		if isNativeHistogram {
+			mSize += 8 // 8 bytes for the bucket count.
+		}
 		if currentSize+mSize > activeSeriesMaxSizeBytes {
 			if err := client.SendActiveSeriesResponse(stream, resp); err != nil {
 				return fmt.Errorf("error sending response: %w", err)
@@ -91,6 +91,9 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 			currentSize = 0
 		}
 		resp.Metric = append(resp.Metric, m)
+		if isNativeHistogram {
+			resp.BucketCount = append(resp.BucketCount, uint64(count))
+		}
 		currentSize += mSize
 	}
 	if err := postings.Err(); err != nil {

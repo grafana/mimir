@@ -133,10 +133,10 @@ func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
 	returnedSeriesCount := 0
 	for _, res := range server.responses {
 		returnedSeriesCount += len(res.Metric)
-		// Check that all series contain the special label "__nh_bucket_count__".
-		for _, m := range res.Metric {
-			assert.Equal(t, 3, len(m.Labels))
-			assert.Equal(t, "8", mimirpb.FromLabelAdaptersToLabels(m.Labels).Get("__nh_bucket_count__"))
+		// Check that all series have a corresponding bucket count.
+		assert.Equal(t, len(res.Metric), len(res.BucketCount), "All series should have a bucket count.")
+		for _, bc := range res.BucketCount {
+			assert.Equal(t, uint64(8), bc)
 		}
 	}
 	assert.Equal(t, len(writeReq.Timeseries)/2, returnedSeriesCount)
