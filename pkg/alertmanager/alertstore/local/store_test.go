@@ -78,7 +78,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 
 	// The storage is empty.
 	{
-		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
+		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"}, false)
 		require.NoError(t, err)
 		assert.Empty(t, configs)
 	}
@@ -88,22 +88,22 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 		user1Cfg := prepareAlertmanagerConfig("user-1")
 		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-1.yaml"), []byte(user1Cfg), os.ModePerm))
 
-		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
+		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"}, false)
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.NotContains(t, configs, "user-2")
-		assert.Equal(t, user1Cfg, configs["user-1"].RawConfig)
+		assert.Equal(t, user1Cfg, configs["user-1"].Mimir.RawConfig)
 
 		// Add another user config.
 		user2Cfg := prepareAlertmanagerConfig("user-2")
 		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-2.yaml"), []byte(user2Cfg), os.ModePerm))
 
-		configs, err = store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
+		configs, err = store.GetAlertConfigs(ctx, []string{"user-1", "user-2"}, false)
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.Contains(t, configs, "user-2")
-		assert.Equal(t, user1Cfg, configs["user-1"].RawConfig)
-		assert.Equal(t, user2Cfg, configs["user-2"].RawConfig)
+		assert.Equal(t, user1Cfg, configs["user-1"].Mimir.RawConfig)
+		assert.Equal(t, user2Cfg, configs["user-2"].Mimir.RawConfig)
 	}
 }
 

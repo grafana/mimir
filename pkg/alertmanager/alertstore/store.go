@@ -26,7 +26,7 @@ type AlertStore interface {
 	// GetAlertConfigs loads and returns the alertmanager configuration for given users.
 	// If any of the provided users has no configuration, then this function does not return an
 	// error but the returned configs will not include the missing users.
-	GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDesc, error)
+	GetAlertConfigs(ctx context.Context, userIDs []string, fetchGrafanaConfig bool) (map[string]alertspb.AlertConfigDescs, error)
 
 	// GetAlertConfig loads and returns the alertmanager configuration for the given user.
 	GetAlertConfig(ctx context.Context, user string) (alertspb.AlertConfigDesc, error)
