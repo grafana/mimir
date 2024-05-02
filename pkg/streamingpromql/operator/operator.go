@@ -77,7 +77,7 @@ type InstantVectorSeriesData struct {
 // RangeVectorStepData contains the timestamps associated with a single time step produced by a
 // RangeVectorOperator.
 //
-// All values are in milliseconds.
+// All values are in milliseconds since the Unix epoch.
 //
 // For example, if the operator represents the selector "some_metric[5m]", and this time step is for
 // 2024-05-02T00:00:00Z, then:
