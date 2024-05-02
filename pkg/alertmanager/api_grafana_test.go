@@ -52,7 +52,7 @@ const (
 
 func TestMultitenantAlertmanager_DeleteUserGrafanaConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(storage, nil, false, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 	now := time.Now().UnixMilli()
 
 	am := &MultitenantAlertmanager{
@@ -111,7 +111,7 @@ func TestMultitenantAlertmanager_DeleteUserGrafanaConfig(t *testing.T) {
 
 func TestMultitenantAlertmanager_DeleteUserGrafanaState(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(storage, nil, false, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
@@ -172,7 +172,7 @@ func TestMultitenantAlertmanager_DeleteUserGrafanaState(t *testing.T) {
 
 func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(storage, nil, false, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 	now := time.Now().UnixMilli()
 
 	am := &MultitenantAlertmanager{
@@ -225,7 +225,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 
 func TestMultitenantAlertmanager_GetUserGrafanaState(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(storage, nil, false, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
@@ -277,7 +277,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaState(t *testing.T) {
 
 func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(storage, nil, false, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
@@ -346,7 +346,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 
 func TestMultitenantAlertmanager_SetUserGrafanaState(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(storage, nil, false, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,

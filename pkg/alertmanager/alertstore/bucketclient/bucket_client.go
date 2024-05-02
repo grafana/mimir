@@ -56,19 +56,23 @@ type BucketAlertStore struct {
 	amBucket        objstore.Bucket
 	grafanaAMBucket objstore.Bucket
 
-	cfgProvider bucket.TenantConfigProvider
-	logger      log.Logger
-
-	fetchGrafanaCfg bool // Retrieve Grafana AM configs alongside Mimir AM configs.
+	cfgProvider     bucket.TenantConfigProvider
+	fetchGrafanaCfg bool
+	logger          log.Logger
 }
 
-func NewBucketAlertStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, fetchGrafanaCfg bool, logger log.Logger) *BucketAlertStore {
+type BucketAlertStoreConfig struct {
+	// Retrieve Grafana AM configs alongside Mimir AM configs.
+	FetchGrafanaConfig bool
+}
+
+func NewBucketAlertStore(cfg BucketAlertStoreConfig, bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketAlertStore {
 	return &BucketAlertStore{
 		alertsBucket:    bucket.NewPrefixedBucketClient(bkt, AlertsPrefix),
 		amBucket:        bucket.NewPrefixedBucketClient(bkt, AlertmanagerPrefix),
 		grafanaAMBucket: bucket.NewPrefixedBucketClient(bkt, GrafanaAlertmanagerPrefix),
 		cfgProvider:     cfgProvider,
-		fetchGrafanaCfg: fetchGrafanaCfg,
+		fetchGrafanaCfg: cfg.FetchGrafanaConfig,
 		logger:          logger,
 	}
 }

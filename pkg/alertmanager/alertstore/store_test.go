@@ -22,7 +22,7 @@ import (
 
 func TestAlertStore_ListAllUsers(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, false, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
@@ -48,7 +48,8 @@ func TestAlertStore_ListAllUsers(t *testing.T) {
 
 func TestAlertStore_SetAndGetAlertConfig(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, true, log.NewNopLogger())
+	cfg := bucketclient.BucketAlertStoreConfig{FetchGrafanaConfig: true}
+	store := bucketclient.NewBucketAlertStore(cfg, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
@@ -87,7 +88,8 @@ func TestAlertStore_SetAndGetAlertConfig(t *testing.T) {
 
 func TestStore_GetAlertConfigs(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, true, log.NewNopLogger())
+	cfg := bucketclient.BucketAlertStoreConfig{FetchGrafanaConfig: true}
+	store := bucketclient.NewBucketAlertStore(cfg, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
@@ -129,7 +131,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 
 func TestAlertStore_DeleteAlertConfig(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, false, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
@@ -190,7 +192,7 @@ func makeTestGrafanaAlertConfig(t *testing.T, user, cfg, hash string, createdAtT
 
 func TestBucketAlertStore_GetSetDeleteFullState(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, false, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	state1 := makeTestFullState("one")
@@ -260,7 +262,7 @@ func TestBucketAlertStore_GetSetDeleteFullState(t *testing.T) {
 
 func TestBucketAlertStore_GetSetDeleteGrafanaState(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, false, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	state1 := makeTestFullState("one")
@@ -318,7 +320,7 @@ func TestBucketAlertStore_GetSetDeleteGrafanaState(t *testing.T) {
 
 func TestBucketAlertStore_GetSetDeleteGrafanaAlertConfig(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, false, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
