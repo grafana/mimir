@@ -79,22 +79,27 @@ func (gc *UserGrafanaConfig) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type UserGrafanaState struct {
-	State string `json:"state"`
+type PostableUserGrafanaState struct {
+	UserGrafanaState
+	Promoted bool `json:"promoted"`
 }
 
-func (gs *UserGrafanaState) UnmarshalJSON(data []byte) error {
-	type plain UserGrafanaState
-	err := json.Unmarshal(data, (*plain)(gs))
+func (p *PostableUserGrafanaState) UnmarshalJSON(data []byte) error {
+	type plain PostableUserGrafanaState
+	err := json.Unmarshal(data, (*plain)(p))
 	if err != nil {
 		return err
 	}
 
-	if err = gs.Validate(); err != nil {
+	if err = p.UserGrafanaState.Validate(); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+type UserGrafanaState struct {
+	State string `json:"state"`
 }
 
 func (gs *UserGrafanaState) Validate() error {
@@ -173,7 +178,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaState(w http.ResponseWriter, r 
 		return
 	}
 
-	st := &UserGrafanaState{}
+	st := &PostableUserGrafanaState{}
 	err = json.Unmarshal(payload, st)
 	if err != nil {
 		level.Error(logger).Log("msg", errMarshallingStateJSON, "err", err.Error())
@@ -184,6 +189,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaState(w http.ResponseWriter, r 
 		})
 		return
 	}
+	fmt.Println("Is the state promoted?", st.Promoted)
 
 	decodedBytes, err := base64.StdEncoding.DecodeString(st.State)
 	if err != nil {

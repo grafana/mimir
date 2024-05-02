@@ -709,7 +709,8 @@ func (am *MultitenantAlertmanager) setConfig(cfgs bucketclient.Coso) error {
 		}
 	default:
 		// Grafana and Mimir config, we need to merge :(
-		am.logger.Log("msg", "Both Grafana and Mimir configurations found, va a haber que mergear u.u", "user", cfgs.Mimir.User)
+		am.logger.Log("msg", "Both Grafana and Mimir configurations found, we need to merge configurations", "user", cfgs.Mimir.User)
+		am.logger.Log("msg", "Merge not implemented, falling back to using Mimir AM configuration", "user", cfgs.Mimir.User)
 		cfg = cfgs.Mimir
 	}
 
