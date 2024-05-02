@@ -6504,6 +6504,17 @@
             },
             {
               "kind": "field",
+              "name": "max_concurrent_reject",
+              "required": false,
+              "desc": "When the number of max concurrent queries is reached, reject new queries with an error instead of blocking.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.bucket-store.max-concurrent-reject",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "tenant_sync_concurrency",
               "required": false,
               "desc": "Maximum number of concurrent tenants synching blocks.",

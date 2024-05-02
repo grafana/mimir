@@ -104,7 +104,12 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 
 	// The number of concurrent queries against the tenants BucketStores are limited.
 	queryGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "query"}, gateReg)
-	queryGate := gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
+	var queryGate gate.Gate
+	if cfg.BucketStore.MaxConcurrentReject {
+		queryGate = gate.NewRejecting(cfg.BucketStore.MaxConcurrent)
+	} else {
+		queryGate = gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
+	}
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
 
 	// The number of concurrent index header loads from storegateway are limited.

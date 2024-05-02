@@ -3526,6 +3526,11 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.max-concurrent
   [max_concurrent: <int> | default = 100]
 
+  # (experimental) When the number of max concurrent queries is reached, reject
+  # new queries with an error instead of blocking.
+  # CLI flag: -blocks-storage.bucket-store.max-concurrent-reject
+  [max_concurrent_reject: <boolean> | default = false]
+
   # (advanced) Maximum number of concurrent tenants synching blocks.
   # CLI flag: -blocks-storage.bucket-store.tenant-sync-concurrency
   [tenant_sync_concurrency: <int> | default = 1]

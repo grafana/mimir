@@ -389,6 +389,7 @@ type BucketStoreConfig struct {
 	SyncDir                  string              `yaml:"sync_dir"`
 	SyncInterval             time.Duration       `yaml:"sync_interval" category:"advanced"`
 	MaxConcurrent            int                 `yaml:"max_concurrent" category:"advanced"`
+	MaxConcurrentReject      bool                `yaml:"max_concurrent_reject" category:"experimental"`
 	TenantSyncConcurrency    int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
 	BlockSyncConcurrency     int                 `yaml:"block_sync_concurrency" category:"advanced"`
 	MetaSyncConcurrency      int                 `yaml:"meta_sync_concurrency" category:"advanced"`
@@ -448,6 +449,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.SyncInterval, "blocks-storage.bucket-store.sync-interval", 15*time.Minute, "How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction).")
 	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.bucket-store.series-hash-cache-max-size-bytes", uint64(1*units.Gibibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
 	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 100, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
+	f.BoolVar(&cfg.MaxConcurrentReject, "blocks-storage.bucket-store.max-concurrent-reject", false, "When the number of max concurrent queries is reached, reject new queries with an error instead of blocking.")
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 1, "Maximum number of concurrent tenants synching blocks.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "blocks-storage.bucket-store.block-sync-concurrency", 4, "Maximum number of concurrent blocks synching per tenant.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "blocks-storage.bucket-store.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from object storage per tenant.")
