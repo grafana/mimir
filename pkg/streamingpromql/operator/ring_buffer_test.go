@@ -130,27 +130,28 @@ func shouldHaveNoPoints(t *testing.T, buf *RingBuffer) {
 }
 
 func shouldHavePoints(t *testing.T, buf *RingBuffer, expected ...promql.FPoint) {
-	var actual []promql.FPoint
+	var pointsFromForEach []promql.FPoint
 
 	buf.ForEach(func(p promql.FPoint) {
-		actual = append(actual, p)
+		pointsFromForEach = append(pointsFromForEach, p)
 	})
 
-	require.Equal(t, expected, actual)
+	require.Equal(t, expected, pointsFromForEach)
 
-	head, tail := buf.Points()
-	actual = append(head, tail...)
+	head, tail := buf.HeadAndTail()
+	combinedHeadAndTail := append(head, tail...)
 
-	if len(actual) == 0 {
-		actual = nil // expected will be nil when it's empty, but appending two empty slices returns a non-nil slice.
+	if len(combinedHeadAndTail) == 0 {
+		combinedHeadAndTail = nil // expected will be nil when it's empty, but appending two empty slices returns a non-nil slice.
 	}
 
-	require.Equal(t, expected, actual)
+	require.Equal(t, expected, combinedHeadAndTail)
 
-	if len(actual) == 0 {
-		return
+	allPoints := buf.CopyPoints()
+	require.Equal(t, expected, allPoints)
+
+	if len(expected) != 0 {
+		require.Equal(t, expected[0], buf.First())
+		require.Equal(t, expected[len(expected)-1], buf.Last())
 	}
-
-	require.Equal(t, expected[0], buf.First())
-	require.Equal(t, expected[len(expected)-1], buf.Last())
 }

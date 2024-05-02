@@ -26,13 +26,15 @@ func (b *RingBuffer) DiscardPointsBefore(t int64) {
 	}
 }
 
-// Points returns slices of the points in this buffer.
+// HeadAndTail returns slices of the points in this buffer.
 // Either or both slice could be empty.
-// Callers must not modify the values in the returned slices.
+// Callers must not modify the values in the returned slices or return them to a pool.
+// Calling HeadAndTail is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
+// points into the slice.
 //
 // FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
 // Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
-func (b *RingBuffer) Points() ([]promql.FPoint, []promql.FPoint) {
+func (b *RingBuffer) HeadAndTail() ([]promql.FPoint, []promql.FPoint) {
 	endOfTailSegment := b.firstIndex + b.size
 
 	if endOfTailSegment > len(b.points) {
@@ -43,6 +45,24 @@ func (b *RingBuffer) Points() ([]promql.FPoint, []promql.FPoint) {
 	}
 
 	return b.points[b.firstIndex:endOfTailSegment], nil
+}
+
+// CopyPoints returns a single slice of the points in this buffer.
+// Callers may modify the values in the returned slice, and should return the slice to the pool by calling
+// PutFPointSlice when it is no longer needed.
+// Calling HeadAndTail is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
+// points into the slice.
+func (b *RingBuffer) CopyPoints() []promql.FPoint {
+	if b.size == 0 {
+		return nil
+	}
+
+	head, tail := b.HeadAndTail()
+	combined := GetFPointSlice(len(head) + len(tail))
+	combined = append(combined, head...)
+	combined = append(combined, tail...)
+
+	return combined
 }
 
 // ForEach calls f for each point in this buffer.
