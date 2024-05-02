@@ -44,5 +44,8 @@ func main() {
 	createPartitionsCommand := commands.CreatePartitionsCommand{}
 	createPartitionsCommand.Register(app, getKafkaClient)
 
+	consumerGroupCommand := commands.ConsumerGroupCommand{}
+	consumerGroupCommand.Register(app, getKafkaClient)
+
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 }
