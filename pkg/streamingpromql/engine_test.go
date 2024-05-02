@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,16 +26,16 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"a + b":                        "PromQL expression type *parser.BinaryExpr",
-		"1 + 2":                        "PromQL expression type *parser.BinaryExpr",
-		"metric{} + other_metric{}":    "PromQL expression type *parser.BinaryExpr",
-		"1":                            "PromQL expression type *parser.NumberLiteral",
-		"metric{} offset 2h":           "instant vector selector with 'offset'",
-		"avg(metric{})":                "'avg' aggregation",
-		"sum without(l) (metric{})":    "grouping with 'without'",
-		"rate(metric{}[5m] offset 2h)": "range vector selector with 'offset'",
-		"avg_over_time(metric{}[5m])":  "'avg_over_time' function",
-		"-sum(metric{})":               "PromQL expression type *parser.UnaryExpr",
+		"a + b":                       "PromQL expression type *parser.BinaryExpr",
+		"1 + 2":                       "scalar value as top-level expression",
+		"metric{} + other_metric{}":   "PromQL expression type *parser.BinaryExpr",
+		"1":                           "scalar value as top-level expression",
+		"metric{} offset 2h":          "instant vector selector with 'offset'",
+		"avg(metric{})":               "'avg' aggregation",
+		"sum without(l) (metric{})":   "grouping with 'without'",
+		"rate(metric{}[5m:1m])":       "PromQL expression type *parser.SubqueryExpr",
+		"avg_over_time(metric{}[5m])": "'avg_over_time' function",
+		"-sum(metric{})":              "PromQL expression type *parser.UnaryExpr",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -53,12 +56,8 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 	// These expressions are also unsupported, but are only valid as instant queries.
 	unsupportedInstantQueryExpressions := map[string]string{
-		"'a'":                    "PromQL expression type *parser.StringLiteral",
-		"metric{}[5m]":           "PromQL expression type *parser.MatrixSelector",
-		"metric{}[5m] offset 2h": "PromQL expression type *parser.MatrixSelector",
-		"metric{}[5m] @ 123":     "PromQL expression type *parser.MatrixSelector",
-		"metric{}[5m] @ start()": "PromQL expression type *parser.MatrixSelector",
-		"metric{}[5m] @ end()":   "PromQL expression type *parser.MatrixSelector",
+		"'a'":                    "string value as top-level expression",
+		"metric{}[5m] offset 2h": "range vector selector with 'offset'",
 		"metric{}[5m:1m]":        "PromQL expression type *parser.SubqueryExpr",
 	}
 
@@ -155,6 +154,102 @@ func TestOurTestCases(t *testing.T) {
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
 			t.Run("Prometheus' engine", func(t *testing.T) {
 				promql.RunTest(t, testScript, prometheusEngine)
+			})
+		})
+	}
+}
+
+// Testing instant queries that return a range vector is not supported by Prometheus' PromQL testing framework,
+// and adding support for this would be quite involved.
+//
+// So instead, we test these few cases here instead.
+func TestRangeVectorSelectors(t *testing.T) {
+	opts := NewTestEngineOpts()
+	streamingEngine, err := NewEngine(opts)
+	require.NoError(t, err)
+
+	prometheusEngine := promql.NewEngine(opts)
+
+	storage := teststorage.New(t)
+	defer storage.Close()
+
+	series1 := labels.FromStrings("__name__", "some_metric", "env", "1")
+	series2 := labels.FromStrings("__name__", "some_metric", "env", "2")
+	baseT := time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC)
+
+	a := storage.Appender(context.Background())
+	for seriesIdx, series := range []labels.Labels{series1, series2} {
+		for timeStep := 0; timeStep < 5; timeStep++ {
+			ts := baseT.Add(time.Duration(timeStep) * time.Minute)
+			v := float64(timeStep * (seriesIdx + 1))
+			_, err := a.Append(0, series, timestamp.FromTime(ts), v)
+			require.NoError(t, err)
+		}
+	}
+
+	require.NoError(t, a.Commit())
+
+	testCases := map[string]struct {
+		expr     string
+		expected *promql.Result
+		ts       time.Time
+	}{
+		"matches series with points in range": {
+			expr: "some_metric[1m]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: series1,
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
+						},
+					},
+					{
+						Metric: series2,
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
+						},
+					},
+				},
+			},
+		},
+		"matches no series": {
+			expr: "some_nonexistent_metric[1m]",
+			ts:   baseT,
+			expected: &promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+		"no samples in range": {
+			expr: "some_nonexistent_metric[1m]",
+			ts:   baseT.Add(20 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			runTest := func(t *testing.T, eng promql.QueryEngine, expr string, ts time.Time, expected *promql.Result) {
+				q, err := eng.NewInstantQuery(context.Background(), storage, nil, expr, ts)
+				require.NoError(t, err)
+				defer q.Close()
+
+				res := q.Exec(context.Background())
+				require.Equal(t, expected, res)
+			}
+
+			t.Run("streaming engine", func(t *testing.T) {
+				runTest(t, streamingEngine, testCase.expr, testCase.ts, testCase.expected)
+			})
+
+			// Run the tests against Prometheus' engine to ensure our test cases are valid.
+			t.Run("Prometheus' engine", func(t *testing.T) {
+				runTest(t, prometheusEngine, testCase.expr, testCase.ts, testCase.expected)
 			})
 		})
 	}
