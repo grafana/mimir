@@ -22,7 +22,7 @@ import (
 
 func TestAlertStore_ListAllUsers(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucket, nil, false, log.NewNopLogger())
 
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
@@ -48,7 +48,7 @@ func TestAlertStore_ListAllUsers(t *testing.T) {
 
 func TestAlertStore_SetAndGetAlertConfig(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucket, nil, true, log.NewNopLogger())
 
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
@@ -87,7 +87,7 @@ func TestAlertStore_SetAndGetAlertConfig(t *testing.T) {
 
 func TestStore_GetAlertConfigs(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucket, nil, true, log.NewNopLogger())
 
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
@@ -96,7 +96,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 
 	// The storage is empty.
 	{
-		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"}, false)
+		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
 		require.NoError(t, err)
 		assert.Empty(t, configs)
 	}
@@ -105,7 +105,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 	{
 		require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
 
-		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"}, false)
+		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.NotContains(t, configs, "user-2")
@@ -115,18 +115,8 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 		require.NoError(t, store.SetAlertConfig(ctx, user2Cfg))
 		require.NoError(t, store.SetGrafanaAlertConfig(ctx, user2GrafanaCfg))
 
-		// Should return only the Mimir Alertmanager configuration.
-		configs, err = store.GetAlertConfigs(ctx, []string{"user-1", "user-2"}, false)
-		require.NoError(t, err)
-		assert.Contains(t, configs, "user-1")
-		assert.Contains(t, configs, "user-2")
-		assert.Equal(t, user1Cfg, configs["user-1"].Mimir)
-		assert.Equal(t, alertspb.GrafanaAlertConfigDesc{}, configs["user-1"].Grafana)
-		assert.Equal(t, user2Cfg, configs["user-2"].Mimir)
-		assert.Equal(t, alertspb.GrafanaAlertConfigDesc{}, configs["user-2"].Grafana)
-
 		// Should return both Mimir and Grafana Alertmanager configurations.
-		configs, err = store.GetAlertConfigs(ctx, []string{"user-1", "user-2"}, true)
+		configs, err = store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.Contains(t, configs, "user-2")
@@ -139,7 +129,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 
 func TestAlertStore_DeleteAlertConfig(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucket, nil, false, log.NewNopLogger())
 
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
@@ -200,7 +190,7 @@ func makeTestGrafanaAlertConfig(t *testing.T, user, cfg, hash string, createdAtT
 
 func TestBucketAlertStore_GetSetDeleteFullState(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucket, nil, false, log.NewNopLogger())
 
 	ctx := context.Background()
 	state1 := makeTestFullState("one")
@@ -270,7 +260,7 @@ func TestBucketAlertStore_GetSetDeleteFullState(t *testing.T) {
 
 func TestBucketAlertStore_GetSetDeleteGrafanaState(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucket, nil, false, log.NewNopLogger())
 
 	ctx := context.Background()
 	state1 := makeTestFullState("one")
@@ -328,7 +318,7 @@ func TestBucketAlertStore_GetSetDeleteGrafanaState(t *testing.T) {
 
 func TestBucketAlertStore_GetSetDeleteGrafanaAlertConfig(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucket, nil, false, log.NewNopLogger())
 
 	ctx := context.Background()
 	now := time.Now().UnixMilli()

@@ -610,7 +610,7 @@ func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) 
 	numUsersOwned := len(ownedUserIDs)
 
 	// Load the configs for the owned users.
-	configs, err := am.store.GetAlertConfigs(ctx, ownedUserIDs, am.cfg.GrafanaAlertmanagerCompatibilityEnabled)
+	configs, err := am.store.GetAlertConfigs(ctx, ownedUserIDs)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to load alertmanager configurations for owned users")
 	}

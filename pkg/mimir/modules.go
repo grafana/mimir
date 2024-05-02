@@ -947,7 +947,7 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	t.Cfg.Alertmanager.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
 
-	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, t.Registerer)
+	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, t.Cfg.Alertmanager.GrafanaAlertmanagerCompatibilityEnabled, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
 	}

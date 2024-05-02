@@ -58,14 +58,17 @@ type BucketAlertStore struct {
 
 	cfgProvider bucket.TenantConfigProvider
 	logger      log.Logger
+
+	fetchGrafanaCfg bool // Retrieve Grafana AM configs alongside Mimir AM configs.
 }
 
-func NewBucketAlertStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketAlertStore {
+func NewBucketAlertStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, fetchGrafanaCfg bool, logger log.Logger) *BucketAlertStore {
 	return &BucketAlertStore{
 		alertsBucket:    bucket.NewPrefixedBucketClient(bkt, AlertsPrefix),
 		amBucket:        bucket.NewPrefixedBucketClient(bkt, AlertmanagerPrefix),
 		grafanaAMBucket: bucket.NewPrefixedBucketClient(bkt, GrafanaAlertmanagerPrefix),
 		cfgProvider:     cfgProvider,
+		fetchGrafanaCfg: fetchGrafanaCfg,
 		logger:          logger,
 	}
 }
@@ -83,7 +86,7 @@ func (s *BucketAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
 }
 
 // GetAlertConfigs implements alertstore.AlertStore.
-func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string, fetchGrafanaConfig bool) (map[string]alertspb.AlertConfigDescs, error) {
+func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDescs, error) {
 	var (
 		cfgsMx = sync.Mutex{}
 		cfgs   = make(map[string]alertspb.AlertConfigDescs, len(userIDs))
@@ -101,7 +104,7 @@ func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string
 		}
 		cfg.Mimir = mimirCfg
 
-		if fetchGrafanaConfig {
+		if s.fetchGrafanaCfg {
 			grafanaCfg, err := s.getGrafanaAlertConfig(ctx, userID)
 			// Users not having a Grafana alerting configuration is expected.
 			if err != nil && !s.alertsBucket.IsObjNotFoundErr(err) {
