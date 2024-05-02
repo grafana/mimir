@@ -1,5 +1,4 @@
-// Migration step 1:
-// - Deploy a temporarily dedicated set of ingesters, named ingester-zone-[abc]-partition.
+// This is the initial state of Mimir namespace, before getting migrated to ingest storage.
 (import 'test-multi-zone.jsonnet') {
   _config+:: {
     cluster: 'test-cluster',
