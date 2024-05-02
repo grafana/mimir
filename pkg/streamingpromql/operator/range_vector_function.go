@@ -17,8 +17,9 @@ import (
 type RangeVectorFunction struct {
 	Inner RangeVectorOperator
 
-	numSteps int
-	buffer   *RingBuffer
+	numSteps     int
+	rangeSeconds float64
+	buffer       *RingBuffer
 }
 
 var _ InstantVectorOperator = &RangeVectorFunction{}
@@ -35,6 +36,7 @@ func (m *RangeVectorFunction) SeriesMetadata(ctx context.Context) ([]SeriesMetad
 	}
 
 	m.numSteps = m.Inner.StepCount()
+	m.rangeSeconds = m.Inner.Range().Seconds()
 
 	return metadata, nil
 }
@@ -140,8 +142,7 @@ func (m *RangeVectorFunction) calculateRate(rangeStart, rangeEnd int64, firstPoi
 	extrapolateToInterval += durationToEnd
 
 	factor := extrapolateToInterval / sampledInterval
-	rangeSeconds := float64(rangeEnd-rangeStart) / 1000
-	factor /= rangeSeconds
+	factor /= m.rangeSeconds
 	return delta * factor
 }
 

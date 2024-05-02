@@ -8,6 +8,7 @@ package operator
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
@@ -36,6 +37,10 @@ func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]SeriesMetad
 
 func (m *RangeVectorSelector) StepCount() int {
 	return m.numSteps
+}
+
+func (m *RangeVectorSelector) Range() time.Duration {
+	return m.Selector.Range
 }
 
 func (m *RangeVectorSelector) Next(_ context.Context) error {

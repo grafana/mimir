@@ -5,6 +5,7 @@ package operator
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -41,6 +42,11 @@ type RangeVectorOperator interface {
 	// StepCount returns the number of time steps produced for each series by this operator.
 	// StepCount must only be called after calling SeriesMetadata.
 	StepCount() int
+
+	// Range returns the time range selected by this operator at each time step.
+	//
+	// For example, if this operator represents the selector "some_metric[5m]", Range returns 5 minutes.
+	Range() time.Duration
 
 	// Next advances to the next series produced by this operator, or EOS if no more series are available.
 	// SeriesMetadata must be called exactly once before calling Next.
