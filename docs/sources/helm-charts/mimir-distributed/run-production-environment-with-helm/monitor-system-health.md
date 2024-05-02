@@ -82,7 +82,7 @@ However, if you prefer not to use it or you already have an existing Grafana Age
            auth:
              username: "12345"
              passwordSecretName: "metamonitoring-credentials"
-             passwordSecretKey: "prometheus-api-key"
+             passwordSecretKey: "loki-api-key"
 
        metrics:
          remote:
@@ -90,7 +90,7 @@ However, if you prefer not to use it or you already have an existing Grafana Age
            auth:
              username: "54321"
              passwordSecretName: "metamonitoring-credentials"
-             passwordSecretKey: "loki-api-key"
+             passwordSecretKey: "prometheus-api-key"
 
          scrapeK8s:
            enabled: true

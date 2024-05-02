@@ -26,6 +26,7 @@ var (
 	configCommand         commands.ConfigCommand
 	loadgenCommand        commands.LoadgenCommand
 	logConfig             commands.LoggerConfig
+	promQLCommand         commands.PromQLCommand
 	pushGateway           commands.PushGatewayConfig
 	remoteReadCommand     commands.RemoteReadCommand
 	ruleCommand           commands.RuleCommand
@@ -45,6 +46,7 @@ func main() {
 	configCommand.Register(app, envVars)
 	loadgenCommand.Register(app, envVars, prometheus.DefaultRegisterer)
 	logConfig.Register(app, envVars)
+	promQLCommand.Register(app, envVars)
 	pushGateway.Register(app, envVars)
 	remoteReadCommand.Register(app, envVars)
 	ruleCommand.Register(app, envVars, prometheus.DefaultRegisterer)
