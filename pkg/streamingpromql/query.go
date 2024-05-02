@@ -151,15 +151,17 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 			return nil, NewNotSupportedError("range vector selector with 'offset'")
 		}
 
-		return &operator.RangeVectorSelectorWithTransformation{
-			Selector: &operator.Selector{
-				Queryable: q.queryable,
-				Start:     timestamp.FromTime(q.statement.Start),
-				End:       timestamp.FromTime(q.statement.End),
-				Timestamp: vectorSelector.Timestamp,
-				Interval:  interval.Milliseconds(),
-				Range:     matrixSelector.Range,
-				Matchers:  vectorSelector.LabelMatchers,
+		return &operator.RangeVectorFunction{
+			Inner: &operator.RangeVectorSelector{
+				Selector: &operator.Selector{
+					Queryable: q.queryable,
+					Start:     timestamp.FromTime(q.statement.Start),
+					End:       timestamp.FromTime(q.statement.End),
+					Timestamp: vectorSelector.Timestamp,
+					Interval:  interval.Milliseconds(),
+					Range:     matrixSelector.Range,
+					Matchers:  vectorSelector.LabelMatchers,
+				},
 			},
 		}, nil
 	case *parser.StepInvariantExpr:
