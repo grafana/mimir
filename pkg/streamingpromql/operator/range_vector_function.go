@@ -111,7 +111,6 @@ func (m *RangeVectorFunction) Next(ctx context.Context) (InstantVectorSeriesData
 
 // This is based on extrapolatedRate from promql/functions.go.
 // https://github.com/prometheus/prometheus/pull/13725 has a good explanation of the intended behaviour here.
-// rangeStart and rangeEnd are expected to be in milliseconds.
 func (m *RangeVectorFunction) calculateRate(rangeStart, rangeEnd int64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
 	durationToStart := float64(firstPoint.T-rangeStart) / 1000
 	durationToEnd := float64(rangeEnd-lastPoint.T) / 1000
