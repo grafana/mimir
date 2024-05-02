@@ -68,6 +68,22 @@ type InstantVectorSeriesData struct {
 	Histograms []promql.HPoint
 }
 
+// RangeVectorStepData contains the timestamps associated with a single time step produced by a
+// RangeVectorOperator.
+//
+// All values are in milliseconds.
+//
+// For example, if the operator represents the selector "some_metric[5m]", and this time step is for
+// 2024-05-02T00:00:00Z, then:
+//   - StepT is 1714608000000 (2024-05-02T00:00:00Z)
+//   - RangeStart is 1714607700000 (2024-05-01T23:55:00Z)
+//   - RangeEnd is 1714608000000 (2024-05-02T00:00:00Z)
+//
+// If the operator represents the selector "some_metric[5m] @ 1712016000", and this time step is for
+// 2024-05-02T00:00:00Z, then:
+//   - StepT is 1714608000000 (2024-05-02T00:00:00Z)
+//   - RangeStart is 1712015700000 (2024-04-01T23:55:00Z)
+//   - RangeEnd is 1712016000000 (2024-04-02T00:00:00Z)
 type RangeVectorStepData struct {
 	// StepT is the timestamp of this time step.
 	StepT int64
