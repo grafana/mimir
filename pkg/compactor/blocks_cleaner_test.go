@@ -46,8 +46,9 @@ type testBlocksCleanerOptions struct {
 }
 
 func (o testBlocksCleanerOptions) String() string {
-	return fmt.Sprintf("concurrency=%d, tenant deletion delay=%v",
-		o.concurrency, o.tenantDeletionDelay)
+	return fmt.Sprintf(
+		"concurrency=%d, tenant deletion delay=%v, user 4 files=%v",
+		o.concurrency, o.tenantDeletionDelay, o.user4FilesExist)
 }
 
 func TestBlocksCleaner(t *testing.T) {
@@ -58,7 +59,6 @@ func TestBlocksCleaner(t *testing.T) {
 		{concurrency: 10},
 	} {
 		options := options
-
 		t.Run(options.String(), func(t *testing.T) {
 			t.Parallel()
 			testBlocksCleanerWithOptions(t, options)
@@ -780,6 +780,15 @@ func TestBlocksCleaner_ShouldCleanUpFilesWhenNoMoreBlocksRemain(t *testing.T) {
 }
 
 func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T) {
+	t.Run("sans obj store timeouts", func(t *testing.T) {
+		shouldRemovePartialBlocksOutsideDelayPeriod(t, false)
+	})
+	t.Run("with obj store timeouts", func(t *testing.T) {
+		shouldRemovePartialBlocksOutsideDelayPeriod(t, true)
+	})
+}
+
+func shouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T, objStoreTimeouts bool) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
@@ -802,7 +811,19 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	reg := prometheus.NewPedanticRegistry()
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	testClient := bucketClient
+	var mockBucket *mockBucketWithTimeouts
+
+	if objStoreTimeouts {
+		// Wrap the bucket client in one that will fail on initial calls.
+		mockBucket = &mockBucketWithTimeouts{
+			Bucket:          testClient,
+			initialTimeouts: 3,
+		}
+		testClient = mockBucket
+	}
+
+	cleaner := NewBlocksCleaner(cfg, testClient, tsdb.AllUsers, cfgProvider, logger, reg)
 
 	makeBlockPartial := func(user string, blockID ulid.ULID) {
 		err := bucketClient.Delete(ctx, path.Join(user, blockID.String(), block.MetaFilename))
@@ -847,6 +868,11 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_compactor_blocks_marked_for_deletion_total",
 	))
+
+	if objStoreTimeouts {
+		assert.Equal(t, mockBucket.getCalls > 0, mockBucket.getSucceeded)
+		assert.Equal(t, mockBucket.deleteCalls > 0, mockBucket.deleteSucceeded)
+	}
 }
 
 func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.T) {
@@ -1253,19 +1279,34 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 	return m.Bucket.Delete(ctx, name)
 }
 
-type mockBucketGetTimeout struct {
+type mockBucketWithTimeouts struct {
 	objstore.Bucket
 
-	calls           int
 	initialTimeouts int
+
+	getCalls     int
+	getSucceeded bool
+
+	deleteCalls     int
+	deleteSucceeded bool
 }
 
-func (m *mockBucketGetTimeout) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	m.calls++
-	//if m.calls <= m.initialTimeouts {
-	//	return nil, context.DeadlineExceeded
-	//}
+func (m *mockBucketWithTimeouts) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	m.getCalls++
+	if m.getCalls <= m.initialTimeouts {
+		return nil, context.DeadlineExceeded
+	}
+	m.getSucceeded = true
 	return m.Bucket.Get(ctx, name)
+}
+
+func (m *mockBucketWithTimeouts) Delete(ctx context.Context, name string) error {
+	m.deleteCalls++
+	if m.deleteCalls <= m.initialTimeouts {
+		return context.DeadlineExceeded
+	}
+	m.deleteSucceeded = true
+	return m.Bucket.Delete(ctx, name)
 }
 
 type mockConfigProvider struct {

@@ -403,9 +403,14 @@ func shouldRetry(err error) bool {
 	// things like 5xx errors from blob storage.
 	var tempErr interface{ Temporary() bool }
 
-	return (
-		(errors.As(err, &tempErr) && tempErr.Temporary()) || errors.Is(err, context.DeadlineExceeded)
-	)
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return true
+	case errors.As(err, &tempErr):
+		return tempErr.Temporary()
+	}
+
+	return false
 }
 
 func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
