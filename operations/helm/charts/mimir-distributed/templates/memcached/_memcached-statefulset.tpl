@@ -22,6 +22,12 @@ spec:
   updateStrategy:
     {{- toYaml .statefulStrategy | nindent 4 }}
   serviceName: {{ template "mimir.fullname" $.ctx }}-{{ $.component }}
+  {{- if .volumeClaimTemplates }}
+  volumeClaimTemplates:
+  {{- with .volumeClaimTemplates }}
+      {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
 
   template:
     metadata:

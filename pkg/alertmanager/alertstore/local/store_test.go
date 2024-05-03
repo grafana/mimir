@@ -92,7 +92,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.NotContains(t, configs, "user-2")
-		assert.Equal(t, user1Cfg, configs["user-1"].RawConfig)
+		assert.Equal(t, user1Cfg, configs["user-1"].Mimir.RawConfig)
 
 		// Add another user config.
 		user2Cfg := prepareAlertmanagerConfig("user-2")
@@ -102,8 +102,8 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.Contains(t, configs, "user-2")
-		assert.Equal(t, user1Cfg, configs["user-1"].RawConfig)
-		assert.Equal(t, user2Cfg, configs["user-2"].RawConfig)
+		assert.Equal(t, user1Cfg, configs["user-1"].Mimir.RawConfig)
+		assert.Equal(t, user2Cfg, configs["user-2"].Mimir.RawConfig)
 	}
 }
 

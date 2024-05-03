@@ -99,4 +99,4 @@ These logs need to have specific labels in order for the dashboard to work.
 | :---------- | :------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cluster`   | Yes           | The Kubernetes cluster or datacenter where the Mimir cluster is running. You can configure the cluster label via the `per_cluster_label` field in the mixin configuration. |
 | `namespace` | No            | The Kubernetes namespace where the Mimir cluster is running.                                                                                                               |
-| `name`      | No            | Name of the component. For example, `query-frontend`.                                                                                                                      |
+| `name`      | Yes           | Name of the component. For example, `query-frontend`. You can configure the cluster label via the `per_component_loki_label` field in the mixin configuration.             |

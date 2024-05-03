@@ -128,7 +128,7 @@ func TestIngester_LabelValuesCardinality_SentInBatches(t *testing.T) {
 		}}
 	}
 
-	in := prepareHealthyIngester(t)
+	in := prepareHealthyIngester(t, nil)
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	writeReq := &mimirpb.WriteRequest{Source: mimirpb.API}
@@ -231,7 +231,7 @@ func TestIngester_LabelValuesCardinality_AllValuesToBeReturnedInSingleMessage(t 
 	}
 	for tName, tCfg := range testCases {
 		t.Run(tName, func(t *testing.T) {
-			in := prepareHealthyIngester(t)
+			in := prepareHealthyIngester(t, nil)
 			ctx := user.InjectOrgID(context.Background(), userID)
 
 			samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
@@ -339,7 +339,7 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 		metricName = "metric_name"
 	)
 
-	in := prepareHealthyIngester(b)
+	in := prepareHealthyIngester(b, nil)
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
