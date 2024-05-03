@@ -50,7 +50,7 @@
       namespace: $._config.namespace,
     },
     spec: {
-      replicas:: null,  // We don't want this field to be managed by Flux.
+      replicas:: null,  // Hide replicas field.
       labelSelector: 'name=unused',  // HPA requires that label selector exists and is valid, but it will not be used for target type of AverageValue.
     },
   },

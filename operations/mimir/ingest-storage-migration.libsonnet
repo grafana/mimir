@@ -45,7 +45,7 @@
     $.ingest_storage_ingester_args +
     $.ingest_storage_ingester_ring_client_args + {
       // Run partition ingesters on a dedicated hash ring, so that they don't clash with classic ingesters.
-      'ingester.ring.prefix': 'partition-ingesters/',
+      'ingester.ring.prefix': $._config.ingest_storage_ingester_instance_ring_dedicated_prefix,
     },
 
   local partitionIngesterStatefulSetLabelsAndAnnotations =
@@ -149,7 +149,7 @@
     // TODO remove once we've improved the config validation.
     $.ingest_storage_kafka_consumer_args + {
       // Run partition ingesters on a dedicated hash ring, so that they don't clash with classic ingesters.
-      'ingester.ring.prefix': 'partition-ingesters/',
+      'ingester.ring.prefix': $._config.ingest_storage_ingester_instance_ring_dedicated_prefix,
     },
 
   //

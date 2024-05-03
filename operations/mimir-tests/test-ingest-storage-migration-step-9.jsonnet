@@ -4,7 +4,7 @@
 (import 'test-ingest-storage-migration-step-8.jsonnet') {
   _config+:: {
     // This builds on previous step.
-    ingest_storage_ingester_instance_ring_dedicated_prefix: true,
+    ingest_storage_ingester_instance_ring_dedicated_prefix_enabled: true,
 
     ingest_storage_migration_partition_ingester_zone_a_scale_down: false,
     ingest_storage_migration_partition_ingester_zone_b_scale_down: false,

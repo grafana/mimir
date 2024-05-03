@@ -5,7 +5,8 @@
 
     // Mimir ingesters migrated from classic architecture to partitions run their instances hash ring
     // on a dedicated prefix, which has been introduced as part of the migration process.
-    ingest_storage_ingester_instance_ring_dedicated_prefix: false,
+    ingest_storage_ingester_instance_ring_dedicated_prefix_enabled: false,
+    ingest_storage_ingester_instance_ring_dedicated_prefix: 'partition-ingesters/',
 
     commonConfig+:: if !$._config.ingest_storage_enabled then {} else
       $.ingest_storage_args +
@@ -81,9 +82,9 @@
     // Set no key prefix for the partition ring, like we do for all other hash rings.
     'ingester.partition-ring.prefix': '',
   } + (
-    if !$._config.ingest_storage_ingester_instance_ring_dedicated_prefix then {} else {
+    if !$._config.ingest_storage_ingester_instance_ring_dedicated_prefix_enabled then {} else {
       // Run partition ingesters on a dedicated hash ring, so that they don't clash with classic ingesters.
-      'ingester.ring.prefix': 'partition-ingesters/',
+      'ingester.ring.prefix': $._config.ingest_storage_ingester_instance_ring_dedicated_prefix,
     }
   ),
 
