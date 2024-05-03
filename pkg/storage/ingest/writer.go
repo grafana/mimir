@@ -141,7 +141,7 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, record *kg
 	// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
 	// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
 	// cases may cause all requests to fail with context cancelled.
-	client.Produce(context.Background(), record, func(_ *kgo.Record, err error) {
+	client.Produce(context.WithoutCancel(ctx), record, func(_ *kgo.Record, err error) {
 		errCh <- err
 	})
 

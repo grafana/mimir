@@ -27,23 +27,12 @@ type Selector struct {
 	// Set for range vector selectors, otherwise 0.
 	Range time.Duration
 
-	querier                   storage.Querier
-	currentSeriesBatch        *seriesBatch
-	seriesIndexInCurrentBatch int
+	querier storage.Querier
+	series  *seriesList
 }
 
-// There's not too much science behind this number: this is based on the batch size used for chunks streaming.
-const seriesBatchSize = 256
-
-var seriesBatchPool = sync.Pool{New: func() any {
-	return &seriesBatch{
-		series: make([]storage.Series, 0, seriesBatchSize),
-		next:   nil,
-	}
-}}
-
 func (s *Selector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
-	if s.currentSeriesBatch != nil {
+	if s.series != nil {
 		return nil, errors.New("should not call Selector.SeriesMetadata() multiple times")
 	}
 
@@ -85,57 +74,26 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error)
 	}
 
 	ss := s.querier.Select(ctx, true, hints, s.Matchers...)
-	s.currentSeriesBatch = seriesBatchPool.Get().(*seriesBatch)
-	incompleteBatch := s.currentSeriesBatch
-	totalSeries := 0
+	s.series = newSeriesList()
 
 	for ss.Next() {
-		if len(incompleteBatch.series) == cap(incompleteBatch.series) {
-			nextBatch := seriesBatchPool.Get().(*seriesBatch)
-			incompleteBatch.next = nextBatch
-			incompleteBatch = nextBatch
-		}
-
-		incompleteBatch.series = append(incompleteBatch.series, ss.At())
-		totalSeries++
+		s.series.Add(ss.At())
 	}
 
-	metadata := GetSeriesMetadataSlice(totalSeries)
-	batch := s.currentSeriesBatch
-	for batch != nil {
-		for _, s := range batch.series {
-			metadata = append(metadata, SeriesMetadata{Labels: s.Labels()})
-		}
-
-		batch = batch.next
-	}
-
-	return metadata, ss.Err()
+	return s.series.ToSeriesMetadata(), ss.Err()
 }
 
 func (s *Selector) Next(existing chunkenc.Iterator) (chunkenc.Iterator, error) {
-	if s.currentSeriesBatch == nil || len(s.currentSeriesBatch.series) == 0 {
+	if s.series.Len() == 0 {
 		return nil, EOS
 	}
 
-	it := s.currentSeriesBatch.series[s.seriesIndexInCurrentBatch].Iterator(existing)
-	s.seriesIndexInCurrentBatch++
-
-	if s.seriesIndexInCurrentBatch == len(s.currentSeriesBatch.series) {
-		b := s.currentSeriesBatch
-		s.currentSeriesBatch = s.currentSeriesBatch.next
-		putSeriesBatch(b)
-		s.seriesIndexInCurrentBatch = 0
-	}
-
-	return it, nil
+	return s.series.Pop().Iterator(existing), nil
 }
 
 func (s *Selector) Close() {
-	for s.currentSeriesBatch != nil {
-		b := s.currentSeriesBatch
-		s.currentSeriesBatch = s.currentSeriesBatch.next
-		putSeriesBatch(b)
+	if s.series != nil {
+		s.series.Close()
 	}
 
 	if s.querier != nil {
@@ -144,9 +102,111 @@ func (s *Selector) Close() {
 	}
 }
 
+// seriesList is a FIFO queue of storage.Series.
+//
+// It is implemented as a linked list of slices of storage.Series, to allow O(1) insertion
+// without the memory overhead of a linked list node per storage.Series.
+type seriesList struct {
+	currentSeriesBatch        *seriesBatch
+	seriesIndexInCurrentBatch int
+
+	lastSeriesBatch *seriesBatch
+
+	length int
+}
+
+func newSeriesList() *seriesList {
+	firstBatch := getSeriesBatch()
+
+	return &seriesList{
+		currentSeriesBatch: firstBatch,
+		lastSeriesBatch:    firstBatch,
+	}
+}
+
+// Add adds s to the end of this seriesList.
+func (l *seriesList) Add(s storage.Series) {
+	if len(l.lastSeriesBatch.series) == cap(l.lastSeriesBatch.series) {
+		nextBatch := getSeriesBatch()
+		l.lastSeriesBatch.next = nextBatch
+		l.lastSeriesBatch = nextBatch
+	}
+
+	l.lastSeriesBatch.series = append(l.lastSeriesBatch.series, s)
+	l.length++
+}
+
+// Len returns the total number of series ever added to this seriesList.
+func (l *seriesList) Len() int {
+	return l.length
+}
+
+// ToSeriesMetadata returns a SeriesMetadata value for each series added to this seriesList.
+//
+// Calling ToSeriesMetadata after calling Pop may return an incomplete list.
+func (l *seriesList) ToSeriesMetadata() []SeriesMetadata {
+	metadata := GetSeriesMetadataSlice(l.length)
+	batch := l.currentSeriesBatch
+
+	for batch != nil {
+		for _, s := range batch.series {
+			metadata = append(metadata, SeriesMetadata{Labels: s.Labels()})
+		}
+
+		batch = batch.next
+	}
+
+	return metadata
+}
+
+// Pop returns the next series from the head of this seriesList, and advances
+// to the next item in this seriesList.
+func (l *seriesList) Pop() storage.Series {
+	if l.currentSeriesBatch == nil || len(l.currentSeriesBatch.series) == 0 {
+		panic("no more series to pop")
+	}
+
+	s := l.currentSeriesBatch.series[l.seriesIndexInCurrentBatch]
+	l.seriesIndexInCurrentBatch++
+
+	if l.seriesIndexInCurrentBatch == len(l.currentSeriesBatch.series) {
+		b := l.currentSeriesBatch
+		l.currentSeriesBatch = l.currentSeriesBatch.next
+		putSeriesBatch(b)
+		l.seriesIndexInCurrentBatch = 0
+	}
+
+	return s
+}
+
+// Close releases resources associated with this seriesList.
+func (l *seriesList) Close() {
+	for l.currentSeriesBatch != nil {
+		b := l.currentSeriesBatch
+		l.currentSeriesBatch = l.currentSeriesBatch.next
+		putSeriesBatch(b)
+	}
+
+	l.lastSeriesBatch = nil // Should have been put back in the pool as part of the loop above.
+}
+
 type seriesBatch struct {
 	series []storage.Series
 	next   *seriesBatch
+}
+
+// There's not too much science behind this number: this is based on the batch size used for chunks streaming.
+const seriesBatchSize = 256
+
+var seriesBatchPool = sync.Pool{New: func() any {
+	return &seriesBatch{
+		series: make([]storage.Series, 0, seriesBatchSize),
+		next:   nil,
+	}
+}}
+
+func getSeriesBatch() *seriesBatch {
+	return seriesBatchPool.Get().(*seriesBatch)
 }
 
 func putSeriesBatch(b *seriesBatch) {

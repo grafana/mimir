@@ -10,6 +10,7 @@ package ingester
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -17,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1491,14 +1491,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				})
 				stats.failedExemplarsCount += len(ts.Exemplars)
 			} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
-				if len(ts.Exemplars) > 1 {
-					// We can get multiple exemplars for native histograms.
-					// Sort exemplars by timestamp to ensure they are ingested in order.
-					// OpenTelemetry in particular does not order exemplars.
-					sort.Slice(ts.Exemplars, func(i, j int) bool {
-						return ts.Exemplars[i].TimestampMs < ts.Exemplars[j].TimestampMs
-					})
-				}
 				outOfOrderExemplars := 0
 				for _, ex := range ts.Exemplars {
 					if ex.TimestampMs > maxTimestampMs {
@@ -1649,6 +1641,13 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	vals, _, err := q.LabelValues(ctx, labelName, matchers...)
 	if err != nil {
 		return nil, err
+	}
+
+	// The label value strings are sometimes pointing to memory mapped file
+	// regions that may become unmapped anytime after Querier.Close is called.
+	// So we copy those strings.
+	for i, s := range vals {
+		vals[i] = strings.Clone(s)
 	}
 
 	return &client.LabelValuesResponse{
@@ -3547,6 +3546,48 @@ func (i *Ingester) unsetPrepareShutdown() {
 	i.lifecycler.SetUnregisterOnShutdown(i.cfg.IngesterRing.UnregisterOnShutdown)
 	i.lifecycler.SetFlushOnShutdown(i.cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown)
 	i.metrics.shutdownMarker.Set(0)
+}
+
+// PrepareUnregisterHandler manipulates whether an ingester will unregister from the ring on its next termination.
+//
+// The following methods are supported:
+//   - GET Returns the ingester's current unregister state.
+//   - PUT Sets the ingester's unregister state.
+//   - DELETE Resets the ingester's unregister state to the value passed via the RingConfig.UnregisterOnShutdown ring
+//     configuration option.
+//
+// All methods are idempotent.
+func (i *Ingester) PrepareUnregisterHandler(w http.ResponseWriter, r *http.Request) {
+	if i.State() != services.Running {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	type prepareUnregisterBody struct {
+		Unregister *bool `json:"unregister"`
+	}
+
+	switch r.Method {
+	case http.MethodPut:
+		dec := json.NewDecoder(r.Body)
+		input := prepareUnregisterBody{}
+		if err := dec.Decode(&input); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if input.Unregister == nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		i.lifecycler.SetUnregisterOnShutdown(*input.Unregister)
+	case http.MethodDelete:
+		i.lifecycler.SetUnregisterOnShutdown(i.cfg.IngesterRing.UnregisterOnShutdown)
+	}
+
+	shouldUnregister := i.lifecycler.ShouldUnregisterOnShutdown()
+	util.WriteJSONResponse(w, &prepareUnregisterBody{Unregister: &shouldUnregister})
 }
 
 // PreparePartitionDownscaleHandler prepares the ingester's partition downscaling. The partition owned by the

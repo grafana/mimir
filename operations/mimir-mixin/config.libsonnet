@@ -647,6 +647,10 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'cortex-gw.*',
       },
+      ingester: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a',
+      },
     },
 
 

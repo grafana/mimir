@@ -1617,10 +1617,10 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
 			},
 			expectedMetrics: `
-                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
-                # TYPE cortex_discarded_exemplars_total counter
-                cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
-            `,
+			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+			# TYPE cortex_discarded_exemplars_total counter
+			cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+		`,
 		},
 		"should drop exemplars with timestamp lower than the accepted minimum, when multiple exemplars are specified for the same series": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -1648,10 +1648,10 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				},
 			},
 			expectedMetrics: `
-                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
-                # TYPE cortex_discarded_exemplars_total counter
-                cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
-            `,
+			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+			# TYPE cortex_discarded_exemplars_total counter
+			cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+		`,
 		},
 		"should drop exemplars with timestamp lower than the accepted minimum, when multiple exemplars are specified in the same series": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -1679,10 +1679,10 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				},
 			},
 			expectedMetrics: `
-                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
-                # TYPE cortex_discarded_exemplars_total counter
-                cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
-            `,
+			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+			# TYPE cortex_discarded_exemplars_total counter
+			cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+		`,
 		},
 		"should drop exemplars with timestamp greater than the accepted maximum, when multiple exemplars are specified in the same series": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -1710,10 +1710,71 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				},
 			},
 			expectedMetrics: `
+		        # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+		        # TYPE cortex_discarded_exemplars_total counter
+		        cortex_discarded_exemplars_total{reason="exemplar_too_far_in_future",user="user"} 1
+		    `,
+		},
+		"should drop exemplars above the allowed exemplars per series limit, when multiple exemplars are specified in the same series": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 2
+				limits.MaxExemplarsPerSeriesPerRequest = 2
+			},
+			minExemplarTS: 300000,
+			maxExemplarTS: math.MaxInt64,
+			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 600000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar3"}}, TimestampMs: 602000},
+					},
+				},
+			}),
+			expectedExemplars: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Exemplars: []mimirpb.Exemplar{
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 600000},
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+						},
+					},
+				},
+			},
+			expectedMetrics: `
                 # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
                 # TYPE cortex_discarded_exemplars_total counter
-                cortex_discarded_exemplars_total{reason="exemplar_too_far_in_future",user="user"} 1
+                cortex_discarded_exemplars_total{reason="too_many_exemplars_per_series_per_request",user="user"} 1
             `,
+		},
+		"should sort exemplars if they are not sorted": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 3
+			},
+			minExemplarTS: 600000,
+			maxExemplarTS: math.MaxInt64,
+			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 602000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+					},
+				},
+			}),
+			expectedExemplars: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Exemplars: []mimirpb.Exemplar{
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 602000},
+						},
+					},
+				},
+			},
 		},
 	}
 	now := mtime.Now()
@@ -3729,6 +3790,34 @@ func TestDistributor_UserStats(t *testing.T) {
 			shardSize:      1, // Tenant's shard made of: ingester-zone-a-0, ingester-zone-b-0 and ingester-zone-c-0.
 			expectedSeries: 5,
 		},
+		"multi zone, 5 ingesters, every series successfully replicated to 3 ingesters across 5 zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 1, happyIngesters: 1},
+				"zone-b": {numIngesters: 1, happyIngesters: 1},
+				"zone-c": {numIngesters: 1, happyIngesters: 1},
+				"zone-d": {numIngesters: 1, happyIngesters: 1},
+				"zone-e": {numIngesters: 1, happyIngesters: 1},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_2", "series_3", "series_4"),
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_3", "series_4", "series_5"),
+				},
+				"zone-d": {
+					makeWriteRequest(0, 1, 0, false, false, "series_4", "series_5", "series_1"),
+				},
+				"zone-e": {
+					makeWriteRequest(0, 1, 0, false, false, "series_5", "series_1", "series_2"),
+				},
+			},
+			// We pushed 5 series and every series has been replicated to 3 ingesters (in different zones).
+			expectedSeries: 5,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -4844,9 +4933,10 @@ type prepConfig struct {
 	circuitBreakerOpen bool
 
 	// Ingest storage specific configuration.
-	ingestStorageEnabled    bool
-	ingestStoragePartitions int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
-	ingestStorageKafka      *kfake.Cluster
+	ingestStorageEnabled          bool
+	ingestStorageMigrationEnabled bool
+	ingestStoragePartitions       int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
+	ingestStorageKafka            *kfake.Cluster
 
 	// We need this setting to simulate a response from ingesters that didn't support responding
 	// with a stream of chunks, and were responding with chunk series instead. This is needed to
@@ -5190,6 +5280,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 			ingestCfg.KafkaConfig.Topic = kafkaTopic
 			ingestCfg.KafkaConfig.Address = cfg.ingestStorageKafka.ListenAddrs()[0]
 			ingestCfg.KafkaConfig.LastProducedOffsetPollInterval = 100 * time.Millisecond
+			ingestCfg.Migration.DistributorSendToIngestersEnabled = cfg.ingestStorageMigrationEnabled
 		}
 
 		distributorCfg.IngesterClientFactory = factory
@@ -7052,6 +7143,64 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			strings.NewReader(expectedMetrics),
 			metricNames...,
 		))
+	})
+}
+
+func TestDistributor_StorageConfigMetrics(t *testing.T) {
+	t.Run("classic storage", func(t *testing.T) {
+		t.Parallel()
+		_, _, regs, _ := prepare(t, prepConfig{
+			numDistributors:   1,
+			numIngesters:      3,
+			happyIngesters:    3,
+			replicationFactor: 3,
+		})
+		assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+			# HELP cortex_distributor_replication_factor The configured replication factor.
+			# TYPE cortex_distributor_replication_factor gauge
+			cortex_distributor_replication_factor 3
+
+			# HELP cortex_distributor_ingest_storage_enabled Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.
+			# TYPE cortex_distributor_ingest_storage_enabled gauge
+			cortex_distributor_ingest_storage_enabled 0
+		`), "cortex_distributor_replication_factor", "cortex_distributor_ingest_storage_enabled"))
+	})
+
+	t.Run("migration to ingest storage", func(t *testing.T) {
+		t.Parallel()
+		_, _, regs, _ := prepare(t, prepConfig{
+			ingestStorageEnabled:          true,
+			ingestStorageMigrationEnabled: true,
+			numDistributors:               1,
+			numIngesters:                  3,
+			happyIngesters:                3,
+			replicationFactor:             3,
+		})
+		assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+			# HELP cortex_distributor_replication_factor The configured replication factor.
+			# TYPE cortex_distributor_replication_factor gauge
+			cortex_distributor_replication_factor 3
+
+			# HELP cortex_distributor_ingest_storage_enabled Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.
+			# TYPE cortex_distributor_ingest_storage_enabled gauge
+			cortex_distributor_ingest_storage_enabled 1
+		`), "cortex_distributor_replication_factor", "cortex_distributor_ingest_storage_enabled"))
+	})
+
+	t.Run("ingest storage", func(t *testing.T) {
+		t.Parallel()
+		_, _, regs, _ := prepare(t, prepConfig{
+			ingestStorageEnabled: true,
+			numDistributors:      1,
+			numIngesters:         3,
+			happyIngesters:       3,
+			replicationFactor:    3,
+		})
+		assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+			# HELP cortex_distributor_ingest_storage_enabled Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.
+			# TYPE cortex_distributor_ingest_storage_enabled gauge
+			cortex_distributor_ingest_storage_enabled 1
+		`), "cortex_distributor_replication_factor", "cortex_distributor_ingest_storage_enabled"))
 	})
 }
 

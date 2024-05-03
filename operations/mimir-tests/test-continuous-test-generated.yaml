@@ -455,7 +455,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: continuous-test
         ports:
-        - containerPort: 9900
+        - containerPort: 8080
           name: http-metrics
         resources:
           limits:

@@ -960,16 +960,15 @@ func TestIngester_Push(t *testing.T) {
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
-						// These are intentionally out of order to test the sorting.
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
-							TimestampMs: 2000,
-							Value:       2000,
-						},
 						{
 							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
+						},
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
 						},
 					},
 				),
@@ -2549,9 +2548,10 @@ func TestIngester_Push(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), userID)
 
-			// Wait until the ingester is healthy
-			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-				return i.lifecycler.HealthyInstancesCount()
+			// Wait until the ingester is healthy and owns tokens. Note that the timeout here is set
+			// such that it is longer than the MinReadyDuration configuration for the ingester ring.
+			test.Poll(t, time.Second, nil, func() interface{} {
+				return i.lifecycler.CheckReady(context.Background())
 			})
 
 			// Push timeseries
@@ -2568,9 +2568,9 @@ func TestIngester_Push(t *testing.T) {
 						assert.NoError(t, err)
 					} else {
 						handledErr := i.mapPushErrorToErrorWithStatus(err)
-						errWithStatus, ok := handledErr.(errorWithStatus)
+						errWithStatus, ok := handledErr.(globalerror.ErrorWithStatus)
 						assert.True(t, ok)
-						assert.True(t, errWithStatus.equals(testData.expectedErr))
+						assert.True(t, errWithStatus.Equals(testData.expectedErr))
 					}
 				}
 			}
@@ -9949,7 +9949,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 
 	tests := map[string]struct {
 		reqs             []*mimirpb.WriteRequest
-		expectedErrs     []errorWithStatus
+		expectedErrs     []globalerror.ErrorWithStatus
 		expectedMetrics  string
 		expectedSampling bool
 		maxExemplars     int
@@ -9972,7 +9972,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleOutOfOrderError(model.Time(9), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleOutOfOrderError(model.Time(9), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10005,7 +10005,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10039,7 +10039,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10076,7 +10076,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10110,7 +10110,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10138,7 +10138,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10169,7 +10169,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[1]), codes.FailedPrecondition),
 			},
@@ -10192,7 +10192,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10226,7 +10226,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[1]), codes.FailedPrecondition),
 			},
@@ -10308,13 +10308,13 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 						require.Error(t, err)
 						status, ok := grpcutil.ErrorToStatus(err)
 						require.True(t, ok)
-						require.ErrorContains(t, status.Err(), testData.expectedErrs[0].err.Error())
+						require.ErrorContains(t, status.Err(), testData.expectedErrs[0].UnderlyingErr.Error())
 					}
 					_, err = client.Push(ctxs[1], req)
 					require.Error(t, err)
 					status, ok := grpcutil.ErrorToStatus(err)
 					require.True(t, ok)
-					require.ErrorContains(t, status.Err(), testData.expectedErrs[1].err.Error())
+					require.ErrorContains(t, status.Err(), testData.expectedErrs[1].UnderlyingErr.Error())
 				}
 			}
 
@@ -10651,9 +10651,9 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 
 func checkErrorWithStatus(t *testing.T, err error, expectedErr error) {
 	require.Error(t, err)
-	errWithStatus, ok := err.(errorWithStatus)
+	errWithStatus, ok := err.(globalerror.ErrorWithStatus)
 	require.True(t, ok)
-	require.True(t, errWithStatus.equals(expectedErr))
+	require.True(t, errWithStatus.Equals(expectedErr))
 }
 
 func buildSeriesSet(t *testing.T, series *Series) []labels.Labels {
@@ -10720,6 +10720,128 @@ func TestIngester_Starting(t *testing.T) {
 			fI.startWaitAndCheck(ctx, t)
 			require.Equal(t, testCase.expectedLifecyclerStateAfterStarting, fI.lifecycler.State())
 			checkFinalRingState(ctx, fI)
+		})
+	}
+}
+
+func TestIngester_PrepareUnregisterHandler(t *testing.T) {
+	ctx := context.Background()
+
+	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	require.NoError(t, err)
+
+	type testCase struct {
+		name                     string
+		startIngester            bool
+		httpMethod               string
+		requestBody              io.Reader
+		prepare                  func(i *Ingester)
+		expectedStatusCode       int
+		expectedResponseBody     string
+		expectedUnregisterStatus bool
+	}
+
+	tests := []testCase{
+		{
+			name:                     "returns HTTP 503 if ingester is not running",
+			startIngester:            false,
+			httpMethod:               http.MethodGet,
+			requestBody:              nil,
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusServiceUnavailable,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 400 on PUT with request body that is not valid JSON",
+			startIngester:            true,
+			httpMethod:               http.MethodPut,
+			requestBody:              strings.NewReader("invalid json"),
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusBadRequest,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 400 on PUT with request body that is valid JSON but has incorrect structure",
+			startIngester:            true,
+			httpMethod:               http.MethodPut,
+			requestBody:              strings.NewReader(`{"ping": "pong"}`),
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusBadRequest,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 200 and unregister status on PUT with valid request body",
+			startIngester:            true,
+			httpMethod:               http.MethodPut,
+			requestBody:              strings.NewReader(`{"unregister": false}`),
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusOK,
+			expectedResponseBody:     `{"unregister":false}`,
+			expectedUnregisterStatus: false,
+		},
+		{
+			name:                     "returns HTTP 200 with unregister status on GET request",
+			startIngester:            true,
+			httpMethod:               http.MethodGet,
+			requestBody:              nil,
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusOK,
+			expectedResponseBody:     `{"unregister":true}`,
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:          "returns HTTP 200 with unregister status on DELETE request",
+			startIngester: true,
+			httpMethod:    http.MethodDelete,
+			requestBody:   nil,
+			prepare: func(i *Ingester) {
+				i.lifecycler.SetUnregisterOnShutdown(false)
+			},
+			expectedStatusCode:       http.StatusOK,
+			expectedResponseBody:     `{"unregister":true}`,
+			expectedUnregisterStatus: true,
+		},
+	}
+
+	setup := func(t *testing.T, start bool, cfg Config) *Ingester {
+		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
+
+		if start {
+			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+			})
+
+			test.Poll(t, 1*time.Second, 1, func() interface{} {
+				return ingester.lifecycler.HealthyInstancesCount()
+			})
+		}
+
+		return ingester
+	}
+
+	for _, tc := range tests {
+		// Avoid a common gotcha with table driven tests and t.Parallel().
+		// See https://gist.github.com/posener/92a55c4cd441fc5e5e85f27bca008721.
+		// As of writing these tests, Mimir runs on go 1.21. Once go.mod is updated to specify go 1.22, this line can
+		// be dropped. See https://tip.golang.org/wiki/LoopvarExperiment.
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ingester := setup(t, tc.startIngester, defaultIngesterTestConfig(t))
+			if tc.prepare != nil {
+				tc.prepare(ingester)
+			}
+			res := httptest.NewRecorder()
+			ingester.PrepareUnregisterHandler(res, httptest.NewRequest(tc.httpMethod, "/ingester/unregister-on-shutdown", tc.requestBody))
+			require.Equal(t, tc.expectedStatusCode, res.Code)
+			require.Equal(t, tc.expectedResponseBody, res.Body.String())
+			require.Equal(t, tc.expectedUnregisterStatus, ingester.lifecycler.ShouldUnregisterOnShutdown())
 		})
 	}
 }

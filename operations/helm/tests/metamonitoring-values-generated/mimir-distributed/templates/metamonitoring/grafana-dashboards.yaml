@@ -25627,7 +25627,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Replicas\nThe maximum and current number of ruler-querier replicas.\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
+                      "description": "### Replicas\nThe maximum and current number of ruler-querier replicas.<br /><br />\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -29143,7 +29143,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(user) (rate(cortex_prometheus_notifications_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  /\nsum by(user) (rate(cortex_prometheus_notifications_queue_capacity{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) > 0\n",
+                            "expr": "sum by(user) (cortex_prometheus_notifications_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"})\n  /\nsum by(user) (cortex_prometheus_notifications_queue_capacity{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}) > 0\n",
                             "format": "time_series",
                             "legendFormat": "{{ user }}",
                             "legendLink": null
@@ -39419,7 +39419,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Replicas\nThe maximum and current number of distributor replicas.\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
+                      "description": "### Replicas\nThe maximum and current number of distributor replicas.<br /><br />\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -39679,7 +39679,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Distributor - autoscaling",
+                "title": "Distributor – autoscaling",
                 "titleSize": "h6"
              },
              {
