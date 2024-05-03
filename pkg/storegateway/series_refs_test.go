@@ -1384,55 +1384,73 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 		return sortedTestCases[i].name < sortedTestCases[j].name
 	})
 
+	chunksStreamingCases := map[bool]string{
+		true:  "for chunks streaming",
+		false: "not for chunks streaming",
+	}
+
 	for _, testCase := range sortedTestCases {
 		testName, tc := testCase.name, testCase.tc
 		t.Run(testName, func(t *testing.T) {
-			// Setup
-			blockFactory := defaultTestBlockFactory
-			if tc.blockFactory != nil {
-				blockFactory = tc.blockFactory
-			}
-			block := blockFactory()
-			indexr := block.indexReader(selectAllStrategy{})
-			postings, _, err := indexr.ExpandedPostings(context.Background(), tc.matchers, newSafeQueryStats())
-			require.NoError(t, err)
-			postingsIterator := newPostingsSetsIterator(
-				postings,
-				tc.batchSize,
-			)
-			hasher := tc.seriesHasher
-			if hasher == nil {
-				hasher = cachedSeriesHasher{hashcache.NewSeriesHashCache(100).GetBlockCache("")}
-			}
-			if tc.strategy == 0 {
-				tc.strategy = defaultStrategy // the `0` strategy is not usable, so test cases probably meant to not set it
-			}
-			loadingIterator := newLoadingSeriesChunkRefsSetIterator(
-				context.Background(),
-				postingsIterator,
-				indexr,
-				noopCache{},
-				newSafeQueryStats(),
-				block.meta,
-				tc.shard,
-				hasher,
-				tc.strategy,
-				tc.minT,
-				tc.maxT,
-				"t1",
-				log.NewNopLogger(),
-			)
+			for enableChunksStreaming, name := range chunksStreamingCases {
+				t.Run(name, func(t *testing.T) {
+					// Setup
+					blockFactory := defaultTestBlockFactory
+					if tc.blockFactory != nil {
+						blockFactory = tc.blockFactory
+					}
+					block := blockFactory()
+					indexr := block.indexReader(selectAllStrategy{})
+					postings, _, err := indexr.ExpandedPostings(context.Background(), tc.matchers, newSafeQueryStats())
+					require.NoError(t, err)
+					postingsIterator := newPostingsSetsIterator(
+						postings,
+						tc.batchSize,
+					)
+					hasher := tc.seriesHasher
+					if hasher == nil {
+						hasher = cachedSeriesHasher{hashcache.NewSeriesHashCache(100).GetBlockCache("")}
+					}
 
-			// Tests
-			sets := readAllSeriesChunkRefsSet(loadingIterator)
-			assert.NoError(t, loadingIterator.Err())
-			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, tc.minT, tc.maxT, tc.strategy, tc.expectedSets, sets)
+					strategy := tc.strategy
 
-			// Ensure that the iterator behaves correctly after a reset.
-			loadingIterator.Reset()
-			setsAfterReset := readAllSeriesChunkRefsSet(loadingIterator)
-			assert.NoError(t, loadingIterator.Err())
-			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, tc.minT, tc.maxT, tc.strategy, tc.expectedSets, setsAfterReset)
+					if strategy == 0 {
+						strategy = defaultStrategy // the `0` strategy is not usable, so test cases probably meant to not set it
+					}
+
+					if enableChunksStreaming {
+						strategy = strategy | forChunksStreaming
+					}
+
+					loadingIterator := newLoadingSeriesChunkRefsSetIterator(
+						context.Background(),
+						postingsIterator,
+						indexr,
+						noopCache{},
+						newSafeQueryStats(),
+						block.meta,
+						tc.shard,
+						hasher,
+						strategy,
+						tc.minT,
+						tc.maxT,
+						"t1",
+						log.NewNopLogger(),
+					)
+
+					sets := readAllSeriesChunkRefsSet(loadingIterator)
+					assert.NoError(t, loadingIterator.Err())
+					assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, tc.minT, tc.maxT, strategy, tc.expectedSets, sets)
+
+					if enableChunksStreaming {
+						// Ensure that the iterator behaves correctly after a reset.
+						loadingIterator.Reset()
+						setsAfterReset := readAllSeriesChunkRefsSet(loadingIterator)
+						assert.NoError(t, loadingIterator.Err())
+						assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, tc.minT, tc.maxT, strategy, tc.expectedSets, setsAfterReset)
+					}
+				})
+			}
 		})
 	}
 }
