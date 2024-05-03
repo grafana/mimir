@@ -1447,6 +1447,8 @@ func TestOwnedSeriesIngesterRingStrategyRingChanged(t *testing.T) {
 
 	t.Run("change of state is not interesting", func(t *testing.T) {
 		updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
+			// Change only the state of the ingester without registering it again in the ring.
+			// We only want to change the state and not any other field.
 			ingester2 := desc.Ingesters[instanceID2]
 			ingester2.State = ring.LEAVING
 			desc.Ingesters[instanceID2] = ingester2
