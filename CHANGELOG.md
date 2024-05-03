@@ -7,13 +7,16 @@
 * [CHANGE] Ingester: `/ingester/flush` endpoint is now only allowed to execute only while the ingester is in `Running` state. The 503 status code is returned if the endpoint is called while the ingester is not in `Running` state. #7486
 * [CHANGE] Distributor: Include label name in `err-mimir-label-value-too-long` error message: #7740
 * [CHANGE] Ingester: enabled 1 out 10 errors log sampling by default. All the discarded samples will still be tracked by the `cortex_discarded_samples_total` metric. The feature can be configured via `-ingester.error-sample-rate` (0 to log all errors). #7807
+* [CHANGE] Query-frontend: Query results caching and experimental query blocking now utilize the PromQL string-formatted query format rather than the unvalidated query as submitted to the frontend. #7742
+  * Query results caching should be more stable as all equivalent queries receive the same cache key, but there may be cache churn on first deploy with the updated format
+  * Query blocking can no longer be circumvented with an equivalent query in a different format; see [Configure queries to block](https://grafana.com/docs/mimir/latest/configure/configure-blocked-queries/)
 * [FEATURE] Continuous-test: now runable as a module with `mimir -target=continuous-test`. #7747
 * [FEATURE] Store-gateway: Allow specific tenants to be enabled or disabled via `-store-gateway.enabled-tenants` or `-store-gateway.disabled-tenants` CLI flags or their corresponding YAML settings. #7653
 * [FEATURE] New `-<prefix>.s3.bucket-lookup-type` flag configures lookup style type, used to access bucket in s3 compatible providers. #7684
-* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.promql-engine=streaming`. #7693 #7899
+* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.promql-engine=streaming`. #7693 #7898 #7899
 * [FEATURE] New `/ingester/unregister-on-shutdown` HTTP endpoint allows dynamic access to ingesters' `-ingester.ring.unregister-on-shutdown` configuration. #7739
 * [FEATURE] Server: added experimental [PROXY protocol support](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt). The PROXY protocol support can be enabled via `-server.proxy-protocol-enabled=true`. When enabled, the support is added both to HTTP and gRPC listening ports. #7698
-* [ENHANCEMENT] Distributor: add experimental limit for exemplars per series per request, enabled with `-distributor.max-exemplars-per-series-per-request`, the number of discarded exemplars are tracked with `cortex_discarded_exemplars_total{reason="too_many_exemplars_per_series"}` #7989
+* [ENHANCEMENT] Distributor: add experimental limit for exemplars per series per request, enabled with `-distributor.max-exemplars-per-series-per-request`, the number of discarded exemplars are tracked with `cortex_discarded_exemplars_total{reason="too_many_exemplars_per_series_per_request"}` #7989 #8010
 * [ENHANCEMENT] Store-gateway: merge series from different blocks concurrently. #7456
 * [ENHANCEMENT] Store-gateway: Add `stage="wait_max_concurrent"` to `cortex_bucket_store_series_request_stage_duration_seconds` which records how long the query had to wait for its turn for `-blocks-storage.bucket-store.max-concurrent`. #7609
 * [ENHANCEMENT] Querier: add `cortex_querier_federation_upstream_query_wait_duration_seconds` to observe time from when a querier picks up a cross-tenant query to when work begins on its single-tenant counterparts. #7209
@@ -25,13 +28,15 @@
 * [ENHANCEMENT] Expose TLS configuration for the S3 backend client. #2652
 * [ENHANCEMENT] Rules: Support expansion of native histogram values when using rule templates #7974
 * [ENHANCEMENT] Rules: Add metric `cortex_prometheus_rule_group_last_restore_duration_seconds` which measures how long it takes to restore rule groups using the `ALERTS_FOR_STATE` series #7974
+* [ENHANCEMENT] OTLP: Improve remote write format translation performance by using label set hashes for metric identifiers instead of string based ones. #8012
+* [ENHANCEMENT] Querying: Remove OpEmptyMatch from regex concatenations. #8012
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 * [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
 * [BUGFIX] querier: Don't cache context.Canceled errors for bucket index. #7620
 * [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622
 * [BUGFIX] Query-frontend: Don't panic when using the `-query-frontend.downstream-url` flag. #7651
-* [BUGFIX] Ingester: when receiving multiple exemplars for a native histogram via remote write, sort them and only report an error if all are older than the latest exemplar as this could be a partial update. #7640 #7948
+* [BUGFIX] Ingester: when receiving multiple exemplars for a native histogram via remote write, sort them and only report an error if all are older than the latest exemplar as this could be a partial update. #7640 #7948 #8014
 * [BUGFIX] Ingester: don't retain blocks if they finish exactly on the boundary of the retention window. #7656
 * [BUGFIX] Bug-fixes and improvements to experimental native histograms. #7744 #7813
 * [BUGFIX] Querier: return an error when a query uses `label_join` with an invalid destination label name. #7744
@@ -43,6 +48,11 @@
 * [BUGFIX] Ingester: do not reuse exemplars slice in the write request if there are more than 10 exemplars per series. This should help to reduce the in-use memory in case of few requests with a very large number of exemplars. #7936
 * [BUGFIX] Distributor: fix down scaling of native histograms in the distributor when timeseries unmarshal cache is in use. #7947
 * [BUGFIX] Distributor: fix cardinality API to return more accurate number of in-memory series when number of zones is larger than replication factor. #7984
+* [BUGFIX] All: fix config validation for non-ingester modules, when ingester's ring is configured with spread-minimizing token generation strategy. #7990
+* [BUGFIX] Ingester: copy LabelValues strings out of mapped memory to avoid a segmentation fault if the region becomes unmapped before the result is marshaled. #8003
+* [BUGFIX] OTLP: Don't generate target_info unless at least one identifying label is defined. #8012
+* [BUGFIX] OTLP: Don't generate target_info unless there are metrics. #8012
+* [BUGFIX] Query-frontend: Experimental query queue splitting: fix issue where offset and range selector duration were not considered when predicting query component. #7742
 
 ### Mixin
 
@@ -85,6 +95,7 @@
 
 * [CHANGE] Deprecated `--rule-files` flag in favor of CLI arguments. #7756
 * [BUGFIX] Fix panic in `loadgen` subcommand. #7629
+* [ENHANCEMENT] `mimirtool promql format`: Format PromQL query with Prometheus' string or pretty-print formatter. #7742
 * [BUGFIX] `mimirtool rules prepare`: do not add aggregation label to `on()` clause if already present in `group_left()` or `group_right()`. #7839
 
 ### Mimir Continuous Test
@@ -97,7 +108,7 @@
 ### Query-tee
 
 * [ENHANCEMENT] Log queries that take longer than `proxy.log-slow-query-response-threshold` when compared to other backends. #7346
-* [ENHANCEMENT] Add two new metrics for measuring the relative duration between backends: #7782
+* [ENHANCEMENT] Add two new metrics for measuring the relative duration between backends: #7782 #8013
   * `cortex_querytee_backend_response_relative_duration_seconds`
   * `cortex_querytee_backend_response_relative_duration_proportional`
 

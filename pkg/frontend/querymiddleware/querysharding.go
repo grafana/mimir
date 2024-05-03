@@ -144,7 +144,10 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddShardedQueries(uint32(shardingStats.GetShardedQueries()))
 
-	r = r.WithQuery(shardedQuery)
+	r, err = r.WithQuery(shardedQuery)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
 	shardedQueryable := newShardedQueryable(r, s.next)
 
 	qry, err := newQuery(ctx, r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))

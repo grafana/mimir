@@ -8,6 +8,7 @@ package mimirpb
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 	"unsafe"
@@ -181,6 +182,13 @@ func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
 		p.Exemplars[ix] = p.Exemplars[last]
 	}
 	p.Exemplars = p.Exemplars[:last]
+	p.clearUnmarshalData()
+}
+
+func (p *PreallocTimeseries) SortExemplars() {
+	sort.Slice(p.Exemplars, func(i, j int) bool {
+		return p.Exemplars[i].TimestampMs < p.Exemplars[j].TimestampMs
+	})
 	p.clearUnmarshalData()
 }
 

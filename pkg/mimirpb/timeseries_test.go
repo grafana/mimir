@@ -566,3 +566,23 @@ func TestClearExemplars(t *testing.T) {
 		assert.Equal(t, 0, cap(ts.Exemplars))
 	})
 }
+
+func TestSortExemplars(t *testing.T) {
+	t.Run("should sort TimeSeries.Exemplars in order", func(t *testing.T) {
+		p := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Exemplars: []Exemplar{
+					{Labels: []LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 3},
+					{Labels: []LabelAdapter{{Name: "trace", Value: "2"}, {Name: "service", Value: "B"}}, Value: 2, TimestampMs: 2},
+				},
+			},
+			marshalledData: []byte{1, 2, 3},
+		}
+
+		p.SortExemplars()
+		require.Len(t, p.Exemplars, 2)
+		assert.Equal(t, int64(2), p.Exemplars[0].TimestampMs)
+		assert.Equal(t, int64(3), p.Exemplars[1].TimestampMs)
+		assert.Nil(t, p.marshalledData)
+	})
+}

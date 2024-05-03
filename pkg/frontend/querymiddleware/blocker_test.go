@@ -29,7 +29,7 @@ func Test_queryBlocker_Do(t *testing.T) {
 			limits:         mockLimits{},
 			shouldContinue: true,
 			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
-				Query: "rate(metric_counter[5m])",
+				queryExpr: parseQuery(t, "rate(metric_counter[5m])"),
 			}),
 		},
 		{
@@ -40,7 +40,7 @@ func Test_queryBlocker_Do(t *testing.T) {
 				},
 			},
 			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
-				Query: "rate(metric_counter[5m])",
+				queryExpr: parseQuery(t, "rate(metric_counter[5m])"),
 			}),
 		},
 		{
@@ -53,20 +53,19 @@ func Test_queryBlocker_Do(t *testing.T) {
 			shouldContinue: true,
 
 			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
-				Query: "rate(metric_counter[15m])",
+				queryExpr: parseQuery(t, "rate(metric_counter[15m])"),
 			}),
 		},
 		{
 			name: "blocks multiple line query non regex pattern",
 			limits: mockLimits{
 				blockedQueries: []*validation.BlockedQuery{
-					{Pattern: `rate(metric_counter[5m])/
-rate(other_counter[5m])`, Regex: false},
+					{Pattern: `rate(metric_counter[5m]) / rate(other_counter[5m])`, Regex: false},
 				},
 			},
 			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
-				Query: `rate(metric_counter[5m])/
-rate(other_counter[5m])`,
+				queryExpr: parseQuery(t, `rate(metric_counter[5m])/
+rate(other_counter[5m])`),
 			}),
 		},
 		{
@@ -79,8 +78,8 @@ rate(other_counter[5m])`,
 			shouldContinue: true,
 
 			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
-				Query: `rate(metric_counter[15m])/
-rate(other_counter[15m])`,
+				queryExpr: parseQuery(t, `rate(metric_counter[15m])/
+rate(other_counter[15m])`),
 			}),
 		},
 		{
@@ -91,7 +90,7 @@ rate(other_counter[15m])`,
 				},
 			},
 			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
-				Query: "rate(metric_counter[5m])",
+				queryExpr: parseQuery(t, "rate(metric_counter[5m])"),
 			}),
 		},
 		{
@@ -103,8 +102,8 @@ rate(other_counter[15m])`,
 				},
 			},
 			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
-				Query: `rate(other_counter[15m])/
-		rate(metric_counter[15m])`,
+				queryExpr: parseQuery(t, `rate(other_counter[15m])/
+		rate(metric_counter[15m])`),
 			}),
 		},
 		{
@@ -117,7 +116,7 @@ rate(other_counter[15m])`,
 			shouldContinue: true,
 
 			request: MetricsQueryRequest(&PrometheusRangeQueryRequest{
-				Query: "rate(metric_counter[5m])",
+				queryExpr: parseQuery(t, "rate(metric_counter[5m])"),
 			}),
 		},
 	}

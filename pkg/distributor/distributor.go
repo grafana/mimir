@@ -690,6 +690,8 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 		ts.ResizeExemplars(allowedExemplars)
 	}
 
+	var previousExemplarTS int64 = math.MinInt64
+	isInOrder := true
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
 		if err := validateExemplar(d.exemplarValidationMetrics, userID, ts.Labels, e); err != nil {
@@ -704,7 +706,15 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 			// Don't increase index i. After moving last exemplar to this index, we want to check it again.
 			continue
 		}
+		// We want to check if exemplars are in order. If they are not, we will sort them and invalidate the cache.
+		if isInOrder && previousExemplarTS > ts.Exemplars[i].TimestampMs {
+			isInOrder = false
+		}
+		previousExemplarTS = ts.Exemplars[i].TimestampMs
 		i++
+	}
+	if !isInOrder {
+		ts.SortExemplars()
 	}
 	return nil
 }

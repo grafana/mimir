@@ -1335,6 +1335,12 @@ store_gateway_client:
 # CLI flag: -querier.promql-engine
 [promql_engine: <string> | default = "standard"]
 
+# (experimental) If set to true and the streaming engine is in use, fall back to
+# using the Prometheus PromQL engine for any queries not supported by the
+# streaming engine.
+# CLI flag: -querier.enable-promql-engine-fallback
+[enable_promql_engine_fallback: <boolean> | default = true]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
 # CLI flag: -querier.max-concurrent
