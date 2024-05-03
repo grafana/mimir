@@ -1,9 +1,9 @@
 ---
 aliases:
-  - ../operators-guide/configure/reference-configuration-parameters/
-  - ../operators-guide/configuring/reference-configuration-parameters/
-  - ../reference-configuration-parameters/
-  - ../references/configuration-parameters/
+- ../operators-guide/configure/reference-configuration-parameters/
+- ../operators-guide/configuring/reference-configuration-parameters/
+- ../reference-configuration-parameters/
+- ../references/configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration parameters
 title: Grafana Mimir configuration parameters
@@ -131,6 +131,16 @@ where `default_value` is the value to use if the environment variable is undefin
 # and go_memstats_*.
 # CLI flag: -enable-go-runtime-metrics
 [enable_go_runtime_metrics: <boolean> | default = false]
+
+# The grpc_client block configures the gRPC client used to communicate between
+# two Mimir components.
+# The CLI flags prefix for this block configuration is: grpc1
+[grpc1: <grpc_client>]
+
+# The grpc_client block configures the gRPC client used to communicate between
+# two Mimir components.
+# The CLI flags prefix for this block configuration is: grpc2
+[grpc2: <grpc_client>]
 
 api:
   # (advanced) Allows to skip label name validation via
@@ -1256,7 +1266,7 @@ store_gateway_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -1271,7 +1281,7 @@ store_gateway_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -1739,7 +1749,7 @@ alertmanager_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -1754,7 +1764,7 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2216,7 +2226,7 @@ alertmanager_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -2231,7 +2241,7 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2395,6 +2405,8 @@ circuit_breaker:
 
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
+- `grpc1`
+- `grpc2`
 - `ingester.client`
 - `querier.frontend-client`
 - `querier.scheduler-client`
@@ -2487,7 +2499,7 @@ backoff_config:
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -2502,7 +2514,7 @@ backoff_config:
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2644,7 +2656,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -2659,7 +2671,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2901,7 +2913,7 @@ The `memberlist` block configures the Gossip memberlist.
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -2916,7 +2928,7 @@ The `memberlist` block configures the Gossip memberlist.
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -4409,7 +4421,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -4424,7 +4436,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -4566,7 +4578,7 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -4581,7 +4593,7 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA

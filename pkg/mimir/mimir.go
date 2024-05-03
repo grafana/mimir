@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
@@ -110,6 +111,9 @@ type Config struct {
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
 
+	Grpc1 grpcclient.Config `yaml:"grpc1"`
+	Grpc2 grpcclient.Config `yaml:"grpc2"`
+
 	API              api.Config                      `yaml:"api"`
 	Server           server.Config                   `yaml:"server"`
 	Distributor      distributor.Config              `yaml:"distributor"`
@@ -168,6 +172,9 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.EnableGoRuntimeMetrics, "enable-go-runtime-metrics", false, "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.")
 	f.BoolVar(&c.TimeseriesUnmarshalCachingOptimizationEnabled, "timeseries-unmarshal-caching-optimization-enabled", true, "Enables optimized marshaling of timeseries.")
 
+	c.Grpc1.RegisterFlagsWithPrefix("grpc1", f)
+	c.Grpc2.RegisterFlagsWithPrefix("grpc2", f)
+	
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
 	c.Distributor.RegisterFlags(f, logger)
