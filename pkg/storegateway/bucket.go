@@ -55,6 +55,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -546,18 +547,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		// We don't do the streaming call if we are not requesting the chunks.
 		req.StreamingChunksBatchSize = 0
 	}
-	defer func() {
-		if err == nil {
-			return
-		}
-		code := codes.Internal
-		if st, ok := grpcutil.ErrorToStatus(err); ok {
-			code = st.Code()
-		} else if errors.Is(err, context.Canceled) {
-			code = codes.Canceled
-		}
-		err = status.Error(code, err.Error())
-	}()
+	defer func() { err = mapSeriesError(err) }()
 
 	matchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
 	if err != nil {
@@ -611,11 +601,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
 	done, err := s.limitConcurrentQueries(ctx, stats)
 	if err != nil {
-		if errors.Is(err, errGateTimeout) {
-			// If the gate timed out, then we behave in the same way as if the blocks aren't discovered yet.
-			// The querier will try the blocks again on a different store-gateway replica.
-			return nil
-		}
 		return err
 	}
 	defer done()
@@ -712,6 +697,31 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	}
 
 	return nil
+}
+
+func mapSeriesError(err error) error {
+	if err == nil {
+		return err
+	}
+
+	var stGwErr storeGatewayError
+	switch {
+	case errors.As(err, &stGwErr):
+		switch cause := stGwErr.errorCause(); cause {
+		case mimirpb.INSTANCE_LIMIT:
+			return globalerror.NewErrorWithGRPCStatus(stGwErr, codes.Unavailable, &mimirpb.ErrorDetails{Cause: cause})
+		default:
+			return globalerror.NewErrorWithGRPCStatus(stGwErr, codes.Internal, &mimirpb.ErrorDetails{Cause: cause})
+		}
+	default:
+		code := codes.Internal
+		if st, ok := grpcutil.ErrorToStatus(err); ok {
+			code = st.Code()
+		} else if errors.Is(err, context.Canceled) {
+			code = codes.Canceled
+		}
+		return status.Error(code, err.Error())
+	}
 }
 
 func (s *BucketStore) recordRequestAmbientTime(stats *safeQueryStats, requestStart time.Time) {

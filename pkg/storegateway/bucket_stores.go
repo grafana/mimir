@@ -26,6 +26,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -430,7 +431,7 @@ type timeoutGate struct {
 	timeout  time.Duration
 }
 
-var errGateTimeout = errors.New("concurrency gate waiting timeout")
+var errGateTimeout = staticError{cause: mimirpb.INSTANCE_LIMIT, msg: "timeout waiting for concurrency gate"}
 
 func (t timeoutGate) Start(ctx context.Context) error {
 	if t.timeout == 0 {
