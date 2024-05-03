@@ -66,19 +66,15 @@ func shouldRetry(err error) bool {
 //	err2 := b.WithRequestDurationLimit(2*time.Minute).Upload(ctx, "stuff/bigmanifest", ...)
 //	...
 func (r *retryingBucket) WithRequestDurationLimit(lim time.Duration) *retryingBucket {
-	return &retryingBucket{
-		Bucket:               r.Bucket,
-		requestDurationLimit: lim,
-		retryPolicy:          r.retryPolicy,
-	}
+	clone := *r
+	clone.requestDurationLimit = lim
+	return &clone
 }
 
 func (r *retryingBucket) WithRetries(bc backoff.Config) *retryingBucket {
-	return &retryingBucket{
-		Bucket:               r.Bucket,
-		requestDurationLimit: r.requestDurationLimit,
-		retryPolicy:          bc,
-	}
+	clone := *r
+	clone.retryPolicy = bc
+	return &clone
 }
 
 func (r *retryingBucket) requestContextWithBackoff(ctx context.Context) (context.Context, context.CancelFunc, *backoff.Backoff) {
