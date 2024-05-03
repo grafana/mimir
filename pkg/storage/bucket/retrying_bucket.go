@@ -13,21 +13,21 @@ import (
 	"github.com/thanos-io/objstore"
 )
 
-// retryingBucket is a bucket wrapper that knows how to add retries on top of
+// RetryingBucket is a bucket wrapper that knows how to add retries on top of
 // (most of) the Bucket operations.  The Thanos Bucket providers each have some
 // level of retries, but they can be inconsistent. And they don't handle things
 // like the request context timing out due to a hung TCP connection.
-type retryingBucket struct {
+type RetryingBucket struct {
 	objstore.Bucket
 
 	requestDurationLimit time.Duration
 	retryPolicy          backoff.Config
 }
 
-var _ objstore.Bucket = (*retryingBucket)(nil)
+var _ objstore.Bucket = (*RetryingBucket)(nil)
 
-func NewRetryingBucket(wrappedBucket objstore.Bucket) *retryingBucket {
-	return &retryingBucket{
+func NewRetryingBucket(wrappedBucket objstore.Bucket) *RetryingBucket {
+	return &RetryingBucket{
 		Bucket:               wrappedBucket,
 		requestDurationLimit: 30 * time.Second,
 		retryPolicy: backoff.Config{
@@ -65,19 +65,19 @@ func shouldRetry(err error) bool {
 //	err1 := b.WithRequestDurationLimit(10*time.Second).Get(ctx, "stuff/tinymanifest")
 //	err2 := b.WithRequestDurationLimit(2*time.Minute).Upload(ctx, "stuff/bigmanifest", ...)
 //	...
-func (r *retryingBucket) WithRequestDurationLimit(lim time.Duration) *retryingBucket {
+func (r *RetryingBucket) WithRequestDurationLimit(lim time.Duration) *RetryingBucket {
 	clone := *r
 	clone.requestDurationLimit = lim
 	return &clone
 }
 
-func (r *retryingBucket) WithRetries(bc backoff.Config) *retryingBucket {
+func (r *RetryingBucket) WithRetries(bc backoff.Config) *RetryingBucket {
 	clone := *r
 	clone.retryPolicy = bc
 	return &clone
 }
 
-func (r *retryingBucket) requestContextWithBackoff(ctx context.Context) (context.Context, context.CancelFunc, *backoff.Backoff) {
+func (r *RetryingBucket) requestContextWithBackoff(ctx context.Context) (context.Context, context.CancelFunc, *backoff.Backoff) {
 	rctx := ctx
 	cancelFunc := func() {}
 	if r.requestDurationLimit > 0 {
@@ -86,7 +86,7 @@ func (r *retryingBucket) requestContextWithBackoff(ctx context.Context) (context
 	return rctx, cancelFunc, backoff.New(ctx, r.retryPolicy)
 }
 
-func (r *retryingBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+func (r *RetryingBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	rctx, cancel, b := r.requestContextWithBackoff(ctx)
 	defer cancel()
 	var lastErr error
@@ -105,7 +105,7 @@ func (r *retryingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 	return nil, fmt.Errorf("get failed with retries: %w (%w)", lastErr, b.Err())
 }
 
-func (r *retryingBucket) GetRange(ctx context.Context, name string, off int64, length int64) (io.ReadCloser, error) {
+func (r *RetryingBucket) GetRange(ctx context.Context, name string, off int64, length int64) (io.ReadCloser, error) {
 	rctx, cancel, b := r.requestContextWithBackoff(ctx)
 	defer cancel()
 	var lastErr error
@@ -124,7 +124,7 @@ func (r *retryingBucket) GetRange(ctx context.Context, name string, off int64, l
 	return nil, fmt.Errorf("get range failed with retries: %w (%w)", lastErr, b.Err())
 }
 
-func (r *retryingBucket) Upload(ctx context.Context, name string, reader io.Reader) error {
+func (r *RetryingBucket) Upload(ctx context.Context, name string, reader io.Reader) error {
 	rctx, cancel, b := r.requestContextWithBackoff(ctx)
 	defer cancel()
 	var lastErr error
