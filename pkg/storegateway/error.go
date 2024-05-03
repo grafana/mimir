@@ -3,19 +3,19 @@ package storegateway
 import "github.com/grafana/mimir/pkg/mimirpb"
 
 type storeGatewayError interface {
-    error
-    errorCause() mimirpb.ErrorCause
+	error
+	errorCause() mimirpb.ErrorCause
 }
 
 type staticError struct {
-    cause mimirpb.ErrorCause
-    msg   string
+	cause mimirpb.ErrorCause
+	msg   string
 }
 
 func (s staticError) Error() string {
-    return s.msg
+	return s.msg
 }
 
 func (s staticError) errorCause() mimirpb.ErrorCause {
-    return s.cause
+	return s.cause
 }

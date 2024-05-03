@@ -43,7 +43,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
-    "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
@@ -55,7 +55,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
-    "github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -3288,34 +3288,34 @@ func TestShouldStopQueryFunc(t *testing.T) {
 			err:      errors.New("test"),
 			expected: false,
 		},
-        "should not stop query on store-gateway instance limit": {
-            err:      globalerror.NewErrorWithGRPCStatus(errors.New("instance limit"), codes.Aborted, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}),
-            expected: false,
-        },
-        "should not stop query on store-gateway instance limit; shouldn't look at the gRPC code, only Mimir error cause": {
-            err:      globalerror.NewErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}),
-            expected: false,
-        },
-        "should not stop query on any other mimirpb error": {
-            err:      globalerror.NewErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY}),
-            expected: false,
-        },
-        "should not stop query on any unknown error detail": {
-            err: func() error {
-                st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"})
-                require.NoError(t, createErr)
-                return st.Err()
-            }(),
-            expected: false,
-        },
-        "should not stop query on multiple error details": {
-            err: func() error {
-                st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"}, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT})
-                require.NoError(t, createErr)
-                return st.Err()
-            }(),
-            expected: false,
-        },
+		"should not stop query on store-gateway instance limit": {
+			err:      globalerror.NewErrorWithGRPCStatus(errors.New("instance limit"), codes.Aborted, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}),
+			expected: false,
+		},
+		"should not stop query on store-gateway instance limit; shouldn't look at the gRPC code, only Mimir error cause": {
+			err:      globalerror.NewErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}),
+			expected: false,
+		},
+		"should not stop query on any other mimirpb error": {
+			err:      globalerror.NewErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY}),
+			expected: false,
+		},
+		"should not stop query on any unknown error detail": {
+			err: func() error {
+				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"})
+				require.NoError(t, createErr)
+				return st.Err()
+			}(),
+			expected: false,
+		},
+		"should not stop query on multiple error details": {
+			err: func() error {
+				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"}, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT})
+				require.NoError(t, createErr)
+				return st.Err()
+			}(),
+			expected: false,
+		},
 	}
 
 	for testName, testData := range tests {
