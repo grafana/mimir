@@ -5,6 +5,8 @@ import (
 	"bytes"
 )
 
+const maxInPoolRequestBufferSize = 1024 * 1024 // 1MB
+
 // Pool is an abstraction of sync.Pool, for testability.
 type Pool interface {
 	// Get a pooled object.
@@ -53,6 +55,9 @@ func (rb *RequestBuffers) CleanUp() {
 	for i, b := range rb.buffers {
 		// Make sure the backing array doesn't retain a reference
 		rb.buffers[i] = nil
+		if b.Cap() > maxInPoolRequestBufferSize {
+			continue // Avoid pooling large buffers
+		}
 		rb.p.Put(b)
 	}
 	rb.buffers = rb.buffers[:0]
