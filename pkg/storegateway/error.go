@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package storegateway
 
 import "github.com/grafana/mimir/pkg/mimirpb"
