@@ -80,3 +80,38 @@ func TestConfig_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestConfig_GetConsumerGroup(t *testing.T) {
+	tests := map[string]struct {
+		consumerGroup string
+		instanceID    string
+		partitionID   int32
+		expected      string
+	}{
+		"should return the instance ID if no consumer group is explicitly configured": {
+			consumerGroup: "",
+			instanceID:    "ingester-zone-a-1",
+			partitionID:   1,
+			expected:      "ingester-zone-a-1",
+		},
+		"should return the configured consumer group if set": {
+			consumerGroup: "ingester-a",
+			instanceID:    "ingester-zone-a-1",
+			partitionID:   1,
+			expected:      "ingester-a",
+		},
+		"should support <partition> placeholder in the consumer group": {
+			consumerGroup: "ingester-zone-a-partition-<partition>",
+			instanceID:    "ingester-zone-a-1",
+			partitionID:   1,
+			expected:      "ingester-zone-a-partition-1",
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := KafkaConfig{ConsumerGroup: testData.consumerGroup}
+			assert.Equal(t, testData.expected, cfg.GetConsumerGroup(testData.instanceID, testData.partitionID))
+		})
+	}
+}
