@@ -96,6 +96,9 @@ func (o *Options) validate() error {
 	if o == nil {
 		return errors.New("grpctransport: opts required to be non-nil")
 	}
+	if o.InternalOptions != nil && o.InternalOptions.SkipValidation {
+		return nil
+	}
 	hasCreds := o.Credentials != nil ||
 		(o.DetectOpts != nil && len(o.DetectOpts.CredentialsJSON) > 0) ||
 		(o.DetectOpts != nil && o.DetectOpts.CredentialsFile != "")
@@ -151,6 +154,9 @@ type InternalOptions struct {
 	// DefaultScopes specifies the default OAuth2 scopes to be used for a
 	// service.
 	DefaultScopes []string
+	// SkipValidation bypasses validation on Options. It should only be used
+	// internally for clients that needs more control over their transport.
+	SkipValidation bool
 }
 
 // Dial returns a GRPCClientConnPool that can be used to communicate with a
@@ -169,7 +175,7 @@ func Dial(ctx context.Context, secure bool, opts *Options) (GRPCClientConnPool, 
 	}
 	pool := &roundRobinConnPool{}
 	for i := 0; i < opts.PoolSize; i++ {
-		conn, err := dial(ctx, false, opts)
+		conn, err := dial(ctx, secure, opts)
 		if err != nil {
 			// ignore close error, if any
 			defer pool.Close()
@@ -287,13 +293,22 @@ func (c *grpcCredentialsProvider) GetRequestMetadata(ctx context.Context, uri ..
 			return nil, fmt.Errorf("unable to transfer credentials PerRPCCredentials: %v", err)
 		}
 	}
-	metadata := map[string]string{
-		"authorization": token.Type + " " + token.Value,
-	}
+	metadata := make(map[string]string, len(c.metadata)+1)
+	setAuthMetadata(token, metadata)
 	for k, v := range c.metadata {
 		metadata[k] = v
 	}
 	return metadata, nil
+}
+
+// setAuthMetadata uses the provided token to set the Authorization metadata.
+// If the token.Type is empty, the type is assumed to be Bearer.
+func setAuthMetadata(token *auth.Token, m map[string]string) {
+	typ := token.Type
+	if typ == "" {
+		typ = internal.TokenTypeBearer
+	}
+	m["authorization"] = typ + " " + token.Value
 }
 
 func (c *grpcCredentialsProvider) RequireTransportSecurity() bool {
