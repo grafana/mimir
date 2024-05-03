@@ -8,7 +8,7 @@ should_be_namespaced(contents) {
 }
 
 should_be_namespaced(contents) {
-	not contents.kind in ["PodSecurityPolicy", "Namespace"]
+	not contents.kind in ["PodSecurityPolicy", "Namespace", "CustomResourceDefinition"]
 }
 
 metadata_has_namespace(metadata) {
