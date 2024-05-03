@@ -1764,8 +1764,10 @@ func (m *MetricsMetadataResponse) GetMetadata() []*mimirpb.MetricMetadata {
 }
 
 type ActiveSeriesResponse struct {
-	Metric      []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
-	BucketCount []uint64          `protobuf:"varint,2,rep,packed,name=bucket_count,json=bucketCount,proto3" json:"bucket_count,omitempty"`
+	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
+	// bucket_count is only used when the request type was NATIVE_HISTOGRAM_SERIES.
+	// bucket_count contains the native histogram active buckets count for each series in "metric" above.
+	BucketCount []uint64 `protobuf:"varint,2,rep,packed,name=bucket_count,json=bucketCount,proto3" json:"bucket_count,omitempty"`
 }
 
 func (m *ActiveSeriesResponse) Reset()      { *m = ActiveSeriesResponse{} }
