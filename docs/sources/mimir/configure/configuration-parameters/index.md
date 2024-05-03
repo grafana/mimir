@@ -3526,6 +3526,13 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.max-concurrent
   [max_concurrent: <int> | default = 100]
 
+  # (advanced) Timeout for the queue of queries waiting for execution. If the
+  # queue is full and the timeout is reached, the query will be retried on
+  # another store-gateway. 0 means no timeout and all queries will wait
+  # indefinitely for their turn.
+  # CLI flag: -blocks-storage.bucket-store.max-concurrent-queue-timeout
+  [max_concurrent_queue_timeout: <duration> | default = 0s]
+
   # (advanced) Maximum number of concurrent tenants synching blocks.
   # CLI flag: -blocks-storage.bucket-store.tenant-sync-concurrency
   [tenant_sync_concurrency: <int> | default = 1]
