@@ -1805,8 +1805,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 					testCase.matchers,
 					nil,
 					cachedSeriesHasher{hashCache},
-					// noChunkRefs, // skip chunks since we are testing labels filtering
-					0, // remove noChunkRefs strategy
+					noChunkRefs, // skip chunks since we are testing labels filtering
 					block.meta.MinTime,
 					block.meta.MaxTime,
 					newSafeQueryStats(),
