@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
@@ -77,7 +78,17 @@ type BlocksCleaner struct {
 	bucketIndexCompactionPlanningErrors prometheus.Counter
 }
 
-func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
+func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket,
+	ownUser func(userID string) (bool, error), cfgProvider ConfigProvider,
+	logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
+
+	bucketClient = bucket.NewRetryingBucket(bucketClient).WithRequestDurationLimit(30 * time.Second).WithRetries(
+		backoff.Config{
+			MinBackoff: 0,
+			MaxBackoff: 0,
+		},
+	)
+
 	c := &BlocksCleaner{
 		cfg:          cfg,
 		bucketClient: bucketClient,

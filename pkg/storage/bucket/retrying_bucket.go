@@ -27,7 +27,6 @@ type retryingBucket struct {
 var _ objstore.Bucket = (*retryingBucket)(nil)
 
 func NewRetryingBucket(wrappedBucket objstore.Bucket) *retryingBucket {
-
 	return &retryingBucket{
 		Bucket:               wrappedBucket,
 		requestDurationLimit: 30 * time.Second,

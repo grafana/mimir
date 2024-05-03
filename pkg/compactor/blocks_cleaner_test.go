@@ -10,10 +10,12 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,11 +44,14 @@ type testBlocksCleanerOptions struct {
 	concurrency         int
 	tenantDeletionDelay time.Duration
 	user4FilesExist     bool // User 4 has "FinishedTime" in tenant deletion marker set to "1h" ago.
+	objStoreTimeouts    bool
 }
 
 func (o testBlocksCleanerOptions) String() string {
-	return fmt.Sprintf("concurrency=%d, tenant deletion delay=%v",
-		o.concurrency, o.tenantDeletionDelay)
+	return fmt.Sprintf(
+		"concurrency=%d, tenant deletion delay=%v, user 4 files=%v, obj store timeouts=%v",
+		o.concurrency, o.tenantDeletionDelay, o.user4FilesExist, o.objStoreTimeouts,
+	)
 }
 
 func TestBlocksCleaner(t *testing.T) {
@@ -56,12 +61,14 @@ func TestBlocksCleaner(t *testing.T) {
 		{concurrency: 2},
 		{concurrency: 10},
 	} {
-		options := options
-
-		t.Run(options.String(), func(t *testing.T) {
-			t.Parallel()
-			testBlocksCleanerWithOptions(t, options)
-		})
+		for _, objStoreTimeouts := range []bool{false, true} {
+			options := options
+			options.objStoreTimeouts = objStoreTimeouts
+			t.Run(options.String(), func(t *testing.T) {
+				t.Parallel()
+				testBlocksCleanerWithOptions(t, options)
+			})
+		}
 	}
 }
 
@@ -112,7 +119,21 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	logger := log.NewNopLogger()
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	testBucketClient := bucketClient
+	var mockBucket *mockBucketWithTimeouts
+
+	if options.objStoreTimeouts {
+		// Wrap the bucket client in one that will fail on initial calls.
+		mockBucket = &mockBucketWithTimeouts{
+			Bucket:          testBucketClient,
+			calls:           make(map[objStoreCall]int),
+			success:         make(map[objStoreCall]struct{}),
+			initialTimeouts: 2,
+		}
+		testBucketClient = mockBucket
+	}
+
+	cleaner := NewBlocksCleaner(cfg, testBucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, cleaner))
 	defer services.StopAndAwaitTerminated(ctx, cleaner) //nolint:errcheck
 
@@ -190,6 +211,15 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		require.NoError(t, err)
 		assert.ElementsMatch(t, tc.expectedBlocks, idx.Blocks.GetULIDs())
 		assert.ElementsMatch(t, tc.expectedMarks, idx.BlockDeletionMarks.GetULIDs())
+	}
+
+	if options.objStoreTimeouts {
+		for op, ct := range mockBucket.calls {
+			if ct > 0 {
+				_, successful := mockBucket.success[op]
+				assert.True(t, successful)
+			}
+		}
 	}
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -1250,6 +1280,49 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 		return errors.New("mocked delete failure")
 	}
 	return m.Bucket.Delete(ctx, name)
+}
+
+type objStoreCall struct {
+	op   string
+	name string
+}
+
+// enables mocking of initial timeouts per {operation, object} pair that would
+// require retries to eventually succeed.
+type mockBucketWithTimeouts struct {
+	objstore.Bucket
+
+	initialTimeouts int
+
+	mu      sync.Mutex
+	calls   map[objStoreCall]int
+	success map[objStoreCall]struct{}
+}
+
+func (m *mockBucketWithTimeouts) err(c objStoreCall) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.calls[c]++
+	if m.calls[c] <= m.initialTimeouts {
+		return context.DeadlineExceeded
+	}
+	m.success[c] = struct{}{}
+	return nil
+}
+
+func (m *mockBucketWithTimeouts) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	if err := m.err(objStoreCall{"get", name}); err != nil {
+		return nil, err
+	}
+	return m.Bucket.Get(ctx, name)
+}
+
+func (m *mockBucketWithTimeouts) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	if err := m.err(objStoreCall{"get_range", name}); err != nil {
+		return nil, err
+	}
+	return m.Bucket.GetRange(ctx, name, off, length)
 }
 
 type mockConfigProvider struct {
