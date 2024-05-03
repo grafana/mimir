@@ -34,7 +34,7 @@ func NewRequestBuffers(p Pool) *RequestBuffers {
 
 // Get obtains a buffer from the pool. It will be returned back to the pool when CleanUp is called.
 func (rb *RequestBuffers) Get(size int) *bytes.Buffer {
-	if rb == nil {
+	if rb == nil || size > maxInPoolRequestBufferSize {
 		if size < 0 {
 			size = 0
 		}
