@@ -37,7 +37,7 @@
   //   since the rollout-group is shared between the two.
   //
 
-  local partitionIngesterArgs =
+  local partitionIngesterArgs(zone) =
     // Explicitly include all the ingest storage config because during the migration the ingest storage
     // may not be enabled globally yet.
     $.ingest_storage_args +
@@ -46,6 +46,10 @@
     $.ingest_storage_ingester_ring_client_args + {
       // Run partition ingesters on a dedicated hash ring, so that they don't clash with classic ingesters.
       'ingester.ring.prefix': $._config.ingest_storage_ingester_instance_ring_dedicated_prefix,
+
+      // Customize the consume group so that it will match the expected one when we'll migrate the temporarily
+      // ingester-zone-[abc]-partition back to ingester-zone-[abc].
+      'ingest-storage.kafka.consumer-group': 'ingester-zone-%s-<partition>' % zone,
     },
 
   local partitionIngesterStatefulSetLabelsAndAnnotations =
@@ -64,9 +68,9 @@
   local gossipLabel = if !$._config.memberlist_ring_enabled then {} else
     $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
 
-  ingester_partition_zone_a_args:: $.ingester_zone_a_args + partitionIngesterArgs,
-  ingester_partition_zone_b_args:: $.ingester_zone_b_args + partitionIngesterArgs,
-  ingester_partition_zone_c_args:: $.ingester_zone_c_args + partitionIngesterArgs,
+  ingester_partition_zone_a_args:: $.ingester_zone_a_args + partitionIngesterArgs('a'),
+  ingester_partition_zone_b_args:: $.ingester_zone_b_args + partitionIngesterArgs('b'),
+  ingester_partition_zone_c_args:: $.ingester_zone_c_args + partitionIngesterArgs('c'),
 
   ingester_partition_zone_a_env_map:: $.ingester_zone_a_env_map,
   ingester_partition_zone_b_env_map:: $.ingester_zone_b_env_map,
