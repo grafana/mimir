@@ -49,6 +49,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] The new value `metaMonitoring.grafanaAgent.logs.clusterLabel` controls whether to add a `cluster` label and with what content to PodLogs logs. #7764
 * [ENHANCEMENT] The new values `global.extraVolumes` and `global.extraVolumeMounts` adds volumes and volumeMounts to all pods directly managed by mimir-distributed. #7922
 * [ENHANCEMENT] Add a volumeClaimTemplates section to the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` components. #8016
+* [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966
 
 ## 5.3.0
 
