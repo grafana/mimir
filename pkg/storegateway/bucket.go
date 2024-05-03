@@ -1058,8 +1058,7 @@ func (s *BucketStore) streamingSeriesForBlocks(
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	stats *safeQueryStats,
 ) (storepb.SeriesSet, iterator[seriesChunkRefsSet], error) {
-	// var strategy = noChunkRefs | overlapMintMaxt
-	var strategy = overlapMintMaxt
+	var strategy = overlapMintMaxt | forChunksStreaming
 	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, strategy)
 	if err != nil {
 		return nil, nil, err

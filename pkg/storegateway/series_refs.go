@@ -798,6 +798,9 @@ const (
 	// overlapMintMaxt flag is used together with noChunkRefs. With this, only the series whose
 	// chunks overlap with [mint, maxt] are selected.
 	overlapMintMaxt seriesIteratorStrategy = 0b00000010
+	// forChunksStreaming flag is used when the iterator is being used for store-gateway to querier chunks
+	// streaming. It enables optimisations for the case where only a single batch is needed for all series.
+	forChunksStreaming seriesIteratorStrategy = 0b00000100
 )
 
 func (s seriesIteratorStrategy) isNoChunkRefs() bool {
@@ -807,6 +810,8 @@ func (s seriesIteratorStrategy) isNoChunkRefs() bool {
 func (s seriesIteratorStrategy) isOverlapMintMaxt() bool {
 	return s&overlapMintMaxt != 0
 }
+
+func (s seriesIteratorStrategy) isForChunksStreaming() bool { return s&forChunksStreaming != 0 }
 
 func (s seriesIteratorStrategy) isOnEntireBlock() bool {
 	return !s.isOverlapMintMaxt()
@@ -1183,10 +1188,10 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet sy
 	}
 
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again,
-	// provided it's not the first and only batch.
+	// provided it's not the first and only batch used for chunks streaming.
 	// TODO: should we forcibly release the retained first and only batch later?
-	releaseable := !s.postingsSetIterator.IsFirstAndOnlyBatch()
-	set := newSeriesChunkRefsSet(len(symbolizedSet.series), releaseable)
+	isOnlyBatchForChunksStreaming := s.postingsSetIterator.IsFirstAndOnlyBatch() && s.strategy.isForChunksStreaming()
+	set := newSeriesChunkRefsSet(len(symbolizedSet.series), !isOnlyBatchForChunksStreaming)
 
 	labelsBuilder := labels.NewScratchBuilder(maxLabelsPerSeries)
 	for _, series := range symbolizedSet.series {
@@ -1208,8 +1213,8 @@ func (s *loadingSeriesChunkRefsSetIterator) multiLookupStringify(symbolizedSet s
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again,
 	// provided it's not the first and only batch.
 	// TODO: should we forcibly release the retained first and only batch later?
-	releaseable := !s.postingsSetIterator.IsFirstAndOnlyBatch()
-	set := newSeriesChunkRefsSet(len(symbolizedSet.series), releaseable)
+	isOnlyBatchForChunksStreaming := s.postingsSetIterator.IsFirstAndOnlyBatch() && s.strategy.isForChunksStreaming()
+	set := newSeriesChunkRefsSet(len(symbolizedSet.series), !isOnlyBatchForChunksStreaming)
 
 	labelsBuilder := labels.NewScratchBuilder(16)
 	for _, series := range symbolizedSet.series {
