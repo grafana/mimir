@@ -30,7 +30,7 @@ func (l *mockTenantLimits) AllByUserID() map[string]*Limits {
 
 func MockOverrides(customize func(defaults *Limits, tenantLimits map[string]*Limits)) *Overrides {
 	defaults := MockDefaultLimits()
-	tenantLimits := map[string]*Limits{}
+	tenantLimits := make(map[string]*Limits)
 	customize(defaults, tenantLimits)
 
 	overrides, err := NewOverrides(*defaults, NewMockTenantLimits(tenantLimits))
