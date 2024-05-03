@@ -422,6 +422,7 @@ func (u *BucketStores) syncDirForUser(userID string) string {
 	return filepath.Join(u.cfg.BucketStore.SyncDir, userID)
 }
 
+// timeoutGate returns errGateTimeout when the timeout is reached while still waiting for the delegate gate.
 // timeoutGate belongs better in dskit. However, at the time of writing dskit supports go 1.20.
 // go 1.20 doesn't have context.WithTimeoutCause yet,
 // so we choose to implement timeoutGate here instead of implementing context.WithTimeoutCause ourselves in dskit.
@@ -437,12 +438,16 @@ func (t timeoutGate) Start(ctx context.Context) error {
 	if t.timeout == 0 {
 		return t.delegate.Start(ctx)
 	}
+
+	// Inject our own error so that we can differentiate between a timeout caused by this gate
+	// or a timeout in the original request timeout.
 	ctx, cancel := context.WithTimeoutCause(ctx, t.timeout, errGateTimeout)
 	defer cancel()
 
 	err := t.delegate.Start(ctx)
-	if errors.Is(err, errGateTimeout) {
+	if errors.Is(context.Cause(ctx), errGateTimeout) {
 		_ = spanlogger.FromContext(ctx, log.NewNopLogger()).Error(err)
+		err = errGateTimeout
 	}
 	return err
 }
