@@ -242,6 +242,8 @@ message MetricsMetadataResponse {
 
 message ActiveSeriesResponse {
   repeated cortexpb.Metric metric = 1;
+  // bucket_count is only used when the request type was NATIVE_HISTOGRAM_SERIES.
+  // bucket_count contains the native histogram active buckets count for each series in "metric" above.
   repeated uint64 bucket_count = 2;
 }
 

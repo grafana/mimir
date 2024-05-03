@@ -9,8 +9,7 @@ import (
 
 type BucketCountPostings interface {
 	index.Postings
-	// NativeHistogramBuckets returns the number of buckets for the series reference.
-	// If the series reference is not active, it returns false.
+	// AtBucketCount returns the series reference currently pointed to and its bucket count (if it's a native histogram series).
 	AtBucketCount() (storage.SeriesRef, int)
 }
 

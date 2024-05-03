@@ -67,7 +67,7 @@ func TestIngester_ActiveSeries(t *testing.T) {
 	returnedSeriesCount := 0
 	for _, res := range server.responses {
 		returnedSeriesCount += len(res.Metric)
-		// Check that all series has the expected number of labels.
+		// Check that all series have the expected number of labels.
 		for _, m := range res.Metric {
 			assert.Equal(t, 2, len(m.Labels))
 		}
