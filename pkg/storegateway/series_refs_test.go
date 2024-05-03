@@ -2215,7 +2215,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						cached: testCase.cachedSeriesHashesWithWarmCache,
 					}
 
-					statsWarnCache := newSafeQueryStats()
+					statsWarmCache := newSafeQueryStats()
 					ss, err = openBlockSeriesChunkRefsSetsIterator(
 						context.Background(),
 						batchSize,
@@ -2229,14 +2229,14 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						0, // remove noChunkRefs strategy
 						b.meta.MinTime,
 						b.meta.MaxTime,
-						statsWarnCache,
+						statsWarmCache,
 						log.NewNopLogger(),
 					)
 					require.NoError(t, err)
 					lset = extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
 					require.NoError(t, ss.Err())
 					assert.Equal(t, testCase.expectedLabelSets, lset)
-					assert.Equal(t, testCase.expectedSeriesReadFromBlockWithWarmCache, statsWarnCache.export().seriesFetched)
+					assert.Equal(t, testCase.expectedSeriesReadFromBlockWithWarmCache, statsWarmCache.export().seriesFetched)
 				})
 			}
 		})
