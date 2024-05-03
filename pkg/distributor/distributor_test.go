@@ -2505,6 +2505,153 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 	}
 }
 
+func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
+	const numIngesters = 5
+	const responseSizeLimitBytes = 1024
+
+	collision1, collision2 := labelsWithHashCollision()
+
+	pushedData := []struct {
+		lbls      labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.FromStrings(labels.MetricName, "test_1", "team", "a"), 1, 100000},
+		{labels.FromStrings(labels.MetricName, "test_1", "team", "b"), 1, 110000},
+		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+		{collision1, 3, 300000},
+		{collision2, 4, 300000},
+		{labels.FromStrings(labels.MetricName, "large_metric", "label", strings.Repeat("1", 2*responseSizeLimitBytes)), 5, 400000},
+	}
+
+	tests := map[string]struct {
+		shuffleShardSize            int
+		requestMatchers             []*labels.Matcher
+		expectedFetchedSeries       uint64
+		expectedMetrics             []cardinality.ActiveMetricWithBucketCount
+		expectedNumQueriedIngesters int
+	}{
+		"should return an empty response if no metric match": {
+			requestMatchers:             []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown")},
+			expectedMetrics:             []cardinality.ActiveMetricWithBucketCount{},
+			expectedNumQueriedIngesters: numIngesters,
+		},
+		"should return all matching metrics": {
+			requestMatchers:             []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1")},
+			expectedFetchedSeries:       2,
+			expectedMetrics:             []cardinality.ActiveMetricWithBucketCount{{Metric: "test_1", SeriesCount: 2, BucketCount: 16, MaxBucketCount: 8, MinBucketCount: 8, AvgBucketCount: 8.0}},
+			expectedNumQueriedIngesters: numIngesters,
+		},
+		"should honour shuffle shard size": {
+			shuffleShardSize:            3,
+			requestMatchers:             []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")},
+			expectedFetchedSeries:       1,
+			expectedMetrics:             []cardinality.ActiveMetricWithBucketCount{{Metric: "test_2", SeriesCount: 1, BucketCount: 8, MaxBucketCount: 8, MinBucketCount: 8, AvgBucketCount: 8.0}},
+			expectedNumQueriedIngesters: 3,
+		},
+		"should return all matching series even if their hash collides": {
+			requestMatchers:             []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric")},
+			expectedFetchedSeries:       2,
+			expectedMetrics:             []cardinality.ActiveMetricWithBucketCount{{Metric: "metric", SeriesCount: 2, BucketCount: 16, MaxBucketCount: 8, MinBucketCount: 8, AvgBucketCount: 8.0}},
+			expectedNumQueriedIngesters: numIngesters,
+		},
+	}
+
+	// Programmatically build different scenarios under which run the tests.
+	type scenario struct {
+		ingestStorageEnabled     bool
+		minimizeIngesterRequests bool
+	}
+
+	scenarios := map[string]scenario{}
+	for _, minimizeIngesterRequests := range []bool{false, true} {
+		for _, ingestStorageEnabled := range []bool{false, true} {
+			name := fmt.Sprintf("minimize ingester requests: %t, ingest storage enabled: %t", minimizeIngesterRequests, ingestStorageEnabled)
+			scenarios[name] = scenario{
+				ingestStorageEnabled:     ingestStorageEnabled,
+				minimizeIngesterRequests: minimizeIngesterRequests,
+			}
+		}
+	}
+
+	for testName, testData := range tests {
+		testData := testData
+
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			for scenarioName, scenarioData := range scenarios {
+				scenarioData := scenarioData
+
+				t.Run(scenarioName, func(t *testing.T) {
+					t.Parallel()
+
+					testConfig := prepConfig{
+						numIngesters:         numIngesters,
+						happyIngesters:       numIngesters,
+						numDistributors:      1,
+						ingestStorageEnabled: scenarioData.ingestStorageEnabled,
+						configure: func(config *Config) {
+							config.MinimizeIngesterRequests = scenarioData.minimizeIngesterRequests
+						},
+						limits: func() *validation.Limits {
+							limits := prepareDefaultLimits()
+							limits.ActiveSeriesResultsMaxSizeBytes = responseSizeLimitBytes
+							limits.NativeHistogramsIngestionEnabled = true
+							return limits
+						}(),
+					}
+
+					if scenarioData.ingestStorageEnabled {
+						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+					} else {
+						testConfig.shuffleShardSize = testData.shuffleShardSize
+					}
+
+					// Create distributor and ingesters.
+					distributors, ingesters, _, _ := prepare(t, testConfig)
+					d := distributors[0]
+
+					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+					ctx := user.InjectOrgID(context.Background(), "test")
+					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+
+					// Push test data.
+					for _, series := range pushedData {
+						req := mockWriteHistogramRequest(series.lbls, series.value, series.timestamp)
+						_, err := d.Push(ctx, req)
+						require.NoError(t, err)
+					}
+
+					// Prepare empty query stats.
+					qStats, ctx := stats.ContextWithEmptyStats(ctx)
+
+					// Query active series.
+					series, err := d.ActiveNativeHistogramMetrics(ctx, testData.requestMatchers)
+					require.NoError(t, err)
+					assert.ElementsMatch(t, testData.expectedMetrics, series.Data)
+
+					// Check that query stats are set correctly.
+					assert.Equal(t, testData.expectedFetchedSeries, qStats.GetFetchedSeriesCount())
+
+					// Check how many ingesters have been queried.
+					if scenarioData.ingestStorageEnabled {
+						// When ingest storage is enabled, we request quorum 1 for each partition.
+						// In this test each ingester owns a different partition, so we expect all
+						// ingesters to be queried.
+						assert.Equal(t, testData.expectedNumQueriedIngesters, countMockIngestersCalled(ingesters, "ActiveSeries"))
+					} else {
+						// Due to the quorum the distributor could cancel the last request towards ingesters
+						// if all other ones are successful, so we're good either has been queried X or X-1
+						// ingesters.
+						assert.Contains(t, []int{testData.expectedNumQueriedIngesters, testData.expectedNumQueriedIngesters - 1}, countMockIngestersCalled(ingesters, "ActiveSeries"))
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestDistributor_ActiveSeries_AvailabilityAndConsistency(t *testing.T) {
 	// In this test we run all queries with a matcher which matches all series.
 	reqMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}
@@ -4868,6 +5015,13 @@ func mockWriteRequest(lbls labels.Labels, value float64, timestampMs int64) *mim
 	return mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(lbls)}, samples, nil, nil, mimirpb.API)
 }
 
+func mockWriteHistogramRequest(lbls labels.Labels, value float64, timestampMs int64) *mimirpb.WriteRequest {
+	histograms := []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(timestampMs, util_test.GenerateTestHistogram(int(value)))}
+
+	req := mimirpb.NewWriteRequest(nil, mimirpb.API)
+	return req.AddHistogramSeries([][]mimirpb.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(lbls)}, histograms, nil)
+}
+
 type ingesterState int
 
 const (
@@ -6372,7 +6526,16 @@ func (i *mockIngester) ActiveSeries(ctx context.Context, req *client.ActiveSerie
 
 	for _, series := range i.timeseries {
 		if match(series.Labels, matchers) {
-			resp.Metric = append(resp.Metric, &mimirpb.Metric{Labels: series.Labels})
+			lbls := series.Labels
+			if req.Type == client.NATIVE_HISTOGRAM_SERIES {
+				if len(series.Histograms) == 0 {
+					continue
+				}
+				h := series.Histograms[len(series.Histograms)-1]
+				bucketCount := len(h.NegativeCounts) + len(h.NegativeDeltas) + len(h.PositiveCounts) + len(h.PositiveDeltas)
+				resp.BucketCount = append(resp.BucketCount, uint64(bucketCount))
+			}
+			resp.Metric = append(resp.Metric, &mimirpb.Metric{Labels: lbls})
 		}
 		if len(resp.Metric) > 1 {
 			results = append(results, resp)

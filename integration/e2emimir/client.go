@@ -33,6 +33,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -587,6 +588,60 @@ func (c *Client) ActiveSeries(selector string, options ...ActiveSeriesOption) (*
 	err = json.NewDecoder(bodyReader).Decode(res)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding active series response: %w", err)
+	}
+	return res, nil
+}
+
+func (c *Client) ActiveNativeHistogramMetrics(selector string, options ...ActiveSeriesOption) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+	cfg := activeSeriesRequestConfig{method: http.MethodGet, header: http.Header{"X-Scope-OrgID": []string{c.orgID}}}
+	for _, option := range options {
+		option(&cfg)
+	}
+
+	req, err := http.NewRequest(cfg.method, fmt.Sprintf("http://%s/prometheus/api/v1/cardinality/active_native_histogram_metrics", c.querierAddress), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = cfg.header
+
+	q := req.URL.Query()
+	q.Set("selector", selector)
+	switch cfg.method {
+	case http.MethodGet:
+		req.URL.RawQuery = q.Encode()
+	case http.MethodPost:
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req.Body = io.NopCloser(strings.NewReader(q.Encode()))
+	default:
+		return nil, fmt.Errorf("invalid method %s", cfg.method)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer func(body io.ReadCloser) {
+		_, _ = io.ReadAll(body)
+		_ = body.Close()
+	}(resp.Body)
+
+	var bodyReader io.Reader = resp.Body
+	if resp.Header.Get("Content-Encoding") == "x-snappy-framed" {
+		bodyReader = s2.NewReader(bodyReader)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(bodyReader)
+		return nil, fmt.Errorf("unexpected status code %d, body: %s", resp.StatusCode, body)
+	}
+
+	res := &cardinality.ActiveNativeHistogramMetricsResponse{}
+	err = json.NewDecoder(bodyReader).Decode(res)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding active native histograms response: %w", err)
 	}
 	return res, nil
 }

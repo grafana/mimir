@@ -2079,6 +2079,34 @@ func (cm *labelValuesCardinalityConcurrentMap) toResponse(approximateFromZonesFu
 // ActiveSeries queries the ingester replication set for active series matching
 // the given selector. It combines and deduplicates the results.
 func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error) {
+	res, err := d.deduplicateActiveSeries(ctx, matchers, false)
+	if err != nil {
+		return nil, err
+	}
+
+	deduplicatedSeries, fetchedSeries := res.result()
+
+	reqStats := stats.FromContext(ctx)
+	reqStats.AddFetchedSeries(fetchedSeries)
+
+	return deduplicatedSeries, nil
+}
+
+func (d *Distributor) ActiveNativeHistogramMetrics(ctx context.Context, matchers []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+	res, err := d.deduplicateActiveSeries(ctx, matchers, true)
+	if err != nil {
+		return nil, err
+	}
+
+	metrics, fetchedSeries := res.metricResult()
+
+	reqStats := stats.FromContext(ctx)
+	reqStats.AddFetchedSeries(fetchedSeries)
+
+	return &cardinality.ActiveNativeHistogramMetricsResponse{Data: metrics}, nil
+}
+
+func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*labels.Matcher, nativeHistograms bool) (*activeSeriesResponse, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -2094,6 +2122,9 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 	if err != nil {
 		return nil, err
 	}
+	if nativeHistograms {
+		req.Type = ingester_client.NATIVE_HISTOGRAM_SERIES
+	}
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -2101,10 +2132,13 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 	}
 
 	maxResponseSize := math.MaxInt
-	if limit := d.limits.ActiveSeriesResultsMaxSizeBytes(tenantID); limit > 0 {
-		maxResponseSize = limit
+	if !nativeHistograms {
+		// We are going to return metrics level information, this limit doesn't make much sense in that case
+		if limit := d.limits.ActiveSeriesResultsMaxSizeBytes(tenantID); limit > 0 {
+			maxResponseSize = limit
+		}
 	}
-	res := newActiveSeriesResponse(d.hashCollisionCount, maxResponseSize)
+	res := newActiveSeriesResponse(d.hashCollisionCount, maxResponseSize, !nativeHistograms)
 
 	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
 		// This function is invoked purely for its side effects on the captured
@@ -2145,7 +2179,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 				return nil, err
 			}
 
-			err = res.add(msg.Metric)
+			err = res.add(msg.Metric, msg.BucketCount)
 			if err != nil {
 				return nil, err
 			}
@@ -2159,21 +2193,22 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 		return nil, err
 	}
 
-	deduplicatedSeries := res.result()
+	return res, nil
+}
 
-	reqStats := stats.FromContext(ctx)
-	reqStats.AddFetchedSeries(uint64(len(deduplicatedSeries)))
-
-	return deduplicatedSeries, nil
+type labelsWithBucketCount struct {
+	labels.Labels
+	bucketCount uint64
 }
 
 type entry struct {
-	first      labels.Labels
-	collisions []labels.Labels
+	first      labelsWithBucketCount
+	collisions []labelsWithBucketCount
 }
 
 // activeSeriesResponse is a helper to merge/deduplicate ActiveSeries responses from ingesters.
 type activeSeriesResponse struct {
+	ignoreBucketCount  bool
 	m                  sync.Mutex
 	series             map[uint64]entry
 	builder            labels.ScratchBuilder
@@ -2185,8 +2220,9 @@ type activeSeriesResponse struct {
 	maxSize int
 }
 
-func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int) *activeSeriesResponse {
+func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int, ignoreBucketCount bool) *activeSeriesResponse {
 	return &activeSeriesResponse{
+		ignoreBucketCount:  ignoreBucketCount,
 		series:             map[uint64]entry{},
 		builder:            labels.NewScratchBuilder(40),
 		hashCollisionCount: hashCollisionCount,
@@ -2196,12 +2232,12 @@ func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int)
 
 var ErrResponseTooLarge = errors.New("response too large")
 
-func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
+func (r *activeSeriesResponse) add(series []*mimirpb.Metric, bucketCounts []uint64) error {
 
 	r.m.Lock()
 	defer r.m.Unlock()
 
-	for _, metric := range series {
+	for i, metric := range series {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&r.builder, metric.Labels, &r.lbls)
 		lblHash := r.lbls.Hash()
 		if e, ok := r.series[lblHash]; !ok {
@@ -2212,18 +2248,21 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
 			if r.size > r.maxSize {
 				return ErrResponseTooLarge
 			}
-
-			r.series[lblHash] = entry{first: l}
+			if r.ignoreBucketCount {
+				r.series[lblHash] = entry{first: labelsWithBucketCount{labels.Labels(l), 0}}
+			} else {
+				r.series[lblHash] = entry{first: labelsWithBucketCount{labels.Labels(l), bucketCounts[i]}}
+			}
 		} else {
 			// A series with this hash is already present in the result set, we need to
 			// detect potential hash collisions by comparing the labels of the candidate to
 			// the labels in the result set and add the candidate if it's not present.
-			present := labels.Equal(e.first, r.lbls)
+			present := labels.Equal(e.first.Labels, r.lbls)
 			for _, lbls := range e.collisions {
 				if present {
 					break
 				}
-				present = labels.Equal(lbls, r.lbls)
+				present = labels.Equal(lbls.Labels, r.lbls)
 			}
 
 			if !present {
@@ -2234,8 +2273,11 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
 				if r.size > r.maxSize {
 					return ErrResponseTooLarge
 				}
-
-				e.collisions = append(e.collisions, l)
+				if r.ignoreBucketCount {
+					e.collisions = append(e.collisions, labelsWithBucketCount{labels.Labels(l), 0})
+				} else {
+					e.collisions = append(e.collisions, labelsWithBucketCount{labels.Labels(l), bucketCounts[i]})
+				}
 				r.series[lblHash] = e
 				r.hashCollisionCount.Inc()
 			}
@@ -2245,16 +2287,79 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
 	return nil
 }
 
-func (r *activeSeriesResponse) result() []labels.Labels {
+func (r *activeSeriesResponse) result() ([]labels.Labels, uint64) {
 	r.m.Lock()
 	defer r.m.Unlock()
 
 	result := make([]labels.Labels, 0, len(r.series))
 	for _, series := range r.series {
-		result = append(result, series.first)
-		result = append(result, series.collisions...)
+		result = append(result, series.first.Labels)
+		for _, collision := range series.collisions {
+			result = append(result, collision.Labels)
+		}
 	}
-	return result
+	return result, uint64(len(result))
+}
+
+type metricBucketCounts struct {
+	SeriesCount    uint64
+	BucketCount    uint64
+	MaxBucketCount uint64
+	MinBucketCount uint64
+}
+
+// Aggregate native histogram bucket counts on metric level.
+func (r *activeSeriesResponse) metricResult() ([]cardinality.ActiveMetricWithBucketCount, uint64) {
+	metrics, fetchedSeries := r.getMetricCounts()
+	result := make([]cardinality.ActiveMetricWithBucketCount, 0, len(metrics))
+	for name, metric := range metrics {
+		result = append(result, cardinality.ActiveMetricWithBucketCount{
+			Metric:         name,
+			SeriesCount:    metric.SeriesCount,
+			BucketCount:    metric.BucketCount,
+			MaxBucketCount: metric.MaxBucketCount,
+			MinBucketCount: metric.MinBucketCount,
+			AvgBucketCount: float64(metric.BucketCount) / float64(metric.SeriesCount),
+		})
+	}
+	return result, fetchedSeries
+}
+
+func (r *activeSeriesResponse) getMetricCounts() (map[string]*metricBucketCounts, uint64) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	fetchedSeries := uint64(0)
+	metrics := map[string]*metricBucketCounts{}
+	for _, series := range r.series {
+		fetchedSeries += 1 + uint64(len(series.collisions))
+		updateMetricCounts(metrics, series.first)
+		for _, collision := range series.collisions {
+			updateMetricCounts(metrics, collision)
+		}
+	}
+	return metrics, fetchedSeries
+}
+
+func updateMetricCounts(metrics map[string]*metricBucketCounts, series labelsWithBucketCount) {
+	bucketCount := series.bucketCount
+	if m, ok := metrics[series.Get(model.MetricNameLabel)]; ok {
+		m.SeriesCount++
+		m.BucketCount += bucketCount
+		if m.MaxBucketCount < bucketCount {
+			m.MaxBucketCount = bucketCount
+		}
+		if m.MinBucketCount > bucketCount {
+			m.MinBucketCount = bucketCount
+		}
+	} else {
+		metrics[series.Get(model.MetricNameLabel)] = &metricBucketCounts{
+			SeriesCount:    1,
+			BucketCount:    bucketCount,
+			MaxBucketCount: bucketCount,
+			MinBucketCount: bucketCount,
+		}
+	}
 }
 
 // approximateFromZones computes a zonal value while factoring in replication;

@@ -351,6 +351,18 @@ func TestTripperware_Metrics(t *testing.T) {
 				cortex_query_frontend_queries_total{op="active_series",user="user-1"} 1
 			`,
 		},
+		"cardinality active native histogram metrics": {
+			path: "/api/v1/cardinality/active_native_histogram_metrics?selector=%7Bjob%3D%22test%22%7D",
+			expectedMetrics: `
+			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+			cortex_query_frontend_non_step_aligned_queries_total 0
+
+			# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+			# TYPE cortex_query_frontend_queries_total counter
+			cortex_query_frontend_queries_total{op="active_native_histogram_metrics",user="user-1"} 1
+			`,
+		},
 		"unknown query type": {
 			path: "/api/v1/unknown",
 			expectedMetrics: `

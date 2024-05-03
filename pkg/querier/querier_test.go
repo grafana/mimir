@@ -1164,6 +1164,10 @@ func (m *errDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]lab
 	return nil, errDistributorError
 }
 
+func (m *errDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+	return nil, errDistributorError
+}
+
 type emptyDistributor struct{}
 
 func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher, _ cardinality.CountMethod) (*client.LabelNamesAndValuesResponse, error) {
@@ -1200,6 +1204,10 @@ func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.Label
 
 func (d *emptyDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]labels.Labels, error) {
 	return nil, nil
+}
+
+func (m *emptyDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+	return &cardinality.ActiveNativeHistogramMetricsResponse{}, nil
 }
 
 func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
