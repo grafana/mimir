@@ -280,7 +280,6 @@ func (c flattenedSeriesChunkRefsIterator) Err() error {
 }
 
 func (c flattenedSeriesChunkRefsIterator) Reset() {
-	//TODO(zenador): needed?
 	c.from.Reset()
 }
 
@@ -560,10 +559,6 @@ func (s *seriesChunkRefsSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
 func (s *seriesChunkRefsSeriesSet) Err() error {
 	return s.from.Err()
 }
-
-// func (s *seriesChunkRefsSeriesSet) Reset() {
-// 	s.from.Reset()
-// }
 
 // deduplicatingSeriesChunkRefsSetIterator merges together consecutive series in the underlying iterator.
 type deduplicatingSeriesChunkRefsSetIterator struct {

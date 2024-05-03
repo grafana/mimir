@@ -1693,7 +1693,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 
 			strategy := defaultStrategy
 			if testCase.skipChunks {
-				// strategy = noChunkRefs
+				strategy = noChunkRefs
 			}
 			iterator, err := openBlockSeriesChunkRefsSetsIterator(
 				ctx,

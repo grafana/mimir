@@ -1170,7 +1170,7 @@ func loadSeries(ctx context.Context, tb test.TB, postings []storage.SeriesRef, i
 		indexr.block.meta,
 		nil,
 		nil,
-		0, // remove noChunkRefs strategy
+		noChunkRefs,
 		0,
 		0,
 		"",

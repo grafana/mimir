@@ -1027,7 +1027,7 @@ func (s *BucketStore) nonStreamingSeriesSetForBlocks(
 ) (storepb.SeriesSet, error) {
 	strategy := defaultStrategy
 	if req.SkipChunks {
-		// strategy = noChunkRefs
+		strategy = noChunkRefs
 	}
 	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, strategy)
 	if err != nil {
@@ -1427,7 +1427,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 		matchers,
 		nil,
 		cachedSeriesHasher{nil},
-		0, // remove noChunkRefs strategy
+		noChunkRefs,
 		minTime, maxTime,
 		stats,
 		logger,
@@ -1646,7 +1646,7 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 		b.meta,
 		nil,
 		nil,
-		0, // remove noChunkRefs strategy
+		noChunkRefs,
 		b.meta.MinTime,
 		b.meta.MaxTime,
 		b.userID,
