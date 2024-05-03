@@ -867,12 +867,8 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		// The first set is already loaded as s.currentSet, so nothing more to do.
 		s.resetToFirstSet = false
 
-		if s.currentSet.len() == 0 {
-			// If the first batch of postings had series, but they've all been filtered out, then we are done.
-			return false
-		}
-
-		return true
+		// If the first batch of postings had series, but they've all been filtered out, then we are done.
+		return s.currentSet.len() != 0
 	}
 
 	defer func(startTime time.Time) {
