@@ -2040,6 +2040,9 @@ chunks-cache:
   #   readOnly: true
   extraVolumeMounts: []
 
+  # -- List of additional PVCs to be created for the chunks-cache statefulset
+  volumeClaimTemplates: []
+
   # -- Resource requests and limits for the chunks-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
   resources: null
@@ -2131,6 +2134,9 @@ index-cache:
   #   mountPath: /etc/extra-volume
   #   readOnly: true
   extraVolumeMounts: []
+
+  # -- List of additional PVCs to be created for the index-cache statefulset
+  volumeClaimTemplates: []
 
   # -- Resource requests and limits for the index-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
@@ -2224,6 +2230,9 @@ metadata-cache:
   #   readOnly: true
   extraVolumeMounts: []
 
+  # -- List of additional PVCs to be created for the metadata-cache statefulset
+  volumeClaimTemplates: []
+
   # -- Resource requests and limits for the metadata-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
   resources: null
@@ -2315,6 +2324,9 @@ results-cache:
   #   mountPath: /etc/extra-volume
   #   readOnly: true
   extraVolumeMounts: []
+
+  # -- List of additional PVCs to be created for the results-cache statefulset
+  volumeClaimTemplates: []
 
   # -- Resource requests and limits for the results-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).

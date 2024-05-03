@@ -178,6 +178,7 @@
     per_cluster_label: 'cluster',
     per_namespace_label: 'namespace',
     per_job_label: 'job',
+    per_component_loki_label: 'name',
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
     job_labels: [$._config.per_cluster_label, $._config.per_namespace_label, $._config.per_job_label],

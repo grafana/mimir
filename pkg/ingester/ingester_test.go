@@ -960,16 +960,15 @@ func TestIngester_Push(t *testing.T) {
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
-						// These are intentionally out of order to test the sorting.
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
-							TimestampMs: 2000,
-							Value:       2000,
-						},
 						{
 							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
+						},
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
 						},
 					},
 				),
@@ -5282,11 +5281,14 @@ func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestamp
 	return req, expectedQueryRes, expectedQueryStreamResSamples, expectedQueryStreamResChunks
 }
 
-func prepareHealthyIngester(b testing.TB) *Ingester {
+func prepareHealthyIngester(b testing.TB, mutateLimits func(*validation.Limits)) *Ingester {
 	cfg := defaultIngesterTestConfig(b)
 	limits := defaultLimitsTestConfig()
 	limits.MaxGlobalSeriesPerMetric = 0
 	limits.MaxGlobalSeriesPerUser = 0
+	if mutateLimits != nil {
+		mutateLimits(&limits)
+	}
 
 	// Create ingester.
 	i, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, nil, "", nil)

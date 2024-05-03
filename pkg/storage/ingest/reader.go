@@ -69,17 +69,17 @@ type PartitionReader struct {
 	reg    prometheus.Registerer
 }
 
-func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, consumerGroup string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	consumer := newPusherConsumer(pusher, reg, logger)
-	return newPartitionReader(kafkaCfg, partitionID, consumerGroup, consumer, logger, reg)
+	return newPartitionReader(kafkaCfg, partitionID, instanceID, consumer, logger, reg)
 }
 
-func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, consumerGroup string, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	r := &PartitionReader{
 		kafkaCfg:              kafkaCfg,
 		partitionID:           partitionID,
 		consumer:              consumer,
-		consumerGroup:         consumerGroup,
+		consumerGroup:         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		metrics:               newReaderMetrics(partitionID, reg),
 		commitInterval:        time.Second,
 		consumedOffsetWatcher: newPartitionOffsetWatcher(),
