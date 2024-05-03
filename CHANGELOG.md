@@ -56,6 +56,7 @@
 * [BUGFIX] OTLP: Don't generate target_info unless there are metrics. #8012
 * [BUGFIX] Query-frontend: Experimental query queue splitting: fix issue where offset and range selector duration were not considered when predicting query component. #7742
 * [BUGFIX] Querying: Empty matrix results were incorrectly returning `null` instead of `[]`. #8029
+* [BUGFIX] Distributor: Avoid pooling large buffers objects when unmarshalling incoming requests. #8044
 
 ### Mixin
 
