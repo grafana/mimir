@@ -2196,7 +2196,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						testCase.matchers,
 						testCase.shard,
 						seriesHasher,
-						0, // remove noChunkRefs strategy
+						noChunkRefs,
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						statsColdCache,
@@ -2226,7 +2226,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						testCase.matchers,
 						testCase.shard,
 						seriesHasher,
-						0, // remove noChunkRefs strategy
+						noChunkRefs,
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						statsWarmCache,
