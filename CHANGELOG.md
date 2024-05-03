@@ -53,7 +53,7 @@
 * [BUGFIX] OTLP: Don't generate target_info unless at least one identifying label is defined. #8012
 * [BUGFIX] OTLP: Don't generate target_info unless there are metrics. #8012
 * [BUGFIX] Query-frontend: Experimental query queue splitting: fix issue where offset and range selector duration were not considered when predicting query component. #7742
-* [BUGFIX] Querying: Empty matrix results was incorrectly returning `null` instead of `[]`. #8029
+* [BUGFIX] Querying: Empty matrix results were incorrectly returning `null` instead of `[]`. #8029
 
 ### Mixin
 
