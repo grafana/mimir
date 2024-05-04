@@ -2,5 +2,7 @@ package bucket
 
 import "testing"
 
-func TestPrefixedBucketClient(t *testing.T) {
+func TestRetryingBucketClient(t *testing.T) {
+	mockBucket := &ClientMock{}
+	_ = NewRetryingBucketClient(mockBucket)
 }

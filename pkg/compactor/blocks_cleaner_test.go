@@ -10,12 +10,10 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -120,16 +118,11 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	cfgProvider := newMockConfigProvider()
 
 	testBucketClient := bucketClient
-	var mockBucket *mockBucketWithTimeouts
+	var mockBucket *bucket.MockBucketWithTimeouts
 
 	if options.objStoreTimeouts {
 		// Wrap the bucket client in one that will fail on initial calls.
-		mockBucket = &mockBucketWithTimeouts{
-			Bucket:          testBucketClient,
-			calls:           make(map[objStoreCall]int),
-			success:         make(map[objStoreCall]struct{}),
-			initialTimeouts: 2,
-		}
+		mockBucket = bucket.NewMockBucketWithTimeouts(testBucketClient, 2)
 		testBucketClient = mockBucket
 	}
 
@@ -214,9 +207,9 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	}
 
 	if options.objStoreTimeouts {
-		for op, ct := range mockBucket.calls {
+		for op, ct := range mockBucket.Calls {
 			if ct > 0 {
-				_, successful := mockBucket.success[op]
+				_, successful := mockBucket.Success[op]
 				assert.True(t, successful)
 			}
 		}
@@ -1280,49 +1273,6 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 		return errors.New("mocked delete failure")
 	}
 	return m.Bucket.Delete(ctx, name)
-}
-
-type objStoreCall struct {
-	op   string
-	name string
-}
-
-// enables mocking of initial timeouts per {operation, object} pair that would
-// require retries to eventually succeed.
-type mockBucketWithTimeouts struct {
-	objstore.Bucket
-
-	initialTimeouts int
-
-	mu      sync.Mutex
-	calls   map[objStoreCall]int
-	success map[objStoreCall]struct{}
-}
-
-func (m *mockBucketWithTimeouts) err(c objStoreCall) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.calls[c]++
-	if m.calls[c] <= m.initialTimeouts {
-		return context.DeadlineExceeded
-	}
-	m.success[c] = struct{}{}
-	return nil
-}
-
-func (m *mockBucketWithTimeouts) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	if err := m.err(objStoreCall{"get", name}); err != nil {
-		return nil, err
-	}
-	return m.Bucket.Get(ctx, name)
-}
-
-func (m *mockBucketWithTimeouts) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
-	if err := m.err(objStoreCall{"get_range", name}); err != nil {
-		return nil, err
-	}
-	return m.Bucket.GetRange(ctx, name, off, length)
 }
 
 type mockConfigProvider struct {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/grafana/dskit/backoff"
@@ -144,4 +145,62 @@ func (r *RetryingBucketClient) Upload(ctx context.Context, name string, reader i
 	}
 
 	return fmt.Errorf("upload failed with retries: %w (%w)", lastErr, b.Err())
+}
+
+///////////////////////////////////////////////////
+////// test support code that I will move.
+///////////////////////////////////////////////////
+
+// MockBucketWithTimeouts enables mocking of initial timeouts per {operation,
+// object} pair that would require retries to eventually succeed.
+type MockBucketWithTimeouts struct {
+	objstore.Bucket
+
+	InitialTimeouts int
+
+	mu      sync.Mutex
+	Calls   map[objStoreCall]int
+	Success map[objStoreCall]struct{}
+}
+
+type objStoreCall struct {
+	op     string
+	object string
+}
+
+func NewMockBucketWithTimeouts(b objstore.Bucket, timeouts int) *MockBucketWithTimeouts {
+	return &MockBucketWithTimeouts{
+		Bucket:          b,
+		InitialTimeouts: timeouts,
+		Calls:           make(map[objStoreCall]int),
+		Success:         make(map[objStoreCall]struct{}),
+	}
+}
+
+func (m *MockBucketWithTimeouts) err(op, obj string) error {
+	c := objStoreCall{op, obj}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.Calls[c]++
+	if m.Calls[c] <= m.InitialTimeouts {
+		return context.DeadlineExceeded
+	}
+	m.Success[c] = struct{}{}
+	return nil
+}
+
+func (m *MockBucketWithTimeouts) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	if err := m.err("get", name); err != nil {
+		return nil, err
+	}
+	return m.Bucket.Get(ctx, name)
+}
+
+func (m *MockBucketWithTimeouts) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	if err := m.err("get_range", name); err != nil {
+		return nil, err
+	}
+	return m.Bucket.GetRange(ctx, name, off, length)
 }
