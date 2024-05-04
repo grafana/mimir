@@ -60,7 +60,7 @@ func shouldRetry(err error) bool {
 // objstore.Bucket methods.
 // Example:
 //
-//	b := NewRetryingBucket(bucket).WithRequestDurationLimit(1*time.Minute)
+//	b := NewRetryingBucket(bucket)
 //	ctx, cancel := context.WithTimeout(5*time.Minute)
 //	err1 := b.WithRequestDurationLimit(10*time.Second).Get(ctx, "stuff/tinymanifest")
 //	err2 := b.WithRequestDurationLimit(2*time.Minute).Upload(ctx, "stuff/bigmanifest", ...)
@@ -77,28 +77,24 @@ func (r *RetryingBucket) WithRetries(bc backoff.Config) *RetryingBucket {
 	return &clone
 }
 
-func (r *RetryingBucket) requestContextWithBackoff(ctx context.Context) (context.Context, context.CancelFunc, *backoff.Backoff) {
-	rctx := ctx
-	cancelFunc := func() {}
-	if r.requestDurationLimit > 0 {
-		rctx, cancelFunc = context.WithTimeout(rctx, r.requestDurationLimit)
-	}
-	return rctx, cancelFunc, backoff.New(ctx, r.retryPolicy)
-}
-
 func (r *RetryingBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	rctx, cancel, b := r.requestContextWithBackoff(ctx)
-	defer cancel()
+	if r.requestDurationLimit <= 0 {
+		return r.Bucket.Get(ctx, name)
+	}
+
 	var lastErr error
+	b := backoff.New(ctx, r.retryPolicy)
 
 	for b.Ongoing() {
-		if r, err := r.Bucket.Get(rctx, name); err == nil {
+		r, err := func() (io.ReadCloser, error) {
+			rctx, cancel := context.WithTimeout(ctx, r.requestDurationLimit)
+			defer cancel()
+			return r.Bucket.Get(rctx, name)
+		}()
+		if err == nil || !shouldRetry(err) {
 			return r, err
-		} else if !shouldRetry(err) {
-			return nil, err
-		} else {
-			lastErr = err
 		}
+		lastErr = err
 		b.Wait()
 	}
 
@@ -106,18 +102,23 @@ func (r *RetryingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 }
 
 func (r *RetryingBucket) GetRange(ctx context.Context, name string, off int64, length int64) (io.ReadCloser, error) {
-	rctx, cancel, b := r.requestContextWithBackoff(ctx)
-	defer cancel()
+	if r.requestDurationLimit <= 0 {
+		return r.Bucket.GetRange(ctx, name, off, length)
+	}
+
 	var lastErr error
+	b := backoff.New(ctx, r.retryPolicy)
 
 	for b.Ongoing() {
-		if r, err := r.Bucket.GetRange(rctx, name, off, length); err == nil {
+		r, err := func() (io.ReadCloser, error) {
+			rctx, cancel := context.WithTimeout(ctx, r.requestDurationLimit)
+			defer cancel()
+			return r.Bucket.GetRange(rctx, name, off, length)
+		}()
+		if err == nil || !shouldRetry(err) {
 			return r, err
-		} else if !shouldRetry(err) {
-			return nil, err
-		} else {
-			lastErr = err
 		}
+		lastErr = err
 		b.Wait()
 	}
 
@@ -125,18 +126,23 @@ func (r *RetryingBucket) GetRange(ctx context.Context, name string, off int64, l
 }
 
 func (r *RetryingBucket) Upload(ctx context.Context, name string, reader io.Reader) error {
-	rctx, cancel, b := r.requestContextWithBackoff(ctx)
-	defer cancel()
+	if r.requestDurationLimit <= 0 {
+		return r.Bucket.Upload(ctx, name, reader)
+	}
+
 	var lastErr error
+	b := backoff.New(ctx, r.retryPolicy)
 
 	for b.Ongoing() {
-		if err := r.Bucket.Upload(rctx, name, reader); err == nil {
+		err := func() error {
+			rctx, cancel := context.WithTimeout(ctx, r.requestDurationLimit)
+			defer cancel()
+			return r.Bucket.Upload(rctx, name, reader)
+		}()
+		if err == nil || !shouldRetry(err) {
 			return err
-		} else if !shouldRetry(err) {
-			return err
-		} else {
-			lastErr = err
 		}
+		lastErr = err
 		b.Wait()
 	}
 
