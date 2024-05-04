@@ -82,7 +82,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket,
 	ownUser func(userID string) (bool, error), cfgProvider ConfigProvider,
 	logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
 
-	bucketClient = bucket.NewRetryingBucket(bucketClient).WithRequestDurationLimit(30 * time.Second).WithRetries(
+	bucketClient = bucket.NewRetryingBucketClient(bucketClient).WithRequestDurationLimit(30 * time.Second).WithRetries(
 		backoff.Config{
 			MinBackoff: 0,
 			MaxBackoff: 0,
