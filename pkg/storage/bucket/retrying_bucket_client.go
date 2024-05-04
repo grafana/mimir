@@ -147,13 +147,11 @@ func (r *RetryingBucketClient) Upload(ctx context.Context, name string, reader i
 	return fmt.Errorf("upload failed with retries: %w (%w)", lastErr, b.Err())
 }
 
-///////////////////////////////////////////////////
-////// test support code that I will move.
-///////////////////////////////////////////////////
-
-// MockBucketWithTimeouts enables mocking of initial timeouts per {operation,
-// object} pair that would require retries to eventually succeed.
-type MockBucketWithTimeouts struct {
+// MockBucketClientWithTimeouts enables mocking of initial timeouts per
+// {operation, object} pair that would require retries to eventually succeed.
+// TODO(seizethedave): move this to testing.go with the other things in this
+// folder that are only for testing.
+type MockBucketClientWithTimeouts struct {
 	objstore.Bucket
 
 	InitialTimeouts int
@@ -168,8 +166,8 @@ type objStoreCall struct {
 	object string
 }
 
-func NewMockBucketWithTimeouts(b objstore.Bucket, timeouts int) *MockBucketWithTimeouts {
-	return &MockBucketWithTimeouts{
+func NewMockBucketClientWithTimeouts(b objstore.Bucket, timeouts int) *MockBucketClientWithTimeouts {
+	return &MockBucketClientWithTimeouts{
 		Bucket:          b,
 		InitialTimeouts: timeouts,
 		Calls:           make(map[objStoreCall]int),
@@ -177,7 +175,7 @@ func NewMockBucketWithTimeouts(b objstore.Bucket, timeouts int) *MockBucketWithT
 	}
 }
 
-func (m *MockBucketWithTimeouts) err(op, obj string) error {
+func (m *MockBucketClientWithTimeouts) err(op, obj string) error {
 	c := objStoreCall{op, obj}
 
 	m.mu.Lock()
@@ -191,14 +189,14 @@ func (m *MockBucketWithTimeouts) err(op, obj string) error {
 	return nil
 }
 
-func (m *MockBucketWithTimeouts) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+func (m *MockBucketClientWithTimeouts) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	if err := m.err("get", name); err != nil {
 		return nil, err
 	}
 	return m.Bucket.Get(ctx, name)
 }
 
-func (m *MockBucketWithTimeouts) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+func (m *MockBucketClientWithTimeouts) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
 	if err := m.err("get_range", name); err != nil {
 		return nil, err
 	}

@@ -118,11 +118,13 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	cfgProvider := newMockConfigProvider()
 
 	testBucketClient := bucketClient
-	var mockBucket *bucket.MockBucketWithTimeouts
+	var mockBucket *bucket.MockBucketClientWithTimeouts
 
 	if options.objStoreTimeouts {
-		// Wrap the bucket client in one that will fail on initial calls.
-		mockBucket = bucket.NewMockBucketWithTimeouts(testBucketClient, 2)
+		// Wrap the bucket client in one where every bucket method on every
+		// objstore object will fail with context.DeadlineExceed on the first
+		// two invocations.
+		mockBucket = bucket.NewMockBucketClientWithTimeouts(testBucketClient, 2)
 		testBucketClient = mockBucket
 	}
 
