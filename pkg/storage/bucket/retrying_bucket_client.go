@@ -90,7 +90,7 @@ func (r *RetryingBucketClient) Get(ctx context.Context, name string) (io.ReadClo
 		// This goes for any of these that return a Reader stream: we don't
 		// call rctx's cancel function because it'll cancel the stream. We
 		// let the parent context's cancel function do that work.
-		rctx, _ := context.WithTimeout(ctx, r.requestDurationLimit)
+		rctx, _ := context.WithTimeout(ctx, r.requestDurationLimit) //nolint:lostcancel
 		r, err := r.Bucket.Get(rctx, name)
 		if err == nil || !shouldRetry(err) {
 			return r, err
@@ -111,7 +111,7 @@ func (r *RetryingBucketClient) GetRange(ctx context.Context, name string, off in
 	b := backoff.New(ctx, r.retryPolicy)
 
 	for b.Ongoing() {
-		rctx, _ := context.WithTimeout(ctx, r.requestDurationLimit)
+		rctx, _ := context.WithTimeout(ctx, r.requestDurationLimit) //nolint:lostcancel
 		r, err := r.Bucket.GetRange(rctx, name, off, length)
 		if err == nil || !shouldRetry(err) {
 			return r, err
@@ -157,26 +157,25 @@ type MockBucketClientWithTimeouts struct {
 	InitialTimeouts int
 
 	mu      sync.Mutex
-	Calls   map[objStoreCall]int
-	Success map[objStoreCall]struct{}
-}
-
-type objStoreCall struct {
-	op     string
-	object string
+	Calls   map[string]int
+	Success map[string]struct{}
 }
 
 func NewMockBucketClientWithTimeouts(b objstore.Bucket, timeouts int) *MockBucketClientWithTimeouts {
 	return &MockBucketClientWithTimeouts{
 		Bucket:          b,
 		InitialTimeouts: timeouts,
-		Calls:           make(map[objStoreCall]int),
-		Success:         make(map[objStoreCall]struct{}),
+		Calls:           make(map[string]int),
+		Success:         make(map[string]struct{}),
 	}
 }
 
+func (m *MockBucketClientWithTimeouts) OpString(op, obj string) string {
+	return fmt.Sprintf("%s/%s", op, obj)
+}
+
 func (m *MockBucketClientWithTimeouts) err(op, obj string) error {
-	c := objStoreCall{op, obj}
+	c := m.OpString(op, obj)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
