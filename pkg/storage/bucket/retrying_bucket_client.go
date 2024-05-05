@@ -147,6 +147,78 @@ func (r *RetryingBucketClient) Upload(ctx context.Context, name string, reader i
 	return fmt.Errorf("upload failed with retries: %w (%w)", lastErr, b.Err())
 }
 
+func (r *RetryingBucketClient) Iter(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption) error {
+	if r.requestDurationLimit <= 0 {
+		return r.Bucket.Iter(ctx, dir, f, options...)
+	}
+
+	var lastErr error
+	b := backoff.New(ctx, r.retryPolicy)
+
+	for b.Ongoing() {
+		err := func() error {
+			rctx, cancel := context.WithTimeout(ctx, r.requestDurationLimit)
+			defer cancel()
+			return r.Bucket.Iter(rctx, dir, f, options...)
+		}()
+		if err == nil || !shouldRetry(err) {
+			return err
+		}
+		lastErr = err
+		b.Wait()
+	}
+
+	return fmt.Errorf("iter failed with retries: %w (%w)", lastErr, b.Err())
+}
+
+func (r *RetryingBucketClient) Exists(ctx context.Context, name string) (bool, error) {
+	if r.requestDurationLimit <= 0 {
+		return r.Bucket.Exists(ctx, name)
+	}
+
+	var lastErr error
+	b := backoff.New(ctx, r.retryPolicy)
+
+	for b.Ongoing() {
+		exists, err := func() (bool, error) {
+			rctx, cancel := context.WithTimeout(ctx, r.requestDurationLimit)
+			defer cancel()
+			return r.Bucket.Exists(rctx, name)
+		}()
+		if err == nil || !shouldRetry(err) {
+			return exists, err
+		}
+		lastErr = err
+		b.Wait()
+	}
+
+	return false, fmt.Errorf("exists failed with retries: %w (%w)", lastErr, b.Err())
+}
+
+func (r *RetryingBucketClient) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
+	if r.requestDurationLimit <= 0 {
+		return r.Bucket.Attributes(ctx, name)
+	}
+
+	var lastErr error
+	b := backoff.New(ctx, r.retryPolicy)
+
+	for b.Ongoing() {
+		attr, err := func() (objstore.ObjectAttributes, error) {
+			rctx, cancel := context.WithTimeout(ctx, r.requestDurationLimit)
+			defer cancel()
+			return r.Bucket.Attributes(rctx, name)
+		}()
+		if err == nil || !shouldRetry(err) {
+			return attr, err
+		}
+		lastErr = err
+		b.Wait()
+	}
+
+	return objstore.ObjectAttributes{}, fmt.Errorf("attributes failed with retries: %w (%w)", lastErr, b.Err())
+}
+
 // MockBucketClientWithTimeouts enables mocking of initial timeouts per
 // {operation, object} pair that would require retries to eventually succeed.
 // TODO(seizethedave): move this to testing.go with the other things in this
