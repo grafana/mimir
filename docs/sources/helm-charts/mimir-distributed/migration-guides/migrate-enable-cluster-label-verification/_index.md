@@ -1,13 +1,12 @@
 ---
-description: "Migrating Mimir Helm Installation to Use Memberlist Cluster Label"
-title: "Migrating Mimir Helm Installation to Use Memberlist Cluster Label"
-menuTitle: "Migrating Mimir Helm Installation to Use Memberlist Cluster Label"
+description:
+  Learn how to configure Grafana Mimir's cluster label to prevent the Memberlist gossip ring to join
+  different memberlist cluster.
+title: "Configure a unique Grafana Mimir's Memberlist cluster label in helm installation"
 weight: 110
 ---
 
-# Migrating Mimir Helm Installation to Use Memberlist Cluster Label
-
-## Introduction
+# Configure a unique Grafana Mimir's Memberlist cluster label in helm installation
 
 Grafana Mimir uses [memberlist] to share works and deciding which component replica to send the workload such as when ingesting series. Memberlist encodes the replica information in data structure called [hash ring], this is a consistent hashing scheme in which different ingesters instance tokens are placed around the ring. The token position in the ring determines which ingester should handle a request. The information of this hash ring is delivered to different components by using gossip protocol.
 
