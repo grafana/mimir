@@ -204,4 +204,23 @@ func TestMetricsFromTemplating(t *testing.T) {
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"tomcat_session_processingtime_total": {}}, metrics)
 	})
+
+	t.Run(`query contains range with other variables`, func(t *testing.T) {
+		metrics := make(map[string]struct{})
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query:      `myapp_metric_foo[$__from:$__to]`,
+				},
+			},
+		}
+
+		errs := metricsFromTemplating(in, metrics)
+		require.Empty(t, errs)
+		require.Len(t, metrics, 1)
+		require.Equal(t, map[string]struct{}{"myapp_metric_foo": {}}, metrics)
+	})
 }

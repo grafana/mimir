@@ -22,11 +22,13 @@ import (
 )
 
 var (
-	lvRegexp        = regexp.MustCompile(`(?s)label_values\((.+),.+\)`)
-	lvNoQueryRegexp = regexp.MustCompile(`(?s)label_values\((.+)\)`)
-	qrRegexp        = regexp.MustCompile(`(?s)query_result\((.+)\)`)
-	validMetricName = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
-	replacer        = strings.NewReplacer(
+	lvRegexp                     = regexp.MustCompile(`(?s)label_values\((.+),.+\)`)
+	lvNoQueryRegexp              = regexp.MustCompile(`(?s)label_values\((.+)\)`)
+	qrRegexp                     = regexp.MustCompile(`(?s)query_result\((.+)\)`)
+	validMetricName              = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
+	variableRangeQueryRangeRegex = regexp.MustCompile(`\[\$?\w+?]`)
+	variableSubqueryRangeRegex   = regexp.MustCompile(`\[\$?\w+:\$?\w+?]`)
+	variableReplacer             = strings.NewReplacer(
 		"$__interval", "5m",
 		"$interval", "5m",
 		"$resolution", "5s",
@@ -214,8 +216,15 @@ func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error 
 	return parseErrors
 }
 
+func replaceVariables(query string) string {
+	query = variableReplacer.Replace(query)
+	query = variableRangeQueryRangeRegex.ReplaceAllLiteralString(query, `[5m]`)
+	query = variableSubqueryRangeRegex.ReplaceAllLiteralString(query, `[5m:1m]`)
+	return query
+}
+
 func parseQuery(query string, metrics map[string]struct{}) error {
-	expr, err := parser.ParseExpr(replacer.Replace(query))
+	expr, err := parser.ParseExpr(replaceVariables(query))
 	if err != nil {
 		return err
 	}
