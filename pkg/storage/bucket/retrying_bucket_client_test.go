@@ -19,14 +19,30 @@ func TestRetryingBucketClient(t *testing.T) {
 	assert.NotNil(t, r)
 	assert.NoError(t, err)
 
-	s := timeoutBucket.OpString("get", "/meta.json")
-	ct, ok := timeoutBucket.Calls[s]
-	assert.True(t, ok)
+	ct, success := timeoutBucket.GetStats("/meta.json")
 	assert.Equal(t, 3, ct)
-	_, success := timeoutBucket.Success[s]
 	assert.True(t, success)
 
 	assert.Len(t, mockBucket.Calls, 1)
+}
+
+func TestRetryingBucketClient_RetriesExceeded(t *testing.T) {
+	mockBucket := &ClientMock{}
+	mockBucket.MockGet("/meta.json", "{}", nil)
+	timeoutBucket := NewMockBucketClientWithTimeouts(mockBucket, 10)
+	c := NewRetryingBucketClient(timeoutBucket)
+
+	ctx := context.Background()
+	_, err := c.WithRetries(backoff.Config{MaxRetries: 7}).Get(ctx, "/meta.json")
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.ErrorContains(t, err, "failed with retries")
+
+	ct, success := timeoutBucket.GetStats("/meta.json")
+	assert.Equal(t, 7, ct)
+	assert.False(t, success)
+
+	assert.Len(t, mockBucket.Calls, 0)
 }
 
 func TestRetryingBucketClient_NoRetry(t *testing.T) {
@@ -38,13 +54,10 @@ func TestRetryingBucketClient_NoRetry(t *testing.T) {
 	ctx := context.Background()
 	_, err := c.WithRequestDurationLimit(0).Get(ctx, "/meta.json")
 	assert.Error(t, err)
-	assert.ErrorIs(t, context.DeadlineExceeded, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 
-	s := timeoutBucket.OpString("get", "/meta.json")
-	ct, ok := timeoutBucket.Calls[s]
-	assert.True(t, ok)
+	ct, success := timeoutBucket.GetStats("/meta.json")
 	assert.Equal(t, 1, ct)
-	_, success := timeoutBucket.Success[s]
 	assert.False(t, success)
 
 	assert.Len(t, mockBucket.Calls, 0)

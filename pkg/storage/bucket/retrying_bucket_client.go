@@ -226,38 +226,64 @@ func (r *RetryingBucketClient) Attributes(ctx context.Context, name string) (obj
 type MockBucketClientWithTimeouts struct {
 	objstore.Bucket
 
-	InitialTimeouts int
+	initialTimeouts int
 
-	mu      sync.Mutex
-	Calls   map[string]int
-	Success map[string]struct{}
+	mu       sync.Mutex
+	callInfo map[string]*MockBucketStats
+}
+
+type MockBucketStats struct {
+	Calls   int
+	Success bool
 }
 
 func NewMockBucketClientWithTimeouts(b objstore.Bucket, timeouts int) *MockBucketClientWithTimeouts {
 	return &MockBucketClientWithTimeouts{
 		Bucket:          b,
-		InitialTimeouts: timeouts,
-		Calls:           make(map[string]int),
-		Success:         make(map[string]struct{}),
+		initialTimeouts: timeouts,
+		callInfo:        make(map[string]*MockBucketStats),
 	}
 }
 
-func (m *MockBucketClientWithTimeouts) OpString(op, obj string) string {
+func opString(op, obj string) string {
 	return fmt.Sprintf("%s/%s", op, obj)
 }
 
 func (m *MockBucketClientWithTimeouts) err(op, obj string) error {
-	c := m.OpString(op, obj)
-
+	c := opString(op, obj)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.Calls[c]++
-	if m.Calls[c] <= m.InitialTimeouts {
+	ci, ok := m.callInfo[c]
+	if !ok {
+		ci = &MockBucketStats{0, false}
+		m.callInfo[c] = ci
+	}
+	ci.Calls++
+	if ci.Calls <= m.initialTimeouts {
 		return context.DeadlineExceeded
 	}
-	m.Success[c] = struct{}{}
+	ci.Success = true
 	return nil
+}
+
+func (m *MockBucketClientWithTimeouts) AllStats() []*MockBucketStats {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := make([]*MockBucketStats, 0, len(m.callInfo))
+	for _, stat := range m.callInfo {
+		s = append(s, stat)
+	}
+	return s
+}
+
+func (m *MockBucketClientWithTimeouts) GetStats(name string) (int, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if c, ok := m.callInfo[opString("get", name)]; ok {
+		return c.Calls, c.Success
+	}
+	return 0, false
 }
 
 func (m *MockBucketClientWithTimeouts) Get(ctx context.Context, name string) (io.ReadCloser, error) {

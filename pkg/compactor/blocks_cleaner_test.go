@@ -209,10 +209,9 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	}
 
 	if options.objStoreTimeouts {
-		for op, ct := range mockBucket.Calls {
-			if ct > 0 {
-				_, successful := mockBucket.Success[op]
-				assert.True(t, successful)
+		for _, stat := range mockBucket.AllStats() {
+			if stat.Calls > 0 {
+				assert.True(t, stat.Success)
 			}
 		}
 	}
