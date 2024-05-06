@@ -33,6 +33,7 @@ func NewRequestBuffers(p Pool) *RequestBuffers {
 }
 
 // Get obtains a buffer from the pool. It will be returned back to the pool when CleanUp is called.
+// If size exceeds the maximum buffer size allowed in the pool, a new buffer from the heap is returned.
 func (rb *RequestBuffers) Get(size int) *bytes.Buffer {
 	if rb == nil || size > maxInPoolRequestBufferSize {
 		if size < 0 {
