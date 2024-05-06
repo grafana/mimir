@@ -16,10 +16,8 @@ import (
 	gokitlog "github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/listblocks"
@@ -103,43 +101,7 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.UL
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)
 	defer tabber.Flush()
 
-	// Header
-	fmt.Fprintf(tabber, "Block ID\t")
-	if cfg.splitCount > 0 {
-		fmt.Fprintf(tabber, "Split ID\t")
-	}
-	if cfg.showUlidTime {
-		fmt.Fprintf(tabber, "ULID Time\t")
-	}
-	fmt.Fprintf(tabber, "Min Time\t")
-	fmt.Fprintf(tabber, "Max Time\t")
-	fmt.Fprintf(tabber, "Duration\t")
-	fmt.Fprintf(tabber, "No Compact\t")
-	if cfg.showDeleted {
-		fmt.Fprintf(tabber, "Deletion Time\t")
-	}
-	if cfg.showCompactionLevel {
-		fmt.Fprintf(tabber, "Lvl\t")
-	}
-	if cfg.showBlockSize {
-		fmt.Fprintf(tabber, "Size\t")
-	}
-	if cfg.showStats {
-		fmt.Fprintf(tabber, "Series\t")
-		fmt.Fprintf(tabber, "Samples\t")
-		fmt.Fprintf(tabber, "Chunks\t")
-	}
-	if cfg.showLabels {
-		fmt.Fprintf(tabber, "Labels\t")
-	}
-	if cfg.showSources {
-		fmt.Fprintf(tabber, "Sources\t")
-	}
-	if cfg.showParents {
-		fmt.Fprintf(tabber, "Parents\t")
-	}
-	fmt.Fprintln(tabber)
-
+	tenantTotal := 0.0
 	for _, b := range blocks {
 		if !cfg.showDeleted && deleteMarkerDetails[b.ULID].DeletionTime != 0 {
 			continue
@@ -152,69 +114,71 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.UL
 			continue
 		}
 
-		fmt.Fprintf(tabber, "%v\t", b.ULID)
-		if cfg.splitCount > 0 {
-			fmt.Fprintf(tabber, "%d\t", tsdb.HashBlockID(b.ULID)%uint32(cfg.splitCount))
-		}
-		if cfg.showUlidTime {
-			fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(int64(b.ULID.Time())).UTC().Format(time.RFC3339))
-		}
-		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MinTime).UTC().Format(time.RFC3339))
-		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).UTC().Format(time.RFC3339))
-		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).Sub(util.TimeFromMillis(b.MinTime)))
+		// fmt.Fprintf(tabber, "%v\t", b.ULID)
+		// if cfg.splitCount > 0 {
+		// 	fmt.Fprintf(tabber, "%d\t", tsdb.HashBlockID(b.ULID)%uint32(cfg.splitCount))
+		// }
+		// if cfg.showUlidTime {
+		// 	fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(int64(b.ULID.Time())).UTC().Format(time.RFC3339))
+		// }
+		// fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MinTime).UTC().Format(time.RFC3339))
+		// fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).UTC().Format(time.RFC3339))
+		// fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).Sub(util.TimeFromMillis(b.MinTime)))
 
-		if val, ok := noCompactMarkerDetails[b.ULID]; ok {
-			fmt.Fprintf(tabber, "%v\t", []string{
-				fmt.Sprintf("Time: %s", time.Unix(val.NoCompactTime, 0).UTC().Format(time.RFC3339)),
-				fmt.Sprintf("Reason: %s", val.Reason)})
-		} else {
-			fmt.Fprintf(tabber, "\t")
-		}
+		// if val, ok := noCompactMarkerDetails[b.ULID]; ok {
+		// 	fmt.Fprintf(tabber, "%v\t", []string{
+		// 		fmt.Sprintf("Time: %s", time.Unix(val.NoCompactTime, 0).UTC().Format(time.RFC3339)),
+		// 		fmt.Sprintf("Reason: %s", val.Reason)})
+		// } else {
+		// 	fmt.Fprintf(tabber, "\t")
+		// }
 
-		if cfg.showDeleted {
-			if deleteMarkerDetails[b.ULID].DeletionTime == 0 {
-				fmt.Fprintf(tabber, "\t") // no deletion time.
-			} else {
-				fmt.Fprintf(tabber, "%v\t", time.Unix(deleteMarkerDetails[b.ULID].DeletionTime, 0).UTC().Format(time.RFC3339))
-			}
-		}
+		// if cfg.showDeleted {
+		// 	if deleteMarkerDetails[b.ULID].DeletionTime == 0 {
+		// 		fmt.Fprintf(tabber, "\t") // no deletion time.
+		// 	} else {
+		// 		fmt.Fprintf(tabber, "%v\t", time.Unix(deleteMarkerDetails[b.ULID].DeletionTime, 0).UTC().Format(time.RFC3339))
+		// 	}
+		// }
 
-		if cfg.showCompactionLevel {
-			fmt.Fprintf(tabber, "%d\t", b.Compaction.Level)
-		}
+		// if cfg.showCompactionLevel {
+		// 	fmt.Fprintf(tabber, "%d\t", b.Compaction.Level)
+		// }
 
 		if cfg.showBlockSize {
-			fmt.Fprintf(tabber, "%s\t", listblocks.GetFormattedBlockSize(b))
+			tenantTotal += float64(listblocks.GetBlockSizeBytes(b)) / 1024 / 1024 / 1024
+			// fmt.Fprintf(tabber, "%s\t", listblocks.GetFormattedBlockSize(b))
 		}
 
-		if cfg.showStats {
-			fmt.Fprintf(tabber, "%d\t", b.Stats.NumSeries)
-			fmt.Fprintf(tabber, "%d\t", b.Stats.NumSamples)
-			fmt.Fprintf(tabber, "%d\t", b.Stats.NumChunks)
-		}
+		// if cfg.showStats {
+		// 	fmt.Fprintf(tabber, "%d\t", b.Stats.NumSeries)
+		// 	fmt.Fprintf(tabber, "%d\t", b.Stats.NumSamples)
+		// 	fmt.Fprintf(tabber, "%d\t", b.Stats.NumChunks)
+		// }
 
-		if cfg.showLabels {
-			if m := b.Thanos.Labels; m != nil {
-				fmt.Fprintf(tabber, "%s\t", labels.FromMap(b.Thanos.Labels))
-			} else {
-				fmt.Fprintf(tabber, "\t")
-			}
-		}
+		// if cfg.showLabels {
+		// 	if m := b.Thanos.Labels; m != nil {
+		// 		fmt.Fprintf(tabber, "%s\t", labels.FromMap(b.Thanos.Labels))
+		// 	} else {
+		// 		fmt.Fprintf(tabber, "\t")
+		// 	}
+		// }
 
-		if cfg.showSources {
-			// No tab at the end.
-			fmt.Fprintf(tabber, "%v", b.Compaction.Sources)
-		}
+		// if cfg.showSources {
+		// 	// No tab at the end.
+		// 	fmt.Fprintf(tabber, "%v", b.Compaction.Sources)
+		// }
 
-		if cfg.showParents {
-			var p []ulid.ULID
-			for _, pb := range b.Compaction.Parents {
-				p = append(p, pb.ULID)
-			}
-			// No tab at the end.
-			fmt.Fprintf(tabber, "%v", p)
-		}
+		// if cfg.showParents {
+		// 	var p []ulid.ULID
+		// 	for _, pb := range b.Compaction.Parents {
+		// 		p = append(p, pb.ULID)
+		// 	}
+		// 	// No tab at the end.
+		// 	fmt.Fprintf(tabber, "%v", p)
+		// }
 
-		fmt.Fprintln(tabber)
+		// fmt.Fprintln(tabber)
 	}
+	fmt.Fprintln(tabber, "the total size of the tenant", cfg.userID, " is: ", tenantTotal, "GB")
 }
