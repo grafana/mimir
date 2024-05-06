@@ -30,7 +30,7 @@ var _ objstore.Bucket = (*RetryingBucketClient)(nil)
 func NewRetryingBucketClient(wrappedBucket objstore.Bucket) *RetryingBucketClient {
 	return &RetryingBucketClient{
 		Bucket:               wrappedBucket,
-		requestDurationLimit: 30 * time.Second,
+		requestDurationLimit: 5 * time.Minute,
 		retryPolicy: backoff.Config{
 			MaxRetries: 3,
 			MinBackoff: 10 * time.Millisecond,
@@ -40,18 +40,7 @@ func NewRetryingBucketClient(wrappedBucket objstore.Bucket) *RetryingBucketClien
 }
 
 func shouldRetry(err error) bool {
-	// We want to retry DeadlineExceeded, network connectivity things, and other
-	// things like 5xx errors from blob storage.
-	var tempErr interface{ Temporary() bool }
-
-	switch {
-	case errors.Is(err, context.DeadlineExceeded):
-		return true
-	case errors.As(err, &tempErr):
-		return tempErr.Temporary()
-	}
-
-	return false
+	return errors.Is(err, context.DeadlineExceeded)
 }
 
 // WithRequestDurationLimit allows a caller to specify a limit on how long a
@@ -64,7 +53,7 @@ func shouldRetry(err error) bool {
 //	b := NewRetryingBucketClient(bucket)
 //	ctx, cancel := context.WithTimeout(5*time.Minute)
 //	err1 := b.WithRequestDurationLimit(10*time.Second).Get(ctx, "stuff/tinymanifest")
-//	err2 := b.WithRequestDurationLimit(2*time.Minute).Upload(ctx, "stuff/bigmanifest", ...)
+//	err2 := b.WithRequestDurationLimit(2*time.Minute).Upload(ctx, "stuff/bigindex", ...)
 //	...
 func (r *RetryingBucketClient) WithRequestDurationLimit(lim time.Duration) *RetryingBucketClient {
 	clone := *r
@@ -76,6 +65,16 @@ func (r *RetryingBucketClient) WithRetries(bc backoff.Config) *RetryingBucketCli
 	clone := *r
 	clone.retryPolicy = bc
 	return &clone
+}
+
+type cancelingReadCloser struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelingReadCloser) Close() error {
+	defer c.cancel()
+	return c.ReadCloser.Close()
 }
 
 func (r *RetryingBucketClient) Get(ctx context.Context, name string) (io.ReadCloser, error) {
@@ -90,10 +89,14 @@ func (r *RetryingBucketClient) Get(ctx context.Context, name string) (io.ReadClo
 		// This goes for any of these that return a Reader stream: we don't
 		// call rctx's cancel function because it'll cancel the stream. We
 		// let the parent context's cancel function do that work.
-		rctx, _ := context.WithTimeout(ctx, r.requestDurationLimit) //nolint:lostcancel
+		rctx, cancel := context.WithTimeout(ctx, r.requestDurationLimit)
 		r, err := r.Bucket.Get(rctx, name)
-		if err == nil || !shouldRetry(err) {
-			return r, err
+		if err == nil {
+			return &cancelingReadCloser{r, cancel}, err
+		}
+		cancel()
+		if !shouldRetry(err) {
+			return nil, err
 		}
 		lastErr = err
 		b.Wait()

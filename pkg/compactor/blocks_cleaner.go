@@ -15,7 +15,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
@@ -78,17 +77,7 @@ type BlocksCleaner struct {
 	bucketIndexCompactionPlanningErrors prometheus.Counter
 }
 
-func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket,
-	ownUser func(userID string) (bool, error), cfgProvider ConfigProvider,
-	logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
-
-	bucketClient = bucket.NewRetryingBucketClient(bucketClient).WithRequestDurationLimit(30 * time.Second).WithRetries(
-		backoff.Config{
-			MinBackoff: 0,
-			MaxBackoff: 0,
-		},
-	)
-
+func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
 	c := &BlocksCleaner{
 		cfg:          cfg,
 		bucketClient: bucketClient,
@@ -409,7 +398,6 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 }
 
 func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
-	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 	startTime := time.Now()
 
 	level.Info(userLogger).Log("msg", "started blocks cleanup and maintenance")
@@ -421,8 +409,9 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		}
 	}()
 
-	// Read the bucket index.
-	idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, userLogger)
+	retryClient := bucket.NewRetryingBucketClient(c.bucketClient)
+
+	idx, err := bucketindex.ReadIndexEx(ctx, retryClient.WithRequestDurationLimit(1*time.Minute), userID, c.cfgProvider, userLogger)
 	if errors.Is(err, bucketindex.ErrIndexCorrupted) {
 		level.Warn(userLogger).Log("msg", "found a corrupted bucket index, recreating it")
 	} else if err != nil && !errors.Is(err, bucketindex.ErrIndexNotFound) {
@@ -430,6 +419,11 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	}
 
 	level.Info(userLogger).Log("msg", "fetched existing bucket index")
+
+	userClientWithRequestTimeout := func(lim time.Duration) objstore.InstrumentedBucket {
+		r := bucket.NewRetryingBucketClient(c.bucketClient).WithRequestDurationLimit(lim)
+		return bucket.NewUserBucketClient(userID, r, c.cfgProvider)
+	}
 
 	// Mark blocks for future deletion based on the retention period for the user.
 	// Note doing this before UpdateIndex, so it reads in the deletion marks.
@@ -439,17 +433,17 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		// We do not want to stop the remaining work in the cleaner if an
 		// error occurs here. Errors are logged in the function.
 		retention := c.cfgProvider.CompactorBlocksRetentionPeriod(userID)
-		c.applyUserRetentionPeriod(ctx, idx, retention, userBucket, userLogger)
+		c.applyUserRetentionPeriod(ctx, idx, retention, userClientWithRequestTimeout(1*time.Minute), userLogger)
 	}
 
 	// Generate an updated in-memory version of the bucket index.
-	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, userLogger)
+	w := bucketindex.NewUpdater(retryClient.WithRequestDurationLimit(1*time.Minute), userID, c.cfgProvider, userLogger)
 	idx, partials, err := w.UpdateIndex(ctx, idx)
 	if err != nil {
 		return err
 	}
 
-	c.deleteBlocksMarkedForDeletion(ctx, idx, userBucket, userLogger)
+	c.deleteBlocksMarkedForDeletion(ctx, idx, userClientWithRequestTimeout(1*time.Minute), userLogger)
 
 	// Partial blocks with a deletion mark can be cleaned up. This is a best effort, so we don't return
 	// error if the cleanup of partial blocks fail.
@@ -462,18 +456,19 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 			level.Warn(userLogger).Log("msg", "partial blocks deletion has been disabled for tenant because the delay has been set lower than the minimum value allowed", "minimum", validation.MinCompactorPartialBlockDeletionDelay)
 		}
 
-		c.cleanUserPartialBlocks(ctx, partials, idx, partialDeletionCutoffTime, userBucket, userLogger)
+		c.cleanUserPartialBlocks(ctx, partials, idx, partialDeletionCutoffTime,
+			userClientWithRequestTimeout(45*time.Second), userLogger)
 		level.Info(userLogger).Log("msg", "cleaned up partial blocks", "partials", len(partials))
 	}
 
 	// If there are no more blocks, clean up any remaining files
 	// Otherwise upload the updated index to the storage.
 	if c.cfg.NoBlocksFileCleanupEnabled && len(idx.Blocks) == 0 {
-		if err := c.deleteRemainingData(ctx, userBucket, userID, userLogger); err != nil {
+		if err := c.deleteRemainingData(ctx, userClientWithRequestTimeout(1*time.Minute), userID, userLogger); err != nil {
 			return err
 		}
 	} else {
-		if err := bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx); err != nil {
+		if err := bucketindex.WriteIndex(ctx, retryClient.WithRequestDurationLimit(3*time.Minute), userID, c.cfgProvider, idx); err != nil {
 			return err
 		}
 	}
@@ -484,7 +479,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).SetToCurrentTime()
 
 	// Compute pending compaction jobs based on current index.
-	jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, userBucket, idx, c.cfg.CompactionBlockRanges, c.cfgProvider.CompactorSplitAndMergeShards(userID), c.cfgProvider.CompactorSplitGroups(userID))
+	jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, retryClient.WithRequestDurationLimit(2*time.Minute), idx, c.cfg.CompactionBlockRanges, c.cfgProvider.CompactorSplitAndMergeShards(userID), c.cfgProvider.CompactorSplitGroups(userID))
 	if err != nil {
 		// When compactor is shutting down, we get context cancellation. There's no reason to report that as error.
 		if !errors.Is(err, context.Canceled) {
@@ -693,7 +688,7 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 	return lastModified, err
 }
 
-func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, userBucket objstore.InstrumentedBucket, idx *bucketindex.Index, compactionBlockRanges mimir_tsdb.DurationList, mergeShards int, splitGroups int) ([]*Job, error) {
+func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, userBucket objstore.BucketReader, idx *bucketindex.Index, compactionBlockRanges mimir_tsdb.DurationList, mergeShards int, splitGroups int) ([]*Job, error) {
 	metas := ConvertBucketIndexToMetasForCompactionJobPlanning(idx)
 
 	// We need to pass this metric to MetadataFilters, but we don't need to report this value from BlocksCleaner.

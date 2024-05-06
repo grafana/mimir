@@ -1039,12 +1039,12 @@ var _ block.MetadataFilter = &NoCompactionMarkFilter{}
 // NoCompactionMarkFilter is a block.Fetcher filter that finds all blocks with no-compact marker files, and optionally
 // removes them from synced metas.
 type NoCompactionMarkFilter struct {
-	bkt                objstore.InstrumentedBucketReader
+	bkt                objstore.BucketReader
 	noCompactMarkedMap map[ulid.ULID]struct{}
 }
 
 // NewNoCompactionMarkFilter creates NoCompactionMarkFilter.
-func NewNoCompactionMarkFilter(bkt objstore.InstrumentedBucketReader) *NoCompactionMarkFilter {
+func NewNoCompactionMarkFilter(bkt objstore.BucketReader) *NoCompactionMarkFilter {
 	return &NoCompactionMarkFilter{
 		bkt: bkt,
 	}

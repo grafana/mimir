@@ -31,7 +31,11 @@ var (
 func ReadIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, logger log.Logger) (*Index, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
+	return ReadIndexEx(ctx, bkt, userID, cfgProvider, logger)
+}
 
+// ReadIndexEx reads, parses and returns a bucket index from the bucket.
+func ReadIndexEx(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, logger log.Logger) (*Index, error) {
 	userBkt := bucket.NewUserBucketClient(userID, bkt, cfgProvider)
 
 	// Get the bucket index.
