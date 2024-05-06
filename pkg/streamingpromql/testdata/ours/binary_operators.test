@@ -1,0 +1,120 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Most cases for aggregation operators are covered already in the upstream test cases.
+# These test cases cover scenarios not covered by the upstream test cases, such as range queries, or edge cases that are uniquely likely to cause issues in the streaming engine.
+
+# Throughout this file, we use a 6m step to avoid the default 5m lookback window.
+
+# Basic arithmetic operations
+load 6m
+  left_side 11 21 32 42
+  right_side 1 2 3 4
+
+eval range from 0 to 24m step 6m left_side + right_side
+  {} 12 23 35 46
+
+eval range from 0 to 24m step 6m left_side - right_side
+  {} 10 19 29 38
+
+eval range from 0 to 24m step 6m left_side * right_side
+  {} 11 42 96 168
+
+eval range from 0 to 24m step 6m left_side / right_side
+  {} 11 10.5 10.66666 10.5
+
+eval range from 0 to 24m step 6m left_side % right_side
+  {} 0 1 2 2
+
+eval range from 0 to 24m step 6m left_side ^ right_side
+  {} 11 441 32768 3111696
+
+clear
+
+# One-to-one matching with all labels
+load 6m
+  left_side{env="prod", pod="pod-abc123"}     1    2    3    4
+  left_side{env="dev", pod="pod-abc123"}     10   20   30   40
+  left_side{env="dev", pod="pod-xyz456"}      9    9    9    9
+  right_side{env="prod", pod="pod-abc123"}  100  200  300  400
+  right_side{env="dev", pod="pod-abc123"}  1000 2000 3000 4000
+  right_side{env="dev", pod="pod-mno789"}     5    5    5    5
+
+# Matches on both sides: returns results for matching series, ignores non-matching series
+eval range from 0 to 24m step 6m left_side + right_side
+  {env="prod", pod="pod-abc123"} 101 202 303 404
+  {env="dev", pod="pod-abc123"} 1010 2020 3030 4040
+
+# No series on either side: returns no results
+eval range from 0 to 24m step 6m left_side_that_doesnt_exist + right_side_that_doesnt_exist
+
+# No series on left side: returns no results
+eval range from 0 to 24m step 6m left_side_that_doesnt_exist + right_side
+
+# No series on right side: returns no results
+eval range from 0 to 24m step 6m left_side + right_side_that_doesnt_exist
+
+clear
+
+# Series match on both sides, but points don't align
+load 6m
+  partial_left_side  1 2 _ _
+  partial_right_side _ _ 3 4
+
+eval range from 0 to 24m step 6m partial_left_side + partial_right_side
+
+clear
+
+# One-to-one matching with "on" and "ignoring"
+load 6m
+  left_side{env="test", pod="a"} 1 2 3
+  left_side{env="prod", pod="b"} 4 5 6
+  right_side{env="prod", pod="a"} 10 20 30
+  right_side{env="test", pod="b"} 40 50 60
+
+eval range from 0 to 24m step 6m left_side + on(env) right_side
+  {env="prod"} 14 25 36
+  {env="test"} 41 52 63
+
+eval range from 0 to 24m step 6m left_side + ignoring(pod) right_side
+  {env="prod"} 14 25 36
+  {env="test"} 41 52 63
+
+clear
+
+# One-to-one matching, but different series match at different time steps, or not at all
+load 6m
+  left_side{env="test", bar="a"}  1 _ 3 _ _ 6 _
+  left_side{env="test", bar="b"}  _ 2 _ 4 _ _ _
+  right_side{env="test", foo="0"} 2 2 _ _ _ _ 2
+  right_side{env="test", foo="1"} _ _ 3 3 _ _ _
+
+eval range from 0 to 42m step 6m left_side * on (env) right_side
+  {env="test"} 2 4 9 12 _ _ _
+
+clear
+
+# One-to-one matching with multiple matches on left side
+load 6m
+  left_side{env="test", pod="a"} 1 2 3
+  left_side{env="test", pod="b"} 4 5 6
+  left_side{env="test", pod="c"} 7 8 9
+  left_side{env="test", pod="d"} _ 10 11
+  right_side{env="test"} 100 200 300
+
+eval_fail range from 0 to 42m step 6m left_side * on (env) right_side
+  # TODO: expected_message multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)
+
+clear
+
+# One-to-one matching with multiple matches on right side
+load 6m
+  left_side{env="test"} 100 200 300
+  right_side{env="test", pod="a"} 1 2 3
+  right_side{env="test", pod="b"} 4 5 6
+  right_side{env="test", pod="c"} 7 8 9
+  right_side{env="test", pod="d"} _ 10 11
+
+eval_fail range from 0 to 42m step 6m left_side * on (env) right_side
+  # TODO: expected_message found duplicate series for the match group {env="test"} on the right hand-side of the operation: [{__name__="right_side", env="test", pod="b"}, {__name__="right_side", env="test", pod="a"}];many-to-many matching not allowed: matching labels must be unique on one side
+
+clear
