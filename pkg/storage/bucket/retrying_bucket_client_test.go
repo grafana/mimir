@@ -52,7 +52,7 @@ func TestRetryingBucketClient_NoRetry(t *testing.T) {
 	c := NewRetryingBucketClient(timeoutBucket)
 
 	ctx := context.Background()
-	_, err := c.WithRequestDurationLimit(0).Get(ctx, "/meta.json")
+	_, err := c.WithRequestTimeout(0).Get(ctx, "/meta.json")
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 

@@ -43,7 +43,7 @@ func shouldRetry(err error) bool {
 	return errors.Is(err, context.DeadlineExceeded)
 }
 
-// WithRequestDurationLimit allows a caller to specify a limit on how long a
+// WithRequestTimeout allows a caller to specify a limit on how long a
 // single object storage request can take. This allows RetryingBucketClient to
 // perform a number of retries on context.DeadlineExceeded errors within the
 // overall deadline defined on the context passed to the individual
@@ -52,10 +52,10 @@ func shouldRetry(err error) bool {
 //
 //	b := NewRetryingBucketClient(bucket)
 //	ctx, cancel := context.WithTimeout(5*time.Minute)
-//	err1 := b.WithRequestDurationLimit(10*time.Second).Get(ctx, "stuff/tinymanifest")
-//	err2 := b.WithRequestDurationLimit(2*time.Minute).Upload(ctx, "stuff/bigindex", ...)
+//	err1 := b.WithRequestTimeout(10*time.Second).Get(ctx, "stuff/tinymanifest")
+//	err2 := b.WithRequestTimeout(2*time.Minute).Upload(ctx, "stuff/bigindex", ...)
 //	...
-func (r *RetryingBucketClient) WithRequestDurationLimit(lim time.Duration) *RetryingBucketClient {
+func (r *RetryingBucketClient) WithRequestTimeout(lim time.Duration) *RetryingBucketClient {
 	clone := *r
 	clone.requestDurationLimit = lim
 	return &clone

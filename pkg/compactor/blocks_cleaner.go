@@ -411,7 +411,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 
 	retryClient := bucket.NewRetryingBucketClient(c.bucketClient)
 
-	idx, err := bucketindex.ReadIndexEx(ctx, retryClient.WithRequestDurationLimit(1*time.Minute), userID, c.cfgProvider, userLogger)
+	idx, err := bucketindex.ReadIndexEx(ctx, retryClient.WithRequestTimeout(1*time.Minute), userID, c.cfgProvider, userLogger)
 	if errors.Is(err, bucketindex.ErrIndexCorrupted) {
 		level.Warn(userLogger).Log("msg", "found a corrupted bucket index, recreating it")
 	} else if err != nil && !errors.Is(err, bucketindex.ErrIndexNotFound) {
@@ -421,7 +421,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	level.Info(userLogger).Log("msg", "fetched existing bucket index")
 
 	userClientWithRequestTimeout := func(lim time.Duration) objstore.InstrumentedBucket {
-		r := bucket.NewRetryingBucketClient(c.bucketClient).WithRequestDurationLimit(lim)
+		r := bucket.NewRetryingBucketClient(c.bucketClient).WithRequestTimeout(lim)
 		return bucket.NewUserBucketClient(userID, r, c.cfgProvider)
 	}
 
@@ -437,7 +437,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	}
 
 	// Generate an updated in-memory version of the bucket index.
-	w := bucketindex.NewUpdater(retryClient.WithRequestDurationLimit(1*time.Minute), userID, c.cfgProvider, userLogger)
+	w := bucketindex.NewUpdater(retryClient.WithRequestTimeout(1*time.Minute), userID, c.cfgProvider, userLogger)
 	idx, partials, err := w.UpdateIndex(ctx, idx)
 	if err != nil {
 		return err
@@ -468,7 +468,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 			return err
 		}
 	} else {
-		if err := bucketindex.WriteIndex(ctx, retryClient.WithRequestDurationLimit(3*time.Minute), userID, c.cfgProvider, idx); err != nil {
+		if err := bucketindex.WriteIndex(ctx, retryClient.WithRequestTimeout(3*time.Minute), userID, c.cfgProvider, idx); err != nil {
 			return err
 		}
 	}
@@ -479,7 +479,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).SetToCurrentTime()
 
 	// Compute pending compaction jobs based on current index.
-	jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, retryClient.WithRequestDurationLimit(2*time.Minute), idx, c.cfg.CompactionBlockRanges, c.cfgProvider.CompactorSplitAndMergeShards(userID), c.cfgProvider.CompactorSplitGroups(userID))
+	jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, retryClient.WithRequestTimeout(2*time.Minute), idx, c.cfg.CompactionBlockRanges, c.cfgProvider.CompactorSplitAndMergeShards(userID), c.cfgProvider.CompactorSplitGroups(userID))
 	if err != nil {
 		// When compactor is shutting down, we get context cancellation. There's no reason to report that as error.
 		if !errors.Is(err, context.Canceled) {
