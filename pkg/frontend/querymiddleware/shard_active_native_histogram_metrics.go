@@ -194,18 +194,6 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) writeMergedResponse(ctx co
 	stream.WriteObjectStart()
 	defer stream.WriteObjectEnd()
 
-	if mergeError != nil {
-		level.Error(s.logger).Log("msg", "error merging partial responses", "err", mergeError.Error())
-		span.LogFields(otlog.Error(mergeError))
-		stream.WriteMore()
-		stream.WriteObjectField("status")
-		stream.WriteString("error")
-		stream.WriteMore()
-		stream.WriteObjectField("error")
-		stream.WriteString(fmt.Sprintf("error merging partial responses: %s", mergeError.Error()))
-		return
-	}
-
 	stream.WriteObjectField("data")
 	stream.WriteArrayStart()
 	firstItem := true
@@ -215,7 +203,8 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) writeMergedResponse(ctx co
 		} else {
 			stream.WriteMore()
 		}
-
+		// Update the average before sending
+		metricBucketCount[idx].UpdateAverage()
 		stream.WriteVal(metricBucketCount[idx])
 
 		// Flush the stream buffer if it's getting too large.
@@ -224,4 +213,15 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) writeMergedResponse(ctx co
 		}
 	}
 	stream.WriteArrayEnd()
+
+	if mergeError != nil {
+		level.Error(s.logger).Log("msg", "error merging partial responses", "err", mergeError.Error())
+		span.LogFields(otlog.Error(mergeError))
+		stream.WriteMore()
+		stream.WriteObjectField("status")
+		stream.WriteString("error")
+		stream.WriteMore()
+		stream.WriteObjectField("error")
+		stream.WriteString(fmt.Sprintf("error merging partial responses: %s", mergeError.Error()))
+	}
 }

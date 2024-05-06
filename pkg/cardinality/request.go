@@ -288,6 +288,10 @@ type ActiveMetricWithBucketCount struct {
 	MaxBucketCount uint64  `json:"max_bucket_count"`
 }
 
+func (m *ActiveMetricWithBucketCount) UpdateAverage() {
+	m.AvgBucketCount = float64(m.BucketCount) / float64(m.SeriesCount)
+}
+
 type ActiveNativeHistogramMetricsResponse struct {
 	Data []ActiveMetricWithBucketCount `json:"data"`
 }
