@@ -1303,6 +1303,16 @@ func TestBucketCleaner_withRetries(t *testing.T) {
 		assert.True(t, err == context.DeadlineExceeded)
 		assert.Equal(t, 1, calls)
 	})
+	t.Run("no retries needed", func(t *testing.T) {
+		calls := 0
+		f := func(ctx context.Context) error {
+			calls++
+			return nil
+		}
+		err := withRetries(context.Background(), 94000*time.Hour, f)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, calls)
+	})
 	t.Run("doesn't retry things that aren't timeouts", func(t *testing.T) {
 		calls := 0
 		f := func(ctx context.Context) error {
