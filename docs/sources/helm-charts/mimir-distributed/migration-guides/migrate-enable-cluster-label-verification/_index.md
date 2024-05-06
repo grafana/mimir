@@ -9,19 +9,23 @@ weight: 110
 # Configure a unique Grafana Mimir's Memberlist cluster label in helm installation
 
 This document shows the step to configure cluster label verification in a Grafana Mimir installed by Helm.
-The process to update the configuration should take around 30 minutes.
-Multiple [Memberlist](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/memberlist-and-the-gossip-protocol/) [gossip ring](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/) cluster is at risk of merging into without enabling cluster label verification. 
+Multiple [Memberlist](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/memberlist-and-the-gossip-protocol/) [gossip ring](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/) cluster is at risk of merging into one without enabling cluster label verification. 
 For example, if a Mimir, Tempo or Loki are running in the same Kubernetes cluster, they might communicate with each other without this configuration update. 
-Once cluster label verification is enabled, before Memberlist communicate with other components, it will verify whether that new components are having same cluster label and only allowing communication for the parties that are having the same cluster label.
+Once cluster label verification is enabled, before Mimir components communicate with other components, it will verify whether those other components are having same cluster label.
+The process to update the configuration should take around 30 minutes.
 
-There are three steps of the configuration update which we will describe in details in following section. 
-But in brief summary the steps are:
+## Before you begin
+
+- You have a Grafana Mimir installed by mimir-distributed helm chart with its Memberlist cluster label still set to default value. 
+- You have `kubectl` and `helm` command line configured to connect to the Kubernetes cluster where your Grafana Mimir is running.
+
+## Configuration update steps
+
+There are three steps of the configuration update:
 
 1. Disable Memberlist cluster label verification
 1. Set cluster label to all Mimir components
 1. Enable Memberlist cluster label verification again
-
-## Configuration update
 
 ### 1. Disable Memberlist cluster label verification
 
@@ -84,4 +88,4 @@ Ensure the host port 8080 and 8081 are available, otherwise use different availa
 Make sure that the container port which is set by default to port 80 is also correct.
 
 Open the port-forwarded URL in browser to see the Memberlist status http://localhost:8080/memberlist, http://localhost:8081/memberlist and also 
-few others Grafana mimir components. The member list page must show same view of all of their members.
+few others Grafana Mimir components. The Memberlist page from different pods must show same view of all of their members.
