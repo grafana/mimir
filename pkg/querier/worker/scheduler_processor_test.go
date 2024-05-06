@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/ring/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 )
 
@@ -550,6 +552,42 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 		workerCancel()
 	})
+
+	t.Run("should retry streamed responses", func(t *testing.T) {
+		reqProcessor, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		// enable response streaming
+		reqProcessor.streamingEnabled = true
+		// make sure responses don't get rejected as too large
+		reqProcessor.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
+
+		mockStreamer := &mockFrontendResponseStreamer{
+			initialFailures: 1,
+		}
+		reqProcessor.streamResponse = mockStreamer.streamResponseToFrontend
+
+		queryID := uint64(1)
+		requestQueue := []*schedulerpb.SchedulerToQuerier{
+			{QueryID: queryID, HttpRequest: nil, FrontendAddress: frontend.addr, UserID: "test"},
+		}
+
+		responseBodyBytes := bytes.Repeat([]byte("a"), 2*responseStreamingBodyChunkSizeBytes+1)
+
+		responses := []*httpgrpc.HTTPResponse{{
+			Code: http.StatusOK, Body: responseBodyBytes,
+			Headers: []*httpgrpc.Header{streamingEnabledHeader},
+		}}
+
+		processClient.On("Recv").Return(receiveRequests(requestQueue, processClient))
+		ctx, cancel := context.WithCancel(context.Background())
+
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(
+			func(mock.Arguments) { cancel() },
+		).Return(returnResponses(responses)())
+
+		reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
+
+		require.Equal(t, 2, mockStreamer.totalCalls)
+	})
 }
 
 func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopClientMock, *requestHandlerMock, *frontendForQuerierMockServer) {
@@ -729,8 +767,8 @@ func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.Frontend
 					close(f.responseStreamStarted)
 				}
 			})
-			f.queryResultStreamBodyCalls.Inc()
-			if f.queryResultStreamErrorAfter > 0 && int(f.queryResultStreamBodyCalls.Load()) > f.queryResultStreamErrorAfter {
+			bodyCalls := int(f.queryResultStreamBodyCalls.Inc())
+			if f.queryResultStreamErrorAfter > 0 && bodyCalls > f.queryResultStreamErrorAfter {
 				return errors.New("something went wrong")
 			}
 			if !metadataSent {
@@ -742,5 +780,21 @@ func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.Frontend
 		}
 	}
 
+	return nil
+}
+
+type mockFrontendResponseStreamer struct {
+	initialFailures int
+	totalCalls      int
+}
+
+func (m *mockFrontendResponseStreamer) streamResponseToFrontend(
+	_ context.Context, _ context.Context, _ client.PoolClient,
+	_ uint64, _ *httpgrpc.HTTPResponse, _ *querier_stats.Stats, _ log.Logger,
+) error {
+	m.totalCalls++
+	if m.totalCalls <= m.initialFailures {
+		return errors.New("sorry, we've an error")
+	}
 	return nil
 }

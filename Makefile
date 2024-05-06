@@ -450,6 +450,12 @@ lint: check-makefiles
 		"github.com/grafana/mimir/pkg/util/objtools" \
 		./pkg/... ./cmd/... ./integration/...
 
+	# Use the more performant metadata.ValueFromIncomingContext wherever possible (if not possible, we can always put
+	# a lint ignore directive to skip linting).
+	faillint -paths \
+		"google.golang.org/grpc/metadata.{FromIncomingContext}=google.golang.org/grpc/metadata.ValueFromIncomingContext" \
+		./pkg/... ./cmd/... ./integration/...
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
