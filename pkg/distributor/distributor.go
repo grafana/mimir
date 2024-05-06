@@ -13,6 +13,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2322,6 +2323,9 @@ func (r *activeSeriesResponse) metricResult() ([]cardinality.ActiveMetricWithBuc
 			AvgBucketCount: float64(metric.BucketCount) / float64(metric.SeriesCount),
 		})
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Metric < result[j].Metric
+	})
 	return result, fetchedSeries
 }
 

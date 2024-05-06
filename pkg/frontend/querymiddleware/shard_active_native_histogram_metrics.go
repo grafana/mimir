@@ -51,7 +51,7 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) mergeResponses(ctx context
 
 	mtx := sync.Mutex{}
 	metricIdx := make(map[string]int, 0)
-	metricBucketCount := make([]cardinality.ActiveMetricWithBucketCount, 0)
+	metricBucketCount := make([]*cardinality.ActiveMetricWithBucketCount, 0)
 
 	updateMetric := func(item *cardinality.ActiveMetricWithBucketCount) {
 		if item == nil || len(item.Metric) == 0 {
@@ -71,7 +71,7 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) mergeResponses(ctx context
 			}
 		} else {
 			metricIdx[item.Metric] = len(metricBucketCount)
-			metricBucketCount = append(metricBucketCount, *item)
+			metricBucketCount = append(metricBucketCount, item)
 		}
 	}
 
@@ -160,7 +160,7 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) mergeResponses(ctx context
 	return resp
 }
 
-func (s *shardActiveNativeHistogramMetricsMiddleware) writeMergedResponse(ctx context.Context, mergeError error, w io.WriteCloser, metricBucketCount []cardinality.ActiveMetricWithBucketCount, encoding string) {
+func (s *shardActiveNativeHistogramMetricsMiddleware) writeMergedResponse(ctx context.Context, mergeError error, w io.WriteCloser, metricBucketCount []*cardinality.ActiveMetricWithBucketCount, encoding string) {
 	defer w.Close()
 
 	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveNativeHistogramMetrics.writeMergedResponse")
@@ -216,7 +216,7 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) writeMergedResponse(ctx co
 			stream.WriteMore()
 		}
 
-		stream.WriteVal(&metricBucketCount[idx])
+		stream.WriteVal(metricBucketCount[idx])
 
 		// Flush the stream buffer if it's getting too large.
 		if stream.Buffered() > jsoniterMaxBufferSize {
