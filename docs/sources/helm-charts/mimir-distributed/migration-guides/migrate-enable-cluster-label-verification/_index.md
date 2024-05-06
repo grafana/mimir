@@ -8,8 +8,8 @@ weight: 110
 
 # Configure a unique Grafana Mimir's Memberlist cluster label in helm installation
 
-Grafana Mimir uses [memberlist] to share works and deciding which component replica to send the workload such as when ingesting series. 
-Memberlist encodes the replica information in data structure called [hash ring], this is a consistent hashing scheme in which different ingesters instance tokens are placed around the ring. 
+Grafana Mimir uses [memberlist](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/memberlist-and-the-gossip-protocol/) to share works and deciding which component replica to send the workload such as when ingesting series. 
+Memberlist encodes the replica information in data structure called [hash ring](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/), this is a consistent hashing scheme in which different ingesters instance tokens are placed around the ring. 
 The token position in the ring determines which ingester should handle a request. 
 The information of this hash ring is delivered to different components by using gossip protocol.
 
@@ -100,8 +100,3 @@ Make sure that the container port which is set by default to port 80 is also cor
 
 Open the port-forwarded URL in browser to see the memberlist status http://localhost:8080/memberlist, http://localhost:8081/memberlist and also 
 few others Grafana mimir components. The member list page must show same view of all of their members.
-
-{{% docs/reference %}}
-[memberlist]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/memberlist-and-the-gossip-protocol"
-[hash ring]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/hash-ring"
-{{% /docs/reference %}}
