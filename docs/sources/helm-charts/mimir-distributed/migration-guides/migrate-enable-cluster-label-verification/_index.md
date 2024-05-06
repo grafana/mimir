@@ -86,21 +86,20 @@ Apply the configuration changes by running `helm upgrade <my-mimir-release> mimi
 
 ## Verifying The Migration
 
-Once the rollout has been done run the following helm command to verify if we have successfully migrated the Mimir memberlist to check the cluster label.
+Once the rollout is completed, verify the change by looking at the `/memberlist` in some pods. 
+Run the following port-forward command on several different Grafana Mimir components.
 
 ```bash
-helm --kube-context=[your-k8s-context] --namespace=[your-mimir-namespace] get values [your-mimir-release-name]
+   kubectl port-forward pod/<mimir-pod-1> --kube-context=<my-k8s-context> --namespace=<my-mimir-namespace> 8080:80
+   kubectl port-forward pod/<mimir-pod-2> --kube-context=<my-k8s-context> --namespace=<my-mimir-namespace> 8081:80
 ```
 
-You should see the following config the in the values as what we have set above.
+Replace mimir-pod with several actual pods from different Mimir components. 
+Ensure the host port 8080 and 8081 are available, otherwise use different available ports. 
+Make sure that the container port which is set by default to port 80 is also correct.
 
-```yaml
-mimir:
-  structuredConfig:
-    memberlist:
-      cluster_label_verification_disabled: false
-      cluster_label: '{{.Release.Name}}-{{.Release.Namespace}}'
-```
+Open the port-forwarded URL in browser to see the memberlist status http://localhost:8080/memberlist, http://localhost:8081/memberlist and also 
+few others Grafana mimir components. The member list page must show same view of all of their members.
 
 {{% docs/reference %}}
 [memberlist]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/memberlist-and-the-gossip-protocol"
