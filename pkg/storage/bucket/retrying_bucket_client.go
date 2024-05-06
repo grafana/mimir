@@ -86,9 +86,6 @@ func (r *RetryingBucketClient) Get(ctx context.Context, name string) (io.ReadClo
 	b := backoff.New(ctx, r.retryPolicy)
 
 	for b.Ongoing() {
-		// This goes for any of these that return a Reader stream: we don't
-		// call rctx's cancel function because it'll cancel the stream. We
-		// let the parent context's cancel function do that work.
 		rctx, cancel := context.WithTimeout(ctx, r.requestDurationLimit)
 		r, err := r.Bucket.Get(rctx, name)
 		if err == nil {
@@ -114,9 +111,13 @@ func (r *RetryingBucketClient) GetRange(ctx context.Context, name string, off in
 	b := backoff.New(ctx, r.retryPolicy)
 
 	for b.Ongoing() {
-		rctx, _ := context.WithTimeout(ctx, r.requestDurationLimit) //nolint:lostcancel
+		rctx, cancel := context.WithTimeout(ctx, r.requestDurationLimit)
 		r, err := r.Bucket.GetRange(rctx, name, off, length)
-		if err == nil || !shouldRetry(err) {
+		if err == nil {
+			return &cancelingReadCloser{r, cancel}, nil
+		}
+		cancel()
+		if !shouldRetry(err) {
 			return r, err
 		}
 		lastErr = err
