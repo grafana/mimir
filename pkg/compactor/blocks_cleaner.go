@@ -406,26 +406,29 @@ func shouldRetry(err error) bool {
 // the backoff config. Each invocation will be given perCallTimeout to
 // complete. This is specifically designed to retry timeouts due to flaky
 // connectivity with the objstore backend.
-func (c *BlocksCleaner) withRetries(ctx context.Context, bc backoff.Config, perCallTimeout time.Duration, f func(context.Context) error) error {
+func (c *BlocksCleaner) withRetries(ctx context.Context, perCallTimeout time.Duration, f func(context.Context) error) error {
 	if perCallTimeout <= 0 {
 		return f(ctx)
 	}
 
-	var lastErr error
-	b := backoff.New(ctx, bc)
+	var err error
+	b := backoff.New(ctx, backoff.Config{
+		MinBackoff: 20 * time.Millisecond,
+		MaxBackoff: 250 * time.Millisecond,
+		MaxRetries: 3,
+	})
 
 	for b.Ongoing() {
 		rctx, cancel := context.WithTimeout(ctx, perCallTimeout)
 		defer cancel()
-		err := f(rctx)
+		err = f(rctx)
 		if err == nil || !shouldRetry(err) {
 			return err
 		}
-		lastErr = err
 		b.Wait()
 	}
 
-	return fmt.Errorf("failed with retries: %w (%w)", lastErr, b.Err())
+	return fmt.Errorf("failed with retries: %w (last err: %w)", b.Err(), err)
 }
 
 func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
@@ -441,16 +444,10 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		}
 	}()
 
-	retryConfig := backoff.Config{
-		MaxRetries: 3,
-		MinBackoff: 30 * time.Millisecond,
-		MaxBackoff: 1 * time.Second,
-	}
-
 	// Read the bucket index.
 
 	var idx *bucketindex.Index
-	err := c.withRetries(ctx, retryConfig, 1*time.Minute, func(ctx context.Context) error {
+	err := c.withRetries(ctx, 1*time.Minute, func(ctx context.Context) error {
 		var err error
 		idx, err = bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, userLogger)
 		return err
@@ -478,7 +475,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, userLogger)
 
 	var partials map[ulid.ULID]error
-	err = c.withRetries(ctx, retryConfig, 5*time.Minute, func(ctx context.Context) error {
+	err = c.withRetries(ctx, 5*time.Minute, func(ctx context.Context) error {
 		newIdx, p, err := w.UpdateIndex(ctx, idx)
 		if err != nil {
 			return err
@@ -515,7 +512,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 			return fmt.Errorf("delete remaining: %w", err)
 		}
 	} else {
-		if err := c.withRetries(ctx, retryConfig, 3*time.Minute, func(ctx context.Context) error {
+		if err := c.withRetries(ctx, 3*time.Minute, func(ctx context.Context) error {
 			return bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx)
 		}); err != nil {
 			return fmt.Errorf("write index: %w", err)
