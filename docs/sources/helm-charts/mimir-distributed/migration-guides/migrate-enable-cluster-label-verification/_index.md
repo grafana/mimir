@@ -9,14 +9,14 @@ weight: 110
 # Configure a unique Grafana Mimir's Memberlist cluster label in the mimir-distributed Helm chart installation
 
 This document shows the step to configure cluster label verification in a Grafana Mimir installed by Helm.
-Multiple [Memberlist](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/memberlist-and-the-gossip-protocol/) [gossip ring](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/) cluster is at risk of merging into one without enabling cluster label verification. 
-For example, if a Mimir, Tempo or Loki are running in the same Kubernetes cluster, they might communicate with each other without this configuration update. 
+Multiple [Memberlist](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/memberlist-and-the-gossip-protocol/) [gossip ring](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/) cluster is at risk of merging into one without enabling cluster label verification.
+For example, if a Mimir, Tempo or Loki are running in the same Kubernetes cluster, they might communicate with each other without this configuration update.
 Once cluster label verification is enabled, before Mimir components communicate with other components, it will verify whether those other components are having same cluster label.
 The process to update the configuration should take around 30 minutes.
 
 ## Before you begin
 
-- You have a Grafana Mimir installed by mimir-distributed helm chart with its Memberlist cluster label still set to default value. 
+- You have a Grafana Mimir installed by mimir-distributed helm chart with its Memberlist cluster label still set to default value.
 - You have `kubectl` and `helm` command line configured to connect to the Kubernetes cluster where your Grafana Mimir is running.
 
 ## Configuration update steps
@@ -55,7 +55,7 @@ mimir:
   structuredConfig:
     memberlist:
       cluster_label_verification_disabled: true
-      cluster_label: '{{.Release.Name}}-{{.Release.Namespace}}'
+      cluster_label: "{{.Release.Name}}-{{.Release.Namespace}}"
 ```
 
 Apply the configuration changes again by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
@@ -68,7 +68,7 @@ Remove `mimir.structuredConfig.memberlist.cluster_label_verification_disabled` f
 mimir:
   structuredConfig:
     memberlist:
-      cluster_label: '{{.Release.Name}}-{{.Release.Namespace}}'
+      cluster_label: "{{.Release.Name}}-{{.Release.Namespace}}"
 ```
 
 Apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
@@ -83,9 +83,9 @@ Run the following port-forward command on several different Grafana Mimir compon
    kubectl port-forward pod/<mimir-pod-2> --kube-context=<my-k8s-context> --namespace=<my-mimir-namespace> 8081:80
 ```
 
-Replace mimir-pod with several actual pods from different Mimir components. 
-Ensure the host port 8080 and 8081 are available, otherwise use different available ports. 
+Replace mimir-pod with several actual pods from different Mimir components.
+Ensure the host port 8080 and 8081 are available, otherwise use different available ports.
 Make sure that the container port which is set by default to port 80 is also correct.
 
-Open the port-forwarded URL in browser to see the Memberlist status http://localhost:8080/memberlist, http://localhost:8081/memberlist and also 
+Open the port-forwarded URL in browser to see the Memberlist status http://localhost:8080/memberlist, http://localhost:8081/memberlist and also
 few others Grafana Mimir components. The Memberlist page from different pods must show same view of all of their members.
