@@ -47,8 +47,8 @@ func dropMetricName(l labels.Labels, lb *labels.Builder) labels.Labels {
 	return lb.Labels()
 }
 
-func (m *RangeVectorFunction) Next(ctx context.Context) (InstantVectorSeriesData, error) {
-	if err := m.Inner.Next(ctx); err != nil {
+func (m *RangeVectorFunction) NextSeries(ctx context.Context) (InstantVectorSeriesData, error) {
+	if err := m.Inner.NextSeries(ctx); err != nil {
 		return InstantVectorSeriesData{}, err
 	}
 

@@ -29,13 +29,13 @@ type InstantVectorSelector struct {
 var _ InstantVectorOperator = &InstantVectorSelector{}
 
 func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
-	// Compute value we need on every call to Next() once, here.
+	// Compute value we need on every call to NextSeries() once, here.
 	v.numSteps = stepCount(v.Selector.Start, v.Selector.End, v.Selector.Interval)
 
 	return v.Selector.SeriesMetadata(ctx)
 }
 
-func (v *InstantVectorSelector) Next(_ context.Context) (InstantVectorSeriesData, error) {
+func (v *InstantVectorSelector) NextSeries(_ context.Context) (InstantVectorSeriesData, error) {
 	if v.memoizedIterator == nil {
 		v.memoizedIterator = storage.NewMemoizedEmptyIterator(v.Selector.LookbackDelta.Milliseconds())
 	}

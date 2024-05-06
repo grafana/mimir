@@ -262,7 +262,7 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o o
 	v := operator.GetVector(len(series))
 
 	for i, s := range series {
-		d, err := o.Next(ctx)
+		d, err := o.NextSeries(ctx)
 		if err != nil {
 			if errors.Is(err, operator.EOS) {
 				return nil, fmt.Errorf("expected %v series, but only received %v", len(series), i)
@@ -300,7 +300,7 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o o
 	m := operator.GetMatrix(len(series))
 
 	for i, s := range series {
-		d, err := o.Next(ctx)
+		d, err := o.NextSeries(ctx)
 		if err != nil {
 			if errors.Is(err, operator.EOS) {
 				return nil, fmt.Errorf("expected %v series, but only received %v", len(series), i)
@@ -332,7 +332,7 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o ope
 	defer b.Close()
 
 	for i, s := range series {
-		err := o.Next(ctx)
+		err := o.NextSeries(ctx)
 		if err != nil {
 			if errors.Is(err, operator.EOS) {
 				return nil, fmt.Errorf("expected %v series, but only received %v", len(series), i)

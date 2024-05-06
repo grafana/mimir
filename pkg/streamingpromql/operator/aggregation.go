@@ -110,7 +110,7 @@ func (a *Aggregation) labelsForGroup(m labels.Labels, lb *labels.Builder) labels
 	return lb.Labels()
 }
 
-func (a *Aggregation) Next(ctx context.Context) (InstantVectorSeriesData, error) {
+func (a *Aggregation) NextSeries(ctx context.Context) (InstantVectorSeriesData, error) {
 	if len(a.remainingGroups) == 0 {
 		// No more groups left.
 		return InstantVectorSeriesData{}, EOS
@@ -127,7 +127,7 @@ func (a *Aggregation) Next(ctx context.Context) (InstantVectorSeriesData, error)
 
 	// Iterate through inner series until the desired group is complete
 	for thisGroup.remainingSeriesCount > 0 {
-		s, err := a.Inner.Next(ctx)
+		s, err := a.Inner.NextSeries(ctx)
 
 		if err != nil {
 			if errors.Is(err, EOS) {

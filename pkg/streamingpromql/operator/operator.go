@@ -15,12 +15,12 @@ import (
 type Operator interface {
 	// SeriesMetadata returns a list of all series that will be returned by this operator.
 	// The returned []SeriesMetadata can be modified by the caller or returned to a pool.
-	// SeriesMetadata may return series in any order, but the same order must be used by both SeriesMetadata and Next.
+	// SeriesMetadata may return series in any order, but the same order must be used by both SeriesMetadata and NextSeries.
 	// SeriesMetadata should be called no more than once.
 	SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error)
 
 	// Close frees all resources associated with this operator.
-	// Calling SeriesMetadata or Next after calling Close may result in unpredictable behaviour, corruption or crashes.
+	// Calling SeriesMetadata or NextSeries after calling Close may result in unpredictable behaviour, corruption or crashes.
 	Close()
 }
 
@@ -28,11 +28,11 @@ type Operator interface {
 type InstantVectorOperator interface {
 	Operator
 
-	// Next returns the next series from this operator, or EOS if no more series are available.
-	// SeriesMetadata must be called exactly once before calling Next.
+	// NextSeries returns the next series from this operator, or EOS if no more series are available.
+	// SeriesMetadata must be called exactly once before calling NextSeries.
 	// The returned InstantVectorSeriesData can be modified by the caller or returned to a pool.
 	// The returned InstantVectorSeriesData can contain no points.
-	Next(ctx context.Context) (InstantVectorSeriesData, error)
+	NextSeries(ctx context.Context) (InstantVectorSeriesData, error)
 }
 
 // RangeVectorOperator represents all operators that produce range vectors.
@@ -48,9 +48,9 @@ type RangeVectorOperator interface {
 	// For example, if this operator represents the selector "some_metric[5m]", Range returns 5 minutes.
 	Range() time.Duration
 
-	// Next advances to the next series produced by this operator, or EOS if no more series are available.
-	// SeriesMetadata must be called exactly once before calling Next.
-	Next(ctx context.Context) error
+	// NextSeries advances to the next series produced by this operator, or EOS if no more series are available.
+	// SeriesMetadata must be called exactly once before calling NextSeries.
+	NextSeries(ctx context.Context) error
 
 	// NextStep populates the provided RingBuffer with the samples for the next time step for the
 	// current series and returns the timestamps of the next time step, or returns EOS if no more time

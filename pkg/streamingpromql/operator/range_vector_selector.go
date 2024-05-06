@@ -28,7 +28,7 @@ type RangeVectorSelector struct {
 var _ RangeVectorOperator = &RangeVectorSelector{}
 
 func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
-	// Compute value we need on every call to Next() once, here.
+	// Compute value we need on every call to NextSeries() once, here.
 	m.rangeMilliseconds = m.Selector.Range.Milliseconds()
 	m.numSteps = stepCount(m.Selector.Start, m.Selector.End, m.Selector.Interval)
 
@@ -43,7 +43,7 @@ func (m *RangeVectorSelector) Range() time.Duration {
 	return m.Selector.Range
 }
 
-func (m *RangeVectorSelector) Next(_ context.Context) error {
+func (m *RangeVectorSelector) NextSeries(_ context.Context) error {
 	var err error
 	m.chunkIterator, err = m.Selector.Next(m.chunkIterator)
 	if err != nil {
