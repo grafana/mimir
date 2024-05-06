@@ -317,7 +317,7 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, features, logger, registerer)
 }
 
-// ComputeFallbackConfig will load, vaildate and return the provided fallbackConfigFile
+// ComputeFallbackConfig will load, validate and return the provided fallbackConfigFile
 // or return an valid empty default configuration if none is provided.
 func ComputeFallbackConfig(fallbackConfigFile string) ([]byte, error) {
 	if fallbackConfigFile != "" {
@@ -631,11 +631,10 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 	return alertmanagers.Includes(am.ringLifecycler.GetInstanceAddr())
 }
 
-func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertConfigDescs) {
-	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgs))
-	for user, cfg := range cfgs {
-		err := am.setConfig(cfg.Mimir)
-		if err != nil {
+func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertConfigDescs) {
+	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
+	for user, cfgs := range cfgMap {
+		if err := am.setConfig(am.computeConfig(cfgs)); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err)
 			continue
@@ -649,7 +648,7 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertCon
 
 	am.alertmanagersMtx.Lock()
 	for userID, userAM := range am.alertmanagers {
-		if _, exists := cfgs[userID]; !exists {
+		if _, exists := cfgMap[userID]; !exists {
 			userAlertmanagersToStop[userID] = userAM
 			delete(am.alertmanagers, userID)
 			delete(am.cfgs, userID)
@@ -666,6 +665,35 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertCon
 		userAM.StopAndWait()
 		level.Info(am.logger).Log("msg", "deactivated per-tenant alertmanager", "user", userID)
 	}
+}
+
+// computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
+// It returns the final configuration the Alertmanager will use, merging both configs if necessary.
+func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) alertspb.AlertConfigDesc {
+	var cfg alertspb.AlertConfigDesc
+	switch {
+	case !cfgs.Grafana.Promoted:
+		level.Debug(am.logger).Log("msg", "grafana configuration not promoted, using mimir config", "user", cfgs.Mimir.User)
+		cfg = cfgs.Mimir
+	case cfgs.Grafana.Default:
+		level.Debug(am.logger).Log("msg", "grafana configuration is default, using mimir config", "user", cfgs.Mimir.User)
+		cfg = cfgs.Mimir
+	case cfgs.Grafana.RawConfig == "":
+		level.Debug(am.logger).Log("msg", "grafana configuration is empty, using mimir config", "user", cfgs.Mimir.User)
+		cfg = cfgs.Mimir
+
+	case cfgs.Mimir.RawConfig == am.fallbackConfig:
+		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config", "user", cfgs.Mimir.User)
+		// TODO: parse Grafana config.
+	case cfgs.Mimir.RawConfig == "":
+		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config", "user", cfgs.Grafana.User)
+		// TODO: parse Grafana config.
+
+	default:
+		level.Debug(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
+	}
+
+	return cfg
 }
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
