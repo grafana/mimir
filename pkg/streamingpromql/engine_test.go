@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 )
 
@@ -170,24 +169,13 @@ func TestRangeVectorSelectors(t *testing.T) {
 
 	prometheusEngine := promql.NewEngine(opts)
 
-	storage := teststorage.New(t)
-	defer storage.Close()
-
-	series1 := labels.FromStrings("__name__", "some_metric", "env", "1")
-	series2 := labels.FromStrings("__name__", "some_metric", "env", "2")
-	baseT := time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC)
-
-	a := storage.Appender(context.Background())
-	for seriesIdx, series := range []labels.Labels{series1, series2} {
-		for timeStep := 0; timeStep < 5; timeStep++ {
-			ts := baseT.Add(time.Duration(timeStep) * time.Minute)
-			v := float64(timeStep * (seriesIdx + 1))
-			_, err := a.Append(0, series, timestamp.FromTime(ts), v)
-			require.NoError(t, err)
-		}
-	}
-
-	require.NoError(t, a.Commit())
+	baseT := timestamp.Time(0)
+	storage := promql.LoadedStorage(t, `
+		load 1m
+			some_metric{env="1"} 0+1x4
+			some_metric{env="2"} 0+2x4
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 	testCases := map[string]struct {
 		expr     string
@@ -200,14 +188,14 @@ func TestRangeVectorSelectors(t *testing.T) {
 			expected: &promql.Result{
 				Value: promql.Matrix{
 					{
-						Metric: series1,
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
 						Floats: []promql.FPoint{
 							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
 							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
 						},
 					},
 					{
-						Metric: series2,
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
 						Floats: []promql.FPoint{
 							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
 							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
