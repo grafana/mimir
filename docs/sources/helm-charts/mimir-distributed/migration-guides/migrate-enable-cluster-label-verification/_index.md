@@ -17,13 +17,13 @@ Once cluster label verification is enabled, before Memberlist communicate with o
 There are three steps of the configuration update which we will describe in details in following section. 
 But in brief summary the steps are:
 
-1. Disable memberlist cluster label verification
+1. Disable Memberlist cluster label verification
 1. Set cluster label to all Mimir components
-1. Enable memberlist cluster label verification again
+1. Enable Memberlist cluster label verification again
 
 ## Configuration update
 
-### 1. Disable memberlist cluster label verification
+### 1. Disable Memberlist cluster label verification
 
 Cluster label verification flag is enabled by default with cluster label set to an empty string.
 Letting default value of cluster label can make different systems that use Memberlist and also not setting the cluster label to communicate with each other.
@@ -56,7 +56,7 @@ mimir:
 
 Apply the configuration changes again by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
 
-### 3. Enable memberlist cluster label verification
+### 3. Enable Memberlist cluster label verification
 
 Remove `mimir.structuredConfig.memberlist.cluster_label_verification_disabled` from the values.yaml file to re-enable Memberlist cluster label verification.
 
@@ -83,5 +83,5 @@ Replace mimir-pod with several actual pods from different Mimir components.
 Ensure the host port 8080 and 8081 are available, otherwise use different available ports. 
 Make sure that the container port which is set by default to port 80 is also correct.
 
-Open the port-forwarded URL in browser to see the memberlist status http://localhost:8080/memberlist, http://localhost:8081/memberlist and also 
+Open the port-forwarded URL in browser to see the Memberlist status http://localhost:8080/memberlist, http://localhost:8081/memberlist and also 
 few others Grafana mimir components. The member list page must show same view of all of their members.
