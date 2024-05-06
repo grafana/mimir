@@ -14,14 +14,14 @@ Multiple [Memberlist](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/
 For example, if a Mimir, Tempo or Loki are running in the same Kubernetes cluster, they might communicate with each other without this configuration update. 
 Once cluster label verification is enabled, before Memberlist communicate with other components, it will verify whether that new components are having same cluster label and only allowing communication for the parties that are having the same cluster label.
 
-There are three steps of the migration which we will describe in details in the migration section. 
+There are three steps of the configuration update which we will describe in details in following section. 
 But in brief summary the steps are:
 
 1. Disable memberlist cluster label verification
 1. Set cluster label to all Mimir components
 1. Enable memberlist cluster label verification again
 
-## Migration
+## Configuration update
 
 ### 1. Disable memberlist cluster label verification
 
