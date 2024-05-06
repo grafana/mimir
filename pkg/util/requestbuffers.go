@@ -5,7 +5,10 @@ import (
 	"bytes"
 )
 
-const maxInPoolRequestBufferSize = 1024 * 1024 // 1MB
+// The maximum buffer size allowed in the pool.
+// A sane default value of 1MB is chosen, which should be sufficient for most use cases, though it could be
+// revisited if necessary.
+const maxInPoolRequestBufferSize = 1024 * 1024
 
 // Pool is an abstraction of sync.Pool, for testability.
 type Pool interface {
