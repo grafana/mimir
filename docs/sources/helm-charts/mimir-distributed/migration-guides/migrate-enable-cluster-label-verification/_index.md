@@ -46,56 +46,56 @@ However, cluster label default value is an empty string.
 If different systems that using memberlist and not setting the cluster label, they can talk with each other. 
 To disable cluster label verification flag, set the following structured config.
 
-```
-mimir
+```yaml
+mimir:
   structuredConfig:
     memberlist:
       cluster_label_verification_disabled: true
 ```
 
-Rollout the installation to apply the configuration changes by running `helm upgrade mimir-distributed -f values.yaml`.
+Rollout the installation to apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
 
 ### 2. Set cluster label to all Mimir components
 
 Set cluster label to all Mimir components by setting the following configuration. 
 Once the configuration is applied, all Mimir components will only communicate via memberlist if the other component is having the same cluster label.
 
-```
-mimir
+```yaml
+mimir:
   structuredConfig:
     memberlist:
       cluster_label_verification_disabled: true
       cluster_label: "$helm-release-name"
 ```
 
-Apply the configuration changes by running `helm upgrade mimir-distributed -f values.yaml`.
+Apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
 
 ### 3. Enable memberlist cluster label verification
 
 Set `memberlist.cluster_label_verification_disabled` to false, to re-enable memberlist cluster label verification.
 
-```
-mimir
+```yaml
+mimir:
   structuredConfig:
     memberlist:
       cluster_label_verification_disabled: false
       cluster_label: "$helm-release-name"
 ```
 
-Apply the configuration changes by running `helm upgrade mimir-distributed -f values.yaml`.
+Apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
 
 ## Verifying The Migration
 
 Once the rollout has been done run the following helm command to verify if we have successfully migrated the Mimir memberlist to check the cluster label.
 
-```
+```bash
 helm --kube-context=[your-k8s-context] --namespace=[your-mimir-namespace] get values [your-mimir-release-name]
 ```
 
 You should see the following config the in the values as what we have set above.
 
-```
-mimir
+```yaml
+mimir:
   structuredConfig:
     memberlist:
       cluster_label_verification_disabled: false
