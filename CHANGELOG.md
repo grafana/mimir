@@ -101,6 +101,7 @@
 
 * [CHANGE] Deprecated `--rule-files` flag in favor of CLI arguments. #7756
 * [BUGFIX] Fix panic in `loadgen` subcommand. #7629
+* [ENHANCEMENT] Add `mimir-http-prefix` option to introduce a prefix for Mimir URL when use legacy routes. #8069
 * [ENHANCEMENT] `mimirtool promql format`: Format PromQL query with Prometheus' string or pretty-print formatter. #7742
 * [BUGFIX] `mimirtool rules prepare`: do not add aggregation label to `on()` clause if already present in `group_left()` or `group_right()`. #7839
 * [BUGFIX] Analyze Grafana: fix parsing queries with variables. #8062

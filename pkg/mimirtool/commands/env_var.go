@@ -12,6 +12,7 @@ type EnvVarNames struct {
 	TLSInsecureSkipVerify string
 	TenantID              string
 	UseLegacyRoutes       string
+	MimirHTTPPrefix       string
 	AuthToken             string
 	ExtraHeaders          string
 }

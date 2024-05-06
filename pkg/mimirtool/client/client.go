@@ -46,6 +46,7 @@ type Config struct {
 	ID              string `yaml:"id"`
 	TLS             tls.ClientConfig
 	UseLegacyRoutes bool              `yaml:"use_legacy_routes"`
+	MimirHTTPPrefix string            `yaml:"mimir_http_prefix"`
 	AuthToken       string            `yaml:"auth_token"`
 	ExtraHeaders    map[string]string `yaml:"extra_headers"`
 }
@@ -97,7 +98,10 @@ func New(cfg Config) (*MimirClient, error) {
 
 	path := rulerAPIPath
 	if cfg.UseLegacyRoutes {
-		path = legacyAPIPath
+		var err error
+		if path, err = url.JoinPath(cfg.MimirHTTPPrefix, legacyAPIPath); err != nil {
+			return nil, err
+		}
 	}
 
 	return &MimirClient{

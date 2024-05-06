@@ -176,6 +176,11 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 			Envar(envVars.UseLegacyRoutes).
 			BoolVar(&r.ClientConfig.UseLegacyRoutes)
 
+		c.Flag("mimir-http-prefix", "Used when use-legacy-routes is set to true. The prefix to use for the url when contacting Grafana Mimir; alternatively, set "+envVars.MimirHTTPPrefix+".").
+			Default("/prometheus").
+			Envar(envVars.MimirHTTPPrefix).
+			StringVar(&r.ClientConfig.MimirHTTPPrefix)
+
 		c.Flag("tls-ca-path", "TLS CA certificate to verify Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCAPath+".").
 			Default("").
 			Envar(envVars.TLSCAPath).
