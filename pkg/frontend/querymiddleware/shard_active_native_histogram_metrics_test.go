@@ -4,17 +4,14 @@ package querymiddleware
 
 import (
 	"bytes"
-	//"context"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-
-	//"os"
 	"strconv"
 	"strings"
-
 	"sync"
 	"testing"
 
@@ -22,7 +19,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/klauspost/compress/s2"
 	"github.com/pkg/errors"
-
 	//"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -631,7 +627,7 @@ func TestShardActiveNativeHistogramMetricsMiddlewareRoundTripConcurrent(t *testi
 				MinBucketCount: 5,
 				MaxBucketCount: 5,
 			},
-	  }})
+		}})
 		require.NoError(t, err)
 
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(resp))}, nil
@@ -689,60 +685,49 @@ func TestShardActiveNativeHistogramMetricsMiddlewareRoundTripConcurrent(t *testi
 	}
 }
 
-// func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
-// 	for _, useZeroAllocationDecoder := range []bool{false, true} {
-// 		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
-// 			runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t, useZeroAllocationDecoder)
-// 		})
-// 	}
-// }
+func TestShardActiveNativeHistogramMetricsMiddlewareMergeResponseContextCancellation(t *testing.T) {
+	s := newShardActiveNativeHistogramMetricsMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveNativeHistogramMetricsMiddleware)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(fmt.Errorf("test ran to completion"))
 
-// func runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t *testing.T, useZeroAllocationDecoder bool) {
-// 	s := newShardActiveSeriesMiddleware(nil, true, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
-// 	ctx, cancel := context.WithCancelCause(context.Background())
-// 	defer cancel(fmt.Errorf("test ran to completion"))
+	rawResp := resultActiveNativeHistogramMetrics{}
+	for i := 0; i < 10000; i++ { // Bump this number if the test is flaky.
+		rawResp.Data = append(rawResp.Data, cardinality.ActiveMetricWithBucketCount{
+			Metric:         fmt.Sprintf("metric-%d", i),
+			SeriesCount:    1,
+			BucketCount:    5,
+			AvgBucketCount: 5,
+			MinBucketCount: 5,
+			MaxBucketCount: 5,
+		})
+	}
 
-// 	body, err := json.Marshal(&activeSeriesResponse{Data: []labels.Labels{
-// 		// Make this large enough to ensure the whole response isn't buffered.
-// 		labels.FromStrings("lbl1", strings.Repeat("a", os.Getpagesize())),
-// 		labels.FromStrings("lbl2", "val2"),
-// 		labels.FromStrings("lbl3", "val3"),
-// 	}})
-// 	require.NoError(t, err)
+	body, err := json.Marshal(rawResp)
+	require.NoError(t, err)
 
-// 	responses := []*http.Response{
-// 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
-// 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
-// 	}
-// 	var resp *http.Response
+	responses := []*http.Response{
+		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
+		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
+	}
+	var resp *http.Response
 
-// 	if useZeroAllocationDecoder {
-// 		resp = s.mergeResponsesWithZeroAllocationDecoder(ctx, responses, "")
-// 	} else {
-// 		defer func() {
-// 			_, _ = io.Copy(io.Discard, resp.Body)
-// 			_ = resp.Body.Close()
-// 		}()
+	g := sync.WaitGroup{}
+	g.Add(1)
+	go func() {
+		defer g.Done()
+		resp = s.mergeResponses(ctx, responses, "")
+	}()
 
-// 		resp = s.mergeResponses(ctx, responses, "")
-// 	}
+	cancelCause := "request canceled while streaming response"
+	cancel(fmt.Errorf(cancelCause))
 
-// 	var buf bytes.Buffer
-// 	_, err = io.CopyN(&buf, resp.Body, int64(os.Getpagesize()))
-// 	require.NoError(t, err)
+	g.Wait()
 
-// 	cancelCause := "request canceled while streaming response"
-// 	cancel(fmt.Errorf(cancelCause))
-
-// 	_, err = io.Copy(&buf, resp.Body)
-// 	require.NoError(t, err)
-// 	assert.Contains(t, buf.String(), cancelCause)
-// }
-
-
-// type activeSeriesResponse struct {
-// 	Data []labels.Labels `json:"data"`
-// }
+	var buf bytes.Buffer
+	_, err = io.Copy(&buf, resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), cancelCause)
+}
 
 type resultActiveNativeHistogramMetrics struct {
 	Data   []cardinality.ActiveMetricWithBucketCount `json:"data"`

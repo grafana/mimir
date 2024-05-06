@@ -198,6 +198,10 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) writeMergedResponse(ctx co
 	stream.WriteArrayStart()
 	firstItem := true
 	for idx := range metricBucketCount {
+		if ctx.Err() != nil {
+			mergeError = ctx.Err()
+			break
+		}
 		if firstItem {
 			firstItem = false
 		} else {
