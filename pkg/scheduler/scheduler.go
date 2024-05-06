@@ -383,8 +383,8 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 
 	querierID := resp.GetQuerierID()
 
-	s.requestQueue.RegisterQuerierConnection(querierID)
-	defer s.requestQueue.UnregisterQuerierConnection(querierID)
+	s.requestQueue.SubmitRegisterQuerierConnection(querierID)
+	defer s.requestQueue.SubmitUnregisterQuerierConnection(querierID)
 
 	lastUserIndex := queue.FirstUser()
 
@@ -396,7 +396,10 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			if errors.Is(err, queue.ErrStopped) && !s.isRunning() {
 				return schedulerpb.ErrSchedulerIsNotRunning
 			}
-
+			// the main other error we receive here is if the querier itself is shutting down;
+			// this information was submitted via another endpoint and processed internally
+			// by the RequestQueue's tracking of querier connections. The error bubbles up here
+			// as a way to exit this loop and allow the querier to shut down gracefully.
 			return err
 		}
 		lastUserIndex = idx
@@ -438,7 +441,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 
 func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.NotifyQuerierShutdownRequest) (*schedulerpb.NotifyQuerierShutdownResponse, error) {
 	level.Info(s.log).Log("msg", "received shutdown notification from querier", "querier", req.GetQuerierID())
-	s.requestQueue.NotifyQuerierShutdown(req.GetQuerierID())
+	s.requestQueue.SubmitNotifyQuerierShutdown(req.GetQuerierID())
 
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
 }

@@ -216,7 +216,7 @@ func (qb *queueBroker) notifyQuerierShutdown(querierID QuerierID) {
 	qb.tenantQuerierAssignments.notifyQuerierShutdown(querierID)
 }
 
-func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) int {
+func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) []QuerierID {
 	return qb.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
 }
 
@@ -422,20 +422,20 @@ func (tqa *tenantQuerierAssignments) notifyQuerierShutdown(querierID QuerierID) 
 
 // forgetDisconnectedQueriers removes all disconnected queriers that have gone since at least
 // the forget delay. Returns the number of forgotten queriers.
-func (tqa *tenantQuerierAssignments) forgetDisconnectedQueriers(now time.Time) int {
+func (tqa *tenantQuerierAssignments) forgetDisconnectedQueriers(now time.Time) []QuerierID {
 	// Nothing to do if the forget delay is disabled.
 	if tqa.querierForgetDelay == 0 {
-		return 0
+		return nil
 	}
 
 	// Remove all queriers with no connections that have gone since at least the forget delay.
 	threshold := now.Add(-tqa.querierForgetDelay)
-	forgotten := 0
+	var forgotten []QuerierID
 
 	for querierID := range tqa.queriersByID {
 		if querier := tqa.queriersByID[querierID]; querier.connections == 0 && querier.disconnectedAt.Before(threshold) {
 			tqa.removeQuerier(querierID)
-			forgotten++
+			forgotten = append(forgotten, querierID)
 		}
 	}
 

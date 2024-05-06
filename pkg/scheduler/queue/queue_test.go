@@ -367,8 +367,8 @@ func runQueueConsumerIters(
 		consumerIters := queueActorIterationCount(totalIters, numConsumers, consumerIdx)
 		lastTenantIndex := FirstUser()
 		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
-		queue.RegisterQuerierConnection(querierID)
-		defer queue.UnregisterQuerierConnection(querierID)
+		queue.SubmitRegisterQuerierConnection(querierID)
+		defer queue.SubmitUnregisterQuerierConnection(querierID)
 
 		<-start
 
@@ -422,8 +422,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	})
 
 	// Two queriers connect.
-	queue.RegisterQuerierConnection("querier-1")
-	queue.RegisterQuerierConnection("querier-2")
+	queue.SubmitRegisterQuerierConnection("querier-1")
+	queue.SubmitRegisterQuerierConnection("querier-2")
 
 	// Querier-2 waits for a new request.
 	querier2wg := sync.WaitGroup{}
@@ -435,7 +435,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	}()
 
 	// Querier-1 crashes (no graceful shutdown notification).
-	queue.UnregisterQuerierConnection("querier-1")
+	queue.SubmitUnregisterQuerierConnection("querier-1")
 
 	// Enqueue a request from an user which would be assigned to querier-1.
 	// NOTE: "user-1" hash falls in the querier-1 shard.
@@ -473,7 +473,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), queue))
 	})
 
-	queue.RegisterQuerierConnection(querierID)
+	queue.SubmitRegisterQuerierConnection(querierID)
 	errChan := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -513,8 +513,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 	})
 
-	queue.RegisterQuerierConnection(querierID)
-	queue.NotifyQuerierShutdown(querierID)
+	queue.SubmitRegisterQuerierConnection(querierID)
+	queue.SubmitNotifyQuerierShutdown(querierID)
 
 	_, _, err := queue.GetNextRequestForQuerier(context.Background(), FirstUser(), querierID)
 	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
