@@ -29,12 +29,8 @@ func GetSourceIPsFromOutgoingCtx(ctx context.Context) string {
 
 // GetSourceIPsFromIncomingCtx extracts the source field from the GRPC context
 func GetSourceIPsFromIncomingCtx(ctx context.Context) string {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return ""
-	}
-	ipAddresses, ok := md[ipAddressesKey]
-	if !ok {
+	ipAddresses := metadata.ValueFromIncomingContext(ctx, ipAddressesKey)
+	if len(ipAddresses) == 0 {
 		return ""
 	}
 	return ipAddresses[0]
