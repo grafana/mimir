@@ -6,7 +6,7 @@ title: "Configure a unique Grafana Mimir's Memberlist cluster label in the mimir
 weight: 110
 ---
 
-# Configure a unique Grafana Mimir's Memberlist cluster label in helm installation
+# Configure a unique Grafana Mimir's Memberlist cluster label in the mimir-distributed Helm chart installation
 
 This document shows the step to configure cluster label verification in a Grafana Mimir installed by Helm.
 Multiple [Memberlist](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/memberlist-and-the-gossip-protocol/) [gossip ring](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/) cluster is at risk of merging into one without enabling cluster label verification. 
