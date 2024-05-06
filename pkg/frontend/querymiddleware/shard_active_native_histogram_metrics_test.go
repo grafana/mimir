@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	//"sync"
+	"sync"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -33,14 +33,12 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
-const activeNativeHistogramMetricsPath = "/active_native_histogram_metrics"
-
 func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 	const tenantShardCount = 4
 	const tenantMaxShardCount = 128
 
 	validReq := func() *http.Request {
-		r := httptest.NewRequest("POST", activeNativeHistogramMetricsPath, strings.NewReader(`selector={__name__=~".+"}`))
+		r := httptest.NewRequest("POST", "/active_native_histogram_metrics", strings.NewReader(`selector={__name__=~".+"}`))
 		r.Header.Add("X-Scope-OrgID", "test")
 		r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 		return r
@@ -58,9 +56,8 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 		return assert.NoError(t, err)
 	}
 
-	tests := []struct {
+	tests := map[string]struct {
 		// Request parameters
-		name    string
 		request func() *http.Request
 
 		// Possible responses from upstream
@@ -77,11 +74,9 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 		expectedShardCount    int
 		expectContentEncoding string
 	}{
-		{
-			name: "no selector",
-
+		"no selector": {
 			request: func() *http.Request {
-				request := httptest.NewRequest("GET", activeNativeHistogramMetricsPath, nil)
+				request := httptest.NewRequest("GET", "/active_native_histogram_metrics", nil)
 				return request
 			},
 			checkResponseErr: func(t *testing.T, err error) (cont bool) {
@@ -89,13 +84,11 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 				return false
 			},
 		},
-		{
-			name: "invalid selector",
-
+		"invalid selector": {
 			request: func() *http.Request {
 				v := &url.Values{}
 				v.Set("selector", "{invalid}")
-				r := httptest.NewRequest("GET", activeNativeHistogramMetricsPath, nil)
+				r := httptest.NewRequest("GET", "/active_native_histogram_metrics", nil)
 				r.URL.RawQuery = v.Encode()
 				return r
 			},
@@ -104,8 +97,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 				return false
 			},
 		},
-		{
-			name:    "shard count bounded by limits",
+		"shard count bounded by limits": {
 			request: validReqWithShardHeader(tenantMaxShardCount + 1),
 			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
 				assert.Error(t, err)
@@ -113,8 +105,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 				return false
 			},
 		},
-		{
-			name:           "upstream response: invalid type for data field",
+		"upstream response: invalid type for data field": {
 			request:        validReq,
 			responseStatus: http.StatusOK,
 			responseBody:   `{"data": "unexpected"}`,
@@ -127,8 +118,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 			expectedShardCount: tenantShardCount,
 			expect:             resultActiveNativeHistogramMetrics{Status: "error", Error: "expected data field to contain an array"},
 		},
-		{
-			name:           "upstream response: no data field",
+		"upstream response: no data field": {
 			request:        validReq,
 			responseStatus: http.StatusOK,
 			responseBody:   `{unexpected: "response"}`,
@@ -141,8 +131,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 			expectedShardCount: tenantShardCount,
 			expect:             resultActiveNativeHistogramMetrics{Status: "error", Error: "expected data field at top level"},
 		},
-		{
-			name:           "upstream response: response too large",
+		"upstream response: response too large": {
 			request:        validReq,
 			responseStatus: http.StatusRequestEntityTooLarge,
 			responseBody:   "",
@@ -152,8 +141,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 				return false
 			},
 		},
-		{
-			name:    "upstream response: error",
+		"upstream response: error": {
 			request: validReq,
 
 			errorResponse: errors.New("upstream error"),
@@ -162,8 +150,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 				return false
 			},
 		},
-		{
-			name:    "honours shard count from request header",
+		"honours shard count from request header": {
 			request: validReqWithShardHeader(3),
 
 			validResponses: []cardinality.ActiveNativeHistogramMetricsResponse{
@@ -244,8 +231,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 			},
 			expectedShardCount: 3,
 		},
-		{
-			name:    "uses tenant's default shard count if none is specified in the request header",
+		"uses tenant's default shard count if none is specified in the request header": {
 			request: validReq,
 			validResponses: []cardinality.ActiveNativeHistogramMetricsResponse{
 				{
@@ -336,8 +322,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 			},
 			expectedShardCount: tenantShardCount,
 		},
-		{
-			name:    "no sharding, request passed through",
+		"no sharding, request passed through": {
 			request: validReqWithShardHeader(1),
 
 			validResponses: []cardinality.ActiveNativeHistogramMetricsResponse{
@@ -368,8 +353,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 				},
 			},
 		},
-		{
-			name:    "handles empty shards",
+		"handles empty shards": {
 			request: validReqWithShardHeader(6),
 			validResponses: []cardinality.ActiveNativeHistogramMetricsResponse{
 				{
@@ -405,8 +389,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 			},
 			expectedShardCount: 6,
 		},
-		{
-			name: "honours Accept-Encoding header",
+		"honours Accept-Encoding header": {
 			request: func() *http.Request {
 				r := validReq()
 				r.Header.Add("Accept-Encoding", encodingTypeSnappyFramed)
@@ -472,12 +455,11 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 			expectedShardCount:    2,
 			expectContentEncoding: encodingTypeSnappyFramed,
 		},
-		{
-			name: "builds correct request shards for GET requests",
+		"builds correct request shards for GET requests": {
 			request: func() *http.Request {
 				q := url.Values{}
 				q.Set("selector", "{__name__=~\".+\"}")
-				req, _ := http.NewRequest(http.MethodGet, activeNativeHistogramMetricsPath, nil)
+				req, _ := http.NewRequest(http.MethodGet, "/active_native_histogram_metrics", nil)
 				req.URL.RawQuery = q.Encode()
 				req.Header.Add(totalShardsControlHeader, "2")
 				return req
@@ -542,8 +524,8 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			// Stub upstream with valid or invalid responses.
 			var requestCount atomic.Int32
 			upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -629,82 +611,83 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 	}
 }
 
-// func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
-// 	for _, useZeroAllocationDecoder := range []bool{false, true} {
-// 		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
-// 			runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t, useZeroAllocationDecoder)
-// 		})
-// 	}
-// }
+func TestShardActiveNativeHistogramMetricsMiddlewareRoundTripConcurrent(t *testing.T) {
+	const shardCount = 4
 
-// func runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t *testing.T, useZeroAllocationDecoder bool) {
-// 	const shardCount = 4
+	upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		require.NoError(t, r.ParseForm())
+		req, err := cardinality.DecodeActiveSeriesRequestFromValues(r.Form)
+		require.NoError(t, err)
+		shard, _, err := sharding.ShardFromMatchers(req.Matchers)
+		require.NoError(t, err)
+		require.NotNil(t, shard)
 
-// 	upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-// 		require.NoError(t, r.ParseForm())
-// 		req, err := cardinality.DecodeActiveSeriesRequestFromValues(r.Form)
-// 		require.NoError(t, err)
-// 		shard, _, err := sharding.ShardFromMatchers(req.Matchers)
-// 		require.NoError(t, err)
-// 		require.NotNil(t, shard)
+		resp, err := json.Marshal(resultActiveNativeHistogramMetrics{Data: []cardinality.ActiveMetricWithBucketCount{
+			{
+				Metric:         fmt.Sprintf("metric-%d", shard.ShardIndex),
+				SeriesCount:    1,
+				BucketCount:    5,
+				AvgBucketCount: 5,
+				MinBucketCount: 5,
+				MaxBucketCount: 5,
+			},
+	  }})
+		require.NoError(t, err)
 
-// 		resp := fmt.Sprintf(`{"data": [{"__name__": "metric-%d"}]}`, shard.ShardIndex)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(resp))}, nil
+	})
 
-// 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(resp))}, nil
-// 	})
+	s := newShardActiveNativeHistogramMetricsMiddleware(
+		upstream,
+		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
+		log.NewNopLogger(),
+	)
 
-// 	s := newShardActiveSeriesMiddleware(
-// 		upstream,
-// 		useZeroAllocationDecoder,
-// 		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
-// 		log.NewNopLogger(),
-// 	)
+	assertRoundTrip := func(t *testing.T, trip http.RoundTripper, req *http.Request) {
+		resp, err := trip.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
 
-// 	assertRoundTrip := func(t *testing.T, trip http.RoundTripper, req *http.Request) {
-// 		resp, err := trip.RoundTrip(req)
-// 		require.NoError(t, err)
-// 		defer resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-// 		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		var body io.Reader = resp.Body
+		if resp.Header.Get("Content-Encoding") == encodingTypeSnappyFramed {
+			body = s2.NewReader(resp.Body)
+		}
 
-// 		var body io.Reader = resp.Body
-// 		if resp.Header.Get("Content-Encoding") == encodingTypeSnappyFramed {
-// 			body = s2.NewReader(resp.Body)
-// 		}
+		// For this test, if we can decode the response, it is enough to guaranty it worked. We proof actual validity
+		// of all kinds of responses in the tests above.
+		var res resultActiveNativeHistogramMetrics
+		err = json.NewDecoder(body).Decode(&res)
+		require.NoError(t, err)
+		require.Len(t, res.Data, shardCount)
+	}
 
-// 		// For this test, if we can decode the response, it is enough to guaranty it worked. We proof actual validity
-// 		// of all kinds of responses in the tests above.
-// 		var res result
-// 		err = json.NewDecoder(body).Decode(&res)
-// 		require.NoError(t, err)
-// 		require.Len(t, res.Data, shardCount)
-// 	}
+	const reqCount = 20
 
-// 	const reqCount = 20
+	var wg sync.WaitGroup
+	defer wg.Wait()
 
-// 	var wg sync.WaitGroup
-// 	defer wg.Wait()
+	wg.Add(reqCount)
 
-// 	wg.Add(reqCount)
+	for n := reqCount; n > 0; n-- {
+		go func(n int) {
+			defer wg.Done()
 
-// 	for n := reqCount; n > 0; n-- {
-// 		go func(n int) {
-// 			defer wg.Done()
+			req := httptest.NewRequest("POST", "/active_native_histogram_metrics", strings.NewReader(`selector={__name__=~"metric-.*"}`))
+			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
-// 			req := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__=~"metric-.*"}`))
-// 			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+			// Send every other request as snappy to proof the middleware doesn't mess up body encoders
+			if n%2 == 0 {
+				req.Header.Add("Accept-Encoding", encodingTypeSnappyFramed)
+			}
 
-// 			// Send every other request as snappy to proof the middleware doesn't mess up body encoders
-// 			if n%2 == 0 {
-// 				req.Header.Add("Accept-Encoding", encodingTypeSnappyFramed)
-// 			}
+			req = req.WithContext(user.InjectOrgID(req.Context(), "test"))
 
-// 			req = req.WithContext(user.InjectOrgID(req.Context(), "test"))
-
-// 			assertRoundTrip(t, s, req)
-// 		}(n)
-// 	}
-// }
+			assertRoundTrip(t, s, req)
+		}(n)
+	}
+}
 
 // func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
 // 	for _, useZeroAllocationDecoder := range []bool{false, true} {
@@ -756,73 +739,9 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 // 	assert.Contains(t, buf.String(), cancelCause)
 // }
 
-// func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
-// 	b.Run("encoding=none", func(b *testing.B) {
-// 		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1)
-// 	})
-
-// 	b.Run("encoding=snappy", func(b *testing.B) {
-// 		benchmarkActiveSeriesMiddlewareMergeResponses(b, encodingTypeSnappyFramed, 1)
-// 	})
-
-// 	b.Run("seriesCount=1_000", func(b *testing.B) {
-// 		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1_000)
-// 	})
-
-// 	b.Run("seriesCount=10_000", func(b *testing.B) {
-// 		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 10_000)
-// 	})
-// }
 
 // type activeSeriesResponse struct {
 // 	Data []labels.Labels `json:"data"`
-// }
-
-// func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string, numSeries int) {
-
-// 	bcs := []int{4, 16, 64, 128}
-
-// 	for _, numResponses := range bcs {
-// 		b.Run(fmt.Sprintf("num-responses-%d", numResponses), func(b *testing.B) {
-// 			benchResponses := make([][]*http.Response, b.N)
-
-// 			for i := 0; i < b.N; i++ {
-// 				var responses []*http.Response
-// 				for i := 0; i < numResponses; i++ {
-
-// 					var apiResp activeSeriesResponse
-// 					for k := 0; k < numSeries; k++ {
-// 						apiResp.Data = append(apiResp.Data, labels.FromStrings(
-// 							"__name__", "m_"+fmt.Sprint(i),
-// 							"job", "prometheus"+fmt.Sprint(i),
-// 							"instance", "instance"+fmt.Sprint(i),
-// 							"series", fmt.Sprintf("series_%d", k),
-// 						))
-// 					}
-// 					body, _ := json.Marshal(&apiResp)
-
-// 					responses = append(responses, &http.Response{
-// 						StatusCode: http.StatusOK,
-// 						Header:     http.Header{},
-// 						Body:       io.NopCloser(bytes.NewReader(body)),
-// 					})
-// 				}
-// 				benchResponses[i] = responses
-// 			}
-
-// 			s := newShardActiveSeriesMiddleware(nil, true, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
-
-// 			b.ResetTimer()
-// 			b.ReportAllocs()
-
-// 			for i := 0; i < b.N; i++ {
-// 				resp := s.mergeResponsesWithZeroAllocationDecoder(context.Background(), benchResponses[i], encoding)
-
-// 				_, _ = io.Copy(io.Discard, resp.Body)
-// 				_ = resp.Body.Close()
-// 			}
-// 		})
-// 	}
 // }
 
 type resultActiveNativeHistogramMetrics struct {
