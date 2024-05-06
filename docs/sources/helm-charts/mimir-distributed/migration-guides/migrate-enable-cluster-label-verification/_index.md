@@ -57,7 +57,8 @@ Rollout the installation to apply the configuration changes by running `helm upg
 
 ### 2. Set cluster label to all Mimir components
 
-Set cluster label to all Mimir components by setting the following configuration. 
+Set cluster label to all Mimir components by setting the following configuration.
+The configuration will set `cluster_label` to the Helm release name and the namespace where the helm release is installed.
 Once the configuration is applied, all Mimir components will only communicate via memberlist if the other component is having the same cluster label.
 
 ```yaml
@@ -65,21 +66,20 @@ mimir:
   structuredConfig:
     memberlist:
       cluster_label_verification_disabled: true
-      cluster_label: "$helm-release-name"
+      cluster_label: '{{.Release.Name}}-{{.Release.Namespace}}'
 ```
 
 Apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
 
 ### 3. Enable memberlist cluster label verification
 
-Set `memberlist.cluster_label_verification_disabled` to false, to re-enable memberlist cluster label verification.
+Remove `mimir.structuredCOnfig.memebrlist.cluster_label_verification_disabled` from the values.yaml file to re-enable Memberlist cluster label verification.
 
 ```yaml
 mimir:
   structuredConfig:
     memberlist:
-      cluster_label_verification_disabled: false
-      cluster_label: "$helm-release-name"
+      cluster_label: '{{.Release.Name}}-{{.Release.Namespace}}'
 ```
 
 Apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
@@ -99,7 +99,7 @@ mimir:
   structuredConfig:
     memberlist:
       cluster_label_verification_disabled: false
-      cluster_label: "$helm-release-name"
+      cluster_label: '{{.Release.Name}}-{{.Release.Namespace}}'
 ```
 
 {{% docs/reference %}}
