@@ -5,6 +5,11 @@ import (
 	"bytes"
 )
 
+// The maximum buffer size allowed in the pool.
+// A sane default value of 1MB is chosen, which should be sufficient for most use cases, though it could be
+// revisited if necessary.
+const maxInPoolRequestBufferSize = 1024 * 1024
+
 // Pool is an abstraction of sync.Pool, for testability.
 type Pool interface {
 	// Get a pooled object.
@@ -31,8 +36,9 @@ func NewRequestBuffers(p Pool) *RequestBuffers {
 }
 
 // Get obtains a buffer from the pool. It will be returned back to the pool when CleanUp is called.
+// If size exceeds the maximum buffer size allowed in the pool, a new buffer from the heap is returned.
 func (rb *RequestBuffers) Get(size int) *bytes.Buffer {
-	if rb == nil {
+	if rb == nil || size > maxInPoolRequestBufferSize {
 		if size < 0 {
 			size = 0
 		}
@@ -53,6 +59,9 @@ func (rb *RequestBuffers) CleanUp() {
 	for i, b := range rb.buffers {
 		// Make sure the backing array doesn't retain a reference
 		rb.buffers[i] = nil
+		if b.Cap() > maxInPoolRequestBufferSize {
+			continue // Avoid pooling large buffers
+		}
 		rb.p.Put(b)
 	}
 	rb.buffers = rb.buffers[:0]

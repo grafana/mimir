@@ -147,7 +147,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 		require.Empty(t, metrics)
 	})
 
-	t.Run(`label_values query with no metric selector multiline `, func(t *testing.T) {
+	t.Run(`label_values query with no metric selector multiline`, func(t *testing.T) {
 		metrics := make(map[string]struct{})
 		in := minisdk.Templating{
 			List: []minisdk.TemplateVar{
@@ -165,5 +165,62 @@ func TestMetricsFromTemplating(t *testing.T) {
 		errs := metricsFromTemplating(in, metrics)
 		require.Empty(t, errs)
 		require.Empty(t, metrics)
+	})
+
+	t.Run(`query contains a subquery with the $__interval variable`, func(t *testing.T) {
+		metrics := make(map[string]struct{})
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query:      `increase(varnish_main_threads_failed{job=~"$job",instance=~"$instance"}[$__interval:])`,
+				},
+			},
+		}
+
+		errs := metricsFromTemplating(in, metrics)
+		require.Empty(t, errs)
+		require.Len(t, metrics, 1)
+		require.Equal(t, map[string]struct{}{"varnish_main_threads_failed": {}}, metrics)
+	})
+
+	t.Run(`query uses offset with $__interval variable`, func(t *testing.T) {
+		metrics := make(map[string]struct{})
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query:      `increase(tomcat_session_processingtime_total{job=~"$job", instance=~"$instance", host=~"$host", context=~"$context"}[$__interval:] offset -$__interval)`,
+				},
+			},
+		}
+
+		errs := metricsFromTemplating(in, metrics)
+		require.Empty(t, errs)
+		require.Len(t, metrics, 1)
+		require.Equal(t, map[string]struct{}{"tomcat_session_processingtime_total": {}}, metrics)
+	})
+
+	t.Run(`query contains range with other variables`, func(t *testing.T) {
+		metrics := make(map[string]struct{})
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query:      `myapp_metric_foo[$__from:$__to]`,
+				},
+			},
+		}
+
+		errs := metricsFromTemplating(in, metrics)
+		require.Empty(t, errs)
+		require.Len(t, metrics, 1)
+		require.Equal(t, map[string]struct{}{"myapp_metric_foo": {}}, metrics)
 	})
 }

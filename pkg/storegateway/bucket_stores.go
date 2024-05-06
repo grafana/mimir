@@ -617,12 +617,7 @@ func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
 }
 
 func getUserIDFromGRPCContext(ctx context.Context) string {
-	meta, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return ""
-	}
-
-	values := meta.Get(GrpcContextMetadataTenantID)
+	values := metadata.ValueFromIncomingContext(ctx, GrpcContextMetadataTenantID)
 	if len(values) != 1 {
 		return ""
 	}
