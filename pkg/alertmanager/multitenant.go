@@ -42,7 +42,6 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -595,7 +594,7 @@ func (am *MultitenantAlertmanager) stopping(_ error) error {
 // loadAlertmanagerConfigs Loads (and filters) the alertmanagers configuration from object storage, taking into consideration the sharding strategy. Returns:
 // - The list of discovered users (all users with a configuration in storage)
 // - The configurations of users owned by this instance.
-func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]bucketclient.Coso, error) {
+func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]alertspb.AlertConfigDescs, error) {
 	// Find all users with an alertmanager config.
 	allUserIDs, err := am.store.ListAllUsers(ctx)
 	if err != nil {
@@ -613,7 +612,7 @@ func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) 
 	numUsersOwned := len(ownedUserIDs)
 
 	// Load the configs for the owned users.
-	configs, err := am.store.GetAlertConfigs(ctx, ownedUserIDs, am.cfg.GrafanaAlertmanagerCompatibilityEnabled)
+	configs, err := am.store.GetAlertConfigs(ctx, ownedUserIDs)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to load alertmanager configurations for owned users")
 	}
@@ -634,7 +633,7 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 	return alertmanagers.Includes(am.ringLifecycler.GetInstanceAddr())
 }
 
-func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]bucketclient.Coso) {
+func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertConfigDescs) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgs))
 	for user, cfg := range cfgs {
 		err := am.setConfig(cfg)
@@ -673,7 +672,7 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]bucketclient.Coso
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
-func (am *MultitenantAlertmanager) setConfig(cfgs bucketclient.Coso) error {
+func (am *MultitenantAlertmanager) setConfig(cfgs alertspb.AlertConfigDescs) error {
 	fmt.Println("Mimir raw config:", cfgs.Mimir.RawConfig)
 	fmt.Println("Grafana raw config:", cfgs.Grafana.RawConfig)
 	// TODO: move!
@@ -821,7 +820,7 @@ func (am *MultitenantAlertmanager) setConfig(cfgs bucketclient.Coso) error {
 	return nil
 }
 
-func parseThing(cfgs bucketclient.Coso) (alertspb.AlertConfigDesc, error) {
+func parseThing(cfgs alertspb.AlertConfigDescs) (alertspb.AlertConfigDesc, error) {
 	var gCfg GrafanaAlertmanagerConfig
 	if err := json.Unmarshal([]byte(cfgs.Grafana.RawConfig), &gCfg); err != nil {
 		return alertspb.AlertConfigDesc{}, fmt.Errorf("failed to unmarshal Grafana Alertmanager configuration %w", err)
@@ -1007,7 +1006,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	err = am.setConfig(bucketclient.Coso{Mimir: cfgDesc})
+	err = am.setConfig(alertspb.AlertConfigDescs{Mimir: cfgDesc})
 	if err != nil {
 		return nil, err
 	}

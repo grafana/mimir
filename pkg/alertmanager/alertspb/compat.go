@@ -11,6 +11,12 @@ var (
 	ErrNotFound = errors.New("alertmanager storage object not found")
 )
 
+// AlertConfigDescs is a wrapper for a Mimir and a Grafana Alertmanager configurations.
+type AlertConfigDescs struct {
+	Mimir   AlertConfigDesc
+	Grafana GrafanaAlertConfigDesc
+}
+
 // ToProto transforms a yaml Alertmanager config and map of template files to an AlertConfigDesc.
 func ToProto(cfg string, templates map[string]string, user string) AlertConfigDesc {
 	tmpls := []*TemplateDesc{}

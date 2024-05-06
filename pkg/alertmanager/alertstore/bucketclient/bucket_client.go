@@ -8,7 +8,6 @@ package bucketclient
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -57,16 +56,23 @@ type BucketAlertStore struct {
 	amBucket        objstore.Bucket
 	grafanaAMBucket objstore.Bucket
 
-	cfgProvider bucket.TenantConfigProvider
-	logger      log.Logger
+	cfgProvider     bucket.TenantConfigProvider
+	fetchGrafanaCfg bool
+	logger          log.Logger
 }
 
-func NewBucketAlertStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketAlertStore {
+type BucketAlertStoreConfig struct {
+	// Retrieve Grafana AM configs alongside Mimir AM configs.
+	FetchGrafanaConfig bool
+}
+
+func NewBucketAlertStore(cfg BucketAlertStoreConfig, bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketAlertStore {
 	return &BucketAlertStore{
 		alertsBucket:    bucket.NewPrefixedBucketClient(bkt, AlertsPrefix),
 		amBucket:        bucket.NewPrefixedBucketClient(bkt, AlertmanagerPrefix),
 		grafanaAMBucket: bucket.NewPrefixedBucketClient(bkt, GrafanaAlertmanagerPrefix),
 		cfgProvider:     cfgProvider,
+		fetchGrafanaCfg: cfg.FetchGrafanaConfig,
 		logger:          logger,
 	}
 }
@@ -83,22 +89,16 @@ func (s *BucketAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
 	return userIDs, err
 }
 
-// TODO: name...
-type Coso struct {
-	Mimir   alertspb.AlertConfigDesc
-	Grafana alertspb.GrafanaAlertConfigDesc
-}
-
 // GetAlertConfigs implements alertstore.AlertStore.
-func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string, fetchGrafanaConfig bool) (map[string]Coso, error) {
+func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDescs, error) {
 	var (
 		cfgsMx = sync.Mutex{}
-		cfgs   = make(map[string]Coso, len(userIDs))
+		cfgs   = make(map[string]alertspb.AlertConfigDescs, len(userIDs))
 	)
 
 	err := concurrency.ForEachJob(ctx, len(userIDs), fetchConcurrency, func(ctx context.Context, idx int) error {
 		userID := userIDs[idx]
-		var cfg Coso
+		var cfg alertspb.AlertConfigDescs
 
 		mimirCfg, err := s.getAlertConfig(ctx, userID)
 		if s.alertsBucket.IsObjNotFoundErr(err) {
@@ -108,9 +108,9 @@ func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string
 		}
 		cfg.Mimir = mimirCfg
 
-		if fetchGrafanaConfig {
-			fmt.Println("Fetching Grafana config enabled!")
+		if s.fetchGrafanaCfg {
 			grafanaCfg, err := s.getGrafanaAlertConfig(ctx, userID)
+			// Users not having a Grafana alerting configuration is expected.
 			if err != nil && !s.alertsBucket.IsObjNotFoundErr(err) {
 				return errors.Wrapf(err, "failed to fetch grafana alertmanager config for user %s", userID)
 			}

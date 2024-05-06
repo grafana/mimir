@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/alertmanager/config"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
-	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 )
 
 const (
@@ -77,16 +76,16 @@ func (f *Store) ListAllUsers(_ context.Context) ([]string, error) {
 }
 
 // GetAlertConfigs implements alertstore.AlertStore.
-func (f *Store) GetAlertConfigs(_ context.Context, userIDs []string, fetchGrafanaConfig bool) (map[string]bucketclient.Coso, error) {
+func (f *Store) GetAlertConfigs(_ context.Context, userIDs []string) (map[string]alertspb.AlertConfigDescs, error) {
 	configs, err := f.reloadConfigs()
 	if err != nil {
 		return nil, err
 	}
 
-	filtered := make(map[string]bucketclient.Coso, len(userIDs))
+	filtered := make(map[string]alertspb.AlertConfigDescs, len(userIDs))
 	for _, userID := range userIDs {
 		if cfg, ok := configs[userID]; ok {
-			filtered[userID] = bucketclient.Coso{Mimir: cfg}
+			filtered[userID] = alertspb.AlertConfigDescs{Mimir: cfg}
 		}
 	}
 

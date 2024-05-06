@@ -26,6 +26,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -106,6 +107,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	queryGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "query"}, gateReg)
 	queryGate := gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
+	queryGate = timeoutGate{delegate: queryGate, timeout: cfg.BucketStore.MaxConcurrentQueueTimeout}
 
 	// The number of concurrent index header loads from storegateway are limited.
 	lazyLoadingGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "index_header"}, gateReg)
@@ -420,6 +422,40 @@ func (u *BucketStores) syncDirForUser(userID string) string {
 	return filepath.Join(u.cfg.BucketStore.SyncDir, userID)
 }
 
+// timeoutGate returns errGateTimeout when the timeout is reached while still waiting for the delegate gate.
+// timeoutGate belongs better in dskit. However, at the time of writing dskit supports go 1.20.
+// go 1.20 doesn't have context.WithTimeoutCause yet,
+// so we choose to implement timeoutGate here instead of implementing context.WithTimeoutCause ourselves in dskit.
+// It also allows to keep the span logger in timeoutGate as opposed to in the bucket store.
+type timeoutGate struct {
+	delegate gate.Gate
+	timeout  time.Duration
+}
+
+var errGateTimeout = staticError{cause: mimirpb.INSTANCE_LIMIT, msg: "timeout waiting for concurrency gate"}
+
+func (t timeoutGate) Start(ctx context.Context) error {
+	if t.timeout == 0 {
+		return t.delegate.Start(ctx)
+	}
+
+	// Inject our own error so that we can differentiate between a timeout caused by this gate
+	// or a timeout in the original request timeout.
+	ctx, cancel := context.WithTimeoutCause(ctx, t.timeout, errGateTimeout)
+	defer cancel()
+
+	err := t.delegate.Start(ctx)
+	if errors.Is(context.Cause(ctx), errGateTimeout) {
+		_ = spanlogger.FromContext(ctx, log.NewNopLogger()).Error(err)
+		err = errGateTimeout
+	}
+	return err
+}
+
+func (t timeoutGate) Done() {
+	t.delegate.Done()
+}
+
 func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	// Check if the store already exists.
 	bs := u.getStore(userID)
@@ -581,12 +617,7 @@ func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
 }
 
 func getUserIDFromGRPCContext(ctx context.Context) string {
-	meta, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return ""
-	}
-
-	values := meta.Get(GrpcContextMetadataTenantID)
+	values := metadata.ValueFromIncomingContext(ctx, GrpcContextMetadataTenantID)
 	if len(values) != 1 {
 		return ""
 	}
