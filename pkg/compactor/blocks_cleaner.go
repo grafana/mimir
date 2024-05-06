@@ -47,6 +47,9 @@ type BlocksCleanerConfig struct {
 	CompactionBlockRanges      mimir_tsdb.DurationList // Used for estimating compaction jobs.
 }
 
+type readIndexFunc func(context.Context, objstore.Bucket, string, bucket.TenantConfigProvider, log.Logger) (*bucketindex.Index, error)
+type writeIndexFunc func(context.Context, objstore.Bucket, string, bucket.TenantConfigProvider, *bucketindex.Index) error
+
 type BlocksCleaner struct {
 	services.Service
 
@@ -56,6 +59,8 @@ type BlocksCleaner struct {
 	bucketClient objstore.Bucket
 	usersScanner *mimir_tsdb.UsersScanner
 	ownUser      func(userID string) (bool, error)
+	readIndex    readIndexFunc
+	writeIndex   writeIndexFunc
 	singleFlight *concurrency.LimitedConcurrencySingleFlight
 
 	// Keep track of the last owned users.
@@ -84,6 +89,8 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		bucketClient: bucketClient,
 		usersScanner: mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
 		ownUser:      ownUser,
+		readIndex:    bucketindex.ReadIndex,
+		writeIndex:   bucketindex.WriteIndex,
 		cfgProvider:  cfgProvider,
 		singleFlight: concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
 		logger:       log.With(logger, "component", "cleaner"),
@@ -398,15 +405,11 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	return nil
 }
 
-func shouldRetry(err error) bool {
-	return errors.Is(err, context.DeadlineExceeded)
-}
-
 // withRetries invokes the given function as many times as it takes according to
 // the backoff config. Each invocation will be given perCallTimeout to
 // complete. This is specifically designed to retry timeouts due to flaky
 // connectivity with the objstore backend.
-func (c *BlocksCleaner) withRetries(ctx context.Context, perCallTimeout time.Duration, f func(context.Context) error) error {
+func withRetries(ctx context.Context, perCallTimeout time.Duration, f func(context.Context) error) error {
 	if perCallTimeout <= 0 {
 		return f(ctx)
 	}
@@ -431,6 +434,10 @@ func (c *BlocksCleaner) withRetries(ctx context.Context, perCallTimeout time.Dur
 	return fmt.Errorf("failed with retries: %w (last err: %w)", b.Err(), err)
 }
 
+func shouldRetry(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded)
+}
+
 func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 	startTime := time.Now()
@@ -447,9 +454,9 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	// Read the bucket index.
 
 	var idx *bucketindex.Index
-	err := c.withRetries(ctx, 1*time.Minute, func(ctx context.Context) error {
+	err := withRetries(ctx, 1*time.Minute, func(ctx context.Context) error {
 		var err error
-		idx, err = bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, userLogger)
+		idx, err = c.readIndex(ctx, c.bucketClient, userID, c.cfgProvider, userLogger)
 		return err
 	})
 	if errors.Is(err, bucketindex.ErrIndexCorrupted) {
@@ -475,7 +482,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, userLogger)
 
 	var partials map[ulid.ULID]error
-	err = c.withRetries(ctx, 5*time.Minute, func(ctx context.Context) error {
+	err = withRetries(ctx, 5*time.Minute, func(ctx context.Context) error {
 		newIdx, p, err := w.UpdateIndex(ctx, idx)
 		if err != nil {
 			return err
@@ -512,8 +519,8 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 			return fmt.Errorf("delete remaining: %w", err)
 		}
 	} else {
-		if err := c.withRetries(ctx, 3*time.Minute, func(ctx context.Context) error {
-			return bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx)
+		if err := withRetries(ctx, 3*time.Minute, func(ctx context.Context) error {
+			return c.writeIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx)
 		}); err != nil {
 			return fmt.Errorf("write index: %w", err)
 		}

@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -42,11 +43,14 @@ type testBlocksCleanerOptions struct {
 	concurrency         int
 	tenantDeletionDelay time.Duration
 	user4FilesExist     bool // User 4 has "FinishedTime" in tenant deletion marker set to "1h" ago.
+	objStoreTimeouts    bool
 }
 
 func (o testBlocksCleanerOptions) String() string {
-	return fmt.Sprintf("concurrency=%d, tenant deletion delay=%v",
-		o.concurrency, o.tenantDeletionDelay)
+	return fmt.Sprintf(
+		"concurrency=%d, tenant deletion delay=%v, user 4 files=%v, obj store timeouts=%v",
+		o.concurrency, o.tenantDeletionDelay, o.user4FilesExist, o.objStoreTimeouts,
+	)
 }
 
 func TestBlocksCleaner(t *testing.T) {
@@ -56,12 +60,14 @@ func TestBlocksCleaner(t *testing.T) {
 		{concurrency: 2},
 		{concurrency: 10},
 	} {
-		options := options
-
-		t.Run(options.String(), func(t *testing.T) {
-			t.Parallel()
-			testBlocksCleanerWithOptions(t, options)
-		})
+		for _, objStoreTimeouts := range []bool{false, true} {
+			options := options
+			options.objStoreTimeouts = objStoreTimeouts
+			t.Run(options.String(), func(t *testing.T) {
+				t.Parallel()
+				testBlocksCleanerWithOptions(t, options)
+			})
+		}
 	}
 }
 
@@ -113,6 +119,17 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	cfgProvider := newMockConfigProvider()
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+
+	var mockIndexLayer *mockIndexLayerWithTimeouts
+
+	if options.objStoreTimeouts {
+		mockIndexLayer = &mockIndexLayerWithTimeouts{
+			initialTimeouts: 2,
+		}
+		cleaner.readIndex = mockIndexLayer.ReadIndex
+		cleaner.writeIndex = mockIndexLayer.WriteIndex
+	}
+
 	require.NoError(t, services.StartAndAwaitRunning(ctx, cleaner))
 	defer services.StopAndAwaitTerminated(ctx, cleaner) //nolint:errcheck
 
@@ -190,6 +207,11 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		require.NoError(t, err)
 		assert.ElementsMatch(t, tc.expectedBlocks, idx.Blocks.GetULIDs())
 		assert.ElementsMatch(t, tc.expectedMarks, idx.BlockDeletionMarks.GetULIDs())
+	}
+
+	if options.objStoreTimeouts {
+		assert.True(t, mockIndexLayer.readSuccess)
+		assert.True(t, mockIndexLayer.writeSuccess)
 	}
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -1239,6 +1261,61 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 	}
 }
 
+func TestBucketCleaner_withRetries(t *testing.T) {
+	t.Run("eventually succeeds", func(t *testing.T) {
+		calls := 0
+		f := func(ctx context.Context) error {
+			calls++
+			if calls <= 2 {
+				return context.DeadlineExceeded
+			}
+			return nil
+		}
+		err := withRetries(context.Background(), 10*time.Hour, f)
+		assert.NoError(t, err)
+		assert.Equal(t, 3, calls)
+	})
+	t.Run("exhausts retries", func(t *testing.T) {
+		calls := 0
+		f := func(ctx context.Context) error {
+			calls++
+			if calls <= 900 {
+				return context.DeadlineExceeded
+			}
+			return nil
+		}
+		err := withRetries(context.Background(), 10*time.Hour, f)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "failed with retries:")
+		assert.Equal(t, 3, calls)
+	})
+	t.Run("no retries attempted", func(t *testing.T) {
+		calls := 0
+		f := func(ctx context.Context) error {
+			calls++
+			if calls <= 9 {
+				return context.DeadlineExceeded
+			}
+			return nil
+		}
+		err := withRetries(context.Background(), 0, f)
+		assert.Error(t, err)
+		assert.True(t, err == context.DeadlineExceeded)
+		assert.Equal(t, 1, calls)
+	})
+	t.Run("doesn't retry things that aren't timeouts", func(t *testing.T) {
+		calls := 0
+		f := func(ctx context.Context) error {
+			calls++
+			return io.ErrUnexpectedEOF
+		}
+		err := withRetries(context.Background(), 0, f)
+		assert.Error(t, err)
+		assert.True(t, err == io.ErrUnexpectedEOF)
+		assert.Equal(t, 1, calls)
+	})
+}
+
 type mockBucketFailure struct {
 	objstore.Bucket
 
@@ -1250,6 +1327,34 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 		return errors.New("mocked delete failure")
 	}
 	return m.Bucket.Delete(ctx, name)
+}
+
+// mockIndexLayerWithTimeouts holds a pair of ReadIndex/WriteIndex functions
+// that can time-out on initial calls.
+type mockIndexLayerWithTimeouts struct {
+	initialTimeouts int
+	readCalls       int
+	readSuccess     bool
+	writeCalls      int
+	writeSuccess    bool
+}
+
+func (m *mockIndexLayerWithTimeouts) ReadIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, logger log.Logger) (*bucketindex.Index, error) {
+	m.readCalls++
+	if m.readCalls <= m.initialTimeouts {
+		return nil, context.DeadlineExceeded
+	}
+	m.readSuccess = true
+	return bucketindex.ReadIndex(ctx, bkt, userID, cfgProvider, logger)
+}
+
+func (m *mockIndexLayerWithTimeouts) WriteIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, idx *bucketindex.Index) error {
+	m.writeCalls++
+	if m.readCalls <= m.initialTimeouts {
+		return context.DeadlineExceeded
+	}
+	m.writeSuccess = true
+	return bucketindex.WriteIndex(ctx, bkt, userID, cfgProvider, idx)
 }
 
 type mockConfigProvider struct {
