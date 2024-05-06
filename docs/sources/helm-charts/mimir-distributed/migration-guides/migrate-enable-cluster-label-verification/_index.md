@@ -2,6 +2,7 @@
 description:
   Learn how to configure Helm installed Grafana Mimir's cluster label to prevent the Mimir components to join
   different Memberlist cluster.
+menuTitle: "Configure a unique Memberlist cluster label"
 title: "Configure a unique Grafana Mimir's Memberlist cluster label in the mimir-distributed Helm chart installation"
 weight: 110
 ---
