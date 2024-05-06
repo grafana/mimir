@@ -1264,62 +1264,57 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 func TestBucketCleaner_withRetries(t *testing.T) {
 	t.Run("eventually succeeds", func(t *testing.T) {
 		calls := 0
-		f := func(ctx context.Context) error {
+		err := withRetries(context.Background(), 10*time.Hour, func(ctx context.Context) error {
 			calls++
 			if calls <= 2 {
 				return context.DeadlineExceeded
 			}
 			return nil
-		}
-		err := withRetries(context.Background(), 10*time.Hour, f)
+		})
 		assert.NoError(t, err)
 		assert.Equal(t, 3, calls)
 	})
 	t.Run("exhausts retries", func(t *testing.T) {
 		calls := 0
-		f := func(ctx context.Context) error {
+		err := withRetries(context.Background(), 10*time.Hour, func(ctx context.Context) error {
 			calls++
 			if calls <= 900 {
 				return context.DeadlineExceeded
 			}
 			return nil
-		}
-		err := withRetries(context.Background(), 10*time.Hour, f)
+		})
 		assert.Error(t, err)
 		assert.ErrorContains(t, err, "failed with retries:")
 		assert.Equal(t, 3, calls)
 	})
 	t.Run("no retries attempted", func(t *testing.T) {
 		calls := 0
-		f := func(ctx context.Context) error {
+		err := withRetries(context.Background(), 0, func(ctx context.Context) error {
 			calls++
 			if calls <= 9 {
 				return context.DeadlineExceeded
 			}
 			return nil
-		}
-		err := withRetries(context.Background(), 0, f)
+		})
 		assert.Error(t, err)
 		assert.True(t, err == context.DeadlineExceeded)
 		assert.Equal(t, 1, calls)
 	})
 	t.Run("no retries needed", func(t *testing.T) {
 		calls := 0
-		f := func(ctx context.Context) error {
+		err := withRetries(context.Background(), 94000*time.Hour, func(ctx context.Context) error {
 			calls++
 			return nil
-		}
-		err := withRetries(context.Background(), 94000*time.Hour, f)
+		})
 		assert.NoError(t, err)
 		assert.Equal(t, 1, calls)
 	})
 	t.Run("doesn't retry things that aren't timeouts", func(t *testing.T) {
 		calls := 0
-		f := func(ctx context.Context) error {
+		err := withRetries(context.Background(), 0, func(ctx context.Context) error {
 			calls++
 			return io.ErrUnexpectedEOF
-		}
-		err := withRetries(context.Background(), 0, f)
+		})
 		assert.Error(t, err)
 		assert.True(t, err == io.ErrUnexpectedEOF)
 		assert.Equal(t, 1, calls)
