@@ -1206,7 +1206,7 @@ func (d *emptyDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]l
 	return nil, nil
 }
 
-func (m *emptyDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+func (d *emptyDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
 	return &cardinality.ActiveNativeHistogramMetricsResponse{}, nil
 }
 
