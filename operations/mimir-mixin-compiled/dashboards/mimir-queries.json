@@ -988,423 +988,6 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### Requests with strong read consistency / sec\nShows rate of requests with strong read consistency, and rate of failed requests with strong read consistency.\n\n",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 100,
-                           "lineWidth": 0,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "normal"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "reqps"
-                     },
-                     "overrides": [
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "failed"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "successful"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        }
-                     ]
-                  },
-                  "id": 16,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "single",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 4,
-                  "targets": [
-                     {
-                        "expr": "sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n-\nsum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n",
-                        "format": "time_series",
-                        "legendFormat": "successful",
-                        "legendLink": null
-                     },
-                     {
-                        "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n",
-                        "format": "time_series",
-                        "legendFormat": "failed",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Requests with strong read consistency / sec",
-                  "type": "timeseries"
-               },
-               {
-                  "datasource": "$datasource",
-                  "description": "### Requests with strong read consistency ratio\nRatio between requests with strong read consistency and all read requests on ingesters.\n\n",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 100,
-                           "lineWidth": 0,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "normal"
-                           }
-                        },
-                        "max": 1,
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "percentunit"
-                     },
-                     "overrides": [
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "failed"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "successful"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        }
-                     ]
-                  },
-                  "id": 17,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "single",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 4,
-                  "targets": [
-                     {
-                        "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n)\n/\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))\n",
-                        "format": "time_series",
-                        "legendFormat": "successful",
-                        "legendLink": null
-                     },
-                     {
-                        "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n/\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))\n",
-                        "format": "time_series",
-                        "legendFormat": "failed",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Requests with strong read consistency ratio",
-                  "type": "timeseries"
-               },
-               {
-                  "datasource": "$datasource",
-                  "description": "### Strong read consistency queries — wait latency\nHow long does the request wait to guarantee strong read consistency.\n\n",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 1,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "s"
-                     },
-                     "overrides": [ ]
-                  },
-                  "id": 18,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "single",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 4,
-                  "targets": [
-                     {
-                        "expr": "histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                        "format": "time_series",
-                        "legendFormat": "avg",
-                        "legendLink": null
-                     },
-                     {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                        "format": "time_series",
-                        "legendFormat": "99th percentile",
-                        "legendLink": null
-                     },
-                     {
-                        "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                        "format": "time_series",
-                        "legendFormat": "99.9th percentile",
-                        "legendLink": null
-                     },
-                     {
-                        "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                        "format": "time_series",
-                        "legendFormat": "100th percentile",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Strong read consistency queries — wait latency",
-                  "type": "timeseries"
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Ingester (ingest storage: strong consistency)",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "datasource": "$datasource",
-                  "description": "### Rate of requests to fetch last produced offset for partition\nShows rate of requests to fetch last produced offset for partition, and rate of failed requests.\n\n",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 100,
-                           "lineWidth": 0,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "normal"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "reqps"
-                     },
-                     "overrides": [
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "failed"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "successful"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        }
-                     ]
-                  },
-                  "id": 19,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "single",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 6,
-                  "targets": [
-                     {
-                        "expr": "sum(rate(cortex_ingest_storage_reader_last_produced_offset_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n-\nsum(rate(cortex_ingest_storage_reader_last_produced_offset_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n",
-                        "format": "time_series",
-                        "legendFormat": "successful",
-                        "legendLink": null
-                     },
-                     {
-                        "expr": "sum(rate(cortex_ingest_storage_reader_last_produced_offset_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n",
-                        "format": "time_series",
-                        "legendFormat": "failed",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Last produced offset requests / sec",
-                  "type": "timeseries"
-               },
-               {
-                  "datasource": "$datasource",
-                  "description": "### Latency\nHow long does it take to fetch \"last produced offset\" of partition.\n\n",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 1,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "s"
-                     },
-                     "overrides": [ ]
-                  },
-                  "id": 20,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "single",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 6,
-                  "targets": [
-                     {
-                        "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                        "format": "time_series",
-                        "legendFormat": "avg",
-                        "legendLink": null
-                     },
-                     {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                        "format": "time_series",
-                        "legendFormat": "99th percentile",
-                        "legendLink": null
-                     },
-                     {
-                        "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                        "format": "time_series",
-                        "legendFormat": "99.9th percentile",
-                        "legendLink": null
-                     },
-                     {
-                        "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                        "format": "time_series",
-                        "legendFormat": "100th percentile",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Last produced offset latency",
-                  "type": "timeseries"
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Ingester (ingest storage: last produced offset)",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "datasource": "$datasource",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -1428,7 +1011,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 21,
+                  "id": 16,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1507,7 +1090,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 17,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1604,7 +1187,7 @@
                         }
                      ]
                   },
-                  "id": 23,
+                  "id": 18,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1654,7 +1237,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 19,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1714,7 +1297,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 25,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1805,7 +1388,7 @@
                         }
                      ]
                   },
-                  "id": 26,
+                  "id": 21,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1859,7 +1442,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 27,
+                  "id": 22,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1950,7 +1533,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 28,
+                  "id": 23,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1998,7 +1581,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 29,
+                  "id": 24,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2046,7 +1629,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 30,
+                  "id": 25,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2106,7 +1689,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 31,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2154,7 +1737,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 27,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2204,7 +1787,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 33,
+                  "id": 28,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2265,7 +1848,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 29,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2344,7 +1927,7 @@
                         }
                      ]
                   },
-                  "id": 35,
+                  "id": 30,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2429,7 +2012,7 @@
                         }
                      ]
                   },
-                  "id": 36,
+                  "id": 31,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2495,7 +2078,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 37,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2543,7 +2126,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 38,
+                  "id": 33,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2623,7 +2206,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 39,
+                  "id": 34,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2715,7 +2298,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 40,
+                  "id": 35,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2764,7 +2347,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 41,
+                  "id": 36,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2813,7 +2396,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 42,
+                  "id": 37,
                   "links": [ ],
                   "options": {
                      "legend": {

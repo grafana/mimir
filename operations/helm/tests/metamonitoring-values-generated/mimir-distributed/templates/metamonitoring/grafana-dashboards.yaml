@@ -12013,423 +12013,6 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Requests with strong read consistency / sec\nShows rate of requests with strong read consistency, and rate of failed requests with strong read consistency.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 100,
-                               "lineWidth": 0,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "normal"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "reqps"
-                         },
-                         "overrides": [
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "failed"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E24D42",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "successful"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#7EB26D",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            }
-                         ]
-                      },
-                      "id": 16,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 4,
-                      "targets": [
-                         {
-                            "expr": "sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n-\nsum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n",
-                            "format": "time_series",
-                            "legendFormat": "successful",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n",
-                            "format": "time_series",
-                            "legendFormat": "failed",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Requests with strong read consistency / sec",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Requests with strong read consistency ratio\nRatio between requests with strong read consistency and all read requests on ingesters.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 100,
-                               "lineWidth": 0,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "normal"
-                               }
-                            },
-                            "max": 1,
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "percentunit"
-                         },
-                         "overrides": [
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "failed"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E24D42",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "successful"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#7EB26D",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            }
-                         ]
-                      },
-                      "id": 17,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 4,
-                      "targets": [
-                         {
-                            "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n)\n/\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))\n",
-                            "format": "time_series",
-                            "legendFormat": "successful",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n/\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))\n",
-                            "format": "time_series",
-                            "legendFormat": "failed",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Requests with strong read consistency ratio",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Strong read consistency queries — wait latency\nHow long does the request wait to guarantee strong read consistency.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "s"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 18,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 4,
-                      "targets": [
-                         {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "avg",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99.9th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "100th percentile",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Strong read consistency queries — wait latency",
-                      "type": "timeseries"
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Ingester (ingest storage: strong consistency)",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Rate of requests to fetch last produced offset for partition\nShows rate of requests to fetch last produced offset for partition, and rate of failed requests.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 100,
-                               "lineWidth": 0,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "normal"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "reqps"
-                         },
-                         "overrides": [
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "failed"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E24D42",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "successful"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#7EB26D",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            }
-                         ]
-                      },
-                      "id": 19,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "sum(rate(cortex_ingest_storage_reader_last_produced_offset_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n-\nsum(rate(cortex_ingest_storage_reader_last_produced_offset_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n",
-                            "format": "time_series",
-                            "legendFormat": "successful",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum(rate(cortex_ingest_storage_reader_last_produced_offset_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n",
-                            "format": "time_series",
-                            "legendFormat": "failed",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Last produced offset requests / sec",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Latency\nHow long does it take to fetch \"last produced offset\" of partition.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "s"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 20,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "avg",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99.9th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "100th percentile",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Last produced offset latency",
-                      "type": "timeseries"
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Ingester (ingest storage: last produced offset)",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
-                   {
-                      "datasource": "$datasource",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -12453,7 +12036,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 21,
+                      "id": 16,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12532,7 +12115,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 17,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12629,7 +12212,7 @@ data:
                             }
                          ]
                       },
-                      "id": 23,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12679,7 +12262,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 19,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12739,7 +12322,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12830,7 +12413,7 @@ data:
                             }
                          ]
                       },
-                      "id": 26,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12884,7 +12467,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 22,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12975,7 +12558,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13023,7 +12606,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 24,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13071,7 +12654,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 25,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13131,7 +12714,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 26,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13179,7 +12762,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13229,7 +12812,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13290,7 +12873,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13369,7 +12952,7 @@ data:
                             }
                          ]
                       },
-                      "id": 35,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13454,7 +13037,7 @@ data:
                             }
                          ]
                       },
-                      "id": 36,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13520,7 +13103,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13568,7 +13151,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 38,
+                      "id": 33,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13648,7 +13231,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 34,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13740,7 +13323,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13789,7 +13372,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13838,7 +13421,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -39391,7 +38974,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
@@ -39440,7 +39023,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3",
@@ -39501,7 +39084,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 3,
+                      "span": 4,
                       "targets": [
                          {
                             "exemplar": true,
@@ -39512,73 +39095,6 @@ data:
                          }
                       ],
                       "title": "Per pod p99 latency",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Sync write to Kafka latency (ingest storage)\nLatency of synchronous write operation used to store data into Kafka.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "s"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 10,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 3,
-                      "targets": [
-                         {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "avg",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99.9th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "100th percentile",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Sync write to Kafka latency (ingest storage)",
                       "type": "timeseries"
                    }
                 ],
@@ -39755,7 +39271,7 @@ data:
                             }
                          ]
                       },
-                      "id": 11,
+                      "id": 10,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -39803,7 +39319,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 12,
+                      "id": 11,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -39864,7 +39380,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 13,
+                      "id": 12,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -39895,610 +39411,6 @@ data:
                 "repeatRowId": null,
                 "showTitle": true,
                 "title": "Ingester",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Kafka fetches / sec\nRate of fetches received from Kafka brokers. A fetch can contain multiple records (a write request received on the write path is mapped into a single record).\nRead errors are any errors reported on connection to Kafka brokers, and are separate from \"failed\" fetches.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 100,
-                               "lineWidth": 0,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "normal"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "short"
-                         },
-                         "overrides": [
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "failed"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E24D42",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "read errors"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E24D42",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "successful"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#7EB26D",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            }
-                         ]
-                      },
-                      "id": 14,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 4,
-                      "targets": [
-                         {
-                            "expr": "sum (rate (cortex_ingest_storage_reader_fetches_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n-\nsum (rate (cortex_ingest_storage_reader_fetch_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n",
-                            "format": "time_series",
-                            "legendFormat": "successful",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum (rate (cortex_ingest_storage_reader_fetch_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "failed",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum (rate (cortex_ingest_storage_reader_read_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "read errors",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Kafka fetches / sec",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Kafka records / sec\nRate of processed records from Kafka. Failed records are categorized as \"client\" errors (e.g. per-tenant limits) or server errors.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 100,
-                               "lineWidth": 0,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "normal"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "short"
-                         },
-                         "overrides": [
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "failed (client)"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#EF843C",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "failed (server)"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E24D42",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "successful"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#7EB26D",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            }
-                         ]
-                      },
-                      "id": 15,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 4,
-                      "targets": [
-                         {
-                            "expr": "sum(rate(cortex_ingest_storage_reader_records_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n-\nsum(rate(cortex_ingest_storage_reader_records_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n",
-                            "format": "time_series",
-                            "legendFormat": "successful",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum (rate (cortex_ingest_storage_reader_records_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", cause=\"client\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "failed (client)",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum (rate (cortex_ingest_storage_reader_records_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", cause=\"server\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "failed (server)",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Kafka records / sec",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Kafka record processing latency\nTime used to process a single record (write request). This time is spent by appending data to per-tenant TSDB.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "s"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 16,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 4,
-                      "targets": [
-                         {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_processing_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "avg",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99.9th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "100th percentile",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Kafka record processing latency",
-                      "type": "timeseries"
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Ingester (ingest storage)",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Kafka record end-to-end latency when ingesters are running\nTime between writing request by distributor to Kafka and reading the record by ingester, when ingesters are running.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "s"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 17,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", phase=\"running\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "avg",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", phase=\"running\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", phase=\"running\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99.9th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", phase=\"running\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "100th percentile",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Kafka record end-to-end latency when ingesters are running",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Kafka record end-to-end latency when starting\nTime between writing request by distributor to Kafka and reading the record by ingester during catch-up phase, when ingesters are starting.\nIf ingesters are not starting and catching up in the selected time range, this panel will be empty.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "s"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 18,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", phase=\"starting\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "avg",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", phase=\"starting\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", phase=\"starting\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99.9th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", phase=\"starting\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "100th percentile",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Kafka record end-to-end latency when starting",
-                      "type": "timeseries"
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Ingester (ingest storage – end-to-end latency)",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Last consumed offset commits / sec\nRate of \"last consumed offset\" commits issued by ingesters to Kafka.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 100,
-                               "lineWidth": 0,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "normal"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "short"
-                         },
-                         "overrides": [
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "failed"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E24D42",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "successful"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#7EB26D",
-                                        "mode": "fixed"
-                                     }
-                                  }
-                               ]
-                            }
-                         ]
-                      },
-                      "id": 19,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "sum (rate (cortex_ingest_storage_reader_offset_commit_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n-\nsum (rate (cortex_ingest_storage_reader_offset_commit_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n",
-                            "format": "time_series",
-                            "legendFormat": "successful",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "sum (rate (cortex_ingest_storage_reader_offset_commit_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "failed",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Last consumed offset commits / sec",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Kafka record processing latency\nTime spent to commit \"last consumed offset\" by ingesters to Kafka.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "s"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 20,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "avg",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "99.9th percentile",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])))",
-                            "format": "time_series",
-                            "legendFormat": "100th percentile",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Last consumed offset commits latency",
-                      "type": "timeseries"
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Ingester (ingest storage - last consumed offset)",
                 "titleSize": "h6"
              },
              {
@@ -40580,7 +39492,7 @@ data:
                             }
                          ]
                       },
-                      "id": 21,
+                      "id": 13,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -40641,7 +39553,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -40690,7 +39602,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 23,
+                      "id": 15,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -40739,7 +39651,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 16,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -40935,7 +39847,7 @@ data:
                             }
                          ]
                       },
-                      "id": 25,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -40983,7 +39895,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 18,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -41210,7 +40122,7 @@ data:
                             }
                          ]
                       },
-                      "id": 27,
+                      "id": 19,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41258,7 +40170,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 20,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -41485,7 +40397,7 @@ data:
                             }
                          ]
                       },
-                      "id": 29,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41533,7 +40445,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 22,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -41656,7 +40568,7 @@ data:
                             }
                          ]
                       },
-                      "id": 31,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41711,7 +40623,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 24,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -41834,7 +40746,7 @@ data:
                             }
                          ]
                       },
-                      "id": 33,
+                      "id": 25,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41889,7 +40801,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -42012,7 +40924,7 @@ data:
                             }
                          ]
                       },
-                      "id": 35,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42098,7 +41010,7 @@ data:
                             }
                          ]
                       },
-                      "id": 36,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42154,7 +41066,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42234,7 +41146,7 @@ data:
                             }
                          ]
                       },
-                      "id": 38,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42301,7 +41213,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42350,7 +41262,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42399,7 +41311,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42448,7 +41360,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 34,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42508,7 +41420,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 43,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42556,7 +41468,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
