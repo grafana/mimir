@@ -1272,6 +1272,8 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 
 // NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
 // The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
+//
+// This function is used outside of this codebase.
 func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
 	cleanupInDefer := true
 	return func(ctx context.Context, req *Request) error {
