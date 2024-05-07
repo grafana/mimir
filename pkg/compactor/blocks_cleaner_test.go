@@ -1297,7 +1297,7 @@ func TestBucketCleaner_withRetries(t *testing.T) {
 			return nil
 		})
 		assert.Error(t, err)
-		assert.True(t, err == context.DeadlineExceeded)
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
 		assert.Equal(t, 1, calls)
 	})
 	t.Run("no retries needed", func(t *testing.T) {
@@ -1316,7 +1316,7 @@ func TestBucketCleaner_withRetries(t *testing.T) {
 			return io.ErrUnexpectedEOF
 		})
 		assert.Error(t, err)
-		assert.True(t, err == io.ErrUnexpectedEOF)
+		assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
 		assert.Equal(t, 1, calls)
 	})
 }
