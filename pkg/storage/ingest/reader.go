@@ -35,6 +35,8 @@ const (
 )
 
 type record struct {
+	// Context holds the tracing (and potentially other) info, that the record was enriched with on fetch from Kafka.
+	ctx      context.Context
 	tenantID string
 	content  []byte
 }
@@ -317,12 +319,15 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		minOffset = math.MaxInt
 		maxOffset = 0
 	)
-	fetches.EachRecord(func(r *kgo.Record) {
-		minOffset = min(minOffset, int(r.Offset))
-		maxOffset = max(maxOffset, int(r.Offset))
+	fetches.EachRecord(func(rec *kgo.Record) {
+		minOffset = min(minOffset, int(rec.Offset))
+		maxOffset = max(maxOffset, int(rec.Offset))
 		records = append(records, record{
-			content:  r.Value,
-			tenantID: string(r.Key),
+			// This context carries the tracing data for this individual record;
+			// kotel populates this data when it fetches the messages.
+			ctx:      rec.Context,
+			tenantID: string(rec.Key),
+			content:  rec.Value,
 		})
 	})
 
@@ -346,7 +351,6 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		)
 		boff.Wait()
 	}
-
 }
 
 func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {

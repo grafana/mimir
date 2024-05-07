@@ -70,7 +70,7 @@ require (
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/prometheus/procfs v0.12.0
-	github.com/thanos-io/objstore v0.0.0-20240418104850-a1e58aa3bed5
+	github.com/thanos-io/objstore v0.0.0-20240506104147-63052b4c4867
 	github.com/twmb/franz-go v1.16.1
 	github.com/twmb/franz-go/pkg/kadm v1.10.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240430054423-8b5395896363
@@ -259,7 +259,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240506140043-87502d402982
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240507095556-d5f2bb7dda35
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
