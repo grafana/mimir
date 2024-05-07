@@ -35,6 +35,7 @@ const (
 )
 
 type record struct {
+	// Context holds the tracing (and potentially other) info, that the record was enriched with on fetch from Kafka.
 	ctx      context.Context
 	tenantID string
 	content  []byte

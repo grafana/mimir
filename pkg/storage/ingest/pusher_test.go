@@ -314,7 +314,6 @@ func TestPusherConsumer_consume_ShouldHonorContextCancellation(t *testing.T) {
 		cancel(wantCancelErr)
 	}()
 
-	// Should return no error on client errors.
 	err = consumer.consume(canceledCtx, []record{reqRecord})
 	require.ErrorIs(t, err, wantCancelErr)
 }
