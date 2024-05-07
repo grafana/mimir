@@ -1468,7 +1468,7 @@ How to **fix**:
   1. Find out the timestamp at which new partitions were created and became ACTIVE in the ring (e.g. looking at new ingesters logs).
   1. Temporarily restart ingesters with the following configuration:
      ```
-     # Set <value> to the timestamp retrived from previous step. The timestamp should be Unix epoch with milliseconds precision.
+     # Set <value> to the timestamp retrieved from previous step. The timestamp should be Unix epoch with milliseconds precision.
      -ingest-storage.kafka.consume-from-position-at-startup=timestamp
      -ingest-storage.kafka.consume-from-timestamp-at-startup=<value>
      ```
