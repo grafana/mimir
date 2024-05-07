@@ -7,7 +7,6 @@ package alertmanager
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -708,24 +708,10 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	return cfg, nil
 }
 
-func parseGrafanaConfig(cfg alertspb.GrafanaAlertConfigDesc) (alertspb.AlertConfigDesc, error) {
-	var amCfg GrafanaAlertmanagerConfig
-	if err := json.Unmarshal([]byte(cfg.RawConfig), &amCfg); err != nil {
-		return alertspb.AlertConfigDesc{}, fmt.Errorf("failed to unmarshal Grafana Alertmanager configuration %w", err)
-	}
-
-	rawCfg, err := json.Marshal(amCfg.AlertmanagerConfig)
-	if err != nil {
-		return alertspb.AlertConfigDesc{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
-	}
-
-	return alertspb.ToProto(string(rawCfg), amCfg.Templates, cfg.User), nil
-}
-
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
 func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error {
-	var userAmConfig *amconfig.Config
+	var userAmConfig *definition.PostableApiAlertingConfig
 	var err error
 	var hasTemplateChanges bool
 	var userTemplateDir = filepath.Join(am.getTenantDirectory(cfg.User), templatesDir)
@@ -787,13 +773,13 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 			return fmt.Errorf("blank Alertmanager configuration for %v", cfg.User)
 		}
 		level.Debug(am.logger).Log("msg", "blank Alertmanager configuration; using fallback", "user", cfg.User)
-		userAmConfig, err = amconfig.Load(am.fallbackConfig)
+		userAmConfig, err = loadConfig([]byte(am.fallbackConfig))
 		if err != nil {
 			return fmt.Errorf("unable to load fallback configuration for %v: %v", cfg.User, err)
 		}
 		rawCfg = am.fallbackConfig
 	} else {
-		userAmConfig, err = amconfig.Load(cfg.RawConfig)
+		userAmConfig, err = loadConfig([]byte(cfg.RawConfig))
 		if err != nil && hasExisting {
 			// This means that if a user has a working config and
 			// they submit a broken one, the Manager will keep running the last known
@@ -835,7 +821,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amconfig.Config, rawCfg string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, rawCfg string) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)

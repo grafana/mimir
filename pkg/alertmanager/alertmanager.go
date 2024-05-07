@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
@@ -313,7 +314,7 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg string) error {
+func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiAlertingConfig, rawCfg string) error {
 	templateFiles := make([]string, len(conf.Templates))
 	for i, t := range conf.Templates {
 		templateFilepath, err := safeTemplateFilepath(filepath.Join(am.cfg.TenantDataDir, templatesDir), t)
@@ -330,7 +331,8 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	}
 	tmpl.ExternalURL = am.cfg.ExternalURL
 
-	am.api.Update(conf, func(_ model.LabelSet) {})
+	cfg := grafanaToUpstreamConfig(conf)
+	am.api.Update(&cfg, func(_ model.LabelSet) {})
 
 	// Ensure inhibitor is set before being called
 	if am.inhibitor != nil {
@@ -394,7 +396,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	am.lastPipeline = pipeline
 	am.dispatcher = dispatch.NewDispatcher(
 		am.alerts,
-		dispatch.NewRoute(conf.Route, nil),
+		dispatch.NewRoute(cfg.Route, nil),
 		pipeline,
 		am.marker,
 		timeoutFunc,
@@ -451,10 +453,11 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a
 // list of receiver config.
-func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
+func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
 	integrationsMap := make(map[string][]notify.Integration, len(nc))
 	for _, rcv := range nc {
-		integrations, err := buildReceiverIntegrations(rcv, tmpl, firewallDialer, logger, notifierWrapper)
+		// TODO: We're currently passing only the upstream receivers, we need to use the Grafana receivers too.
+		integrations, err := buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, logger, notifierWrapper)
 		if err != nil {
 			return nil, err
 		}
