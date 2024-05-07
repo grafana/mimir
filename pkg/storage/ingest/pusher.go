@@ -138,11 +138,11 @@ func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []record,
 
 	for _, rec := range records {
 		// rec.ctx contains the tracing baggage for this record, which we propagate down the call tree.
-		// But this context's cancellation is disjointed from the top-most ctx. The context.AfterFunc below,
+		// But rec.ctx cancellation is disjointed from the context passed to unmarshalRequests(). The context.AfterFunc below,
 		// is what fuses the two lifetimes together.
-		recCtx, cancel := context.WithCancelCause(rec.ctx)
+		recCtx, cancelRecCtx := context.WithCancelCause(rec.ctx)
 		context.AfterFunc(ctx, func() {
-			cancel(context.Cause(ctx))
+			cancelRecCtx(context.Cause(ctx))
 		})
 		pRecord := parsedRecord{
 			ctx:          recCtx,

@@ -322,7 +322,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		minOffset = min(minOffset, int(rec.Offset))
 		maxOffset = max(maxOffset, int(rec.Offset))
 		records = append(records, record{
-			// This context caries the tracing data for this individual record;
+			// This context carries the tracing data for this individual record;
 			// kotel populates this data when it fetches the messages.
 			ctx:      rec.Context,
 			tenantID: string(rec.Key),
