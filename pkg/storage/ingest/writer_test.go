@@ -466,6 +466,80 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		wg.Wait()
 	})
+
+	t.Run("should return error if the WriteRequest contains a timeseries which is larger than the maximum allowed record data size", func(t *testing.T) {
+		t.Parallel()
+
+		req := &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
+				mockPreallocTimeseries(strings.Repeat("x", producerBatchMaxBytes)), // Huge, will fail to be written.
+				mockPreallocTimeseries("series_1"),                                 // Small, will be successfully written.
+			},
+			Metadata: nil,
+			Source:   mimirpb.API,
+		}
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		produceRequestProcessed := atomic.NewBool(false)
+
+		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
+			// Add a delay, so that if WriteSync() will not wait then the test will fail.
+			time.Sleep(time.Second)
+			produceRequestProcessed.Store(true)
+
+			return nil, nil, false
+		})
+
+		err := writer.WriteSync(ctx, partitionID, tenantID, req)
+		require.Equal(t, ErrWriteRequestDataItemTooLarge, err)
+
+		// Ensure it was processed before returning.
+		assert.True(t, produceRequestProcessed.Load())
+
+		// Read back from Kafka.
+		consumer, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr), kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{topicName: {int32(partitionID): kgo.NewOffset().AtStart()}}))
+		require.NoError(t, err)
+		t.Cleanup(consumer.Close)
+
+		fetchCtx, cancel := context.WithTimeout(ctx, time.Second)
+		t.Cleanup(cancel)
+
+		fetches := consumer.PollFetches(fetchCtx)
+		require.NoError(t, fetches.Err())
+		require.Len(t, fetches.Records(), 1)
+		assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
+
+		received := mimirpb.WriteRequest{}
+		require.NoError(t, received.Unmarshal(fetches.Records()[0].Value))
+		received.ClearTimeseriesUnmarshalData()
+
+		// We expect that the small time series has been ingested, while the huge one has been discarded.
+		require.Len(t, received.Timeseries, 1)
+		assert.Equal(t, mockPreallocTimeseries("series_1"), received.Timeseries[0])
+
+		// Check metrics.
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes sent to the ingest storage.
+			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
+			cortex_ingest_storage_writer_sent_bytes_total %d
+
+			# HELP cortex_ingest_storage_writer_records_per_write_request The number of records a single per-partition write request has been split into.
+			# TYPE cortex_ingest_storage_writer_records_per_write_request histogram
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="1"} 0
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="2"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="4"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="8"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="16"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="32"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="64"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="128"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf"} 1
+			cortex_ingest_storage_writer_records_per_write_request_sum 2
+			cortex_ingest_storage_writer_records_per_write_request_count 1
+		`, len(fetches.Records()[0].Value))), "cortex_ingest_storage_writer_sent_bytes_total", "cortex_ingest_storage_writer_records_per_write_request"))
+	})
 }
 
 func TestMarshalWriteRequestToRecords(t *testing.T) {
@@ -491,10 +565,9 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 	require.NotZero(t, req.Metadata)
 
 	t.Run("should return 1 record if the input WriteRequest size is less than the size limit", func(t *testing.T) {
-		records, size, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size()*2)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size()*2)
 		require.NoError(t, err)
 		require.Len(t, records, 1)
-		require.Equal(t, len(records[0].Value), size)
 
 		actual := &mimirpb.WriteRequest{}
 		require.NoError(t, actual.Unmarshal(records[0].Value))
@@ -506,20 +579,17 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 	t.Run("should return multiple records if the input WriteRequest size is bigger than the size limit", func(t *testing.T) {
 		const limit = 100
 
-		records, size, err := marshalWriteRequestToRecords(1, "user-1", req, limit)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit)
 		require.NoError(t, err)
 		require.Len(t, records, 4)
 
 		// Assert each record, and decode all partial WriteRequests.
-		expectedSize := 0
 		partials := make([]*mimirpb.WriteRequest, 0, len(records))
 
 		for _, rec := range records {
 			assert.Equal(t, int32(1), rec.Partition)
 			assert.Equal(t, "user-1", string(rec.Key))
 			assert.Less(t, len(rec.Value), limit)
-
-			expectedSize += len(rec.Value)
 
 			actual := &mimirpb.WriteRequest{}
 			require.NoError(t, actual.Unmarshal(rec.Value))
@@ -528,7 +598,6 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 			partials = append(partials, actual)
 		}
 
-		assert.Equal(t, expectedSize, size)
 		assert.Equal(t, []*mimirpb.WriteRequest{
 			{
 				Source:                  mimirpb.RULE,
@@ -553,7 +622,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 	t.Run("should return multiple records, larger than the limit, if the Timeseries and Metadata entries in the WriteRequest are bigger than limit", func(t *testing.T) {
 		const limit = 1
 
-		records, _, err := marshalWriteRequestToRecords(1, "user-1", req, limit)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit)
 		require.NoError(t, err)
 		require.Len(t, records, 6)
 
@@ -613,7 +682,7 @@ func BenchmarkMarshalWriteRequestToRecords_NoSplitting(b *testing.B) {
 
 	b.Run("marshalWriteRequestToRecords()", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			records, _, err := marshalWriteRequestToRecords(1, "user-1", req, 1024*1024*1024)
+			records, err := marshalWriteRequestToRecords(1, "user-1", req, 1024*1024*1024)
 			if err != nil {
 				b.Fatal(err)
 			}

@@ -1498,7 +1498,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 
 	batchOptions := ring.DoBatchOptions{
 		Cleanup:       batchCleanup,
-		IsClientError: isIngesterClientError,
+		IsClientError: isIngestionClientError,
 		Go:            d.doBatchPushWorkers,
 	}
 

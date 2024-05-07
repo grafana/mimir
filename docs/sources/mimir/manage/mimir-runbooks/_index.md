@@ -2193,6 +2193,22 @@ How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
 
+### err-mimir-distributor-max-write-request-data-item-size
+
+This error can only be returned when the experimental ingest storage is enabled and is caused by a write request containing a timeseries or metadata entry which is larger than the allowed limit.
+
+How it **works**:
+
+- The distributor shards a write request into N partitions, where N is the tenant partitions shard size.
+- For each partition, the write request data is encoded into one or more Kafka records.
+- The maximum size of a Kafka record is hardcoded, so the per-partition write request data is automatically split into multiple Kafka records in order to ingest large write requests.
+- The splitting uses a single timeseries or metadata entry has a the splittable unit, which means that a single timeseries or metadata entry can't be split into multiple Kafka records.
+- If the write request contains a single timeseries or metadata entry whose size is bigger than the Kafka record size limit, then the ingestion of the write request will fail and return a 4xx HTTP status code. The 4xx status code is used to ensure the client will not retry sending a request which will consistently fail.
+
+How to **fix** it:
+
+- Configure the client remote writing to Mimir to send smaller write requests.
+
 ### err-mimir-query-blocked
 
 This error occurs when a query-frontend blocks a read request because the query matches at least one of the rules defined in the limits.
