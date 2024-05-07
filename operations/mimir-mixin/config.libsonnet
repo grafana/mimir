@@ -694,6 +694,6 @@
     show_grpc_ingestion_panels: true,
 
     // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
-    show_ingest_storage_panels: false,
+    show_ingest_storage_panels: true,
   },
 }
