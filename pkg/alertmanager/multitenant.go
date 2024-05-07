@@ -7,6 +7,7 @@ package alertmanager
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -634,7 +635,14 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertConfigDescs) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
 	for user, cfgs := range cfgMap {
-		if err := am.setConfig(am.computeConfig(cfgs)); err != nil {
+		cfg, err := am.computeConfig(cfgs)
+		if err != nil {
+			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
+			level.Warn(am.logger).Log("msg", "error computing config", "err", err)
+			continue
+		}
+
+		if err := am.setConfig(cfg); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err)
 			continue
@@ -669,9 +677,10 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertC
 
 // computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
 // It returns the final configuration the Alertmanager will use, merging both configs if necessary.
-func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) alertspb.AlertConfigDesc {
+func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (alertspb.AlertConfigDesc, error) {
 	var cfg alertspb.AlertConfigDesc
 	switch {
+	// Mimir configuration.
 	case !cfgs.Grafana.Promoted:
 		level.Debug(am.logger).Log("msg", "grafana configuration not promoted, using mimir config", "user", cfgs.Mimir.User)
 		cfg = cfgs.Mimir
@@ -682,18 +691,35 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		level.Debug(am.logger).Log("msg", "grafana configuration is empty, using mimir config", "user", cfgs.Mimir.User)
 		cfg = cfgs.Mimir
 
+	// Grafana configuration.
 	case cfgs.Mimir.RawConfig == am.fallbackConfig:
 		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config", "user", cfgs.Mimir.User)
-		// TODO: parse Grafana config.
+		return parseGrafanaConfig(cfgs.Grafana)
 	case cfgs.Mimir.RawConfig == "":
 		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config", "user", cfgs.Grafana.User)
-		// TODO: parse Grafana config.
+		return parseGrafanaConfig(cfgs.Grafana)
 
+	// Both configurations.
 	default:
 		level.Debug(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
+		return cfgs.Mimir, nil
 	}
 
-	return cfg
+	return cfg, nil
+}
+
+func parseGrafanaConfig(cfg alertspb.GrafanaAlertConfigDesc) (alertspb.AlertConfigDesc, error) {
+	var amCfg GrafanaAlertmanagerConfig
+	if err := json.Unmarshal([]byte(cfg.RawConfig), &amCfg); err != nil {
+		return alertspb.AlertConfigDesc{}, fmt.Errorf("failed to unmarshal Grafana Alertmanager configuration %w", err)
+	}
+
+	rawCfg, err := json.Marshal(amCfg.AlertmanagerConfig)
+	if err != nil {
+		return alertspb.AlertConfigDesc{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
+	}
+
+	return alertspb.ToProto(string(rawCfg), amCfg.Templates, cfg.User), nil
 }
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
