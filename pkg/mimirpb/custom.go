@@ -116,19 +116,21 @@ func (m *WriteRequest) splitTimeseriesByMaxMarshalSize(maxSize int) []*WriteRequ
 		return nil
 	}
 
-	newPartialReq := func(preallocTimeseries int) *WriteRequest {
-		return &WriteRequest{
+	newPartialReq := func(preallocTimeseries int) (*WriteRequest, int) {
+		req := &WriteRequest{
 			Timeseries:              preallocSliceIfNeeded[PreallocTimeseries](preallocTimeseries),
 			Source:                  m.Source,
 			SkipLabelNameValidation: m.SkipLabelNameValidation,
 		}
+
+		return req, req.Size()
 	}
 
 	// The partial requests returned by this function will not contain any Metadata,
 	// so we first compute the request size without it.
 	reqSizeWithoutMetadata := m.SizeWithoutMetadata()
 	if reqSizeWithoutMetadata <= maxSize {
-		partialReq := newPartialReq(0)
+		partialReq, _ := newPartialReq(0)
 		partialReq.Timeseries = m.Timeseries
 		return []*WriteRequest{partialReq}
 	}
@@ -138,9 +140,7 @@ func (m *WriteRequest) splitTimeseriesByMaxMarshalSize(maxSize int) []*WriteRequ
 	estimatedPartialReqs := (reqSizeWithoutMetadata / maxSize) + 2
 	estimatedTimeseriesPerPartialReq := (len(m.Timeseries) / estimatedPartialReqs) + 2
 
-	partialReq := newPartialReq(estimatedTimeseriesPerPartialReq)
-	partialReqSize := partialReq.Size()
-
+	partialReq, partialReqSize := newPartialReq(estimatedTimeseriesPerPartialReq)
 	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
 
 	// Split timeseries into partial write requests.
@@ -152,7 +152,7 @@ func (m *WriteRequest) splitTimeseriesByMaxMarshalSize(maxSize int) []*WriteRequ
 		if partialReqSize+seriesSize > maxSize && !partialReq.IsEmpty() {
 			// The current partial request is full (or close to be full), so we create a new one.
 			partialReqs = append(partialReqs, partialReq)
-			partialReq = newPartialReq(estimatedTimeseriesPerPartialReq)
+			partialReq, partialReqSize = newPartialReq(estimatedTimeseriesPerPartialReq)
 		}
 
 		partialReq.Timeseries = append(partialReq.Timeseries, series)
@@ -171,19 +171,20 @@ func (m *WriteRequest) splitMetadataByMaxMarshalSize(maxSize int) []*WriteReques
 		return nil
 	}
 
-	newPartialReq := func(preallocMetadata int) *WriteRequest {
-		return &WriteRequest{
+	newPartialReq := func(preallocMetadata int) (*WriteRequest, int) {
+		req := &WriteRequest{
 			Metadata:                preallocSliceIfNeeded[*MetricMetadata](preallocMetadata),
 			Source:                  m.Source,
 			SkipLabelNameValidation: m.SkipLabelNameValidation,
 		}
+		return req, req.Size()
 	}
 
 	// The partial requests returned by this function will not contain any Timeseries,
 	// so we first compute the request size without it.
 	reqSizeWithoutTimeseries := m.SizeWithoutTimeseries()
 	if reqSizeWithoutTimeseries <= maxSize {
-		partialReq := newPartialReq(0)
+		partialReq, _ := newPartialReq(0)
 		partialReq.Metadata = m.Metadata
 		return []*WriteRequest{partialReq}
 	}
@@ -193,9 +194,7 @@ func (m *WriteRequest) splitMetadataByMaxMarshalSize(maxSize int) []*WriteReques
 	estimatedPartialReqs := (reqSizeWithoutTimeseries / maxSize) + 2
 	estimatedMetadataPerPartialReq := (len(m.Metadata) / estimatedPartialReqs) + 2
 
-	partialReq := newPartialReq(estimatedMetadataPerPartialReq)
-	partialReqSize := partialReq.Size()
-
+	partialReq, partialReqSize := newPartialReq(estimatedMetadataPerPartialReq)
 	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
 
 	// Split metadata into partial write requests.
@@ -207,7 +206,7 @@ func (m *WriteRequest) splitMetadataByMaxMarshalSize(maxSize int) []*WriteReques
 		if partialReqSize+metadataSize > maxSize && !partialReq.IsEmpty() {
 			// The current partial request is full (or close to be full), so we create a new one.
 			partialReqs = append(partialReqs, partialReq)
-			partialReq = newPartialReq(estimatedMetadataPerPartialReq)
+			partialReq, partialReqSize = newPartialReq(estimatedMetadataPerPartialReq)
 		}
 
 		partialReq.Metadata = append(partialReq.Metadata, metadata)
