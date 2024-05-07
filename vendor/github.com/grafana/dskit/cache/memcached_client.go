@@ -36,7 +36,7 @@ var (
 	ErrInvalidWriteBufferSizeBytes             = errors.New("invalid write buffer size specified (must be greater than 0)")
 	ErrInvalidReadBufferSizeBytes              = errors.New("invalid read buffer size specified (must be greater than 0)")
 
-	_ RemoteCacheClient = (*MemcachedClient)(nil)
+	_ Cache = (*MemcachedClient)(nil)
 )
 
 // memcachedClientBackend is an interface used to mock the underlying client in tests.

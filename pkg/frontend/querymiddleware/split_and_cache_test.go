@@ -697,7 +697,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 
 			// Check if the response was cached.
 			cacheKey := cacheHashKey(keyGenerator.QueryRequest(ctx, userID, req))
-			found := cacheBackend.Fetch(ctx, []string{cacheKey})
+			found := cacheBackend.GetMulti(ctx, []string{cacheKey})
 
 			if len(testData.expectedCachedResponses) == 0 {
 				assert.Empty(t, found)
@@ -1233,7 +1233,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		// Simulate an hash collision on "key-1".
 		buf, err := proto.Marshal(&CachedResponse{Key: "another", Extents: []Extent{mkExtent(10, 20)}})
 		require.NoError(t, err)
-		cacheBackend.StoreAsync(map[string][]byte{cacheHashKey("key-1"): buf}, 0)
+		cacheBackend.SetMultiAsync(map[string][]byte{cacheHashKey("key-1"): buf}, 0)
 
 		mw.storeCacheExtents("key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 

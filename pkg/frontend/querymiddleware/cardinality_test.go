@@ -227,7 +227,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			}
 			numSetupStoreCalls := 0
 			if len(tt.cacheContent) > 0 {
-				c.StoreAsync(tt.cacheContent, time.Minute)
+				c.SetMultiAsync(tt.cacheContent, time.Minute)
 				numSetupStoreCalls++
 			}
 
