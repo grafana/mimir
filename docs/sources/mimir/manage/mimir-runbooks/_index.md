@@ -2139,6 +2139,7 @@ This error only occurs when an administrator has explicitly define a blocked lis
 - `/cortex.Ingester/Push`
 - `api_v1_push`
 - `api_v1_push_influx_write`
+- `otlp_v1_metrics`
 
 **Read path**:
 
