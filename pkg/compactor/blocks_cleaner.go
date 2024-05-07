@@ -423,8 +423,8 @@ func withRetries(ctx context.Context, perCallTimeout time.Duration, f func(conte
 
 	for b.Ongoing() {
 		rctx, cancel := context.WithTimeout(ctx, perCallTimeout)
-		defer cancel()
 		err = f(rctx)
+		cancel()
 		if err == nil || !shouldRetry(err) {
 			return err
 		}
