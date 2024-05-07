@@ -500,10 +500,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	err = withRetries(ctx, 5*time.Minute, c.retryConfig, log.With(userLogger, "op", "updateIndex"), func(ctx context.Context) error {
 		var err error
 		idx, partials, err = w.UpdateIndex(ctx, idx)
-		if err != nil {
-			return err
-		}
-		return nil
+		return err
 	})
 	if err != nil {
 		return fmt.Errorf("update index: %w", err)
