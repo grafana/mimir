@@ -123,6 +123,7 @@
 ### Documentation
 
 * [ENHANCEMENT] Clarify Compactor and its storage volume when configured under Kubernetes. #7675
+* [ENHANCEMENT] Add OTLP route to _Mimir routes by path_ runbooks section. #8074
 
 ### Tools
 
