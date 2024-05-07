@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
@@ -120,6 +121,9 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	cfgProvider := newMockConfigProvider()
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	// Don't waste time sleeping in tests.
+	cleaner.retryConfig.MinBackoff = 0
+	cleaner.retryConfig.MaxBackoff = 0
 
 	var mockIndexLayer *mockIndexLayerWithTimeouts
 
@@ -1265,10 +1269,21 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 	}
 }
 
+type tmpErr struct{}
+
+func (e *tmpErr) Error() string   { return "invalid widget" }
+func (e *tmpErr) Temporary() bool { return true }
+
 func TestBucketCleaner_withRetries(t *testing.T) {
-	t.Run("eventually succeeds", func(t *testing.T) {
+	rc := backoff.Config{
+		MinBackoff: 0,
+		MaxBackoff: 0,
+		MaxRetries: 3,
+	}
+	l := log.NewNopLogger()
+	t.Run("eventually succeeds on deadline exceeded", func(t *testing.T) {
 		calls := 0
-		err := withRetries(context.Background(), 10*time.Hour, func(ctx context.Context) error {
+		err := withRetries(context.Background(), 10*time.Hour, rc, l, func(ctx context.Context) error {
 			calls++
 			if calls <= 2 {
 				return context.DeadlineExceeded
@@ -1278,9 +1293,21 @@ func TestBucketCleaner_withRetries(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 3, calls)
 	})
+	t.Run("eventually succeeds on temp err", func(t *testing.T) {
+		calls := 0
+		err := withRetries(context.Background(), 64000*time.Hour, rc, l, func(ctx context.Context) error {
+			calls++
+			if calls <= 2 {
+				return fmt.Errorf("problem: %w", &tmpErr{})
+			}
+			return nil
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, 3, calls)
+	})
 	t.Run("exhausts retries", func(t *testing.T) {
 		calls := 0
-		err := withRetries(context.Background(), 10*time.Hour, func(ctx context.Context) error {
+		err := withRetries(context.Background(), 10*time.Hour, rc, l, func(ctx context.Context) error {
 			calls++
 			if calls <= 900 {
 				return context.DeadlineExceeded
@@ -1293,7 +1320,7 @@ func TestBucketCleaner_withRetries(t *testing.T) {
 	})
 	t.Run("no retries attempted", func(t *testing.T) {
 		calls := 0
-		err := withRetries(context.Background(), 0, func(ctx context.Context) error {
+		err := withRetries(context.Background(), 0, rc, l, func(ctx context.Context) error {
 			calls++
 			if calls <= 9 {
 				return context.DeadlineExceeded
@@ -1306,7 +1333,7 @@ func TestBucketCleaner_withRetries(t *testing.T) {
 	})
 	t.Run("no retries needed", func(t *testing.T) {
 		calls := 0
-		err := withRetries(context.Background(), 94000*time.Hour, func(ctx context.Context) error {
+		err := withRetries(context.Background(), 94000*time.Hour, rc, l, func(ctx context.Context) error {
 			calls++
 			return nil
 		})
@@ -1315,7 +1342,7 @@ func TestBucketCleaner_withRetries(t *testing.T) {
 	})
 	t.Run("doesn't retry things that aren't timeouts", func(t *testing.T) {
 		calls := 0
-		err := withRetries(context.Background(), 0, func(ctx context.Context) error {
+		err := withRetries(context.Background(), 0, rc, l, func(ctx context.Context) error {
 			calls++
 			return io.ErrUnexpectedEOF
 		})

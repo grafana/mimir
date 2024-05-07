@@ -62,6 +62,7 @@ type BlocksCleaner struct {
 	readIndex    readIndexFunc
 	writeIndex   writeIndexFunc
 	singleFlight *concurrency.LimitedConcurrencySingleFlight
+	retryConfig  backoff.Config
 
 	// Keep track of the last owned users.
 	lastOwnedUsers []string
@@ -84,6 +85,12 @@ type BlocksCleaner struct {
 }
 
 func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
+	retryConfig := backoff.Config{
+		MinBackoff: 20 * time.Millisecond,
+		MaxBackoff: 250 * time.Millisecond,
+		MaxRetries: 3,
+	}
+
 	c := &BlocksCleaner{
 		cfg:          cfg,
 		bucketClient: bucketClient,
@@ -93,6 +100,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		writeIndex:   bucketindex.WriteIndex,
 		cfgProvider:  cfgProvider,
 		singleFlight: concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
+		retryConfig:  retryConfig,
 		logger:       log.With(logger, "component", "cleaner"),
 		runsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_block_cleanup_started_total",
@@ -406,20 +414,16 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 }
 
 // withRetries invokes the given function as many times as it takes according to
-// the backoff config. Each invocation will be given perCallTimeout to
+// the backoff config. Each invocation of f will be given perCallTimeout to
 // complete. This is specifically designed to retry timeouts due to flaky
 // connectivity with the objstore backend.
-func withRetries(ctx context.Context, perCallTimeout time.Duration, f func(context.Context) error) error {
+func withRetries(ctx context.Context, perCallTimeout time.Duration, bc backoff.Config, logger log.Logger, f func(context.Context) error) error {
 	if perCallTimeout <= 0 {
 		return f(ctx)
 	}
 
 	var err error
-	b := backoff.New(ctx, backoff.Config{
-		MinBackoff: 20 * time.Millisecond,
-		MaxBackoff: 250 * time.Millisecond,
-		MaxRetries: 3,
-	})
+	b := backoff.New(ctx, bc)
 
 	for b.Ongoing() {
 		rctx, cancel := context.WithTimeout(ctx, perCallTimeout)
@@ -428,14 +432,25 @@ func withRetries(ctx context.Context, perCallTimeout time.Duration, f func(conte
 		if err == nil || !shouldRetry(err) {
 			return err
 		}
+		level.Info(logger).Log("msg", "single call failed with error", "err", err)
 		b.Wait()
 	}
 
+	level.Warn(logger).Log("msg", "retries exhausted")
 	return fmt.Errorf("failed with retries: %w (last err: %w)", b.Err(), err)
 }
 
 func shouldRetry(err error) bool {
-	return errors.Is(err, context.DeadlineExceeded)
+	var tempErr interface{ Temporary() bool }
+
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return true
+	case errors.As(err, &tempErr):
+		return tempErr.Temporary()
+	}
+
+	return false
 }
 
 func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
@@ -454,7 +469,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	// Read the bucket index.
 
 	var idx *bucketindex.Index
-	err := withRetries(ctx, 1*time.Minute, func(ctx context.Context) error {
+	err := withRetries(ctx, 1*time.Minute, c.retryConfig, log.With(userLogger, "op", "readIndex"), func(ctx context.Context) error {
 		var err error
 		idx, err = c.readIndex(ctx, c.bucketClient, userID, c.cfgProvider, userLogger)
 		return err
@@ -482,13 +497,12 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, userLogger)
 
 	var partials map[ulid.ULID]error
-	err = withRetries(ctx, 5*time.Minute, func(ctx context.Context) error {
-		newIdx, p, err := w.UpdateIndex(ctx, idx)
+	err = withRetries(ctx, 5*time.Minute, c.retryConfig, log.With(userLogger, "op", "updateIndex"), func(ctx context.Context) error {
+		var err error
+		idx, partials, err = w.UpdateIndex(ctx, idx)
 		if err != nil {
 			return err
 		}
-		idx = newIdx
-		partials = p
 		return nil
 	})
 	if err != nil {
@@ -519,7 +533,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 			return fmt.Errorf("delete remaining: %w", err)
 		}
 	} else {
-		if err := withRetries(ctx, 3*time.Minute, func(ctx context.Context) error {
+		if err := withRetries(ctx, 3*time.Minute, c.retryConfig, log.With(userLogger, "op", "writeIndex"), func(ctx context.Context) error {
 			return c.writeIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx)
 		}); err != nil {
 			return fmt.Errorf("write index: %w", err)
