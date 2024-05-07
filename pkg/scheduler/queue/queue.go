@@ -222,8 +222,12 @@ func (q *RequestQueue) dispatcherLoop() {
 
 			for currentElement != nil {
 				call := currentElement.Value.(*nextRequestForQuerierCall)
+				// TODO
 				//call.sendError(ErrStopped)
-				q.querierChannels[call.querierID] <- nextRequestForQuerier{err: ErrStopped}
+				select {
+				case q.querierChannels[call.querierID] <- nextRequestForQuerier{err: ErrStopped}:
+				case <-call.ctx.Done():
+				}
 				currentElement = currentElement.Next()
 			}
 
@@ -276,8 +280,13 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 	req, tenant, idx, err := broker.dequeueRequestForQuerier(call.lastUserIndex.last, call.querierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
+		// TODO
 		//call.sendError(err)
-		q.querierChannels[call.querierID] <- nextRequestForQuerier{err: err}
+		//q.querierChannels[call.querierID] <- nextRequestForQuerier{err: err}
+		select {
+		case q.querierChannels[call.querierID] <- nextRequestForQuerier{err: err}:
+		case <-call.ctx.Done():
+		}
 		// ...and remove the waiting GetNextRequestForQuerier call from our list.
 		return true
 	}
