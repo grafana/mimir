@@ -1355,7 +1355,7 @@ func (m *mockIndexLayerWithTimeouts) ReadIndex(ctx context.Context, bkt objstore
 
 func (m *mockIndexLayerWithTimeouts) WriteIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, idx *bucketindex.Index) error {
 	m.writeCalls++
-	if m.readCalls <= m.initialTimeouts {
+	if m.writeCalls <= m.initialTimeouts {
 		return context.DeadlineExceeded
 	}
 	m.writeSuccess = true
