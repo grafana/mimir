@@ -10,6 +10,12 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
+const (
+	// estimatedMarshalledSliceEntryOverhead is the estimated number of extra bytes to marshal a slice entry in
+	// the average case scenario (1b + 2b for the length).
+	estimatedMarshalledSliceEntryOverhead = 3
+)
+
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
 // in the WriteRequest. Returns math.MaxInt64 if the request is empty.
 func (m *WriteRequest) MinTimestamp() int64 {
@@ -36,6 +42,183 @@ func (m *WriteRequest) MinTimestamp() int64 {
 	}
 
 	return min
+}
+
+// IsEmpty returns whether the WriteRequest has no data to ingest.
+func (m *WriteRequest) IsEmpty() bool {
+	return len(m.Timeseries) == 0 && len(m.Metadata) == 0
+}
+
+// SizeWithoutMetadata is like Size() but subtracts the marshalled Metadata size.
+func (m *WriteRequest) SizeWithoutMetadata() int {
+	if len(m.Metadata) == 0 {
+		return m.Size()
+	}
+
+	origMetadata := m.Metadata
+	m.Metadata = nil
+	size := m.Size()
+	m.Metadata = origMetadata
+
+	return size
+}
+
+// SizeWithoutTimeseries is like Size() but subtracts the marshalled Timeseries size.
+func (m *WriteRequest) SizeWithoutTimeseries() int {
+	if len(m.Timeseries) == 0 {
+		return m.Size()
+	}
+
+	origTimeseries := m.Timeseries
+	m.Timeseries = nil
+	size := m.Size()
+	m.Timeseries = origTimeseries
+
+	return size
+}
+
+// SplitByMaxMarshalSize splits the WriteRequest into multiple ones, where each partial WriteRequest marshalled size
+// is at most maxSize.
+//
+// This function guarantees that a single Timeseries or Metadata entry is never split across multiple requests.
+// For this reason, this function is a best-effort: if a single Timeseries or Metadata marshalled size is bigger
+// than maxSize, then the returned partial WriteRequest marshalled size will be bigger than maxSize too.
+//
+// The returned partial WriteRequests are NOT a deep copy of the input one; they may contain references to slices
+// and data from the original WriteRequest.
+// TODO benchmark
+// TODO unit test: consider adding a fuzzy test to stress this logic
+func (m *WriteRequest) SplitByMaxMarshalSize(maxSize int) []*WriteRequest {
+	if m.Size() <= maxSize {
+		return []*WriteRequest{m}
+	}
+
+	partialReqsWithTimeseries := m.splitTimeseriesByMaxMarshalSize(maxSize)
+	partialReqsWithMetadata := m.splitMetadataByMaxMarshalSize(maxSize)
+
+	// Most of the times a write request only have either Timeseries or Metadata.
+	if len(partialReqsWithMetadata) == 0 {
+		return partialReqsWithTimeseries
+	}
+	if len(partialReqsWithTimeseries) == 0 {
+		return partialReqsWithMetadata
+	}
+
+	merged := make([]*WriteRequest, 0, len(partialReqsWithTimeseries)+len(partialReqsWithMetadata))
+	merged = append(merged, partialReqsWithTimeseries...)
+	merged = append(merged, partialReqsWithMetadata...)
+
+	return merged
+}
+
+func (m *WriteRequest) splitTimeseriesByMaxMarshalSize(maxSize int) []*WriteRequest {
+	if len(m.Timeseries) == 0 {
+		return nil
+	}
+
+	newPartialReq := func(preallocTimeseries int) *WriteRequest {
+		return &WriteRequest{
+			Timeseries:              preallocSliceIfNeeded[PreallocTimeseries](preallocTimeseries),
+			Source:                  m.Source,
+			SkipLabelNameValidation: m.SkipLabelNameValidation,
+		}
+	}
+
+	// The partial requests returned by this function will not contain any Metadata,
+	// so we first compute the request size without it.
+	reqSizeWithoutMetadata := m.SizeWithoutMetadata()
+	if reqSizeWithoutMetadata <= maxSize {
+		partialReq := newPartialReq(0)
+		partialReq.Timeseries = m.Timeseries
+		return []*WriteRequest{partialReq}
+	}
+
+	// We assume that different timeseries roughly have the same size (no huge outliers)
+	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up).
+	estimatedPartialReqs := (reqSizeWithoutMetadata / maxSize) + 2
+	estimatedTimeseriesPerPartialReq := (len(m.Timeseries) / estimatedPartialReqs) + 2
+
+	partialReq := newPartialReq(estimatedTimeseriesPerPartialReq)
+	partialReqSize := partialReq.Size()
+
+	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
+
+	// Split timeseries into partial write requests.
+	for _, series := range m.Timeseries {
+		seriesSize := series.Size()
+
+		// If the partial request is empty we add the series anyway, in order to avoid an infinite loop
+		// if a single timeseries is bigger than the limit.
+		if partialReqSize+seriesSize > maxSize && !partialReq.IsEmpty() {
+			// The current partial request is full (or close to be full), so we create a new one.
+			partialReqs = append(partialReqs, partialReq)
+			partialReq = newPartialReq(estimatedTimeseriesPerPartialReq)
+		}
+
+		partialReq.Timeseries = append(partialReq.Timeseries, series)
+		partialReqSize += seriesSize + estimatedMarshalledSliceEntryOverhead
+	}
+
+	if !partialReq.IsEmpty() {
+		partialReqs = append(partialReqs, partialReq)
+	}
+
+	return partialReqs
+}
+
+func (m *WriteRequest) splitMetadataByMaxMarshalSize(maxSize int) []*WriteRequest {
+	if len(m.Metadata) == 0 {
+		return nil
+	}
+
+	newPartialReq := func(preallocMetadata int) *WriteRequest {
+		return &WriteRequest{
+			Metadata:                preallocSliceIfNeeded[*MetricMetadata](preallocMetadata),
+			Source:                  m.Source,
+			SkipLabelNameValidation: m.SkipLabelNameValidation,
+		}
+	}
+
+	// The partial requests returned by this function will not contain any Timeseries,
+	// so we first compute the request size without it.
+	reqSizeWithoutTimeseries := m.SizeWithoutTimeseries()
+	if reqSizeWithoutTimeseries <= maxSize {
+		partialReq := newPartialReq(0)
+		partialReq.Metadata = m.Metadata
+		return []*WriteRequest{partialReq}
+	}
+
+	// We assume that different metadata roughly have the same size (no huge outliers)
+	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up).
+	estimatedPartialReqs := (reqSizeWithoutTimeseries / maxSize) + 2
+	estimatedMetadataPerPartialReq := (len(m.Metadata) / estimatedPartialReqs) + 2
+
+	partialReq := newPartialReq(estimatedMetadataPerPartialReq)
+	partialReqSize := partialReq.Size()
+
+	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
+
+	// Split metadata into partial write requests.
+	for _, metadata := range m.Metadata {
+		metadataSize := metadata.Size()
+
+		// If the partial request is empty we add the metadata anyway, in order to avoid an infinite loop
+		// if a single metadata is bigger than the limit.
+		if partialReqSize+metadataSize > maxSize && !partialReq.IsEmpty() {
+			// The current partial request is full (or close to be full), so we create a new one.
+			partialReqs = append(partialReqs, partialReq)
+			partialReq = newPartialReq(estimatedMetadataPerPartialReq)
+		}
+
+		partialReq.Metadata = append(partialReq.Metadata, metadata)
+		partialReqSize += metadataSize + estimatedMarshalledSliceEntryOverhead
+	}
+
+	if !partialReq.IsEmpty() {
+		partialReqs = append(partialReqs, partialReq)
+	}
+
+	return partialReqs
 }
 
 func (h Histogram) IsFloatHistogram() bool {
