@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -210,8 +211,11 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	}
 
 	if options.objStoreTimeouts {
-		assert.True(t, mockIndexLayer.readSuccess)
-		assert.True(t, mockIndexLayer.writeSuccess)
+		readCalls, readSuccess, writeCalls, writeSuccess := mockIndexLayer.State()
+		assert.Greater(t, readCalls, 0)
+		assert.True(t, readSuccess)
+		assert.Greater(t, writeCalls, 0)
+		assert.True(t, writeSuccess)
 	}
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -1338,28 +1342,42 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 // that can time-out on initial calls.
 type mockIndexLayerWithTimeouts struct {
 	initialTimeouts int
-	readCalls       int
-	readSuccess     bool
-	writeCalls      int
-	writeSuccess    bool
+
+	mu           sync.Mutex
+	readCalls    int
+	readSuccess  bool
+	writeCalls   int
+	writeSuccess bool
 }
 
 func (m *mockIndexLayerWithTimeouts) ReadIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, logger log.Logger) (*bucketindex.Index, error) {
+	m.mu.Lock()
 	m.readCalls++
 	if m.readCalls <= m.initialTimeouts {
+		m.mu.Unlock()
 		return nil, context.DeadlineExceeded
 	}
 	m.readSuccess = true
+	m.mu.Unlock()
 	return bucketindex.ReadIndex(ctx, bkt, userID, cfgProvider, logger)
 }
 
 func (m *mockIndexLayerWithTimeouts) WriteIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, idx *bucketindex.Index) error {
+	m.mu.Lock()
 	m.writeCalls++
 	if m.writeCalls <= m.initialTimeouts {
+		m.mu.Unlock()
 		return context.DeadlineExceeded
 	}
 	m.writeSuccess = true
+	m.mu.Unlock()
 	return bucketindex.WriteIndex(ctx, bkt, userID, cfgProvider, idx)
+}
+
+func (m *mockIndexLayerWithTimeouts) State() (int, bool, int, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.readCalls, m.readSuccess, m.writeCalls, m.writeSuccess
 }
 
 type mockConfigProvider struct {
