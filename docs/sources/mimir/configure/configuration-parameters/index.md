@@ -3026,8 +3026,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (advanced) Controls how far into the future incoming samples and exemplars are
 # accepted compared to the wall clock. Any sample or exemplar will be rejected
 # if its timestamp is greater than '(now + grace_period)'. This configuration is
-# enforced in the distributor, ingester and query-frontend (to avoid querying
-# too far into the future).
+# enforced in the distributor and ingester.
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
 
@@ -3525,6 +3524,13 @@ bucket_store:
   # storage. The limit is shared across all tenants.
   # CLI flag: -blocks-storage.bucket-store.max-concurrent
   [max_concurrent: <int> | default = 100]
+
+  # (advanced) Timeout for the queue of queries waiting for execution. If the
+  # queue is full and the timeout is reached, the query will be retried on
+  # another store-gateway. 0 means no timeout and all queries will wait
+  # indefinitely for their turn.
+  # CLI flag: -blocks-storage.bucket-store.max-concurrent-queue-timeout
+  [max_concurrent_queue_timeout: <duration> | default = 0s]
 
   # (advanced) Maximum number of concurrent tenants synching blocks.
   # CLI flag: -blocks-storage.bucket-store.tenant-sync-concurrency

@@ -142,7 +142,7 @@ func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
 	}
 
 	reg := prometheus.NewPedanticRegistry()
-	codec := NewPrometheusCodec(reg, formatJSON)
+	codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON)
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
