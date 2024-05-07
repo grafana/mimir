@@ -94,7 +94,6 @@ type RequestQueue struct {
 	queueBroker       *queueBroker
 
 	nextRequestForQuerierCalls chan *nextRequestForQuerierCall
-	querierChannels            map[QuerierID]chan nextRequestForQuerier
 
 	queueLength       *prometheus.GaugeVec   // Per user and reason.
 	discardedRequests *prometheus.CounterVec // Per user.
@@ -155,7 +154,6 @@ func NewRequestQueue(
 		queueBroker:       newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, forgetDelay),
 
 		nextRequestForQuerierCalls: make(chan *nextRequestForQuerierCall),
-		querierChannels:            make(map[QuerierID]chan nextRequestForQuerier),
 	}
 
 	q.Service = services.NewTimerService(forgetCheckPeriod, q.starting, q.forgetDisconnectedQueriers, q.stop).WithName("request queue")
@@ -222,12 +220,7 @@ func (q *RequestQueue) dispatcherLoop() {
 
 			for currentElement != nil {
 				call := currentElement.Value.(*nextRequestForQuerierCall)
-				// TODO
-				//call.sendError(ErrStopped)
-				select {
-				case q.querierChannels[call.querierID] <- nextRequestForQuerier{err: ErrStopped}:
-				case <-call.ctx.Done():
-				}
+				call.sendError(ErrStopped)
 				currentElement = currentElement.Next()
 			}
 
@@ -280,13 +273,7 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 	req, tenant, idx, err := broker.dequeueRequestForQuerier(call.lastUserIndex.last, call.querierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
-		// TODO
-		//call.sendError(err)
-		//q.querierChannels[call.querierID] <- nextRequestForQuerier{err: err}
-		select {
-		case q.querierChannels[call.querierID] <- nextRequestForQuerier{err: err}:
-		case <-call.ctx.Done():
-		}
+		call.sendError(err)
 		// ...and remove the waiting GetNextRequestForQuerier call from our list.
 		return true
 	}
@@ -303,16 +290,7 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 		err:           nil,
 	}
 
-	// TODO send to querier channel instead
-	//requestSent := call.send(reqForQuerier)
-	requestSent := false
-	select {
-	case q.querierChannels[call.querierID] <- reqForQuerier:
-		requestSent = true
-	case <-call.ctx.Done():
-		// call was canceled before the nextRequestForQuerier was read
-	}
-
+	requestSent := call.send(reqForQuerier)
 	if requestSent {
 		q.queueLength.WithLabelValues(string(tenant.tenantID)).Dec()
 	} else {
@@ -367,13 +345,11 @@ func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIn
 		processed:     make(chan nextRequestForQuerier),
 	}
 
-	// TODO read from querier channel instead
 	select {
 	case q.nextRequestForQuerierCalls <- call:
 		// The dispatcher now knows we're waiting. Either we'll get a request to send to a querier, or we'll cancel.
 		select {
-		//case result := <-call.processed:
-		case result := <-q.querierChannels[call.querierID]:
+		case result := <-call.processed:
 			return result.req, result.lastUserIndex, result.err
 		case <-ctx.Done():
 			return nil, last, ctx.Err()
@@ -459,9 +435,6 @@ func (q *RequestQueue) processQuerierOperation(querierOp querierOperation) {
 func (q *RequestQueue) processRegisterQuerierConnection(querierID QuerierID) {
 	q.connectedQuerierWorkers.Inc()
 	q.queueBroker.addQuerierConnection(querierID)
-	if q.querierChannels[querierID] == nil {
-		q.querierChannels[querierID] = make(chan nextRequestForQuerier)
-	}
 }
 
 func (q *RequestQueue) processUnregisterQuerierConnection(querierID QuerierID) {
@@ -470,12 +443,7 @@ func (q *RequestQueue) processUnregisterQuerierConnection(querierID QuerierID) {
 }
 
 func (q *RequestQueue) processForgetDisconnectedQueriers() {
-	forgottenQuerierIDs := q.queueBroker.forgetDisconnectedQueriers(time.Now())
-	for _, querierID := range forgottenQuerierIDs {
-		if querierChan := q.querierChannels[querierID]; querierChan != nil && len(querierChan) == 0 {
-			delete(q.querierChannels, querierID)
-		}
-	}
+	q.queueBroker.forgetDisconnectedQueriers(time.Now())
 }
 
 type nextRequestForQuerierCall struct {
