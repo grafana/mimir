@@ -220,6 +220,12 @@ func TestActiveSeries_ContainsRef(t *testing.T) {
 }
 
 func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
+	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3|4"}`}))
+	c := NewActiveSeries(asm, DefaultTimeout)
+	testUpdateSeries(t, c)
+}
+
+func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
 	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
 	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
@@ -227,9 +233,6 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	ref5, ls5 := storage.SeriesRef(5), labels.FromStrings("a", "5")
 	ref6 := storage.SeriesRef(6) // same as ls2
 
-	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3|4"}`}))
-
-	c := NewActiveSeries(asm, DefaultTimeout)
 	valid := c.Purge(time.Now())
 	assert.True(t, valid)
 	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := c.ActiveWithMatchers()
@@ -431,6 +434,27 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	// Make sure deleted is empty, so we're not leaking.
 	assert.Empty(t, c.deleted.refs)
 	assert.Empty(t, c.deleted.keys)
+}
+
+func TestActiveSeries_UpdateSeries_Clear(t *testing.T) {
+	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3|4"}`}))
+	c := NewActiveSeries(asm, DefaultTimeout)
+	testUpdateSeries(t, c)
+
+	c.Clear()
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := c.ActiveWithMatchers()
+	assert.Equal(t, 0, allActive)
+	assert.Equal(t, []int{0}, activeMatching)
+	assert.Equal(t, 0, allActiveHistograms)
+	assert.Equal(t, []int{0}, activeMatchingHistograms)
+	assert.Equal(t, 0, allActiveBuckets)
+	assert.Equal(t, []int{0}, activeMatchingBuckets)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 0, allActive)
+	assert.Equal(t, 0, allActiveHistograms)
+	assert.Equal(t, 0, allActiveBuckets)
+
+	testUpdateSeries(t, c)
 }
 
 func labelsWithHashCollision() (labels.Labels, labels.Labels) {

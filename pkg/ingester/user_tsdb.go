@@ -614,6 +614,7 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 func (u *userTSDB) computeOwnedSeries() int {
 	// This can happen if ingester doesn't own this tenant anymore.
 	if len(u.ownedTokenRanges) == 0 {
+		u.activeSeries.Clear()
 		return 0
 	}
 

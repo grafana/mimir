@@ -215,6 +215,16 @@ func (c *ActiveSeries) Delete(ref chunks.HeadSeriesRef) {
 	c.stripes[stripeID].remove(storage.SeriesRef(ref))
 }
 
+func (c *ActiveSeries) Clear() {
+	for s := 0; s < numStripes; s++ {
+		c.stripes[s].clear()
+	}
+	// c.deleted keeps track of series which were removed from memory, but might come back with a different SeriesRef.
+	// If they do come back, then we use deletedSeries to stop tracking their previous entry.
+	// We can also clear the deleted series because we've already stopped tracking all series.
+	c.deleted.clear()
+}
+
 func (s *seriesStripe) containsRef(ref storage.SeriesRef) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -386,7 +396,6 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 	return e.nanos, true
 }
 
-// nolint // Linter reports that this method is unused, but it is.
 func (s *seriesStripe) clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -580,4 +589,14 @@ func (ds *deletedSeries) purge(ref storage.SeriesRef) {
 
 	delete(ds.keys, ref)
 	delete(ds.refs, key)
+}
+
+func (ds *deletedSeries) clear() {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
+	// nil the maps to release memory.
+	// They will be reinitilized if the tenant resumes sending series.
+	ds.keys = nil
+	ds.refs = nil
 }
