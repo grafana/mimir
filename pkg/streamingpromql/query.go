@@ -163,6 +163,34 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 				Matchers:  vectorSelector.LabelMatchers,
 			},
 		}, nil
+	case *parser.BinaryExpr:
+		if e.LHS.Type() != parser.ValueTypeVector || e.RHS.Type() != parser.ValueTypeVector {
+			return nil, NewNotSupportedError("binary expression with scalars")
+		}
+
+		if e.VectorMatching.Card != parser.CardOneToOne {
+			return nil, NewNotSupportedError(fmt.Sprintf("binary expression with %v matching", e.VectorMatching.Card))
+		}
+
+		if e.Op.IsComparisonOperator() || e.Op.IsSetOperator() {
+			return nil, NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", e.Op))
+		}
+
+		lhs, err := q.convertToOperator(e.LHS)
+		if err != nil {
+			return nil, err
+		}
+
+		rhs, err := q.convertToOperator(e.RHS)
+		if err != nil {
+			return nil, err
+		}
+
+		return &operator.BinaryOperator{
+			Left:  lhs,
+			Right: rhs,
+			Op:    e.Op,
+		}, nil
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToOperator(e.Expr)
