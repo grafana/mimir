@@ -8,11 +8,14 @@ package operator
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"math"
 	"slices"
+	"time"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 )
 
 type BinaryOperation struct {
@@ -24,6 +27,8 @@ type BinaryOperation struct {
 
 	// We need to retain these so that NextSeries() can return an error message with the series labels when
 	// multiple points match on a single side.
+	// Note that we don't retain the output series metadata: if we need to return an error message, we can compute
+	// the output series labels from these again.
 	leftMetadata  []SeriesMetadata
 	rightMetadata []SeriesMetadata
 
@@ -146,6 +151,7 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata,
 	return allMetadata, nil
 }
 
+// hashFunc returns a function that computes the hash of the output group this series belongs to.
 func (b *BinaryOperation) hashFunc() func(labels.Labels) uint64 {
 	buf := make([]byte, 0, 1024)
 	names := b.VectorMatching.MatchingLabels
@@ -170,6 +176,7 @@ func (b *BinaryOperation) hashFunc() func(labels.Labels) uint64 {
 	}
 }
 
+// labelsFunc returns a function that computes the labels of the output group this series belongs to.
 func (b *BinaryOperation) labelsFunc() func(labels.Labels) labels.Labels {
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
@@ -197,13 +204,12 @@ func (b *BinaryOperation) Next(ctx context.Context) (InstantVectorSeriesData, er
 	thisSeries := b.remainingSeries[0]
 	b.remainingSeries = b.remainingSeries[1:]
 
-	// TODO: need to store which series are actually used on each side in SeriesMetadata() above
-	// TODO: need to return original slices from Left.Next() and Right.Next() to the pool
-	// Solution: return a type like { data InstantVectorSeriesData, refCount int } from getSeries() and merge(),
-	// use this to track when it is safe to return slices here or in merge() - will work for one-to-one, many-to-one and many-to-many cases
-	// Populate refCount from slice that tracks the number of times each series is used in an output series
-
 	allLeftSeries, err := b.leftBuffer.getSeries(ctx, thisSeries.leftSeriesIndices)
+	if err != nil {
+		return InstantVectorSeriesData{}, err
+	}
+
+	mergedLeftSide, err := b.mergeOneSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")
 	if err != nil {
 		return InstantVectorSeriesData{}, err
 	}
@@ -213,26 +219,133 @@ func (b *BinaryOperation) Next(ctx context.Context) (InstantVectorSeriesData, er
 		return InstantVectorSeriesData{}, err
 	}
 
-	// TODO: merge left side into single slice? Or have some kind of iterator over slices?
-	// TODO: merge right side into single slice? Or have some kind of iterator over slices?
-	// Merging:
-	// - responsible for merging multiple series on a side into one series
-	// - if only one series on side, just return original slice as-is
-	// - if multiple series:
-	//   - sort series by first point
-	//   - for each remaining series:
-	//      - if points don't overlap with previous series, just copy data
-	//      - if points do overlap with previous series, need to zip series together, checking for conflicts
-	// - would this be easier to do if we were working with []float64 rather than []FPoint?
-	//   - would also mean that some arithmetic operations become faster, as we can use vectorisation (eg. leftPoints + rightPoints, rather than output[i] = left[i] + right[i] etc.)
-	//   - should we just change the InstantVectorOperator interface to use ([]float64, presence)? Would make some aggregation operations faster as well (eg. sum)
+	mergedRightSide, err := b.mergeOneSide(allRightSeries, thisSeries.rightSeriesIndices, b.rightMetadata, "right")
+	if err != nil {
+		return InstantVectorSeriesData{}, err
+	}
 
-	return b.computeResult(allLeftSeries[0], allRightSeries[0]), nil
+	return b.computeResult(mergedLeftSide, mergedRightSide), nil
+}
 
-	// TODO: return series slices to the pool
+// mergeOneSide exists to handle the case where one side of an output series has different source series at different time steps.
+//
+// For example, consider the query "left_side + on (env) right_side" with the following source data:
+//
+//	left_side{env="test", pod="a"} 1 2 _
+//	left_side{env="test", pod="b"} _ _ 3
+//	right_side{env="test"} 100 200 300
+//
+// mergeOneSide will take in both series for left_side and return a single series with the points [1, 2, 3].
+//
+// mergeOneSide is optimised for the case where there is only one source series, or the source series do not overlap, as in the example above.
+//
+// TODO: for many-to-one / one-to-many matching, we could avoid re-merging each time for the side used multiple times
+// TODO: would this be easier to do if we were working with []float64 rather than []FPoint?
+//   - would also mean that some arithmetic operations become faster, as we can use vectorisation (eg. leftPoints + rightPoints, rather than output[i] = left[i] + right[i] etc.)
+//   - should we just change the InstantVectorOperator interface to use ([]float64, presence)? Would make some aggregation operations faster as well (eg. sum)
+func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []SeriesMetadata, side string) (InstantVectorSeriesData, error) {
+	if len(data) == 1 {
+		// If there's only one series on this side, there's no merging required.
+		return data[0], nil
+	}
+
+	if len(data) == 0 {
+		return InstantVectorSeriesData{}, nil
+	}
+
+	slices.SortFunc(data, func(a, b InstantVectorSeriesData) int {
+		return int(a.Floats[0].T - b.Floats[0].T)
+	})
+
+	mergedSize := len(data[0].Floats)
+	haveOverlaps := false
+
+	// We're going to create a new slice, so return this one to the pool.
+	// We'll return the other slices in the for loop below.
+	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
+	// TODO: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
+	defer PutFPointSlice(data[0].Floats)
+
+	for i := 0; i < len(data)-1; i++ {
+		first := data[i]
+		second := data[i+1]
+		mergedSize += len(second.Floats)
+
+		// We're going to create a new slice, so return this one to the pool.
+		// We must defer here, rather than at the end, as the merge loop below reslices Floats.
+		// TODO: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
+		defer PutFPointSlice(second.Floats)
+
+		// Check if first overlaps with second.
+		// InstantVectorSeriesData.Floats is required to be sorted in timestamp order, so if the last point
+		// of the first series is before the first point of the second series, it cannot overlap.
+		if first.Floats[len(first.Floats)-1].T >= second.Floats[0].T {
+			haveOverlaps = true
+		}
+	}
+
+	output := GetFPointSlice(mergedSize)
+
+	if !haveOverlaps {
+		// Fast path: no overlaps, so we can just concatenate the slices together, and there's no
+		// need to check for conflicts either.
+		for _, d := range data {
+			output = append(output, d.Floats...)
+		}
+
+		return InstantVectorSeriesData{Floats: output}, nil
+	}
+
+	// Slow path: there are overlaps, so we need to merge slices together and check for conflicts as we go.
+	// We don't expect to have many series here, so something like a loser tree is likely unnecessary.
+	remainingSeries := len(data)
+
+	for {
+		if remainingSeries == 1 {
+			// Only one series left, just copy remaining points.
+			for _, d := range data {
+				if len(d.Floats) > 0 {
+					output = append(output, d.Floats...)
+					return InstantVectorSeriesData{Floats: output}, nil
+				}
+			}
+		}
+
+		nextT := int64(math.MaxInt64)
+		sourceSeriesIndexInData := -1
+
+		for seriesIndexInData, d := range data {
+			if len(d.Floats) == 0 {
+				continue
+			}
+
+			nextPointInSeries := d.Floats[0]
+			if nextPointInSeries.T == nextT {
+				// Another series has a point with the same timestamp. We have a conflict.
+				firstConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[sourceSeriesIndexInData]].Labels
+				secondConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[seriesIndexInData]].Labels
+				groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
+
+				return InstantVectorSeriesData{}, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
+			}
+
+			if d.Floats[0].T < nextT {
+				nextT = d.Floats[0].T
+				sourceSeriesIndexInData = seriesIndexInData
+			}
+		}
+
+		output = append(output, data[sourceSeriesIndexInData].Floats[0])
+		data[sourceSeriesIndexInData].Floats = data[sourceSeriesIndexInData].Floats[1:]
+
+		if len(data[sourceSeriesIndexInData].Floats) == 0 {
+			remainingSeries--
+		}
+	}
 }
 
 func (b *BinaryOperation) computeResult(left InstantVectorSeriesData, right InstantVectorSeriesData) InstantVectorSeriesData {
+	// TODO: return slices to pool if they're not reused
 	outputLength := min(len(left.Floats), len(right.Floats)) // We can't produce more output points than input points for arithmetic operations.
 	output := GetFPointSlice(outputLength)                   // FIXME: Reuse one side for the output slice?
 
