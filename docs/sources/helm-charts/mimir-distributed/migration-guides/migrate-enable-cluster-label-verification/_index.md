@@ -25,7 +25,7 @@ The process to update the configuration should take around 30 minutes.
 There are three steps of the configuration update:
 
 1. Disable Memberlist cluster label verification
-1. Set cluster label to all Mimir components
+1. Set cluster label on all Mimir components
 1. Enable Memberlist cluster label verification again
 
 ### 1. Disable Memberlist cluster label verification
@@ -43,7 +43,8 @@ mimir:
       cluster_label_verification_disabled: true
 ```
 
-Rollout the installation to apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`. Replace `<my-mimir-release>` with the actual Mimir release name.
+Rollout the installation to apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
+Replace `<my-mimir-release>` with the actual Mimir release name. Wait until all Pods are ready before going to the next step.
 
 ### 2. Set cluster label on all Mimir components
 
@@ -60,6 +61,7 @@ mimir:
 ```
 
 Apply the configuration changes again by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
+Wait until all Pods are ready before going to the next step.
 
 ### 3. Enable Memberlist cluster label verification
 
@@ -73,8 +75,9 @@ mimir:
 ```
 
 Apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
+Wait until all Pods are ready before verifying that the configuration is applied correctly.
 
-## Verifying The Migration
+## Verifying the configuration changes
 
 Once the rollout is completed, verify the change by looking at the `/memberlist` endpoint in some of Grafana Mimir pods.
 Run the following port-forward command on several different Grafana Mimir components.
@@ -84,9 +87,8 @@ Run the following port-forward command on several different Grafana Mimir compon
    kubectl port-forward pod/<mimir-pod-2> --kube-context=<my-k8s-context> --namespace=<my-mimir-namespace> 8081:8080
 ```
 
-Replace mimir-pod with several actual pods from different Mimir components.
+Replace <mimir-pod-1> and <mimir-pod-2> with several actual pods from different Mimir components.
 Ensure the host port 8080 and 8081 are available, otherwise use different available ports.
-Make sure that the container port which is set by default to port 80 is also correct.
 
 Open the port-forwarded URL in browser to see the Memberlist status http://localhost:8080/memberlist, http://localhost:8081/memberlist and also
 few others Grafana Mimir components. The Memberlist page from different pods must show same view of all of their members.
