@@ -83,6 +83,7 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata,
 	}
 
 	// TODO: Prometheus' engine uses strings for the key here, which would avoid issues with hash collisions, but seems much slower.
+	// Either we should use strings, or we'll need to deal with hash collisions.
 	hashFunc := b.hashFunc()
 
 	// TODO: pool binaryOperationSeriesPair? Pool internal slices?
