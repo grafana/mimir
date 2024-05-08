@@ -204,19 +204,19 @@ func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID Q
 	return request, tenant, tenantIndex, nil
 }
 
-func (qb *queueBroker) addQuerierConnection(querierID QuerierID) {
-	qb.tenantQuerierAssignments.addQuerierConnection(querierID)
+func (qb *queueBroker) addQuerierConnection(querierID QuerierID) (resharded bool) {
+	return qb.tenantQuerierAssignments.addQuerierConnection(querierID)
 }
 
-func (qb *queueBroker) removeQuerierConnection(querierID QuerierID, now time.Time) {
-	qb.tenantQuerierAssignments.removeQuerierConnection(querierID, now)
+func (qb *queueBroker) removeQuerierConnection(querierID QuerierID, now time.Time) (resharded bool) {
+	return qb.tenantQuerierAssignments.removeQuerierConnection(querierID, now)
 }
 
-func (qb *queueBroker) notifyQuerierShutdown(querierID QuerierID) {
-	qb.tenantQuerierAssignments.notifyQuerierShutdown(querierID)
+func (qb *queueBroker) notifyQuerierShutdown(querierID QuerierID) (resharded bool) {
+	return qb.tenantQuerierAssignments.notifyQuerierShutdown(querierID)
 }
 
-func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) []QuerierID {
+func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) (resharded bool) {
 	return qb.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
 }
 
@@ -325,7 +325,7 @@ func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID TenantID, max
 	return nil
 }
 
-func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) {
+func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) (resharded bool) {
 	querier := tqa.queriersByID[querierID]
 	if querier != nil {
 		querier.connections++
@@ -342,7 +342,7 @@ func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) {
 	tqa.querierIDsSorted = append(tqa.querierIDsSorted, querierID)
 	sort.Sort(tqa.querierIDsSorted)
 
-	tqa.recomputeTenantQueriers()
+	return tqa.recomputeTenantQueriers()
 }
 
 func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
@@ -363,7 +363,7 @@ func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
 	}
 }
 
-func (tqa *tenantQuerierAssignments) removeQuerierConnection(querierID QuerierID, now time.Time) {
+func (tqa *tenantQuerierAssignments) removeQuerierConnection(querierID QuerierID, now time.Time) (resharded bool) {
 	querier := tqa.queriersByID[querierID]
 	if querier == nil || querier.connections <= 0 {
 		panic("unexpected number of connections for querier")
@@ -372,23 +372,25 @@ func (tqa *tenantQuerierAssignments) removeQuerierConnection(querierID QuerierID
 	// Decrease the number of active connections.
 	querier.connections--
 	if querier.connections > 0 {
-		return
+		return false
 	}
 
-	// There no more active connections. If the forget delay is configured then
-	// we can remove it only if querier has announced a graceful shutdown.
+	// No more active connections. We can remove the querier only if
+	// the querier has sent a shutdown signal or if no forget delay is enabled.
 	if querier.shuttingDown || tqa.querierForgetDelay == 0 {
-		tqa.removeQuerier(querierID)
-		return
+		return tqa.removeQuerier(querierID)
 	}
 
 	// No graceful shutdown has been notified yet, so we should track the current time
 	// so that we'll remove the querier as soon as we receive the graceful shutdown
 	// notification (if any) or once the threshold expires.
 	querier.disconnectedAt = now
+	return false
 }
 
-func (tqa *tenantQuerierAssignments) removeQuerier(querierID QuerierID) {
+// removeQuerier deletes a querier from the tenant-querier assignments.
+// Returns true if tenant-querier reshard was triggered.
+func (tqa *tenantQuerierAssignments) removeQuerier(querierID QuerierID) (resharded bool) {
 	delete(tqa.queriersByID, querierID)
 
 	ix := tqa.querierIDsSorted.Search(querierID)
@@ -398,51 +400,51 @@ func (tqa *tenantQuerierAssignments) removeQuerier(querierID QuerierID) {
 
 	tqa.querierIDsSorted = append(tqa.querierIDsSorted[:ix], tqa.querierIDsSorted[ix+1:]...)
 
-	tqa.recomputeTenantQueriers()
+	return tqa.recomputeTenantQueriers()
 }
 
-// notifyQuerierShutdown records that a querier has sent notification about a graceful shutdown.
-func (tqa *tenantQuerierAssignments) notifyQuerierShutdown(querierID QuerierID) {
+// notifyQuerierShutdown handles a graceful shutdown notification from a querier.
+// Returns true if tenant-querier reshard was triggered.
+func (tqa *tenantQuerierAssignments) notifyQuerierShutdown(querierID QuerierID) (resharded bool) {
 	querier := tqa.queriersByID[querierID]
 	if querier == nil {
 		// The querier may have already been removed, so we just ignore it.
-		return
+		return false
 	}
 
-	// If there are no more connections, we should remove the querier.
+	// If there are no more connections, we should remove the querier - Shutdown signals ignore forgetDelay.
+	// forgetDelay is only for queriers which have deregistered all connections but have not sent a shutdown signal
 	if querier.connections == 0 {
 		tqa.removeQuerier(querierID)
 		return
 	}
 
-	// Otherwise we should annotate we received a graceful shutdown notification
-	// and the querier will be removed once all connections are unregistered.
+	// place in graceful shutdown state; any queued requests to dispatch queries
+	// to this querier will receive error responses until all querier workers disconnect
 	querier.shuttingDown = true
+	return false
 }
 
-// forgetDisconnectedQueriers removes all disconnected queriers that have gone since at least
-// the forget delay. Returns the number of forgotten queriers.
-func (tqa *tenantQuerierAssignments) forgetDisconnectedQueriers(now time.Time) []QuerierID {
-	// Nothing to do if the forget delay is disabled.
+// forgetDisconnectedQueriers removes all queriers which have had zero connections for longer than the forget delay.
+// Returns true if tenant-querier reshard was triggered.
+func (tqa *tenantQuerierAssignments) forgetDisconnectedQueriers(now time.Time) (resharded bool) {
+	// if forget delay is disabled, removal is done immediately on querier disconnect or shutdown; do nothing
 	if tqa.querierForgetDelay == 0 {
-		return nil
+		return false
 	}
 
 	// Remove all queriers with no connections that have gone since at least the forget delay.
 	threshold := now.Add(-tqa.querierForgetDelay)
-	var forgotten []QuerierID
-
 	for querierID := range tqa.queriersByID {
 		if querier := tqa.queriersByID[querierID]; querier.connections == 0 && querier.disconnectedAt.Before(threshold) {
-			tqa.removeQuerier(querierID)
-			forgotten = append(forgotten, querierID)
+			resharded = tqa.removeQuerier(querierID)
 		}
 	}
 
-	return forgotten
+	return resharded
 }
 
-func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() {
+func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() (resharded bool) {
 	var scratchpad querierIDSlice
 	for tenantID, tenant := range tqa.tenantsByID {
 		if tenant.maxQueriers > 0 && tenant.maxQueriers < len(tqa.querierIDsSorted) && scratchpad == nil {
@@ -451,21 +453,22 @@ func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() {
 			// allocate the scratchpad the first time this case is hit and it will be reused after
 			scratchpad = make(querierIDSlice, 0, len(tqa.querierIDsSorted))
 		}
-
-		tqa.shuffleTenantQueriers(tenantID, scratchpad)
+		resharded = tqa.shuffleTenantQueriers(tenantID, scratchpad)
 	}
+	return resharded
 }
 
-func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, scratchpad querierIDSlice) {
+func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, scratchpad querierIDSlice) (resharded bool) {
 	tenant := tqa.tenantsByID[tenantID]
 	if tenant == nil {
-		return
+		return false
 	}
 
 	if tenant.maxQueriers == 0 || len(tqa.querierIDsSorted) <= tenant.maxQueriers {
-		// shuffle shard is either disabled or calculation is unnecessary
+		// shuffle shard is either disabled or calculation is unnecessary;
+		// a nil querier set for the tenant indicates tenant can use all queriers
 		tqa.tenantQuerierIDs[tenantID] = nil
-		return
+		return false
 	}
 
 	querierIDSet := make(map[QuerierID]struct{}, tenant.maxQueriers)
@@ -482,4 +485,5 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, sc
 		last--
 	}
 	tqa.tenantQuerierIDs[tenantID] = querierIDSet
+	return true
 }

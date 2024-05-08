@@ -559,7 +559,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		ctx:           ctx,
 		querierID:     QuerierID(querierID),
 		lastUserIndex: FirstUser(),
-		processed:     make(chan nextRequestForQuerier),
+		resultChan:    make(chan nextRequestForQuerier),
 	}
 	cancel() // ensure querier context done before send is attempted
 

@@ -296,7 +296,7 @@ func TestQueuesConsistency(t *testing.T) {
 
 func TestQueues_ForgetDelay(t *testing.T) {
 	const (
-		forgetDelay          = time.Minute
+		forgetDelay          = 5 * time.Second
 		maxQueriersPerTenant = 1
 		numTenants           = 100
 	)
@@ -326,6 +326,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	qb.removeQuerierConnection("querier-1", now.Add(20*time.Second))
 	qb.removeQuerierConnection("querier-1", now.Add(21*time.Second))
 	qb.notifyQuerierShutdown("querier-1")
+	time.Sleep(forgetDelay)
 
 	// We expect querier-1 has been removed.
 	assert.NotContains(t, qb.tenantQuerierAssignments.queriersByID, "querier-1")
