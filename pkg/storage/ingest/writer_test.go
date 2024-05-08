@@ -102,42 +102,50 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should write to the requested partition", func(t *testing.T) {
 		t.Parallel()
 
-		seriesPerPartition := map[int32][]mimirpb.PreallocTimeseries{
-			0: series1,
-			1: series2,
-		}
+		for _, writeClients := range []int{1, 2, 10} {
+			t.Run(fmt.Sprintf("Write clients = %d", writeClients), func(t *testing.T) {
+				t.Parallel()
 
-		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+				seriesPerPartition := map[int32][]mimirpb.PreallocTimeseries{
+					0: series1,
+					1: series2,
+				}
 
-		// Write to partitions.
-		for partitionID, series := range seriesPerPartition {
-			err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Metadata: nil, Source: mimirpb.API})
-			require.NoError(t, err)
-		}
+				_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+				config := createTestKafkaConfig(clusterAddr, topicName)
+				config.WriteClients = writeClients
+				writer, _ := createTestWriter(t, config)
 
-		// Read back from Kafka.
-		for partitionID, expectedSeries := range seriesPerPartition {
-			consumer, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr), kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{topicName: {partitionID: kgo.NewOffset().AtStart()}}))
-			require.NoError(t, err)
-			t.Cleanup(consumer.Close)
+				// Write to partitions.
+				for partitionID, series := range seriesPerPartition {
+					err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Metadata: nil, Source: mimirpb.API})
+					require.NoError(t, err)
+				}
 
-			fetchCtx, cancel := context.WithTimeout(ctx, time.Second)
-			t.Cleanup(cancel)
+				// Read back from Kafka.
+				for partitionID, expectedSeries := range seriesPerPartition {
+					consumer, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr), kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{topicName: {partitionID: kgo.NewOffset().AtStart()}}))
+					require.NoError(t, err)
+					t.Cleanup(consumer.Close)
 
-			fetches := consumer.PollFetches(fetchCtx)
-			require.NoError(t, fetches.Err())
-			require.Len(t, fetches.Records(), 1)
-			assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
+					fetchCtx, cancel := context.WithTimeout(ctx, time.Second)
+					t.Cleanup(cancel)
 
-			received := mimirpb.WriteRequest{}
-			require.NoError(t, received.Unmarshal(fetches.Records()[0].Value))
-			require.Len(t, received.Timeseries, len(expectedSeries))
+					fetches := consumer.PollFetches(fetchCtx)
+					require.NoError(t, fetches.Err())
+					require.Len(t, fetches.Records(), 1)
+					assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
 
-			for idx, expected := range expectedSeries {
-				assert.Equal(t, expected.Labels, received.Timeseries[idx].Labels)
-				assert.Equal(t, expected.Samples, received.Timeseries[idx].Samples)
-			}
+					received := mimirpb.WriteRequest{}
+					require.NoError(t, received.Unmarshal(fetches.Records()[0].Value))
+					require.Len(t, received.Timeseries, len(expectedSeries))
+
+					for idx, expected := range expectedSeries {
+						assert.Equal(t, expected.Labels, received.Timeseries[idx].Labels)
+						assert.Equal(t, expected.Samples, received.Timeseries[idx].Samples)
+					}
+				}
+			})
 		}
 	})
 

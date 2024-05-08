@@ -89,6 +89,10 @@ func (w *Writer) stopping(_ error) error {
 	defer w.writersMx.Unlock()
 
 	for idx, client := range w.writers {
+		if client == nil {
+			continue
+		}
+
 		client.Close()
 		w.writers[idx] = nil
 	}
