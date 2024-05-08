@@ -1464,9 +1464,11 @@ How to **fix**:
   - Add more CPU/memory/disk to ingesters, depending on the saturated resources.
   - Increase the ingester max series instance limit (see [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook).
 - **Skip replaying overloading backlog from partition** (data loss)
-  1. Ensure ingesters have been scaled out, and the new partitions are ACTIVE in the partitions ring. If autoscaler didn't scaled out ingesters yet, manually add more ingester replicas (e.g. increasing HPA min replicas or manually setting the desired number of ingester replicas).
+
+  1. Ensure ingesters have been scaled out, and the new partitions are ACTIVE in the partitions ring. If autoscaler didn't scaled out ingesters yet, manually add more ingester replicas (e.g. increasing HPA min replicas or manually setting the desired number of ingester replicas if ingester autoscaling is disabled).
   1. Find out the timestamp at which new partitions were created and became ACTIVE in the ring (e.g. looking at new ingesters logs).
   1. Temporarily restart ingesters with the following configuration:
+
      ```
      # Set <value> to the timestamp retrieved from previous step. The timestamp should be Unix epoch with milliseconds precision.
      -ingest-storage.kafka.consume-from-position-at-startup=timestamp
@@ -1474,11 +1476,12 @@ How to **fix**:
      ```
 
      Alternatively, if you can quickly find the timestamp at which new partitions became ACTIVE in the ring, you can temporarily configure ingesters to replay a partition from the end:
+
      ```
      -ingest-storage.kafka.consume-from-position-at-startup=end
      ```
-  1. Once ingesters are stable, revert the temporarily config applied in the previous step.
 
+  1. Once ingesters are stable, revert the temporarily config applied in the previous step.
 
 ## Errors catalog
 
