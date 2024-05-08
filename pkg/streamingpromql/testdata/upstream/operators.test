@@ -563,18 +563,14 @@ load 5m
     trigx{} 20
     trigNaN{} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 5m trigy atan2 trigx
-#    {} 0.4636476090008061
+eval instant at 5m trigy atan2 trigx
+    {} 0.4636476090008061
 
-# Unsupported by streaming engine.
-# eval instant at 5m trigy atan2 trigNaN
-#    {} NaN
+eval instant at 5m trigy atan2 trigNaN
+    {} NaN
 
-# Unsupported by streaming engine.
 # eval instant at 5m 10 atan2 20
 #    0.4636476090008061
 
-# Unsupported by streaming engine.
 # eval instant at 5m 10 atan2 NaN
 #    NaN
