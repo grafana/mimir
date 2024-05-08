@@ -85,8 +85,12 @@ func (w *Writer) starting(_ context.Context) error {
 }
 
 func (w *Writer) stopping(_ error) error {
-	for _, client := range w.writers {
+	w.writersMx.Lock()
+	defer w.writersMx.Unlock()
+
+	for idx, client := range w.writers {
 		client.Close()
+		w.writers[idx] = nil
 	}
 
 	return nil
