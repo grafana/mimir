@@ -653,6 +653,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// run early compaction removing all series from the head
+				maxTimeBeforeCompaction := time.UnixMilli(c.db.Head().MaxTime())
 				c.ing.compactBlocks(context.Background(), true, time.Now().Add(1*time.Minute).UnixMilli(), nil)
 				require.Equal(t, uint64(0), c.db.Head().NumSeries())
 
@@ -664,7 +665,14 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonEarlyCompaction)
 				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
-				c.checkActiveSeriesCount(t, ownedServiceSeriesCount) // series are still active even if they aren't in the head
+
+				// series should be marked as deleted, but are still active
+				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
+				// generate samples for the same series but with later timestamps
+				c.seriesToWrite, c.seriesTokens = generateSeriesWithTokensAt(ownedServiceTestUser, maxTimeBeforeCompaction.Add(1*time.Millisecond))
+				c.pushUserSeries(t)
+				// pushing them again doesn't count them twice
+				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 			},
 		},
 		"previous ring check failed": {
@@ -750,13 +758,17 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 }
 
 func generateSeriesWithTokens(testUser string) ([]series, []uint32) {
+	return generateSeriesWithTokensAt(testUser, time.Now())
+}
+
+func generateSeriesWithTokensAt(testUser string, startTime time.Time) ([]series, []uint32) {
 	var seriesToWrite []series
 	var seriesTokens []uint32
 	for seriesIdx := 0; seriesIdx < ownedServiceSeriesCount; seriesIdx++ {
 		s := series{
 			lbls:      labels.FromStrings(labels.MetricName, "test", fmt.Sprintf("lbl_%05d", seriesIdx), "value"),
 			value:     float64(0),
-			timestamp: time.Now().UnixMilli(),
+			timestamp: startTime.Add(time.Duration(seriesIdx) * time.Millisecond).UnixMilli(),
 		}
 		seriesToWrite = append(seriesToWrite, s)
 		seriesTokens = append(seriesTokens, mimirpb.ShardByAllLabels(testUser, s.lbls))
@@ -1369,6 +1381,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// run early compaction removing all series from the head
+				maxTimeBeforeCompaction := time.UnixMilli(c.db.Head().MaxTime())
 				c.ing.compactBlocks(context.Background(), true, time.Now().Add(1*time.Minute).UnixMilli(), nil)
 				require.Equal(t, uint64(0), c.db.Head().NumSeries())
 
@@ -1380,7 +1393,14 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonEarlyCompaction)
 				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
-				c.checkActiveSeriesCount(t, ownedServiceSeriesCount) // series are still active even if they aren't in the head
+
+				// series should be marked as deleted, but are still active
+				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
+				// generate samples for the same series but with later timestamps
+				c.seriesToWrite, _ = generateSeriesWithTokensAt(c.user, maxTimeBeforeCompaction.Add(1*time.Millisecond))
+				c.pushUserSeries(t)
+				// pushing them again doesn't count them twice
+				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 			},
 		},
 		"previous ring check failed": {
