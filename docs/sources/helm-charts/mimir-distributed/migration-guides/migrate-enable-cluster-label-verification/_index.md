@@ -47,7 +47,7 @@ Rollout the installation to apply the configuration changes by running `helm upg
 
 ### 2. Set cluster label on all Mimir components
 
-Set cluster label to all Mimir components by setting the following configuration below.
+Set cluster label on all Mimir components by setting the following configuration.
 The configuration will set `cluster_label` to the Helm release name and the namespace where the helm release is installed.
 Updating a new cluster label after disabling cluster label verification will prevent Memberlist from forming a partition.
 
