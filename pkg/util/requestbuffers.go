@@ -3,14 +3,51 @@ package util
 
 import (
 	"bytes"
+	"sync"
+
+	"github.com/prometheus/prometheus/util/pool"
 )
 
-// Pool is an abstraction of sync.Pool, for testability.
+// Pool is an abstraction for a pool of objects.
 type Pool interface {
-	// Get a pooled object.
-	Get() any
-	// Put back an object into the pool.
-	Put(any)
+	// Get returns a new byte slices that fits the given size.
+	Get(sz int) []byte
+
+	// Put puts a slice back into the pool.
+	Put(s []byte)
+}
+
+type bufferPool struct {
+	p sync.Pool
+}
+
+func (p *bufferPool) Get(_ int) []byte { return p.p.Get().([]byte) }
+func (p *bufferPool) Put(s []byte)     { p.p.Put(s) } //nolint:staticcheck
+
+// NewBufferPool returns a new Pool for byte slices.
+func NewBufferPool() Pool {
+	return &bufferPool{
+		p: sync.Pool{
+			New: func() interface{} {
+				return make([]byte, 0, 256*1024)
+			},
+		},
+	}
+}
+
+type bucketedBufferPool struct{ p *pool.Pool }
+
+func (p *bucketedBufferPool) Get(sz int) []byte { return p.p.Get(sz).([]byte) }
+func (p *bucketedBufferPool) Put(s []byte)      { p.p.Put(s) } //nolint:staticcheck
+
+// NewBucketedBufferPool returns a new Pool for byte slices with bucketing.
+// The pool will have buckets for sizes from minSize to maxSize increasing by the given factor.
+func NewBucketedBufferPool(minSize, maxSize int, factor float64) Pool {
+	return &bucketedBufferPool{
+		p: pool.New(minSize, maxSize, factor, func(sz int) interface{} {
+			return make([]byte, 0, sz)
+		}),
+	}
 }
 
 // RequestBuffers provides pooled request buffers.
@@ -32,20 +69,22 @@ func NewRequestBuffers(p Pool) *RequestBuffers {
 
 // Get obtains a buffer from the pool. It will be returned back to the pool when CleanUp is called.
 func (rb *RequestBuffers) Get(size int) *bytes.Buffer {
-	if rb == nil {
+	if rb == nil || rb.p == nil {
 		if size < 0 {
 			size = 0
 		}
 		return bytes.NewBuffer(make([]byte, 0, size))
 	}
 
-	b := rb.p.Get().(*bytes.Buffer)
-	b.Reset()
+	b := rb.p.Get(size)
+	buf := bytes.NewBuffer(b)
+	buf.Reset()
 	if size > 0 {
-		b.Grow(size)
+		buf.Grow(size)
 	}
-	rb.buffers = append(rb.buffers, b)
-	return b
+
+	rb.buffers = append(rb.buffers, buf)
+	return buf
 }
 
 // CleanUp releases buffers back to the pool.
@@ -53,7 +92,7 @@ func (rb *RequestBuffers) CleanUp() {
 	for i, b := range rb.buffers {
 		// Make sure the backing array doesn't retain a reference
 		rb.buffers[i] = nil
-		rb.p.Put(b)
+		rb.p.Put(b.Bytes())
 	}
 	rb.buffers = rb.buffers[:0]
 }
