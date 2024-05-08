@@ -2626,7 +2626,7 @@ func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
 					// Prepare empty query stats.
 					qStats, ctx := stats.ContextWithEmptyStats(ctx)
 
-					// Query active series.
+					// Query active native histogram metric stats.
 					series, err := d.ActiveNativeHistogramMetrics(ctx, testData.requestMatchers)
 					require.NoError(t, err)
 					assert.ElementsMatch(t, testData.expectedMetrics, series.Data)
