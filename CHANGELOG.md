@@ -60,6 +60,7 @@
 * [BUGFIX] Distributor: Avoid pooling large buffers objects when unmarshalling incoming requests. #8044
 * [BUGFIX] All: don't increment `thanos_objstore_bucket_operation_failures_total` metric for cancelled requests. #8072
 * [BUGFIX] Query-frontend: fix empty metric name matcher not being applied under certain conditions. #8076
+* [BUGFIX] Querying: Fix regex matching of multibyte runes with dot operator. #8089
 
 ### Mixin
 
