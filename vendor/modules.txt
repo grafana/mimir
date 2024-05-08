@@ -566,7 +566,35 @@ github.com/gosimple/slug
 github.com/grafana-tools/sdk
 # github.com/grafana/alerting v0.0.0-20240424080142-bb4f4f429d36
 ## explicit; go 1.21
+github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
+github.com/grafana/alerting/images
+github.com/grafana/alerting/logging
+github.com/grafana/alerting/models
+github.com/grafana/alerting/notify
+github.com/grafana/alerting/receivers
+github.com/grafana/alerting/receivers/alertmanager
+github.com/grafana/alerting/receivers/dinding
+github.com/grafana/alerting/receivers/discord
+github.com/grafana/alerting/receivers/email
+github.com/grafana/alerting/receivers/googlechat
+github.com/grafana/alerting/receivers/kafka
+github.com/grafana/alerting/receivers/line
+github.com/grafana/alerting/receivers/oncall
+github.com/grafana/alerting/receivers/opsgenie
+github.com/grafana/alerting/receivers/pagerduty
+github.com/grafana/alerting/receivers/pushover
+github.com/grafana/alerting/receivers/sensugo
+github.com/grafana/alerting/receivers/slack
+github.com/grafana/alerting/receivers/teams
+github.com/grafana/alerting/receivers/telegram
+github.com/grafana/alerting/receivers/testing
+github.com/grafana/alerting/receivers/threema
+github.com/grafana/alerting/receivers/victorops
+github.com/grafana/alerting/receivers/webex
+github.com/grafana/alerting/receivers/webhook
+github.com/grafana/alerting/receivers/wecom
+github.com/grafana/alerting/templates
 # github.com/grafana/dskit v0.0.0-20240411172511-de4086540f6f
 ## explicit; go 1.20
 github.com/grafana/dskit/backoff
@@ -853,7 +881,7 @@ github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus/alertmanager v0.27.0
+# github.com/prometheus/alertmanager v0.27.0 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240422145632-c33c6b5b6e6b
 ## explicit; go 1.21
 github.com/prometheus/alertmanager/api
 github.com/prometheus/alertmanager/api/metrics
@@ -1288,6 +1316,7 @@ golang.org/x/oauth2/jwt
 ## explicit; go 1.18
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
+golang.org/x/sync/singleflight
 # golang.org/x/sys v0.19.0
 ## explicit; go 1.18
 golang.org/x/sys/cpu
@@ -1558,3 +1587,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20231010094147-47ce5e72a9ae
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
+# github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240422145632-c33c6b5b6e6b

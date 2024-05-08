@@ -5,8 +5,10 @@ import (
 	"fmt"
 
 	"github.com/grafana/alerting/definition"
+	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	amconfig "github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/dispatch"
 	"gopkg.in/yaml.v3"
 )
 
@@ -54,4 +56,40 @@ func grafanaToUpstreamConfig(cfg *definition.PostableApiAlertingConfig) amconfig
 		MuteTimeIntervals: cfg.Config.MuteTimeIntervals,
 		TimeIntervals:     cfg.Config.TimeIntervals,
 	}
+}
+
+// TODO: move to alerting package.
+func postableApiReceiverToApiReceiver(r *definition.PostableApiReceiver) *alertingNotify.APIReceiver {
+	integrations := alertingNotify.GrafanaIntegrations{
+		Integrations: make([]*alertingNotify.GrafanaIntegrationConfig, 0, len(r.GrafanaManagedReceivers)),
+	}
+	for _, cfg := range r.GrafanaManagedReceivers {
+		integrations.Integrations = append(integrations.Integrations, postableGrafanaReceiverToGrafanaIntegrationConfig(cfg))
+	}
+
+	return &alertingNotify.APIReceiver{
+		ConfigReceiver:      r.Receiver,
+		GrafanaIntegrations: integrations,
+	}
+}
+
+// TODO: move to alerting package.
+func postableGrafanaReceiverToGrafanaIntegrationConfig(p *definition.PostableGrafanaReceiver) *alertingNotify.GrafanaIntegrationConfig {
+	return &alertingNotify.GrafanaIntegrationConfig{
+		UID:                   p.UID,
+		Name:                  p.Name,
+		Type:                  p.Type,
+		DisableResolveMessage: p.DisableResolveMessage,
+		Settings:              json.RawMessage(p.Settings),
+		SecureSettings:        p.SecureSettings,
+	}
+}
+
+// TODO: move to alerting package.
+func getActiveReceiversMap(r *dispatch.Route) map[string]struct{} {
+	activeReceivers := make(map[string]struct{})
+	r.Walk(func(r *dispatch.Route) {
+		activeReceivers[r.RouteOpts.Receiver] = struct{}{}
+	})
+	return activeReceivers
 }

@@ -21,6 +21,10 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
+	"github.com/grafana/alerting/images"
+	alertingLogging "github.com/grafana/alerting/logging"
+	alertingNotify "github.com/grafana/alerting/notify"
+	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
@@ -331,9 +335,6 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	}
 	tmpl.ExternalURL = am.cfg.ExternalURL
 
-	cfg := grafanaToUpstreamConfig(conf)
-	am.api.Update(&cfg, func(_ model.LabelSet) {})
-
 	// Ensure inhibitor is set before being called
 	if am.inhibitor != nil {
 		am.inhibitor.Stop()
@@ -374,6 +375,11 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 		return err
 	}
 
+	cfg := grafanaToUpstreamConfig(conf)
+	activeReceivers := getActiveReceiversMap(dispatch.NewRoute(cfg.Route, nil))
+	receivers := buildReceivers(integrationsMap, activeReceivers)
+	am.api.Update(&cfg, receivers, func(_ model.LabelSet) {})
+
 	timeIntervals := make(map[string][]timeinterval.TimeInterval, len(conf.MuteTimeIntervals)+len(conf.TimeIntervals))
 	for _, ti := range conf.MuteTimeIntervals {
 		timeIntervals[ti.Name] = ti.TimeIntervals
@@ -385,7 +391,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	intervener := timeinterval.NewIntervener(timeIntervals)
 
 	pipeline := am.pipelineBuilder.New(
-		integrationsMap,
+		receivers,
 		waitFunc,
 		am.inhibitor,
 		silence.NewSilencer(am.silences, am.marker, am.logger),
@@ -453,26 +459,52 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a
 // list of receiver config.
-func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
-	integrationsMap := make(map[string][]notify.Integration, len(nc))
+func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*notify.Integration, error) {
+	integrationsMap := make(map[string][]*notify.Integration, len(nc))
 	for _, rcv := range nc {
-		// TODO: We're currently passing only the upstream receivers, we need to use the Grafana receivers too.
-		integrations, err := buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, logger, notifierWrapper)
-		if err != nil {
-			return nil, err
+		// Check if it's a Grafana or an upstream receiver and build the integrations accordingly.
+		if rcv.Type() == definition.GrafanaReceiverType {
+			// The decrypt functions and the context are used to decrypt the configuration.
+			// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
+			rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), postableApiReceiverToApiReceiver(rcv), noopDecryptFn)
+			if err != nil {
+				return nil, err
+			}
+
+			// TODO: logger factory, webhook sender and email sender are no-ops for now.
+			// TODO: orgID, version.
+			integrations, err := alertingNotify.BuildReceiverIntegrations(rCfg, tmpl, &images.UnavailableProvider{}, loggerFactory, whSenderFn, emailSenderFn, 1, "")
+			if err != nil {
+				return nil, err
+			}
+			integrationsMap[rcv.Name] = integrations
+		} else {
+			integrations, err := buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, logger, notifierWrapper)
+			if err != nil {
+				return nil, err
+			}
+			integrationsMap[rcv.Name] = integrations
 		}
-		integrationsMap[rcv.Name] = integrations
 	}
 	return integrationsMap, nil
+}
+
+func buildReceivers(integrationsMap map[string][]*notify.Integration, activeReceivers map[string]struct{}) []*notify.Receiver {
+	var receivers []*notify.Receiver
+	for k, v := range integrationsMap {
+		_, active := activeReceivers[k]
+		receivers = append(receivers, notify.NewReceiver(k, active, v))
+	}
+	return receivers
 }
 
 // buildReceiverIntegrations builds a list of integration notifiers off of a
 // receiver config.
 // Taken from https://github.com/prometheus/alertmanager/blob/94d875f1227b29abece661db1a68c001122d1da5/cmd/alertmanager/main.go#L112-L159.
-func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]notify.Integration, error) {
+func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]*notify.Integration, error) {
 	var (
 		errs         types.MultiError
-		integrations []notify.Integration
+		integrations []*notify.Integration
 		add          = func(name string, i int, rs notify.ResolvedSender, f func(l log.Logger) (notify.Notifier, error)) {
 			n, err := f(log.With(logger, "integration", name))
 			if err != nil {
@@ -533,6 +565,24 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 		return nil, &errs
 	}
 	return integrations, nil
+}
+
+// noopDecryptFn implements alertingNotify.DecryptFn.
+// TODO: make part of alerting package.
+func noopDecryptFn(_ context.Context, sjd map[string][]byte, key string, fallback string) string {
+	if v, ok := sjd[key]; ok {
+		return string(v)
+	}
+	return fallback
+}
+func loggerFactory(logger string, ctx ...interface{}) alertingLogging.Logger {
+	return alertingLogging.FakeLogger{}
+}
+func whSenderFn(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
+	return &sender{}, nil
+}
+func emailSenderFn(n alertingReceivers.Metadata) (alertingReceivers.EmailSender, error) {
+	return &sender{}, nil
 }
 
 func md5HashAsMetricValue(data []byte) float64 {
