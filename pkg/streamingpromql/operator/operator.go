@@ -36,6 +36,13 @@ type SeriesMetadata struct {
 }
 
 type InstantVectorSeriesData struct {
-	Floats     []promql.FPoint
+	// Floats contains floating point samples for this series.
+	// Samples must be sorted in timestamp order, earliest timestamps first.
+	// Samples must not have duplicate timestamps.
+	Floats []promql.FPoint
+
+	// Histograms contains histogram samples for this series.
+	// Samples must be sorted in timestamp order, earliest timestamps first.
+	// Samples must not have duplicate timestamps.
 	Histograms []promql.HPoint
 }
