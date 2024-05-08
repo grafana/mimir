@@ -43,7 +43,7 @@ mimir:
       cluster_label_verification_disabled: true
 ```
 
-Rollout the installation to apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`. Replace `my-mimir-release` with the actual Mimir release name.
+Rollout the installation to apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`. Replace `<my-mimir-release>` with the actual Mimir release name.
 
 ### 2. Set cluster label on all Mimir components
 
