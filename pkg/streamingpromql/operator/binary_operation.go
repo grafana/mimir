@@ -15,9 +15,7 @@ import (
 	"slices"
 )
 
-type binaryOperatorFunc func(left, right float64) float64
-
-type BinaryOperator struct {
+type BinaryOperation struct {
 	Left  InstantVectorOperator
 	Right InstantVectorOperator
 	Op    parser.ItemType
@@ -29,25 +27,25 @@ type BinaryOperator struct {
 	leftMetadata  []SeriesMetadata
 	rightMetadata []SeriesMetadata
 
-	remainingSeries []*binaryOperatorSeriesPair
-	leftBuffer      *binaryOperatorSeriesBuffer
-	rightBuffer     *binaryOperatorSeriesBuffer
-	operatorFunc    binaryOperatorFunc
+	remainingSeries []*binaryOperationSeriesPair
+	leftBuffer      *binaryOperationSeriesBuffer
+	rightBuffer     *binaryOperationSeriesBuffer
+	op              binaryOperationFunc
 }
 
-var _ InstantVectorOperator = &BinaryOperator{}
+var _ InstantVectorOperator = &BinaryOperation{}
 
-type binaryOperatorSeriesPair struct {
+type binaryOperationSeriesPair struct {
 	leftSeriesIndices  []int
 	rightSeriesIndices []int
 }
 
-func (b *BinaryOperator) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
-	b.operatorFunc = arithmeticOperatorFuncs[b.Op]
-	if b.operatorFunc == nil {
+func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
+	b.op = arithmeticOperationFuncs[b.Op]
+	if b.op == nil {
 		// This should never happen, this should be caught by Query.convertToOperator
-		// FIXME: move NotSupportedError to a separate package so we can use it in a constructor function for BinaryOperator and remove the check in Query.convertToOperator
-		return nil, fmt.Errorf("unsupported binary operator '%s'", b.Op)
+		// FIXME: move NotSupportedError to a separate package so we can use it in a constructor function for BinaryOperation and remove the check in Query.convertToOperator
+		return nil, fmt.Errorf("unsupported binary operation '%s'", b.Op)
 	}
 
 	// TODO: break this into smaller functions, it's enormous
@@ -81,9 +79,9 @@ func (b *BinaryOperator) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, 
 	// TODO: Prometheus' engine uses strings for the key here, which would avoid issues with hash collisions, but seems much slower.
 	hashFunc := b.hashFunc()
 
-	// TODO: pool binaryOperatorSeriesPair? Pool internal slices?
+	// TODO: pool binaryOperationSeriesPair? Pool internal slices?
 	// TODO: guess initial size of map?
-	allPairs := map[uint64]*binaryOperatorSeriesPair{}
+	allPairs := map[uint64]*binaryOperationSeriesPair{}
 
 	// TODO: is it better to use whichever side has fewer series for this first loop? Should result in a smaller map and therefore less work later on
 	// Would need to be careful about 'or' and 'unless' cases
@@ -92,7 +90,7 @@ func (b *BinaryOperator) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, 
 		series, exists := allPairs[hash]
 
 		if !exists {
-			series = &binaryOperatorSeriesPair{}
+			series = &binaryOperationSeriesPair{}
 			allPairs[hash] = series
 		}
 
@@ -119,7 +117,7 @@ func (b *BinaryOperator) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, 
 	}
 
 	allMetadata := make([]SeriesMetadata, 0, len(allPairs))
-	b.remainingSeries = make([]*binaryOperatorSeriesPair, 0, len(allPairs))
+	b.remainingSeries = make([]*binaryOperationSeriesPair, 0, len(allPairs))
 	labelsFunc := b.labelsFunc()
 
 	for _, pair := range allPairs {
@@ -142,13 +140,13 @@ func (b *BinaryOperator) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, 
 	//       - therefore best option to keep peak memory utilisation low is to order series so we don't hold higher cardinality side in memory, especially as we'll
 	//         likely have to hold some "many" side series in memory anyway (doesn't make sense to have to hold both "one" and "many" side series)
 
-	b.leftBuffer = newBinaryOperatorSeriesBuffer(b.Left)
-	b.rightBuffer = newBinaryOperatorSeriesBuffer(b.Right)
+	b.leftBuffer = newBinaryOperationSeriesBuffer(b.Left)
+	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right)
 
 	return allMetadata, nil
 }
 
-func (b *BinaryOperator) hashFunc() func(labels.Labels) uint64 {
+func (b *BinaryOperation) hashFunc() func(labels.Labels) uint64 {
 	buf := make([]byte, 0, 1024)
 	names := b.VectorMatching.MatchingLabels
 
@@ -172,7 +170,7 @@ func (b *BinaryOperator) hashFunc() func(labels.Labels) uint64 {
 	}
 }
 
-func (b *BinaryOperator) labelsFunc() func(labels.Labels) labels.Labels {
+func (b *BinaryOperation) labelsFunc() func(labels.Labels) labels.Labels {
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	if b.VectorMatching.On {
@@ -191,7 +189,7 @@ func (b *BinaryOperator) labelsFunc() func(labels.Labels) labels.Labels {
 	}
 }
 
-func (b *BinaryOperator) Next(ctx context.Context) (InstantVectorSeriesData, error) {
+func (b *BinaryOperation) Next(ctx context.Context) (InstantVectorSeriesData, error) {
 	if len(b.remainingSeries) == 0 {
 		return InstantVectorSeriesData{}, EOS
 	}
@@ -234,8 +232,8 @@ func (b *BinaryOperator) Next(ctx context.Context) (InstantVectorSeriesData, err
 	// TODO: return series slices to the pool
 }
 
-func (b *BinaryOperator) computeResult(left InstantVectorSeriesData, right InstantVectorSeriesData) InstantVectorSeriesData {
-	outputLength := min(len(left.Floats), len(right.Floats)) // We can't produce more output points than input points for arithmetic operators.
+func (b *BinaryOperation) computeResult(left InstantVectorSeriesData, right InstantVectorSeriesData) InstantVectorSeriesData {
+	outputLength := min(len(left.Floats), len(right.Floats)) // We can't produce more output points than input points for arithmetic operations.
 	output := GetFPointSlice(outputLength)                   // FIXME: Reuse one side for the output slice?
 
 	nextRightIndex := 0
@@ -253,7 +251,7 @@ func (b *BinaryOperator) computeResult(left InstantVectorSeriesData, right Insta
 		if leftPoint.T == right.Floats[nextRightIndex].T {
 			// We have matching points on both sides, compute the result.
 			output = append(output, promql.FPoint{
-				F: b.operatorFunc(leftPoint.F, right.Floats[nextRightIndex].F),
+				F: b.op(leftPoint.F, right.Floats[nextRightIndex].F),
 				T: leftPoint.T,
 			})
 		}
@@ -264,7 +262,7 @@ func (b *BinaryOperator) computeResult(left InstantVectorSeriesData, right Insta
 	}
 }
 
-func (b *BinaryOperator) Close() {
+func (b *BinaryOperation) Close() {
 	if b.Left != nil {
 		b.Left.Close()
 	}
@@ -282,12 +280,12 @@ func (b *BinaryOperator) Close() {
 	}
 }
 
-// binaryOperatorSeriesBuffer buffers series data until it is needed by BinaryOperator.
+// binaryOperationSeriesBuffer buffers series data until it is needed by BinaryOperation.
 //
 // For example, if the source operator produces series in order A, B, C, but their corresponding output series from the
-// binary operator are in order B, A, C, binaryOperatorSeriesBuffer will buffer the data for series A while series B is
+// binary operation are in order B, A, C, binaryOperationSeriesBuffer will buffer the data for series A while series B is
 // produced, then return series A when needed.
-type binaryOperatorSeriesBuffer struct {
+type binaryOperationSeriesBuffer struct {
 	source          InstantVectorOperator
 	nextIndexToRead int
 
@@ -299,8 +297,8 @@ type binaryOperatorSeriesBuffer struct {
 	output []InstantVectorSeriesData
 }
 
-func newBinaryOperatorSeriesBuffer(source InstantVectorOperator) *binaryOperatorSeriesBuffer {
-	return &binaryOperatorSeriesBuffer{
+func newBinaryOperationSeriesBuffer(source InstantVectorOperator) *binaryOperationSeriesBuffer {
+	return &binaryOperationSeriesBuffer{
 		source: source,
 		buffer: map[int]InstantVectorSeriesData{},
 	}
@@ -308,7 +306,7 @@ func newBinaryOperatorSeriesBuffer(source InstantVectorOperator) *binaryOperator
 
 // getSeries returns the data for the series in seriesIndices.
 // The returned slice is only safe to use until getSeries is called again.
-func (b *binaryOperatorSeriesBuffer) getSeries(ctx context.Context, seriesIndices []int) ([]InstantVectorSeriesData, error) {
+func (b *binaryOperationSeriesBuffer) getSeries(ctx context.Context, seriesIndices []int) ([]InstantVectorSeriesData, error) {
 	if cap(b.output) < len(seriesIndices) {
 		// TODO: pool?
 		b.output = make([]InstantVectorSeriesData, len(seriesIndices))
@@ -329,7 +327,7 @@ func (b *binaryOperatorSeriesBuffer) getSeries(ctx context.Context, seriesIndice
 	return b.output, nil
 }
 
-func (b *binaryOperatorSeriesBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (InstantVectorSeriesData, error) {
+func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (InstantVectorSeriesData, error) {
 	for seriesIndex > b.nextIndexToRead {
 		d, err := b.source.Next(ctx)
 		if err != nil {
@@ -354,7 +352,9 @@ func (b *binaryOperatorSeriesBuffer) getSingleSeries(ctx context.Context, series
 	return d, nil
 }
 
-var arithmeticOperatorFuncs = map[parser.ItemType]binaryOperatorFunc{
+type binaryOperationFunc func(left, right float64) float64
+
+var arithmeticOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	parser.ADD: func(left, right float64) float64 {
 		return left + right
 	},
