@@ -201,8 +201,8 @@ func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.DefaultProduceTopic(w.kafkaCfg.Topic),
 
-		// Use a static partitioner because we want to be in control of the partition.
-		kgo.RecordPartitioner(newKafkaStaticPartitioner()),
+		// We set the partition field in each record.
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 
 		// Set the upper bounds the size of a record batch.
 		kgo.ProducerBatchMaxBytes(16_000_000),
@@ -239,27 +239,4 @@ func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
 		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
 	)
 	return kgo.NewClient(opts...)
-}
-
-type kafkaStaticPartitioner struct{}
-
-func newKafkaStaticPartitioner() *kafkaStaticPartitioner {
-	return &kafkaStaticPartitioner{}
-}
-
-// ForTopic implements kgo.Partitioner.
-func (p *kafkaStaticPartitioner) ForTopic(string) kgo.TopicPartitioner {
-	return p
-}
-
-// RequiresConsistency implements kgo.TopicPartitioner.
-func (p *kafkaStaticPartitioner) RequiresConsistency(_ *kgo.Record) bool {
-	// Never let Kafka client to write the record to another partition
-	// if the partition is down.
-	return true
-}
-
-// Partition implements kgo.TopicPartitioner.
-func (p *kafkaStaticPartitioner) Partition(r *kgo.Record, _ int) int {
-	return int(r.Partition)
 }
