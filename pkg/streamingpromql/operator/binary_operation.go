@@ -72,6 +72,7 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata,
 	}
 
 	// Keep series labels for later so we can use them to generate error messages.
+	// We'll return them to the pool in Close().
 	b.leftMetadata = leftMetadata
 	b.rightMetadata = rightMetadata
 
