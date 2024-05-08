@@ -225,7 +225,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	} else {
 		m, err := q.populateMatrix(ctx, series)
 		if err != nil {
-			return &promql.Result{Value: m}
+			return &promql.Result{Err: err}
 		}
 
 		q.result = &promql.Result{Value: m}
