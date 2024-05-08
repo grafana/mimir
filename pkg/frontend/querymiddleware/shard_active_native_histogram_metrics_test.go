@@ -19,7 +19,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/klauspost/compress/s2"
 	"github.com/pkg/errors"
-	//"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"

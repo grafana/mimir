@@ -2530,6 +2530,7 @@ func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
 		expectedFetchedSeries       uint64
 		expectedMetrics             []cardinality.ActiveMetricWithBucketCount
 		expectedNumQueriedIngesters int
+		expectedError               error
 	}{
 		"should return an empty response if no metric match": {
 			requestMatchers:             []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown")},
@@ -2554,6 +2555,10 @@ func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
 			expectedFetchedSeries:       2,
 			expectedMetrics:             []cardinality.ActiveMetricWithBucketCount{{Metric: "metric", SeriesCount: 2, BucketCount: 16, MaxBucketCount: 8, MinBucketCount: 8, AvgBucketCount: 8.0}},
 			expectedNumQueriedIngesters: numIngesters,
+		},
+		"aborts if response is too large": {
+			requestMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "large_metric")},
+			expectedError:   ErrResponseTooLarge,
 		},
 	}
 
@@ -2628,6 +2633,11 @@ func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
 
 					// Query active native histogram metric stats.
 					series, err := d.ActiveNativeHistogramMetrics(ctx, testData.requestMatchers)
+					if testData.expectedError != nil {
+						require.ErrorIs(t, err, testData.expectedError)
+						return
+					}
+
 					require.NoError(t, err)
 					assert.ElementsMatch(t, testData.expectedMetrics, series.Data)
 

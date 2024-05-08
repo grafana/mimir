@@ -2135,11 +2135,8 @@ func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*l
 	}
 
 	maxResponseSize := math.MaxInt
-	// For native histograms we are going to return metrics level information so we don't need to limit the response size.
-	if !nativeHistograms {
-		if limit := d.limits.ActiveSeriesResultsMaxSizeBytes(tenantID); limit > 0 {
-			maxResponseSize = limit
-		}
+	if limit := d.limits.ActiveSeriesResultsMaxSizeBytes(tenantID); limit > 0 {
+		maxResponseSize = limit
 	}
 	res := newActiveSeriesResponse(d.hashCollisionCount, maxResponseSize, !nativeHistograms)
 
