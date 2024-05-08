@@ -9,7 +9,7 @@ weight: 110
 
 # Configure a unique Grafana Mimir's Memberlist cluster label in the mimir-distributed Helm chart installation
 
-This document shows the step to configure cluster label verification in a Grafana Mimir installed by Helm.
+This document shows the steps to configure cluster label verification in a Grafana Mimir installed by Helm.
 Multiple [Memberlist](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/memberlist-and-the-gossip-protocol/) [gossip ring](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/) cluster is at risk of merging into one without enabling cluster label verification.
 For example, if a Mimir, Tempo or Loki are running in the same Kubernetes cluster, they might communicate with each other without this configuration update.
 Once cluster label verification is enabled, before Mimir components communicate with other components, it will verify whether those other components are having same cluster label.
