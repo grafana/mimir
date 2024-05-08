@@ -80,8 +80,8 @@ Once the rollout is completed, verify the change by looking at the `/memberlist`
 Run the following port-forward command on several different Grafana Mimir components.
 
 ```bash
-   kubectl port-forward pod/<mimir-pod-1> --kube-context=<my-k8s-context> --namespace=<my-mimir-namespace> 8080:80
-   kubectl port-forward pod/<mimir-pod-2> --kube-context=<my-k8s-context> --namespace=<my-mimir-namespace> 8081:80
+   kubectl port-forward pod/<mimir-pod-1> --kube-context=<my-k8s-context> --namespace=<my-mimir-namespace> 8080:8080
+   kubectl port-forward pod/<mimir-pod-2> --kube-context=<my-k8s-context> --namespace=<my-mimir-namespace> 8081:8080
 ```
 
 Replace mimir-pod with several actual pods from different Mimir components.
