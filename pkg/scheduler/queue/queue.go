@@ -51,29 +51,29 @@ type SchedulerRequest struct {
 	ParentSpanContext opentracing.SpanContext
 }
 
-// UserIndex is opaque type that allows to resume iteration over users between successive calls
-// of RequestQueue.GetNextRequestForQuerier method.
-type UserIndex struct {
+// TenantIndex is opaque type that allows to resume iteration over tenants
+// between successive calls of RequestQueue.GetNextRequestForQuerier method.
+type TenantIndex struct {
 	last int
 }
 
-// ReuseLastUser modifies index to start iteration on the same user, for which last queue was returned.
-func (ui UserIndex) ReuseLastUser() UserIndex {
+// ReuseLastTenant modifies index to start iteration on the same tenant, for which last queue was returned.
+func (ui TenantIndex) ReuseLastTenant() TenantIndex {
 	if ui.last >= 0 {
-		return UserIndex{last: ui.last - 1}
+		return TenantIndex{last: ui.last - 1}
 	}
 	return ui
 }
 
-// FirstUser returns UserIndex that starts iteration over user queues from the very first user.
-func FirstUser() UserIndex {
-	return UserIndex{last: -1}
+// FirstTenant returns TenantIndex that starts iteration over tenant queues from the very first tenant.
+func FirstTenant() TenantIndex {
+	return TenantIndex{last: -1}
 }
 
 // Request stored into the queue.
 type Request interface{}
 
-// RequestQueue holds incoming requests in per-user queues. It also assigns each user specified number of queriers,
+// RequestQueue holds incoming requests in per-tenant queues. It also assigns each tenant specified number of queriers,
 // and when querier asks for next request to handle (using GetNextRequestForQuerier), it returns requests
 // in a fair fashion.
 type RequestQueue struct {
@@ -87,9 +87,10 @@ type RequestQueue struct {
 
 	// metrics for reporting
 	connectedQuerierWorkers *atomic.Int32
-	queueLength             *prometheus.GaugeVec   // per user
-	discardedRequests       *prometheus.CounterVec // per user
-	enqueueDuration         prometheus.Histogram
+	// metrics are broken out with "user" label for backwards compat, despite update to "tenant" terminology
+	queueLength       *prometheus.GaugeVec   // per user
+	discardedRequests *prometheus.CounterVec // per user
+	enqueueDuration   prometheus.Histogram
 
 	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
@@ -275,7 +276,7 @@ func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEn
 // Sending the request to the call's result channel will block until it the result is read or the call is canceled.
 // The call can be discarded if the work is completed, otherwise it can remain in the list of waiting calls.
 func (q *RequestQueue) trySendNextRequestForQuerier(broker *queueBroker, call *nextRequestForQuerierCall) (sent bool) {
-	req, tenant, idx, err := broker.dequeueRequestForQuerier(call.lastUserIndex.last, call.querierID)
+	req, tenant, idx, err := broker.dequeueRequestForQuerier(call.lastTenantIndex.last, call.querierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
 		call.sendError(err)
@@ -283,16 +284,16 @@ func (q *RequestQueue) trySendNextRequestForQuerier(broker *queueBroker, call *n
 		return true
 	}
 
-	call.lastUserIndex.last = idx
+	call.lastTenantIndex.last = idx
 	if req == nil {
 		// Nothing available for this querier, try again next time.
 		return false
 	}
 
 	reqForQuerier := nextRequestForQuerier{
-		req:           req.req,
-		lastUserIndex: call.lastUserIndex,
-		err:           nil,
+		req:             req.req,
+		lastTenantIndex: call.lastTenantIndex,
+		err:             nil,
 	}
 
 	requestSent := call.send(reqForQuerier)
@@ -339,15 +340,15 @@ func (q *RequestQueue) EnqueueRequestToDispatcher(tenantID string, req Request, 
 	}
 }
 
-// GetNextRequestForQuerier find next user queue and takes the next request off of it. Will block if there are no requests.
-// By passing user index from previous call of this method, querier guarantees that it iterates over all users fairly.
-// If querier finds that request from the user is already expired, it can get a request for the same user by using UserIndex.ReuseLastUser.
-func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID string) (Request, UserIndex, error) {
+// GetNextRequestForQuerier finds next tenant queue and takes the next request off of it. Will block if there are no requests.
+// By passing tenant index from previous call of this method, querier guarantees that it iterates over all tenants fairly.
+// If querier finds that request from the tenant is already expired, it can get a request for the same tenant by using TenantIndex.ReuseLastTenant.
+func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last TenantIndex, querierID string) (Request, TenantIndex, error) {
 	call := &nextRequestForQuerierCall{
-		ctx:           ctx,
-		querierID:     QuerierID(querierID),
-		lastUserIndex: last,
-		resultChan:    make(chan nextRequestForQuerier),
+		ctx:             ctx,
+		querierID:       QuerierID(querierID),
+		lastTenantIndex: last,
+		resultChan:      make(chan nextRequestForQuerier),
 	}
 
 	select {
@@ -355,7 +356,7 @@ func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIn
 		// The dispatcher now knows we're waiting. Either we'll get a request to send to a querier, or we'll cancel.
 		select {
 		case result := <-call.resultChan:
-			return result.req, result.lastUserIndex, result.err
+			return result.req, result.lastTenantIndex, result.err
 		case <-ctx.Done():
 			return nil, last, ctx.Err()
 		}
@@ -367,7 +368,7 @@ func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIn
 }
 
 func (q *RequestQueue) stop(_ error) error {
-	q.stopRequested <- struct{}{} // Why not close the channel? We only want to trigger dispatcherLoop() once.
+	close(q.stopRequested)
 	<-q.stopCompleted
 
 	return nil
@@ -442,13 +443,23 @@ func (q *RequestQueue) processForgetDisconnectedQueriers() (resharded bool) {
 	return q.queueBroker.forgetDisconnectedQueriers(time.Now())
 }
 
+// nextRequestForQuerierCall is a "request" indicating that the querier is ready to receive the next query request.
+// It embeds an unbuffered result channel for the nextRequestForQuerier "response" to be written to.
+// "Request" and "Response" terminology is avoided in the naming here to avoid confusion with the actual query requests.
 type nextRequestForQuerierCall struct {
-	ctx           context.Context
-	querierID     QuerierID
-	lastUserIndex UserIndex
-	resultChan    chan nextRequestForQuerier
+	ctx             context.Context
+	querierID       QuerierID
+	lastTenantIndex TenantIndex
+	resultChan      chan nextRequestForQuerier
+}
 
-	haveUsed bool // Must be set to true after sending a message to resultChan, to ensure we only ever try to send one message to resultChan.
+// nextRequestForQuerier is the "response" to a nextRequestForQuerierCall, to be written to the call's result channel.
+// Errors are embedded in this response rather than written to a separate error channel
+// so that lastTenantIndex can still be returned back to the querier connection.
+type nextRequestForQuerier struct {
+	req             Request
+	lastTenantIndex TenantIndex
+	err             error
 }
 
 func (q *nextRequestForQuerierCall) sendError(err error) {
@@ -456,15 +467,9 @@ func (q *nextRequestForQuerierCall) sendError(err error) {
 	_ = q.send(nextRequestForQuerier{err: err})
 }
 
-// send sends req to the GetNextRequestForQuerier call that is waiting for a new query.
-// Returns true if sending succeeds, or false otherwise (eg. because the GetNextRequestForQuerier call has already returned due to a context
-// cancellation).
+// send sends req to the nextRequestForQuerierCall result channel that is waiting for a new query.
+// Returns true if sending succeeds, or false if req context is timed out or canceled.
 func (q *nextRequestForQuerierCall) send(req nextRequestForQuerier) bool {
-	if q.haveUsed {
-		panic("bug: should not try to send multiple messages to a querier")
-	}
-
-	q.haveUsed = true
 	defer close(q.resultChan)
 
 	select {
@@ -473,10 +478,4 @@ func (q *nextRequestForQuerierCall) send(req nextRequestForQuerier) bool {
 	case <-q.ctx.Done():
 		return false
 	}
-}
-
-type nextRequestForQuerier struct {
-	req           Request
-	lastUserIndex UserIndex
-	err           error
 }

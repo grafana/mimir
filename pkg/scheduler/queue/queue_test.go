@@ -365,7 +365,7 @@ func runQueueConsumerIters(
 ) func(consumerIdx int) error {
 	return func(consumerIdx int) error {
 		consumerIters := queueActorIterationCount(totalIters, numConsumers, consumerIdx)
-		lastTenantIndex := FirstUser()
+		lastTenantIndex := FirstTenant()
 		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
 		queue.SubmitRegisterQuerierConnection(querierID)
 		defer queue.SubmitUnregisterQuerierConnection(querierID)
@@ -388,8 +388,8 @@ func runQueueConsumerIters(
 type consumeRequest func(request Request) error
 
 func queueConsume(
-	ctx context.Context, queue *RequestQueue, querierID string, lastTenantIndex UserIndex, consumeFunc consumeRequest,
-) (UserIndex, error) {
+	ctx context.Context, queue *RequestQueue, querierID string, lastTenantIndex TenantIndex, consumeFunc consumeRequest,
+) (TenantIndex, error) {
 	request, idx, err := queue.GetNextRequestForQuerier(ctx, lastTenantIndex, querierID)
 	if err != nil {
 		return lastTenantIndex, err
@@ -430,7 +430,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	querier2wg.Add(1)
 	go func() {
 		defer querier2wg.Done()
-		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstUser(), "querier-2")
+		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstTenant(), "querier-2")
 		require.NoError(t, err)
 	}()
 
@@ -478,7 +478,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstUser(), querierID)
+		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstTenant(), querierID)
 		errChan <- err
 	}()
 
@@ -516,7 +516,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	queue.SubmitRegisterQuerierConnection(querierID)
 	queue.SubmitNotifyQuerierShutdown(querierID)
 
-	_, _, err := queue.GetNextRequestForQuerier(context.Background(), FirstUser(), querierID)
+	_, _, err := queue.GetNextRequestForQuerier(context.Background(), FirstTenant(), querierID)
 	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
 }
 
@@ -556,10 +556,10 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 	ctx, cancel := context.WithCancel(context.Background())
 	call := &nextRequestForQuerierCall{
-		ctx:           ctx,
-		querierID:     QuerierID(querierID),
-		lastUserIndex: FirstUser(),
-		resultChan:    make(chan nextRequestForQuerier),
+		ctx:             ctx,
+		querierID:       QuerierID(querierID),
+		lastTenantIndex: FirstTenant(),
+		resultChan:      make(chan nextRequestForQuerier),
 	}
 	cancel() // ensure querier context done before send is attempted
 
