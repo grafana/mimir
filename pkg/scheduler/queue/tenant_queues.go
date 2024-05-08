@@ -466,9 +466,11 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, sc
 
 	if tenant.maxQueriers == 0 || len(tqa.querierIDsSorted) <= tenant.maxQueriers {
 		// shuffle shard is either disabled or calculation is unnecessary;
-		// a nil querier set for the tenant indicates tenant can use all queriers
+		prevQuerierIDSet := tqa.tenantQuerierIDs[tenantID]
+		// assigning querier set to nil for the tenant indicates tenant can use all queriers
 		tqa.tenantQuerierIDs[tenantID] = nil
-		return false
+		// tenant may have already been assigned all queriers; only indicate reshard if this changed
+		return prevQuerierIDSet != nil
 	}
 
 	querierIDSet := make(map[QuerierID]struct{}, tenant.maxQueriers)
