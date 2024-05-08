@@ -40,10 +40,6 @@ func init() {
 						stoppedLoad <- totalLoad.Load()
 						return
 					default:
-						/*sum := 0
-						for i := 0; i < 10000; i++ {
-							sum += i
-						}*/
 						n := fibonacci(40)
 						fmt.Println(n)
 					}
