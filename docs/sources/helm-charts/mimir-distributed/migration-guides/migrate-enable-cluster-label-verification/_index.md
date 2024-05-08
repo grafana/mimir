@@ -45,7 +45,7 @@ mimir:
 
 Rollout the installation to apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`. Replace `my-mimir-release` with the actual Mimir release name.
 
-### 2. Set cluster label to all Mimir components
+### 2. Set cluster label on all Mimir components
 
 Set cluster label to all Mimir components by setting the following configuration below.
 The configuration will set `cluster_label` to the Helm release name and the namespace where the helm release is installed.
