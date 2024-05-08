@@ -3815,7 +3815,23 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 		return nil, errPushGrpcDisabled
 	}
 
+	ingesterID := i.cfg.IngesterRing.InstanceID
+
+	level.Info(i.logger).Log("msg", "Push is being executed", "ingester", ingesterID)
+
+	if deadlineExceedEnabled.Load() {
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		time.Sleep(5 * time.Second)
+		level.Error(i.logger).Log("msg", "slept for 5s and will continue", "user", userID, "ingester", i.cfg.IngesterRing.InstanceID)
+	}
+
 	err := i.PushToStorage(ctx, req)
+
+	level.Info(i.logger).Log("msg", "Push completed", "ingester", ingesterID, "currentTimeout")
+
 	if err != nil {
 		return nil, err
 	}
