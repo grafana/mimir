@@ -187,9 +187,10 @@ func (q *Query) convertToOperator(expr parser.Expr) (operator.InstantVectorOpera
 		}
 
 		return &operator.BinaryOperator{
-			Left:  lhs,
-			Right: rhs,
-			Op:    e.Op,
+			Left:           lhs,
+			Right:          rhs,
+			VectorMatching: *e.VectorMatching,
+			Op:             e.Op,
 		}, nil
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
