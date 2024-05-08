@@ -46,15 +46,15 @@ type app struct {
 func (a *app) run() error {
 	a.parseArgs()
 
-	if a.listTests {
-		a.printTests()
-		return nil
-	}
-
 	// Do this early, to avoid doing a bunch of pointless work if the regex is invalid or doesn't match any tests.
 	filteredNames, err := a.filteredTestCaseNames()
 	if err != nil {
 		return err
+	}
+
+	if a.listTests {
+		a.printTests(filteredNames)
+		return nil
 	}
 
 	if err := a.findBenchmarkPackageDir(); err != nil {
@@ -196,8 +196,8 @@ func (a *app) startIngesterAndLoadData() error {
 	return nil
 }
 
-func (a *app) printTests() {
-	for _, name := range a.allTestCaseNames() {
+func (a *app) printTests(names []string) {
+	for _, name := range names {
 		println(name)
 	}
 }
