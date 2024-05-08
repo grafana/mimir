@@ -32,7 +32,7 @@ There are three steps of the configuration update:
 
 Cluster label verification flag is enabled by default with cluster label set to an empty string.
 Using the default value of cluster label can make different systems that use Memberlist communicate with each other if they also have not updated the default cluster label.
-Updating a new cluster label directly to a non-empty string value without disabling cluster label verification will cause Memberlist to form partition in the Grafana Mimir cluster.
+Setting a new cluster label directly to a non-empty string value without first disabling cluster label verification will cause Memberlist to form partition in the Grafana Mimir cluster.
 The partition makes some Mimir components to have different cluster label values which can make the cluster member can't communicate.
 To disable cluster label verification flag, set the following structured config in mimir-distributed values.yaml configuration.
 
