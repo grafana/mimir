@@ -20,7 +20,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20240503143227-c41c58734f46
+	github.com/grafana/dskit v0.0.0-20240507172911-12154f083c2c
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/json-iterator/go v1.1.12
@@ -70,7 +70,7 @@ require (
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/prometheus/procfs v0.12.0
-	github.com/thanos-io/objstore v0.0.0-20240418104850-a1e58aa3bed5
+	github.com/thanos-io/objstore v0.0.0-20240506104147-63052b4c4867
 	github.com/twmb/franz-go v1.16.1
 	github.com/twmb/franz-go/pkg/kadm v1.10.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240430054423-8b5395896363
@@ -259,7 +259,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240503181622-baf746893778
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240507095556-d5f2bb7dda35
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

@@ -507,8 +507,8 @@ github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc h1:PXZQA2WCxe85T
 github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc/go.mod h1:AHHlOEv1+GGQ3ktHMlhuTUwo3zljV3QJbC0+8o2kn+4=
 github.com/grafana/alerting v0.0.0-20240424080142-bb4f4f429d36 h1:v4aQ0cde8SCzNRrD2RczzmFolEkXWriSY9tKakAD0ng=
 github.com/grafana/alerting v0.0.0-20240424080142-bb4f4f429d36/go.mod h1:8nOsn7PWmttOmWiR7bvYIl3VLl+tIq72ZF+1y54w36M=
-github.com/grafana/dskit v0.0.0-20240503143227-c41c58734f46 h1:/CHn2YnjgCUjYZCRPqLhEk5GX+MlY4TKZ7BZciYSfM4=
-github.com/grafana/dskit v0.0.0-20240503143227-c41c58734f46/go.mod h1:HvSf3uf8Ps2vPpzHeAFyZTdUcbVr+Rxpq1xcx7J/muc=
+github.com/grafana/dskit v0.0.0-20240507172911-12154f083c2c h1:a9QDwklVugrWWvna12T8A9Y9tPqtKz8QR0V1FLRu9AA=
+github.com/grafana/dskit v0.0.0-20240507172911-12154f083c2c/go.mod h1:HvSf3uf8Ps2vPpzHeAFyZTdUcbVr+Rxpq1xcx7J/muc=
 github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc h1:BW+LjKJDz0So5LI8UZfW5neWeKpSkWqhmGjQFzcFfLM=
 github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc/go.mod h1:JVmqPBe8A/pZWwRoJW5ZjyALeY5OXMzPl7LrVXOdZAI=
 github.com/grafana/goautoneg v0.0.0-20231010094147-47ce5e72a9ae h1:Yxbw9jKGJVC6qAK5Ubzzb/qZwM6rRMMqaDc/d4Vp3pM=
@@ -517,8 +517,8 @@ github.com/grafana/gomemcache v0.0.0-20240229205252-cd6a66d6fb56 h1:X8IKQ0wu40wp
 github.com/grafana/gomemcache v0.0.0-20240229205252-cd6a66d6fb56/go.mod h1:PGk3RjYHpxMM8HFPhKKo+vve3DdlPUELZLSDEFehPuU=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe h1:yIXAAbLswn7VNWBIvM71O2QsgfgW9fRXZNR0DXe6pDU=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe/go.mod h1:MS2lj3INKhZjWNqd3N0m3J+Jxf3DAOnAH9VT3Sh9MUE=
-github.com/grafana/mimir-prometheus v0.0.0-20240503181622-baf746893778 h1:5AQ9H6vXBGIKzjC6X6WoGZUdQMi1+jCHxxa6FWOsGJ0=
-github.com/grafana/mimir-prometheus v0.0.0-20240503181622-baf746893778/go.mod h1:E2np9vZuQQY6rH0VCk4u/AggTkRs9db6i2PFIsg3VFI=
+github.com/grafana/mimir-prometheus v0.0.0-20240507095556-d5f2bb7dda35 h1:3F9wKNQ5L1gS2QMi6NcQUf2GB7fgxaFV8QkFHN/3/L8=
+github.com/grafana/mimir-prometheus v0.0.0-20240507095556-d5f2bb7dda35/go.mod h1:E2np9vZuQQY6rH0VCk4u/AggTkRs9db6i2PFIsg3VFI=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956 h1:em1oddjXL8c1tL0iFdtVtPloq2hRPen2MJQKoAWpxu0=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956/go.mod h1:qtI1ogk+2JhVPIXVc6q+NHziSmy2W5GbdQZFUHADCBU=
 github.com/grafana/pyroscope-go/godeltaprof v0.1.6 h1:nEdZ8louGAplSvIJi1HVp7kWvFvdiiYg3COLlTwJiFo=
@@ -891,8 +891,8 @@ github.com/stretchr/testify v1.9.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8
 github.com/subosito/gotenv v1.4.1/go.mod h1:ayKnFf/c6rvx/2iiLrJUk1e6plDbT3edrFNGqEflhK0=
 github.com/tencentyun/cos-go-sdk-v5 v0.7.40 h1:W6vDGKCHe4wBACI1d2UgE6+50sJFhRWU4O8IB2ozzxM=
 github.com/tencentyun/cos-go-sdk-v5 v0.7.40/go.mod h1:4dCEtLHGh8QPxHEkgq+nFaky7yZxQuYwgSJM87icDaw=
-github.com/thanos-io/objstore v0.0.0-20240418104850-a1e58aa3bed5 h1:2LxFD4FZCACq/LCNQ7vrMeg8LYrRG8+CtybhkQN+UjI=
-github.com/thanos-io/objstore v0.0.0-20240418104850-a1e58aa3bed5/go.mod h1:CuSIQu7lCntygNhEGKdLZLaoA8FtpAiC+454oLTXeUY=
+github.com/thanos-io/objstore v0.0.0-20240506104147-63052b4c4867 h1:1lC5qkSwtPVgvF6JJ39QrudgiGBcBIjXx/qqGg/ZhDo=
+github.com/thanos-io/objstore v0.0.0-20240506104147-63052b4c4867/go.mod h1:CuSIQu7lCntygNhEGKdLZLaoA8FtpAiC+454oLTXeUY=
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=
 github.com/twmb/franz-go v1.16.1 h1:rpWc7fB9jd7TgmCyfxzenBI+QbgS8ZfJOUQE+tzPtbE=
 github.com/twmb/franz-go v1.16.1/go.mod h1:/pER254UPPGp/4WfGqRi+SIRGE50RSQzVubQp6+N4FA=

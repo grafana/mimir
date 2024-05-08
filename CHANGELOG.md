@@ -10,10 +10,11 @@
 * [CHANGE] Query-frontend: Query results caching and experimental query blocking now utilize the PromQL string-formatted query format rather than the unvalidated query as submitted to the frontend. #7742
   * Query results caching should be more stable as all equivalent queries receive the same cache key, but there may be cache churn on first deploy with the updated format
   * Query blocking can no longer be circumvented with an equivalent query in a different format; see [Configure queries to block](https://grafana.com/docs/mimir/latest/configure/configure-blocked-queries/)
+* [CHANGE] Query-frontend: stop using `-validation.create-grace-period` to lamp how far into the future a query can span.
 * [FEATURE] Continuous-test: now runable as a module with `mimir -target=continuous-test`. #7747
 * [FEATURE] Store-gateway: Allow specific tenants to be enabled or disabled via `-store-gateway.enabled-tenants` or `-store-gateway.disabled-tenants` CLI flags or their corresponding YAML settings. #7653
 * [FEATURE] New `-<prefix>.s3.bucket-lookup-type` flag configures lookup style type, used to access bucket in s3 compatible providers. #7684
-* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.promql-engine=streaming`. #7693 #7898 #7899
+* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.promql-engine=streaming`. #7693 #7898 #7899 #8058
 * [FEATURE] New `/ingester/unregister-on-shutdown` HTTP endpoint allows dynamic access to ingesters' `-ingester.ring.unregister-on-shutdown` configuration. #7739
 * [FEATURE] Server: added experimental [PROXY protocol support](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt). The PROXY protocol support can be enabled via `-server.proxy-protocol-enabled=true`. When enabled, the support is added both to HTTP and gRPC listening ports. #7698
 * [FEATURE] Query-frontend, querier: new experimental `/cardinality/active_native_histogram_metrics` API to get active native histogram metric names with statistics about active native histogram buckets. #7982 #7986 #8008
@@ -57,6 +58,9 @@
 * [BUGFIX] OTLP: Don't generate target_info unless there are metrics. #8012
 * [BUGFIX] Query-frontend: Experimental query queue splitting: fix issue where offset and range selector duration were not considered when predicting query component. #7742
 * [BUGFIX] Querying: Empty matrix results were incorrectly returning `null` instead of `[]`. #8029
+* [BUGFIX] Distributor: Avoid pooling large buffers objects when unmarshalling incoming requests. #8044
+* [BUGFIX] All: don't increment `thanos_objstore_bucket_operation_failures_total` metric for cancelled requests. #8072
+* [BUGFIX] Query-frontend: fix empty metric name matcher not being applied under certain conditions. #8076
 
 ### Mixin
 
@@ -103,6 +107,7 @@
 * [BUGFIX] Fix panic in `loadgen` subcommand. #7629
 * [ENHANCEMENT] `mimirtool promql format`: Format PromQL query with Prometheus' string or pretty-print formatter. #7742
 * [BUGFIX] `mimirtool rules prepare`: do not add aggregation label to `on()` clause if already present in `group_left()` or `group_right()`. #7839
+* [BUGFIX] Analyze Grafana: fix parsing queries with variables. #8062
 
 ### Mimir Continuous Test
 
@@ -121,6 +126,7 @@
 ### Documentation
 
 * [ENHANCEMENT] Clarify Compactor and its storage volume when configured under Kubernetes. #7675
+* [ENHANCEMENT] Add OTLP route to _Mimir routes by path_ runbooks section. #8074
 
 ### Tools
 

@@ -216,7 +216,6 @@ func TestCases(metricSizes []int) []BenchCase {
 			tmp = append(tmp, c)
 		} else {
 			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 0})
-			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 1})
 			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 100})
 			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 1000})
 			// Important: if adding test cases with larger numbers of steps, make sure to adjust NumIntervals as well.

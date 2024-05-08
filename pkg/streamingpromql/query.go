@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -269,6 +270,10 @@ func (q *Query) populateMatrix(ctx context.Context, series []operator.SeriesMeta
 			Histograms: d.Histograms,
 		})
 	}
+
+	slices.SortFunc(m, func(a, b promql.Series) int {
+		return labels.Compare(a.Metric, b.Metric)
+	})
 
 	return m, nil
 }

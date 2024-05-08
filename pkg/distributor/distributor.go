@@ -745,7 +745,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
@@ -811,7 +811,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
@@ -870,7 +870,7 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 // filtering empty values. This is a protection mechanism for ingesters.
 func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
@@ -913,7 +913,7 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 
 func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
@@ -1052,7 +1052,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 // including data that later gets modified or dropped.
 func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
@@ -1240,7 +1240,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			d.cleanupAfterPushFinished(rs)
 		})
 
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
@@ -1271,9 +1271,11 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 	}
 }
 
-// nextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
+// NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
 // The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
-func nextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
+//
+// This function is used outside of this codebase.
+func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
 	cleanupInDefer := true
 	return func(ctx context.Context, req *Request) error {
 			cleanupInDefer = false
