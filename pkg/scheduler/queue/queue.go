@@ -181,21 +181,18 @@ func (q *RequestQueue) dispatcherLoop() {
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			stopping = true
 		case querierOp := <-q.querierOperations:
-			// These operations may cause a resharding, so we should always try to dispatch queries afterwards.
-			// In the future, we could make this smarter: detect when a resharding actually happened and only trigger dispatching queries in those cases.
-			needToDispatchQueries = true
-			q.processQuerierOperation(querierOp)
+			// Need to attempt to dispatch queries only if querier operation results in a resharding
+			needToDispatchQueries = q.processQuerierOperation(querierOp)
 		case r := <-q.requestsToEnqueue:
 			err := q.enqueueRequestToBroker(q.queueBroker, r)
 			r.errChan <- err
-
 			if err == nil {
 				needToDispatchQueries = true
 			}
 		case call := <-q.nextRequestForQuerierCalls:
-			dispatched := q.tryDispatchRequestToQuerier(q.queueBroker, call)
-			if !dispatched {
-				// No requests available for this querier connection right now. Add it to the list to try later.
+			requestSent := q.trySendNextRequestForQuerier(q.queueBroker, call)
+			if !requestSent {
+				// No requests available for this querier; add it to the list to try later.
 				waitingGetNextRequestForQuerierCalls.PushBack(call)
 			}
 		}
@@ -207,7 +204,7 @@ func (q *RequestQueue) dispatcherLoop() {
 				call := currentElement.Value.(*nextRequestForQuerierCall)
 				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
 
-				if q.tryDispatchRequestToQuerier(q.queueBroker, call) {
+				if q.trySendNextRequestForQuerier(q.queueBroker, call) {
 					waitingGetNextRequestForQuerierCalls.Remove(currentElement)
 				}
 
@@ -268,7 +265,7 @@ func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEn
 	return nil
 }
 
-// tryDispatchRequestToQuerier finds and forwards a request to a waiting GetNextRequestForQuerier call.
+// trySendNextRequestForQuerier finds and forwards a request to a waiting GetNextRequestForQuerier call.
 //
 // Returns true if the work for the nextRequestForQuerierCall is completed, meaning either:
 // a) the querier is found to be shutting down and the call was notified on its error channel, or
@@ -277,7 +274,7 @@ func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEn
 //
 // Sending the request to the call's result channel will block until it the result is read or the call is canceled.
 // The call can be discarded if the work is completed, otherwise it can remain in the list of waiting calls.
-func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *nextRequestForQuerierCall) (callCompleted bool) {
+func (q *RequestQueue) trySendNextRequestForQuerier(broker *queueBroker, call *nextRequestForQuerierCall) (sent bool) {
 	req, tenant, idx, err := broker.dequeueRequestForQuerier(call.lastUserIndex.last, call.querierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
