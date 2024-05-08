@@ -229,8 +229,6 @@ func (b *BinaryOperator) Next(ctx context.Context) (InstantVectorSeriesData, err
 	//   - would also mean that some arithmetic operations become faster, as we can use vectorisation (eg. leftPoints + rightPoints, rather than output[i] = left[i] + right[i] etc.)
 	//   - should we just change the InstantVectorOperator interface to use ([]float64, presence)? Would make some aggregation operations faster as well (eg. sum)
 
-	// Compute result for each output series
-	//   - Can we reuse either the left or right side slice for the output slice?
 	return b.computeResult(allLeftSeries[0], allRightSeries[0]), nil
 
 	// TODO: return series slices to the pool
@@ -238,7 +236,7 @@ func (b *BinaryOperator) Next(ctx context.Context) (InstantVectorSeriesData, err
 
 func (b *BinaryOperator) computeResult(left InstantVectorSeriesData, right InstantVectorSeriesData) InstantVectorSeriesData {
 	outputLength := min(len(left.Floats), len(right.Floats)) // We can't produce more output points than input points for arithmetic operators.
-	output := GetFPointSlice(outputLength)                   // Reuse one side for the output slice?
+	output := GetFPointSlice(outputLength)                   // FIXME: Reuse one side for the output slice?
 
 	nextRightIndex := 0
 
