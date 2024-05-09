@@ -175,6 +175,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			some_metric{env="1"} 0+1x4
 			some_metric{env="2"} 0+2x4
 			some_metric_with_gaps 0 1 _ 3
+			some_metric_with_stale_marker 0 1 stale 3
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
@@ -228,6 +229,22 @@ func TestRangeVectorSelectors(t *testing.T) {
 						Metric: labels.FromStrings("__name__", "some_metric_with_gaps"),
 						Floats: []promql.FPoint{
 							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+						},
+					},
+				},
+			},
+		},
+		"metric with stale marker": {
+			expr: "some_metric_with_stale_marker[3m]",
+			ts:   baseT.Add(3 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "some_metric_with_stale_marker"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT), F: 0},
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(3 * time.Minute)), F: 3},
 						},
 					},
 				},

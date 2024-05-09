@@ -9,6 +9,7 @@ load 1m
   some_metric{env="test", cluster="eu"} 0+180x4
   some_metric{env="test", cluster="us"} 0+240x4
   some_metric_with_gaps 0 60 120 180 240 _ 2000 2120 2240
+  some_metric_with_stale_marker 0 60 120 stale 240 300
 
 # Range query with rate.
 eval range from 0 to 4m step 1m rate(some_metric[1m])
@@ -34,3 +35,7 @@ eval range from 0 to 8m step 1m rate(some_metric_with_gaps[1m])
 
 eval range from 0 to 8m step 1m rate(some_metric_with_gaps[2m])
   {} _ 0.5 1 1 1 1 14.666666666666666 2 2
+
+# Test that we handle staleness markers correctly.
+eval range from 0 to 5m step 1m rate(some_metric_with_stale_marker[2m])
+  {} _ 0.5 1 1 1 1
