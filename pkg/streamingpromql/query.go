@@ -323,6 +323,10 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o o
 		})
 	}
 
+	slices.SortFunc(m, func(a, b promql.Series) int {
+		return labels.Compare(a.Metric, b.Metric)
+	})
+
 	return m, nil
 }
 

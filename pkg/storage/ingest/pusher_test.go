@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
@@ -46,6 +47,8 @@ func TestPusherConsumer(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	ctx := context.Background()
+
 	type response struct {
 		err error
 	}
@@ -60,7 +63,7 @@ func TestPusherConsumer(t *testing.T) {
 	}{
 		"single record": {
 			records: []record{
-				{content: wrBytes[0], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -69,9 +72,9 @@ func TestPusherConsumer(t *testing.T) {
 		},
 		"multiple records": {
 			records: []record{
-				{content: wrBytes[0], tenantID: tenantID},
-				{content: wrBytes[1], tenantID: tenantID},
-				{content: wrBytes[2], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[2], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -82,9 +85,9 @@ func TestPusherConsumer(t *testing.T) {
 		},
 		"unparsable record": {
 			records: []record{
-				{content: wrBytes[0], tenantID: tenantID},
-				{content: []byte{0}, tenantID: tenantID},
-				{content: wrBytes[1], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
+				{ctx: ctx, content: []byte{0}, tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -95,9 +98,9 @@ func TestPusherConsumer(t *testing.T) {
 		},
 		"failed processing of record": {
 			records: []record{
-				{content: wrBytes[0], tenantID: tenantID},
-				{content: wrBytes[1], tenantID: tenantID},
-				{content: wrBytes[2], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[2], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -108,8 +111,8 @@ func TestPusherConsumer(t *testing.T) {
 		},
 		"failed processing of last record": {
 			records: []record{
-				{content: wrBytes[0], tenantID: tenantID},
-				{content: wrBytes[1], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -120,9 +123,9 @@ func TestPusherConsumer(t *testing.T) {
 		},
 		"failed processing & failed unmarshalling": {
 			records: []record{
-				{content: wrBytes[0], tenantID: tenantID},
-				{content: wrBytes[1], tenantID: tenantID},
-				{content: []byte{0}, tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
+				{ctx: ctx, content: []byte{0}, tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -134,9 +137,9 @@ func TestPusherConsumer(t *testing.T) {
 		"no records": {},
 		"ingester client error": {
 			records: []record{
-				{content: wrBytes[0], tenantID: tenantID},
-				{content: wrBytes[1], tenantID: tenantID},
-				{content: wrBytes[2], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[2], tenantID: tenantID},
 			},
 			responses: []response{
 				{err: ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "ingester test error")},
@@ -148,11 +151,11 @@ func TestPusherConsumer(t *testing.T) {
 		},
 		"ingester server error": {
 			records: []record{
-				{content: wrBytes[0], tenantID: tenantID},
-				{content: wrBytes[1], tenantID: tenantID},
-				{content: wrBytes[2], tenantID: tenantID},
-				{content: wrBytes[3], tenantID: tenantID},
-				{content: wrBytes[4], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[1], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[2], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[3], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[4], tenantID: tenantID},
 			},
 			responses: []response{
 				{err: ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "ingester test error")},
@@ -199,9 +202,13 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}}
 	reqBytes, err := req.Marshal()
 	require.NoError(t, err)
-	reqRecord := record{tenantID: "user-1", content: reqBytes}
 
-	// Utility function used to setup the test.
+	reqRecord := record{
+		ctx:      context.Background(),
+		tenantID: "user-1",
+		content:  reqBytes,
+	}
+
 	setupTest := func(pusherErr error) (*pusherConsumer, *concurrency.SyncBuffer, *prometheus.Registry) {
 		pusher := pusherFunc(func(context.Context, *mimirpb.WriteRequest) error {
 			return pusherErr
@@ -273,6 +280,42 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		`), "cortex_ingest_storage_reader_records_failed_total"))
 	})
 
+}
+
+func TestPusherConsumer_consume_ShouldHonorContextCancellation(t *testing.T) {
+	// Create a request that will be used in this test; the content doesn't matter,
+	// since we only test errors.
+	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}}
+	reqBytes, err := req.Marshal()
+	require.NoError(t, err)
+
+	reqRecord := record{
+		ctx:      context.Background(), // The record's context isn't important for the test.
+		tenantID: "user-1",
+		content:  reqBytes,
+	}
+
+	// didPush signals that the testing record was pushed to the pusher.
+	didPush := make(chan struct{}, 1)
+	pusher := pusherFunc(func(ctx context.Context, _ *mimirpb.WriteRequest) error {
+		close(didPush)
+		<-ctx.Done()
+		return context.Cause(ctx)
+	})
+	consumer := newPusherConsumer(pusher, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+
+	wantCancelErr := cancellation.NewErrorf("stop")
+
+	// For this test, cancelling the top-most context must cancel an in-flight call to push,
+	// to prevent pusher from hanging forever.
+	canceledCtx, cancel := context.WithCancelCause(context.Background())
+	go func() {
+		<-didPush
+		cancel(wantCancelErr)
+	}()
+
+	err = consumer.consume(canceledCtx, []record{reqRecord})
+	require.ErrorIs(t, err, wantCancelErr)
 }
 
 // ingesterError mimics how the ingester construct errors

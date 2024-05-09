@@ -9,7 +9,7 @@
       store_gateway_enabled: false,
 
       // Enables shuffle sharding for partitions, for (experimental) ingest storage.
-      ingest_storage_partitions_enabled: false,
+      ingest_storage_partitions_enabled: $._config.ingest_storage_enabled,
 
       // Default shard sizes. We want the shard size to be divisible by the number of zones.
       // We typically run 3 zones

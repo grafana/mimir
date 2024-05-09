@@ -14,6 +14,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// Common functionality shared between the Memcached and Redis Cache implementations
+
 const (
 	opSet            = "set"
 	opGetMulti       = "getmulti"

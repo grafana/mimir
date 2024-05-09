@@ -3327,7 +3327,7 @@
           "kind": "field",
           "name": "creation_grace_period",
           "required": false,
-          "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future).",
+          "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor and ingester.",
           "fieldValue": null,
           "fieldDefaultValue": 600000000000,
           "fieldFlag": "validation.create-grace-period",
@@ -6500,6 +6500,17 @@
               "fieldDefaultValue": 100,
               "fieldFlag": "blocks-storage.bucket-store.max-concurrent",
               "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_concurrent_queue_timeout",
+              "required": false,
+              "desc": "Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.max-concurrent-queue-timeout",
+              "fieldType": "duration",
               "fieldCategory": "advanced"
             },
             {

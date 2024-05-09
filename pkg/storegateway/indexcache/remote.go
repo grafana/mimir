@@ -38,7 +38,7 @@ var (
 // RemoteIndexCache is a memcached or redis based index cache.
 type RemoteIndexCache struct {
 	logger log.Logger
-	remote cache.RemoteCacheClient
+	remote cache.Cache
 
 	// Metrics.
 	requests *prometheus.CounterVec
@@ -46,7 +46,7 @@ type RemoteIndexCache struct {
 }
 
 // NewRemoteIndexCache makes a new RemoteIndexCache.
-func NewRemoteIndexCache(logger log.Logger, remote cache.RemoteCacheClient, reg prometheus.Registerer) (*RemoteIndexCache, error) {
+func NewRemoteIndexCache(logger log.Logger, remote cache.Cache, reg prometheus.Registerer) (*RemoteIndexCache, error) {
 	c := &RemoteIndexCache{
 		logger: logger,
 		remote: remote,
