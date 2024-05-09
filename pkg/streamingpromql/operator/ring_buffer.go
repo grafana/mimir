@@ -26,16 +26,16 @@ func (b *RingBuffer) DiscardPointsBefore(t int64) {
 	}
 }
 
-// HeadAndTail returns slices of the points in this buffer.
+// UnsafePoints returns slices of the points in this buffer.
 // Either or both slice could be empty.
 // Callers must not modify the values in the returned slices or return them to a pool.
-// Calling HeadAndTail is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
-// points into the slice, whereas HeadAndTail returns a view into the internal state of this buffer.
+// Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
+// points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
 // The returned slices are no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset).
 //
 // FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
 // Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
-func (b *RingBuffer) HeadAndTail() ([]promql.FPoint, []promql.FPoint) {
+func (b *RingBuffer) UnsafePoints() ([]promql.FPoint, []promql.FPoint) {
 	endOfTailSegment := b.firstIndex + b.size
 
 	if endOfTailSegment > len(b.points) {
@@ -51,14 +51,14 @@ func (b *RingBuffer) HeadAndTail() ([]promql.FPoint, []promql.FPoint) {
 // CopyPoints returns a single slice of the points in this buffer.
 // Callers may modify the values in the returned slice, and should return the slice to the pool by calling
 // PutFPointSlice when it is no longer needed.
-// Calling HeadAndTail is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
-// points into the slice, whereas HeadAndTail returns a view into the internal state of this buffer.
+// Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
+// points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
 func (b *RingBuffer) CopyPoints() []promql.FPoint {
 	if b.size == 0 {
 		return nil
 	}
 
-	head, tail := b.HeadAndTail()
+	head, tail := b.UnsafePoints()
 	combined := GetFPointSlice(len(head) + len(tail))
 	combined = append(combined, head...)
 	combined = append(combined, tail...)

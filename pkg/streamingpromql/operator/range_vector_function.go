@@ -72,7 +72,7 @@ func (m *RangeVectorFunction) NextSeries(ctx context.Context) (InstantVectorSeri
 			return InstantVectorSeriesData{}, err
 		}
 
-		head, tail := m.buffer.HeadAndTail()
+		head, tail := m.buffer.UnsafePoints()
 		count := len(head) + len(tail)
 
 		if count < 2 {

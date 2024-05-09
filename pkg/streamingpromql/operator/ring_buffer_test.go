@@ -138,17 +138,17 @@ func shouldHavePoints(t *testing.T, buf *RingBuffer, expected ...promql.FPoint) 
 
 	require.Equal(t, expected, pointsFromForEach)
 
-	head, tail := buf.HeadAndTail()
-	combinedHeadAndTail := append(head, tail...)
+	head, tail := buf.UnsafePoints()
+	combinedPoints := append(head, tail...)
 
-	if len(combinedHeadAndTail) == 0 {
-		combinedHeadAndTail = nil // expected will be nil when it's empty, but appending two empty slices returns a non-nil slice.
+	if len(combinedPoints) == 0 {
+		combinedPoints = nil // expected will be nil when it's empty, but appending two empty slices returns a non-nil slice.
 	}
 
-	require.Equal(t, expected, combinedHeadAndTail)
+	require.Equal(t, expected, combinedPoints)
 
-	allPoints := buf.CopyPoints()
-	require.Equal(t, expected, allPoints)
+	copiedPoints := buf.CopyPoints()
+	require.Equal(t, expected, copiedPoints)
 
 	if len(expected) != 0 {
 		require.Equal(t, expected[0], buf.First())
