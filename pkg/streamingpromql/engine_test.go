@@ -214,7 +214,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"no samples in range": {
-			expr: "some_nonexistent_metric[1m]",
+			expr: "some_metric[1m]",
 			ts:   baseT.Add(20 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{},
