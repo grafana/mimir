@@ -75,7 +75,7 @@ mimir:
 ```
 
 Apply the configuration changes by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
-Wait until all Pods are ready before verifying that the configuration is applied correctly.
+Replace `<my-mimir-release>` with the actual Mimir release name. Wait until all Pods are ready before verifying that the configuration is applied correctly.
 
 ## Verifying the configuration changes
 
