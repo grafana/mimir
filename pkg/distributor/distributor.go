@@ -317,7 +317,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	var requestBufferPool util.Pool
 	if cfg.MaxRequestPoolBufferSize > 0 {
-		requestBufferPool = util.NewBucketedBufferPool(1e3, cfg.MaxRequestPoolBufferSize, 2)
+		requestBufferPool = util.NewBucketedBufferPool(1<<10, cfg.MaxRequestPoolBufferSize, 4)
 	} else {
 		requestBufferPool = util.NewBufferPool()
 	}
