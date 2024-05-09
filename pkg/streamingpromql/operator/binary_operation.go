@@ -53,82 +53,21 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata,
 		return nil, fmt.Errorf("unsupported binary operation '%s'", b.Op)
 	}
 
-	// TODO: break this into smaller functions, it's enormous
-
-	leftMetadata, err := b.Left.SeriesMetadata(ctx)
-	if err != nil {
+	if canProduceAnySeries, err := b.loadSeriesMetadata(ctx); err != nil {
 		return nil, err
-	}
-
-	if len(leftMetadata) == 0 {
-		// FIXME: this is incorrect for 'or'
-		// No series on left-hand side, we'll never have any output series.
+	} else if !canProduceAnySeries {
 		return nil, nil
 	}
 
-	rightMetadata, err := b.Right.SeriesMetadata(ctx)
-	if err != nil {
-		return nil, err
-	}
+	allPairs := b.computeSeriesPairs()
 
-	// Keep series labels for later so we can use them to generate error messages.
-	// We'll return them to the pool in Close().
-	b.leftMetadata = leftMetadata
-	b.rightMetadata = rightMetadata
-
-	if len(rightMetadata) == 0 {
-		// FIXME: this is incorrect for 'or' and 'unless'
-		// No series on right-hand side, we'll never have any output series.
-		return nil, nil
-	}
-
-	// TODO: Prometheus' engine uses strings for the key here, which would avoid issues with hash collisions, but seems much slower.
-	// Either we should use strings, or we'll need to deal with hash collisions.
-	hashFunc := b.hashFunc()
-
-	// TODO: pool binaryOperationSeriesPair? Pool internal slices?
-	// TODO: guess initial size of map?
-	allPairs := map[uint64]*binaryOperationSeriesPair{}
-
-	// TODO: is it better to use whichever side has fewer series for this first loop? Should result in a smaller map and therefore less work later on
-	// Would need to be careful about 'or' and 'unless' cases
-	for idx, s := range leftMetadata {
-		hash := hashFunc(s.Labels)
-		series, exists := allPairs[hash]
-
-		if !exists {
-			series = &binaryOperationSeriesPair{}
-			allPairs[hash] = series
-		}
-
-		series.leftSeriesIndices = append(series.leftSeriesIndices, idx)
-	}
-
-	for idx, s := range rightMetadata {
-		hash := hashFunc(s.Labels)
-
-		if series, exists := allPairs[hash]; exists {
-			series.rightSeriesIndices = append(series.rightSeriesIndices, idx)
-		}
-
-		// FIXME: if this is an 'or' operation, then we need to create the right side even if the left doesn't exist
-	}
-
-	// Remove pairs that cannot produce series.
-	for hash, pair := range allPairs {
-		if len(pair.leftSeriesIndices) == 0 || len(pair.rightSeriesIndices) == 0 {
-			// FIXME: this is incorrect for 'or' and 'unless'
-			// No matching series on at least one side for this output series, so output series will have no samples. Remove it.
-			delete(allPairs, hash)
-		}
-	}
-
+	// TODO: move this into computeSeriesPairs?
 	allMetadata := make([]SeriesMetadata, 0, len(allPairs))
 	b.remainingSeries = make([]*binaryOperationSeriesPair, 0, len(allPairs))
 	labelsFunc := b.labelsFunc()
 
 	for _, pair := range allPairs {
-		firstSeriesLabels := leftMetadata[pair.leftSeriesIndices[0]].Labels
+		firstSeriesLabels := b.leftMetadata[pair.leftSeriesIndices[0]].Labels
 		allMetadata = append(allMetadata, SeriesMetadata{Labels: labelsFunc(firstSeriesLabels)})
 		b.remainingSeries = append(b.remainingSeries, pair)
 	}
@@ -151,6 +90,84 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata,
 	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right)
 
 	return allMetadata, nil
+}
+
+// loadSeriesMetadata loads series metadata from both sides of this operation.
+// It returns false if one side returned no series and that means there is no way for this operation to return any series.
+// (eg. if doing A + B and either A or B have no series, then there is no way for this operation to produce any series)
+func (b *BinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) {
+	// We retain the series labels for later so we can use them to generate error messages.
+	// We'll return them to the pool in Close().
+
+	var err error
+	b.leftMetadata, err = b.Left.SeriesMetadata(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	if len(b.leftMetadata) == 0 {
+		// FIXME: this is incorrect for 'or'
+		// No series on left-hand side, we'll never have any output series.
+		return false, nil
+	}
+
+	b.rightMetadata, err = b.Right.SeriesMetadata(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	if len(b.rightMetadata) == 0 {
+		// FIXME: this is incorrect for 'or' and 'unless'
+		// No series on right-hand side, we'll never have any output series.
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (b *BinaryOperation) computeSeriesPairs() map[uint64]*binaryOperationSeriesPair {
+	// TODO: Prometheus' engine uses strings for the key here, which would avoid issues with hash collisions, but seems much slower.
+	// Either we should use strings, or we'll need to deal with hash collisions.
+	hashFunc := b.hashFunc()
+
+	// TODO: pool binaryOperationSeriesPair? Pool internal slices?
+	// TODO: guess initial size of map?
+	allPairs := map[uint64]*binaryOperationSeriesPair{}
+
+	// TODO: is it better to use whichever side has fewer series for this first loop? Should result in a smaller map and therefore less work later on
+	// Would need to be careful about 'or' and 'unless' cases
+	for idx, s := range b.leftMetadata {
+		hash := hashFunc(s.Labels)
+		series, exists := allPairs[hash]
+
+		if !exists {
+			series = &binaryOperationSeriesPair{}
+			allPairs[hash] = series
+		}
+
+		series.leftSeriesIndices = append(series.leftSeriesIndices, idx)
+	}
+
+	for idx, s := range b.rightMetadata {
+		hash := hashFunc(s.Labels)
+
+		if series, exists := allPairs[hash]; exists {
+			series.rightSeriesIndices = append(series.rightSeriesIndices, idx)
+		}
+
+		// FIXME: if this is an 'or' operation, then we need to create the right side even if the left doesn't exist
+	}
+
+	// Remove pairs that cannot produce series.
+	for hash, pair := range allPairs {
+		if len(pair.leftSeriesIndices) == 0 || len(pair.rightSeriesIndices) == 0 {
+			// FIXME: this is incorrect for 'or' and 'unless'
+			// No matching series on at least one side for this output series, so output series will have no samples. Remove it.
+			delete(allPairs, hash)
+		}
+	}
+
+	return allPairs
 }
 
 // hashFunc returns a function that computes the hash of the output group this series belongs to.
