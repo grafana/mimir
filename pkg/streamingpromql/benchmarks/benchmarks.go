@@ -108,6 +108,13 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr:  "a_X - b_X",
 			Steps: 10000,
 		},
+		// Test the case where one side of a binary operation has many more series than the other.
+		{
+			Expr: `a_100{l=~"[13579]."} - b_100`,
+		},
+		{
+			Expr: `a_2000{l=~"1..."} - b_2000`,
+		},
 		//{
 		//	Expr: "a_X and b_X{l=~'.*[0-4]$'}",
 		//},
