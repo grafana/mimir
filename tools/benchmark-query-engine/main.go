@@ -248,6 +248,7 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 	cmd.Env = append(cmd.Env, "STREAMING_PROMQL_ENGINE_BENCHMARK_SKIP_COMPARE_RESULTS=true")
 
 	if err := cmd.Run(); err != nil {
+		slog.Warn("output from failed command", "output", buf.String())
 		return fmt.Errorf("executing command failed: %w", err)
 	}
 
