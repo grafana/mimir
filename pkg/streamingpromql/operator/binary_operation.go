@@ -347,9 +347,12 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 }
 
 func (b *BinaryOperation) computeResult(left InstantVectorSeriesData, right InstantVectorSeriesData) InstantVectorSeriesData {
-	// TODO: return slices to pool if they're not reused
+	// FIXME: it is only safe to unconditionally put these slices back in the pool for one-to-one matching (otherwise we'll need some of these slices for future groups)
+	defer PutFPointSlice(left.Floats)
+	defer PutFPointSlice(right.Floats)
+
 	outputLength := min(len(left.Floats), len(right.Floats)) // We can't produce more output points than input points for arithmetic operations.
-	output := GetFPointSlice(outputLength)                   // FIXME: Reuse one side for the output slice?
+	output := GetFPointSlice(outputLength)                   // TODO: Reuse one side for the output slice. If we do this, need to make sure not to return it to the pool
 
 	nextRightIndex := 0
 
