@@ -62,9 +62,11 @@ func OTLPHandler(
 	}, []string{"user"})
 
 	otlpUncompressedBodySize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "cortex_distributor_otlp_uncompressed_request_body_size_bytes",
-		Help:    "Size of uncompressed OTLP request body in bytes.",
-		Buckets: uncompressedBodySizeBuckets,
+		Name:                            "cortex_distributor_otlp_uncompressed_request_body_size_bytes",
+		Help:                            "Size of uncompressed OTLP request body in bytes.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+		NativeHistogramMaxBucketNumber:  100,
 	}, []string{"user"})
 
 	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {

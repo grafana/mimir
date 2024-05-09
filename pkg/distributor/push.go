@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -41,10 +42,6 @@ var (
 	errRetryBaseLessThanOneSecond    = errors.New("retry base duration should not be less than 1 second")
 	errNonPositiveMaxBackoffExponent = errors.New("max backoff exponent should be a positive value")
 )
-
-const mb = 1024 * 1024
-
-var uncompressedBodySizeBuckets = []float64{1 * mb, 2.5 * mb, 5 * mb, 10 * mb, 25 * mb, 50 * mb, 100 * mb, 250 * mb}
 
 const (
 	SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
@@ -88,9 +85,11 @@ func Handler(
 ) http.Handler {
 
 	uncompressedBodySize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "cortex_distributor_uncompressed_request_body_size_bytes",
-		Help:    "Size of uncompressed request body in bytes.",
-		Buckets: uncompressedBodySizeBuckets,
+		Name:                            "cortex_distributor_uncompressed_request_body_size_bytes",
+		Help:                            "Size of uncompressed request body in bytes.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+		NativeHistogramMaxBucketNumber:  100,
 	}, []string{"user"})
 
 	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
