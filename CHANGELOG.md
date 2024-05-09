@@ -57,7 +57,6 @@
 * [BUGFIX] OTLP: Don't generate target_info unless there are metrics. #8012
 * [BUGFIX] Query-frontend: Experimental query queue splitting: fix issue where offset and range selector duration were not considered when predicting query component. #7742
 * [BUGFIX] Querying: Empty matrix results were incorrectly returning `null` instead of `[]`. #8029
-* [BUGFIX] Distributor: Avoid pooling large buffers objects when unmarshalling incoming requests. #8044
 * [BUGFIX] All: don't increment `thanos_objstore_bucket_operation_failures_total` metric for cancelled requests. #8072
 * [BUGFIX] Query-frontend: fix empty metric name matcher not being applied under certain conditions. #8076
 * [BUGFIX] Querying: Fix regex matching of multibyte runes with dot operator. #8089
