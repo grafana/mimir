@@ -35,7 +35,7 @@ func (b *RingBuffer) DiscardPointsBefore(t int64) {
 //
 // FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
 // Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
-func (b *RingBuffer) UnsafePoints(maxT int64) ([]promql.FPoint, []promql.FPoint) {
+func (b *RingBuffer) UnsafePoints(maxT int64) (head []promql.FPoint, tail []promql.FPoint) {
 	size := b.size
 
 	for size > 0 && b.points[(b.firstIndex+size-1)%len(b.points)].T > maxT {
