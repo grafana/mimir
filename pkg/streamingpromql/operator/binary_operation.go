@@ -75,18 +75,8 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata,
 		return nil, nil
 	}
 
-	allOutputSeries := b.computeOutputSeries()
-
-	// TODO: move this into computeOutputSeries?
-	allMetadata := make([]SeriesMetadata, 0, len(allOutputSeries))
-	b.remainingSeries = make([]*binaryOperationOutputSeries, 0, len(allOutputSeries))
-	labelsFunc := b.labelsFunc()
-
-	for _, outputSeries := range allOutputSeries {
-		firstSeriesLabels := b.leftMetadata[outputSeries.leftSeriesIndices[0]].Labels
-		allMetadata = append(allMetadata, SeriesMetadata{Labels: labelsFunc(firstSeriesLabels)})
-		b.remainingSeries = append(b.remainingSeries, outputSeries)
-	}
+	allMetadata, allSeries := b.computeOutputSeries()
+	b.remainingSeries = allSeries
 
 	// TODO: sort output series
 	// Sort output series: either to favour left side or right side
@@ -141,24 +131,24 @@ func (b *BinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) 
 	return true, nil
 }
 
-func (b *BinaryOperation) computeOutputSeries() map[uint64]*binaryOperationOutputSeries {
+func (b *BinaryOperation) computeOutputSeries() ([]SeriesMetadata, []*binaryOperationOutputSeries) {
 	// TODO: Prometheus' engine uses strings for the key here, which would avoid issues with hash collisions, but seems much slower.
 	// Either we should use strings, or we'll need to deal with hash collisions.
 	hashFunc := b.hashFunc()
 
 	// TODO: pool binaryOperationOutputSeries? Pool internal slices?
 	// TODO: guess initial size of map?
-	allOutputSeries := map[uint64]*binaryOperationOutputSeries{}
+	outputSeriesMap := map[uint64]*binaryOperationOutputSeries{}
 
 	// TODO: is it better to use whichever side has fewer series for this first loop? Should result in a smaller map and therefore less work later on
 	// Would need to be careful about 'or' and 'unless' cases
 	for idx, s := range b.leftMetadata {
 		hash := hashFunc(s.Labels)
-		series, exists := allOutputSeries[hash]
+		series, exists := outputSeriesMap[hash]
 
 		if !exists {
 			series = &binaryOperationOutputSeries{}
-			allOutputSeries[hash] = series
+			outputSeriesMap[hash] = series
 		}
 
 		series.leftSeriesIndices = append(series.leftSeriesIndices, idx)
@@ -167,7 +157,7 @@ func (b *BinaryOperation) computeOutputSeries() map[uint64]*binaryOperationOutpu
 	for idx, s := range b.rightMetadata {
 		hash := hashFunc(s.Labels)
 
-		if series, exists := allOutputSeries[hash]; exists {
+		if series, exists := outputSeriesMap[hash]; exists {
 			series.rightSeriesIndices = append(series.rightSeriesIndices, idx)
 		}
 
@@ -175,15 +165,25 @@ func (b *BinaryOperation) computeOutputSeries() map[uint64]*binaryOperationOutpu
 	}
 
 	// Remove series that cannot produce samples.
-	for hash, outputSeries := range allOutputSeries {
+	for hash, outputSeries := range outputSeriesMap {
 		if len(outputSeries.leftSeriesIndices) == 0 || len(outputSeries.rightSeriesIndices) == 0 {
 			// FIXME: this is incorrect for 'or' and 'unless'
 			// No matching series on at least one side for this output series, so output series will have no samples. Remove it.
-			delete(allOutputSeries, hash)
+			delete(outputSeriesMap, hash)
 		}
 	}
 
-	return allOutputSeries
+	allMetadata := make([]SeriesMetadata, 0, len(outputSeriesMap))
+	allSeries := make([]*binaryOperationOutputSeries, 0, len(outputSeriesMap))
+	labelsFunc := b.labelsFunc()
+
+	for _, outputSeries := range outputSeriesMap {
+		firstSeriesLabels := b.leftMetadata[outputSeries.leftSeriesIndices[0]].Labels
+		allMetadata = append(allMetadata, SeriesMetadata{Labels: labelsFunc(firstSeriesLabels)})
+		allSeries = append(allSeries, outputSeries)
+	}
+
+	return allMetadata, allSeries
 }
 
 // hashFunc returns a function that computes the hash of the output group this series belongs to.
