@@ -61,7 +61,7 @@ mimir:
 ```
 
 Apply the configuration changes again by running `helm upgrade <my-mimir-release> mimir-distributed -f values.yaml`.
-Wait until all Pods are ready before going to the next step.
+Replace `<my-mimir-release>` with the actual Mimir release name. Wait until all Pods are ready before going to the next step.
 
 ### 3. Enable Memberlist cluster label verification
 
