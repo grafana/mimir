@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sort"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -46,6 +47,20 @@ type binaryOperationOutputSeries struct {
 	rightSeriesIndices []int
 }
 
+// latestLeftSeries returns the index of the last series from the left source needed for this output series.
+//
+// It assumes that leftSeriesIndices is sorted in ascending order.
+func (s binaryOperationOutputSeries) latestLeftSeries() int {
+	return s.leftSeriesIndices[len(s.leftSeriesIndices)-1]
+}
+
+// latestRightSeries returns the index of the last series from the right source needed for this output series.
+//
+// It assumes that rightSeriesIndices is sorted in ascending order.
+func (s binaryOperationOutputSeries) latestRightSeries() int {
+	return s.rightSeriesIndices[len(s.rightSeriesIndices)-1]
+}
+
 // SeriesMetadata returns the series expected to be produced by this operator.
 //
 // Note that it is possible that this method returns a series which will not have any points, as the
@@ -76,21 +91,8 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata,
 	}
 
 	allMetadata, allSeries := b.computeOutputSeries()
+	b.sortSeries(allMetadata, allSeries)
 	b.remainingSeries = allSeries
-
-	// TODO: sort output series
-	// Sort output series: either to favour left side or right side
-	//   - Add comment emphasising this is critical for managing peak memory consumption, could make this decision more sophisticated in the future
-	//   - TODO: think this through with some examples, especially for pathological cases where a single output series has multiple series on each side for different timesteps
-	//   - One-to-one matching:
-	//       - assume one series on each side of output series
-	//       - therefore best option to keep peak memory utilisation low is to order series so we don't hold higher cardinality side in memory
-	//         eg. if LHS is 20 series, and RHS is 2 series, best option is to go through LHS series in order and potentially have to hold some RHS series in memory,
-	//             as then in worst case we'll hold 2 series in memory at once
-	//   - Many-to-one / one-to-many matching:
-	//       - assume "one" side is higher cardinality, and series from "many" side are used multiple times
-	//       - therefore best option to keep peak memory utilisation low is to order series so we don't hold higher cardinality side in memory, especially as we'll
-	//         likely have to hold some "many" side series in memory anyway (doesn't make sense to have to hold both "one" and "many" side series)
 
 	b.leftBuffer = newBinaryOperationSeriesBuffer(b.Left)
 	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right)
@@ -184,6 +186,83 @@ func (b *BinaryOperation) computeOutputSeries() ([]SeriesMetadata, []*binaryOper
 	}
 
 	return allMetadata, allSeries
+}
+
+// sortSeries sorts metadata and series in place to try to minimise the number of input series we'll need to buffer in memory.
+//
+// This is critical for minimising the memory consumption of this operator: if we choose a poor ordering of series,
+// we'll need to buffer many input series in memory.
+//
+// At present, sortSeries uses a very basic heuristic to guess the best way to sort the output series, but we could make
+// this more sophisticated in the future.
+func (b *BinaryOperation) sortSeries(metadata []SeriesMetadata, series []*binaryOperationOutputSeries) {
+	// For one-to-one matching, we assume that each output series takes one series from each side of the operator.
+	// If this is true, then the best order is the one in which we read from the highest cardinality side in order.
+	// If we do this, then in the worst case, we'll have to buffer the whole of the lower cardinality side.
+	// (Compare this with sorting so that we read the lowest cardinality side in order: in the worst case, we'll have
+	// to buffer the whole of the higher cardinality side.)
+	//
+	// FIXME: this is reasonable for one-to-one matching, but likely not for one-to-many / many-to-one.
+	// For one-to-many / many-to-one, it would likely be best to buffer the side used for multiple output series (the "one" side),
+	// as we'll need to retain these series for multiple output series anyway.
+
+	var sortInterface sort.Interface
+
+	if len(b.leftMetadata) < len(b.rightMetadata) {
+		sortInterface = favourRightSideSorter{metadata, series}
+	} else {
+		sortInterface = favourLeftSideSorter{metadata, series}
+	}
+
+	sort.Sort(sortInterface)
+}
+
+type favourRightSideSorter struct {
+	metadata []SeriesMetadata
+	series   []*binaryOperationOutputSeries
+}
+
+type favourLeftSideSorter struct {
+	metadata []SeriesMetadata
+	series   []*binaryOperationOutputSeries
+}
+
+func (g favourRightSideSorter) Len() int {
+	return len(g.metadata)
+}
+
+func (g favourLeftSideSorter) Len() int {
+	return len(g.metadata)
+}
+
+func (g favourRightSideSorter) Less(i, j int) bool {
+	iRight := g.series[i].latestRightSeries()
+	jRight := g.series[j].latestRightSeries()
+	if iRight != jRight {
+		return iRight < jRight
+	}
+
+	return g.series[i].latestLeftSeries() < g.series[j].latestLeftSeries()
+}
+
+func (g favourLeftSideSorter) Less(i, j int) bool {
+	iLeft := g.series[i].latestLeftSeries()
+	jLeft := g.series[j].latestLeftSeries()
+	if iLeft != jLeft {
+		return iLeft < jLeft
+	}
+
+	return g.series[i].latestRightSeries() < g.series[j].latestRightSeries()
+}
+
+func (g favourRightSideSorter) Swap(i, j int) {
+	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
+	g.series[i], g.series[j] = g.series[j], g.series[i]
+}
+
+func (g favourLeftSideSorter) Swap(i, j int) {
+	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
+	g.series[i], g.series[j] = g.series[j], g.series[i]
 }
 
 // hashFunc returns a function that computes the hash of the output group this series belongs to.
