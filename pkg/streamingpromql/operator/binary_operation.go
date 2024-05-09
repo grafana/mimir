@@ -378,13 +378,8 @@ func (b *BinaryOperation) computeResult(left InstantVectorSeriesData, right Inst
 }
 
 func (b *BinaryOperation) Close() {
-	if b.Left != nil {
-		b.Left.Close()
-	}
-
-	if b.Right != nil {
-		b.Right.Close()
-	}
+	b.Left.Close()
+	b.Right.Close()
 
 	if b.leftMetadata != nil {
 		PutSeriesMetadataSlice(b.leftMetadata)
