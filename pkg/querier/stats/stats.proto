@@ -34,4 +34,7 @@ message Stats {
   uint64 estimated_series_count = 8;
   // The sum of durations that the query spent in the queue, before it was handled by querier.
   google.protobuf.Duration queue_time = 9 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  // TotalSamples represents the total number of samples scanned while evaluating a query.
+  // This value is taken from the Prometheus engine github.com/prometheus/prometheus/util/stats/query_stats.go
+  uint64 total_samples = 10;
 }
