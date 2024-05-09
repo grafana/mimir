@@ -161,6 +161,9 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr: "rate(a_X[1m]) + rate(b_X[1m])",
 		},
 		{
+			Expr: "sum(a_X + b_X)",
+		},
+		{
 			Expr: "sum by (le)(rate(h_X[1m]))",
 		},
 		//{
