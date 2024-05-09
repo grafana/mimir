@@ -323,6 +323,7 @@ func (f *Handler) reportQueryStats(
 		"split_queries", stats.LoadSplitQueries(),
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
 		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
+		"total_samples", stats.LoadTotalSamples(),
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {

@@ -52,6 +52,10 @@ type mockQuerier struct {
 	seriesSet storage.SeriesSet
 }
 
+func (m mockQuerier) Close() error {
+	return nil
+}
+
 func (m mockQuerier) Select(_ context.Context, _ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 	if sp == nil {
 		panic("mockQuerier: select params must be set")
@@ -62,6 +66,10 @@ func (m mockQuerier) Select(_ context.Context, _ bool, sp *storage.SelectHints, 
 type mockChunkQuerier struct {
 	storage.ChunkQuerier
 	seriesSet storage.SeriesSet
+}
+
+func (m mockChunkQuerier) Close() error {
+	return nil
 }
 
 func (m mockChunkQuerier) Select(_ context.Context, _ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
