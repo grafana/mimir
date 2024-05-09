@@ -174,6 +174,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 		load 1m
 			some_metric{env="1"} 0+1x4
 			some_metric{env="2"} 0+2x4
+			some_metric_with_gaps 0 1 _ 3
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
@@ -216,6 +217,20 @@ func TestRangeVectorSelectors(t *testing.T) {
 			ts:   baseT.Add(20 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{},
+			},
+		},
+		"does not return points outside range if last selected point does not align to end of range": {
+			expr: "some_metric_with_gaps[1m]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "some_metric_with_gaps"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+						},
+					},
+				},
 			},
 		},
 	}

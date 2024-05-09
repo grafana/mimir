@@ -342,14 +342,14 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o ope
 		}
 
 		b.Reset()
-		_, err = o.NextStepSamples(b)
+		step, err := o.NextStepSamples(b)
 		if err != nil {
 			return nil, err
 		}
 
 		m = append(m, promql.Series{
 			Metric: s.Labels,
-			Floats: b.CopyPoints(),
+			Floats: b.CopyPoints(step.RangeEnd),
 		})
 	}
 

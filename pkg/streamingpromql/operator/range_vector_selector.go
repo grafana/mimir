@@ -97,6 +97,9 @@ func (m *RangeVectorSelector) fillBuffer(floats *RingBuffer, rangeStart, rangeEn
 				continue
 			}
 
+			// We might append a sample beyond the range end, but this is OK:
+			// - callers of NextStepSamples are expected to pass the same RingBuffer to subsequent calls, so the point is not lost
+			// - callers of NextStepSamples are expected to handle the case where the buffer contains points beyond the end of the range
 			floats.Append(promql.FPoint{T: t, F: f})
 
 			if t >= rangeEnd {

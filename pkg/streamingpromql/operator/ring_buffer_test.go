@@ -3,6 +3,7 @@
 package operator
 
 import (
+	"math"
 	"testing"
 
 	"github.com/prometheus/prometheus/promql"
@@ -138,20 +139,41 @@ func shouldHavePoints(t *testing.T, buf *RingBuffer, expected ...promql.FPoint) 
 
 	require.Equal(t, expected, pointsFromForEach)
 
-	head, tail := buf.UnsafePoints()
+	if len(expected) == 0 {
+		shouldHavePointsAtOrBeforeTime(t, buf, math.MaxInt64, expected...)
+		_, present := buf.LastAtOrBefore(math.MaxInt64)
+		require.False(t, present)
+	} else {
+		require.Equal(t, expected[0], buf.First())
+		// We test LastAtOrBefore() below.
+
+		lastPointT := expected[len(expected)-1].T
+
+		shouldHavePointsAtOrBeforeTime(t, buf, lastPointT, expected...)
+		shouldHavePointsAtOrBeforeTime(t, buf, lastPointT+1, expected...)
+		shouldHavePointsAtOrBeforeTime(t, buf, lastPointT-1, expected[:len(expected)-1]...)
+	}
+}
+
+func shouldHavePointsAtOrBeforeTime(t *testing.T, buf *RingBuffer, ts int64, expected ...promql.FPoint) {
+	head, tail := buf.UnsafePoints(ts)
 	combinedPoints := append(head, tail...)
 
-	if len(combinedPoints) == 0 {
-		combinedPoints = nil // expected will be nil when it's empty, but appending two empty slices returns a non-nil slice.
+	if len(expected) == 0 {
+		require.Len(t, combinedPoints, 0)
+	} else {
+		require.Equal(t, expected, combinedPoints)
 	}
 
-	require.Equal(t, expected, combinedPoints)
-
-	copiedPoints := buf.CopyPoints()
+	copiedPoints := buf.CopyPoints(ts)
 	require.Equal(t, expected, copiedPoints)
 
-	if len(expected) != 0 {
-		require.Equal(t, expected[0], buf.First())
-		require.Equal(t, expected[len(expected)-1], buf.Last())
+	end, present := buf.LastAtOrBefore(ts)
+
+	if len(expected) == 0 {
+		require.False(t, present)
+	} else {
+		require.True(t, present)
+		require.Equal(t, expected[len(expected)-1], end)
 	}
 }

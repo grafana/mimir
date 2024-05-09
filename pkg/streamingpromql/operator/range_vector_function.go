@@ -72,7 +72,7 @@ func (m *RangeVectorFunction) NextSeries(ctx context.Context) (InstantVectorSeri
 			return InstantVectorSeriesData{}, err
 		}
 
-		head, tail := m.buffer.UnsafePoints()
+		head, tail := m.buffer.UnsafePoints(step.RangeEnd)
 		count := len(head) + len(tail)
 
 		if count < 2 {
@@ -81,7 +81,7 @@ func (m *RangeVectorFunction) NextSeries(ctx context.Context) (InstantVectorSeri
 		}
 
 		firstPoint := m.buffer.First()
-		lastPoint := m.buffer.Last()
+		lastPoint, _ := m.buffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
 		delta := lastPoint.F - firstPoint.F
 		previousValue := firstPoint.F
 
