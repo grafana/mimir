@@ -54,7 +54,7 @@ func (m *RangeVectorSelector) NextSeries(_ context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) NextStep(floats *RingBuffer) (RangeVectorStepData, error) {
+func (m *RangeVectorSelector) NextStepSamples(floats *RingBuffer) (RangeVectorStepData, error) {
 	if m.nextT > m.Selector.End {
 		return RangeVectorStepData{}, EOS
 	}

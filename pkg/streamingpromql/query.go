@@ -342,7 +342,7 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o ope
 		}
 
 		b.Reset()
-		_, err = o.NextStep(b)
+		_, err = o.NextStepSamples(b)
 		if err != nil {
 			return nil, err
 		}

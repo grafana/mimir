@@ -63,9 +63,9 @@ func (m *RangeVectorFunction) NextSeries(ctx context.Context) (InstantVectorSeri
 	}
 
 	for {
-		step, err := m.Inner.NextStep(m.buffer)
+		step, err := m.Inner.NextStepSamples(m.buffer)
 
-		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStep is guaranteed to return exactly EOS, never a wrapped error.
+		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 		if err == EOS {
 			return data, nil
 		} else if err != nil {

@@ -52,15 +52,15 @@ type RangeVectorOperator interface {
 	// SeriesMetadata must be called exactly once before calling NextSeries.
 	NextSeries(ctx context.Context) error
 
-	// NextStep populates the provided RingBuffer with the samples for the next time step for the
+	// NextStepSamples populates the provided RingBuffer with the samples for the next time step for the
 	// current series and returns the timestamps of the next time step, or returns EOS if no more time
 	// steps are available.
 	// The provided RingBuffer is expected to only contain points for the current series, and the same
-	// RingBuffer should be passed to subsequent NextStep calls for the same series.
+	// RingBuffer should be passed to subsequent NextStepSamples calls for the same series.
 	// The provided RingBuffer may be populated with points beyond the end of the expected time range, and
 	// callers should compare returned points' timestamps to the returned RangeVectorStepData.RangeEnd.
-	// Next must be called at least once before calling NextStep.
-	NextStep(floats *RingBuffer) (RangeVectorStepData, error)
+	// Next must be called at least once before calling NextStepSamples.
+	NextStepSamples(floats *RingBuffer) (RangeVectorStepData, error)
 }
 
 var EOS = errors.New("operator stream exhausted") //nolint:revive
