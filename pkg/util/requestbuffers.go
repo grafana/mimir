@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/prometheus/util/pool"
 )
 
-// Pool is an abstraction for a pool of objects.
+// Pool is an abstraction for a pool of byte slices.
 type Pool interface {
 	// Get returns a new byte slices that fits the given size.
 	Get(sz int) []byte

@@ -161,7 +161,7 @@ func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*
 	res := &pushRequest{Version: req.Header.Get("X-Prometheus-Remote-Write-Version")}
 
 	var wr mimirpb.WriteRequest
-	if err := util.ParseProtoReader(context.Background(), bytes.NewReader(body), int(req.ContentLength), 100<<20, buffers, &wr, util.RawSnappy); err != nil {
+	if _, err := util.ParseProtoReader(context.Background(), bytes.NewReader(body), int(req.ContentLength), 100<<20, buffers, &wr, util.RawSnappy); err != nil {
 		res.Error = fmt.Errorf("failed to decode decodePush request: %s", err).Error()
 		return nil, true
 	}

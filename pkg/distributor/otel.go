@@ -61,6 +61,12 @@ func OTLPHandler(
 		Help: "The total number of OTLP requests that have come in to the distributor.",
 	}, []string{"user"})
 
+	otlpUncompressedBodySize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "cortex_distributor_otlp_uncompressed_request_body_size_bytes",
+		Help:    "Size of uncompressed OTLP request body in bytes.",
+		Buckets: uncompressedBodySizeBuckets,
+	}, []string{"user"})
+
 	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
@@ -74,27 +80,27 @@ func OTLPHandler(
 			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\" or no compression supported", contentEncoding)
 		}
 
-		var decoderFunc func(io.ReadCloser) (pmetricotlp.ExportRequest, error)
+		var decoderFunc func(io.ReadCloser) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
 		switch contentType {
 		case pbContentType:
-			decoderFunc = func(reader io.ReadCloser) (pmetricotlp.ExportRequest, error) {
+			decoderFunc = func(reader io.ReadCloser) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
 				exportReq := pmetricotlp.NewExportRequest()
 				unmarshaler := otlpProtoUnmarshaler{
 					request: &exportReq,
 				}
-				err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
+				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
-					return exportReq, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
+					return exportReq, 0, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
 						actual: tooLargeErr.Actual,
 						limit:  tooLargeErr.Limit,
 					}.Error())
 				}
-				return exportReq, err
+				return exportReq, protoBodySize, err
 			}
 
 		case jsonContentType:
-			decoderFunc = func(reader io.ReadCloser) (pmetricotlp.ExportRequest, error) {
+			decoderFunc = func(reader io.ReadCloser) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
 				exportReq := pmetricotlp.NewExportRequest()
 				sz := int(r.ContentLength)
 				if sz > 0 {
@@ -106,23 +112,23 @@ func OTLPHandler(
 					var err error
 					reader, err = gzip.NewReader(reader)
 					if err != nil {
-						return exportReq, errors.Wrap(err, "create gzip reader")
+						return exportReq, 0, errors.Wrap(err, "create gzip reader")
 					}
 				}
 
 				reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))
 				if _, err := buf.ReadFrom(reader); err != nil {
 					if util.IsRequestBodyTooLarge(err) {
-						return exportReq, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
+						return exportReq, 0, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
 							actual: -1,
 							limit:  maxRecvMsgSize,
 						}.Error())
 					}
 
-					return exportReq, errors.Wrap(err, "read write request")
+					return exportReq, 0, errors.Wrap(err, "read write request")
 				}
 
-				return exportReq, exportReq.UnmarshalJSON(buf.Bytes())
+				return exportReq, buf.Len(), exportReq.UnmarshalJSON(buf.Bytes())
 			}
 
 		default:
@@ -143,7 +149,7 @@ func OTLPHandler(
 		spanLogger.SetTag("content_encoding", contentEncoding)
 		spanLogger.SetTag("content_length", r.ContentLength)
 
-		otlpReq, err := decoderFunc(r.Body)
+		otlpReq, uncompressedBodySize, err := decoderFunc(r.Body)
 		if err != nil {
 			return err
 		}
@@ -157,6 +163,7 @@ func OTLPHandler(
 		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
 
 		otlpRequestsCounter.WithLabelValues(tenantID).Inc()
+		otlpUncompressedBodySize.WithLabelValues(tenantID).Observe(float64(uncompressedBodySize))
 
 		metrics, err := otelMetricsToTimeseries(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {

@@ -21,6 +21,8 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -39,6 +41,10 @@ var (
 	errRetryBaseLessThanOneSecond    = errors.New("retry base duration should not be less than 1 second")
 	errNonPositiveMaxBackoffExponent = errors.New("max backoff exponent should be a positive value")
 )
+
+const mb = 1024 * 1024
+
+var uncompressedBodySizeBuckets = []float64{1 * mb, 2.5 * mb, 5 * mb, 10 * mb, 25 * mb, 50 * mb, 100 * mb, 250 * mb}
 
 const (
 	SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
@@ -77,14 +83,31 @@ func Handler(
 	limits *validation.Overrides,
 	retryCfg RetryConfig,
 	push PushFunc,
+	reg prometheus.Registerer,
 	logger log.Logger,
 ) http.Handler {
+
+	uncompressedBodySize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "cortex_distributor_uncompressed_request_body_size_bytes",
+		Help:    "Size of uncompressed request body in bytes.",
+		Buckets: uncompressedBodySizeBuckets,
+	}, []string{"user"})
+
 	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
-		err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
+		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		tenantID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return err
+		}
+		uncompressedBodySize.WithLabelValues(tenantID).Observe(float64(protoBodySize))
+
+		return nil
 	})
 }
 
