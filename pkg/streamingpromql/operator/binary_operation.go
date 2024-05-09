@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
+// BinaryOperation represents a binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
 type BinaryOperation struct {
 	Left  InstantVectorOperator
 	Right InstantVectorOperator
@@ -45,6 +46,21 @@ type binaryOperationSeriesPair struct {
 	rightSeriesIndices []int
 }
 
+// SeriesMetadata returns the series expected to be produced by this operator.
+//
+// Note that it is possible that this method returns a series which will not have any points, as the
+// list of possible output series is generated based solely on the series labels, not their data.
+//
+// For example, if this operator is for a range query with the expression "left_metric + right_metric", but
+// left_metric has points at T=0 and T=1 in the query range, and right_metric has points at T=2 and T=3 in the
+// query range, then SeriesMetadata will return a series, but NextSeries will return no points for that series.
+//
+// If this affects many series in the query, this may cause consuming operators to be less efficient, but in
+// practice this rarely happens.
+//
+// (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
+// contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
+// avoid.)
 func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
 	b.op = arithmeticOperationFuncs[b.Op]
 	if b.op == nil {
