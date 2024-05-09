@@ -459,12 +459,19 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 }
 
 func (b *BinaryOperation) computeResult(left InstantVectorSeriesData, right InstantVectorSeriesData) InstantVectorSeriesData {
-	// FIXME: it is only safe to unconditionally put these slices back in the pool for one-to-one matching (otherwise we'll need some of these slices for future groups)
-	defer PutFPointSlice(left.Floats)
-	defer PutFPointSlice(right.Floats)
+	var output []promql.FPoint
 
-	outputLength := min(len(left.Floats), len(right.Floats)) // We can't produce more output points than input points for arithmetic operations.
-	output := GetFPointSlice(outputLength)                   // TODO: Reuse one side for the output slice. If we do this, need to make sure not to return it to the pool
+	// For one-to-one matching for arithmetic operators, reuse one of the input slices to avoid allocating another slice.
+	// We'll never produce more points than the smaller input side, so use that as our output slice.
+	//
+	// FIXME: this is not safe to do for one-to-many, many-to-one or many-to-many matching, as we may need the input series for later output series.
+	if len(left.Floats) < len(right.Floats) {
+		output = left.Floats[:0]
+		defer PutFPointSlice(right.Floats)
+	} else {
+		output = right.Floats[:0]
+		defer PutFPointSlice(left.Floats)
+	}
 
 	nextRightIndex := 0
 
