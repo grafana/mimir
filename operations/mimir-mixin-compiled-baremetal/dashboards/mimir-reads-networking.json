@@ -189,6 +189,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Ingress TCP connections (per pod)\nThe number of ingress TCP connections (HTTP and gRPC protocol).\n",
                   "fieldConfig": {
                      "custom": {
                         "fillOpacity": 0
@@ -247,7 +248,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "TCP connections (per pod)",
+                  "title": "Ingress TCP connections (per pod)",
                   "type": "timeseries"
                }
             ],
@@ -417,6 +418,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Ingress TCP connections (per pod)\nThe number of ingress TCP connections (HTTP and gRPC protocol).\n",
                   "fieldConfig": {
                      "custom": {
                         "fillOpacity": 0
@@ -475,7 +477,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "TCP connections (per pod)",
+                  "title": "Ingress TCP connections (per pod)",
                   "type": "timeseries"
                }
             ],
@@ -645,6 +647,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Ingress TCP connections (per pod)\nThe number of ingress TCP connections (HTTP and gRPC protocol).\n",
                   "fieldConfig": {
                      "custom": {
                         "fillOpacity": 0
@@ -703,7 +706,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "TCP connections (per pod)",
+                  "title": "Ingress TCP connections (per pod)",
                   "type": "timeseries"
                }
             ],
@@ -873,6 +876,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Ingress TCP connections (per pod)\nThe number of ingress TCP connections (HTTP and gRPC protocol).\n",
                   "fieldConfig": {
                      "custom": {
                         "fillOpacity": 0
@@ -931,7 +935,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "TCP connections (per pod)",
+                  "title": "Ingress TCP connections (per pod)",
                   "type": "timeseries"
                }
             ],
@@ -1101,6 +1105,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Ingress TCP connections (per pod)\nThe number of ingress TCP connections (HTTP and gRPC protocol).\n",
                   "fieldConfig": {
                      "custom": {
                         "fillOpacity": 0
@@ -1159,7 +1164,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "TCP connections (per pod)",
+                  "title": "Ingress TCP connections (per pod)",
                   "type": "timeseries"
                }
             ],
@@ -1329,6 +1334,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Ingress TCP connections (per pod)\nThe number of ingress TCP connections (HTTP and gRPC protocol).\n",
                   "fieldConfig": {
                      "custom": {
                         "fillOpacity": 0
@@ -1387,7 +1393,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "TCP connections (per pod)",
+                  "title": "Ingress TCP connections (per pod)",
                   "type": "timeseries"
                }
             ],
