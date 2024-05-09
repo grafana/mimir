@@ -437,7 +437,8 @@ func (tqa *tenantQuerierAssignments) forgetDisconnectedQueriers(now time.Time) (
 	threshold := now.Add(-tqa.querierForgetDelay)
 	for querierID := range tqa.queriersByID {
 		if querier := tqa.queriersByID[querierID]; querier.connections == 0 && querier.disconnectedAt.Before(threshold) {
-			resharded = tqa.removeQuerier(querierID)
+			// operation must be on left to avoid short-circuiting and skipping the operation
+			resharded = tqa.removeQuerier(querierID) || resharded
 		}
 	}
 
@@ -453,7 +454,8 @@ func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() (resharded bool) 
 			// allocate the scratchpad the first time this case is hit and it will be reused after
 			scratchpad = make(querierIDSlice, 0, len(tqa.querierIDsSorted))
 		}
-		resharded = tqa.shuffleTenantQueriers(tenantID, scratchpad)
+		// operation must be on left to avoid short-circuiting and skipping the operation
+		resharded = tqa.shuffleTenantQueriers(tenantID, scratchpad) || resharded
 	}
 	return resharded
 }

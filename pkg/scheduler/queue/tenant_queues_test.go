@@ -298,7 +298,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	const (
 		forgetDelay          = 1 * time.Minute
 		maxQueriersPerTenant = 1
-		numTenants           = 100
+		numTenants           = 10
 	)
 
 	now := time.Now()

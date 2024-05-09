@@ -404,6 +404,7 @@ func queueConsume(
 
 func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBecauseQuerierHasBeenForgotten(t *testing.T) {
 	const forgetDelay = 3 * time.Second
+	const testTimeout = 10 * time.Second
 
 	queue := NewRequestQueue(
 		log.NewNopLogger(),
@@ -418,6 +419,10 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	ctx := context.Background()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
 	t.Cleanup(func() {
+		// if the test has failed and the queue does not get cleared,
+		// we must send a shutdown signal for the remaining connected querier
+		// or else StopAndAwaitTerminated will never complete.
+		queue.SubmitUnregisterQuerierConnection("querier-2")
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 	})
 
@@ -447,11 +452,96 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", req, 1, nil))
 
 	startTime := time.Now()
-	querier2wg.Wait()
-	waitTime := time.Since(startTime)
+	done := make(chan struct{})
+	go func() {
+		querier2wg.Wait()
+		close(done)
+	}()
 
-	// We expect that querier-2 got the request only after querier-1 forget delay is passed.
-	assert.GreaterOrEqual(t, waitTime.Milliseconds(), forgetDelay.Milliseconds())
+	select {
+	case <-done:
+		waitTime := time.Since(startTime)
+		// We expect that querier-2 got the request only after forget delay is passed.
+		assert.GreaterOrEqual(t, waitTime.Milliseconds(), forgetDelay.Milliseconds())
+	case <-time.After(testTimeout):
+		t.Fatal("timeout: querier-2 did not receive the request expected to be resharded to querier-2")
+	}
+}
+
+func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultipleQuerierForget(t *testing.T) {
+	const forgetDelay = 3 * time.Second
+	const testTimeout = 10 * time.Second
+
+	queue := NewRequestQueue(
+		log.NewNopLogger(),
+		1, true,
+		forgetDelay,
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+	)
+
+	// Start the queue service.
+	ctx := context.Background()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+	t.Cleanup(func() {
+		// if the test has failed and the queue does not get cleared,
+		// we must send a shutdown signal for the remaining connected querier
+		// or else StopAndAwaitTerminated will never complete.
+		queue.SubmitUnregisterQuerierConnection("querier-2")
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+	})
+
+	// Three queriers connect.
+	// We will submit the enqueue request with maxQueriers: 2.
+	// When two queriers are forgotten at the same time, only the first forgotten querier triggers a reshard.
+	// In this reshard, the tenant goes from a shuffled subset of queriers to a state of
+	// "tenant can use all queriers", as connected queriers is now <= tenant.maxQueriers.
+	// The second forgotten querier won't trigger a reshard, as connected queriers is already <= tenant.maxQueriers.
+	//
+	// We are testing that the occurrence of a reshard is reported correctly
+	// when not all querier forget operations in a batch caused a reshard.
+	queue.SubmitRegisterQuerierConnection("querier-1")
+	queue.SubmitRegisterQuerierConnection("querier-2")
+	queue.SubmitRegisterQuerierConnection("querier-3")
+
+	// querier-2 waits for a new request.
+	querier2wg := sync.WaitGroup{}
+	querier2wg.Add(1)
+	go func() {
+		defer querier2wg.Done()
+		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstTenant(), "querier-2")
+		require.NoError(t, err)
+	}()
+
+	// querier-1 and querier-3 crash (no graceful shutdown notification).
+	queue.SubmitUnregisterQuerierConnection("querier-1")
+	queue.SubmitUnregisterQuerierConnection("querier-3")
+
+	// Enqueue a request from a tenant which would be assigned to querier-1.
+	// NOTE: "user-1" hash falls in the querier-1 shard.
+	req := &SchedulerRequest{
+		Ctx:                       context.Background(),
+		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		AdditionalQueueDimensions: randAdditionalQueueDimension(true),
+	}
+	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", req, 2, nil))
+
+	startTime := time.Now()
+	done := make(chan struct{})
+	go func() {
+		querier2wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		waitTime := time.Since(startTime)
+		// We expect that querier-2 got the request only after forget delay is passed.
+		assert.GreaterOrEqual(t, waitTime.Milliseconds(), forgetDelay.Milliseconds())
+	case <-time.After(testTimeout):
+		t.Fatal("timeout: querier-2 did not receive the request expected to be resharded to querier-2")
+	}
 }
 
 func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled(t *testing.T) {
@@ -565,7 +655,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 	// send to querier will fail but method returns true,
 	// indicating not to re-submit a request for nextRequestForQuerierCall for the querier
-	require.True(t, queue.trySendNextRequestForQuerier(queueBroker, call))
+	require.True(t, queue.trySendNextRequestForQuerier(call))
 	// assert request was re-enqueued for tenant after failed send
 	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).IsEmpty())
 }
