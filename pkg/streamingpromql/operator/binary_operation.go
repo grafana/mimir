@@ -33,7 +33,7 @@ type BinaryOperation struct {
 	leftMetadata  []SeriesMetadata
 	rightMetadata []SeriesMetadata
 
-	remainingSeries []*binaryOperationSeriesPair
+	remainingSeries []*binaryOperationOutputSeries
 	leftBuffer      *binaryOperationSeriesBuffer
 	rightBuffer     *binaryOperationSeriesBuffer
 	op              binaryOperationFunc
@@ -41,7 +41,7 @@ type BinaryOperation struct {
 
 var _ InstantVectorOperator = &BinaryOperation{}
 
-type binaryOperationSeriesPair struct {
+type binaryOperationOutputSeries struct {
 	leftSeriesIndices  []int
 	rightSeriesIndices []int
 }
@@ -75,17 +75,17 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata,
 		return nil, nil
 	}
 
-	allPairs := b.computeSeriesPairs()
+	allOutputSeries := b.computeOutputSeries()
 
-	// TODO: move this into computeSeriesPairs?
-	allMetadata := make([]SeriesMetadata, 0, len(allPairs))
-	b.remainingSeries = make([]*binaryOperationSeriesPair, 0, len(allPairs))
+	// TODO: move this into computeOutputSeries?
+	allMetadata := make([]SeriesMetadata, 0, len(allOutputSeries))
+	b.remainingSeries = make([]*binaryOperationOutputSeries, 0, len(allOutputSeries))
 	labelsFunc := b.labelsFunc()
 
-	for _, pair := range allPairs {
-		firstSeriesLabels := b.leftMetadata[pair.leftSeriesIndices[0]].Labels
+	for _, outputSeries := range allOutputSeries {
+		firstSeriesLabels := b.leftMetadata[outputSeries.leftSeriesIndices[0]].Labels
 		allMetadata = append(allMetadata, SeriesMetadata{Labels: labelsFunc(firstSeriesLabels)})
-		b.remainingSeries = append(b.remainingSeries, pair)
+		b.remainingSeries = append(b.remainingSeries, outputSeries)
 	}
 
 	// TODO: sort output series
@@ -141,24 +141,24 @@ func (b *BinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) 
 	return true, nil
 }
 
-func (b *BinaryOperation) computeSeriesPairs() map[uint64]*binaryOperationSeriesPair {
+func (b *BinaryOperation) computeOutputSeries() map[uint64]*binaryOperationOutputSeries {
 	// TODO: Prometheus' engine uses strings for the key here, which would avoid issues with hash collisions, but seems much slower.
 	// Either we should use strings, or we'll need to deal with hash collisions.
 	hashFunc := b.hashFunc()
 
-	// TODO: pool binaryOperationSeriesPair? Pool internal slices?
+	// TODO: pool binaryOperationOutputSeries? Pool internal slices?
 	// TODO: guess initial size of map?
-	allPairs := map[uint64]*binaryOperationSeriesPair{}
+	allOutputSeries := map[uint64]*binaryOperationOutputSeries{}
 
 	// TODO: is it better to use whichever side has fewer series for this first loop? Should result in a smaller map and therefore less work later on
 	// Would need to be careful about 'or' and 'unless' cases
 	for idx, s := range b.leftMetadata {
 		hash := hashFunc(s.Labels)
-		series, exists := allPairs[hash]
+		series, exists := allOutputSeries[hash]
 
 		if !exists {
-			series = &binaryOperationSeriesPair{}
-			allPairs[hash] = series
+			series = &binaryOperationOutputSeries{}
+			allOutputSeries[hash] = series
 		}
 
 		series.leftSeriesIndices = append(series.leftSeriesIndices, idx)
@@ -167,23 +167,23 @@ func (b *BinaryOperation) computeSeriesPairs() map[uint64]*binaryOperationSeries
 	for idx, s := range b.rightMetadata {
 		hash := hashFunc(s.Labels)
 
-		if series, exists := allPairs[hash]; exists {
+		if series, exists := allOutputSeries[hash]; exists {
 			series.rightSeriesIndices = append(series.rightSeriesIndices, idx)
 		}
 
 		// FIXME: if this is an 'or' operation, then we need to create the right side even if the left doesn't exist
 	}
 
-	// Remove pairs that cannot produce series.
-	for hash, pair := range allPairs {
-		if len(pair.leftSeriesIndices) == 0 || len(pair.rightSeriesIndices) == 0 {
+	// Remove series that cannot produce samples.
+	for hash, outputSeries := range allOutputSeries {
+		if len(outputSeries.leftSeriesIndices) == 0 || len(outputSeries.rightSeriesIndices) == 0 {
 			// FIXME: this is incorrect for 'or' and 'unless'
 			// No matching series on at least one side for this output series, so output series will have no samples. Remove it.
-			delete(allPairs, hash)
+			delete(allOutputSeries, hash)
 		}
 	}
 
-	return allPairs
+	return allOutputSeries
 }
 
 // hashFunc returns a function that computes the hash of the output group this series belongs to.
