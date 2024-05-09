@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"sync"
 
-	"github.com/prometheus/prometheus/util/pool"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 // Pool is an abstraction for a pool of byte slices.
@@ -35,19 +35,12 @@ func NewBufferPool() Pool {
 	}
 }
 
-type bucketedBufferPool struct{ p *pool.Pool }
-
-func (p *bucketedBufferPool) Get(sz int) []byte { return p.p.Get(sz).([]byte) }
-func (p *bucketedBufferPool) Put(s []byte)      { p.p.Put(s) } //nolint:staticcheck
-
 // NewBucketedBufferPool returns a new Pool for byte slices with bucketing.
 // The pool will have buckets for sizes from minSize to maxSize increasing by the given factor.
 func NewBucketedBufferPool(minSize, maxSize int, factor float64) Pool {
-	return &bucketedBufferPool{
-		p: pool.New(minSize, maxSize, factor, func(sz int) interface{} {
-			return make([]byte, 0, sz)
-		}),
-	}
+	return pool.NewBucketedPool(minSize, maxSize, factor, func(sz int) []byte {
+		return make([]byte, 0, sz)
+	})
 }
 
 // RequestBuffers provides pooled request buffers.
