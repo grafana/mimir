@@ -110,7 +110,5 @@ func (m *RangeVectorSelector) fillBuffer(floats *RingBuffer, rangeStart, rangeEn
 }
 
 func (m *RangeVectorSelector) Close() {
-	if m.Selector != nil {
-		m.Selector.Close()
-	}
+	m.Selector.Close()
 }

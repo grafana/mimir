@@ -100,7 +100,5 @@ func (v *InstantVectorSelector) NextSeries(_ context.Context) (InstantVectorSeri
 }
 
 func (v *InstantVectorSelector) Close() {
-	if v.Selector != nil {
-		v.Selector.Close()
-	}
+	v.Selector.Close()
 }

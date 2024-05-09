@@ -146,9 +146,7 @@ func (m *RangeVectorFunction) calculateRate(rangeStart, rangeEnd int64, firstPoi
 }
 
 func (m *RangeVectorFunction) Close() {
-	if m.Inner != nil {
-		m.Inner.Close()
-	}
+	m.Inner.Close()
 
 	if m.buffer != nil {
 		m.buffer.Close()
