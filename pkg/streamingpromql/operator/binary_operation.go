@@ -264,7 +264,7 @@ func (b *BinaryOperation) Next(ctx context.Context) (InstantVectorSeriesData, er
 //   - should we just change the InstantVectorOperator interface to use ([]float64, presence)? Would make some aggregation operations faster as well (eg. sum)
 func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []SeriesMetadata, side string) (InstantVectorSeriesData, error) {
 	if len(data) == 1 {
-		// If there's only one series on this side, there's no merging required.
+		// Fast path: if there's only one series on this side, there's no merging required.
 		return data[0], nil
 	}
 
