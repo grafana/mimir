@@ -17,7 +17,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
@@ -50,24 +49,12 @@ func OTLPHandler(
 	enableOtelMetadataStorage bool,
 	limits *validation.Overrides,
 	retryCfg RetryConfig,
-	reg prometheus.Registerer,
 	push PushFunc,
+	pushMetrics *PushMetrics,
+	reg prometheus.Registerer,
 	logger log.Logger,
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
-
-	otlpRequestsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_distributor_otlp_requests_total",
-		Help: "The total number of OTLP requests that have come in to the distributor.",
-	}, []string{"user"})
-
-	otlpUncompressedBodySize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:                            "cortex_distributor_otlp_uncompressed_request_body_size_bytes",
-		Help:                            "Size of uncompressed OTLP request body in bytes.",
-		NativeHistogramBucketFactor:     1.1,
-		NativeHistogramMinResetDuration: 1 * time.Hour,
-		NativeHistogramMaxBucketNumber:  100,
-	}, []string{"user"})
 
 	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
@@ -164,8 +151,8 @@ func OTLPHandler(
 		}
 		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
 
-		otlpRequestsCounter.WithLabelValues(tenantID).Inc()
-		otlpUncompressedBodySize.WithLabelValues(tenantID).Observe(float64(uncompressedBodySize))
+		pushMetrics.IncOTLPRequest(tenantID)
+		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
 		metrics, err := otelMetricsToTimeseries(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {

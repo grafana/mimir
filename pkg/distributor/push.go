@@ -13,7 +13,6 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -22,8 +21,6 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -80,18 +77,9 @@ func Handler(
 	limits *validation.Overrides,
 	retryCfg RetryConfig,
 	push PushFunc,
-	reg prometheus.Registerer,
+	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-
-	uncompressedBodySize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:                            "cortex_distributor_uncompressed_request_body_size_bytes",
-		Help:                            "Size of uncompressed request body in bytes.",
-		NativeHistogramBucketFactor:     1.1,
-		NativeHistogramMinResetDuration: 1 * time.Hour,
-		NativeHistogramMaxBucketNumber:  100,
-	}, []string{"user"})
-
 	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
 		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
@@ -104,7 +92,7 @@ func Handler(
 		if err != nil {
 			return err
 		}
-		uncompressedBodySize.WithLabelValues(tenantID).Observe(float64(protoBodySize))
+		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(protoBodySize))
 
 		return nil
 	})
