@@ -87,7 +87,7 @@ Run the following port-forward command on several different Grafana Mimir compon
    kubectl port-forward pod/<mimir-pod-2> --kube-context=<my-k8s-context> --namespace=<my-mimir-namespace> 8081:8080
 ```
 
-Replace <mimir-pod-1> and <mimir-pod-2> with several actual pods from different Mimir components.
+Replace `<mimir-pod-1>` and `<mimir-pod-2>` with several actual pods from different Mimir components.
 Ensure the host port 8080 and 8081 are available, otherwise use different available ports.
 
 Open the port-forwarded URL in browser to see the Memberlist status http://localhost:8080/memberlist, http://localhost:8081/memberlist and also
