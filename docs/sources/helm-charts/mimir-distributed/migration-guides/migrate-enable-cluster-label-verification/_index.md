@@ -13,7 +13,7 @@ This document shows the steps to configure cluster label verification in a Grafa
 Multiple [Memberlist](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/memberlist-and-the-gossip-protocol/) [gossip ring](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/) clusters are at risk of merging into one without enabling cluster label verification.
 For example, if a Mimir, Tempo or Loki are running in the same Kubernetes cluster, they might communicate with each other without this configuration update.
 Once cluster label verification is enabled, before Mimir components communicate with other components, they will verify whether the other components have the same cluster label.
-The process to update the configuration should take around 30 minutes.
+The process to update the configuration will take three rollouts of the whole cluster.
 
 ## Before you begin
 
