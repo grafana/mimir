@@ -493,7 +493,7 @@ func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Head
 
 func writeStatsHeader(headers http.Header, stats *querier_stats.Stats) {
 	if stats != nil {
-		headers.Set(MimirQueryStatsHeaderName, fmt.Sprintf("fetched_chunk_bytes=%d", stats.GetFetchedChunkBytes()))
+		headers.Set(MimirQueryStatsHeaderName, fmt.Sprintf("total_samples=%d", stats.LoadTotalSamples()))
 	}
 }
 
