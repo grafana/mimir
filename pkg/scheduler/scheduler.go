@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -63,6 +64,10 @@ type Scheduler struct {
 	pendingRequestsMu sync.Mutex
 	pendingRequests   map[requestKey]*queue.SchedulerRequest // request is kept in this map even after being dispatched to querier. It can still be canceled at that time.
 
+	queryComponentInflightRequestsMu *sync.RWMutex
+	queryComponentInflightRequests   map[QueryComponent]int
+	totalInflightRequests            int
+
 	// The ring is used to let other components discover query-scheduler replicas.
 	// The ring is optional.
 	schedulerLifecycler *ring.BasicLifecycler
@@ -84,6 +89,124 @@ type Scheduler struct {
 type requestKey struct {
 	frontendAddr string
 	queryID      uint64
+}
+
+type QueryComponent int
+
+const (
+	Ingester QueryComponent = iota
+	StoreGateway
+)
+const ingesterQueueDimension = "ingester"
+const storeGatewayQueueDimension = "store-gateway"
+const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
+
+func queryComponents(req *queue.SchedulerRequest) (isIngester, isStoreGateway bool) {
+	var expectedQueryComponent string
+	if len(req.AdditionalQueueDimensions) > 0 {
+		expectedQueryComponent = req.AdditionalQueueDimensions[0]
+	}
+
+	isIngester, isStoreGateway = true, true
+	switch expectedQueryComponent {
+	case ingesterQueueDimension:
+		isStoreGateway = false
+	case storeGatewayQueueDimension:
+		isIngester = false
+	}
+	return isIngester, isStoreGateway
+}
+
+func (s *Scheduler) isOverLoaded(
+	//mu *sync.RWMutex,
+	//queryComponentInflightReqs map[QueryComponent]int,
+	overloadThreshold int,
+	req *queue.SchedulerRequest,
+) bool {
+	if overloadThreshold <= 0 {
+		return false
+	}
+	isIngester, isStoreGateway := queryComponents(req)
+
+	s.queryComponentInflightRequestsMu.RLock()
+	defer s.queryComponentInflightRequestsMu.RUnlock()
+	level.Info(s.log).Log(
+		"msg", "isOverloaded",
+		"inflightReqs:Ingester", s.queryComponentInflightRequests[Ingester],
+		"inflightReqs:StoreGateway", s.queryComponentInflightRequests[StoreGateway],
+	)
+	//fmt.Sprintf("inflightReqs: %+v\n", queryComponentInflightReqs)
+
+	if isIngester {
+		if s.queryComponentInflightRequests[Ingester] >= overloadThreshold {
+			return true
+		}
+	}
+	if isStoreGateway {
+		if s.queryComponentInflightRequests[StoreGateway] >= overloadThreshold {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Scheduler) getOverloadThreshold(
+	overloadedFactor float64,
+) int {
+	// Overload factor is expected to be > 1.
+	if overloadedFactor <= 1 {
+		return 0
+	}
+
+	s.queryComponentInflightRequestsMu.RLock()
+	defer s.queryComponentInflightRequestsMu.RUnlock()
+
+	level.Info(s.log).Log("msg", "getOverloadThreshold", "totalInflightReqs", s.totalInflightRequests)
+	// No overloaded connection if there are no connections or no inflight requests at all.
+	if s.totalInflightRequests == 0 {
+		return 0
+	}
+
+	// Compute the average number of inflight requests per connection.
+	avg := float64(s.totalInflightRequests) / float64(len(s.queryComponentInflightRequests))
+
+	// Compute the overload threshold.
+	overloadThreshold := int(math.Ceil(avg * overloadedFactor))
+	level.Info(s.log).Log("msg", "getOverloadThreshold", "overloadThreshold", overloadThreshold)
+	return overloadThreshold
+}
+
+func (s *Scheduler) incrementQueryComponentInflightRequests(
+	req *queue.SchedulerRequest,
+) {
+	s.updateQueryComponentInflightRequests(
+		req, 1,
+	)
+}
+
+func (s *Scheduler) decrementQueryComponentInflightRequests(
+	req *queue.SchedulerRequest,
+) {
+	s.updateQueryComponentInflightRequests(
+		req, -1,
+	)
+}
+
+func (s *Scheduler) updateQueryComponentInflightRequests(
+	req *queue.SchedulerRequest,
+	updateIncrement int,
+) {
+	isIngester, isStoreGateway := queryComponents(req)
+
+	s.queryComponentInflightRequestsMu.Lock()
+	defer s.queryComponentInflightRequestsMu.Unlock()
+	if isIngester {
+		s.queryComponentInflightRequests[Ingester] += updateIncrement
+	}
+	if isStoreGateway {
+		s.queryComponentInflightRequests[StoreGateway] += updateIncrement
+	}
+	s.totalInflightRequests += updateIncrement
 }
 
 type connectedFrontend struct {
@@ -126,7 +249,11 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		log:    log,
 		limits: limits,
 
-		pendingRequests:    map[requestKey]*queue.SchedulerRequest{},
+		pendingRequests: map[requestKey]*queue.SchedulerRequest{},
+
+		queryComponentInflightRequestsMu: &sync.RWMutex{},
+		queryComponentInflightRequests:   map[QueryComponent]int{},
+
 		connectedFrontends: map[string]*connectedFrontend{},
 		subservicesWatcher: services.NewFailureWatcher(),
 	}
@@ -419,15 +546,39 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		  If this tenant meanwhile continued to queue requests,
 		  it's possible that its own queue would perpetually contain only expired requests.
 		*/
+		isIngester, isStoreGateway := queryComponents(r)
+		level.Info(s.log).Log("msg", "expected query component", "isIngester", isIngester, "isStoreGateway", isStoreGateway)
+		threshold := s.getOverloadThreshold(
+			//s.log,
+			//s.queryComponentInflightRequestsMu,
+			//s.queryComponentInflightRequests,
+			//s.totalInflightRequests,
+			2.1,
+		)
+		if s.isOverLoaded(
+			//s.log,
+			//s.queryComponentInflightRequestsMu,
+			//s.queryComponentInflightRequests,
+			threshold,
+			r,
+		) {
+			// TODO do other stuff to increment or decrement
+			s.cancelRequestAndRemoveFromPending(r.FrontendAddress, r.QueryID, "request dropped due to overloaded query component")
+
+			level.Warn(s.log).Log("msg", "request dropped due to overloaded query component", "isIngester", isIngester, "isStoreGateway", isStoreGateway)
+		}
 
 		if r.Ctx.Err() != nil {
 			// Remove from pending requests.
 			s.cancelRequestAndRemoveFromPending(r.FrontendAddress, r.QueryID, "request cancelled")
 
+			// TODO do other stuff to increment or decrement
+
 			lastUserIndex = lastUserIndex.ReuseLastUser()
 			continue
 		}
 
+		// TODO do other stuff to increment or decrement
 		if err := s.forwardRequestToQuerier(querier, r, queueTime); err != nil {
 			return err
 		}
@@ -444,7 +595,9 @@ func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.No
 }
 
 func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *queue.SchedulerRequest, queueTime time.Duration) error {
+	s.incrementQueryComponentInflightRequests(req)
 	// Make sure to cancel request at the end to clean up resources.
+	defer s.decrementQueryComponentInflightRequests(req)
 	defer s.cancelRequestAndRemoveFromPending(req.FrontendAddress, req.QueryID, "request complete")
 
 	// Handle the stream sending & receiving on a goroutine so we can
