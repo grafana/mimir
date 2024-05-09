@@ -31,6 +31,7 @@ type BucketIndexBlocksFinderConfig struct {
 	IndexLoader              bucketindex.LoaderConfig
 	MaxStalePeriod           time.Duration
 	IgnoreDeletionMarksDelay time.Duration
+	IgnoreUploadedWithin     time.Duration
 }
 
 // BucketIndexBlocksFinder implements BlocksFinder interface and find blocks in the bucket
@@ -72,8 +73,9 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 		return nil, nil, err
 	}
 
+	now := time.Now()
 	// Ensure the bucket index is not too old.
-	if time.Since(idx.GetUpdatedAt()) > f.cfg.MaxStalePeriod {
+	if now.Sub(idx.GetUpdatedAt()) > f.cfg.MaxStalePeriod {
 		return nil, nil, newBucketIndexTooOldError(idx.GetUpdatedAt(), f.cfg.MaxStalePeriod)
 	}
 
@@ -82,9 +84,13 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 		matchingDeletionMarks = map[ulid.ULID]*bucketindex.BlockDeletionMark{}
 	)
 
-	// Filter blocks containing samples within the range.
+	// Filter blocks not containing samples within the range or uploaded too recently.
 	for _, block := range idx.Blocks {
 		if !block.Within(minT, maxT) {
+			continue
+		}
+
+		if f.cfg.IgnoreUploadedWithin > 0 && now.Sub(block.GetUploadedAt()) < f.cfg.IgnoreUploadedWithin {
 			continue
 		}
 
@@ -98,7 +104,7 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 		}
 
 		// Exclude blocks marked for deletion. This is the same logic as Thanos IgnoreDeletionMarkFilter.
-		if time.Since(time.Unix(mark.DeletionTime, 0)).Seconds() > f.cfg.IgnoreDeletionMarksDelay.Seconds() {
+		if now.Sub(time.Unix(mark.DeletionTime, 0)) > f.cfg.IgnoreDeletionMarksDelay {
 			delete(matchingBlocks, mark.ID)
 			continue
 		}

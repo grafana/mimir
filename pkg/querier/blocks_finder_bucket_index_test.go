@@ -204,6 +204,47 @@ func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexIsTooOld(t *testing.T) {
 	require.EqualError(t, err, newBucketIndexTooOldError(idx.GetUpdatedAt(), finder.cfg.MaxStalePeriod).Error())
 }
 
+func TestBucketIndexBlocksFinder_GetBlocks_BlockUploadedTooRecently(t *testing.T) {
+	const userID = "user-1"
+
+	now := time.Now()
+	queryMinT := now.Add(-5 * time.Hour)
+	queryMaxT := now.Add(-time.Hour)
+	blockMinT := now.Add(-4 * time.Hour)
+	blockMaxT := now.Add(-2 * time.Hour)
+
+	ctx := context.Background()
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	finder := prepareBucketIndexBlocksFinder(t, bkt)
+	finder.cfg.IgnoreUploadedWithin = time.Hour
+
+	block1 := &bucketindex.Block{
+		ID:         ulid.MustNew(1, nil),
+		MinTime:    blockMinT.UnixMilli(),
+		MaxTime:    blockMaxT.UnixMilli(),
+		UploadedAt: now.Unix(),
+	}
+	block2 := &bucketindex.Block{
+		ID:         ulid.MustNew(2, nil),
+		MinTime:    blockMinT.UnixMilli(),
+		MaxTime:    blockMaxT.UnixMilli(),
+		UploadedAt: now.Add(-2 * time.Hour).Unix(),
+	}
+	idx := &bucketindex.Index{
+		Version:            bucketindex.IndexVersion1,
+		Blocks:             bucketindex.Blocks{block1, block2},
+		BlockDeletionMarks: bucketindex.BlockDeletionMarks{},
+		UpdatedAt:          now.Unix(),
+	}
+	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, idx))
+
+	blocks, deletionMarks, err := finder.GetBlocks(ctx, userID, queryMinT.UnixMilli(), queryMaxT.UnixMilli())
+	require.NoError(t, err)
+	require.NotContains(t, blocks, block1)
+	require.Contains(t, blocks, block2)
+	require.Empty(t, deletionMarks)
+}
+
 func prepareBucketIndexBlocksFinder(t testing.TB, bkt objstore.Bucket) *BucketIndexBlocksFinder {
 	ctx := context.Background()
 	cfg := BucketIndexBlocksFinderConfig{

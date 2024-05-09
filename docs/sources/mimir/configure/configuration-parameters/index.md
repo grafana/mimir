@@ -3683,6 +3683,13 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.ignore-deletion-marks-delay
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
+  # (experimental) Blocks with upload time within this duration are ignored by
+  # queriers. This only is only useful when using shorter values of
+  # -blocks-storage.bucket-store.ignore-blocks-within to ensure both queriers
+  # and store-gateways are aware of blocks added to the bucket index.
+  # CLI flag: -blocks-storage.bucket-store.ignore-uploaded-within
+  [ignore_uploaded_within: <duration> | default = 0s]
+
   bucket_index:
     # (advanced) How frequently a bucket index, which previously failed to load,
     # should be tried to load again. This option is used only by querier.

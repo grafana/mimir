@@ -397,6 +397,7 @@ type BucketStoreConfig struct {
 	ChunksCache               ChunksCacheConfig   `yaml:"chunks_cache"`
 	MetadataCache             MetadataCacheConfig `yaml:"metadata_cache"`
 	IgnoreDeletionMarksDelay  time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
+	IgnoreUploadedWithin      time.Duration       `yaml:"ignore_uploaded_within" category:"experimental"`
 	BucketIndex               BucketIndexConfig   `yaml:"bucket_index"`
 	IgnoreBlocksWithin        time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
 
@@ -455,6 +456,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MetaSyncConcurrency, "blocks-storage.bucket-store.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from object storage per tenant.")
 	f.DurationVar(&cfg.IgnoreDeletionMarksDelay, "blocks-storage.bucket-store.ignore-deletion-marks-delay", time.Hour*1, "Duration after which the blocks marked for deletion will be filtered out while fetching blocks. "+
 		"The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet.")
+	f.DurationVar(&cfg.IgnoreUploadedWithin, "blocks-storage.bucket-store.ignore-uploaded-within", 0, "Blocks with upload time within this duration are ignored by queriers. This only is only useful when using shorter values of -blocks-storage.bucket-store.ignore-blocks-within to ensure both queriers and store-gateways are aware of blocks added to the bucket index.")
 	f.DurationVar(&cfg.IgnoreBlocksWithin, "blocks-storage.bucket-store.ignore-blocks-within", 10*time.Hour, "Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.")
 	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")

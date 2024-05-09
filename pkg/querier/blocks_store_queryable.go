@@ -224,6 +224,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		},
 		MaxStalePeriod:           storageCfg.BucketStore.BucketIndex.MaxStalePeriod,
 		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksDelay,
+		IgnoreUploadedWithin:     storageCfg.BucketStore.IgnoreUploadedWithin,
 	}, bucketClient, limits, logger, reg)
 
 	storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
