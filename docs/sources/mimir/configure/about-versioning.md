@@ -71,6 +71,8 @@ The following features are currently experimental:
     - `-distributor.retry-after-header.max-backoff-exponent`
   - Limit exemplars per series per request
     - `-distributor.max-exemplars-per-series-per-request`
+  - Enforce a maximum pool buffer size for write requests
+    - `-distributor.max-request-pool-buffer-size`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`

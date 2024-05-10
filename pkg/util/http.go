@@ -146,14 +146,15 @@ const (
 
 // ParseProtoReader parses a compressed proto from an io.Reader.
 // You can pass in an optional RequestBuffers.
-func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, buffers *RequestBuffers, req proto.Message, compression CompressionType) error {
+// If no error is returned, the returned actualSize is the size of the uncompressed proto.
+func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, buffers *RequestBuffers, req proto.Message, compression CompressionType) (actualSize int, err error) {
 	sp := opentracing.SpanFromContext(ctx)
 	if sp != nil {
 		sp.LogFields(otlog.Event("util.ParseProtoReader[start reading]"))
 	}
 	body, err := decompressRequest(buffers, reader, expectedSize, maxSize, compression, sp)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if sp != nil {
@@ -173,14 +174,14 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 			sp.LogFields(otlog.Event("util.ParseProtoReader[unmarshal done]"), otlog.Error(err))
 		}
 
-		return err
+		return 0, err
 	}
 
 	if sp != nil {
 		sp.LogFields(otlog.Event("util.ParseProtoReader[unmarshal done]"))
 	}
 
-	return nil
+	return len(body), nil
 }
 
 type MsgSizeTooLargeErr struct {
