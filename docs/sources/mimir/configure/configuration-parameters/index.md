@@ -3291,7 +3291,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 [label_values_max_cardinality_label_names_per_request: <int> | default = 100]
 
 # (experimental) Maximum size of an active series request result shard in bytes.
-# 0 to disable.
+# Maximum size of active native histogram series loaded for calculating active
+# native histogram statistics. 0 to disable.
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
 
