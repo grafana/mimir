@@ -11,6 +11,8 @@ import (
 )
 
 func TestRingBuffer(t *testing.T) {
+	setupRingBufferPoolFunctionsForTesting(t)
+
 	buf := &RingBuffer{}
 	shouldHaveNoPoints(t, buf)
 
@@ -63,6 +65,8 @@ func TestRingBuffer(t *testing.T) {
 }
 
 func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
+	setupRingBufferPoolFunctionsForTesting(t)
+
 	// Set up the buffer so that the first point is part-way through the underlying slice.
 	// We resize in powers of two, and the underlying slice comes from a pool that uses a factor of 2 as well.
 	buf := &RingBuffer{}
@@ -155,4 +159,29 @@ func shouldHavePointsAtOrBeforeTime(t *testing.T, buf *RingBuffer, ts int64, exp
 		require.True(t, present)
 		require.Equal(t, expected[len(expected)-1], end)
 	}
+}
+
+// setupRingBufferPoolFunctionsForTesting replaces the global FPoint slice pool used by RingBuffer
+// with a fake for testing.
+//
+// This helps ensure that the tests behave as expected: the default global pool does not guarantee that
+// slices returned have exactly the capacity requested. Instead, it only guarantees that slices have
+// capacity at least as large as requested. This makes it difficult to consistently test scenarios like
+// wraparound.
+func setupRingBufferPoolFunctionsForTesting(t *testing.T) {
+	originalGet := getFPointSliceForRingBuffer
+	originalPut := putFPointSliceForRingBuffer
+
+	getFPointSliceForRingBuffer = func(size int) []promql.FPoint {
+		return make([]promql.FPoint, 0, size)
+	}
+
+	putFPointSliceForRingBuffer = func(_ []promql.FPoint) {
+		// Drop slice on the floor - we don't need it.
+	}
+
+	t.Cleanup(func() {
+		getFPointSliceForRingBuffer = originalGet
+		putFPointSliceForRingBuffer = originalPut
+	})
 }
