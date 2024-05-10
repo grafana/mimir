@@ -2,6 +2,7 @@
 package util
 
 import (
+	"runtime/debug"
 	"testing"
 	"unsafe"
 
@@ -10,6 +11,10 @@ import (
 )
 
 func TestRequestBuffers(t *testing.T) {
+	// Disable GC
+	originalGCPercent := debug.SetGCPercent(-1)
+	defer debug.SetGCPercent(originalGCPercent)
+
 	const maxBufferSize = 32 * 1024
 
 	p := NewBucketedBufferPool(1024, maxBufferSize, 2)
