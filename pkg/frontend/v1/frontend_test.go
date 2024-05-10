@@ -143,7 +143,7 @@ func TestFrontendCheckReady(t *testing.T) {
 			}()
 
 			for i := 0; i < tt.connectedClients; i++ {
-				f.requestQueue.RegisterQuerierConnection("test")
+				f.requestQueue.SubmitRegisterQuerierConnection("test")
 			}
 			err = f.CheckReady(context.Background())
 			errMsg := ""

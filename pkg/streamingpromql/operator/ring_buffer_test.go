@@ -3,6 +3,7 @@
 package operator
 
 import (
+	"math"
 	"testing"
 
 	"github.com/prometheus/prometheus/promql"
@@ -109,27 +110,49 @@ func shouldHaveNoPoints(t *testing.T, buf *RingBuffer) {
 }
 
 func shouldHavePoints(t *testing.T, buf *RingBuffer, expected ...promql.FPoint) {
-	var actual []promql.FPoint
+	var pointsFromForEach []promql.FPoint
 
 	buf.ForEach(func(p promql.FPoint) {
-		actual = append(actual, p)
+		pointsFromForEach = append(pointsFromForEach, p)
 	})
 
-	require.Equal(t, expected, actual)
+	require.Equal(t, expected, pointsFromForEach)
 
-	head, tail := buf.Points()
-	actual = append(head, tail...)
+	if len(expected) == 0 {
+		shouldHavePointsAtOrBeforeTime(t, buf, math.MaxInt64, expected...)
+		_, present := buf.LastAtOrBefore(math.MaxInt64)
+		require.False(t, present)
+	} else {
+		require.Equal(t, expected[0], buf.First())
+		// We test LastAtOrBefore() below.
 
-	if len(actual) == 0 {
-		actual = nil // expected will be nil when it's empty, but appending two empty slices returns a non-nil slice.
+		lastPointT := expected[len(expected)-1].T
+
+		shouldHavePointsAtOrBeforeTime(t, buf, lastPointT, expected...)
+		shouldHavePointsAtOrBeforeTime(t, buf, lastPointT+1, expected...)
+		shouldHavePointsAtOrBeforeTime(t, buf, lastPointT-1, expected[:len(expected)-1]...)
+	}
+}
+
+func shouldHavePointsAtOrBeforeTime(t *testing.T, buf *RingBuffer, ts int64, expected ...promql.FPoint) {
+	head, tail := buf.UnsafePoints(ts)
+	combinedPoints := append(head, tail...)
+
+	if len(expected) == 0 {
+		require.Len(t, combinedPoints, 0)
+	} else {
+		require.Equal(t, expected, combinedPoints)
 	}
 
-	require.Equal(t, expected, actual)
+	copiedPoints := buf.CopyPoints(ts)
+	require.Equal(t, expected, copiedPoints)
 
-	if len(actual) == 0 {
-		return
+	end, present := buf.LastAtOrBefore(ts)
+
+	if len(expected) == 0 {
+		require.False(t, present)
+	} else {
+		require.True(t, present)
+		require.Equal(t, expected[len(expected)-1], end)
 	}
-
-	require.Equal(t, expected[0], buf.First())
-	require.Equal(t, expected[len(expected)-1], buf.Last())
 }

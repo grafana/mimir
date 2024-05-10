@@ -310,7 +310,7 @@ func (b *BinaryOperation) labelsFunc() func(labels.Labels) labels.Labels {
 	}
 }
 
-func (b *BinaryOperation) Next(ctx context.Context) (InstantVectorSeriesData, error) {
+func (b *BinaryOperation) NextSeries(ctx context.Context) (InstantVectorSeriesData, error) {
 	if len(b.remainingSeries) == 0 {
 		return InstantVectorSeriesData{}, EOS
 	}
@@ -561,7 +561,7 @@ func (b *binaryOperationSeriesBuffer) getSeries(ctx context.Context, seriesIndic
 
 func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (InstantVectorSeriesData, error) {
 	for seriesIndex > b.nextIndexToRead {
-		d, err := b.source.Next(ctx)
+		d, err := b.source.NextSeries(ctx)
 		if err != nil {
 			return InstantVectorSeriesData{}, err
 		}
@@ -575,7 +575,7 @@ func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, serie
 	if seriesIndex == b.nextIndexToRead {
 		// Don't bother buffering data if we can return it directly.
 		b.nextIndexToRead++
-		return b.source.Next(ctx)
+		return b.source.NextSeries(ctx)
 	}
 
 	d := b.buffer[seriesIndex]

@@ -106,8 +106,8 @@ func (t *testOperator) SeriesMetadata(_ context.Context) ([]SeriesMetadata, erro
 	return labelsToSeriesMetadata(t.series), nil
 }
 
-func (t *testOperator) Next(_ context.Context) (InstantVectorSeriesData, error) {
-	panic("Next() not supported")
+func (t *testOperator) NextSeries(_ context.Context) (InstantVectorSeriesData, error) {
+	panic("NextSeries() not supported")
 }
 
 func (t *testOperator) Close() {
