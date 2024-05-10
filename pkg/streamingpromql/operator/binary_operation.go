@@ -90,12 +90,12 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata,
 		return nil, nil
 	}
 
-	allMetadata, allSeries := b.computeOutputSeries()
+	allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed := b.computeOutputSeries()
 	b.sortSeries(allMetadata, allSeries)
 	b.remainingSeries = allSeries
 
-	b.leftBuffer = newBinaryOperationSeriesBuffer(b.Left)
-	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right)
+	b.leftBuffer = newBinaryOperationSeriesBuffer(b.Left, leftSeriesUsed)
+	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right, rightSeriesUsed)
 
 	return allMetadata, nil
 }
@@ -133,7 +133,15 @@ func (b *BinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) 
 	return true, nil
 }
 
-func (b *BinaryOperation) computeOutputSeries() ([]SeriesMetadata, []*binaryOperationOutputSeries) {
+// computeOutputSeries determines the possible output series from this operator.
+// It assumes leftMetadata and rightMetadata have already been populated.
+//
+// It returns:
+// - a list of all possible series this operator could return
+// - a corresponding list of the source series for each output series
+// - a list indicating which series from the left side are needed to compute the output
+// - a list indicating which series from the right side are needed to compute the output
+func (b *BinaryOperation) computeOutputSeries() ([]SeriesMetadata, []*binaryOperationOutputSeries, []bool, []bool) {
 	// TODO: Prometheus' engine uses strings for the key here, which would avoid issues with hash collisions, but seems much slower.
 	// Either we should use strings, or we'll need to deal with hash collisions.
 	hashFunc := b.hashFunc()
@@ -175,14 +183,24 @@ func (b *BinaryOperation) computeOutputSeries() ([]SeriesMetadata, []*binaryOper
 	allMetadata := make([]SeriesMetadata, 0, len(outputSeriesMap))
 	allSeries := make([]*binaryOperationOutputSeries, 0, len(outputSeriesMap))
 	labelsFunc := b.labelsFunc()
+	leftSeriesUsed := GetBoolSlice(len(b.leftMetadata))[:len(b.leftMetadata)]
+	rightSeriesUsed := GetBoolSlice(len(b.rightMetadata))[:len(b.rightMetadata)]
 
 	for _, outputSeries := range outputSeriesMap {
 		firstSeriesLabels := b.leftMetadata[outputSeries.leftSeriesIndices[0]].Labels
 		allMetadata = append(allMetadata, SeriesMetadata{Labels: labelsFunc(firstSeriesLabels)})
 		allSeries = append(allSeries, outputSeries)
+
+		for _, leftSeriesIndex := range outputSeries.leftSeriesIndices {
+			leftSeriesUsed[leftSeriesIndex] = true
+		}
+
+		for _, rightSeriesIndex := range outputSeries.rightSeriesIndices {
+			rightSeriesUsed[rightSeriesIndex] = true
+		}
 	}
 
-	return allMetadata, allSeries
+	return allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed
 }
 
 // sortSeries sorts metadata and series in place to try to minimise the number of input series we'll need to buffer in memory.
@@ -504,6 +522,14 @@ func (b *BinaryOperation) Close() {
 	if b.rightMetadata != nil {
 		PutSeriesMetadataSlice(b.rightMetadata)
 	}
+
+	if b.leftBuffer != nil {
+		b.leftBuffer.close()
+	}
+
+	if b.rightBuffer != nil {
+		b.rightBuffer.close()
+	}
 }
 
 // binaryOperationSeriesBuffer buffers series data until it is needed by BinaryOperation.
@@ -515,18 +541,23 @@ type binaryOperationSeriesBuffer struct {
 	source          InstantVectorOperator
 	nextIndexToRead int
 
-	// TODO: what is the best way to store buffered data?
+	// If seriesUsed[i] == true, then the series at index i is needed for this operation and should be buffered if not used immediately.
+	// If seriesUsed[i] == false, then the series at index i is never used and can be immediately discarded.
+	// FIXME: could use a bitmap here to save some memory
+	seriesUsed []bool
+
+	// Stores series read but required for later series.
 	buffer map[int]InstantVectorSeriesData
 
-	// TODO: need a way to know if a series will never be used and therefore skip buffering it
-
+	// Reused to avoid allocating on every call to getSeries.
 	output []InstantVectorSeriesData
 }
 
-func newBinaryOperationSeriesBuffer(source InstantVectorOperator) *binaryOperationSeriesBuffer {
+func newBinaryOperationSeriesBuffer(source InstantVectorOperator, seriesUsed []bool) *binaryOperationSeriesBuffer {
 	return &binaryOperationSeriesBuffer{
-		source: source,
-		buffer: map[int]InstantVectorSeriesData{},
+		source:     source,
+		seriesUsed: seriesUsed,
+		buffer:     map[int]InstantVectorSeriesData{},
 	}
 }
 
@@ -559,8 +590,13 @@ func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, serie
 			return InstantVectorSeriesData{}, err
 		}
 
-		// TODO: don't bother storing data we won't need, immediately return slice to pool
-		b.buffer[b.nextIndexToRead] = d
+		if b.seriesUsed[b.nextIndexToRead] {
+			// We need this series later, but not right now. Store it for later.
+			b.buffer[b.nextIndexToRead] = d
+		} else {
+			// We don't need this series at all, return the slice to the pool now.
+			PutFPointSlice(d.Floats)
+		}
 
 		b.nextIndexToRead++
 	}
@@ -575,6 +611,12 @@ func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, serie
 	delete(b.buffer, seriesIndex)
 
 	return d, nil
+}
+
+func (b *binaryOperationSeriesBuffer) close() {
+	if b.seriesUsed != nil {
+		PutBoolSlice(b.seriesUsed)
+	}
 }
 
 type binaryOperationFunc func(left, right float64) float64
