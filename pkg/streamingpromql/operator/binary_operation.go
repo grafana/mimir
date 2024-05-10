@@ -137,9 +137,6 @@ func (b *BinaryOperation) computeOutputSeries() ([]SeriesMetadata, []*binaryOper
 	// TODO: Prometheus' engine uses strings for the key here, which would avoid issues with hash collisions, but seems much slower.
 	// Either we should use strings, or we'll need to deal with hash collisions.
 	hashFunc := b.hashFunc()
-
-	// TODO: pool binaryOperationOutputSeries? Pool internal slices?
-	// TODO: guess initial size of map?
 	outputSeriesMap := map[uint64]*binaryOperationOutputSeries{}
 
 	// TODO: is it better to use whichever side has fewer series for this first loop? Should result in a smaller map and therefore less work later on
@@ -353,10 +350,7 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (InstantVectorSeriesDa
 //
 // mergeOneSide is optimised for the case where there is only one source series, or the source series do not overlap, as in the example above.
 //
-// TODO: for many-to-one / one-to-many matching, we could avoid re-merging each time for the side used multiple times
-// TODO: would this be easier to do if we were working with []float64 rather than []FPoint?
-//   - would also mean that some arithmetic operations become faster, as we can use vectorisation (eg. leftPoints + rightPoints, rather than output[i] = left[i] + right[i] etc.)
-//   - should we just change the InstantVectorOperator interface to use ([]float64, presence)? Would make some aggregation operations faster as well (eg. sum)
+// FIXME: for many-to-one / one-to-many matching, we could avoid re-merging each time for the side used multiple times
 func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []SeriesMetadata, side string) (InstantVectorSeriesData, error) {
 	if len(data) == 1 {
 		// Fast path: if there's only one series on this side, there's no merging required.
@@ -377,7 +371,7 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 	// We're going to create a new slice, so return this one to the pool.
 	// We'll return the other slices in the for loop below.
 	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-	// TODO: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
+	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
 	defer PutFPointSlice(data[0].Floats)
 
 	for i := 0; i < len(data)-1; i++ {
@@ -387,7 +381,7 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-		// TODO: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
+		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
 		defer PutFPointSlice(second.Floats)
 
 		// Check if first overlaps with second.
@@ -540,7 +534,6 @@ func newBinaryOperationSeriesBuffer(source InstantVectorOperator) *binaryOperati
 // The returned slice is only safe to use until getSeries is called again.
 func (b *binaryOperationSeriesBuffer) getSeries(ctx context.Context, seriesIndices []int) ([]InstantVectorSeriesData, error) {
 	if cap(b.output) < len(seriesIndices) {
-		// TODO: pool?
 		b.output = make([]InstantVectorSeriesData, len(seriesIndices))
 	}
 
