@@ -8,9 +8,10 @@ import (
 
 	alertingLogging "github.com/grafana/alerting/logging"
 	alertingReceivers "github.com/grafana/alerting/receivers"
-	"github.com/grafana/mimir/pkg/util/version"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/version"
 )
 
 func TestSendWebhook(t *testing.T) {
