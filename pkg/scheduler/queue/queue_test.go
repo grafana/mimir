@@ -443,7 +443,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	queue.SubmitUnregisterQuerierConnection("querier-1")
 
 	// Enqueue a request from an user which would be assigned to querier-1.
-	// NOTE: "user-1" hash falls in the querier-1 shard.
+	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
+	// when there are only one or two queriers in the sorted list of connected queriers
 	req := &SchedulerRequest{
 		Ctx:                       context.Background(),
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
@@ -494,13 +495,17 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 
 	// Three queriers connect.
 	// We will submit the enqueue request with maxQueriers: 2.
-	// When two queriers are forgotten at the same time, only the first forgotten querier triggers a reshard.
-	// In this reshard, the tenant goes from a shuffled subset of queriers to a state of
+	//
+	// Whenever forgetDisconnectedQueriers runs, all queriers which reached zero connections since the last
+	// run of forgetDisconnectedQueriers will all be removed in from the shuffle shard in the same run.
+	//
+	// In this case two queriers are forgotten in the same run, but only the first forgotten querier triggers a reshard.
+	// In the first reshard, the tenant goes from a shuffled subset of queriers to a state of
 	// "tenant can use all queriers", as connected queriers is now <= tenant.maxQueriers.
 	// The second forgotten querier won't trigger a reshard, as connected queriers is already <= tenant.maxQueriers.
 	//
 	// We are testing that the occurrence of a reshard is reported correctly
-	// when not all querier forget operations in a batch caused a reshard.
+	// when not all querier forget operations in a single run of forgetDisconnectedQueriers caused a reshard.
 	queue.SubmitRegisterQuerierConnection("querier-1")
 	queue.SubmitRegisterQuerierConnection("querier-2")
 	queue.SubmitRegisterQuerierConnection("querier-3")
@@ -519,7 +524,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	queue.SubmitUnregisterQuerierConnection("querier-3")
 
 	// Enqueue a request from a tenant which would be assigned to querier-1.
-	// NOTE: "user-1" hash falls in the querier-1 shard.
+	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
+	// when there are only one or two queriers in the sorted list of connected queriers
 	req := &SchedulerRequest{
 		Ctx:                       context.Background(),
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},

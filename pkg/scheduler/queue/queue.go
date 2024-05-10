@@ -268,14 +268,14 @@ func (q *RequestQueue) enqueueRequestToBroker(r requestToEnqueue) error {
 
 // trySendNextRequestForQuerier finds and forwards a request to a waiting GetNextRequestForQuerier call.
 //
-// Returns true if a nextRequestForQuerier was written to the nextRequestForQuerierCall's result channel.
+// Returns true if a nextRequestForQuerier was written to the nextRequestForQuerierCall's result channel,
+// indicating that the nextRequestForQuerierCall can be removed from the list of waiting calls.
 // The nextRequestForQuerier result can contain either:
 // a) a query request which was successfully dequeued for the querier, or
 // b) an ErrShuttingDown indicating the querier has been placed in a graceful shutdown state.
 // Returns false if no message was sent to the querier, meaning neither of the above cases occurred.
 //
-// Sending the request to the call's result channel will block until the result is read or the call is canceled.
-// The call can be discarded once it has received a result, otherwise it can remain in the list of waiting calls.
+// Sending the request to the call's result channel blocks until the result is read or the call is canceled.
 func (q *RequestQueue) trySendNextRequestForQuerier(call *nextRequestForQuerierCall) (sent bool) {
 	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(call.lastTenantIndex.last, call.querierID)
 	if err != nil {
