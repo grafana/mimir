@@ -596,7 +596,7 @@ func (ds *deletedSeries) clear() {
 	defer ds.mu.Unlock()
 
 	// nil the maps to release memory.
-	// They will be reinitilized if the tenant resumes sending series.
+	// They will be reinitialized if the tenant resumes sending series.
 	ds.keys = nil
 	ds.refs = nil
 }

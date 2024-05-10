@@ -36,7 +36,7 @@
 * [ENHANCEMENT] Store-gateway: add `-blocks-storage.bucket-store.max-concurrent-queue-timeout`. When set, queries at the store-gateway's query gate will not wait longer than that to execute. If a query reaches the wait timeout, then the querier will retry the blocks on a different store-gateway. If all store-gateways are unavailable, then the query will fail with `err-mimir-store-consistency-check-failed`. #7777
 * [ENHANCEMENT] Ingester: Optimize querying with regexp matchers. #8106
 * [ENHANCEMENT] Distributor: Introduce `-distributor.max-request-pool-buffer-size` to allow configuring the maximum size of the request pool buffers. #8082
-* [ENHANCEMENT] Ingester: active series are now updated along with owned series. They decrease when series change ownership between ingesters. This helps provide a more accurate total of active series when adding ingesters. #8084
+* [ENHANCEMENT] Ingester: active series are now updated along with owned series. They decrease when series change ownership between ingesters. This helps provide a more accurate total of active series when ingesters are added. #8084
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 * [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
