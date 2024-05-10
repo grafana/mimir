@@ -172,10 +172,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching", e.VectorMatching.Card))
 		}
 
-		if e.Op.IsComparisonOperator() || e.Op.IsSetOperator() {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", e.Op))
-		}
-
 		lhs, err := q.convertToInstantVectorOperator(e.LHS)
 		if err != nil {
 			return nil, err
@@ -186,12 +182,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 			return nil, err
 		}
 
-		return &operator.BinaryOperation{
-			Left:           lhs,
-			Right:          rhs,
-			VectorMatching: *e.VectorMatching,
-			Op:             e.Op,
-		}, nil
+		return operator.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op)
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToInstantVectorOperator(e.Expr)

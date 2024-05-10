@@ -17,6 +17,8 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 )
 
 // BinaryOperation represents a binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
@@ -37,7 +39,7 @@ type BinaryOperation struct {
 	remainingSeries []*binaryOperationOutputSeries
 	leftBuffer      *binaryOperationSeriesBuffer
 	rightBuffer     *binaryOperationSeriesBuffer
-	op              binaryOperationFunc
+	opFunc          binaryOperationFunc
 }
 
 var _ InstantVectorOperator = &BinaryOperation{}
@@ -61,6 +63,22 @@ func (s binaryOperationOutputSeries) latestRightSeries() int {
 	return s.rightSeriesIndices[len(s.rightSeriesIndices)-1]
 }
 
+func NewBinaryOperation(left InstantVectorOperator, right InstantVectorOperator, vectorMatching parser.VectorMatching, op parser.ItemType) (*BinaryOperation, error) {
+	opFunc := arithmeticOperationFuncs[op]
+	if opFunc == nil {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
+	}
+
+	return &BinaryOperation{
+		Left:           left,
+		Right:          right,
+		VectorMatching: vectorMatching,
+		Op:             op,
+
+		opFunc: opFunc,
+	}, nil
+}
+
 // SeriesMetadata returns the series expected to be produced by this operator.
 //
 // Note that it is possible that this method returns a series which will not have any points, as the
@@ -77,13 +95,6 @@ func (s binaryOperationOutputSeries) latestRightSeries() int {
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
 func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
-	b.op = arithmeticOperationFuncs[b.Op]
-	if b.op == nil {
-		// This should never happen, this should be caught by Query.convertToOperator
-		// FIXME: move NotSupportedError to a separate package so we can use it in a constructor function for BinaryOperation and remove the check in Query.convertToOperator
-		return nil, fmt.Errorf("unsupported binary operation '%s'", b.Op)
-	}
-
 	if canProduceAnySeries, err := b.loadSeriesMetadata(ctx); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
@@ -500,7 +511,7 @@ func (b *BinaryOperation) computeResult(left InstantVectorSeriesData, right Inst
 		if leftPoint.T == right.Floats[nextRightIndex].T {
 			// We have matching points on both sides, compute the result.
 			output = append(output, promql.FPoint{
-				F: b.op(leftPoint.F, right.Floats[nextRightIndex].F),
+				F: b.opFunc(leftPoint.F, right.Floats[nextRightIndex].F),
 				T: leftPoint.T,
 			})
 		}
