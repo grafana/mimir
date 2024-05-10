@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-// Mostly taken from http://github.com/grafana/grafana/pkg/services/notification/webhook.go
+// Mostly taken from http://github.com/grafana/grafana/main/pkg/services/notifications/webhook.go
 package alertmanager
 
 import (
@@ -18,29 +18,43 @@ import (
 
 	alertingLogging "github.com/grafana/alerting/logging"
 	alertingReceivers "github.com/grafana/alerting/receivers"
+	"github.com/pkg/errors"
+
+	"github.com/grafana/mimir/pkg/util/version"
 )
 
-type sender struct {
+var (
+	ErrInvalidMethod = errors.New("webhook only supports HTTP methods PUT or POST")
+)
+
+type Sender struct {
+	c   *http.Client
 	log alertingLogging.Logger
 }
 
-var netTransport = &http.Transport{
-	TLSClientConfig: &tls.Config{
-		Renegotiation: tls.RenegotiateFreelyAsClient,
-	},
-	Proxy: http.ProxyFromEnvironment,
-	Dial: (&net.Dialer{
-		Timeout: 30 * time.Second,
-	}).Dial,
-	TLSHandshakeTimeout: 5 * time.Second,
-}
-var netClient = &http.Client{
-	Timeout:   time.Second * 30,
-	Transport: netTransport,
+func NewSender(log alertingLogging.Logger) *Sender {
+	netTransport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			Renegotiation: tls.RenegotiateFreelyAsClient,
+		},
+		Proxy: http.ProxyFromEnvironment,
+		Dial: (&net.Dialer{
+			Timeout: 30 * time.Second,
+		}).Dial,
+		TLSHandshakeTimeout: 5 * time.Second,
+	}
+	c := &http.Client{
+		Timeout:   time.Second * 30,
+		Transport: netTransport,
+	}
+	return &Sender{
+		c:   c,
+		log: log,
+	}
 }
 
 // SendWebhook implements alertingReceivers.WebhookSender.
-func (s *sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWebhookSettings) error {
+func (s *Sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWebhookSettings) error {
 	if cmd.HTTPMethod == "" {
 		cmd.HTTPMethod = http.MethodPost
 	}
@@ -48,7 +62,7 @@ func (s *sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 	s.log.Debug("Sending webhook", "url", cmd.URL, "http method", cmd.HTTPMethod)
 
 	if cmd.HTTPMethod != http.MethodPost && cmd.HTTPMethod != http.MethodPut {
-		return fmt.Errorf("webhook only supports HTTP methods PUT or POST")
+		return ErrInvalidMethod
 	}
 
 	request, err := http.NewRequestWithContext(ctx, cmd.HTTPMethod, cmd.URL, bytes.NewReader([]byte(cmd.Body)))
@@ -61,7 +75,7 @@ func (s *sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 	}
 
 	request.Header.Set("Content-Type", cmd.ContentType)
-	request.Header.Set("User-Agent", "Grafana")
+	request.Header.Set("User-Agent", version.UserAgent())
 
 	if cmd.User != "" && cmd.Password != "" {
 		request.SetBasicAuth(cmd.User, cmd.Password)
@@ -71,7 +85,7 @@ func (s *sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 		request.Header.Set(k, v)
 	}
 
-	resp, err := netClient.Do(request)
+	resp, err := s.c.Do(request)
 	if err != nil {
 		return err
 	}
@@ -104,6 +118,6 @@ func (s *sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 }
 
 // SendEmail implements alertingReceivers.EmailSender.
-func (s *sender) SendEmail(ctx context.Context, cmd *alertingReceivers.SendEmailSettings) error {
+func (s *Sender) SendEmail(ctx context.Context, cmd *alertingReceivers.SendEmailSettings) error {
 	return nil
 }
