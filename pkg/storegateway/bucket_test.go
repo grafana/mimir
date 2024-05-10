@@ -2059,7 +2059,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
 	assert.NoError(t, err)
 
-	_, blockMinT, blockMaxT := uploadTestBlock(t, tmpDir, instrBkt, []testBlockDataSetup{appendTestSeries(100)})
+	_, blockMinT, blockMaxT := uploadTestBlock(t, tmpDir, instrBkt, []testBlockDataSetup{appendTestSeries(10000)})
 
 	store, err := NewBucketStore(
 		"test",
@@ -2072,7 +2072,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		},
 		selectAllStrategy{},
-		newStaticChunksLimiterFactory(100),
+		newStaticChunksLimiterFactory(0),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		hashcache.NewSeriesHashCache(1024*1024),
@@ -2092,18 +2092,18 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 		},
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	firstRequestStarted := make(chan struct{})
-
 	srv := newStoreGatewayTestServer(t, store)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	firstRequestStarted := make(chan struct{})
 
 	go func() {
 		// Start the first Series call, but do not read responses.
 		// This keeps the request in flight in the store-gateway.
 		conn, err := srv.dialConn()
 		assert.NoError(t, err)
-		t.Cleanup(func() { _ = conn.Close() })
+		defer conn.Close()
 		_, err = srv.requestSeries(ctx, conn, req)
 		assert.NoError(t, err)
 		close(firstRequestStarted)
