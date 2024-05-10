@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-// Mostly taken from http://github.com/grafana/grafana/pkg/services/notification/webhook.go
+// Mostly taken from http://github.com/grafana/grafana/main/pkg/services/notifications/webhook.go
 package alertmanager
 
 import (
