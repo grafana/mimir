@@ -15,6 +15,7 @@
     autoscaling_ruler_querier_max_replicas: error 'you must set autoscaling_ruler_querier_max_replicas in the _config',
     autoscaling_ruler_querier_cpu_target_utilization: 1,
     autoscaling_ruler_querier_memory_target_utilization: 1,
+    autoscaling_ruler_querier_workers_target_utilization: 0.75,  // Target to utilize 75% ruler-querier workers on peak traffic, so we have 25% room for higher peaks.
 
     autoscaling_distributor_enabled: false,
     autoscaling_distributor_min_replicas: error 'you must set autoscaling_distributor_min_replicas in the _config',
@@ -342,6 +343,7 @@
     with_cortex_prefix=false,
     weight=1,
     scale_down_period=null,
+    extra_triggers=[],
   ):: self.newScaledObject(
     name, $._config.namespace, {
       min_replica_count: replicasWithWeight(min_replicas, weight),
@@ -380,7 +382,7 @@
           // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
           ignore_null_values: false,
         },
-      ],
+      ] + extra_triggers,
     },
   ),
 
@@ -471,6 +473,29 @@
       max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
       cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
+      extra_triggers=if $._config.autoscaling_ruler_querier_workers_target_utilization <= 0 then [] else [
+        {
+          local name = 'ruler-querier-queries',
+          local querier_max_concurrent = $.ruler_querier_args['querier.max-concurrent'],
+
+          metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+          // Each ruler-query-scheduler tracks *at regular intervals* the number of inflight requests
+          // (both enqueued and processing queries) as a summary. With the following query we target
+          // to have enough querier workers to run the max observed inflight requests 50% of time.
+          //
+          // This metric covers the case queries are piling up in the ruler-query-scheduler queue,
+          // but ruler-querier replicas are not scaled up by other scaling metrics (e.g. CPU and memory)
+          // because resources utilization is not increasing significantly.
+          query: 'sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="%s",quantile="0.5"}[1m]))' % [$._config.namespace],
+
+          threshold: '%d' % std.floor(querier_max_concurrent * $._config.autoscaling_ruler_querier_workers_target_utilization),
+
+          // Do not let KEDA use the value "0" as scaling metric if the query returns no result
+          // (e.g. query-scheduler is crashing).
+          ignore_null_values: false,
+        },
+      ],
     ),
 
   ruler_querier_deployment: overrideSuperIfExists(

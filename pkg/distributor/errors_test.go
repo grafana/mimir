@@ -484,7 +484,7 @@ func TestWrapIngesterPushError(t *testing.T) {
 			require.True(t, ok)
 
 			require.Equal(t, testData.expectedIngesterPushError.Error(), ingesterPushErr.Error())
-			require.Equal(t, testData.expectedIngesterPushError.errorCause(), ingesterPushErr.errorCause())
+			require.Equal(t, testData.expectedIngesterPushError.Cause(), ingesterPushErr.Cause())
 		})
 	}
 }
@@ -543,9 +543,9 @@ func TestIsIngesterClientError(t *testing.T) {
 }
 
 func checkDistributorError(t *testing.T, err error, expectedCause mimirpb.ErrorCause) {
-	var distributorErr distributorError
+	var distributorErr Error
 	require.ErrorAs(t, err, &distributorErr)
-	require.Equal(t, expectedCause, distributorErr.errorCause())
+	require.Equal(t, expectedCause, distributorErr.Cause())
 }
 
 type mockDistributorErr string
@@ -554,6 +554,6 @@ func (e mockDistributorErr) Error() string {
 	return string(e)
 }
 
-func (e mockDistributorErr) errorCause() mimirpb.ErrorCause {
+func (e mockDistributorErr) Cause() mimirpb.ErrorCause {
 	return mimirpb.UNKNOWN_CAUSE
 }

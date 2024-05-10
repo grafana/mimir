@@ -122,7 +122,6 @@ func handler(
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)
 			if source != "" {
-				ctx = util.AddSourceIPsToOutgoingContext(ctx, source)
 				logger = utillog.WithSourceIPs(source, logger)
 			}
 		}
@@ -202,9 +201,9 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 		return http.StatusInternalServerError
 	}
 
-	var distributorErr distributorError
+	var distributorErr Error
 	if errors.As(pushErr, &distributorErr) {
-		switch distributorErr.errorCause() {
+		switch distributorErr.Cause() {
 		case mimirpb.BAD_DATA:
 			return http.StatusBadRequest
 		case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
