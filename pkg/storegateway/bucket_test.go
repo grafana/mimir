@@ -2104,8 +2104,11 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 		conn, err := srv.dialConn()
 		assert.NoError(t, err)
 		defer conn.Close()
-		_, err = srv.requestSeries(ctx, conn, req)
+		stream, err := srv.requestSeries(ctx, conn, req)
 		assert.NoError(t, err)
+
+		// Do a single read to be sure that the request is being processed in the server.
+		_, _ = stream.Recv()
 		close(firstRequestStarted)
 		<-ctx.Done()
 	}()
