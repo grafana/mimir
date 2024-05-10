@@ -2104,7 +2104,12 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 		conn, err := srv.dialConn()
 		assert.NoError(t, err)
 		t.Cleanup(func() { _ = conn.Close() })
-		_, err = srv.requestSeries(ctx, conn, req)
+		sgClient, err := srv.requestSeries(ctx, conn, req)
+		assert.NoError(t, err)
+		// Receive one message so we can be sure that the server has started processing the request.
+		// Otherwise we cannot be sure that the gate was actually called, making the test flaky.
+		// Depends on the server returning two messages at least: result and stats. We don't read the second one.
+		_, err = sgClient.Recv()
 		assert.NoError(t, err)
 		close(firstRequestStarted)
 		<-ctx.Done()
