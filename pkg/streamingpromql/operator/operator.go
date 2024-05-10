@@ -21,6 +21,7 @@ type Operator interface {
 
 	// Close frees all resources associated with this operator.
 	// Calling SeriesMetadata or NextSeries after calling Close may result in unpredictable behaviour, corruption or crashes.
+	// It must be safe to call Close at any time, including if SeriesMetadata or NextSeries have returned an error.
 	Close()
 }
 
