@@ -26,12 +26,12 @@ var (
 	ErrInvalidMethod = errors.New("webhook only supports HTTP methods PUT or POST")
 )
 
-type sender struct {
+type Sender struct {
 	c   *http.Client
 	log alertingLogging.Logger
 }
 
-func NewSender(log alertingLogging.Logger) *sender {
+func NewSender(log alertingLogging.Logger) *Sender {
 	netTransport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			Renegotiation: tls.RenegotiateFreelyAsClient,
@@ -46,14 +46,14 @@ func NewSender(log alertingLogging.Logger) *sender {
 		Timeout:   time.Second * 30,
 		Transport: netTransport,
 	}
-	return &sender{
+	return &Sender{
 		c:   c,
 		log: log,
 	}
 }
 
 // SendWebhook implements alertingReceivers.WebhookSender.
-func (s *sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWebhookSettings) error {
+func (s *Sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWebhookSettings) error {
 	if cmd.HTTPMethod == "" {
 		cmd.HTTPMethod = http.MethodPost
 	}
