@@ -212,7 +212,8 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 				 "configuration": %s,
 				 "configuration_hash": "bb788eaa294c05ec556c1ed87546b7a9",
 				 "created": %d,
-				 "default": false
+				 "default": false,
+				 "promoted": false
 			},
 			"status": "success"
 		}
@@ -326,7 +327,8 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 			"configuration": %s,
 			"configuration_hash": "ChEKBW5mbG9nEghzb21lZGF0YQ==",
 			"created": 12312414343,
-			"default": false
+			"default": false,
+			"promoted": true
 		}
 		`, testGrafanaConfig)
 		req.Body = io.NopCloser(strings.NewReader(json))

@@ -97,6 +97,10 @@ sum(rate(http_requests_total{cluster="ops-tools1"}[1m]))
 )`,
 			expected: `sum(sum(rate(http_requests_total{cluster="us-central1"}[1m])) / sum(rate(http_requests_total{cluster="ops-tools1"}[1m])))`,
 		},
+		{
+			input:    `sum({__name__="",a="x"})`,
+			expected: `sum({__name__="",a="x"})`,
+		},
 	}
 
 	for i, c := range testExpr {

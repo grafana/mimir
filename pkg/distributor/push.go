@@ -6,7 +6,6 @@
 package distributor
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -14,7 +13,6 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
-	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -38,11 +36,6 @@ type PushFunc func(ctx context.Context, req *Request) error
 type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error
 
 var (
-	bufferPool = sync.Pool{
-		New: func() any {
-			return bytes.NewBuffer(make([]byte, 0, 256*1024))
-		},
-	}
 	errRetryBaseLessThanOneSecond    = errors.New("retry base duration should not be less than 1 second")
 	errNonPositiveMaxBackoffExponent = errors.New("max backoff exponent should be a positive value")
 )
@@ -78,19 +71,30 @@ func (cfg *RetryConfig) Validate() error {
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
 	maxRecvMsgSize int,
+	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	limits *validation.Overrides,
 	retryCfg RetryConfig,
 	push PushFunc,
+	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
-		err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
+	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
+		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		tenantID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return err
+		}
+		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(protoBodySize))
+
+		return nil
 	})
 }
 
@@ -108,6 +112,7 @@ func (e distributorMaxWriteMessageSizeErr) Error() string {
 
 func handler(
 	maxRecvMsgSize int,
+	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	limits *validation.Overrides,
@@ -126,7 +131,7 @@ func handler(
 			}
 		}
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
-			rb := util.NewRequestBuffers(&bufferPool)
+			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
 			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
@@ -201,9 +206,9 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 		return http.StatusInternalServerError
 	}
 
-	var distributorErr distributorError
+	var distributorErr Error
 	if errors.As(pushErr, &distributorErr) {
-		switch distributorErr.errorCause() {
+		switch distributorErr.Cause() {
 		case mimirpb.BAD_DATA:
 			return http.StatusBadRequest
 		case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:

@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 func TestWriter_WriteSync(t *testing.T) {
 	const (
 		topicName     = "test"
-		numPartitions = 1
+		numPartitions = 2
 		partitionID   = 0
 		tenantID      = "user-1"
 	)
@@ -97,6 +97,58 @@ func TestWriter_WriteSync(t *testing.T) {
 			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
 			cortex_ingest_storage_writer_sent_bytes_total %d
 		`, len(fetches.Records()[0].Value))), "cortex_ingest_storage_writer_sent_bytes_total"))
+	})
+
+	t.Run("should write to the requested partition", func(t *testing.T) {
+		t.Parallel()
+
+		for _, writeClients := range []int{1, 2, 10} {
+			writeClients := writeClients
+
+			t.Run(fmt.Sprintf("Write clients = %d", writeClients), func(t *testing.T) {
+				t.Parallel()
+
+				seriesPerPartition := map[int32][]mimirpb.PreallocTimeseries{
+					0: series1,
+					1: series2,
+				}
+
+				_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+				config := createTestKafkaConfig(clusterAddr, topicName)
+				config.WriteClients = writeClients
+				writer, _ := createTestWriter(t, config)
+
+				// Write to partitions.
+				for partitionID, series := range seriesPerPartition {
+					err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Metadata: nil, Source: mimirpb.API})
+					require.NoError(t, err)
+				}
+
+				// Read back from Kafka.
+				for partitionID, expectedSeries := range seriesPerPartition {
+					consumer, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr), kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{topicName: {partitionID: kgo.NewOffset().AtStart()}}))
+					require.NoError(t, err)
+					t.Cleanup(consumer.Close)
+
+					fetchCtx, cancel := context.WithTimeout(ctx, time.Second)
+					t.Cleanup(cancel)
+
+					fetches := consumer.PollFetches(fetchCtx)
+					require.NoError(t, fetches.Err())
+					require.Len(t, fetches.Records(), 1)
+					assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
+
+					received := mimirpb.WriteRequest{}
+					require.NoError(t, received.Unmarshal(fetches.Records()[0].Value))
+					require.Len(t, received.Timeseries, len(expectedSeries))
+
+					for idx, expected := range expectedSeries {
+						assert.Equal(t, expected.Labels, received.Timeseries[idx].Labels)
+						assert.Equal(t, expected.Samples, received.Timeseries[idx].Samples)
+					}
+				}
+			})
+		}
 	})
 
 	t.Run("should interrupt the WriteSync() on context cancelled but other concurrent requests should not fail", func(t *testing.T) {

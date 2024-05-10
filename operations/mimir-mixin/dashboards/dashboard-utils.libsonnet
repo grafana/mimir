@@ -569,7 +569,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     )
     .addPanel(
-      $.timeseriesPanel('TCP connections (per pod)') +
+      local title = 'Ingress TCP connections (per pod)';
+
+      $.timeseriesPanel(title) +
+      $.panelDescription(
+        title,
+        'The number of ingress TCP connections (HTTP and gRPC protocol).'
+      ) +
       $.queryPanel([
         'avg(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
         'max(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,

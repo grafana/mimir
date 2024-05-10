@@ -15,10 +15,10 @@ import (
 
 type Selector struct {
 	Queryable storage.Queryable
-	Start     int64 // Milliseconds since Unix epoch
-	End       int64 // Milliseconds since Unix epoch
-	Timestamp *int64
-	Interval  int64 // In milliseconds
+	Start     int64  // Milliseconds since Unix epoch
+	End       int64  // Milliseconds since Unix epoch
+	Timestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
+	Interval  int64  // In milliseconds
 	Matchers  []*labels.Matcher
 
 	// Set for instant vector selectors, otherwise 0.
