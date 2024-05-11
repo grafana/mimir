@@ -36,49 +36,49 @@ func TestUpdater_UpdateIndex(t *testing.T) {
 		tbkt := bucket.NewMockBucketClientWithTimeouts(bkt, 2)
 		testUpdateIndex(t, bkt, tbkt)
 		for _, stat := range tbkt.AllStats() {
-			assert.Greater(t, stat.Calls, 2)
+			assert.Equal(t, 3, stat.Calls)
 			assert.True(t, stat.Success)
 		}
 	})
 }
 
-func testUpdateIndex(t *testing.T, bkt, testBkt objstore.Bucket) {
+func testUpdateIndex(t *testing.T, controlBkt, testBkt objstore.Bucket) {
 	const userID = "user-1"
 
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
 	// Generate the initial index.
-	bkt = block.BucketWithGlobalMarkers(bkt)
-	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, nil)
-	block.MockNoCompactMark(t, bkt, userID, block1.BlockMeta) // no-compact mark is ignored by bucket index updater.
-	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_5"})
-	block2Mark := block.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
+	controlBkt = block.BucketWithGlobalMarkers(controlBkt)
+	block1 := block.MockStorageBlockWithExtLabels(t, controlBkt, userID, 10, 20, nil)
+	block.MockNoCompactMark(t, controlBkt, userID, block1.BlockMeta) // no-compact mark is ignored by bucket index updater.
+	block2 := block.MockStorageBlockWithExtLabels(t, controlBkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_5"})
+	block2Mark := block.MockStorageDeletionMark(t, controlBkt, userID, block2.BlockMeta)
 
 	w := NewUpdater(testBkt, userID, nil, logger)
 	returnedIdx, _, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
-	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
+	assertBucketIndexEqual(t, returnedIdx, controlBkt, userID,
 		[]block.Meta{block1, block2},
 		[]*block.DeletionMark{block2Mark})
 
 	// Create new blocks, and update the index.
-	block3 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, map[string]string{"aaa": "bbb"})
-	block4 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 40, 50, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_5"})
-	block4Mark := block.MockStorageDeletionMark(t, bkt, userID, block4.BlockMeta)
+	block3 := block.MockStorageBlockWithExtLabels(t, controlBkt, userID, 30, 40, map[string]string{"aaa": "bbb"})
+	block4 := block.MockStorageBlockWithExtLabels(t, controlBkt, userID, 40, 50, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_5"})
+	block4Mark := block.MockStorageDeletionMark(t, controlBkt, userID, block4.BlockMeta)
 
 	returnedIdx, _, err = w.UpdateIndex(ctx, returnedIdx)
 	require.NoError(t, err)
-	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
+	assertBucketIndexEqual(t, returnedIdx, controlBkt, userID,
 		[]block.Meta{block1, block2, block3, block4},
 		[]*block.DeletionMark{block2Mark, block4Mark})
 
 	// Hard delete a block and update the index.
-	require.NoError(t, block.Delete(ctx, log.NewNopLogger(), bucket.NewUserBucketClient(userID, bkt, nil), block2.ULID))
+	require.NoError(t, block.Delete(ctx, log.NewNopLogger(), bucket.NewUserBucketClient(userID, controlBkt, nil), block2.ULID))
 
 	returnedIdx, _, err = w.UpdateIndex(ctx, returnedIdx)
 	require.NoError(t, err)
-	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
+	assertBucketIndexEqual(t, returnedIdx, controlBkt, userID,
 		[]block.Meta{block1, block3, block4},
 		[]*block.DeletionMark{block4Mark})
 }
