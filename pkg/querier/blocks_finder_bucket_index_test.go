@@ -38,7 +38,7 @@ func TestBucketIndexBlocksFinder_GetBlocks(t *testing.T) {
 	mark3 := &bucketindex.BlockDeletionMark{ID: block3.ID, DeletionTime: time.Now().Unix()}
 	mark5 := &bucketindex.BlockDeletionMark{ID: block5.ID, DeletionTime: time.Now().Add(-2 * time.Hour).Unix()}
 
-	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, &bucketindex.Index{
+	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, log.NewNopLogger(), &bucketindex.Index{
 		Version:            bucketindex.IndexVersion1,
 		Blocks:             bucketindex.Blocks{block1, block2, block3, block4, block5},
 		BlockDeletionMarks: bucketindex.BlockDeletionMarks{mark3, mark5},
@@ -145,7 +145,7 @@ func BenchmarkBucketIndexBlocksFinder_GetBlocks(b *testing.B) {
 		id := ulid.MustNew(uint64(i), nil)
 		idx.BlockDeletionMarks = append(idx.BlockDeletionMarks, &bucketindex.BlockDeletionMark{ID: id, DeletionTime: time.Now().Unix()})
 	}
-	require.NoError(b, bucketindex.WriteIndex(ctx, bkt, userID, nil, idx))
+	require.NoError(b, bucketindex.WriteIndex(ctx, bkt, userID, nil, log.NewNopLogger(), idx))
 	finder := prepareBucketIndexBlocksFinder(b, bkt)
 
 	b.ResetTimer()
@@ -198,7 +198,7 @@ func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexIsTooOld(t *testing.T) {
 		BlockDeletionMarks: bucketindex.BlockDeletionMarks{},
 		UpdatedAt:          time.Now().Add(-2 * time.Hour).Unix(),
 	}
-	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, idx))
+	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, log.NewNopLogger(), idx))
 
 	_, _, err := finder.GetBlocks(ctx, userID, 10, 20)
 	require.EqualError(t, err, newBucketIndexTooOldError(idx.GetUpdatedAt(), finder.cfg.MaxStalePeriod).Error())

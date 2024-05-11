@@ -39,7 +39,7 @@ func TestLoader_GetIndex_ShouldLazyLoadBucketIndex(t *testing.T) {
 		BlockDeletionMarks: nil,
 		UpdatedAt:          time.Now().Unix(),
 	}
-	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, idx))
+	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, log.NewNopLogger(), idx))
 
 	// Create the loader.
 	loader := NewLoader(prepareLoaderConfig(), bkt, nil, log.NewNopLogger(), reg)
@@ -179,7 +179,7 @@ func TestLoader_GetIndex_ShouldNotCacheContextCanceled(t *testing.T) {
 		BlockDeletionMarks: nil,
 		UpdatedAt:          time.Now().Unix(),
 	}
-	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, idx))
+	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, log.NewNopLogger(), idx))
 
 	// Create the loader.
 	loader := NewLoader(prepareLoaderConfig(), bkt, nil, log.NewNopLogger(), reg)
@@ -250,7 +250,7 @@ func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousLoadSuccess(t *testing.T)
 		BlockDeletionMarks: nil,
 		UpdatedAt:          time.Now().Unix(),
 	}
-	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, idx))
+	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, log.NewNopLogger(), idx))
 
 	// Create the loader.
 	cfg := LoaderConfig{
@@ -272,7 +272,7 @@ func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousLoadSuccess(t *testing.T)
 
 	// Update the bucket index.
 	idx.Blocks = append(idx.Blocks, &Block{ID: ulid.MustNew(2, nil), MinTime: 20, MaxTime: 30})
-	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, idx))
+	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, log.NewNopLogger(), idx))
 
 	// Wait until the index has been updated in background.
 	test.Poll(t, 3*time.Second, 2, func() interface{} {
@@ -335,7 +335,7 @@ func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousLoadFailure(t *testing.T)
 		BlockDeletionMarks: nil,
 		UpdatedAt:          time.Now().Unix(),
 	}
-	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, idx))
+	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, log.NewNopLogger(), idx))
 
 	// Wait until the index has been updated in background.
 	test.Poll(t, 3*time.Second, nil, func() interface{} {
@@ -388,7 +388,7 @@ func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousIndexNotFound(t *testing.
 		BlockDeletionMarks: nil,
 		UpdatedAt:          time.Now().Unix(),
 	}
-	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, idx))
+	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, log.NewNopLogger(), idx))
 
 	// Wait until the index has been updated in background.
 	test.Poll(t, 3*time.Second, nil, func() interface{} {
@@ -424,7 +424,7 @@ func TestLoader_ShouldNotCacheCriticalErrorOnBackgroundUpdates(t *testing.T) {
 		BlockDeletionMarks: nil,
 		UpdatedAt:          time.Now().Unix(),
 	}
-	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, idx))
+	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, log.NewNopLogger(), idx))
 
 	// Create the loader.
 	cfg := LoaderConfig{
@@ -480,7 +480,7 @@ func TestLoader_ShouldCacheIndexNotFoundOnBackgroundUpdates(t *testing.T) {
 		BlockDeletionMarks: nil,
 		UpdatedAt:          time.Now().Unix(),
 	}
-	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, idx))
+	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, log.NewNopLogger(), idx))
 
 	// Create the loader.
 	cfg := LoaderConfig{
@@ -537,7 +537,7 @@ func TestLoader_ShouldOffloadIndexIfNotFoundDuringBackgroundUpdates(t *testing.T
 		BlockDeletionMarks: nil,
 		UpdatedAt:          time.Now().Unix(),
 	}
-	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, idx))
+	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, log.NewNopLogger(), idx))
 
 	// Create the loader.
 	cfg := LoaderConfig{
@@ -592,7 +592,7 @@ func TestLoader_ShouldOffloadIndexIfIdleTimeoutIsReachedDuringBackgroundUpdates(
 		BlockDeletionMarks: nil,
 		UpdatedAt:          time.Now().Unix(),
 	}
-	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, idx))
+	require.NoError(t, WriteIndex(ctx, bkt, "user-1", nil, log.NewNopLogger(), idx))
 
 	// Create the loader.
 	cfg := LoaderConfig{

@@ -8,12 +8,14 @@ package bucketindex
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"path"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -28,6 +30,12 @@ var (
 	ErrBlockMetaCorrupted         = block.ErrorSyncMetaCorrupted
 	ErrBlockDeletionMarkNotFound  = errors.New("block deletion mark not found")
 	ErrBlockDeletionMarkCorrupted = errors.New("block deletion mark corrupted")
+
+	timeoutBackoff = backoff.Config{
+		MinBackoff: 25 * time.Millisecond,
+		MaxBackoff: 250 * time.Millisecond,
+		MaxRetries: 3,
+	}
 )
 
 // Updater is responsible to generate an update in-memory bucket index.
@@ -126,15 +134,14 @@ func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Blo
 }
 
 func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Block, error) {
-	// Set a generous timeout for fetching the meta.json and getting the attributes of the same file.
-	// This protects against operations that can take unbounded time.
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-
-	metaFile := path.Join(id.String(), block.MetaFilename)
-
 	// Get the block's meta.json file.
-	r, err := w.bkt.Get(ctx, metaFile)
+	metaFile := path.Join(id.String(), block.MetaFilename)
+	var r io.ReadCloser
+	err := bucket.WithTimeoutsRetried(ctx, 1*time.Minute, timeoutBackoff, w.logger, func(ctx context.Context) error {
+		var err error
+		r, err = w.bkt.Get(ctx, metaFile)
+		return err
+	})
 	if w.bkt.IsObjNotFoundErr(err) {
 		return nil, ErrBlockMetaNotFound
 	}
@@ -161,8 +168,12 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 	block := BlockFromThanosMeta(m)
 
 	// Get the meta.json attributes.
-	attrs, err := w.bkt.Attributes(ctx, metaFile)
-	if err != nil {
+	var attrs objstore.ObjectAttributes
+	if err := bucket.WithTimeoutsRetried(ctx, 30*time.Second, timeoutBackoff, w.logger, func(ctx context.Context) error {
+		var err error
+		attrs, err = w.bkt.Attributes(ctx, metaFile)
+		return err
+	}); err != nil {
 		return nil, errors.Wrapf(err, "read meta file attributes: %v", metaFile)
 	}
 
@@ -170,7 +181,6 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 	// we can safely assume that the last modified timestamp of the meta.json is the time when
 	// the block has completed to be uploaded.
 	block.UploadedAt = attrs.LastModified.Unix()
-
 	return block, nil
 }
 
@@ -178,9 +188,14 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 	out := make([]*BlockDeletionMark, 0, len(old))
 
 	// Find all markers in the storage.
-	discovered, err := block.ListBlockDeletionMarks(ctx, w.bkt)
-	if err != nil {
-		return nil, err
+	var discovered map[ulid.ULID]struct{}
+
+	if err := bucket.WithTimeoutsRetried(ctx, 1*time.Minute, timeoutBackoff, w.logger, func(ctx context.Context) error {
+		var err error
+		discovered, err = block.ListBlockDeletionMarks(ctx, w.bkt)
+		return err
+	}); err != nil {
+		return nil, fmt.Errorf("list deletion marks: %w", err)
 	}
 
 	level.Info(w.logger).Log("msg", "listed deletion markers", "count", len(discovered))
@@ -213,14 +228,15 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 	}
 
 	level.Info(w.logger).Log("msg", "updated deletion markers for recently marked blocks", "count", len(discovered), "total_deletion_markers", len(out))
-
 	return out, nil
 }
 
 func (w *Updater) updateBlockDeletionMarkIndexEntry(ctx context.Context, id ulid.ULID) (*BlockDeletionMark, error) {
 	m := block.DeletionMark{}
 
-	if err := block.ReadMarker(ctx, w.logger, w.bkt, id.String(), &m); err != nil {
+	if err := bucket.WithTimeoutsRetried(ctx, 1*time.Minute, timeoutBackoff, w.logger, func(ctx context.Context) error {
+		return block.ReadMarker(ctx, w.logger, w.bkt, id.String(), &m)
+	}); err != nil {
 		if errors.Is(err, block.ErrorMarkerNotFound) {
 			return nil, errors.Wrap(ErrBlockDeletionMarkNotFound, err.Error())
 		}

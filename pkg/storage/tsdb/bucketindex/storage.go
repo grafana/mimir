@@ -10,9 +10,11 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"io"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
@@ -23,19 +25,25 @@ import (
 var (
 	ErrIndexNotFound  = errors.New("bucket index not found")
 	ErrIndexCorrupted = errors.New("bucket index corrupted")
+
+	indexOpBackoff = backoff.Config{
+		MinBackoff: 25 * time.Millisecond,
+		MaxBackoff: 250 * time.Millisecond,
+		MaxRetries: 3,
+	}
 )
 
 // ReadIndex reads, parses and returns a bucket index from the bucket.
-// ReadIndex has a one-minute timeout for completing the read against the bucket.
-// One minute is hard-coded to a reasonably high value to protect against operations that can take unbounded time.
 func ReadIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, logger log.Logger) (*Index, error) {
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-
 	userBkt := bucket.NewUserBucketClient(userID, bkt, cfgProvider)
 
 	// Get the bucket index.
-	reader, err := userBkt.WithExpectedErrs(userBkt.IsObjNotFoundErr).Get(ctx, IndexCompressedFilename)
+	var reader io.ReadCloser
+	err := bucket.WithTimeoutsRetried(ctx, 1*time.Minute, indexOpBackoff, logger, func(ctx context.Context) error {
+		var err error
+		reader, err = userBkt.WithExpectedErrs(userBkt.IsObjNotFoundErr).Get(ctx, IndexCompressedFilename)
+		return err
+	})
 	if err != nil {
 		if userBkt.IsObjNotFoundErr(err) {
 			return nil, ErrIndexNotFound
@@ -62,7 +70,7 @@ func ReadIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvi
 }
 
 // WriteIndex uploads the provided index to the storage.
-func WriteIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, idx *Index) error {
+func WriteIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, logger log.Logger, idx *Index) error {
 	bkt = bucket.NewUserBucketClient(userID, bkt, cfgProvider)
 
 	// Marshal the index.
@@ -84,7 +92,10 @@ func WriteIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProv
 	}
 
 	// Upload the index to the storage.
-	if err := bkt.Upload(ctx, IndexCompressedFilename, &gzipContent); err != nil {
+
+	if err := bucket.WithTimeoutsRetried(ctx, 1*time.Minute, indexOpBackoff, logger, func(ctx context.Context) error {
+		return bkt.Upload(ctx, IndexCompressedFilename, &gzipContent)
+	}); err != nil {
 		return errors.Wrap(err, "upload bucket index")
 	}
 

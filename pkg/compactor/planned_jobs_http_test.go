@@ -57,7 +57,7 @@ func TestPlannedJobsHandler(t *testing.T) {
 		&bucketindex.Block{ID: blockMarkedForNoCompact, MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
 	}
 
-	require.NoError(t, bucketindex.WriteIndex(context.Background(), bucketClient, user, nil, &index))
+	require.NoError(t, bucketindex.WriteIndex(context.Background(), bucketClient, user, nil, log.NewNopLogger(), &index))
 
 	userBucket := bucket.NewUserBucketClient(user, bucketClient, nil)
 	// Mark block for no-compaction.

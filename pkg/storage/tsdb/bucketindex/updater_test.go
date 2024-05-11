@@ -27,9 +27,23 @@ import (
 )
 
 func TestUpdater_UpdateIndex(t *testing.T) {
-	const userID = "user-1"
+	t.Run("regular bucket", func(t *testing.T) {
+		bkt, _ := testutil.PrepareFilesystemBucket(t)
+		testUpdateIndex(t, bkt, bkt)
+	})
+	t.Run("bucket with timeouts", func(t *testing.T) {
+		bkt, _ := testutil.PrepareFilesystemBucket(t)
+		tbkt := bucket.NewMockBucketClientWithTimeouts(bkt, 2)
+		testUpdateIndex(t, bkt, tbkt)
+		for _, stat := range tbkt.AllStats() {
+			assert.Greater(t, stat.Calls, 2)
+			assert.True(t, stat.Success)
+		}
+	})
+}
 
-	bkt, _ := testutil.PrepareFilesystemBucket(t)
+func testUpdateIndex(t *testing.T, bkt, testBkt objstore.Bucket) {
+	const userID = "user-1"
 
 	ctx := context.Background()
 	logger := log.NewNopLogger()
@@ -41,7 +55,7 @@ func TestUpdater_UpdateIndex(t *testing.T) {
 	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_5"})
 	block2Mark := block.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
 
-	w := NewUpdater(bkt, userID, nil, logger)
+	w := NewUpdater(testBkt, userID, nil, logger)
 	returnedIdx, _, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, returnedIdx, bkt, userID,

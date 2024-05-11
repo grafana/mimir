@@ -47,7 +47,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	mark1 := &bucketindex.BlockDeletionMark{ID: block1.ID, DeletionTime: now.Add(-time.Hour).Unix()}     // Below the ignore delay threshold.
 	mark2 := &bucketindex.BlockDeletionMark{ID: block2.ID, DeletionTime: now.Add(-3 * time.Hour).Unix()} // Above the ignore delay threshold.
 
-	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, &bucketindex.Index{
+	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, log.NewNopLogger(), &bucketindex.Index{
 		Version:            bucketindex.IndexVersion1,
 		Blocks:             bucketindex.Blocks{block1, block2, block3, block4},
 		BlockDeletionMarks: bucketindex.BlockDeletionMarks{mark1, mark2},

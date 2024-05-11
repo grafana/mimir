@@ -77,7 +77,7 @@ func testIgnoreDeletionMarkFilter(t *testing.T, bucketIndexEnabled bool) {
 		u := bucketindex.NewUpdater(bkt, userID, nil, logger)
 		idx, _, err = u.UpdateIndex(ctx, nil)
 		require.NoError(t, err)
-		require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, idx))
+		require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, logger, idx))
 	}
 
 	inputMetas := map[ulid.ULID]*block.Meta{

@@ -1709,7 +1709,7 @@ func createBucketIndex(t *testing.T, bkt objstore.Bucket, userID string) *bucket
 	updater := bucketindex.NewUpdater(bkt, userID, nil, log.NewNopLogger())
 	idx, _, err := updater.UpdateIndex(context.Background(), nil)
 	require.NoError(t, err)
-	require.NoError(t, bucketindex.WriteIndex(context.Background(), bkt, userID, nil, idx))
+	require.NoError(t, bucketindex.WriteIndex(context.Background(), bkt, userID, nil, log.NewNopLogger(), idx))
 
 	return idx
 }

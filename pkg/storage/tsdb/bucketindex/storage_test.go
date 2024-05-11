@@ -14,7 +14,9 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
@@ -59,12 +61,24 @@ func TestReadIndex_ShouldReturnTheParsedIndexOnSuccess(t *testing.T) {
 	u := NewUpdater(bkt, userID, nil, logger)
 	expectedIdx, _, err := u.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
-	require.NoError(t, WriteIndex(ctx, bkt, userID, nil, expectedIdx))
+	require.NoError(t, WriteIndex(ctx, bkt, userID, nil, logger, expectedIdx))
 
 	// Read it back and compare.
-	actualIdx, err := ReadIndex(ctx, bkt, userID, nil, logger)
-	require.NoError(t, err)
-	assert.Equal(t, expectedIdx, actualIdx)
+	t.Run("normal case", func(t *testing.T) {
+		actualIdx, err := ReadIndex(ctx, bkt, userID, nil, logger)
+		require.NoError(t, err)
+		assert.Equal(t, expectedIdx, actualIdx)
+	})
+	t.Run("with obj store timeouts", func(t *testing.T) {
+		tbucket := bucket.NewMockBucketClientWithTimeouts(bkt, 2)
+		actualIdx, err := ReadIndex(ctx, tbucket, userID, nil, logger)
+		require.NoError(t, err)
+		assert.Equal(t, expectedIdx, actualIdx)
+		obj := userID + objstore.DirDelim + IndexCompressedFilename
+		calls, success := tbucket.GetStats(obj)
+		assert.Equal(t, 3, calls)
+		assert.True(t, success)
+	})
 }
 
 func BenchmarkReadIndex(b *testing.B) {
@@ -96,7 +110,7 @@ func BenchmarkReadIndex(b *testing.B) {
 	u := NewUpdater(bkt, userID, nil, logger)
 	idx, _, err := u.UpdateIndex(ctx, nil)
 	require.NoError(b, err)
-	require.NoError(b, WriteIndex(ctx, bkt, userID, nil, idx))
+	require.NoError(b, WriteIndex(ctx, bkt, userID, nil, logger, idx))
 
 	// Read it back once just to make sure the index contains the expected data.
 	idx, err = ReadIndex(ctx, bkt, userID, nil, logger)
