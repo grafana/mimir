@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/api"
+	"github.com/grafana/mimir/pkg/blockbuilder"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -98,6 +99,7 @@ const (
 	Vault                      string = "vault"
 	TenantFederation           string = "tenant-federation"
 	UsageStats                 string = "usage-stats"
+	BlockBuilder               string = "block-builder"
 	ContinuousTest             string = "continuous-test"
 	All                        string = "all"
 
@@ -207,6 +209,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.StoreGateway.ShardingRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.BlockBuilder.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 
 	// Update Configs - Redis Clients
 	t.Cfg.BlocksStorage.BucketStore.IndexCache.BackendConfig.Redis.TLS.Reader = t.Vault
@@ -410,6 +413,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Cfg.BlockBuilder.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 
 	return serv, err
 }
@@ -1000,6 +1004,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.Alertmanager.ShardingRing.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.BlockBuilder.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 
 	return t.MemberlistKV, nil
 }
@@ -1038,6 +1043,19 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 
 	t.UsageStatsReporter = usagestats.NewReporter(bucketClient, util_log.Logger, t.Registerer)
 	return t.UsageStatsReporter, nil
+}
+
+func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
+	t.Cfg.BlockBuilder.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
+
+	t.BlockBuilder, err = blockbuilder.NewBlockBuilder(t.Cfg.BlockBuilder, util_log.Logger, t.IngesterPartitionRingWatcher, t.Registerer)
+	if err != nil {
+		return
+	}
+
+	t.API.RegisterBlockBuilderRing(t.BlockBuilder)
+
+	return t.BlockBuilder, nil
 }
 
 func (t *Mimir) initContinuousTest() (services.Service, error) {
@@ -1089,6 +1107,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
+	mm.RegisterModule(BlockBuilder, t.initBlockBuilder)
 	mm.RegisterModule(ContinuousTest, t.initContinuousTest)
 	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
 	mm.RegisterModule(Write, nil)
@@ -1123,6 +1142,7 @@ func (t *Mimir) setupModuleManager() error {
 		Compactor:                {API, MemberlistKV, Overrides, Vault},
 		StoreGateway:             {API, Overrides, MemberlistKV, Vault},
 		TenantFederation:         {Queryable},
+		BlockBuilder:             {API, MemberlistKV, IngesterPartitionRing},
 		ContinuousTest:           {API},
 		Write:                    {Distributor, Ingester},
 		Read:                     {QueryFrontend, Querier},
