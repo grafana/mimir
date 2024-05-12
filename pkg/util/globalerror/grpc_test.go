@@ -71,10 +71,10 @@ func TestWrapContextError(t *testing.T) {
 
 		for testName, testData := range tests {
 			t.Run(testName, func(t *testing.T) {
-				wrapped := WrapGrpcContextError(testData.origErr)
+				wrapped := WrapGRPCErrorWithContextError(testData.origErr)
 
 				assert.NotEqual(t, testData.origErr, wrapped)
-				assert.Equal(t, testData.origErr, errors.Unwrap(wrapped))
+				assert.ErrorIs(t, wrapped, testData.origErr)
 
 				assert.True(t, errors.Is(wrapped, testData.expectedContextErr))
 				assert.Equal(t, testData.expectedGrpcCode, grpcutil.ErrorToStatusCode(wrapped))
@@ -98,11 +98,11 @@ func TestWrapContextError(t *testing.T) {
 
 	t.Run("should return the input error on a non-gRPC error", func(t *testing.T) {
 		orig := errors.New("mock error")
-		assert.Equal(t, orig, WrapGrpcContextError(orig))
+		assert.Equal(t, orig, WrapGRPCErrorWithContextError(orig))
 
-		assert.Equal(t, context.Canceled, WrapGrpcContextError(context.Canceled))
-		assert.Equal(t, context.DeadlineExceeded, WrapGrpcContextError(context.DeadlineExceeded))
-		assert.Equal(t, io.EOF, WrapGrpcContextError(io.EOF))
+		assert.Equal(t, context.Canceled, WrapGRPCErrorWithContextError(context.Canceled))
+		assert.Equal(t, context.DeadlineExceeded, WrapGRPCErrorWithContextError(context.DeadlineExceeded))
+		assert.Equal(t, io.EOF, WrapGRPCErrorWithContextError(io.EOF))
 	})
 }
 
@@ -144,7 +144,7 @@ func TestErrorWithStatus(t *testing.T) {
 	for name, data := range tests {
 		t.Run(name, func(t *testing.T) {
 			const statusCode = codes.Unimplemented
-			errWithStatus := NewErrorWithGRPCStatus(data.originErr, statusCode, data.details)
+			errWithStatus := WrapErrorWithGRPCStatus(data.originErr, statusCode, data.details)
 			require.Error(t, errWithStatus)
 			require.Errorf(t, errWithStatus, data.expectedErrorMessage)
 

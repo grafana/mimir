@@ -6,70 +6,69 @@ import (
 	"context"
 
 	"github.com/gogo/status"
-	"github.com/pkg/errors"
+	"github.com/grafana/dskit/grpcutil"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-// WrapGrpcContextError wraps a gRPC error with a custom error mapping gRPC to standard golang context errors.
-func WrapGrpcContextError(err error) error {
+// WrapGRPCErrorWithContextError checks if the given error is a gRPC error corresponding
+// to a standard golang context error, and if it is, wraps the former with the latter.
+// If the given error isn't a gRPC error, or it doesn't correspond to a standard golang
+// context error, the original error is returned.
+func WrapGRPCErrorWithContextError(err error) error {
 	if err == nil {
 		return nil
 	}
-
-	// Get the gRPC status from the error.
-	type grpcErrorStatus interface{ GRPCStatus() *grpcstatus.Status }
-	var grpcError grpcErrorStatus
-	if !errors.As(err, &grpcError) {
-		return err
+	if stat, ok := grpcutil.ErrorToStatus(err); ok {
+		switch stat.Code() {
+		case codes.Canceled:
+			return ErrorWithStatus{
+				Causes: createCauses(err, context.Canceled),
+				Status: stat,
+			}
+		case codes.DeadlineExceeded:
+			return ErrorWithStatus{
+				Causes: createCauses(err, context.DeadlineExceeded),
+				Status: stat,
+			}
+		default:
+			return err
+		}
 	}
+	return err
+}
 
-	switch status := grpcError.GRPCStatus(); {
-	case status.Code() == codes.Canceled:
-		return &grpcContextError{grpcErr: err, grpcStatus: status, stdErr: context.Canceled}
-	case status.Code() == codes.DeadlineExceeded:
-		return &grpcContextError{grpcErr: err, grpcStatus: status, stdErr: context.DeadlineExceeded}
-	default:
-		return err
+// WrapErrorWithGRPCStatus wraps the given error with a gRPC status, which is built out of the given parameters:
+// the gRPC status' code and details are passed as parameters, while its message corresponds to the original error.
+// The resulting error is of type ErrorWithStatus.
+func WrapErrorWithGRPCStatus(originalErr error, errCode codes.Code, errDetails *mimirpb.ErrorDetails) ErrorWithStatus {
+	stat := createGRPCStatus(originalErr, errCode, errDetails)
+	return ErrorWithStatus{
+		Causes: createCauses(originalErr),
+		Status: stat,
 	}
 }
 
-// grpcContextError is a custom error used to wrap gRPC errors which maps to golang standard context errors.
-type grpcContextError struct {
-	// grpcErr is the gRPC error wrapped by grpcContextError.
-	grpcErr error
-
-	// grpcStatus is the gRPC status associated with the gRPC error. It's guaranteed to be non-nil.
-	grpcStatus *grpcstatus.Status
-
-	// stdErr is the equivalent golang standard context error.
-	stdErr error
+// ToGRPCStatusError returns an error corresponding to a gRPC status built out of the given parameters:
+// the gRPC status' code and details are passed as parameters, while its message corresponds to the original error.
+// The resulting error is of type error, and it can be parsed to the corresponding gRPC status by both
+// gogo/status and grpc/status packages.
+func ToGRPCStatusError(originalErr error, errCode codes.Code, errDetails *mimirpb.ErrorDetails) error {
+	stat := createGRPCStatus(originalErr, errCode, errDetails)
+	return stat.Err()
 }
 
-func (e *grpcContextError) Error() string {
-	return e.grpcErr.Error()
-}
-
-func (e *grpcContextError) Unwrap() error {
-	return e.grpcErr
-}
-
-func (e *grpcContextError) Is(err error) bool {
-	return errors.Is(e.stdErr, err) || errors.Is(e.grpcErr, err)
-}
-
-func (e *grpcContextError) As(target any) bool {
-	if errors.As(e.stdErr, target) {
-		return true
+func createGRPCStatus(originalErr error, errCode codes.Code, errDetails *mimirpb.ErrorDetails) *status.Status {
+	stat := status.New(errCode, originalErr.Error())
+	if errDetails != nil {
+		statWithDetails, err := stat.WithDetails(errDetails)
+		if err == nil {
+			return statWithDetails
+		}
 	}
-
-	return errors.As(e.grpcErr, target)
-}
-
-func (e *grpcContextError) GRPCStatus() *grpcstatus.Status {
-	return e.grpcStatus
+	return stat
 }
 
 // ErrorWithStatus is used for wrapping errors returned by ingester.
@@ -82,32 +81,16 @@ func (e *grpcContextError) GRPCStatus() *grpcstatus.Status {
 // and grpc/status packages, but which preserve the original error
 // semantics.
 type ErrorWithStatus struct {
-	UnderlyingErr error
-	Status        *status.Status
-}
-
-func NewErrorWithGRPCStatus(originalErr error, code codes.Code, details *mimirpb.ErrorDetails) ErrorWithStatus {
-	stat := status.New(code, originalErr.Error())
-	if details != nil {
-		if statWithDetails, err := stat.WithDetails(details); err == nil {
-			return ErrorWithStatus{
-				UnderlyingErr: originalErr,
-				Status:        statWithDetails,
-			}
-		}
-	}
-	return ErrorWithStatus{
-		UnderlyingErr: originalErr,
-		Status:        stat,
-	}
+	Causes []error
+	Status *status.Status
 }
 
 func (e ErrorWithStatus) Error() string {
 	return e.Status.Message()
 }
 
-func (e ErrorWithStatus) Unwrap() error {
-	return e.UnderlyingErr
+func (e ErrorWithStatus) Unwrap() []error {
+	return e.Causes
 }
 
 // GRPCStatus with a *grpcstatus.Status as output is needed
@@ -119,10 +102,10 @@ func (e ErrorWithStatus) GRPCStatus() *grpcstatus.Status {
 	return nil
 }
 
-// writeErrorDetails is needed for testing purposes only. It returns the
+// details is needed for testing purposes only. It returns the
 // mimirpb.ErrorDetails object stored in this error's Status, if any
 // or nil otherwise.
-func (e ErrorWithStatus) writeErrorDetails() *mimirpb.ErrorDetails {
+func (e ErrorWithStatus) details() *mimirpb.ErrorDetails {
 	details := e.Status.Details()
 	if len(details) != 1 {
 		return nil
@@ -149,8 +132,8 @@ func (e ErrorWithStatus) Equals(err error) bool {
 	if e.Status.Code() != errWithStatus.Status.Code() || e.Status.Message() != errWithStatus.Status.Message() {
 		return false
 	}
-	errDetails := e.writeErrorDetails()
-	otherErrDetails := errWithStatus.writeErrorDetails()
+	errDetails := e.details()
+	otherErrDetails := errWithStatus.details()
 	if errDetails == nil && otherErrDetails == nil {
 		return true
 	}
@@ -158,4 +141,10 @@ func (e ErrorWithStatus) Equals(err error) bool {
 		return errDetails.GetCause() == otherErrDetails.GetCause()
 	}
 	return false
+}
+
+func createCauses(errs ...error) []error {
+	causes := make([]error, 0, 2)
+	causes = append(causes, errs...)
+	return causes
 }

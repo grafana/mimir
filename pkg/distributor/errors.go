@@ -254,22 +254,7 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 			errCode = codes.Unimplemented
 		}
 	}
-	return errorWithStatus(pushErr, errCode, errDetails)
-}
-
-// errorWithStatus is slightly different from globalerror.NewErrorWithGRPCStatus. It returns status.Err() instead of an error with the status message.
-// The actual difference is between "rpc error: code = XYZ desc = message" and just "message".
-// At the time of writing this should be purely a cosmetic difference, but it's hard to verify.
-// Because of this difference, the function is used instead of globalerror.NewErrorWithGRPCStatus.
-func errorWithStatus(pushErr error, errCode codes.Code, errDetails *mimirpb.ErrorDetails) error {
-	stat := status.New(errCode, pushErr.Error())
-	if errDetails != nil {
-		statWithDetails, err := stat.WithDetails(errDetails)
-		if err == nil {
-			return statWithDetails.Err()
-		}
-	}
-	return stat.Err()
+	return globalerror.ToGRPCStatusError(pushErr, errCode, errDetails)
 }
 
 func wrapIngesterPushError(err error, ingesterID string) error {

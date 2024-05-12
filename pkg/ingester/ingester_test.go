@@ -10311,13 +10311,13 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 						require.Error(t, err)
 						status, ok := grpcutil.ErrorToStatus(err)
 						require.True(t, ok)
-						require.ErrorContains(t, status.Err(), testData.expectedErrs[0].UnderlyingErr.Error())
+						require.ErrorContains(t, status.Err(), testData.expectedErrs[0].Causes[0].Error())
 					}
 					_, err = client.Push(ctxs[1], req)
 					require.Error(t, err)
 					status, ok := grpcutil.ErrorToStatus(err)
 					require.True(t, ok)
-					require.ErrorContains(t, status.Err(), testData.expectedErrs[1].UnderlyingErr.Error())
+					require.ErrorContains(t, status.Err(), testData.expectedErrs[1].Causes[0].Error())
 				}
 			}
 

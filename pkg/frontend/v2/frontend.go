@@ -378,7 +378,7 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
 	defer func(s frontendv2pb.FrontendForQuerier_QueryResultStreamServer) {
 		err := s.SendAndClose(&frontendv2pb.QueryResultResponse{})
-		if err != nil && !errors.Is(globalerror.WrapGrpcContextError(err), context.Canceled) {
+		if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
 			level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
 		}
 	}(stream)
