@@ -54,7 +54,7 @@ type QueryComponentLoad struct {
 	schedulerQuerierInflightRequestsByQueryComponent map[QueryComponent]int //nolint: unused
 	schedulerQuerierTotalInflightRequests            int                    //nolint: unused
 
-	overloadFactor float64
+	overloadFactor float64 // nolint: unused
 }
 
 // IsOverloadedForQueryComponents checks if TODO
