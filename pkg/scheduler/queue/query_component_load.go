@@ -2,7 +2,10 @@
 
 package queue
 
-import "sync"
+import (
+	"math"
+	"sync"
+)
 
 type QueryComponent int
 
@@ -17,10 +20,10 @@ const ingesterQueueDimension = "ingester"
 const storeGatewayQueueDimension = "store-gateway"
 const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
 
-// nolint: unused
-// queryComponents interprets annotations by the frontend for the expected query component,
+// QueryComponentsForRequest interprets annotations by the frontend for the expected query component,
 // and flags whether a query request is expected to be served by the ingesters, store-gateways, or both.
-func queryComponents(req *SchedulerRequest) (isIngester, isStoreGateway bool) {
+// nolint: unused
+func QueryComponentsForRequest(req *SchedulerRequest) (isIngester, isStoreGateway bool) {
 	var expectedQueryComponent string
 	if len(req.AdditionalQueueDimensions) > 0 {
 		expectedQueryComponent = req.AdditionalQueueDimensions[0]
@@ -44,27 +47,77 @@ type QueryComponentLoad struct {
 	inflightRequestsMu sync.RWMutex //nolint: unused
 	// schedulerQuerierInflightRequestsByQueryComponent tracks requests from the time they are forwarded to a querier
 	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
-	// Unlike the Scheduler's schedulerInflightRequests, this does not begin until the request is sent to a querier.
+	// Unlike the Scheduler's schedulerInflightRequests, tracking begins only when the request is sent to a querier.
 	// Scheduler-Querier inflight requests are broken out by the query component,
 	// representing whether the query request will be served by the ingesters, store-gateways, or both.
 	// Query requests utilizing both ingesters and store-gateways are tracked in the map entry for both keys.
 	schedulerQuerierInflightRequestsByQueryComponent map[QueryComponent]int //nolint: unused
 	schedulerQuerierTotalInflightRequests            int                    //nolint: unused
+
+	overloadFactor float64
+}
+
+// IsOverloadedForQueryComponents checks if TODO
+// nolint: unused
+func (qcl *QueryComponentLoad) IsOverloadedForQueryComponents(isIngester, isStoreGateway bool, overloadThreshold int) bool {
+	if overloadThreshold <= 0 {
+		return false
+	}
+
+	qcl.inflightRequestsMu.RLock()
+	defer qcl.inflightRequestsMu.RUnlock()
+
+	if isIngester {
+		if qcl.schedulerQuerierInflightRequestsByQueryComponent[Ingester] >= overloadThreshold {
+			return true
+		}
+	}
+	if isStoreGateway {
+		if qcl.schedulerQuerierInflightRequestsByQueryComponent[StoreGateway] >= overloadThreshold {
+			return true
+		}
+	}
+	return false
 }
 
 // nolint: unused
-func (qcl *QueryComponentLoad) incrementQueryComponentInflightRequests(req *SchedulerRequest) {
+func (qcl *QueryComponentLoad) overloadThreshold() int {
+	// overload factor is expected to be > 1; any misconfiguration of this should be a no-op
+	if qcl.overloadFactor <= 1 {
+		return 0
+	}
+
+	qcl.inflightRequestsMu.RLock()
+	defer qcl.inflightRequestsMu.RUnlock()
+
+	// no overloaded component if there are no inflight requests at all.
+	if qcl.schedulerQuerierTotalInflightRequests == 0 {
+		return 0
+	}
+
+	// compute average inflight requests per component.
+	avg := float64(qcl.schedulerQuerierTotalInflightRequests) / float64(len(qcl.schedulerQuerierInflightRequestsByQueryComponent))
+
+	// compute the overload threshold.
+	overloadThreshold := int(math.Ceil(avg * qcl.overloadFactor))
+	return overloadThreshold
+}
+
+// IncrementQueryComponentInflightRequests is called when a request is sent to a querier
+// nolint: unused
+func (qcl *QueryComponentLoad) IncrementQueryComponentInflightRequests(req *SchedulerRequest) {
 	qcl.updateQueryComponentInflightRequests(req, 1)
 }
 
+// DecrementQueryComponentInflightRequests is called when a querier completes or fails a request
 // nolint: unused
-func (qcl *QueryComponentLoad) decrementQueryComponentInflightRequests(req *SchedulerRequest) {
+func (qcl *QueryComponentLoad) DecrementQueryComponentInflightRequests(req *SchedulerRequest) {
 	qcl.updateQueryComponentInflightRequests(req, -1)
 }
 
 // nolint: unused
 func (qcl *QueryComponentLoad) updateQueryComponentInflightRequests(req *SchedulerRequest, increment int) {
-	isIngester, isStoreGateway := queryComponents(req)
+	isIngester, isStoreGateway := QueryComponentsForRequest(req)
 
 	qcl.inflightRequestsMu.Lock()
 	defer qcl.inflightRequestsMu.Unlock()
