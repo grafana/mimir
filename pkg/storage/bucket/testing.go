@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+// This file contains things intended only to be used by tests.
+
 package bucket
 
 import (
