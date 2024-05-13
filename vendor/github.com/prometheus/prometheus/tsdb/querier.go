@@ -331,7 +331,14 @@ func postingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *labels.M
 	}
 
 	var res []string
+	count := 1
+
 	for _, val := range vals {
+		if count%100 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		count++
+
 		if m.Matches(val) {
 			res = append(res, val)
 		}
@@ -372,7 +379,12 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *l
 	if m.Type == labels.MatchEqual && m.Value == "" {
 		res = vals
 	} else {
+		count := 1
 		for _, val := range vals {
+			if count%100 == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			count++
 			if !m.Matches(val) {
 				res = append(res, val)
 			}
@@ -403,7 +415,14 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 		// re-use the allValues slice to avoid allocations
 		// this is safe because the iteration is always ahead of the append
 		filteredValues := allValues[:0]
+		count := 1
+
 		for _, v := range allValues {
+			if count%100 == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			count++
+
 			if m.Matches(v) {
 				filteredValues = append(filteredValues, v)
 			}
