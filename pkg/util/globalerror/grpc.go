@@ -25,12 +25,12 @@ func WrapGRPCErrorWithContextError(err error) error {
 		switch stat.Code() {
 		case codes.Canceled:
 			return &ErrorWithStatus{
-				Causes: createCauses(err, context.Canceled),
+				Causes: []error{err, context.Canceled},
 				Status: stat,
 			}
 		case codes.DeadlineExceeded:
 			return &ErrorWithStatus{
-				Causes: createCauses(err, context.DeadlineExceeded),
+				Causes: []error{err, context.DeadlineExceeded},
 				Status: stat,
 			}
 		default:
@@ -46,7 +46,7 @@ func WrapGRPCErrorWithContextError(err error) error {
 func WrapErrorWithGRPCStatus(originalErr error, errCode codes.Code, errDetails *mimirpb.ErrorDetails) *ErrorWithStatus {
 	stat := createGRPCStatus(originalErr, errCode, errDetails)
 	return &ErrorWithStatus{
-		Causes: createCauses(originalErr),
+		Causes: []error{originalErr},
 		Status: stat,
 	}
 }
@@ -141,10 +141,4 @@ func (e *ErrorWithStatus) Equals(err error) bool {
 		return errDetails.GetCause() == otherErrDetails.GetCause()
 	}
 	return false
-}
-
-func createCauses(errs ...error) []error {
-	causes := make([]error, 0, 2)
-	causes = append(causes, errs...)
-	return causes
 }

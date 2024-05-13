@@ -67,6 +67,16 @@ func TestWrapContextError(t *testing.T) {
 				expectedGrpcCode:   codes.DeadlineExceeded,
 				expectedContextErr: context.DeadlineExceeded,
 			},
+			"ErrorWithStatus with Canceled status": {
+				origErr:            WrapErrorWithGRPCStatus(errors.New("cancel error"), codes.Canceled, nil),
+				expectedGrpcCode:   codes.Canceled,
+				expectedContextErr: context.Canceled,
+			},
+			"ErrorWithStatus with DeadlineExceeded status": {
+				origErr:            WrapErrorWithGRPCStatus(errors.New("timeout error"), codes.DeadlineExceeded, nil),
+				expectedGrpcCode:   codes.DeadlineExceeded,
+				expectedContextErr: context.DeadlineExceeded,
+			},
 		}
 
 		for testName, testData := range tests {
