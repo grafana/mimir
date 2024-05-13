@@ -271,26 +271,35 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o o
 			return nil, err
 		}
 
-		if len(d.Floats)+len(d.Histograms) != 1 {
-			operator.PutFPointSlice(d.Floats)
-			// TODO: put histogram point slice back in pool
+		defer operator.PutFPointSlice(d.Floats)
+		defer operator.PutHPointSlice(d.Histograms)
 
-			if len(d.Floats)+len(d.Histograms) == 0 {
-				continue
-			}
-
-			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v", s.Labels.String(), len(d.Floats))
+		// A series may have no data points.
+		if len(d.Floats)+len(d.Histograms) == 0 {
+			continue
 		}
 
-		point := d.Floats[0]
-		v = append(v, promql.Sample{
-			Metric: s.Labels,
-			T:      ts,
-			F:      point.F,
-		})
+		if len(d.Floats)+len(d.Histograms) != 1 {
+			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v Floats, %v Histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
+		}
 
-		operator.PutFPointSlice(d.Floats)
-		// TODO: put histogram point slice back in pool
+		if len(d.Floats) == 1 {
+			point := d.Floats[0]
+			v = append(v, promql.Sample{
+				Metric: s.Labels,
+				T:      ts,
+				F:      point.F,
+			})
+		} else if len(d.Histograms) == 1 {
+			point := d.Histograms[0]
+			v = append(v, promql.Sample{
+				Metric: s.Labels,
+				T:      ts,
+				H:      point.H,
+			})
+		} else {
+			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v Floats, %v Histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
+		}
 	}
 
 	return v, nil
@@ -311,8 +320,7 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o o
 
 		if len(d.Floats) == 0 && len(d.Histograms) == 0 {
 			operator.PutFPointSlice(d.Floats)
-			// TODO: put histogram point slice back in pool
-
+			operator.PutHPointSlice(d.Histograms)
 			continue
 		}
 
@@ -373,7 +381,7 @@ func (q *Query) Close() {
 	case promql.Matrix:
 		for _, s := range v {
 			operator.PutFPointSlice(s.Floats)
-			// TODO: put histogram point slice back in pool
+			operator.PutHPointSlice(s.Histograms)
 		}
 
 		operator.PutMatrix(v)

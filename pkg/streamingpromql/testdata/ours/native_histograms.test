@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Provenance-includes-location: https://github.com/prometheus/prometheus/tree/main/promql/testdata/native_histograms.test
+# Provenance-includes-license: Apache-2.0
+# Provenance-includes-copyright: The Prometheus Authors
+
+# Minimal valid case: an empty histogram.
+load 5m
+	empty_histogram	{{}}
+
+eval instant at 5m empty_histogram
+	{__name__="empty_histogram"} {{}}
+
+# buckets:[1 2 1] means 1 observation in the 1st bucket, 2 observations in the 2nd and 1 observation in the 3rd (total 4).
+load 5m
+	single_histogram	{{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+
+eval instant at 5m single_histogram
+	{__name__="single_histogram"} {{count:4 sum:5 buckets:[1 2 1]}}

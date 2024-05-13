@@ -19,6 +19,10 @@ var (
 		return make([]promql.FPoint, 0, size)
 	})
 
+	hPointSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, 10, func(size int) []promql.HPoint {
+		return make([]promql.HPoint, 0, size)
+	})
+
 	matrixPool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, 10, func(size int) promql.Matrix {
 		return make(promql.Matrix, 0, size)
 	})
@@ -47,6 +51,14 @@ func GetFPointSlice(size int) []promql.FPoint {
 
 func PutFPointSlice(s []promql.FPoint) {
 	fPointSlicePool.Put(s)
+}
+
+func GetHPointSlice(size int) []promql.HPoint {
+	return hPointSlicePool.Get(size)
+}
+
+func PutHPointSlice(s []promql.HPoint) {
+	hPointSlicePool.Put(s)
 }
 
 func GetMatrix(size int) promql.Matrix {
