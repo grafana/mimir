@@ -24,12 +24,12 @@ func WrapGRPCErrorWithContextError(err error) error {
 	if stat, ok := grpcutil.ErrorToStatus(err); ok {
 		switch stat.Code() {
 		case codes.Canceled:
-			return ErrorWithStatus{
+			return &ErrorWithStatus{
 				Causes: createCauses(err, context.Canceled),
 				Status: stat,
 			}
 		case codes.DeadlineExceeded:
-			return ErrorWithStatus{
+			return &ErrorWithStatus{
 				Causes: createCauses(err, context.DeadlineExceeded),
 				Status: stat,
 			}
@@ -43,9 +43,9 @@ func WrapGRPCErrorWithContextError(err error) error {
 // WrapErrorWithGRPCStatus wraps the given error with a gRPC status, which is built out of the given parameters:
 // the gRPC status' code and details are passed as parameters, while its message corresponds to the original error.
 // The resulting error is of type ErrorWithStatus.
-func WrapErrorWithGRPCStatus(originalErr error, errCode codes.Code, errDetails *mimirpb.ErrorDetails) ErrorWithStatus {
+func WrapErrorWithGRPCStatus(originalErr error, errCode codes.Code, errDetails *mimirpb.ErrorDetails) *ErrorWithStatus {
 	stat := createGRPCStatus(originalErr, errCode, errDetails)
-	return ErrorWithStatus{
+	return &ErrorWithStatus{
 		Causes: createCauses(originalErr),
 		Status: stat,
 	}
@@ -85,17 +85,17 @@ type ErrorWithStatus struct {
 	Status *status.Status
 }
 
-func (e ErrorWithStatus) Error() string {
+func (e *ErrorWithStatus) Error() string {
 	return e.Status.Message()
 }
 
-func (e ErrorWithStatus) Unwrap() []error {
+func (e *ErrorWithStatus) Unwrap() []error {
 	return e.Causes
 }
 
 // GRPCStatus with a *grpcstatus.Status as output is needed
 // for a correct execution of grpc/status.FromError().
-func (e ErrorWithStatus) GRPCStatus() *grpcstatus.Status {
+func (e *ErrorWithStatus) GRPCStatus() *grpcstatus.Status {
 	if stat, ok := e.Status.Err().(interface{ GRPCStatus() *grpcstatus.Status }); ok {
 		return stat.GRPCStatus()
 	}
@@ -105,7 +105,7 @@ func (e ErrorWithStatus) GRPCStatus() *grpcstatus.Status {
 // details is needed for testing purposes only. It returns the
 // mimirpb.ErrorDetails object stored in this error's Status, if any
 // or nil otherwise.
-func (e ErrorWithStatus) details() *mimirpb.ErrorDetails {
+func (e *ErrorWithStatus) details() *mimirpb.ErrorDetails {
 	details := e.Status.Details()
 	if len(details) != 1 {
 		return nil
@@ -120,12 +120,12 @@ func (e ErrorWithStatus) details() *mimirpb.ErrorDetails {
 // type ErrorWithStatus, if their underlying statuses have the same code,
 // messages, and if both have either no details, or exactly one detail
 // of type mimirpb.ErrorDetails, which are equal too.
-func (e ErrorWithStatus) Equals(err error) bool {
+func (e *ErrorWithStatus) Equals(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	errWithStatus, ok := err.(ErrorWithStatus)
+	errWithStatus, ok := err.(*ErrorWithStatus)
 	if !ok {
 		return false
 	}

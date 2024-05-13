@@ -2568,7 +2568,7 @@ func TestIngester_Push(t *testing.T) {
 						assert.NoError(t, err)
 					} else {
 						handledErr := i.mapPushErrorToErrorWithStatus(err)
-						errWithStatus, ok := handledErr.(globalerror.ErrorWithStatus)
+						errWithStatus, ok := handledErr.(*globalerror.ErrorWithStatus)
 						assert.True(t, ok)
 						assert.True(t, errWithStatus.Equals(testData.expectedErr))
 					}
@@ -7530,7 +7530,8 @@ func TestIngester_PushGrpcMethod_Disabled(t *testing.T) {
 		[]mimirpb.Sample{{TimestampMs: 1_000, Value: 1}},
 	)
 	_, err = i.Push(ctx, req)
-	require.ErrorIs(t, err, errPushGrpcDisabled)
+	aa := errPushGrpcDisabled
+	require.ErrorIs(t, err, aa)
 }
 
 func TestIngester_instanceLimitsMetrics(t *testing.T) {
@@ -9952,7 +9953,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 
 	tests := map[string]struct {
 		reqs             []*mimirpb.WriteRequest
-		expectedErrs     []globalerror.ErrorWithStatus
+		expectedErrs     []*globalerror.ErrorWithStatus
 		expectedMetrics  string
 		expectedSampling bool
 		maxExemplars     int
@@ -9975,7 +9976,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErrs: []globalerror.ErrorWithStatus{
+			expectedErrs: []*globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleOutOfOrderError(model.Time(9), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleOutOfOrderError(model.Time(9), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10008,7 +10009,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []globalerror.ErrorWithStatus{
+			expectedErrs: []*globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10042,7 +10043,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []globalerror.ErrorWithStatus{
+			expectedErrs: []*globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10079,7 +10080,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []globalerror.ErrorWithStatus{
+			expectedErrs: []*globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10113,7 +10114,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []globalerror.ErrorWithStatus{
+			expectedErrs: []*globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10141,7 +10142,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []globalerror.ErrorWithStatus{
+			expectedErrs: []*globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10172,7 +10173,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []globalerror.ErrorWithStatus{
+			expectedErrs: []*globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[1]), codes.FailedPrecondition),
 			},
@@ -10195,7 +10196,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErrs: []globalerror.ErrorWithStatus{
+			expectedErrs: []*globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10229,7 +10230,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []globalerror.ErrorWithStatus{
+			expectedErrs: []*globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[1]), codes.FailedPrecondition),
 			},
@@ -10654,7 +10655,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 
 func checkErrorWithStatus(t *testing.T, err error, expectedErr error) {
 	require.Error(t, err)
-	errWithStatus, ok := err.(globalerror.ErrorWithStatus)
+	errWithStatus, ok := err.(*globalerror.ErrorWithStatus)
 	require.True(t, ok)
 	require.True(t, errWithStatus.Equals(expectedErr))
 }
