@@ -1245,7 +1245,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			batchSize:    largerTestBlockSeriesCount,
 			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", ".*")},
 			expectedSets: func() []seriesChunkRefsSet {
-				set := newSeriesChunkRefsSet(largerTestBlockSeriesCount, true)
+				set := newSeriesChunkRefsSet(largerTestBlockSeriesCount, true, true)
 				for i := 0; i < largerTestBlockSeriesCount; i++ {
 					set.series = append(set.series, seriesChunkRefs{lset: labels.FromStrings("l1", fmt.Sprintf("v%d", i))})
 				}
@@ -2442,7 +2442,7 @@ func readAllSeriesChunkRefs(it iterator[seriesChunkRefs]) []seriesChunkRefs {
 // based on the provided minSeriesID and maxSeriesID (both inclusive). Each series has the ID
 // incremented by +1.
 func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) seriesChunkRefsSet {
-	set := newSeriesChunkRefsSet(maxSeriesID-minSeriesID+1, releasable)
+	set := newSeriesChunkRefsSet(maxSeriesID-minSeriesID+1, releasable, releasable)
 
 	for seriesID := minSeriesID; seriesID <= maxSeriesID; seriesID++ {
 		set.series = append(set.series, seriesChunkRefs{
@@ -2539,7 +2539,7 @@ func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				set, ok := fetchCachedSeriesForPostings(ctx, "tenant-1", mockCache, blockID, testCase.shard, cachedSeriesID, logger)
+				set, ok := fetchCachedSeriesForPostings(ctx, "tenant-1", mockCache, blockID, testCase.shard, cachedSeriesID, true, logger)
 				assert.Equal(b, testCase.expectedHit, ok)
 				if testCase.expectedHit {
 					assert.NotZero(b, set)

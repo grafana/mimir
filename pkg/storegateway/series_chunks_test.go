@@ -691,7 +691,7 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 			setSeriesOffset := 0
 			for setIdx := 0; setIdx < numSets; setIdx++ {
 				// This set cannot be released because reused between multiple benchmark runs.
-				refs := newSeriesChunkRefsSet(numSeriesPerSet, false)
+				refs := newSeriesChunkRefsSet(numSeriesPerSet, false, false)
 				refs.series = refs.series[:cap(refs.series)]
 				for refIdx := range refs.series {
 					refs.series[refIdx] = testBlk.toSeriesChunkRefs(setSeriesOffset)

@@ -102,11 +102,13 @@ type seriesChunkRefsSet struct {
 // newSeriesChunkRefsSet creates a new seriesChunkRefsSet with the given capacity.
 // If releasable is true, then a subsequent call release() will put the internal
 // series slices to a memory pool for reusing.
-func newSeriesChunkRefsSet(capacity int, releasable bool) seriesChunkRefsSet {
+// If either releasable or fromPool are true, then the internal series slice is
+// taken from a pool.
+func newSeriesChunkRefsSet(capacity int, releasable bool, fromPool bool) seriesChunkRefsSet {
 	var prealloc []seriesChunkRefs
 
-	// If it's releasable then we try to reuse a slice from the pool.
-	if releasable {
+	// If it's releasable or we want to force using the pool, then we try to reuse a slice from the pool.
+	if releasable || fromPool {
 		if reused := seriesChunkRefsSetPool.Get(); reused != nil {
 			prealloc = *(reused.(*[]seriesChunkRefs))
 		}
@@ -137,6 +139,14 @@ func (b seriesChunkRefsSet) release() {
 
 	reuse := b.series[:0]
 	seriesChunkRefsSetPool.Put(&reuse)
+}
+
+// makeReleasable returns a new seriesChunkRefsSet that can be released on a subsequent call to release.
+//
+// This is useful for scenarios where a set is used multiple times (eg. during chunks streaming), so initial consumers
+// must not release the set, but we know it is safe for the last consumer of the set to release it.
+func (b seriesChunkRefsSet) makeReleasable() seriesChunkRefsSet {
+	return seriesChunkRefsSet{b.series, true}
 }
 
 // seriesChunkRefs holds a series with a list of chunk references.
@@ -348,7 +358,7 @@ func (s *mergedSeriesChunkRefsSet) Next() bool {
 
 	// This can be released by the caller because mergedSeriesChunkRefsSet doesn't retain it
 	// after Next() will be called again.
-	next := newSeriesChunkRefsSet(s.batchSize, true)
+	next := newSeriesChunkRefsSet(s.batchSize, true, true)
 
 	for i := 0; i < s.batchSize; i++ {
 		err := s.ensureCursors(s.aAt, s.bAt, s.a, s.b)
@@ -598,7 +608,7 @@ func (s *deduplicatingSeriesChunkRefsSetIterator) Next() bool {
 
 	// This can be released by the caller because deduplicatingSeriesChunkRefsSetIterator doesn't retain it
 	// after Next() will be called again.
-	nextSet := newSeriesChunkRefsSet(s.batchSize, true)
+	nextSet := newSeriesChunkRefsSet(s.batchSize, true, true)
 	nextSet.series = append(nextSet.series, firstSeries)
 
 	var nextSeries seriesChunkRefs
@@ -900,7 +910,11 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "could not encode postings for series cache key", "err", err)
 		} else {
-			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
+			// This set can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again,
+			// unless it's the first and only batch used for chunks streaming.
+			// If it's the first and only batch used for chunks streaming, we'll make it releasable when Reset() is called.
+			releaseableSet := !s.isOnlyBatchForChunksStreaming()
+			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, releaseableSet, s.logger); isCached {
 				s.currentSet = cachedSet
 				return true
 			}
@@ -1129,8 +1143,16 @@ func (s *loadingSeriesChunkRefsSetIterator) Reset() {
 		return
 	}
 
+	// Resetting this iterator only makes sense if chunks streaming is enabled.
+	if !s.strategy.isForChunksStreaming() {
+		return
+	}
+
 	if s.postingsSetIterator.IsFirstAndOnlyBatch() {
 		s.resetToFirstSet = true
+
+		// We expect that the second iteration through this iterator is the last iteration, so allow releasing the set.
+		s.currentSet = s.currentSet.makeReleasable()
 	} else {
 		s.currentSet = seriesChunkRefsSet{}
 	}
@@ -1187,11 +1209,7 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet sy
 		}
 	}
 
-	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again,
-	// provided it's not the first and only batch used for chunks streaming.
-	// TODO: should we forcibly release the retained first and only batch later?
-	isOnlyBatchForChunksStreaming := s.postingsSetIterator.IsFirstAndOnlyBatch() && s.strategy.isForChunksStreaming()
-	set := newSeriesChunkRefsSet(len(symbolizedSet.series), !isOnlyBatchForChunksStreaming)
+	set := s.newSeriesChunksRefSet(len(symbolizedSet.series))
 
 	labelsBuilder := labels.NewScratchBuilder(maxLabelsPerSeries)
 	for _, series := range symbolizedSet.series {
@@ -1210,12 +1228,7 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet sy
 }
 
 func (s *loadingSeriesChunkRefsSetIterator) multiLookupStringify(symbolizedSet symbolizedSeriesChunkRefsSet) (seriesChunkRefsSet, error) {
-	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again,
-	// provided it's not the first and only batch.
-	// TODO: should we forcibly release the retained first and only batch later?
-	isOnlyBatchForChunksStreaming := s.postingsSetIterator.IsFirstAndOnlyBatch() && s.strategy.isForChunksStreaming()
-	set := newSeriesChunkRefsSet(len(symbolizedSet.series), !isOnlyBatchForChunksStreaming)
-
+	set := s.newSeriesChunksRefSet(len(symbolizedSet.series))
 	labelsBuilder := labels.NewScratchBuilder(16)
 	for _, series := range symbolizedSet.series {
 		lset, err := s.indexr.LookupLabelsSymbols(s.ctx, series.lset, &labelsBuilder)
@@ -1229,6 +1242,17 @@ func (s *loadingSeriesChunkRefsSetIterator) multiLookupStringify(symbolizedSet s
 		})
 	}
 	return set, nil
+}
+
+func (s *loadingSeriesChunkRefsSetIterator) newSeriesChunksRefSet(capacity int) seriesChunkRefsSet {
+	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again,
+	// unless it's the first and only batch used for chunks streaming.
+	// If it's the first and only batch used for chunks streaming, we'll make it releasable when Reset() is called.
+	return newSeriesChunkRefsSet(capacity, !s.isOnlyBatchForChunksStreaming(), true)
+}
+
+func (s *loadingSeriesChunkRefsSetIterator) isOnlyBatchForChunksStreaming() bool {
+	return s.postingsSetIterator.IsFirstAndOnlyBatch() && s.strategy.isForChunksStreaming()
 }
 
 type filteringSeriesChunkRefsSetIterator struct {
@@ -1306,7 +1330,7 @@ func (i cachedSeriesForPostingsID) isSet() bool {
 	return i.postingsKey != "" && len(i.encodedPostings) > 0
 }
 
-func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, shard *sharding.ShardSelector, itemID cachedSeriesForPostingsID, logger log.Logger) (seriesChunkRefsSet, bool) {
+func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, shard *sharding.ShardSelector, itemID cachedSeriesForPostingsID, releasableSet bool, logger log.Logger) (seriesChunkRefsSet, bool) {
 	data, ok := indexCache.FetchSeriesForPostings(ctx, userID, blockID, shard, itemID.postingsKey)
 	if !ok {
 		return seriesChunkRefsSet{}, false
@@ -1327,9 +1351,7 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 		return seriesChunkRefsSet{}, false
 	}
 
-	// This can be released by the caller because loadingSeriesChunkRefsSetIterator (where this function is called) doesn't retain it
-	// after Next() will be called again.
-	res := newSeriesChunkRefsSet(len(entry.Series), true)
+	res := newSeriesChunkRefsSet(len(entry.Series), releasableSet, true)
 	for _, lset := range entry.Series {
 		res.series = append(res.series, seriesChunkRefs{
 			lset: mimirpb.FromLabelAdaptersToLabels(lset.Labels),
