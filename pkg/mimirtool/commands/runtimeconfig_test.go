@@ -27,6 +27,8 @@ func TestRuntimeConfigValidate(t *testing.T) {
 		c := RuntimeConfigCommand{
 			configFile: filepath.Join("testdata", "runtimeconfig", "invalid.yaml"),
 		}
-		require.ErrorContains(t, c.validate(nil), "failed to load runtime config")
+		err := c.validate(nil)
+		require.ErrorContains(t, err, "failed to load runtime config")
+		require.ErrorContains(t, err, "field unknown_field not found in type")
 	})
 }
