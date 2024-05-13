@@ -1490,7 +1490,7 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir st
 				assert.True(t, uint64(prevChunkRef)+prevChunkLen <= uint64(promChunk.Ref),
 					"estimated length shouldn't extend into the next chunk [%d, %d, %d]", i, j, k)
 				assert.True(t, actualChunk.length <= uint32(tsdb.EstimatedMaxChunkSize),
-					"chunks can be larger than 16KB, but the estimted length should be capped to 16KB to limit the impact of bugs in estimations [%d, %d, %d]", i, j, k)
+					"chunks can be larger than 16KB, but the estimated length should be capped to 16KB to limit the impact of bugs in estimations [%d, %d, %d]", i, j, k)
 
 				prevChunkRef, prevChunkLen = promChunk.Ref, uint64(actualChunk.length)
 			}
