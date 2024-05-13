@@ -23,12 +23,12 @@ type RuntimeConfigCommand struct {
 // Register runtime config related commands and flags with the kingpin application.
 func (c *RuntimeConfigCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 	cmd := app.Command("runtime-config", "Work with Grafana Mimir runtime configuration.")
-	validateCmd := cmd.Command("validate", "Validate a runtime configuration file").Action(c.validateConfig)
+	validateCmd := cmd.Command("validate", "Validate a runtime configuration file").Action(c.validate)
 
 	validateCmd.Flag("config-file", "The runtime configuration file to validate.").StringVar(&c.configFile)
 }
 
-func (c *RuntimeConfigCommand) validateConfig(*kingpin.ParseContext) error {
+func (c *RuntimeConfigCommand) validate(*kingpin.ParseContext) error {
 	if c.configFile == "" {
 		return fmt.Errorf("--config-file cannot be empty")
 	}
