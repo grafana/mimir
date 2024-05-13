@@ -1,14 +1,4 @@
 "services":
-  "grafana-agent":
-    "command":
-      - "-config.file=/etc/agent-config/grafana-agent.yaml"
-      - "-metrics.wal-directory=/tmp"
-      - "-server.http.address=127.0.0.1:9091"
-    "image": "grafana/agent:v0.37.3"
-    "ports":
-      - "9091:9091"
-    "volumes":
-      - "./config:/etc/agent-config"
   "memcached":
     "image": "memcached:1.6.19-alpine"
   "mimir-backend-1":

@@ -7,7 +7,7 @@ std.manifestYamlDoc({
     self.nginx +
     self.minio +
     // self.grafana +
-    self.grafana_agent +
+    // self.grafana_agent +
     self.memcached +
     {},
 

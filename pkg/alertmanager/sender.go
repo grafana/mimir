@@ -91,11 +91,7 @@ func (s *Sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-<<<<<<< HEAD
-			// s.log.Warn("Failed to close response body", "err", err)
-=======
 			s.log.Warn("Failed to close response body", "err", err)
->>>>>>> 1d4aac188c822d3bc6a77431a7c8d54d5a0b9b55
 		}
 	}()
 
@@ -122,7 +118,7 @@ func (s *Sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 }
 
 // TODO(santiago): implement!
-func (s sender) SendEmail(ctx context.Context, cmd *receivers.SendEmailSettings) error {
+func (s Sender) SendEmail(ctx context.Context, cmd *alertingReceivers.SendEmailSettings) error {
 	fmt.Println("SendEmail() called with", cmd)
 	return nil
 }

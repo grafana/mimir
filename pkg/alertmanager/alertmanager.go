@@ -494,26 +494,6 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*notify.Integration, error) {
 	integrationsMap := make(map[string][]*notify.Integration, len(nc))
 
-	// NOTE(santiago): no-op
-	decryptFn := func(ctx context.Context, sjd map[string][]byte, key string, fallback string) string {
-		if value, ok := sjd[key]; ok {
-			return string(value)
-		}
-		return fallback
-	}
-
-	whSenderFn := func(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
-		return sender{}, nil
-	}
-	emailSenderFn := func(n alertingReceivers.Metadata) (alertingReceivers.EmailSender, error) {
-		return sender{}, nil
-	}
-
-	// TODO(santiago): actual logger factory
-	var loggerFactory alertingLogging.LoggerFactory = func(logger string, ctx ...interface{}) alertingLogging.Logger {
-		return alertingLogging.FakeLogger{}
-	}
-
 	for _, rcv := range nc {
 		fmt.Println("Receiver name:", rcv.Name)
 
@@ -536,7 +516,7 @@ func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.T
 					Integrations: integrationConfigs,
 				},
 			}
-			receiverCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), &api, decryptFn)
+			receiverCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), &api, noopDecryptFn)
 			if err != nil {
 				return nil, err
 			}
@@ -626,6 +606,24 @@ func buildReceiverIntegrations(nc *definition.PostableApiReceiver, tmpl *templat
 		return nil, &errs
 	}
 	return integrations, nil
+}
+
+// noopDecryptFn implements alertingNotify.DecryptFn.
+// TODO: make part of alerting package.
+func noopDecryptFn(_ context.Context, sjd map[string][]byte, key string, fallback string) string {
+	if v, ok := sjd[key]; ok {
+		return string(v)
+	}
+	return fallback
+}
+func loggerFactory(logger string, ctx ...interface{}) alertingLogging.Logger {
+	return alertingLogging.FakeLogger{}
+}
+func whSenderFn(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
+	return &Sender{}, nil
+}
+func emailSenderFn(n alertingReceivers.Metadata) (alertingReceivers.EmailSender, error) {
+	return &Sender{}, nil
 }
 
 func md5HashAsMetricValue(data []byte) float64 {

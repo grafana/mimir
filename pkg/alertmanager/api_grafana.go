@@ -84,11 +84,6 @@ type PostableUserGrafanaState struct {
 	Promoted bool `json:"promoted"`
 }
 
-type PostableUserGrafanaState struct {
-	UserGrafanaState
-	Promoted bool `json:"promoted"`
-}
-
 func (gs *PostableUserGrafanaState) UnmarshalJSON(data []byte) error {
 	type plain PostableUserGrafanaState
 	err := json.Unmarshal(data, (*plain)(gs))
@@ -96,7 +91,7 @@ func (gs *PostableUserGrafanaState) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	if err = p.UserGrafanaState.Validate(); err != nil {
+	if err = gs.UserGrafanaState.Validate(); err != nil {
 		return err
 	}
 

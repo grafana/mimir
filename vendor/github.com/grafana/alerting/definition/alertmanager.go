@@ -132,7 +132,65 @@ func (c *Config) UnmarshalJSON(b []byte) error {
 
 	noopUnmarshal := func(_ interface{}) error { return nil }
 
-	if c.Global != nil {
+	if c.Global == nil {
+		global := config.DefaultGlobalConfig()
+		c.Global = &global
+	} else {
+		if err := c.Global.UnmarshalYAML(noopUnmarshal); err != nil {
+			return err
+		}
+	}
+
+	if c.Route == nil {
+		return fmt.Errorf("no routes provided")
+	}
+
+	err := c.Route.Validate()
+	if err != nil {
+		return err
+	}
+
+	for _, r := range c.InhibitRules {
+		if err := r.UnmarshalYAML(noopUnmarshal); err != nil {
+			return err
+		}
+	}
+
+	tiNames := make(map[string]struct{})
+	for _, mt := range c.MuteTimeIntervals {
+		if mt.Name == "" {
+			return fmt.Errorf("missing name in mute time interval")
+		}
+		if _, ok := tiNames[mt.Name]; ok {
+			return fmt.Errorf("mute time interval %q is not unique", mt.Name)
+		}
+		tiNames[mt.Name] = struct{}{}
+	}
+	for _, ti := range c.TimeIntervals {
+		if ti.Name == "" {
+			return fmt.Errorf("missing name in time interval")
+		}
+		if _, ok := tiNames[ti.Name]; ok {
+			return fmt.Errorf("time interval %q is not unique", ti.Name)
+		}
+		tiNames[ti.Name] = struct{}{}
+	}
+	return checkTimeInterval(c.Route, tiNames)
+}
+
+func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	fmt.Println("Config.UnmarshalYAML() called")
+	type plain Config
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	noopUnmarshal := func(_ interface{}) error { return nil }
+
+	if c.Global == nil {
+		global := config.DefaultGlobalConfig()
+		c.Global = &global
+	} else {
 		if err := c.Global.UnmarshalYAML(noopUnmarshal); err != nil {
 			return err
 		}
@@ -228,6 +286,27 @@ func (c *PostableApiAlertingConfig) UnmarshalJSON(b []byte) error {
 	}
 
 	if err := json.Unmarshal(b, &overrides{Receivers: &c.Receivers}); err != nil {
+		return err
+	}
+
+	return c.Validate()
+}
+
+func (c *PostableApiAlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	fmt.Println("PostableApiAlertingConfig.UnmarshalYAML() called")
+	type plain PostableApiAlertingConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	// Since Config implements json.Unmarshaler, we must handle _all_ other fields independently.
+	// Otherwise, the json decoder will detect this and only use the embedded type.
+	// Additionally, we'll use pointers to slices in order to reference the intended target.
+	type overrides struct {
+		Receivers *[]*PostableApiReceiver `yaml:"receivers,omitempty" json:"receivers,omitempty"`
+	}
+
+	if err := unmarshal(&overrides{Receivers: &c.Receivers}); err != nil {
 		return err
 	}
 
