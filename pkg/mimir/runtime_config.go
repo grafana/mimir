@@ -240,7 +240,7 @@ func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logg
 		cfg.LimitsConfig.AlignQueriesWithStep = cfg.Frontend.QueryMiddleware.DeprecatedAlignQueriesWithStep
 	}
 
-	// make sure to set default limits before we start loading configuration into memory
+	// Make sure to set default limits before we start loading configuration into memory.
 	validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)
 	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Ingester.DefaultLimits)
 	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Distributor.DefaultLimits)
