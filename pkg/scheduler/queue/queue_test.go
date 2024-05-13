@@ -33,12 +33,6 @@ func TestMain(m *testing.M) {
 	util_test.VerifyNoLeakTestMain(m)
 }
 
-// cannot import constants from frontend/v2 due to import cycle,
-// but content of the strings should not matter as much as the number of options
-const ingesterQueueDimension = "ingester"
-const storeGatewayQueueDimension = "store-gateway"
-const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
-
 var secondQueueDimensionOptions = []string{
 	ingesterQueueDimension,
 	storeGatewayQueueDimension,
