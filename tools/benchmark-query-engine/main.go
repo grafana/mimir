@@ -211,7 +211,7 @@ func (a *app) allTestCaseNames() []string {
 
 	for _, c := range cases {
 		names = append(names, benchmarkName+"/"+c.Name()+"/streaming")
-		names = append(names, benchmarkName+"/"+c.Name()+"/standard")
+		names = append(names, benchmarkName+"/"+c.Name()+"/Prometheus")
 	}
 
 	return names
