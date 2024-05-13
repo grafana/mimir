@@ -10,10 +10,11 @@
 * [CHANGE] Query-frontend: Query results caching and experimental query blocking now utilize the PromQL string-formatted query format rather than the unvalidated query as submitted to the frontend. #7742
   * Query results caching should be more stable as all equivalent queries receive the same cache key, but there may be cache churn on first deploy with the updated format
   * Query blocking can no longer be circumvented with an equivalent query in a different format; see [Configure queries to block](https://grafana.com/docs/mimir/latest/configure/configure-blocked-queries/)
+* [CHANGE] Query-frontend: stop using `-validation.create-grace-period` to lamp how far into the future a query can span.
 * [FEATURE] Continuous-test: now runable as a module with `mimir -target=continuous-test`. #7747
 * [FEATURE] Store-gateway: Allow specific tenants to be enabled or disabled via `-store-gateway.enabled-tenants` or `-store-gateway.disabled-tenants` CLI flags or their corresponding YAML settings. #7653
 * [FEATURE] New `-<prefix>.s3.bucket-lookup-type` flag configures lookup style type, used to access bucket in s3 compatible providers. #7684
-* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.promql-engine=streaming`. #7693 #7898 #7899
+* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.promql-engine=streaming`. #7693 #7898 #7899 #8023 #8058
 * [FEATURE] New `/ingester/unregister-on-shutdown` HTTP endpoint allows dynamic access to ingesters' `-ingester.ring.unregister-on-shutdown` configuration. #7739
 * [FEATURE] Server: added experimental [PROXY protocol support](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt). The PROXY protocol support can be enabled via `-server.proxy-protocol-enabled=true`. When enabled, the support is added both to HTTP and gRPC listening ports. #7698
 * [ENHANCEMENT] Reduced memory allocations in functions used to propagate contextual information between gRPC calls. #7529
@@ -32,6 +33,8 @@
 * [ENHANCEMENT] OTLP: Improve remote write format translation performance by using label set hashes for metric identifiers instead of string based ones. #8012
 * [ENHANCEMENT] Querying: Remove OpEmptyMatch from regex concatenations. #8012
 * [ENHANCEMENT] Store-gateway: add `-blocks-storage.bucket-store.max-concurrent-queue-timeout`. When set, queries at the store-gateway's query gate will not wait longer than that to execute. If a query reaches the wait timeout, then the querier will retry the blocks on a different store-gateway. If all store-gateways are unavailable, then the query will fail with `err-mimir-store-consistency-check-failed`. #7777
+* [ENHANCEMENT] Ingester: Optimize querying with regexp matchers. #8106
+* [ENHANCEMENT] Distributor: Introduce `-distributor.max-request-pool-buffer-size` to allow configuring the maximum size of the request pool buffers. #8082
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 * [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
@@ -56,6 +59,10 @@
 * [BUGFIX] OTLP: Don't generate target_info unless there are metrics. #8012
 * [BUGFIX] Query-frontend: Experimental query queue splitting: fix issue where offset and range selector duration were not considered when predicting query component. #7742
 * [BUGFIX] Querying: Empty matrix results were incorrectly returning `null` instead of `[]`. #8029
+* [BUGFIX] All: don't increment `thanos_objstore_bucket_operation_failures_total` metric for cancelled requests. #8072
+* [BUGFIX] Query-frontend: fix empty metric name matcher not being applied under certain conditions. #8076
+* [BUGFIX] Querying: Fix regex matching of multibyte runes with dot operator. #8089
+* [BUGFIX] Querying: matrix results returned from instant queries were not sorted by series. #8113
 
 ### Mixin
 
@@ -77,6 +84,7 @@
 * [ENHANCEMENT] Dashboards: allow switching between using classic of native histograms in dashboards. #7627
   * Overview dashboard, Status panel, `cortex_request_duration_seconds` metric.
 * [ENHANCEMENT] Alerts: exclude `529` and `598` status codes from failure codes in `MimirRequestsError`. #7889
+* [ENHANCEMENT] Dashboards: renamed "TCP Connections" panel to "Ingress TCP Connections" in the networking dashboards. #8092
 * [BUGFIX] Dashboards: Fix regular expression for matching read-path gRPC ingester methods to include querying of exemplars, label-related queries, or active series queries. #7676
 * [BUGFIX] Dashboards: Fix user id abbreviations and column heads for Top Tenants dashboard. #7724
 * [BUGFIX] Dashboards: fix incorrect query used for "queue length" panel on "Ruler" dashboard. #8006
@@ -102,6 +110,7 @@
 * [BUGFIX] Fix panic in `loadgen` subcommand. #7629
 * [ENHANCEMENT] `mimirtool promql format`: Format PromQL query with Prometheus' string or pretty-print formatter. #7742
 * [BUGFIX] `mimirtool rules prepare`: do not add aggregation label to `on()` clause if already present in `group_left()` or `group_right()`. #7839
+* [BUGFIX] Analyze Grafana: fix parsing queries with variables. #8062
 
 ### Mimir Continuous Test
 
@@ -120,6 +129,7 @@
 ### Documentation
 
 * [ENHANCEMENT] Clarify Compactor and its storage volume when configured under Kubernetes. #7675
+* [ENHANCEMENT] Add OTLP route to _Mimir routes by path_ runbooks section. #8074
 
 ### Tools
 

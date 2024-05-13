@@ -352,7 +352,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 
 	// Lookup the cache.
 	s.metrics.cacheRequests.Add(float64(len(keys)))
-	founds := s.cache.Fetch(ctx, hashedKeys)
+	founds := s.cache.GetMulti(ctx, hashedKeys)
 	s.metrics.cacheHits.Add(float64(len(founds)))
 
 	// Decode all cached responses.
@@ -455,7 +455,7 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []stri
 		return
 	}
 
-	s.cache.StoreAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
+	s.cache.SetMultiAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
 }
 
 func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e Extent) time.Duration {

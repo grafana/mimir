@@ -2381,35 +2381,63 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 	h.stats.WALReplayStatus.Current = current
 }
 
-// ForEachSecondaryHash iterates over all series in the Head, and passes secondary hashes of the series
-// to the function. Function is called with batch of hashes, in no specific order. Hash for each series
-// in the head is included exactly once. Series for corresponding hash may be deleted while the function
-// is running, and series inserted while this function runs may be reported or ignored.
+// ForEachSecondaryHash iterates over all series in the Head, and passes references and secondary hashes of the series
+// to the function. Function is called with batch of refs and hashes, in no specific order. The order of the refs
+// in the same as the order of the hashes. Each series in the head is included exactly once.
+// Series may be deleted while the function is running, and series inserted while this function runs may be reported or ignored.
 //
 // No locks are held when function is called.
 //
-// Slice of hashes passed to the function is reused between calls.
-func (h *Head) ForEachSecondaryHash(fn func(secondaryHash []uint32)) {
-	buf := make([]uint32, 512)
+// Slices passed to the function are reused between calls.
+func (h *Head) ForEachSecondaryHash(fn func(ref []chunks.HeadSeriesRef, secondaryHash []uint32)) {
+	slices := newPairOfSlices[chunks.HeadSeriesRef, uint32](512)
 
 	for i := 0; i < h.series.size; i++ {
-		buf = buf[:0]
+		slices = slices.reset()
 
 		h.series.locks[i].RLock()
 		for _, s := range h.series.hashes[i].unique {
 			// No need to lock series lock, as we're only accessing its immutable secondary hash.
-			buf = append(buf, s.secondaryHash)
+			slices = slices.append(s.ref, s.secondaryHash)
 		}
 		for _, all := range h.series.hashes[i].conflicts {
 			for _, s := range all {
 				// No need to lock series lock, as we're only accessing its immutable secondary hash.
-				buf = append(buf, s.secondaryHash)
+				slices = slices.append(s.ref, s.secondaryHash)
 			}
 		}
 		h.series.locks[i].RUnlock()
 
-		if len(buf) > 0 {
-			fn(buf)
+		if slices.len() > 0 {
+			fn(slices.slice1, slices.slice2)
 		}
 	}
+}
+
+type pairOfSlices[T1, T2 any] struct {
+	slice1 []T1
+	slice2 []T2
+}
+
+func newPairOfSlices[T1, T2 any](length int) pairOfSlices[T1, T2] {
+	return pairOfSlices[T1, T2]{
+		slice1: make([]T1, length),
+		slice2: make([]T2, length),
+	}
+}
+
+func (p pairOfSlices[T1, T2]) reset() pairOfSlices[T1, T2] {
+	p.slice1 = p.slice1[:0]
+	p.slice2 = p.slice2[:0]
+	return p
+}
+
+func (p pairOfSlices[T1, T2]) append(t1 T1, t2 T2) pairOfSlices[T1, T2] {
+	p.slice1 = append(p.slice1, t1)
+	p.slice2 = append(p.slice2, t2)
+	return p
+}
+
+func (p pairOfSlices[T1, T2]) len() int {
+	return len(p.slice1)
 }

@@ -842,6 +842,11 @@ ha_tracker:
 # CLI flag: -distributor.max-recv-msg-size
 [max_recv_msg_size: <int> | default = 104857600]
 
+# (experimental) Max size of the pooled buffers used for marshaling write
+# requests. If 0, no max size is enforced.
+# CLI flag: -distributor.max-request-pool-buffer-size
+[max_request_pool_buffer_size: <int> | default = 0]
+
 # (advanced) Timeout for downstream ingesters.
 # CLI flag: -distributor.remote-timeout
 [remote_timeout: <duration> | default = 2s]
@@ -3026,8 +3031,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (advanced) Controls how far into the future incoming samples and exemplars are
 # accepted compared to the wall clock. Any sample or exemplar will be rejected
 # if its timestamp is greater than '(now + grace_period)'. This configuration is
-# enforced in the distributor, ingester and query-frontend (to avoid querying
-# too far into the future).
+# enforced in the distributor and ingester.
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
 

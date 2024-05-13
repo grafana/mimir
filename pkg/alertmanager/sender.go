@@ -1,31 +1,71 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/alertmanager/distributor.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
+// Mostly taken from http://github.com/grafana/grafana/main/pkg/services/notifications/webhook.go
 package alertmanager
 
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"time"
 
-	"github.com/grafana/alerting/receivers"
+	alertingLogging "github.com/grafana/alerting/logging"
+	alertingReceivers "github.com/grafana/alerting/receivers"
+	"github.com/pkg/errors"
+
+	"github.com/grafana/mimir/pkg/util/version"
 )
 
-type sender struct{}
+var (
+	ErrInvalidMethod = errors.New("webhook only supports HTTP methods PUT or POST")
+)
 
-// Copied from Grafana
-func (s sender) SendWebhook(ctx context.Context, cmd *receivers.SendWebhookSettings) error {
+type Sender struct {
+	c   *http.Client
+	log alertingLogging.Logger
+}
+
+func NewSender(log alertingLogging.Logger) *Sender {
+	netTransport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			Renegotiation: tls.RenegotiateFreelyAsClient,
+		},
+		Proxy: http.ProxyFromEnvironment,
+		Dial: (&net.Dialer{
+			Timeout: 30 * time.Second,
+		}).Dial,
+		TLSHandshakeTimeout: 5 * time.Second,
+	}
+	c := &http.Client{
+		Timeout:   time.Second * 30,
+		Transport: netTransport,
+	}
+	return &Sender{
+		c:   c,
+		log: log,
+	}
+}
+
+// SendWebhook implements alertingReceivers.WebhookSender.
+func (s *Sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWebhookSettings) error {
 	if cmd.HTTPMethod == "" {
 		cmd.HTTPMethod = http.MethodPost
 	}
 
-	// TODO(santiago): proper logs...
-	fmt.Println("Sending webhook", "url", cmd.URL, "http method", cmd.HTTPMethod)
+	s.log.Debug("Sending webhook", "url", cmd.URL, "http method", cmd.HTTPMethod)
 
 	if cmd.HTTPMethod != http.MethodPost && cmd.HTTPMethod != http.MethodPut {
-		return fmt.Errorf("webhook only supports HTTP methods PUT or POST")
+		return ErrInvalidMethod
 	}
 
-	req, err := http.NewRequestWithContext(ctx, cmd.HTTPMethod, cmd.URL, bytes.NewReader([]byte(cmd.Body)))
+	request, err := http.NewRequestWithContext(ctx, cmd.HTTPMethod, cmd.URL, bytes.NewReader([]byte(cmd.Body)))
 	if err != nil {
 		return err
 	}
@@ -34,25 +74,28 @@ func (s sender) SendWebhook(ctx context.Context, cmd *receivers.SendWebhookSetti
 		cmd.ContentType = "application/json"
 	}
 
-	req.Header.Set("Content-Type", cmd.ContentType)
-	req.Header.Set("User-Agent", "Grafana")
+	request.Header.Set("Content-Type", cmd.ContentType)
+	request.Header.Set("User-Agent", version.UserAgent())
 
 	if cmd.User != "" && cmd.Password != "" {
-		req.SetBasicAuth(cmd.User, cmd.Password)
+		request.SetBasicAuth(cmd.User, cmd.Password)
 	}
 
 	for k, v := range cmd.HTTPHeader {
-		req.Header.Set(k, v)
+		request.Header.Set(k, v)
 	}
 
-	// TODO(santiago): don't use the default client
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.c.Do(request)
 	if err != nil {
 		return err
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
+<<<<<<< HEAD
 			// s.log.Warn("Failed to close response body", "err", err)
+=======
+			s.log.Warn("Failed to close response body", "err", err)
+>>>>>>> 1d4aac188c822d3bc6a77431a7c8d54d5a0b9b55
 		}
 	}()
 
@@ -64,17 +107,17 @@ func (s sender) SendWebhook(ctx context.Context, cmd *receivers.SendWebhookSetti
 	if cmd.Validation != nil {
 		err := cmd.Validation(body, resp.StatusCode)
 		if err != nil {
-			// ns.log.Debug("Webhook failed validation", "url", cmd.URL, "statuscode", resp.Status, "body", string(body))
+			s.log.Debug("Webhook failed validation", "url", cmd.URL, "statuscode", resp.Status, "body", string(body))
 			return fmt.Errorf("webhook failed validation: %w", err)
 		}
 	}
 
 	if resp.StatusCode/100 == 2 {
-		// ns.log.Debug("Webhook succeeded", "url", cmd.URL, "statuscode", resp.Status)
+		s.log.Debug("Webhook succeeded", "url", cmd.URL, "statuscode", resp.Status)
 		return nil
 	}
 
-	// ns.log.Debug("Webhook failed", "url", cmd.URL, "statuscode", resp.Status, "body", string(body))
+	s.log.Debug("Webhook failed", "url", cmd.URL, "statuscode", resp.Status, "body", string(body))
 	return fmt.Errorf("webhook response status %v", resp.Status)
 }
 

@@ -4,11 +4,13 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -38,23 +40,26 @@ type app struct {
 	ingesterAddress     string
 	cleanup             func()
 
-	count      uint
-	testFilter string
-	listTests  bool
+	count           uint
+	testFilter      string
+	listTests       bool
+	justRunIngester bool
 }
 
 func (a *app) run() error {
-	a.parseArgs()
-
-	if a.listTests {
-		a.printTests()
-		return nil
+	if err := a.parseArgs(); err != nil {
+		return err
 	}
 
 	// Do this early, to avoid doing a bunch of pointless work if the regex is invalid or doesn't match any tests.
 	filteredNames, err := a.filteredTestCaseNames()
 	if err != nil {
 		return err
+	}
+
+	if a.listTests {
+		a.printTests(filteredNames)
+		return nil
 	}
 
 	if err := a.findBenchmarkPackageDir(); err != nil {
@@ -67,6 +72,23 @@ func (a *app) run() error {
 
 	defer os.RemoveAll(a.tempDir)
 
+	if err := a.startIngesterAndLoadData(); err != nil {
+		return fmt.Errorf("starting ingester and loading data failed: %w", err)
+	}
+	defer a.cleanup()
+
+	if a.justRunIngester {
+		return a.waitForExit()
+	}
+
+	if err := a.runBenchmarks(filteredNames); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (a *app) runBenchmarks(filteredNames []string) error {
 	if err := a.buildBinary(); err != nil {
 		return fmt.Errorf("building binary failed: %w", err)
 	}
@@ -74,11 +96,6 @@ func (a *app) run() error {
 	if err := a.validateBinary(); err != nil {
 		return fmt.Errorf("benchmark binary failed validation: %w", err)
 	}
-
-	if err := a.startIngesterAndLoadData(); err != nil {
-		return fmt.Errorf("starting ingester and loading data failed: %w", err)
-	}
-	defer a.cleanup()
 
 	haveRunAnyTests := false
 
@@ -92,21 +109,43 @@ func (a *app) run() error {
 		}
 	}
 
-	slog.Info("benchmarks completed successfully, cleaning up...")
+	slog.Info("benchmarks completed successfully")
+	return nil
+}
+
+func (a *app) waitForExit() error {
+	// I know it's a bit weird to use string formatting like this when using structured logging, but this produces the clearest message.
+	slog.Info(fmt.Sprintf("ingester running, run benchmark-query-engine with -use-existing-ingester=%v", a.ingesterAddress))
+	slog.Info("press Ctrl+C to exit")
+
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
+	<-done
+
+	println()
+	slog.Info("interrupt received, shutting down...")
 
 	return nil
 }
 
-func (a *app) parseArgs() {
+func (a *app) parseArgs() error {
 	flag.UintVar(&a.count, "count", 1, "run each benchmark n times")
 	flag.StringVar(&a.testFilter, "bench", ".", "only run benchmarks matching regexp")
 	flag.BoolVar(&a.listTests, "list", false, "list known benchmarks and exit")
+	flag.BoolVar(&a.justRunIngester, "start-ingester", false, "start ingester and wait, run no benchmarks")
+	flag.StringVar(&a.ingesterAddress, "use-existing-ingester", "", "use existing ingester rather than creating a new one")
 
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Printf("%v\n", err)
 		flag.Usage()
 		os.Exit(1)
 	}
+
+	if a.justRunIngester && a.ingesterAddress != "" {
+		return errors.New("cannot specify both '-start-ingester' and an existing ingester address with '-use-existing-ingester'")
+	}
+
+	return nil
 }
 
 func (a *app) findBenchmarkPackageDir() error {
@@ -181,6 +220,14 @@ func (a *app) validateBinary() error {
 }
 
 func (a *app) startIngesterAndLoadData() error {
+	if a.ingesterAddress != "" {
+		slog.Warn("using existing ingester; not checking data required for benchmark is present", "address", a.ingesterAddress)
+		a.cleanup = func() {
+			// Nothing to do.
+		}
+		return nil
+	}
+
 	slog.Info("starting ingester and loading data...")
 
 	address, cleanup, err := benchmarks.StartIngesterAndLoadData(a.dataDir, benchmarks.MetricSizes)
@@ -196,8 +243,8 @@ func (a *app) startIngesterAndLoadData() error {
 	return nil
 }
 
-func (a *app) printTests() {
-	for _, name := range a.allTestCaseNames() {
+func (a *app) printTests(names []string) {
+	for _, name := range names {
 		println(name)
 	}
 }
@@ -211,7 +258,7 @@ func (a *app) allTestCaseNames() []string {
 
 	for _, c := range cases {
 		names = append(names, benchmarkName+"/"+c.Name()+"/streaming")
-		names = append(names, benchmarkName+"/"+c.Name()+"/standard")
+		names = append(names, benchmarkName+"/"+c.Name()+"/Prometheus")
 	}
 
 	return names

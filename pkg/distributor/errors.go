@@ -47,9 +47,10 @@ var (
 	)
 )
 
-// distributorError is a marker interface for the errors returned by distributor.
-type distributorError interface {
-	errorCause() mimirpb.ErrorCause
+// Error is a marker interface for the errors returned by distributor.
+type Error interface {
+	// Cause returns the cause of the error.
+	Cause() mimirpb.ErrorCause
 }
 
 // replicasDidNotMatchError is an error stating that replicas do not match.
@@ -69,12 +70,12 @@ func (e replicasDidNotMatchError) Error() string {
 	return fmt.Sprintf("replicas did not match, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
 }
 
-func (e replicasDidNotMatchError) errorCause() mimirpb.ErrorCause {
+func (e replicasDidNotMatchError) Cause() mimirpb.ErrorCause {
 	return mimirpb.REPLICAS_DID_NOT_MATCH
 }
 
-// Ensure that replicasDidNotMatchError implements distributorError.
-var _ distributorError = replicasDidNotMatchError{}
+// Ensure that replicasDidNotMatchError implements Error.
+var _ Error = replicasDidNotMatchError{}
 
 // tooManyClustersError is an error stating that there are too many HA clusters.
 type tooManyClustersError struct {
@@ -92,12 +93,12 @@ func (e tooManyClustersError) Error() string {
 	return fmt.Sprintf(tooManyClustersMsgFormat, e.limit)
 }
 
-func (e tooManyClustersError) errorCause() mimirpb.ErrorCause {
+func (e tooManyClustersError) Cause() mimirpb.ErrorCause {
 	return mimirpb.TOO_MANY_CLUSTERS
 }
 
-// Ensure that tooManyClustersError implements distributorError.
-var _ distributorError = tooManyClustersError{}
+// Ensure that tooManyClustersError implements Error.
+var _ Error = tooManyClustersError{}
 
 // validationError is an error, used to represent all validation errors from the validation package.
 type validationError struct {
@@ -109,12 +110,12 @@ func newValidationError(err error) validationError {
 	return validationError{error: err}
 }
 
-func (e validationError) errorCause() mimirpb.ErrorCause {
+func (e validationError) Cause() mimirpb.ErrorCause {
 	return mimirpb.BAD_DATA
 }
 
-// Ensure that validationError implements distributorError.
-var _ distributorError = validationError{}
+// Ensure that validationError implements Error.
+var _ Error = validationError{}
 
 // ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
 type ingestionRateLimitedError struct {
@@ -134,12 +135,12 @@ func (e ingestionRateLimitedError) Error() string {
 	return fmt.Sprintf(ingestionRateLimitedMsgFormat, e.limit, e.burst)
 }
 
-func (e ingestionRateLimitedError) errorCause() mimirpb.ErrorCause {
+func (e ingestionRateLimitedError) Cause() mimirpb.ErrorCause {
 	return mimirpb.INGESTION_RATE_LIMITED
 }
 
-// Ensure that ingestionRateLimitedError implements distributorError.
-var _ distributorError = ingestionRateLimitedError{}
+// Ensure that ingestionRateLimitedError implements Error.
+var _ Error = ingestionRateLimitedError{}
 
 // requestRateLimitedError is an error used to represent the request rate limited error.
 type requestRateLimitedError struct {
@@ -159,12 +160,12 @@ func (e requestRateLimitedError) Error() string {
 	return fmt.Sprintf(requestRateLimitedMsgFormat, e.limit, e.burst)
 }
 
-func (e requestRateLimitedError) errorCause() mimirpb.ErrorCause {
+func (e requestRateLimitedError) Cause() mimirpb.ErrorCause {
 	return mimirpb.REQUEST_RATE_LIMITED
 }
 
-// Ensure that requestRateLimitedError implements distributorError.
-var _ distributorError = requestRateLimitedError{}
+// Ensure that requestRateLimitedError implements Error.
+var _ Error = requestRateLimitedError{}
 
 // ingesterPushError is an error used to represent a failed attempt to push to the ingester.
 type ingesterPushError struct {
@@ -192,12 +193,12 @@ func (e ingesterPushError) Error() string {
 	return e.message
 }
 
-func (e ingesterPushError) errorCause() mimirpb.ErrorCause {
+func (e ingesterPushError) Cause() mimirpb.ErrorCause {
 	return e.cause
 }
 
-// Ensure that ingesterPushError implements distributorError.
-var _ distributorError = ingesterPushError{}
+// Ensure that ingesterPushError implements Error.
+var _ Error = ingesterPushError{}
 
 type circuitBreakerOpenError struct {
 	err client.ErrCircuitBreakerOpen
@@ -216,23 +217,23 @@ func (e circuitBreakerOpenError) RemainingDelay() time.Duration {
 	return e.err.RemainingDelay()
 }
 
-func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
+func (e circuitBreakerOpenError) Cause() mimirpb.ErrorCause {
 	return mimirpb.CIRCUIT_BREAKER_OPEN
 }
 
-// Ensure that circuitBreakerOpenError implements distributorError.
-var _ distributorError = circuitBreakerOpenError{}
+// Ensure that circuitBreakerOpenError implements Error.
+var _ Error = circuitBreakerOpenError{}
 
 // toGRPCError converts the given error into an appropriate gRPC error.
 func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 	var (
-		distributorErr distributorError
+		distributorErr Error
 		errDetails     *mimirpb.ErrorDetails
 		errCode        = codes.Internal
 	)
 	if errors.As(pushErr, &distributorErr) {
-		errDetails = &mimirpb.ErrorDetails{Cause: distributorErr.errorCause()}
-		switch distributorErr.errorCause() {
+		errDetails = &mimirpb.ErrorDetails{Cause: distributorErr.Cause()}
+		switch distributorErr.Cause() {
 		case mimirpb.BAD_DATA:
 			errCode = codes.FailedPrecondition
 		case mimirpb.INGESTION_RATE_LIMITED:
@@ -315,7 +316,7 @@ func wrapDeadlineExceededPushError(err error) error {
 func isIngesterClientError(err error) bool {
 	var ingesterPushErr ingesterPushError
 	if errors.As(err, &ingesterPushErr) {
-		return ingesterPushErr.errorCause() == mimirpb.BAD_DATA
+		return ingesterPushErr.Cause() == mimirpb.BAD_DATA
 	}
 
 	// This code is needed for backwards compatibility, since ingesters may still return errors with HTTP status

@@ -152,7 +152,12 @@ type Distributor struct {
 	exemplarValidationMetrics *exemplarValidationMetrics
 	metadataValidationMetrics *metadataValidationMetrics
 
+	// Metrics to be passed to distributor push handlers
+	PushMetrics *PushMetrics
+
 	PushWithMiddlewares PushFunc
+
+	RequestBufferPool util.Pool
 
 	// Pool of []byte used when marshalling write requests.
 	writeRequestBytePool sync.Pool
@@ -177,8 +182,9 @@ type Config struct {
 	RetryConfig     RetryConfig     `yaml:"retry_after_header"`
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
-	MaxRecvMsgSize int           `yaml:"max_recv_msg_size" category:"advanced"`
-	RemoteTimeout  time.Duration `yaml:"remote_timeout" category:"advanced"`
+	MaxRecvMsgSize           int           `yaml:"max_recv_msg_size" category:"advanced"`
+	MaxRequestPoolBufferSize int           `yaml:"max_request_pool_buffer_size" category:"experimental"`
+	RemoteTimeout            time.Duration `yaml:"remote_timeout" category:"advanced"`
 
 	// Distributors ring
 	DistributorRing RingConfig `yaml:"ring"`
@@ -225,6 +231,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.RetryConfig.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
+	f.IntVar(&cfg.MaxRequestPoolBufferSize, "distributor.max-request-pool-buffer-size", 0, "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", true, "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.")
@@ -251,6 +258,44 @@ const (
 	limitLabel               = "limit"
 )
 
+type PushMetrics struct {
+	otlpRequestCounter   *prometheus.CounterVec
+	uncompressedBodySize *prometheus.HistogramVec
+}
+
+func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
+	return &PushMetrics{
+		otlpRequestCounter: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_otlp_requests_total",
+			Help: "The total number of OTLP requests that have come in to the distributor.",
+		}, []string{"user"}),
+		uncompressedBodySize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_uncompressed_request_body_size_bytes",
+			Help:                            "Size of uncompressed request body in bytes.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
+	}
+}
+
+func (m *PushMetrics) IncOTLPRequest(user string) {
+	if m != nil {
+		m.otlpRequestCounter.WithLabelValues(user).Inc()
+	}
+}
+
+func (m *PushMetrics) ObserveUncompressedBodySize(user string, size float64) {
+	if m != nil {
+		m.uncompressedBodySize.WithLabelValues(user).Observe(size)
+	}
+}
+
+func (m *PushMetrics) deleteUserMetrics(user string) {
+	m.otlpRequestCounter.DeleteLabelValues(user)
+	m.uncompressedBodySize.DeleteLabelValues(user)
+}
+
 // New constructs a new Distributor
 func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
@@ -270,10 +315,18 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	subservices := []services.Service(nil)
 	subservices = append(subservices, haTracker)
 
+	var requestBufferPool util.Pool
+	if cfg.MaxRequestPoolBufferSize > 0 {
+		requestBufferPool = util.NewBucketedBufferPool(1<<10, cfg.MaxRequestPoolBufferSize, 4)
+	} else {
+		requestBufferPool = util.NewBufferPool()
+	}
+
 	d := &Distributor{
 		cfg:                   cfg,
 		log:                   log,
 		ingestersRing:         ingestersRing,
+		RequestBufferPool:     requestBufferPool,
 		partitionsRing:        partitionsRing,
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
@@ -376,6 +429,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_hash_collisions_total",
 			Help: "Number of times a hash collision was detected when de-duplicating samples.",
 		}),
+
+		PushMetrics: newPushMetrics(reg),
 	}
 
 	// Initialize expected rejected request labels
@@ -592,6 +647,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
+	d.PushMetrics.deleteUserMetrics(userID)
+
 	filter := prometheus.Labels{"user": userID}
 	d.dedupedSamples.DeletePartialMatch(filter)
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
@@ -744,7 +801,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
@@ -810,7 +867,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
@@ -869,7 +926,7 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 // filtering empty values. This is a protection mechanism for ingesters.
 func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
@@ -912,7 +969,7 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 
 func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
@@ -1051,7 +1108,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 // including data that later gets modified or dropped.
 func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
@@ -1239,7 +1296,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			d.cleanupAfterPushFinished(rs)
 		})
 
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
@@ -1270,9 +1327,11 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 	}
 }
 
-// nextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
+// NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
 // The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
-func nextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
+//
+// This function is used outside of this codebase.
+func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
 	cleanupInDefer := true
 	return func(ctx context.Context, req *Request) error {
 			cleanupInDefer = false

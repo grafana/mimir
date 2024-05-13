@@ -191,7 +191,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	if isCacheLookupEnabled(ctx) {
 		cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName).Inc()
 
-		data := cfg.cache.Fetch(ctx, []string{key})
+		data := cfg.cache.GetMulti(ctx, []string{key})
 		if data[key] != nil {
 			list, err := cfg.codec.Decode(data[key])
 			if err == nil {
@@ -220,7 +220,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	if err == nil && remainingTTL > 0 {
 		data, encErr := cfg.codec.Encode(list)
 		if encErr == nil {
-			cfg.cache.StoreAsync(map[string][]byte{key: data}, remainingTTL)
+			cfg.cache.SetMultiAsync(map[string][]byte{key: data}, remainingTTL)
 			return nil
 		}
 		level.Warn(cb.logger).Log("msg", "failed to encode Iter result", "key", key, "err", encErr)
@@ -240,7 +240,7 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 	if isCacheLookupEnabled(ctx) {
 		cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName).Inc()
 
-		hits := cfg.cache.Fetch(ctx, []string{key})
+		hits := cfg.cache.GetMulti(ctx, []string{key})
 
 		if ex := hits[key]; ex != nil {
 			exists, err := strconv.ParseBool(string(ex))
@@ -270,7 +270,7 @@ func storeExistsCacheEntry(cachingKey string, exists bool, ts time.Time, cache c
 	}
 
 	if ttl > 0 {
-		cache.StoreAsync(map[string][]byte{cachingKey: []byte(strconv.FormatBool(exists))}, ttl)
+		cache.SetMultiAsync(map[string][]byte{cachingKey: []byte(strconv.FormatBool(exists))}, ttl)
 	}
 }
 
@@ -302,7 +302,7 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 
 		cb.operationRequests.WithLabelValues(objstore.OpGet, cfgName).Inc()
 
-		hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey}, cacheOpts...)
+		hits := cfg.cache.GetMulti(ctx, []string{contentKey, existsKey}, cacheOpts...)
 
 		// If we know that file doesn't exist, we can return that. Useful for deletion marks.
 		//
@@ -381,7 +381,7 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 	if isCacheLookupEnabled(ctx) {
 		cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
 
-		hits := cache.Fetch(ctx, []string{key})
+		hits := cache.GetMulti(ctx, []string{key})
 		if raw, ok := hits[key]; ok {
 			var attrs objstore.ObjectAttributes
 			err := json.Unmarshal(raw, &attrs)
@@ -400,7 +400,7 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 	}
 
 	if raw, err := json.Marshal(attrs); err == nil {
-		cache.StoreAsync(map[string][]byte{key: raw}, ttl)
+		cache.SetMultiAsync(map[string][]byte{key: raw}, ttl)
 	} else {
 		level.Warn(cb.logger).Log("msg", "failed to encode cached Attributes result", "key", key, "err", err)
 	}
@@ -476,7 +476,7 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 
 		// Try to get all subranges from the cache.
 		totalCachedBytes := int64(0)
-		hits = cfg.cache.Fetch(ctx, keys, cacheOpts...)
+		hits = cfg.cache.GetMulti(ctx, keys, cacheOpts...)
 		for _, b := range hits {
 			totalCachedBytes += int64(len(b))
 		}
@@ -566,7 +566,7 @@ func (cb *CachingBucket) fetchMissingSubranges(ctx context.Context, name string,
 
 				if storeToCache {
 					cb.fetchedGetRangeBytes.WithLabelValues(originBucket, cfgName).Add(float64(len(subrangeData)))
-					cfg.cache.StoreAsync(map[string][]byte{key: subrangeData}, cfg.subrangeTTL)
+					cfg.cache.SetMultiAsync(map[string][]byte{key: subrangeData}, cfg.subrangeTTL)
 				} else {
 					cb.refetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(len(subrangeData)))
 				}
@@ -757,7 +757,7 @@ func (g *getReader) Read(p []byte) (n int, err error) {
 	if errors.Is(err, io.EOF) && g.buf != nil {
 		remainingTTL := g.ttl - time.Since(g.startTime)
 		if remainingTTL > 0 {
-			g.c.StoreAsync(map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)
+			g.c.SetMultiAsync(map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)
 		}
 		// Clear reference, to avoid doing another Store on next read.
 		g.buf = nil
