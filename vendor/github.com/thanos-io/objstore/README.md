@@ -181,6 +181,7 @@ config:
   list_objects_version: ""
   bucket_lookup_type: auto
   send_content_md5: true
+  disable_multipart: false
   part_size: 67108864
   sse_config:
     type: ""

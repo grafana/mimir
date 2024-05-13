@@ -70,7 +70,7 @@ require (
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/prometheus/procfs v0.12.0
-	github.com/thanos-io/objstore v0.0.0-20240506104147-63052b4c4867
+	github.com/thanos-io/objstore v0.0.0-20240512204237-71ef2d0cf7c4
 	github.com/twmb/franz-go v1.16.1
 	github.com/twmb/franz-go/pkg/kadm v1.10.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240430054423-8b5395896363
