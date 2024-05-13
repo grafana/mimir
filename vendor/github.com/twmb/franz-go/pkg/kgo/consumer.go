@@ -354,7 +354,7 @@ func NewErrFetch(err error) Fetches {
 		Topics: []FetchTopic{{
 			Topic: "",
 			Partitions: []FetchPartition{{
-				Partition: 0,
+				Partition: -1,
 				Err:       err,
 			}},
 		}},
@@ -384,11 +384,11 @@ func (cl *Client) PollFetches(ctx context.Context) Fetches {
 }
 
 // PollRecords waits for records to be available, returning as soon as any
-// broker returns records in a fetch. If the context is nil, this function
-// will return immediately with any currently buffered records.
+// broker returns records in a fetch. If the context is nil, this function will
+// return immediately with any currently buffered records.
 //
 // If the client is closed, a fake fetch will be injected that has no topic, a
-// partition of 0, and a partition error of ErrClientClosed. If the context is
+// partition of -1, and a partition error of ErrClientClosed. If the context is
 // canceled, a fake fetch will be injected with ctx.Err. These injected errors
 // can be used to break out of a poll loop.
 //

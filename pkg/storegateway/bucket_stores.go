@@ -26,12 +26,14 @@ import (
 	"github.com/thanos-io/objstore"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -76,6 +78,9 @@ type BucketStores struct {
 	storesMu sync.RWMutex
 	stores   map[string]*BucketStore
 
+	// Tenants that are specifically enabled or disabled via configuration
+	allowedTenants *util.AllowedTenants
+
 	// Metrics.
 	syncTimes         prometheus.Histogram
 	syncLastSuccess   prometheus.Gauge
@@ -85,7 +90,7 @@ type BucketStores struct {
 }
 
 // NewBucketStores makes a new BucketStores.
-func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
+func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowedTenants, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	chunksCacheClient, err := cache.CreateClient("chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, errors.Wrapf(err, "chunks-cache")
@@ -102,6 +107,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	queryGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "query"}, gateReg)
 	queryGate := gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
+	queryGate = timeoutGate{delegate: queryGate, timeout: cfg.BucketStore.MaxConcurrentQueueTimeout}
 
 	// The number of concurrent index header loads from storegateway are limited.
 	lazyLoadingGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "index_header"}, gateReg)
@@ -118,9 +124,10 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		limits:             limits,
 		bucket:             cachingBucket,
 		shardingStrategy:   shardingStrategy,
+		allowedTenants:     allowedTenants,
 		stores:             map[string]*BucketStore{},
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
-		metaFetcherMetrics: NewMetadataFetcherMetrics(),
+		metaFetcherMetrics: NewMetadataFetcherMetrics(logger),
 		queryGate:          queryGate,
 		lazyLoadingGate:    lazyLoadingGate,
 		partitioners:       newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),
@@ -229,9 +236,6 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 	errs := tsdb_errors.NewMulti()
 	errsMx := sync.Mutex{}
 
-	// Scan users in the bucket. In case of error, it may return a subset of users. If we sync a subset of users
-	// during a periodic sync, we may end up unloading blocks for users that still belong to this store-gateway
-	// so we do prefer to not run the sync at all.
 	userIDs, err := u.scanUsers(ctx)
 	if err != nil {
 		return err
@@ -360,10 +364,22 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return store.LabelValues(ctx, req)
 }
 
-// scanUsers in the bucket and return the list of found users. If an error occurs while
-// iterating the bucket, it may return both an error and a subset of the users in the bucket.
+// scanUsers in the bucket and return the list of found users, respecting any specifically
+// enabled or disabled users.
 func (u *BucketStores) scanUsers(ctx context.Context) ([]string, error) {
-	return tsdb.ListUsers(ctx, u.bucket)
+	users, err := tsdb.ListUsers(ctx, u.bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]string, 0, len(users))
+	for _, user := range users {
+		if u.allowedTenants.IsAllowed(user) {
+			filtered = append(filtered, user)
+		}
+	}
+
+	return filtered, nil
 }
 
 func (u *BucketStores) getStore(userID string) *BucketStore {
@@ -404,6 +420,40 @@ func (u *BucketStores) closeBucketStore(userID string) error {
 
 func (u *BucketStores) syncDirForUser(userID string) string {
 	return filepath.Join(u.cfg.BucketStore.SyncDir, userID)
+}
+
+// timeoutGate returns errGateTimeout when the timeout is reached while still waiting for the delegate gate.
+// timeoutGate belongs better in dskit. However, at the time of writing dskit supports go 1.20.
+// go 1.20 doesn't have context.WithTimeoutCause yet,
+// so we choose to implement timeoutGate here instead of implementing context.WithTimeoutCause ourselves in dskit.
+// It also allows to keep the span logger in timeoutGate as opposed to in the bucket store.
+type timeoutGate struct {
+	delegate gate.Gate
+	timeout  time.Duration
+}
+
+var errGateTimeout = staticError{cause: mimirpb.INSTANCE_LIMIT, msg: "timeout waiting for concurrency gate"}
+
+func (t timeoutGate) Start(ctx context.Context) error {
+	if t.timeout == 0 {
+		return t.delegate.Start(ctx)
+	}
+
+	// Inject our own error so that we can differentiate between a timeout caused by this gate
+	// or a timeout in the original request timeout.
+	ctx, cancel := context.WithTimeoutCause(ctx, t.timeout, errGateTimeout)
+	defer cancel()
+
+	err := t.delegate.Start(ctx)
+	if errors.Is(context.Cause(ctx), errGateTimeout) {
+		_ = spanlogger.FromContext(ctx, log.NewNopLogger()).Error(err)
+		err = errGateTimeout
+	}
+	return err
+}
+
+func (t timeoutGate) Done() {
+	t.delegate.Done()
 }
 
 func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
@@ -567,12 +617,7 @@ func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
 }
 
 func getUserIDFromGRPCContext(ctx context.Context) string {
-	meta, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return ""
-	}
-
-	values := meta.Get(GrpcContextMetadataTenantID)
+	values := metadata.ValueFromIncomingContext(ctx, GrpcContextMetadataTenantID)
 	if len(values) != 1 {
 		return ""
 	}

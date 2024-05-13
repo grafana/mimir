@@ -1,22 +1,25 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'grafana-builder/grafana.libsonnet') {
-  local resourceRequestColor = '#FFC000',
-  local resourceLimitColor = '#E02F44',
-  local successColor = '#7EB26D',
-  local warningColor = '#EAB839',
-  local errorColor = '#E24D42',
+  _colors:: {
+    resourceRequest: '#FFC000',
+    resourceLimit: '#E02F44',
+    success: '#7EB26D',
+    clientError: '#EF843C',
+    warning: '#EAB839',
+    failed: '#E24D42',  // "error" is reserved word in Jsonnet.
+  },
 
   // Colors palette picked from Grafana UI, excluding red-ish colors which we want to keep reserved for errors / failures.
-  local nonErrorColorsPalette = ['#429D48', '#F1C731', '#2A66CF', '#9E44C1', '#FFAB57', '#C79424', '#84D586', '#A1C4FC', '#C788DE'],
+  local nonErrorColorsPalette = ['#429D48', '#F1C731', '#2A66CF', '#9E44C1', '#FFAB57', '#C79424', '#84D586', '#A1C4FC', '#C788DE', '#3F6833', '#447EBC', '#967302', '#5794F2'],
 
   local resourceRequestStyle = $.overrideFieldByName('request', [
-    $.overrideProperty('color', { mode: 'fixed', fixedColor: resourceRequestColor }),
+    $.overrideProperty('color', { mode: 'fixed', fixedColor: $._colors.resourceRequest }),
     $.overrideProperty('custom.fillOpacity', 0),
     $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
   ]),
   local resourceLimitStyle = $.overrideFieldByName('limit', [
-    $.overrideProperty('color', { mode: 'fixed', fixedColor: resourceLimitColor }),
+    $.overrideProperty('color', { mode: 'fixed', fixedColor: $._colors.resourceLimit }),
     $.overrideProperty('custom.fillOpacity', 0),
     $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
   ]),
@@ -196,14 +199,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
   qpsPanel(selector, statusLabelName='status_code')::
     super.qpsPanel(selector, statusLabelName) +
     $.aliasColors({
-      '1xx': warningColor,
-      '2xx': successColor,
+      '1xx': $._colors.warning,
+      '2xx': $._colors.success,
       '3xx': '#6ED0E0',
       '4xx': '#EF843C',
-      '5xx': errorColor,
-      OK: successColor,
-      success: successColor,
-      'error': errorColor,
+      '5xx': $._colors.failed,
+      OK: $._colors.success,
+      success: $._colors.success,
+      'error': $._colors.failed,
       cancel: '#A9A9A9',
     }) + {
       fieldConfig+: {
@@ -260,15 +263,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
     // Set the failure color only if there's just 1 legend and it doesn't contain any placeholder.
     $.aliasColors(
       if (std.type(legends) == 'string' && std.length(std.findSubstr('{', legends[0])) == 0) then {
-        [legends]: errorColor,
+        [legends]: $._colors.failed,
       } else {}
     ),
 
   successFailurePanel(successMetric, failureMetric)::
     $.queryPanel([successMetric, failureMetric], ['successful', 'failed']) +
     $.aliasColors({
-      successful: successColor,
-      failed: errorColor,
+      successful: $._colors.success,
+      failed: $._colors.failed,
     }),
 
   // successFailureCustomPanel is like successFailurePanel() but allows to customize the legends
@@ -277,8 +280,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
   successFailureCustomPanel(queries, legends)::
     $.queryPanel(queries, legends) +
     $.aliasColors({
-      [legends[0]]: successColor,
-      [legends[1]]: errorColor,
+      [legends[0]]: $._colors.success,
+      [legends[1]]: $._colors.failed,
     }),
 
   // Displays started, completed and failed rate.
@@ -288,8 +291,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.stack +
     $.aliasColors({
       started: '#34CCEB',
-      completed: successColor,
-      failed: errorColor,
+      completed: $._colors.success,
+      failed: $._colors.failed,
     }),
 
   resourceUtilizationAndLimitLegend(resourceName)::
@@ -566,7 +569,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     )
     .addPanel(
-      $.timeseriesPanel('TCP connections (per pod)') +
+      local title = 'Ingress TCP connections (per pod)';
+
+      $.timeseriesPanel(title) +
+      $.panelDescription(
+        title,
+        'The number of ingress TCP connections (HTTP and gRPC protocol).'
+      ) +
       $.queryPanel([
         'avg(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
         'max(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
@@ -593,179 +602,160 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     ),
 
-  cpuAndMemoryBasedAutoScalingRow(componentTitle)::
-    local component = std.asciiLower(componentTitle);
-    local field = std.strReplace(component, '-', '_');
-    super.row('%s - autoscaling' % [componentTitle])
-    .addPanel(
-      local title = 'Replicas';
-      $.timeseriesPanel(title) +
-      $.queryPanel(
-        [
-          |||
-            max by (scaletargetref_name) (
-              kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-              # Add the scaletargetref_name label for readability
-              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-            )
-          ||| % {
-            namespace_matcher: $.namespaceMatcher(),
-            hpa_name: $._config.autoscaling[field].hpa_name,
-            cluster_labels: std.join(', ', $._config.cluster_labels),
-          },
-          |||
-            max by (scaletargetref_name) (
-              kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-              # HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active
-              * on (%(cluster_labels)s, horizontalpodautoscaler)
-                kube_horizontalpodautoscaler_status_condition{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s", condition="ScalingActive", status="true"}
-              # Add the scaletargetref_name label for readability
-              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-            )
-          ||| % {
-            namespace_matcher: $.namespaceMatcher(),
-            hpa_name: $._config.autoscaling[field].hpa_name,
-            cluster_labels: std.join(', ', $._config.cluster_labels),
-          },
-          |||
-            max by (scaletargetref_name) (
-              kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-              # Add the scaletargetref_name label for readability
-              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-            )
-          ||| % {
-            namespace_matcher: $.namespaceMatcher(),
-            hpa_name: $._config.autoscaling[field].hpa_name,
-            cluster_labels: std.join(', ', $._config.cluster_labels),
-          },
-        ],
-        [
-          'Max {{ scaletargetref_name }}',
-          'Current {{ scaletargetref_name }}',
-          'Min {{ scaletargetref_name }}',
-        ],
-      ) +
-      $.panelDescription(
-        title,
+  // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
+  autoScalingActualReplicas(componentName)::
+    local title = 'Replicas';
+    local componentTitle = std.strReplace(componentName, '_', '-');
+
+    $.timeseriesPanel(title) +
+    $.queryPanel(
+      [
         |||
-          The maximum and current number of %s replicas.
-          Note: The current number of replicas can still show 1 replica even when scaled to 0.
-          Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
-        ||| % [component]
-      ) +
-      {
-        fieldConfig+: {
-          overrides: [
-            $.overrideField('byRegexp', '/Max .+/', [
-              $.overrideProperty('custom.fillOpacity', 0),
-              $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
-            ]),
-            $.overrideField('byRegexp', '/Current .+/', [
-              $.overrideProperty('custom.fillOpacity', 0),
-            ]),
-            $.overrideField('byRegexp', '/Min .+/', [
-              $.overrideProperty('custom.fillOpacity', 0),
-              $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
-            ]),
-          ],
+          max by (scaletargetref_name) (
+            kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            # Add the scaletargetref_name label for readability
+            + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+              0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+          )
+        ||| % {
+          namespace_matcher: $.namespaceMatcher(),
+          hpa_name: $._config.autoscaling[componentName].hpa_name,
+          cluster_labels: std.join(', ', $._config.cluster_labels),
         },
+        |||
+          max by (scaletargetref_name) (
+            kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            # HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active
+            * on (%(cluster_labels)s, horizontalpodautoscaler)
+              kube_horizontalpodautoscaler_status_condition{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s", condition="ScalingActive", status="true"}
+            # Add the scaletargetref_name label for readability
+            + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+              0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+          )
+        ||| % {
+          namespace_matcher: $.namespaceMatcher(),
+          hpa_name: $._config.autoscaling[componentName].hpa_name,
+          cluster_labels: std.join(', ', $._config.cluster_labels),
+        },
+        |||
+          max by (scaletargetref_name) (
+            kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            # Add the scaletargetref_name label for readability
+            + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+              0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+          )
+        ||| % {
+          namespace_matcher: $.namespaceMatcher(),
+          hpa_name: $._config.autoscaling[componentName].hpa_name,
+          cluster_labels: std.join(', ', $._config.cluster_labels),
+        },
+      ],
+      [
+        'Max {{ scaletargetref_name }}',
+        'Current {{ scaletargetref_name }}',
+        'Min {{ scaletargetref_name }}',
+      ],
+    ) +
+    $.panelDescription(
+      title,
+      |||
+        The maximum and current number of %s replicas.<br /><br />
+        Note: The current number of replicas can still show 1 replica even when scaled to 0.
+        Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
+      ||| % [componentTitle]
+    ) +
+    {
+      fieldConfig+: {
+        overrides: [
+          $.overrideField('byRegexp', '/Max .+/', [
+            $.overrideProperty('custom.fillOpacity', 0),
+            $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+          ]),
+          $.overrideField('byRegexp', '/Current .+/', [
+            $.overrideProperty('custom.fillOpacity', 0),
+          ]),
+          $.overrideField('byRegexp', '/Min .+/', [
+            $.overrideProperty('custom.fillOpacity', 0),
+            $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+          ]),
+        ],
       },
-    )
-    .addPanel(
-      local title = 'Scaling metric (CPU): Desired replicas';
-      $.timeseriesPanel(title) +
-      $.queryPanel(
-        [
-          |||
-            sum by (scaler) (
-              label_replace(
-                keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~".*cpu.*"},
-                "namespace", "$1", "exported_namespace", "(.*)"
-              )
-              /
-              on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
-                label_replace(
-                  kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                  "metric", "$1", "metric_name", "(.+)"
-                ),
-                "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
-              )
+    },
+
+  // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
+  autoScalingDesiredReplicasByScalingMetricPanel(componentName, scalingMetricName, scalingMetricID)::
+    local title = if scalingMetricName != '' then 'Scaling metric (%s): Desired replicas' % scalingMetricName else 'Desired replicas';
+    local scalerSelector = if scalingMetricID != '' then ('.*%s.*' % scalingMetricID) else '.+';
+
+    $.timeseriesPanel(title) +
+    $.queryPanel(
+      [
+        |||
+          sum by (scaler) (
+            label_replace(
+              keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~"%(scaler_selector)s"},
+              "namespace", "$1", "exported_namespace", "(.*)"
             )
-          ||| % {
-            aggregation_labels: $._config.alert_aggregation_labels,
-            cluster_label: $._config.per_cluster_label,
-            hpa_prefix: $._config.autoscaling_hpa_prefix,
-            hpa_name: $._config.autoscaling[field].hpa_name,
-            namespace: $.namespaceMatcher(),
-          },
-        ], [
-          '{{ scaler }}',
-        ]
-      ) +
-      $.panelDescription(
-        title,
-        |||
-          This panel shows the scaling metric exposed by KEDA divided by the target/threshold used.
-          It should represent the desired number of replicas, ignoring the min/max constraints applied later.
-        |||
-      ),
-    )
-    .addPanel(
-      local title = 'Scaling metric (memory): Desired replicas';
-      $.timeseriesPanel(title) +
-      $.queryPanel(
-        [
-          |||
-            sum by (scaler) (
+            /
+            on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
               label_replace(
-                keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~".*memory.*"},
-                "namespace", "$1", "exported_namespace", "(.*)"
-              )
-              /
-              on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
-                label_replace(
-                  kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                  "metric", "$1", "metric_name", "(.+)"
-                ),
-                "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
-              )
+                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                "metric", "$1", "metric_name", "(.+)"
+              ),
+              "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
             )
-          ||| % {
-            aggregation_labels: $._config.alert_aggregation_labels,
-            cluster_label: $._config.per_cluster_label,
-            hpa_prefix: $._config.autoscaling_hpa_prefix,
-            hpa_name: $._config.autoscaling[field].hpa_name,
-            namespace: $.namespaceMatcher(),
-          },
-        ], [
-          '{{ scaler }}',
-        ]
-      ) +
-      $.panelDescription(
-        title,
-        |||
-          This panel shows the scaling metric exposed by KEDA divided by the target/threshold used.
-          It should represent the desired number of replicas, ignoring the min/max constraints applied later.
-        |||
-      ),
+          )
+        ||| % {
+          aggregation_labels: $._config.alert_aggregation_labels,
+          cluster_label: $._config.per_cluster_label,
+          hpa_prefix: $._config.autoscaling_hpa_prefix,
+          hpa_name: $._config.autoscaling[componentName].hpa_name,
+          namespace: $.namespaceMatcher(),
+          scaler_selector: scalerSelector,
+        },
+      ], [
+        '{{ scaler }}',
+      ]
+    ) +
+    $.panelDescription(
+      title,
+      |||
+        This panel shows the scaling metric exposed by KEDA divided by the target/threshold used.
+        It should represent the desired number of replicas, ignoring the min/max constraints applied later.
+      |||
+    ),
+
+  // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
+  autoScalingFailuresPanel(componentName)::
+    local title = 'Autoscaler failures rate';
+
+    $.timeseriesPanel(title) +
+    $.queryPanel(
+      $.filterKedaScalerErrorsByHPA($._config.autoscaling[componentName].hpa_name),
+      '{{scaler}} failures'
+    ) +
+    $.panelDescription(
+      title,
+      |||
+        The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
+        metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
+      |||
+    ),
+
+  cpuAndMemoryBasedAutoScalingRow(componentTitle)::
+    local componentName = std.strReplace(std.asciiLower(componentTitle), '-', '_');
+    super.row('%s – autoscaling' % [componentTitle])
+    .addPanel(
+      $.autoScalingActualReplicas(componentName)
     )
     .addPanel(
-      local title = 'Autoscaler failures rate';
-      $.timeseriesPanel(title) +
-      $.queryPanel(
-        $.filterKedaScalerErrorsByHPA($._config.autoscaling[field].hpa_name),
-        '{{scaler}} failures'
-      ) +
-      $.panelDescription(
-        title,
-        |||
-          The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
-          metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
-        |||
-      ),
+      $.autoScalingDesiredReplicasByScalingMetricPanel(componentName, 'CPU', 'cpu')
+    )
+    .addPanel(
+      $.autoScalingDesiredReplicasByScalingMetricPanel(componentName, 'memory', 'memory')
+    )
+    .addPanel(
+      $.autoScalingFailuresPanel(componentName)
     ),
 
   newStatPanel(queries, legends='', unit='percentunit', decimals=1, thresholds=[], instant=false, novalue='')::
@@ -993,9 +983,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         thresholds: {
           mode: 'absolute',
           steps: [
-            { color: successColor, value: null },
-            { color: warningColor, value: 0.01 },  // 1%
-            { color: errorColor, value: 0.05 },  // 5%
+            { color: $._colors.success, value: null },
+            { color: $._colors.warning, value: 0.01 },  // 1%
+            { color: $._colors.failed, value: 0.05 },  // 5%
           ],
         },
       },
@@ -1342,6 +1332,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
         }
     ), legends)),
   },
+
+  overridesNonErrorColorsPalette(overrides):: std.mapWithIndex(function(idx, override) (
+    // Do not define an override if we exausted the colors in the palette.
+    // Grafana will automatically choose another color.
+    if idx >= std.length(nonErrorColorsPalette) then override else
+      {
+        matcher: override.matcher,
+        properties: override.properties + [
+          {
+            id: 'color',
+            value: {
+              fixedColor: nonErrorColorsPalette[idx],
+              mode: 'fixed',
+            },
+          },
+        ],
+      }
+  ), overrides),
 
   // Panel query override functions
   overrideField(matcherId, options, overrideProperties):: {

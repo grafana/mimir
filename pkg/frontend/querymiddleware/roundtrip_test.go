@@ -34,7 +34,7 @@ import (
 
 func TestRangeTripperware(t *testing.T) {
 	var (
-		query        = "/api/v1/query_range?end=1536716880&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120"
+		query        = "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120"
 		responseBody = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[1536673680,"137"],[1536673780,"137"]]}]}}`
 	)
 
@@ -367,7 +367,7 @@ func TestTripperware_Metrics(t *testing.T) {
 
 	s := httptest.NewServer(
 		middleware.AuthenticateUser.Wrap(
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", jsonMimeType)
 				_, err := w.Write([]byte("{}"))
 				require.NoError(t, err)

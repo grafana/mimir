@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Most cases for functions are covered already in the upstream test cases.
+# These test cases cover scenarios not covered by the upstream test cases, such as range queries, or edge cases that are uniquely likely to cause issues in the streaming engine.
+
+load 1m
+  some_metric{env="prod", cluster="eu"} 0+60x4
+  some_metric{env="prod", cluster="us"} 0+120x4
+  some_metric{env="test", cluster="eu"} 0+180x4
+  some_metric{env="test", cluster="us"} 0+240x4
+  some_metric_with_gaps 0 60 120 180 240 _ 2000 2120 2240
+  some_metric_with_stale_marker 0 60 120 stale 240 300
+
+# Range query with rate.
+eval range from 0 to 4m step 1m rate(some_metric[1m])
+  {env="prod", cluster="eu"} _ 1 1 1 1
+  {env="prod", cluster="us"} _ 2 2 2 2
+  {env="test", cluster="eu"} _ 3 3 3 3
+  {env="test", cluster="us"} _ 4 4 4 4
+
+# If no series are matched, we shouldn't return any results.
+eval range from 0 to 4m step 1m rate(some_nonexistent_metric[1m])
+  # Should return no results.
+
+# Ensure we don't include points outside the range of each individual step.
+#
+# When evaluating a range selector, if there is no point with timestamp equal to the end of the range,
+# the next point (from outside the range) will be included in the ring buffer passed to rate().
+# So we need to ensure we ignore this.
+#
+# The first query below (with 1m) tests that we correctly skip evaluating rate() when there aren't enough points in the range.
+# The second query below (with 2m) tests that we correctly pick the last point from the buffer if the last point in the buffer is outside the range.
+eval range from 0 to 8m step 1m rate(some_metric_with_gaps[1m])
+  {} _ 1 1 1 1 _ _ 2 2
+
+eval range from 0 to 8m step 1m rate(some_metric_with_gaps[2m])
+  {} _ 0.5 1 1 1 1 14.666666666666666 2 2
+
+# Test that we handle staleness markers correctly.
+eval range from 0 to 5m step 1m rate(some_metric_with_stale_marker[2m])
+  {} _ 0.5 1 1 1 1

@@ -29,15 +29,15 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 	tests := []struct {
 		name     string
 		userID   string
-		r        Request
+		r        MetricsQueryRequest
 		expected string
 	}{
 		{
 			name:   "instant query",
 			userID: "tenant-a",
 			r: &PrometheusInstantQueryRequest{
-				Time:  requestTime.UnixMilli(),
-				Query: "up",
+				time:      requestTime.UnixMilli(),
+				queryExpr: parseQuery(t, "up"),
 			},
 			expected: fmt.Sprintf("QS:tenant-a:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
 		},
@@ -45,9 +45,9 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 			name:   "range query",
 			userID: "tenant-b",
 			r: &PrometheusRangeQueryRequest{
-				Start: requestTime.UnixMilli(),
-				End:   requestTime.Add(2 * time.Hour).UnixMilli(),
-				Query: "up",
+				start:     requestTime.UnixMilli(),
+				end:       requestTime.Add(2 * time.Hour).UnixMilli(),
+				queryExpr: parseQuery(t, "up"),
 			},
 			expected: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
 		},
@@ -55,10 +55,10 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 			name:   "range query with large range",
 			userID: "tenant-b",
 			r: &PrometheusRangeQueryRequest{
-				Start: requestTime.UnixMilli(),
+				start: requestTime.UnixMilli(),
 				// Over 24 hours, range part should be 1
-				End:   requestTime.Add(25 * time.Hour).UnixMilli(),
-				Query: "up",
+				end:       requestTime.Add(25 * time.Hour).UnixMilli(),
+				queryExpr: parseQuery(t, "up"),
 			},
 			expected: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 1),
 		},
@@ -128,12 +128,12 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 func Test_cardinalityEstimation_Do(t *testing.T) {
 	const numSeries = uint64(25)
 	request := &PrometheusRangeQueryRequest{
-		Start: parseTimeRFC3339(t, "2023-01-31T09:00:00Z").Unix() * 1000,
-		End:   parseTimeRFC3339(t, "2023-01-31T10:00:00Z").Unix() * 1000,
-		Query: "up",
+		start:     parseTimeRFC3339(t, "2023-01-31T09:00:00Z").Unix() * 1000,
+		end:       parseTimeRFC3339(t, "2023-01-31T10:00:00Z").Unix() * 1000,
+		queryExpr: parseQuery(t, "up"),
 	}
 	addSeriesHandler := func(estimate, actual uint64) HandlerFunc {
-		return func(ctx context.Context, request Request) (Response, error) {
+		return func(ctx context.Context, request MetricsQueryRequest) (Response, error) {
 			require.NotNil(t, request.GetHints())
 			request.GetHints().GetCardinalityEstimate()
 			require.Equal(t, request.GetHints().GetEstimatedSeriesCount(), estimate)
@@ -158,7 +158,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		{
 			name:     "no tenantID",
 			tenantID: "",
-			downstreamHandler: func(_ context.Context, _ Request) (Response, error) {
+			downstreamHandler: func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
 				return &PrometheusResponse{}, nil
 			},
 			expectedLoads:  0,
@@ -168,7 +168,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		{
 			name:     "downstream error",
 			tenantID: "1",
-			downstreamHandler: func(_ context.Context, _ Request) (Response, error) {
+			downstreamHandler: func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
 				return nil, errors.New("test error")
 			},
 			expectedLoads:  1,
@@ -205,7 +205,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		{
 			name:     "with empty cache",
 			tenantID: "1",
-			downstreamHandler: func(ctx context.Context, request Request) (Response, error) {
+			downstreamHandler: func(ctx context.Context, _ MetricsQueryRequest) (Response, error) {
 				queryStats := stats.FromContext(ctx)
 				queryStats.AddFetchedSeries(numSeries)
 				return &PrometheusResponse{}, nil
@@ -227,7 +227,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			}
 			numSetupStoreCalls := 0
 			if len(tt.cacheContent) > 0 {
-				c.StoreAsync(tt.cacheContent, time.Minute)
+				c.SetMultiAsync(tt.cacheContent, time.Minute)
 				numSetupStoreCalls++
 			}
 
@@ -243,16 +243,18 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 
 func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 	rangeQuery := &PrometheusRangeQueryRequest{
-		Start: util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T09:00:00Z")),
-		End:   util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T10:00:00Z")),
-		Query: "up",
+		start:     util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T09:00:00Z")),
+		end:       util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T10:00:00Z")),
+		queryExpr: parseQuery(t, "up"),
 	}
+	rangeQuerySum, _ := rangeQuery.WithQuery("sum(up)")
+
 	tests := []struct {
 		name          string
 		tenantA       string
 		tenantB       string
-		requestA      Request
-		requestB      Request
+		requestA      MetricsQueryRequest
+		requestB      MetricsQueryRequest
 		expectedEqual bool
 	}{
 		{
@@ -315,8 +317,8 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 			name:     "same tenant, same query with start time less than a bucket width apart but in different buckets",
 			tenantA:  "1",
 			tenantB:  "1",
-			requestA: rangeQuery.WithQuery("sum(up)"),
-			requestB: rangeQuery.WithQuery("sum(up)").WithStartEnd(
+			requestA: rangeQuerySum,
+			requestB: rangeQuerySum.WithStartEnd(
 				rangeQuery.GetStart()+(cardinalityEstimateBucketSize/2).Milliseconds(),
 				rangeQuery.GetEnd()+(cardinalityEstimateBucketSize/2).Milliseconds(),
 			),
@@ -326,8 +328,8 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 			name:     "same tenant, same query with start time less than a bucket width apart and in the same bucket",
 			tenantA:  "1",
 			tenantB:  "1",
-			requestA: rangeQuery.WithQuery("up"),
-			requestB: rangeQuery.WithQuery("up").WithStartEnd(
+			requestA: rangeQuery,
+			requestB: rangeQuery.WithStartEnd(
 				rangeQuery.GetStart()+(cardinalityEstimateBucketSize/2).Milliseconds(),
 				rangeQuery.GetEnd()+(cardinalityEstimateBucketSize/2).Milliseconds(),
 			),

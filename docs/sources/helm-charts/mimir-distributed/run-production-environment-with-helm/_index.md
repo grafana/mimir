@@ -227,6 +227,11 @@ cluster, refer to
 
 For OpenShift-specific instructions see [Deploy on OpenShift](#deploy-on-openshift).
 
+The `mimir-distributed` Helm chart also deploys most of the containers
+with a read-only root filesystem (`readOnlyRootFilesystem: true`).
+The exceptions are the optional MinIO and Grafana Agent containers.
+The PodSecurityPolicy resource enforces this setting.
+
 ## Monitor the health of your Grafana Mimir cluster
 
 To monitor the health of your Grafana Mimir cluster, which is also known as

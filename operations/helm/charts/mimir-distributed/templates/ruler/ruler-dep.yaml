@@ -9,7 +9,7 @@ metadata:
     {{- toYaml .Values.ruler.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.ruler.kedaAutoscaling.enabled }}
+  {{- if or (not .Values.ruler.kedaAutoscaling.enabled) (.Values.ruler.kedaAutoscaling.preserveReplicas) }}
   replicas: {{ .Values.ruler.replicas }}
   {{- end }}
   selector:
@@ -70,6 +70,9 @@ spec:
           volumeMounts:
             {{- if .Values.ruler.extraVolumeMounts }}
               {{ toYaml .Values.ruler.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -149,9 +152,12 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
-{{- if .Values.ruler.extraVolumes }}
-{{ toYaml .Values.ruler.extraVolumes | indent 8}}
-{{- end }}
+        {{- if .Values.ruler.extraVolumes }}
+        {{ toYaml .Values.ruler.extraVolumes | nindent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8}}
+        {{- end }}
         - name: storage
           emptyDir: {}
         - name: active-queries

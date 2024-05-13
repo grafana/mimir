@@ -340,7 +340,7 @@ func TestBlockLabelNames(t *testing.T) {
 			onLabelNamesCalled: func() error {
 				return fmt.Errorf("not expected the LabelNames() calls with matchers")
 			},
-			onLabelValuesOffsetsCalled: func(name string) error {
+			onLabelValuesOffsetsCalled: func(string) error {
 				expectedCalls--
 				if expectedCalls < 0 {
 					return fmt.Errorf("didn't expect another index.Reader.LabelValues() call")
@@ -392,7 +392,7 @@ func TestBlockLabelValues(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
 			Reader:                     b.indexHeaderReader,
-			onLabelValuesOffsetsCalled: func(name string) error { return context.DeadlineExceeded },
+			onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
 		}
 		b.indexCache = cacheNotExpectingToStoreLabelValues{t: t}
 
@@ -405,7 +405,7 @@ func TestBlockLabelValues(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
 			Reader: b.indexHeaderReader,
-			onLabelValuesOffsetsCalled: func(name string) error {
+			onLabelValuesOffsetsCalled: func(string) error {
 				expectedCalls--
 				if expectedCalls < 0 {
 					return fmt.Errorf("didn't expect another index.Reader.LabelValues() call")
@@ -993,7 +993,7 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
-func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appenderFactory func() storage.Appender)) func() *bucketBlock {
+func prepareTestBlock(tb test.TB, dataSetup ...testBlockDataSetup) func() *bucketBlock {
 	tmpDir := tb.TempDir()
 	bucketDir := filepath.Join(tmpDir, "bkt")
 
@@ -1036,7 +1036,9 @@ type localBucket struct {
 	dir string
 }
 
-func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup []func(tb testing.TB, appenderFactory func() storage.Appender)) (_ ulid.ULID, minT int64, maxT int64) {
+type testBlockDataSetup = func(tb testing.TB, appenderFactory func() storage.Appender)
+
+func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup []testBlockDataSetup) (_ ulid.ULID, minT int64, maxT int64) {
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = tmpDir
 	headOpts.ChunkRange = 1000
@@ -1904,7 +1906,7 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 	tb, store, seriesSet1, seriesSet2, block1, block2, cleanup := setupStoreForHintsTest(t, 5000)
 	tb.Cleanup(cleanup)
 	for _, streamingBatchSize := range []int{0, 1, 5} {
-		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(*testing.T) {
 			runTestServerSeries(tb, store, streamingBatchSize, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
 		})
 	}
@@ -2038,6 +2040,90 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 	s, ok = grpcutil.ErrorToStatus(err)
 	assert.True(t, ok)
 	assert.Equal(t, codes.Canceled, s.Code())
+}
+
+func TestBucketStore_Series_TimeoutGate(t *testing.T) {
+	const (
+		maxConcurrent            = 1
+		maxConcurrentWaitTimeout = time.Millisecond
+	)
+	t.Parallel()
+	tmpDir := t.TempDir()
+	bktDir := filepath.Join(tmpDir, "bkt")
+	bkt, err := filesystem.NewBucket(bktDir)
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, bkt.Close()) }()
+
+	logger := log.NewNopLogger()
+	instrBkt := objstore.WithNoopInstr(bkt)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
+	assert.NoError(t, err)
+
+	_, blockMinT, blockMaxT := uploadTestBlock(t, tmpDir, instrBkt, []testBlockDataSetup{appendTestSeries(10000)})
+
+	store, err := NewBucketStore(
+		"test",
+		instrBkt,
+		fetcher,
+		tmpDir,
+		mimir_tsdb.BucketStoreConfig{
+			StreamingBatchSize:          1,
+			BlockSyncConcurrency:        10,
+			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+		},
+		selectAllStrategy{},
+		newStaticChunksLimiterFactory(0),
+		newStaticSeriesLimiterFactory(0),
+		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		hashcache.NewSeriesHashCache(1024*1024),
+		NewBucketStoreMetrics(nil),
+		WithLogger(logger),
+		WithQueryGate(timeoutGate{timeout: maxConcurrentWaitTimeout, delegate: gate.NewBlocking(maxConcurrent)}),
+	)
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
+	require.NoError(t, store.SyncBlocks(context.Background()))
+
+	req := &storepb.SeriesRequest{
+		MinTime: blockMinT,
+		MaxTime: blockMaxT,
+		Matchers: []storepb.LabelMatcher{
+			{Type: storepb.LabelMatcher_RE, Name: "i", Value: ".*"},
+		},
+	}
+
+	srv := newStoreGatewayTestServer(t, store)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	firstRequestStarted := make(chan struct{})
+
+	go func() {
+		// Start the first Series call, but do not read responses.
+		// This keeps the request in flight in the store-gateway.
+		conn, err := srv.dialConn()
+		assert.NoError(t, err)
+		defer conn.Close()
+		stream, err := srv.requestSeries(ctx, conn, req)
+		assert.NoError(t, err)
+
+		// Do a single read to be sure that the request is being processed in the server.
+		_, _ = stream.Recv()
+		close(firstRequestStarted)
+		<-ctx.Done()
+	}()
+
+	<-firstRequestStarted
+
+	// Start the second Series call. This should wait until the first request is done because
+	// of the concurrency limit. Because we've blocked the first request, the second request
+	// should eventually time out at the timeout gate.
+	_, _, _, _, err = srv.Series(ctx, req)
+	assert.Error(t, err)
+	s, ok := grpcutil.ErrorToStatus(err)
+	assert.True(t, ok, err)
+	assert.Len(t, s.Details(), 1, err)
+	assert.Equal(t, s.Details()[0].(*mimirpb.ErrorDetails).GetCause(), mimirpb.INSTANCE_LIMIT, err)
 }
 
 func TestBucketStore_Series_InvalidRequest(t *testing.T) {

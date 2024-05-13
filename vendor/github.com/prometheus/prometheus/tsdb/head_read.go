@@ -121,6 +121,10 @@ func (h *headIndexReader) Postings(ctx context.Context, name string, values ...s
 	}
 }
 
+func (h *headIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
+	return h.head.postings.PostingsForLabelMatching(ctx, name, match)
+}
+
 func (h *headIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
 	return h.head.pfmc.PostingsForMatchers(ctx, h, concurrent, ms...)
 }
@@ -595,17 +599,6 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm chunkDiskMapper, mint,
 	}
 
 	return mc, nil
-}
-
-var _ chunkenc.Iterable = &mergedOOOChunks{}
-
-// mergedOOOChunks holds the list of iterables for overlapping chunks.
-type mergedOOOChunks struct {
-	chunkIterables []chunkenc.Iterable
-}
-
-func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
-	return storage.ChainSampleIteratorFromIterables(iterator, o.chunkIterables)
 }
 
 var _ chunkenc.Iterable = &boundedIterable{}

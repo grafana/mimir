@@ -102,7 +102,7 @@ func (p *partiallyFailingSeriesSet) Warnings() annotations.Annotations {
 
 func TestSampledRemoteRead(t *testing.T) {
 	q := &mockSampleAndChunkQueryable{
-		queryableFn: func(mint, maxt int64) (storage.Querier, error) {
+		queryableFn: func(int64, int64) (storage.Querier, error) {
 			return mockQuerier{
 				seriesSet: series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
 					series.NewConcreteSeries(
@@ -326,7 +326,7 @@ func TestStreamedRemoteRead(t *testing.T) {
 	for tn, tc := range tcs {
 		t.Run(tn, func(t *testing.T) {
 			q := &mockSampleAndChunkQueryable{
-				chunkQueryableFn: func(mint, maxt int64) (storage.ChunkQuerier, error) {
+				chunkQueryableFn: func(int64, int64) (storage.ChunkQuerier, error) {
 					return mockChunkQuerier{
 						seriesSet: series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
 							series.NewConcreteSeries(
@@ -519,7 +519,7 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 		for tn, tc := range testCases {
 			t.Run(tn, func(t *testing.T) {
 				q := &mockSampleAndChunkQueryable{
-					queryableFn: func(mint, maxt int64) (storage.Querier, error) {
+					queryableFn: func(int64, int64) (storage.Querier, error) {
 						return mockQuerier{
 							seriesSet: tc.seriesSet,
 						}, tc.getQuerierErr
@@ -555,7 +555,7 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 		for tn, tc := range testCases {
 			t.Run(tn, func(t *testing.T) {
 				q := &mockSampleAndChunkQueryable{
-					chunkQueryableFn: func(mint, maxt int64) (storage.ChunkQuerier, error) {
+					chunkQueryableFn: func(int64, int64) (storage.ChunkQuerier, error) {
 						return mockChunkQuerier{
 							seriesSet: tc.seriesSet,
 						}, tc.getQuerierErr

@@ -11,43 +11,11 @@ package queryrange;
 option go_package = "querymiddleware";
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "google/protobuf/duration.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "google/protobuf/any.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
-
-message PrometheusRangeQueryRequest {
-  string path = 1;
-  int64 start = 2;
-  int64 end = 3;
-  int64 step = 4;
-  google.protobuf.Duration timeout = 5 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
-  string query = 6;
-  Options options = 7 [(gogoproto.nullable) = false];
-
-  // ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
-  int64 id = 8;
-
-  // Hints that could be optionally attached to the request to pass down the stack.
-  // These hints can be used to optimize the query execution.
-  Hints hints = 9 [(gogoproto.nullable) = true];
-}
-
-message PrometheusInstantQueryRequest {
-  string path = 1;
-  int64 time = 2;
-  string query = 3;
-  Options options = 4 [(gogoproto.nullable) = false];
-
-  // ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
-  int64 id = 5;
-
-  // Hints that could be optionally attached to the request to pass down the stack.
-  // These hints can be used to optimize the query execution.
-  Hints hints = 6 [(gogoproto.nullable) = true];
-}
 
 message PrometheusResponseHeader {
   string Name = 1 [(gogoproto.jsontag) = "-"];
@@ -101,17 +69,6 @@ message Options {
   bool InstantSplitDisabled = 4;
   // Instant split by time interval unit stored in nanoseconds (time.Duration unit in int64)
   int64 InstantSplitInterval = 5;
-}
-
-message Hints {
-  // Total number of queries that are expected to to be executed to serve the original request.
-  int32 TotalQueries = 1;
-  // Estimated total number of series that a request might return.
-  // This is a `oneof` instead of an `optional` because our tooling is on a version
-  // that does not yet support optional fields in proto3.
-  oneof CardinalityEstimate {
-    uint64 EstimatedSeriesCount = 2;
-  }
 }
 
 message QueryStatistics {

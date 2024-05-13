@@ -27,6 +27,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"golang.org/x/exp/slices"
 
@@ -62,17 +64,21 @@ const (
 	formatProtobuf = "protobuf"
 )
 
-// Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
+// Codec is used to encode/decode query requests and responses so they can be passed down to middlewares.
 type Codec interface {
 	Merger
-	// DecodeRequest decodes a Request from an http request.
-	DecodeRequest(context.Context, *http.Request) (Request, error)
+	// DecodeMetricsQueryRequest decodes a MetricsQueryRequest from an http request.
+	DecodeMetricsQueryRequest(context.Context, *http.Request) (MetricsQueryRequest, error)
+	// DecodeLabelsQueryRequest decodes a LabelsQueryRequest from an http request.
+	DecodeLabelsQueryRequest(context.Context, *http.Request) (LabelsQueryRequest, error)
 	// DecodeResponse decodes a Response from an http response.
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
-	DecodeResponse(context.Context, *http.Response, Request, log.Logger) (Response, error)
-	// EncodeRequest encodes a Request into an http request.
-	EncodeRequest(context.Context, Request) (*http.Request, error)
+	DecodeResponse(context.Context, *http.Response, MetricsQueryRequest, log.Logger) (Response, error)
+	// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
+	EncodeMetricsQueryRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
+	// EncodeLabelsQueryRequest encodes a LabelsQueryRequest into an http request.
+	EncodeLabelsQueryRequest(context.Context, LabelsQueryRequest) (*http.Request, error)
 	// EncodeResponse encodes a Response into an http response.
 	EncodeResponse(context.Context, *http.Request, Response) (*http.Response, error)
 }
@@ -83,10 +89,12 @@ type Merger interface {
 	MergeResponse(...Response) (Response, error)
 }
 
-// Request represents a query range request that can be process by middlewares.
-type Request interface {
-	// GetId returns the ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
-	GetId() int64
+// MetricsQueryRequest represents an instant or query range request that can be process by middlewares.
+type MetricsQueryRequest interface {
+	// GetID returns the ID of the request used to correlate downstream requests and responses.
+	GetID() int64
+	// GetPath returns the URL Path of the request
+	GetPath() string
 	// GetStart returns the start timestamp of the request in milliseconds.
 	GetStart() int64
 	// GetEnd returns the end timestamp of the request in milliseconds.
@@ -95,22 +103,58 @@ type Request interface {
 	GetStep() int64
 	// GetQuery returns the query of the request.
 	GetQuery() string
+	// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
+	// as determined from the start timestamp and any range vector or offset in the query.
+	GetMinT() int64
+	// GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
+	// as determined from the end timestamp and any offset in the query.
+	GetMaxT() int64
 	// GetOptions returns the options for the given request.
 	GetOptions() Options
 	// GetHints returns hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	GetHints() *Hints
 	// WithID clones the current request with the provided ID.
-	WithID(id int64) Request
+	WithID(id int64) MetricsQueryRequest
 	// WithStartEnd clone the current request with different start and end timestamp.
-	WithStartEnd(startTime int64, endTime int64) Request
-	// WithQuery clone the current request with a different query.
-	WithQuery(string) Request
+	// Implementations must ensure minT and maxT are recalculated when the start and end timestamp change.
+	WithStartEnd(startTime int64, endTime int64) MetricsQueryRequest
+	// WithQuery clones the current request with a different query; returns error if query parse fails.
+	// Implementations must ensure minT and maxT are recalculated when the query changes.
+	WithQuery(string) (MetricsQueryRequest, error)
+	// WithExpr clones the current `PrometheusRangeQueryRequest` with a new query expression.
+	// Implementations must ensure minT and maxT are recalculated when the query changes.
+	WithExpr(parser.Expr) MetricsQueryRequest
 	// WithTotalQueriesHint adds the number of total queries to this request's Hints.
-	WithTotalQueriesHint(int32) Request
+	WithTotalQueriesHint(int32) MetricsQueryRequest
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
-	WithEstimatedSeriesCountHint(uint64) Request
-	proto.Message
+	WithEstimatedSeriesCountHint(uint64) MetricsQueryRequest
+	// AddSpanTags writes information about this request to an OpenTracing span
+	AddSpanTags(opentracing.Span)
+}
+
+// LabelsQueryRequest represents a label names or values query request that can be process by middlewares.
+type LabelsQueryRequest interface {
+	// GetLabelName returns the label name param from a Label Values request `/api/v1/label/<label_name>/values`
+	// or an empty string for a Label Names request `/api/v1/labels`
+	GetLabelName() string
+	// GetStart returns the start timestamp of the request in milliseconds
+	GetStart() int64
+	// GetStartOrDefault returns the start timestamp of the request in milliseconds,
+	// or the Prometheus v1 API MinTime if no start timestamp was provided on the original request.
+	GetStartOrDefault() int64
+	// GetEnd returns the start timestamp of the request in milliseconds
+	GetEnd() int64
+	// GetEndOrDefault returns the end timestamp of the request in milliseconds,
+	// or the Prometheus v1 API MaxTime if no end timestamp was provided on the original request.
+	GetEndOrDefault() int64
+	// GetLabelMatcherSets returns the label matchers a.k.a series selectors for Prometheus label query requests,
+	// as retained in their original string format. This enables the request to be symmetrically decoded and encoded
+	// to and from the http request format without needing to undo the Prometheus parser converting between formats
+	// like `up{job="prometheus"}` and `{__name__="up, job="prometheus"}`, or other idiosyncrasies.
+	GetLabelMatcherSets() []string
+	// GetLimit returns the limit of the number of items in the response.
+	GetLimit() uint64
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(opentracing.Span)
 }
@@ -150,6 +194,7 @@ func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCode
 
 type prometheusCodec struct {
 	metrics                            *prometheusCodecMetrics
+	lookbackDelta                      time.Duration
 	preferredQueryResultResponseFormat string
 }
 
@@ -167,9 +212,14 @@ var knownFormats = []formatter{
 	protobufFormatter{},
 }
 
-func NewPrometheusCodec(registerer prometheus.Registerer, queryResultResponseFormat string) Codec {
+func NewPrometheusCodec(
+	registerer prometheus.Registerer,
+	lookbackDelta time.Duration,
+	queryResultResponseFormat string,
+) Codec {
 	return prometheusCodec{
 		metrics:                            newPrometheusCodecMetrics(registerer),
+		lookbackDelta:                      lookbackDelta,
 		preferredQueryResultResponseFormat: queryResultResponseFormat,
 	}
 }
@@ -217,54 +267,122 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	}, nil
 }
 
-func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Request, error) {
+func (c prometheusCodec) DecodeMetricsQueryRequest(_ context.Context, r *http.Request) (MetricsQueryRequest, error) {
 	switch {
 	case IsRangeQuery(r.URL.Path):
 		return c.decodeRangeQueryRequest(r)
 	case IsInstantQuery(r.URL.Path):
 		return c.decodeInstantQueryRequest(r)
 	default:
-		return nil, fmt.Errorf("prometheus codec doesn't support requests to %s", r.URL.Path)
+		return nil, fmt.Errorf("unknown metrics query API endpoint %s", r.URL.Path)
 	}
 }
 
-func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error) {
-	var result PrometheusRangeQueryRequest
-	var err error
-	result.Start, result.End, result.Step, err = DecodeRangeQueryTimeParams(r)
+func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	start, end, step, err := DecodeRangeQueryTimeParams(&reqValues)
 	if err != nil {
 		return nil, err
 	}
 
-	result.Query = r.FormValue("query")
-	result.Path = r.URL.Path
-	decodeOptions(r, &result.Options)
-	return &result, nil
+	query := reqValues.Get("query")
+	queryExpr, err := parser.ParseExpr(query)
+	if err != nil {
+		return nil, decorateWithParamName(err, "query")
+	}
+
+	var options Options
+	decodeOptions(r, &options)
+
+	req := NewPrometheusRangeQueryRequest(
+		r.URL.Path, start, end, step, c.lookbackDelta, queryExpr, options, nil,
+	)
+	return req, nil
 }
 
-func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, error) {
-	var result PrometheusInstantQueryRequest
-	var err error
-	result.Time, err = DecodeInstantQueryTimeParams(r, time.Now)
+func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	time, err := DecodeInstantQueryTimeParams(&reqValues, time.Now)
 	if err != nil {
 		return nil, decorateWithParamName(err, "time")
 	}
 
-	result.Query = r.FormValue("query")
-	result.Path = r.URL.Path
-	decodeOptions(r, &result.Options)
-	return &result, nil
+	query := reqValues.Get("query")
+	queryExpr, err := parser.ParseExpr(query)
+	if err != nil {
+		return nil, decorateWithParamName(err, "query")
+	}
+
+	var options Options
+	decodeOptions(r, &options)
+
+	req := NewPrometheusInstantQueryRequest(
+		r.URL.Path, time, c.lookbackDelta, queryExpr, options, nil,
+	)
+	return req, nil
+}
+
+func (prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Request) (LabelsQueryRequest, error) {
+	if !IsLabelsQuery(r.URL.Path) {
+		return nil, fmt.Errorf("unknown labels query API endpoint %s", r.URL.Path)
+	}
+
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+	start, end, err := DecodeLabelsQueryTimeParams(&reqValues, false)
+	if err != nil {
+		return nil, err
+	}
+
+	labelMatcherSets := reqValues["match[]"]
+
+	limit := uint64(0) // 0 means unlimited
+	if limitStr := reqValues.Get("limit"); limitStr != "" {
+		limit, err = strconv.ParseUint(limitStr, 10, 64)
+		if err != nil || limit == 0 {
+			return nil, apierror.New(apierror.TypeBadData, fmt.Sprintf("limit parameter must be a positive number: %s", limitStr))
+		}
+	}
+
+	if IsLabelNamesQuery(r.URL.Path) {
+		return &PrometheusLabelNamesQueryRequest{
+			Path:             r.URL.Path,
+			Start:            start,
+			End:              end,
+			LabelMatcherSets: labelMatcherSets,
+			Limit:            limit,
+		}, nil
+	}
+	// else, must be Label Values Request due to IsLabelsQuery check at beginning of func
+	return &PrometheusLabelValuesQueryRequest{
+		Path:             r.URL.Path,
+		LabelName:        labelValuesPathSuffix.FindStringSubmatch(r.URL.Path)[1],
+		Start:            start,
+		End:              end,
+		LabelMatcherSets: labelMatcherSets,
+		Limit:            limit,
+	}, nil
 }
 
 // DecodeRangeQueryTimeParams encapsulates Prometheus instant query time param parsing,
 // emulating the logic in prometheus/prometheus/web/api/v1#API.query_range.
-func DecodeRangeQueryTimeParams(r *http.Request) (start, end, step int64, err error) {
-	start, err = util.ParseTime(r.FormValue("start"))
+func DecodeRangeQueryTimeParams(reqValues *url.Values) (start, end, step int64, err error) {
+	start, err = util.ParseTime(reqValues.Get("start"))
 	if err != nil {
 		return 0, 0, 0, decorateWithParamName(err, "start")
 	}
 
-	end, err = util.ParseTime(r.FormValue("end"))
+	end, err = util.ParseTime(reqValues.Get("end"))
 	if err != nil {
 		return 0, 0, 0, decorateWithParamName(err, "end")
 	}
@@ -273,7 +391,7 @@ func DecodeRangeQueryTimeParams(r *http.Request) (start, end, step int64, err er
 		return 0, 0, 0, errEndBeforeStart
 	}
 
-	step, err = parseDurationMs(r.FormValue("step"))
+	step, err = parseDurationMs(reqValues.Get("step"))
 	if err != nil {
 		return 0, 0, 0, decorateWithParamName(err, "step")
 	}
@@ -293,32 +411,70 @@ func DecodeRangeQueryTimeParams(r *http.Request) (start, end, step int64, err er
 
 // DecodeInstantQueryTimeParams encapsulates Prometheus instant query time param parsing,
 // emulating the logic in prometheus/prometheus/web/api/v1#API.query.
-func DecodeInstantQueryTimeParams(r *http.Request, now func() time.Time) (int64, error) {
-	time, err := util.ParseTimeParam(r, "time", now().UnixMilli())
-	if err != nil {
-		return 0, decorateWithParamName(err, "time")
+func DecodeInstantQueryTimeParams(reqValues *url.Values, defaultNow func() time.Time) (time int64, err error) {
+	timeVal := reqValues.Get("time")
+	if timeVal == "" {
+		time = defaultNow().UnixMilli()
+	} else {
+		time, err = util.ParseTime(timeVal)
+		if err != nil {
+			return 0, decorateWithParamName(err, "time")
+		}
 	}
-	return time, nil
+
+	return time, err
 }
 
-// DecodeLabelsQueryTimeParams encapsulates Prometheus label names query time param parsing,
+// DecodeLabelsQueryTimeParams encapsulates Prometheus label names and label values query time param parsing,
 // emulating the logic in prometheus/prometheus/web/api/v1#API.labelNames and v1#API.labelValues.
-func DecodeLabelsQueryTimeParams(r *http.Request) (start, end int64, err error) {
-	start, err = util.ParseTimeParam(r, "start", v1.MinTime.UnixMilli())
-	if err != nil {
-		return 0, 0, decorateWithParamName(err, "start")
+//
+// Setting `usePromDefaults` true will set missing timestamp params to the Prometheus default
+// min and max query timestamps; false will default to 0 for missing timestamp params.
+func DecodeLabelsQueryTimeParams(reqValues *url.Values, usePromDefaults bool) (start, end int64, err error) {
+	var defaultStart, defaultEnd int64
+	if usePromDefaults {
+		defaultStart = v1.MinTime.UnixMilli()
+		defaultEnd = v1.MaxTime.UnixMilli()
 	}
 
-	end, err = util.ParseTimeParam(r, "end", v1.MaxTime.UnixMilli())
-	if err != nil {
-		return 0, 0, decorateWithParamName(err, "end")
+	startVal := reqValues.Get("start")
+	if startVal == "" {
+		start = defaultStart
+	} else {
+		start, err = util.ParseTime(startVal)
+		if err != nil {
+			return 0, 0, decorateWithParamName(err, "start")
+		}
 	}
 
-	if end < start {
+	endVal := reqValues.Get("end")
+	if endVal == "" {
+		end = defaultEnd
+	} else {
+		end, err = util.ParseTime(endVal)
+		if err != nil {
+			return 0, 0, decorateWithParamName(err, "end")
+		}
+	}
+
+	if endVal != "" && end < start {
 		return 0, 0, errEndBeforeStart
 	}
 
-	return start, end, nil
+	return start, end, err
+}
+
+func decodeQueryMinMaxTime(queryExpr parser.Expr, start, end, step int64, lookbackDelta time.Duration) (minTime, maxTime int64) {
+	evalStmt := &parser.EvalStmt{
+		Expr:          queryExpr,
+		Start:         util.TimeFromMillis(start),
+		End:           util.TimeFromMillis(end),
+		Interval:      time.Duration(step) * time.Millisecond,
+		LookbackDelta: lookbackDelta,
+	}
+
+	minTime, maxTime = promql.FindMinMaxTime(evalStmt)
+	return minTime, maxTime
 }
 
 func decodeOptions(r *http.Request, opts *Options) {
@@ -358,27 +514,28 @@ func decodeCacheDisabledOption(r *http.Request) bool {
 	return false
 }
 
-func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Request, error) {
+func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequest) (*http.Request, error) {
 	var u *url.URL
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		u = &url.URL{
-			Path: r.Path,
+			Path: r.GetPath(),
 			RawQuery: url.Values{
-				"start": []string{encodeTime(r.Start)},
-				"end":   []string{encodeTime(r.End)},
-				"step":  []string{encodeDurationMs(r.Step)},
-				"query": []string{r.Query},
+				"start": []string{encodeTime(r.GetStart())},
+				"end":   []string{encodeTime(r.GetEnd())},
+				"step":  []string{encodeDurationMs(r.GetStep())},
+				"query": []string{r.GetQuery()},
 			}.Encode(),
 		}
 	case *PrometheusInstantQueryRequest:
 		u = &url.URL{
-			Path: r.Path,
+			Path: r.GetPath(),
 			RawQuery: url.Values{
-				"time":  []string{encodeTime(r.Time)},
-				"query": []string{r.Query},
+				"time":  []string{encodeTime(r.GetTime())},
+				"query": []string{r.GetQuery()},
 			}.Encode(),
 		}
+
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", r)
 	}
@@ -409,6 +566,76 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 	return req.WithContext(ctx), nil
 }
 
+func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req LabelsQueryRequest) (*http.Request, error) {
+	var u *url.URL
+	switch req := req.(type) {
+	case *PrometheusLabelNamesQueryRequest:
+		urlValues := url.Values{}
+		if req.GetStart() != 0 {
+			urlValues["start"] = []string{encodeTime(req.Start)}
+		}
+		if req.GetEnd() != 0 {
+			urlValues["end"] = []string{encodeTime(req.End)}
+		}
+		if len(req.GetLabelMatcherSets()) > 0 {
+			urlValues["match[]"] = req.GetLabelMatcherSets()
+		}
+		if req.GetLimit() > 0 {
+			urlValues["limit"] = []string{strconv.FormatUint(req.GetLimit(), 10)}
+		}
+		u = &url.URL{
+			Path:     req.Path,
+			RawQuery: urlValues.Encode(),
+		}
+	case *PrometheusLabelValuesQueryRequest:
+		// repeated from PrometheusLabelNamesQueryRequest case; Go type cast switch
+		// does not support accessing struct members on a typeA|typeB switch
+		urlValues := url.Values{}
+		if req.GetStart() != 0 {
+			urlValues["start"] = []string{encodeTime(req.Start)}
+		}
+		if req.GetEnd() != 0 {
+			urlValues["end"] = []string{encodeTime(req.End)}
+		}
+		if len(req.GetLabelMatcherSets()) > 0 {
+			urlValues["match[]"] = req.GetLabelMatcherSets()
+		}
+		if req.GetLimit() > 0 {
+			urlValues["limit"] = []string{strconv.FormatUint(req.GetLimit(), 10)}
+		}
+		u = &url.URL{
+			Path:     req.Path, // path still contains label name
+			RawQuery: urlValues.Encode(),
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported request type %T", req)
+	}
+
+	r := &http.Request{
+		Method:     "GET",
+		RequestURI: u.String(), // This is what the httpgrpc code looks at.
+		URL:        u,
+		Body:       http.NoBody,
+		Header:     http.Header{},
+	}
+
+	switch c.preferredQueryResultResponseFormat {
+	case formatJSON:
+		r.Header.Set("Accept", jsonMimeType)
+	case formatProtobuf:
+		r.Header.Set("Accept", mimirpb.QueryResponseMimeType+","+jsonMimeType)
+	default:
+		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
+	}
+
+	if consistency, ok := api.ReadConsistencyFromContext(ctx); ok {
+		r.Header.Add(api.ReadConsistencyHeader, consistency)
+	}
+
+	return r.WithContext(ctx), nil
+}
+
 func encodeOptions(req *http.Request, o Options) {
 	if o.CacheDisabled {
 		req.Header.Set(cacheControlHeader, noStoreValue)
@@ -427,7 +654,7 @@ func encodeOptions(req *http.Request, o Options) {
 	}
 }
 
-func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
+func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ MetricsQueryRequest, logger log.Logger) (Response, error) {
 	switch r.StatusCode {
 	case http.StatusServiceUnavailable:
 		return nil, apierror.New(apierror.TypeUnavailable, string(mustReadResponseBody(r)))

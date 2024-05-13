@@ -665,6 +665,7 @@ func (h *Head) Init(minValidTime int64) error {
 	refSeries := make(map[chunks.HeadSeriesRef]*memSeries)
 
 	snapshotLoaded := false
+	var chunkSnapshotLoadDuration time.Duration
 	if h.opts.EnableMemorySnapshotOnShutdown {
 		level.Info(h.logger).Log("msg", "Chunk snapshot is enabled, replaying from the snapshot")
 		// If there are any WAL files, there should be at least one WAL file with an index that is current or newer
@@ -695,7 +696,8 @@ func (h *Head) Init(minValidTime int64) error {
 			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
 			if err == nil {
 				snapshotLoaded = true
-				level.Info(h.logger).Log("msg", "Chunk snapshot loading time", "duration", time.Since(start).String())
+				chunkSnapshotLoadDuration = time.Since(start)
+				level.Info(h.logger).Log("msg", "Chunk snapshot loading time", "duration", chunkSnapshotLoadDuration.String())
 			}
 			if err != nil {
 				snapIdx, snapOffset = -1, 0
@@ -717,6 +719,8 @@ func (h *Head) Init(minValidTime int64) error {
 		oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk
 		lastMmapRef      chunks.ChunkDiskMapperRef
 		err              error
+
+		mmapChunkReplayDuration time.Duration
 	)
 	if snapshotLoaded || h.wal != nil {
 		// If snapshot was not loaded and if there is no WAL, then m-map chunks will be discarded
@@ -740,7 +744,8 @@ func (h *Head) Init(minValidTime int64) error {
 				return err
 			}
 		}
-		level.Info(h.logger).Log("msg", "On-disk memory mappable chunks replay completed", "duration", time.Since(mmapChunkReplayStart).String())
+		mmapChunkReplayDuration = time.Since(mmapChunkReplayStart)
+		level.Info(h.logger).Log("msg", "On-disk memory mappable chunks replay completed", "duration", mmapChunkReplayDuration.String())
 	}
 
 	if h.wal == nil {
@@ -862,6 +867,8 @@ func (h *Head) Init(minValidTime int64) error {
 		"checkpoint_replay_duration", checkpointReplayDuration.String(),
 		"wal_replay_duration", walReplayDuration.String(),
 		"wbl_replay_duration", wblReplayDuration.String(),
+		"chunk_snapshot_load_duration", chunkSnapshotLoadDuration.String(),
+		"mmap_chunk_replay_duration", mmapChunkReplayDuration.String(),
 		"total_replay_duration", totalReplayDuration.String(),
 	)
 
@@ -1119,11 +1126,11 @@ func (h *Head) SetMinValidTime(minValidTime int64) {
 
 // Truncate removes old data before mint from the head and WAL.
 func (h *Head) Truncate(mint int64) (err error) {
-	uninitialized := h.isUninitialized()
+	initialized := h.initialized()
 	if err := h.truncateMemory(mint); err != nil {
 		return err
 	}
-	if uninitialized {
+	if !initialized {
 		return nil
 	}
 	return h.truncateWAL(mint)
@@ -1145,9 +1152,9 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 		}
 	}()
 
-	uninitialized := h.isUninitialized()
+	initialized := h.initialized()
 
-	if h.MinTime() >= mint && !uninitialized {
+	if h.MinTime() >= mint && initialized {
 		return nil
 	}
 
@@ -1158,7 +1165,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	defer h.memTruncationInProcess.Store(false)
 
 	// We wait for pending queries to end that overlap with this truncation.
-	if !uninitialized {
+	if initialized {
 		h.WaitForPendingReadersInTimeRange(h.MinTime(), mint)
 	}
 
@@ -1172,7 +1179,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 
 	// This was an initial call to Truncate after loading blocks on startup.
 	// We haven't read back the WAL yet, so do not attempt to truncate it.
-	if uninitialized {
+	if !initialized {
 		return nil
 	}
 
@@ -1660,9 +1667,9 @@ func (h *Head) MaxOOOTime() int64 {
 	return h.maxOOOTime.Load()
 }
 
-// isUninitialized returns true if the head does not yet have a MinTime or MaxTime set, false otherwise.
-func (h *Head) isUninitialized() bool {
-	return h.MinTime() == math.MaxInt64 || h.MaxTime() == math.MinInt64
+// initialized returns true if the head has a MinTime set, false otherwise.
+func (h *Head) initialized() bool {
+	return h.MinTime() != math.MaxInt64
 }
 
 // compactable returns whether the head has a compactable range.
@@ -1670,7 +1677,7 @@ func (h *Head) isUninitialized() bool {
 // Else the head has a compactable range when the head time range is 1.5 times the chunk range.
 // The 0.5 acts as a buffer of the appendable window.
 func (h *Head) compactable() bool {
-	if h.isUninitialized() {
+	if !h.initialized() {
 		return false
 	}
 
@@ -2374,35 +2381,63 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 	h.stats.WALReplayStatus.Current = current
 }
 
-// ForEachSecondaryHash iterates over all series in the Head, and passes secondary hashes of the series
-// to the function. Function is called with batch of hashes, in no specific order. Hash for each series
-// in the head is included exactly once. Series for corresponding hash may be deleted while the function
-// is running, and series inserted while this function runs may be reported or ignored.
+// ForEachSecondaryHash iterates over all series in the Head, and passes references and secondary hashes of the series
+// to the function. Function is called with batch of refs and hashes, in no specific order. The order of the refs
+// in the same as the order of the hashes. Each series in the head is included exactly once.
+// Series may be deleted while the function is running, and series inserted while this function runs may be reported or ignored.
 //
 // No locks are held when function is called.
 //
-// Slice of hashes passed to the function is reused between calls.
-func (h *Head) ForEachSecondaryHash(fn func(secondaryHash []uint32)) {
-	buf := make([]uint32, 512)
+// Slices passed to the function are reused between calls.
+func (h *Head) ForEachSecondaryHash(fn func(ref []chunks.HeadSeriesRef, secondaryHash []uint32)) {
+	slices := newPairOfSlices[chunks.HeadSeriesRef, uint32](512)
 
 	for i := 0; i < h.series.size; i++ {
-		buf = buf[:0]
+		slices = slices.reset()
 
 		h.series.locks[i].RLock()
 		for _, s := range h.series.hashes[i].unique {
 			// No need to lock series lock, as we're only accessing its immutable secondary hash.
-			buf = append(buf, s.secondaryHash)
+			slices = slices.append(s.ref, s.secondaryHash)
 		}
 		for _, all := range h.series.hashes[i].conflicts {
 			for _, s := range all {
 				// No need to lock series lock, as we're only accessing its immutable secondary hash.
-				buf = append(buf, s.secondaryHash)
+				slices = slices.append(s.ref, s.secondaryHash)
 			}
 		}
 		h.series.locks[i].RUnlock()
 
-		if len(buf) > 0 {
-			fn(buf)
+		if slices.len() > 0 {
+			fn(slices.slice1, slices.slice2)
 		}
 	}
+}
+
+type pairOfSlices[T1, T2 any] struct {
+	slice1 []T1
+	slice2 []T2
+}
+
+func newPairOfSlices[T1, T2 any](length int) pairOfSlices[T1, T2] {
+	return pairOfSlices[T1, T2]{
+		slice1: make([]T1, length),
+		slice2: make([]T2, length),
+	}
+}
+
+func (p pairOfSlices[T1, T2]) reset() pairOfSlices[T1, T2] {
+	p.slice1 = p.slice1[:0]
+	p.slice2 = p.slice2[:0]
+	return p
+}
+
+func (p pairOfSlices[T1, T2]) append(t1 T1, t2 T2) pairOfSlices[T1, T2] {
+	p.slice1 = append(p.slice1, t1)
+	p.slice2 = append(p.slice2, t2)
+	return p
+}
+
+func (p pairOfSlices[T1, T2]) len() int {
+	return len(p.slice1)
 }

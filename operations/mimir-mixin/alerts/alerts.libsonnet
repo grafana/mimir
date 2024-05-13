@@ -34,10 +34,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
           // Note if alert_aggregation_labels is "job", this will repeat the label. But
           // prometheus seems to tolerate that.
           expr: |||
-            100 * sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",route!~"%(excluded_routes)s"}[%(range_interval)s]))
+            # The following 5xx errors considered as non-error:
+            # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
+            # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
+            (
+              sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",status_code!~"529|598",route!~"%(excluded_routes)s"}[%(range_interval)s]))
               /
-            sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{route!~"%(excluded_routes)s"}[%(range_interval)s]))
-              > 1
+              sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{route!~"%(excluded_routes)s"}[%(range_interval)s]))
+            ) * 100 > 1
           ||| % {
             group_by: $._config.alert_aggregation_labels,
             job_label: $._config.per_job_label,
@@ -76,26 +80,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           annotations: {
             message: |||
               {{ $labels.%(per_job_label)s }} {{ $labels.route }} is experiencing {{ printf "%%.2f" $value }}s 99th percentile latency.
-            ||| % $._config,
-          },
-        },
-        {
-          alert: $.alertName('QueriesIncorrect'),
-          expr: |||
-            100 * sum by (%(group_by)s) (rate(test_exporter_test_case_result_total{result="fail"}[%(range_interval)s]))
-              /
-            sum by (%(group_by)s) (rate(test_exporter_test_case_result_total[%(range_interval)s])) > 1
-          ||| % {
-            group_by: $._config.alert_aggregation_labels,
-            range_interval: $.alertRangeInterval(5),
-          },
-          'for': '15m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              The %(product)s cluster %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% incorrect query results.
             ||| % $._config,
           },
         },

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/go-kit/log"
@@ -16,7 +15,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -35,7 +33,7 @@ type tenantCacheTTL interface {
 	ttl(userID string) time.Duration
 }
 
-type keyingFunc func(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
+type keyingFunc func(r *http.Request) (*GenericQueryCacheKey, error)
 
 // genericQueryCache is a http.RoundTripped wrapping the downstream with a generic HTTP response cache.
 type genericQueryCache struct {
@@ -83,15 +81,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 		return c.next.RoundTrip(req)
 	}
 
-	// Decode the request.
-	reqValues, err := util.ParseRequestFormWithoutConsumingBody(req)
-	if err != nil {
-		// This is considered a non-recoverable error, so we return error instead of passing
-		// the request to the downstream.
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
-	}
-
-	queryReq, err := c.cacheKey(ctx, req.URL.Path, reqValues)
+	queryReq, err := c.cacheKey(req)
 	if err != nil {
 		if !errors.Is(err, ErrUnsupportedRequest) {
 			// Logging as info because it's not an actionable error here.
@@ -135,7 +125,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 
 func (c *genericQueryCache) fetchCachedResponse(ctx context.Context, cacheKey, hashedCacheKey string) *http.Response {
 	// Look up the cache.
-	cacheHits := c.cache.Fetch(ctx, []string{hashedCacheKey})
+	cacheHits := c.cache.GetMulti(ctx, []string{hashedCacheKey})
 	if cacheHits[hashedCacheKey] == nil {
 		// Not found in the cache.
 		return nil
@@ -166,7 +156,7 @@ func (c *genericQueryCache) storeCachedResponse(ctx context.Context, cachedRes *
 		return
 	}
 	toStore := map[string][]byte{hashedCacheKey: encoded}
-	c.cache.StoreAsync(toStore, cacheTTL)
+	c.cache.SetMultiAsync(toStore, cacheTTL)
 	c.recordCacheStoreQueryDetails(ctx, toStore)
 }
 

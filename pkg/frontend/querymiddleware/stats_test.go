@@ -23,7 +23,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 	const tenantID = "test"
 	type args struct {
 		ctx context.Context
-		req Request
+		req MetricsQueryRequest
 	}
 	tests := []struct {
 		name                 string
@@ -35,11 +35,11 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			name: "happy path",
 			args: args{
 				req: &PrometheusRangeQueryRequest{
-					Path:  "/query_range",
-					Start: util.TimeToMillis(start),
-					End:   util.TimeToMillis(end),
-					Step:  step.Milliseconds(),
-					Query: `sum(sum_over_time(metric{app="test",namespace=~"short"}[5m]))`,
+					path:      "/query_range",
+					start:     util.TimeToMillis(start),
+					end:       util.TimeToMillis(end),
+					step:      step.Milliseconds(),
+					queryExpr: parseQuery(t, `sum(sum_over_time(metric{app="test",namespace=~"short"}[5m]))`),
 				},
 			},
 			expectedMetrics: strings.NewReader(`
@@ -63,46 +63,15 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			},
 		},
 		{
-			name: "parseExpr failed",
-			args: args{
-				req: &PrometheusRangeQueryRequest{
-					Path:  "/query_range",
-					Start: util.TimeToMillis(start),
-					End:   util.TimeToMillis(end),
-					Step:  step.Milliseconds(),
-					Query: `?`,
-				},
-			},
-			expectedMetrics: strings.NewReader(`
-			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
-			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
-			cortex_query_frontend_non_step_aligned_queries_total 1
-			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_count counter
-			cortex_query_frontend_regexp_matcher_count 0
-			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
-			cortex_query_frontend_regexp_matcher_optimized_count 0
-			`),
-			expectedQueryDetails: QueryDetails{
-				QuerierStats: &querier_stats.Stats{},
-				Start:        start.Truncate(time.Millisecond),
-				End:          end.Truncate(time.Millisecond),
-				MinT:         time.Time{}, // empty because the query is invalid
-				MaxT:         time.Time{}, // empty because the query is invalid
-				Step:         step,
-			},
-		},
-		{
 			name: "explicit consistency",
 			args: args{
 				ctx: querierapi.ContextWithReadConsistency(context.Background(), querierapi.ReadConsistencyStrong),
 				req: &PrometheusRangeQueryRequest{
-					Path:  "/query_range",
-					Start: util.TimeToMillis(start),
-					End:   util.TimeToMillis(end),
-					Step:  step.Milliseconds(),
-					Query: `sum(sum_over_time(metric{app="test",namespace=~"short"}[5m]))`,
+					path:      "/query_range",
+					start:     util.TimeToMillis(start),
+					end:       util.TimeToMillis(end),
+					step:      step.Milliseconds(),
+					queryExpr: parseQuery(t, `sum(sum_over_time(metric{app="test",namespace=~"short"}[5m]))`),
 				},
 			},
 			expectedMetrics: strings.NewReader(`

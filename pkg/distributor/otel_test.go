@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/require"
@@ -54,7 +53,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	}
 	exportReq := TimeseriesToOTLPRequest(sampleSeries, sampleMetadata)
 
-	pushFunc := func(ctx context.Context, pushReq *Request) error {
+	pushFunc := func(_ context.Context, pushReq *Request) error {
 		if _, err := pushReq.WriteRequest(); err != nil {
 			return err
 		}
@@ -67,7 +66,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
 	)
 	require.NoError(b, err)
-	handler := OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, prometheus.NewPedanticRegistry(), pushFunc, log.NewNopLogger())
+	handler := OTLPHandler(100000, nil, nil, false, true, limits, RetryConfig{}, pushFunc, nil, nil, log.NewNopLogger())
 
 	b.Run("protobuf", func(b *testing.B) {
 		req := createOTLPProtoRequest(b, exportReq, false)

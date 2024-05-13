@@ -8,7 +8,7 @@ metadata:
     {{- toYaml .Values.distributor.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.distributor.kedaAutoscaling.enabled }}
+  {{- if or (not .Values.distributor.kedaAutoscaling.enabled) (.Values.distributor.kedaAutoscaling.preserveReplicas) }}
   # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
   {{- if or (or (kindIs "int64" .Values.distributor.replicas) (kindIs "float64" .Values.distributor.replicas)) (.Values.distributor.replicas) }}
   replicas: {{ .Values.distributor.replicas }}
@@ -72,6 +72,9 @@ spec:
           volumeMounts:
             {{- if .Values.distributor.extraVolumeMounts }}
               {{ toYaml .Values.distributor.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -157,9 +160,12 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
-{{- if .Values.distributor.extraVolumes }}
-{{ toYaml .Values.distributor.extraVolumes | indent 8}}
-{{- end }}
+        {{- if .Values.distributor.extraVolumes }}
+        {{- toYaml .Values.distributor.extraVolumes | nindent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{- toYaml .Values.global.extraVolumes | nindent 8}}
+        {{- end }}
         - name: storage
           emptyDir: {}
         - name: active-queries

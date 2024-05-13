@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/server"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
@@ -189,8 +191,64 @@ func TestApiGzip(t *testing.T) {
 		})
 	}
 
-	t.Run("compressed with gzip", func(t *testing.T) {
+	t.Run("compressed with gzip", func(*testing.T) {
 	})
+}
+
+type MockIngester struct {
+	Ingester
+}
+
+func (mi MockIngester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func TestApiIngesterShutdown(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		setFlag            bool
+		expectedStatusCode int
+	}{
+		{
+			name:               "flag set to true, enable GET request for ingester shutdown",
+			setFlag:            true,
+			expectedStatusCode: http.StatusNoContent,
+		},
+		{
+			name:               "flag not set (default), disable GET request for ingester shutdown",
+			setFlag:            false,
+			expectedStatusCode: http.StatusMethodNotAllowed,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{
+				GETRequestForIngesterShutdownEnabled: tc.setFlag,
+			}
+			serverCfg := getServerConfig(t)
+			federationCfg := tenantfederation.Config{}
+			srv, err := server.New(serverCfg)
+			require.NoError(t, err)
+
+			go func() { _ = srv.Run() }()
+			t.Cleanup(srv.Stop)
+
+			api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger())
+			require.NoError(t, err)
+
+			api.RegisterIngester(&MockIngester{})
+
+			req := httptest.NewRequest("GET", "/ingester/shutdown", nil)
+			w := httptest.NewRecorder()
+			api.server.HTTP.ServeHTTP(w, req)
+			require.Equal(t, tc.expectedStatusCode, w.Code)
+
+			// for POST request, it should always return 204
+			req = httptest.NewRequest("POST", "/ingester/shutdown", nil)
+			w = httptest.NewRecorder()
+			api.server.HTTP.ServeHTTP(w, req)
+			require.Equal(t, http.StatusNoContent, w.Code)
+		})
+	}
 }
 
 // Generates server config, with gRPC listening on random port.
@@ -206,6 +264,9 @@ func getServerConfig(t *testing.T) server.Config {
 		GRPCListenPort:    grpcPortNum,
 
 		GRPCServerMaxRecvMsgSize: 1024,
+
+		// Use new registry to avoid using default one and panic due to duplicate metrics.
+		Registerer: prometheus.NewPedanticRegistry(),
 	}
 	require.NoError(t, cfg.LogLevel.Set("info"))
 	return cfg

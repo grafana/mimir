@@ -48,6 +48,7 @@ import (
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -135,6 +136,7 @@ type Config struct {
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
+	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
 	Common CommonConfig `yaml:"common"`
@@ -192,6 +194,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
+	c.ContinuousTest.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
 
 	c.Common.RegisterFlags(f)
@@ -265,7 +268,14 @@ func (c *Config) Validate(log log.Logger) error {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
 	if err := c.Ingester.Validate(log); err != nil {
-		return errors.Wrap(err, "invalid ingester config")
+		// We check for "ingester" module here because, as of today, its config has a special mode, that assumes
+		// passing a unique set of per instance flags, e.g. "-ingester.ring.instance-id".
+		// Such a scenario breaks the validation of other modules if those flags aren't also passed to each instance (ref
+		// grafana/mimir#7822). Otherwise, log the fact and move on.
+		if c.isAnyModuleEnabled(Ingester, Write, All) || !errors.Is(err, ingester.ErrSpreadMinimizingValidation) {
+			return errors.Wrap(err, "invalid ingester config")
+		}
+		level.Debug(log).Log("ingester config is invalid; moving on because the \"ingester\" module is not in this process's targets", "err", err.Error())
 	}
 	if err := c.Worker.Validate(); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")
@@ -706,7 +716,7 @@ type Mimir struct {
 	QuerierQueryable              prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable             prom_storage.ExemplarQueryable
 	MetadataSupplier              querier.MetadataSupplier
-	QuerierEngine                 *promql.Engine
+	QuerierEngine                 promql.QueryEngine
 	QueryFrontendTripperware      querymiddleware.Tripperware
 	QueryFrontendCodec            querymiddleware.Codec
 	Ruler                         *ruler.Ruler
@@ -720,6 +730,7 @@ type Mimir struct {
 	ActivityTracker               *activitytracker.ActivityTracker
 	Vault                         *vault.Vault
 	UsageStatsReporter            *usagestats.Reporter
+	ContinuousTestManager         *continuoustest.Manager
 	BuildInfoHandler              http.Handler
 }
 
@@ -754,6 +765,10 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
 		})
+
+	// Do not allow to configure potentially unsafe options until we've properly tested them in Mimir.
+	// These configuration options are hidden in the auto-generated documentation (see pkg/util/configdoc).
+	cfg.Server.GRPCServerRecvBufferPoolsEnabled = false
 
 	// Inject the registerer in the Server config too.
 	cfg.Server.Registerer = reg
@@ -812,6 +827,7 @@ func (t *Mimir) setupObjstoreTracing() {
 // Run starts Mimir running, and blocks until a Mimir stops.
 func (t *Mimir) Run() error {
 	mimirpb.TimeseriesUnmarshalCachingEnabled = t.Cfg.TimeseriesUnmarshalCachingOptimizationEnabled
+	defer util_log.Flush()
 
 	// Register custom process metrics.
 	if c, err := process.NewProcessCollector(); err == nil {

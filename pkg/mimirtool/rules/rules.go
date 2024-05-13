@@ -157,7 +157,7 @@ func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.Ru
 // exprNodeInspectorFunc returns a PromQL inspector.
 // It modifies most PromQL expressions to include a given label.
 func exprNodeInspectorFunc(rule rulefmt.RuleNode, label string) func(node parser.Node, path []parser.Node) error {
-	return func(node parser.Node, path []parser.Node) error {
+	return func(node parser.Node, _ []parser.Node) error {
 		var err error
 		switch n := node.(type) {
 		case *parser.AggregateExpr:
@@ -204,8 +204,15 @@ func prepareBinaryExpr(e *parser.BinaryExpr, label string, rule string) error {
 		return nil
 	}
 
+	// Skip if the aggregation label is already present in the on() clause.
 	for _, lbl := range e.VectorMatching.MatchingLabels {
-		// It already has the label we want to add in the expression.
+		if lbl == label {
+			return nil
+		}
+	}
+
+	// Skip if the aggregation label is already present in the group_left/right() clause.
+	for _, lbl := range e.VectorMatching.Include {
 		if lbl == label {
 			return nil
 		}

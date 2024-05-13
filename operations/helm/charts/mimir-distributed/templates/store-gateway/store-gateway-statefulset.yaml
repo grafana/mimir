@@ -112,6 +112,9 @@ spec:
         {{- if .Values.store_gateway.extraVolumes }}
         {{ toYaml .Values.store_gateway.extraVolumes | nindent 8 }}
         {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8 }}
+        {{- end }}
         - name: active-queries
           emptyDir: {}
       containers:
@@ -139,6 +142,9 @@ spec:
           volumeMounts:
             {{- if .Values.store_gateway.extraVolumeMounts }}
             {{ toYaml .Values.store_gateway.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+            {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
               mountPath: /etc/mimir
