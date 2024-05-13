@@ -835,6 +835,14 @@ func (s seriesIteratorStrategy) isNoChunkRefsAndOverlapMintMaxt() bool {
 	return s.isNoChunkRefs() && s.isOverlapMintMaxt()
 }
 
+func (s seriesIteratorStrategy) withNoChunkRefs() seriesIteratorStrategy {
+	return s | noChunkRefs
+}
+
+func (s seriesIteratorStrategy) withoutNoChunkRefs() seriesIteratorStrategy {
+	return s & ^noChunkRefs
+}
+
 func newLoadingSeriesChunkRefsSetIterator(
 	ctx context.Context,
 	postingsSetIterator *postingsSetsIterator,
@@ -852,6 +860,11 @@ func newLoadingSeriesChunkRefsSetIterator(
 ) *loadingSeriesChunkRefsSetIterator {
 	if strategy.isOnEntireBlock() {
 		minTime, maxTime = blockMeta.MinTime, blockMeta.MaxTime
+	}
+	if strategy.isForChunksStreaming() {
+		// Assume we don't want chunk refs on the first pass through the iterator.
+		// If it turns out there's only one batch of series, we'll re-enable loading chunk refs in Next() below.
+		strategy = strategy.withNoChunkRefs()
 	}
 	return &loadingSeriesChunkRefsSetIterator{
 		ctx:                 ctx,
@@ -884,6 +897,13 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 		// If the first batch of postings had series, but they've all been filtered out, then we are done.
 		return s.currentSet.len() != 0
+	}
+
+	if s.strategy.isForChunksStreaming() {
+		if s.postingsSetIterator.IsFirstAndOnlyBatch() {
+			// We must load chunk refs on our first pass.
+			s.strategy = s.strategy.withoutNoChunkRefs()
+		}
 	}
 
 	defer func(startTime time.Time) {
@@ -1159,11 +1179,8 @@ func (s *loadingSeriesChunkRefsSetIterator) Reset() {
 
 	s.postingsSetIterator.Reset()
 
-	s.strategy = defaultStrategy
-
-	// TODO: handle change in strategy
-	// - When loading first and only batch, and we know we'll want chunks later for streaming: always load chunk refs
-	// - Otherwise, when resetting, set flag to load chunk refs
+	// We want to load chunk refs on the second iteration, so that we can send chunks to queriers.
+	s.strategy = s.strategy.withoutNoChunkRefs()
 }
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again

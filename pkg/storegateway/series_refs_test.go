@@ -1121,7 +1121,8 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 		minT, maxT   int64
 		batchSize    int
 
-		expectedSets []seriesChunkRefsSet
+		expectedSets                                    []seriesChunkRefsSet
+		expectChunkRefsOnFirstAndOnlyBatchWhenStreaming bool
 	}
 
 	sharedSeriesHasher := cachedSeriesHasher{hashcache.NewSeriesHashCache(1000).GetBlockCache("")}
@@ -1191,6 +1192,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 					{lset: labels.FromStrings("l1", "v4")},
 				}},
 			},
+			expectChunkRefsOnFirstAndOnlyBatchWhenStreaming: true, // Some batches will be filtered out, so although only one batch is returned, multiple are created internally.
 		},
 		"returns no batches when no series are owned by shard": {
 			shard: &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
@@ -1222,6 +1224,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 					{lset: labels.FromStrings("l1", "v3")},
 				}},
 			},
+			expectChunkRefsOnFirstAndOnlyBatchWhenStreaming: true, // Some batches will be filtered out, so although only one batch is returned, multiple are created internally.
 		},
 		"ignores mixT/maxT when skipping chunks": {
 			minT:      0,
@@ -1256,7 +1259,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				return []seriesChunkRefsSet{set}
 			}(),
 		},
-		"works with many series in many batches batch": {
+		"works with many series in many batches": {
 			blockFactory: largerTestBlockFactory,
 			minT:         0,
 			maxT:         math.MaxInt64,
@@ -1440,14 +1443,31 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 
 					sets := readAllSeriesChunkRefsSet(loadingIterator)
 					assert.NoError(t, loadingIterator.Err())
-					assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, tc.minT, tc.maxT, strategy, tc.expectedSets, sets)
 
 					if enableChunksStreaming {
-						// Ensure that the iterator behaves correctly after a reset.
+						assertionStrategy := strategy
+
+						if len(tc.expectedSets) == 1 && !tc.expectChunkRefsOnFirstAndOnlyBatchWhenStreaming {
+							// If we expect a single batch, then chunk refs should be present when we iterate through the series the first time.
+							assertionStrategy = assertionStrategy.withoutNoChunkRefs()
+							assertSeriesChunkRefsSetsHaveChunkRefsPopulated(t, sets)
+						} else {
+							// Otherwise, if multiple batches are expected, then chunk refs should not be present when we iterate through the series the first time.
+							assertionStrategy = assertionStrategy.withNoChunkRefs()
+							assertSeriesChunkRefsSetsDoNotHaveChunkRefsPopulated(t, sets)
+						}
+
+						assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, tc.minT, tc.maxT, assertionStrategy, tc.expectedSets, sets)
+
+						// Ensure that the iterator behaves correctly after a reset (ie. when streaming chunks to the querier).
 						loadingIterator.Reset()
 						setsAfterReset := readAllSeriesChunkRefsSet(loadingIterator)
 						assert.NoError(t, loadingIterator.Err())
-						assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, tc.minT, tc.maxT, strategy, tc.expectedSets, setsAfterReset)
+						assertionStrategy = assertionStrategy.withoutNoChunkRefs() // Chunk refs should be present when we iterate through the series after a reset.
+						assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, tc.minT, tc.maxT, assertionStrategy, tc.expectedSets, setsAfterReset)
+						assertSeriesChunkRefsSetsHaveChunkRefsPopulated(t, setsAfterReset)
+					} else {
+						assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, tc.minT, tc.maxT, strategy, tc.expectedSets, sets)
 					}
 				})
 			}
@@ -1498,6 +1518,22 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir st
 				// There shouldn't be extra chunks returned by prometheus
 				assert.False(t, promChunks.Next())
 			}
+		}
+	}
+}
+
+func assertSeriesChunkRefsSetsHaveChunkRefsPopulated(t *testing.T, sets []seriesChunkRefsSet) {
+	for _, set := range sets {
+		for _, s := range set.series {
+			require.NotEmpty(t, s.refs)
+		}
+	}
+}
+
+func assertSeriesChunkRefsSetsDoNotHaveChunkRefsPopulated(t *testing.T, sets []seriesChunkRefsSet) {
+	for _, set := range sets {
+		for _, s := range set.series {
+			require.Empty(t, s.refs)
 		}
 	}
 }
@@ -2673,4 +2709,11 @@ type mockIndexCacheEntry struct {
 
 func (c mockIndexCache) FetchSeriesForPostings(context.Context, string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey) ([]byte, bool) {
 	return c.fetchSeriesForPostingsResponse.contents, c.fetchSeriesForPostingsResponse.cached
+}
+
+func TestSeriesIteratorStrategy(t *testing.T) {
+	require.False(t, defaultStrategy.isNoChunkRefs())
+	require.True(t, defaultStrategy.withNoChunkRefs().isNoChunkRefs())
+	require.False(t, defaultStrategy.withNoChunkRefs().withoutNoChunkRefs().isNoChunkRefs())
+	require.False(t, defaultStrategy.withoutNoChunkRefs().isNoChunkRefs())
 }
