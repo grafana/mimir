@@ -1121,8 +1121,8 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 		minT, maxT   int64
 		batchSize    int
 
-		expectedSets                                    []seriesChunkRefsSet
-		expectChunkRefsOnFirstAndOnlyBatchWhenStreaming bool
+		expectedSets                 []seriesChunkRefsSet
+		expectSomeBatchesFilteredOut bool
 	}
 
 	sharedSeriesHasher := cachedSeriesHasher{hashcache.NewSeriesHashCache(1000).GetBlockCache("")}
@@ -1192,7 +1192,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 					{lset: labels.FromStrings("l1", "v4")},
 				}},
 			},
-			expectChunkRefsOnFirstAndOnlyBatchWhenStreaming: true, // Some batches will be filtered out, so although only one batch is returned, multiple are created internally.
+			expectSomeBatchesFilteredOut: true,
 		},
 		"returns no batches when no series are owned by shard": {
 			shard: &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
@@ -1224,7 +1224,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 					{lset: labels.FromStrings("l1", "v3")},
 				}},
 			},
-			expectChunkRefsOnFirstAndOnlyBatchWhenStreaming: true, // Some batches will be filtered out, so although only one batch is returned, multiple are created internally.
+			expectSomeBatchesFilteredOut: true,
 		},
 		"ignores mixT/maxT when skipping chunks": {
 			minT:      0,
@@ -1447,8 +1447,9 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 					if enableChunksStreaming {
 						assertionStrategy := strategy
 
-						if len(tc.expectedSets) == 1 && !tc.expectChunkRefsOnFirstAndOnlyBatchWhenStreaming {
+						if len(tc.expectedSets) == 1 && !tc.expectSomeBatchesFilteredOut {
 							// If we expect a single batch, then chunk refs should be present when we iterate through the series the first time.
+							// We exclude the case where some batches are filtered out internally: in this case, we expect to behave as if there were multiple batches.
 							assertionStrategy = assertionStrategy.withoutNoChunkRefs()
 							assertSeriesChunkRefsSetsHaveChunkRefsPopulated(t, sets)
 						} else {
