@@ -20,29 +20,6 @@ type tenantRequest struct {
 	req      Request
 }
 
-type querierConn struct {
-	// Number of active connections.
-	connections int
-
-	// True if the querier notified it's gracefully shutting down.
-	shuttingDown bool
-
-	// When the last connection has been unregistered.
-	disconnectedAt time.Time
-}
-
-type queueTenant struct {
-	tenantID    TenantID
-	maxQueriers int
-
-	// seed for shuffle sharding of queriers; computed from tenantID only,
-	// and is therefore consistent between different frontends.
-	shuffleShardSeed int64
-
-	// points up to tenant order to enable efficient removal
-	orderIndex int
-}
-
 // queueBroker encapsulates access to tenant queues for pending requests
 // and maintains consistency with the tenant-querier assignments
 type queueBroker struct {

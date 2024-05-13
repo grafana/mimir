@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/scheduler/queue/user_queues.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
 
 package queue
 
@@ -9,6 +12,29 @@ import (
 
 	"github.com/grafana/mimir/pkg/util"
 )
+
+type queueTenant struct {
+	tenantID    TenantID
+	maxQueriers int
+
+	// seed for shuffle sharding of queriers; computed from tenantID only,
+	// and is therefore consistent between different frontends.
+	shuffleShardSeed int64
+
+	// points up to tenant order to enable efficient removal
+	orderIndex int
+}
+
+type querierConn struct {
+	// Number of active connections.
+	connections int
+
+	// True if the querier notified it's gracefully shutting down.
+	shuttingDown bool
+
+	// When the last connection has been unregistered.
+	disconnectedAt time.Time
+}
 
 type querierIDSlice []QuerierID
 
