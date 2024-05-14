@@ -365,6 +365,14 @@ type NotifierConfig[T interface{}] struct {
 // the given key. If the key is not present, then it returns the fallback value.
 type GetDecryptedValueFn func(ctx context.Context, sjd map[string][]byte, key string, fallback string) string
 
+// NoopDecrypt is a GetDecryptedValueFn that returns a value without decrypting it.
+func NoopDecrypt(_ context.Context, sjd map[string][]byte, key string, fallback string) string {
+	if v, ok := sjd[key]; ok {
+		return string(v)
+	}
+	return fallback
+}
+
 // BuildReceiverConfiguration parses, decrypts and validates the APIReceiver.
 func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decrypt GetDecryptedValueFn) (GrafanaReceiverConfig, error) {
 	result := GrafanaReceiverConfig{
@@ -386,7 +394,11 @@ func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decrypt G
 func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver *GrafanaIntegrationConfig, decrypt GetDecryptedValueFn) error {
 	secureSettings, err := decodeSecretsFromBase64(receiver.SecureSettings)
 	if err != nil {
-		return err
+		// An error means that the secure settings are not base-64 encoded.
+		secureSettings = make(map[string][]byte, len(receiver.SecureSettings))
+		for k, v := range receiver.SecureSettings {
+			secureSettings[k] = []byte(v)
+		}
 	}
 
 	decryptFn := func(key string, fallback string) string {

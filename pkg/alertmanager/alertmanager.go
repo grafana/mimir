@@ -620,10 +620,10 @@ func loggerFactory(logger string, ctx ...interface{}) alertingLogging.Logger {
 	return alertingLogging.FakeLogger{}
 }
 func whSenderFn(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
-	return &Sender{}, nil
+	return NewSender(alertingLogging.FakeLogger{}), nil
 }
 func emailSenderFn(n alertingReceivers.Metadata) (alertingReceivers.EmailSender, error) {
-	return &Sender{}, nil
+	return NewSender(alertingLogging.FakeLogger{}), nil
 }
 
 func md5HashAsMetricValue(data []byte) float64 {
