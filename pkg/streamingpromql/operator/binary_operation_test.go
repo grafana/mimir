@@ -3,6 +3,9 @@
 package operator
 
 import (
+	"slices"
+	"sort"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -257,6 +260,233 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			} else {
 				require.EqualError(t, err, testCase.expectedError)
 			}
+		})
+	}
+}
+
+func TestBinaryOperation_Sorting(t *testing.T) {
+	testCases := map[string]struct {
+		series []*binaryOperationOutputSeries
+
+		expectedOrderFavouringLeftSide  []int
+		expectedOrderFavouringRightSide []int
+	}{
+		"no output series": {
+			series: []*binaryOperationOutputSeries{},
+
+			expectedOrderFavouringLeftSide:  []int{},
+			expectedOrderFavouringRightSide: []int{},
+		},
+		"single output series": {
+			series: []*binaryOperationOutputSeries{
+				{
+					leftSeriesIndices:  []int{4},
+					rightSeriesIndices: []int{1},
+				},
+			},
+
+			expectedOrderFavouringLeftSide:  []int{0},
+			expectedOrderFavouringRightSide: []int{0},
+		},
+		"two output series, both with one input series, read from both sides in same order and already sorted correctly": {
+			series: []*binaryOperationOutputSeries{
+				{
+					leftSeriesIndices:  []int{1},
+					rightSeriesIndices: []int{1},
+				},
+				{
+					leftSeriesIndices:  []int{2},
+					rightSeriesIndices: []int{2},
+				},
+			},
+
+			expectedOrderFavouringLeftSide:  []int{0, 1},
+			expectedOrderFavouringRightSide: []int{0, 1},
+		},
+		"two output series, both with one input series, read from both sides in same order but sorted incorrectly": {
+			series: []*binaryOperationOutputSeries{
+				{
+					leftSeriesIndices:  []int{2},
+					rightSeriesIndices: []int{2},
+				},
+				{
+					leftSeriesIndices:  []int{1},
+					rightSeriesIndices: []int{1},
+				},
+			},
+
+			expectedOrderFavouringLeftSide:  []int{1, 0},
+			expectedOrderFavouringRightSide: []int{1, 0},
+		},
+		"two output series, both with one input series, read from both sides in different order": {
+			series: []*binaryOperationOutputSeries{
+				{
+					leftSeriesIndices:  []int{1},
+					rightSeriesIndices: []int{2},
+				},
+				{
+					leftSeriesIndices:  []int{2},
+					rightSeriesIndices: []int{1},
+				},
+			},
+
+			expectedOrderFavouringLeftSide:  []int{0, 1},
+			expectedOrderFavouringRightSide: []int{1, 0},
+		},
+		"two output series, both with multiple input series": {
+			series: []*binaryOperationOutputSeries{
+				{
+					leftSeriesIndices:  []int{1, 2},
+					rightSeriesIndices: []int{0, 3},
+				},
+				{
+					leftSeriesIndices:  []int{0, 3},
+					rightSeriesIndices: []int{1, 2},
+				},
+			},
+
+			expectedOrderFavouringLeftSide:  []int{0, 1},
+			expectedOrderFavouringRightSide: []int{1, 0},
+		},
+		"multiple output series, both with one input series, read from both sides in same order and already sorted correctly": {
+			series: []*binaryOperationOutputSeries{
+				{
+					leftSeriesIndices:  []int{1},
+					rightSeriesIndices: []int{1},
+				},
+				{
+					leftSeriesIndices:  []int{2},
+					rightSeriesIndices: []int{2},
+				},
+				{
+					leftSeriesIndices:  []int{3},
+					rightSeriesIndices: []int{3},
+				},
+			},
+
+			expectedOrderFavouringLeftSide:  []int{0, 1, 2},
+			expectedOrderFavouringRightSide: []int{0, 1, 2},
+		},
+		"multiple output series, both with one input series, read from both sides in same order but sorted incorrectly": {
+			series: []*binaryOperationOutputSeries{
+				{
+					leftSeriesIndices:  []int{2},
+					rightSeriesIndices: []int{2},
+				},
+				{
+					leftSeriesIndices:  []int{3},
+					rightSeriesIndices: []int{3},
+				},
+				{
+					leftSeriesIndices:  []int{1},
+					rightSeriesIndices: []int{1},
+				},
+			},
+
+			expectedOrderFavouringLeftSide:  []int{2, 0, 1},
+			expectedOrderFavouringRightSide: []int{2, 0, 1},
+		},
+		"multiple output series, both with one input series, read from both sides in different order": {
+			series: []*binaryOperationOutputSeries{
+				{
+					leftSeriesIndices:  []int{1},
+					rightSeriesIndices: []int{2},
+				},
+				{
+					leftSeriesIndices:  []int{3},
+					rightSeriesIndices: []int{3},
+				},
+				{
+					leftSeriesIndices:  []int{2},
+					rightSeriesIndices: []int{1},
+				},
+			},
+
+			expectedOrderFavouringLeftSide:  []int{0, 2, 1},
+			expectedOrderFavouringRightSide: []int{2, 0, 1},
+		},
+		"multiple output series, with multiple input series each": {
+			series: []*binaryOperationOutputSeries{
+				{
+					leftSeriesIndices:  []int{4, 5, 10},
+					rightSeriesIndices: []int{2, 20},
+				},
+				{
+					leftSeriesIndices:  []int{2, 4, 15},
+					rightSeriesIndices: []int{3, 5, 50},
+				},
+				{
+					leftSeriesIndices:  []int{3, 1},
+					rightSeriesIndices: []int{1, 40},
+				},
+			},
+
+			expectedOrderFavouringLeftSide:  []int{2, 0, 1},
+			expectedOrderFavouringRightSide: []int{0, 2, 1},
+		},
+		"multiple output series which depend on the same input series": {
+			series: []*binaryOperationOutputSeries{
+				{
+					leftSeriesIndices:  []int{1},
+					rightSeriesIndices: []int{2},
+				},
+				{
+					leftSeriesIndices:  []int{1},
+					rightSeriesIndices: []int{1},
+				},
+				{
+					leftSeriesIndices:  []int{2},
+					rightSeriesIndices: []int{2},
+				},
+				{
+					leftSeriesIndices:  []int{2},
+					rightSeriesIndices: []int{1},
+				},
+			},
+
+			expectedOrderFavouringLeftSide:  []int{1, 0, 3, 2},
+			expectedOrderFavouringRightSide: []int{1, 3, 0, 2},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Len(t, testCase.expectedOrderFavouringLeftSide, len(testCase.series), "invalid test case: should have same number of input and output series for order favouring left side")
+			require.Len(t, testCase.expectedOrderFavouringRightSide, len(testCase.series), "invalid test case: should have same number of input and output series for order favouring right side")
+
+			metadata := make([]SeriesMetadata, len(testCase.series))
+			for i, _ := range testCase.series {
+				metadata[i] = SeriesMetadata{labels.FromStrings("series", strconv.Itoa(i))}
+			}
+
+			test := func(t *testing.T, series []*binaryOperationOutputSeries, metadata []SeriesMetadata, sorter sort.Interface, expectedOrder []int) {
+				expectedSeriesOrder := make([]*binaryOperationOutputSeries, len(series))
+				expectedMetadataOrder := make([]SeriesMetadata, len(metadata))
+
+				for outputIndex, inputIndex := range expectedOrder {
+					expectedSeriesOrder[outputIndex] = series[inputIndex]
+					expectedMetadataOrder[outputIndex] = metadata[inputIndex]
+				}
+
+				sort.Sort(sorter)
+
+				require.Equal(t, expectedSeriesOrder, series)
+				require.Equal(t, expectedMetadataOrder, metadata)
+			}
+
+			t.Run("sorting favouring left side", func(t *testing.T) {
+				series := slices.Clone(testCase.series)
+				metadata := slices.Clone(metadata)
+				sorter := favourLeftSideSorter{metadata, series}
+				test(t, series, metadata, sorter, testCase.expectedOrderFavouringLeftSide)
+			})
+
+			t.Run("sorting favouring right side", func(t *testing.T) {
+				series := slices.Clone(testCase.series)
+				metadata := slices.Clone(metadata)
+				sorter := favourRightSideSorter{metadata, series}
+				test(t, series, metadata, sorter, testCase.expectedOrderFavouringRightSide)
+			})
 		})
 	}
 }
