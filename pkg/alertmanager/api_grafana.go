@@ -47,6 +47,7 @@ type UserGrafanaConfig struct {
 	Hash                      string                    `json:"configuration_hash"`
 	CreatedAt                 int64                     `json:"created"`
 	Default                   bool                      `json:"default"`
+	Promoted                  bool                      `json:"promoted"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
@@ -82,8 +83,13 @@ type UserGrafanaState struct {
 	State string `json:"state"`
 }
 
-func (gs *UserGrafanaState) UnmarshalJSON(data []byte) error {
-	type plain UserGrafanaState
+type PostableUserGrafanaState struct {
+	UserGrafanaState
+	Promoted bool `json:"promoted"`
+}
+
+func (gs *PostableUserGrafanaState) UnmarshalJSON(data []byte) error {
+	type plain PostableUserGrafanaState
 	err := json.Unmarshal(data, (*plain)(gs))
 	if err != nil {
 		return err
@@ -172,7 +178,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaState(w http.ResponseWriter, r 
 		return
 	}
 
-	st := &UserGrafanaState{}
+	st := &PostableUserGrafanaState{}
 	err = json.Unmarshal(payload, st)
 	if err != nil {
 		level.Error(logger).Log("msg", errMarshallingStateJSON, "err", err.Error())
@@ -323,7 +329,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default)
+	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted)
 	err = am.store.SetGrafanaAlertConfig(r.Context(), cfgDesc)
 	if err != nil {
 		level.Error(logger).Log("msg", errStoringGrafanaConfig, "err", err.Error())

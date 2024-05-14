@@ -78,7 +78,8 @@ func PutSeriesMetadataSlice(s []SeriesMetadata) {
 func GetFloatSlice(size int) []float64 {
 	s := floatSlicePool.Get(size)
 	if s != nil {
-		return zeroFloatSlice(s, size)
+		clear(s[:size])
+		return s
 	}
 
 	return make([]float64, 0, size)
@@ -92,7 +93,8 @@ func GetBoolSlice(size int) []bool {
 	s := boolSlicePool.Get(size)
 
 	if s != nil {
-		return zeroBoolSlice(s, size)
+		clear(s[:size])
+		return s
 	}
 
 	return make([]bool, 0, size)
@@ -100,24 +102,4 @@ func GetBoolSlice(size int) []bool {
 
 func PutBoolSlice(s []bool) {
 	boolSlicePool.Put(s)
-}
-
-func zeroFloatSlice(s []float64, size int) []float64 {
-	s = s[:size]
-
-	for i := range s {
-		s[i] = 0
-	}
-
-	return s[:0]
-}
-
-func zeroBoolSlice(s []bool, size int) []bool {
-	s = s[:size]
-
-	for i := range s {
-		s[i] = false
-	}
-
-	return s[:0]
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
@@ -126,7 +127,7 @@ func TestUpstreamTestCases(t *testing.T) {
 			testScript, err := io.ReadAll(f)
 			require.NoError(t, err)
 
-			promql.RunTest(t, string(testScript), engine)
+			promqltest.RunTest(t, string(testScript), engine)
 		})
 	}
 }
@@ -154,12 +155,12 @@ func TestOurTestCases(t *testing.T) {
 			testScript := string(b)
 
 			t.Run("streaming engine", func(t *testing.T) {
-				promql.RunTest(t, testScript, streamingEngine)
+				promqltest.RunTest(t, testScript, streamingEngine)
 			})
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
 			t.Run("Prometheus' engine", func(t *testing.T) {
-				promql.RunTest(t, testScript, prometheusEngine)
+				promqltest.RunTest(t, testScript, prometheusEngine)
 			})
 		})
 	}
@@ -177,7 +178,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 	prometheusEngine := promql.NewEngine(opts)
 
 	baseT := timestamp.Time(0)
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			some_metric{env="1"} 0+1x4
 			some_metric{env="2"} 0+2x4
