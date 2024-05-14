@@ -70,4 +70,3 @@ spec:
 For more information about Vault and Vault Agent, see [Injecting Vault Secrets Into Kubernetes Pods via a Sidecar](https://www.hashicorp.com/blog/injecting-vault-secrets-into-kubernetes-pods-via-a-sidecar).
 
 To configure TLS in Mimir, refer to [Securing Grafana Mimir communications with TLS].
-
