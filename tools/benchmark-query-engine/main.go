@@ -44,7 +44,7 @@ type app struct {
 	testFilter      string
 	listTests       bool
 	justRunIngester bool
-  cpuProfilePath  string
+	cpuProfilePath  string
 	memProfilePath  string
 }
 
