@@ -709,9 +709,9 @@ func mapSeriesError(err error) error {
 	case errors.As(err, &stGwErr):
 		switch cause := stGwErr.errorCause(); cause {
 		case mimirpb.INSTANCE_LIMIT:
-			return globalerror.ToGRPCStatusError(stGwErr, codes.Unavailable, &mimirpb.ErrorDetails{Cause: cause})
+			return globalerror.WrapErrorWithGRPCStatus(stGwErr, codes.Unavailable, &mimirpb.ErrorDetails{Cause: cause}).Err()
 		default:
-			return globalerror.ToGRPCStatusError(stGwErr, codes.Internal, &mimirpb.ErrorDetails{Cause: cause})
+			return globalerror.WrapErrorWithGRPCStatus(stGwErr, codes.Internal, &mimirpb.ErrorDetails{Cause: cause}).Err()
 		}
 	default:
 		code := codes.Internal

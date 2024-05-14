@@ -3289,15 +3289,15 @@ func TestShouldStopQueryFunc(t *testing.T) {
 			expected: false,
 		},
 		"should not stop query on store-gateway instance limit": {
-			err:      globalerror.ToGRPCStatusError(errors.New("instance limit"), codes.Aborted, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}),
+			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Aborted, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}).Err(),
 			expected: false,
 		},
 		"should not stop query on store-gateway instance limit; shouldn't look at the gRPC code, only Mimir error cause": {
-			err:      globalerror.ToGRPCStatusError(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}),
+			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}).Err(),
 			expected: false,
 		},
 		"should not stop query on any other mimirpb error": {
-			err:      globalerror.ToGRPCStatusError(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY}),
+			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY}).Err(),
 			expected: false,
 		},
 		"should not stop query on any unknown error detail": {

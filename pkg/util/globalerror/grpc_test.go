@@ -116,7 +116,7 @@ func TestWrapContextError(t *testing.T) {
 	})
 }
 
-func TestErrorWithStatus(t *testing.T) {
+func TestWrapErrorWithGRPCStatus(t *testing.T) {
 	genericErrMsg := "this is an error"
 	genericErr := errors.New(genericErrMsg)
 
@@ -158,6 +158,9 @@ func TestErrorWithStatus(t *testing.T) {
 			require.Error(t, errWithStatus)
 			require.Errorf(t, errWithStatus, data.expectedErrorMessage)
 
+			// Ensure that errWithStatus preserves the original error
+			require.ErrorIs(t, errWithStatus, data.originErr)
+
 			// Ensure gogo's status.FromError recognizes errWithStatus.
 			//lint:ignore faillint We want to explicitly assert on status.FromError()
 			stat, ok := status.FromError(errWithStatus)
@@ -191,6 +194,82 @@ func TestErrorWithStatus(t *testing.T) {
 				shouldLog, _ := optional.ShouldLog(context.Background())
 				require.False(t, shouldLog)
 			}
+		})
+	}
+}
+
+func TestErrorWithStatus_Err(t *testing.T) {
+	genericErrMsg := "this is an error"
+	genericErr := errors.New(genericErrMsg)
+
+	tests := map[string]struct {
+		originErr            error
+		details              *mimirpb.ErrorDetails
+		expectedErrorMessage string
+		expectedErrorDetails *mimirpb.ErrorDetails
+	}{
+		"Err() of an ErrorWithStatus backed by a genericErr contains ErrorDetails": {
+			originErr:            genericErr,
+			details:              &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedErrorMessage: genericErrMsg,
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+		},
+		"Err() of an ErrorWithStatus backed by a DoNotLog error of genericErr contains ErrorDetails": {
+			originErr:            middleware.DoNotLogError{Err: genericErr},
+			details:              &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedErrorMessage: genericErrMsg,
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+		},
+		"Err() of an ErrorWithStatus without ErrorDetails backed by a DoNotLog error of genericErr contains ErrorDetails": {
+			originErr:            middleware.DoNotLogError{Err: genericErr},
+			expectedErrorMessage: genericErrMsg,
+		},
+		"Err() of an ErrorWithStatus without ErrorDetails": {
+			originErr:            genericErr,
+			expectedErrorMessage: genericErrMsg,
+		},
+	}
+
+	for name, data := range tests {
+		t.Run(name, func(t *testing.T) {
+			const statusCode = codes.Unimplemented
+			errWithStatus := WrapErrorWithGRPCStatus(data.originErr, statusCode, data.details)
+			err := errWithStatus.Err()
+			require.Error(t, err)
+			require.Errorf(t, err, data.expectedErrorMessage)
+
+			// Ensure that err does not preserve the original error
+			require.NotErrorIs(t, err, data.originErr)
+
+			// Ensure gogo's status.FromError recognizes errWithStatus.
+			//lint:ignore faillint We want to explicitly assert on status.FromError()
+			stat, ok := status.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, statusCode, stat.Code())
+			require.Equal(t, stat.Message(), data.expectedErrorMessage)
+			checkErrorWithStatusDetails(t, stat.Details(), data.expectedErrorDetails)
+
+			// Ensure dskit's grpcutil.ErrorToStatus recognizes errWithHTTPStatus.
+			stat, ok = grpcutil.ErrorToStatus(err)
+			require.True(t, ok)
+			require.Equal(t, statusCode, stat.Code())
+			require.Equal(t, stat.Message(), data.expectedErrorMessage)
+			checkErrorWithStatusDetails(t, stat.Details(), data.expectedErrorDetails)
+
+			// Ensure grpc's status.FromError recognizes errWithStatus.
+			//lint:ignore faillint We want to explicitly assert on status.FromError()
+			st, ok := grpcstatus.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, statusCode, st.Code())
+			require.Equal(t, st.Message(), data.expectedErrorMessage)
+
+			// Ensure httpgrpc's HTTPResponseFromError doesn't recognize errWithStatus.
+			resp, ok := httpgrpc.HTTPResponseFromError(err)
+			require.False(t, ok)
+			require.Nil(t, resp)
+
+			var optional middleware.OptionalLogging
+			require.False(t, errors.As(err, &optional))
 		})
 	}
 }

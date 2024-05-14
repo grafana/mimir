@@ -39,7 +39,7 @@ var (
 // and containing the given gRPC code. If the given error is an ingesterError,
 // the resulting ErrorWithStatus will be enriched by the details backed by
 // ingesterError.errorCause. These details are of type mimirpb.ErrorDetails.
-func newErrorWithStatus(originalErr error, code codes.Code) *globalerror.ErrorWithStatus {
+func newErrorWithStatus(originalErr error, code codes.Code) globalerror.ErrorWithStatus {
 	var (
 		ingesterErr  ingesterError
 		errorDetails *mimirpb.ErrorDetails
@@ -52,12 +52,12 @@ func newErrorWithStatus(originalErr error, code codes.Code) *globalerror.ErrorWi
 
 // newErrorWithHTTPStatus creates a new ErrorWithStatus backed by the given error,
 // and containing the given HTTP status code.
-func newErrorWithHTTPStatus(err error, code int) *globalerror.ErrorWithStatus {
+func newErrorWithHTTPStatus(err error, code int) globalerror.ErrorWithStatus {
 	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
 	stat, _ := grpcutil.ErrorToStatus(errWithHTTPStatus)
-	return &globalerror.ErrorWithStatus{
-		Causes: []error{err},
-		Status: stat,
+	return globalerror.ErrorWithStatus{
+		UnderlyingErr: err,
+		Status:        stat,
 	}
 }
 

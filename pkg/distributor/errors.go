@@ -254,7 +254,7 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 			errCode = codes.Unimplemented
 		}
 	}
-	return globalerror.ToGRPCStatusError(pushErr, errCode, errDetails)
+	return globalerror.WrapErrorWithGRPCStatus(pushErr, errCode, errDetails).Err()
 }
 
 func wrapIngesterPushError(err error, ingesterID string) error {

@@ -25,13 +25,15 @@ func WrapGRPCErrorWithContextError(err error) error {
 		switch stat.Code() {
 		case codes.Canceled:
 			return &ErrorWithStatus{
-				Causes: []error{err, context.Canceled},
-				Status: stat,
+				UnderlyingErr: err,
+				Status:        stat,
+				ctxErr:        context.Canceled,
 			}
 		case codes.DeadlineExceeded:
 			return &ErrorWithStatus{
-				Causes: []error{err, context.DeadlineExceeded},
-				Status: stat,
+				UnderlyingErr: err,
+				Status:        stat,
+				ctxErr:        context.DeadlineExceeded,
 			}
 		default:
 			return err
@@ -43,21 +45,12 @@ func WrapGRPCErrorWithContextError(err error) error {
 // WrapErrorWithGRPCStatus wraps the given error with a gRPC status, which is built out of the given parameters:
 // the gRPC status' code and details are passed as parameters, while its message corresponds to the original error.
 // The resulting error is of type ErrorWithStatus.
-func WrapErrorWithGRPCStatus(originalErr error, errCode codes.Code, errDetails *mimirpb.ErrorDetails) *ErrorWithStatus {
+func WrapErrorWithGRPCStatus(originalErr error, errCode codes.Code, errDetails *mimirpb.ErrorDetails) ErrorWithStatus {
 	stat := createGRPCStatus(originalErr, errCode, errDetails)
-	return &ErrorWithStatus{
-		Causes: []error{originalErr},
-		Status: stat,
+	return ErrorWithStatus{
+		UnderlyingErr: originalErr,
+		Status:        stat,
 	}
-}
-
-// ToGRPCStatusError returns an error corresponding to a gRPC status built out of the given parameters:
-// the gRPC status' code and details are passed as parameters, while its message corresponds to the original error.
-// The resulting error is of type error, and it can be parsed to the corresponding gRPC status by both
-// gogo/status and grpc/status packages.
-func ToGRPCStatusError(originalErr error, errCode codes.Code, errDetails *mimirpb.ErrorDetails) error {
-	stat := createGRPCStatus(originalErr, errCode, errDetails)
-	return stat.Err()
 }
 
 func createGRPCStatus(originalErr error, errCode codes.Code, errDetails *mimirpb.ErrorDetails) *status.Status {
@@ -81,21 +74,40 @@ func createGRPCStatus(originalErr error, errCode codes.Code, errDetails *mimirpb
 // and grpc/status packages, but which preserve the original error
 // semantics.
 type ErrorWithStatus struct {
-	Causes []error
-	Status *status.Status
+	UnderlyingErr error
+	Status        *status.Status
+	ctxErr        error
 }
 
-func (e *ErrorWithStatus) Error() string {
+func (e ErrorWithStatus) Error() string {
 	return e.Status.Message()
 }
 
-func (e *ErrorWithStatus) Unwrap() []error {
-	return e.Causes
+// Err returns an immutable error representing this ErrorWithStatus.
+// Returns nil if UnderlyingError is nil or Status.Code() is OK.
+// The resulting error is of type error, and it can be parsed to
+// the corresponding gRPC status by both gogo/status and grpc/status
+// packages.
+func (e ErrorWithStatus) Err() error {
+	if e.UnderlyingErr == nil {
+		return nil
+	}
+	if e.Status.Code() == codes.OK {
+		return nil
+	}
+	return e.Status.Err()
+}
+
+func (e ErrorWithStatus) Unwrap() []error {
+	if e.ctxErr == nil {
+		return []error{e.UnderlyingErr}
+	}
+	return []error{e.UnderlyingErr, e.ctxErr}
 }
 
 // GRPCStatus with a *grpcstatus.Status as output is needed
 // for a correct execution of grpc/status.FromError().
-func (e *ErrorWithStatus) GRPCStatus() *grpcstatus.Status {
+func (e ErrorWithStatus) GRPCStatus() *grpcstatus.Status {
 	if stat, ok := e.Status.Err().(interface{ GRPCStatus() *grpcstatus.Status }); ok {
 		return stat.GRPCStatus()
 	}
@@ -105,7 +117,7 @@ func (e *ErrorWithStatus) GRPCStatus() *grpcstatus.Status {
 // details is needed for testing purposes only. It returns the
 // mimirpb.ErrorDetails object stored in this error's Status, if any
 // or nil otherwise.
-func (e *ErrorWithStatus) details() *mimirpb.ErrorDetails {
+func (e ErrorWithStatus) details() *mimirpb.ErrorDetails {
 	details := e.Status.Details()
 	if len(details) != 1 {
 		return nil
@@ -120,12 +132,12 @@ func (e *ErrorWithStatus) details() *mimirpb.ErrorDetails {
 // type ErrorWithStatus, if their underlying statuses have the same code,
 // messages, and if both have either no details, or exactly one detail
 // of type mimirpb.ErrorDetails, which are equal too.
-func (e *ErrorWithStatus) Equals(err error) bool {
+func (e ErrorWithStatus) Equals(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	errWithStatus, ok := err.(*ErrorWithStatus)
+	errWithStatus, ok := err.(ErrorWithStatus)
 	if !ok {
 		return false
 	}
