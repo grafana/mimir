@@ -232,40 +232,42 @@ func (b *BinaryOperation) sortSeries(metadata []SeriesMetadata, series []*binary
 	var sortInterface sort.Interface
 
 	if len(b.leftMetadata) < len(b.rightMetadata) {
-		sortInterface = favourRightSideSorter{metadata, series}
+		sortInterface = newFavourRightSideSorter(metadata, series)
 	} else {
-		sortInterface = favourLeftSideSorter{metadata, series}
+		sortInterface = newFavourLeftSideSorter(metadata, series)
 	}
 
 	sort.Sort(sortInterface)
 }
 
-type favourRightSideSorter struct {
+type binaryOperationOutputSorter struct {
 	metadata []SeriesMetadata
 	series   []*binaryOperationOutputSeries
 }
 
 type favourLeftSideSorter struct {
-	metadata []SeriesMetadata
-	series   []*binaryOperationOutputSeries
+	binaryOperationOutputSorter
 }
 
-func (g favourRightSideSorter) Len() int {
+func newFavourLeftSideSorter(metadata []SeriesMetadata, series []*binaryOperationOutputSeries) favourLeftSideSorter {
+	return favourLeftSideSorter{binaryOperationOutputSorter{metadata, series}}
+}
+
+type favourRightSideSorter struct {
+	binaryOperationOutputSorter
+}
+
+func newFavourRightSideSorter(metadata []SeriesMetadata, series []*binaryOperationOutputSeries) favourRightSideSorter {
+	return favourRightSideSorter{binaryOperationOutputSorter{metadata, series}}
+}
+
+func (g binaryOperationOutputSorter) Len() int {
 	return len(g.metadata)
 }
 
-func (g favourLeftSideSorter) Len() int {
-	return len(g.metadata)
-}
-
-func (g favourRightSideSorter) Less(i, j int) bool {
-	iRight := g.series[i].latestRightSeries()
-	jRight := g.series[j].latestRightSeries()
-	if iRight != jRight {
-		return iRight < jRight
-	}
-
-	return g.series[i].latestLeftSeries() < g.series[j].latestLeftSeries()
+func (g binaryOperationOutputSorter) Swap(i, j int) {
+	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
+	g.series[i], g.series[j] = g.series[j], g.series[i]
 }
 
 func (g favourLeftSideSorter) Less(i, j int) bool {
@@ -278,14 +280,14 @@ func (g favourLeftSideSorter) Less(i, j int) bool {
 	return g.series[i].latestRightSeries() < g.series[j].latestRightSeries()
 }
 
-func (g favourRightSideSorter) Swap(i, j int) {
-	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
-	g.series[i], g.series[j] = g.series[j], g.series[i]
-}
+func (g favourRightSideSorter) Less(i, j int) bool {
+	iRight := g.series[i].latestRightSeries()
+	jRight := g.series[j].latestRightSeries()
+	if iRight != jRight {
+		return iRight < jRight
+	}
 
-func (g favourLeftSideSorter) Swap(i, j int) {
-	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
-	g.series[i], g.series[j] = g.series[j], g.series[i]
+	return g.series[i].latestLeftSeries() < g.series[j].latestLeftSeries()
 }
 
 // labelsFunc returns a function that computes the labels of the output group this series belongs to.

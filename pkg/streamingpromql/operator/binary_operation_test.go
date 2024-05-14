@@ -477,14 +477,14 @@ func TestBinaryOperation_Sorting(t *testing.T) {
 			t.Run("sorting favouring left side", func(t *testing.T) {
 				series := slices.Clone(testCase.series)
 				metadata := slices.Clone(metadata)
-				sorter := favourLeftSideSorter{metadata, series}
+				sorter := newFavourLeftSideSorter(metadata, series)
 				test(t, series, metadata, sorter, testCase.expectedOrderFavouringLeftSide)
 			})
 
 			t.Run("sorting favouring right side", func(t *testing.T) {
 				series := slices.Clone(testCase.series)
 				metadata := slices.Clone(metadata)
-				sorter := favourRightSideSorter{metadata, series}
+				sorter := newFavourRightSideSorter(metadata, series)
 				test(t, series, metadata, sorter, testCase.expectedOrderFavouringRightSide)
 			})
 		})
