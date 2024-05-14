@@ -282,6 +282,11 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o o
 	ts := timeMilliseconds(q.statement.Start)
 	v := operator.GetVector(len(series))
 
+	returnSlices := func(f []promql.FPoint, h []promql.HPoint) {
+		operator.PutFPointSlice(f)
+		operator.PutHPointSlice(h)
+	}
+
 	for i, s := range series {
 		d, err := o.NextSeries(ctx)
 		if err != nil {
@@ -292,15 +297,13 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o o
 			return nil, err
 		}
 
-		defer operator.PutFPointSlice(d.Floats)
-		defer operator.PutHPointSlice(d.Histograms)
-
 		// A series may have no data points.
 		if len(d.Floats)+len(d.Histograms) == 0 {
 			continue
 		}
 
 		if len(d.Floats)+len(d.Histograms) != 1 {
+			returnSlices(d.Floats, d.Histograms)
 			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v Floats, %v Histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
 		}
 
@@ -319,8 +322,10 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o o
 				H:      point.H,
 			})
 		} else {
+			returnSlices(d.Floats, d.Histograms)
 			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v Floats, %v Histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
 		}
+		returnSlices(d.Floats, d.Histograms)
 	}
 
 	return v, nil
