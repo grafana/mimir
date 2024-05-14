@@ -114,8 +114,9 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	lazyLoadingGate := gate.NewNoop()
 	lazyLoadingMax := cfg.BucketStore.IndexHeader.LazyLoadingConcurrency
 	if lazyLoadingMax != 0 {
-		blockingGate := gate.NewBlocking(cfg.BucketStore.IndexHeader.LazyLoadingConcurrency)
-		lazyLoadingGate = gate.NewInstrumented(lazyLoadingGateReg, cfg.BucketStore.IndexHeader.LazyLoadingConcurrency, blockingGate)
+		lazyLoadingGate = gate.NewBlocking(cfg.BucketStore.IndexHeader.LazyLoadingConcurrency)
+		lazyLoadingGate = gate.NewInstrumented(lazyLoadingGateReg, cfg.BucketStore.IndexHeader.LazyLoadingConcurrency, lazyLoadingGate)
+		lazyLoadingGate = timeoutGate{delegate: lazyLoadingGate, timeout: cfg.BucketStore.IndexHeader.LazyLoadingConcurrencyQueueTimeout}
 	}
 
 	u := &BucketStores{

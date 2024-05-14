@@ -3759,6 +3759,12 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency
     [lazy_loading_concurrency: <int> | default = 4]
 
+    # (experimental) Timeout for the queue of index header loads. If the queue
+    # is full and the timeout is reached, the load will return an error. 0 means
+    # no timeout and the load will wait indefinitely.
+    # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout
+    [lazy_loading_concurrency_queue_timeout: <duration> | default = 0s]
+
     # (advanced) If true, verify the checksum of index headers upon loading them
     # (either on startup or lazily when lazy loading is enabled). Setting to
     # true helps detect disk corruption at the cost of slowing down index header
