@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/common/model"
+	"gopkg.in/yaml.v3"
 )
 
 type Provenance string
@@ -22,7 +23,7 @@ type Config struct {
 	// MuteTimeIntervals is deprecated and will be removed before Alertmanager 1.0.
 	MuteTimeIntervals []config.MuteTimeInterval `yaml:"mute_time_intervals,omitempty" json:"mute_time_intervals,omitempty"`
 	TimeIntervals     []config.TimeInterval     `yaml:"time_intervals,omitempty" json:"time_intervals,omitempty"`
-	Templates         []string                  `yaml:"templates" json:"templates"`
+	Templates         []string                  `yaml:"templates,omitempty" json:"templates,omitempty"`
 }
 
 // A Route is a node that contains definitions of how to handle alerts. This is modified
@@ -125,75 +126,19 @@ func (r *Route) ResourceID() string {
 // post-validation is included in the UnmarshalYAML method. Here we simply run this with
 // a noop unmarshaling function in order to benefit from said validation.
 func (c *Config) UnmarshalJSON(b []byte) error {
-	type plain Config
-	if err := json.Unmarshal(b, (*plain)(c)); err != nil {
-		return err
-	}
-
-	noopUnmarshal := func(_ interface{}) error { return nil }
-
-	if c.Global == nil {
-		global := config.DefaultGlobalConfig()
-		c.Global = &global
-	} else {
-		if err := c.Global.UnmarshalYAML(noopUnmarshal); err != nil {
-			return err
-		}
-	}
-
-	if c.Route == nil {
-		return fmt.Errorf("no routes provided")
-	}
-
-	err := c.Route.Validate()
-	if err != nil {
-		return err
-	}
-
-	for _, r := range c.InhibitRules {
-		if err := r.UnmarshalYAML(noopUnmarshal); err != nil {
-			return err
-		}
-	}
-
-	tiNames := make(map[string]struct{})
-	for _, mt := range c.MuteTimeIntervals {
-		if mt.Name == "" {
-			return fmt.Errorf("missing name in mute time interval")
-		}
-		if _, ok := tiNames[mt.Name]; ok {
-			return fmt.Errorf("mute time interval %q is not unique", mt.Name)
-		}
-		tiNames[mt.Name] = struct{}{}
-	}
-	for _, ti := range c.TimeIntervals {
-		if ti.Name == "" {
-			return fmt.Errorf("missing name in time interval")
-		}
-		if _, ok := tiNames[ti.Name]; ok {
-			return fmt.Errorf("time interval %q is not unique", ti.Name)
-		}
-		tiNames[ti.Name] = struct{}{}
-	}
-	return checkTimeInterval(c.Route, tiNames)
+	return yaml.Unmarshal(b, c)
 }
 
 func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	fmt.Println("Config.UnmarshalYAML() called")
 	type plain Config
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
 
-	noopUnmarshal := func(_ interface{}) error { return nil }
-
+	// Having a nil global config causes panics in the Alertmanager codebase.
 	if c.Global == nil {
-		global := config.DefaultGlobalConfig()
-		c.Global = &global
-	} else {
-		if err := c.Global.UnmarshalYAML(noopUnmarshal); err != nil {
-			return err
-		}
+		c.Global = &config.GlobalConfig{}
+		*c.Global = config.DefaultGlobalConfig()
 	}
 
 	if c.Route == nil {
@@ -206,7 +151,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	for _, r := range c.InhibitRules {
-		if err := r.UnmarshalYAML(noopUnmarshal); err != nil {
+		if err := r.UnmarshalYAML(unmarshal); err != nil {
 			return err
 		}
 	}
@@ -273,37 +218,20 @@ func (c *PostableApiAlertingConfig) GetRoute() *Route {
 }
 
 func (c *PostableApiAlertingConfig) UnmarshalJSON(b []byte) error {
-	type plain PostableApiAlertingConfig
-	if err := json.Unmarshal(b, (*plain)(c)); err != nil {
-		return err
-	}
-
-	// Since Config implements json.Unmarshaler, we must handle _all_ other fields independently.
-	// Otherwise, the json decoder will detect this and only use the embedded type.
-	// Additionally, we'll use pointers to slices in order to reference the intended target.
-	type overrides struct {
-		Receivers *[]*PostableApiReceiver `yaml:"receivers,omitempty" json:"receivers,omitempty"`
-	}
-
-	if err := json.Unmarshal(b, &overrides{Receivers: &c.Receivers}); err != nil {
-		return err
-	}
-
-	return c.Validate()
+	return yaml.Unmarshal(b, c)
 }
 
 func (c *PostableApiAlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	fmt.Println("PostableApiAlertingConfig.UnmarshalYAML() called")
 	type plain PostableApiAlertingConfig
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
 
-	// Since Config implements json.Unmarshaler, we must handle _all_ other fields independently.
+	// Since Config implements yaml.Unmarshaler, we must handle _all_ other fields independently.
 	// Otherwise, the json decoder will detect this and only use the embedded type.
 	// Additionally, we'll use pointers to slices in order to reference the intended target.
 	type overrides struct {
-		Receivers *[]*PostableApiReceiver `yaml:"receivers,omitempty" json:"receivers,omitempty"`
+		Receivers *[]*PostableApiReceiver `yaml:"receivers" json:"receivers,omitempty"`
 	}
 
 	if err := unmarshal(&overrides{Receivers: &c.Receivers}); err != nil {
@@ -450,8 +378,8 @@ type PostableGrafanaReceiver struct {
 	Name                  string            `json:"name"`
 	Type                  string            `json:"type"`
 	DisableResolveMessage bool              `json:"disableResolveMessage"`
-	Settings              RawMessage        `json:"settings,omitempty"`
-	SecureSettings        map[string]string `json:"secureSettings"`
+	Settings              RawMessage        `json:"settings,omitempty" yaml:"settings,omitempty"`
+	SecureSettings        map[string]string `json:"secureSettings,omitempty" yaml:"secureSettings,omitempty"`
 }
 
 type ReceiverType int
@@ -601,21 +529,17 @@ type PostableApiReceiver struct {
 	PostableGrafanaReceivers `yaml:",inline"`
 }
 
+func (r *PostableApiReceiver) UnmarshalJSON(b []byte) error {
+	return yaml.Unmarshal(b, r)
+}
+
 func (r *PostableApiReceiver) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal(&r.PostableGrafanaReceivers); err != nil {
 		return err
 	}
 
-	if err := unmarshal(&r.Receiver); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *PostableApiReceiver) UnmarshalJSON(b []byte) error {
-	type plain PostableApiReceiver
-	if err := json.Unmarshal(b, (*plain)(r)); err != nil {
+	type plain config.Receiver
+	if err := unmarshal((*plain)(&r.Receiver)); err != nil {
 		return err
 	}
 
