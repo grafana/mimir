@@ -112,6 +112,7 @@
 * [ENHANCEMENT] `mimirtool promql format`: Format PromQL query with Prometheus' string or pretty-print formatter. #7742
 * [BUGFIX] `mimirtool rules prepare`: do not add aggregation label to `on()` clause if already present in `group_left()` or `group_right()`. #7839
 * [BUGFIX] Analyze Grafana: fix parsing queries with variables. #8062
+* [BUGFIX] Analyze Rules: Count recording rules used in rules group as used. #6133
 
 ### Mimir Continuous Test
 
