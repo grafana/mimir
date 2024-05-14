@@ -74,13 +74,16 @@ If you encounter the HTTP error 413 "Request Entity Too Large" when uploading bl
 To resolve this issue:
 
 Determine the current size of the blocks you are trying to upload by running the following command:
+
 ```bash
 find <path/to/blocks> -name 'chunks' -printf '%s\n' | numfmt --to=iec-i
 ```
+
 This will show the size of each block's chunks directory in a human-readable format.
 Increase the client_max_body_size directive in the Nginx configuration:
 
 For manual Nginx deployments, open the Nginx configuration file (e.g., /etc/nginx/nginx.conf) and set the client_max_body_size directive inside the server block for the Mimir endpoint to a value about 5% larger than the maximum size of the blocks you are uploading. For example:
+
 ```
 server {
     ...
@@ -98,20 +101,23 @@ location / {
 ```
 
 For Helm deployments of Mimir, you can set the nginx.nginxConfig.client_max_body_size value in your Helm values file to a higher value, e.g.:
+
 ```yaml
 nginx:
   nginxConfig:
     client_max_body_size: 95M
 ```
 
-
 Apply the configuration changes:
 
 For manual Nginx deployments, save the configuration file and reload Nginx:
+
 ```bash
 sudo nginx -s reload
 ```
+
 For Helm deployments, upgrade your Mimir release with the updated values file:
+
 ```bash
 helm upgrade <release-name> <chart-name> -f values.yaml
 ```

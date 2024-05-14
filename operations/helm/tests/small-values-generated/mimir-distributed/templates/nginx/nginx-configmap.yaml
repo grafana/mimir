@@ -17,7 +17,6 @@ data:
     pid        /tmp/nginx.pid;
     worker_rlimit_nofile 8192;
     
-    
     events {
       worker_connections  4096;  ## Default: 1024
     }
@@ -55,7 +54,6 @@ data:
       server {
         listen 8080;
         listen [::]:8080;
-        
     
         if ($has_multiple_orgid_headers = 1) {
             return 400 'Sending multiple X-Scope-OrgID headers is not allowed. Use a single header with | as separator instead.';
