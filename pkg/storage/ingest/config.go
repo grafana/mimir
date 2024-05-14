@@ -64,7 +64,8 @@ type KafkaConfig struct {
 	WriteTimeout time.Duration `yaml:"write_timeout"`
 	WriteClients int           `yaml:"write_clients"`
 
-	ConsumerGroup string `yaml:"consumer_group"`
+	ConsumerGroup                     string        `yaml:"consumer_group"`
+	ConsumerGroupOffsetCommitInterval time.Duration `yaml:"consumer_group_offset_commit_interval"`
 
 	LastProducedOffsetPollInterval time.Duration `yaml:"last_produced_offset_poll_interval"`
 	LastProducedOffsetRetryTimeout time.Duration `yaml:"last_produced_offset_retry_timeout"`
@@ -90,6 +91,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.WriteClients, prefix+".write-clients", 1, "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. An higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.")
 
 	f.StringVar(&cfg.ConsumerGroup, prefix+".consumer-group", "", "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it will be replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir will use the ingester instance ID to guarantee uniqueness.")
+	f.DurationVar(&cfg.ConsumerGroupOffsetCommitInterval, prefix+".consumer-group-offset-commit-interval", time.Second, "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.")
 
 	f.DurationVar(&cfg.LastProducedOffsetPollInterval, prefix+".last-produced-offset-poll-interval", time.Second, "How frequently to poll the last produced offset, used to enforce strong read consistency.")
 	f.DurationVar(&cfg.LastProducedOffsetRetryTimeout, prefix+".last-produced-offset-retry-timeout", 10*time.Second, "How long to retry a failed request to get the last produced offset.")
