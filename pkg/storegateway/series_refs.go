@@ -839,7 +839,7 @@ func (s seriesIteratorStrategy) withNoChunkRefs() seriesIteratorStrategy {
 	return s | noChunkRefs
 }
 
-func (s seriesIteratorStrategy) withoutNoChunkRefs() seriesIteratorStrategy {
+func (s seriesIteratorStrategy) withChunkRefs() seriesIteratorStrategy {
 	return s & ^noChunkRefs
 }
 
@@ -902,7 +902,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	if s.strategy.isForChunksStreaming() {
 		if s.postingsSetIterator.IsFirstAndOnlyBatch() {
 			// We must load chunk refs on our first pass.
-			s.strategy = s.strategy.withoutNoChunkRefs()
+			s.strategy = s.strategy.withChunkRefs()
 		}
 	}
 
@@ -1180,7 +1180,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Reset() {
 	s.postingsSetIterator.Reset()
 
 	// We want to load chunk refs on the second iteration, so that we can send chunks to queriers.
-	s.strategy = s.strategy.withoutNoChunkRefs()
+	s.strategy = s.strategy.withChunkRefs()
 }
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again

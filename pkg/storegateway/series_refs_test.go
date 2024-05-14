@@ -1450,7 +1450,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 						if len(tc.expectedSets) == 1 && !tc.expectSomeBatchesFilteredOut {
 							// If we expect a single batch, then chunk refs should be present when we iterate through the series the first time.
 							// We exclude the case where some batches are filtered out internally: in this case, we expect to behave as if there were multiple batches.
-							assertionStrategy = assertionStrategy.withoutNoChunkRefs()
+							assertionStrategy = assertionStrategy.withChunkRefs()
 							assertSeriesChunkRefsSetsHaveChunkRefsPopulated(t, sets)
 						} else {
 							// Otherwise, if multiple batches are expected, then chunk refs should not be present when we iterate through the series the first time.
@@ -1464,7 +1464,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 						loadingIterator.Reset()
 						setsAfterReset := readAllSeriesChunkRefsSet(loadingIterator)
 						assert.NoError(t, loadingIterator.Err())
-						assertionStrategy = assertionStrategy.withoutNoChunkRefs() // Chunk refs should be present when we iterate through the series after a reset.
+						assertionStrategy = assertionStrategy.withChunkRefs() // Chunk refs should be present when we iterate through the series after a reset.
 						assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, tc.minT, tc.maxT, assertionStrategy, tc.expectedSets, setsAfterReset)
 						assertSeriesChunkRefsSetsHaveChunkRefsPopulated(t, setsAfterReset)
 					} else {
@@ -2715,6 +2715,6 @@ func (c mockIndexCache) FetchSeriesForPostings(context.Context, string, ulid.ULI
 func TestSeriesIteratorStrategy(t *testing.T) {
 	require.False(t, defaultStrategy.isNoChunkRefs())
 	require.True(t, defaultStrategy.withNoChunkRefs().isNoChunkRefs())
-	require.False(t, defaultStrategy.withNoChunkRefs().withoutNoChunkRefs().isNoChunkRefs())
-	require.False(t, defaultStrategy.withoutNoChunkRefs().isNoChunkRefs())
+	require.False(t, defaultStrategy.withNoChunkRefs().withChunkRefs().isNoChunkRefs())
+	require.False(t, defaultStrategy.withChunkRefs().isNoChunkRefs())
 }
