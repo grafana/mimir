@@ -757,17 +757,9 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, errors.New("set size must be a positive number")
 	}
 
-	var (
-		ps              []storage.SeriesRef
-		pendingMatchers []*labels.Matcher
-		fetchPostings   = true
-	)
-	if fetchPostings {
-		var err error
-		ps, pendingMatchers, err = indexr.ExpandedPostings(ctx, matchers, stats)
-		if err != nil {
-			return nil, errors.Wrap(err, "expanded matching postings")
-		}
+	ps, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
+	if err != nil {
+		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
 	var it iterator[seriesChunkRefsSet]
