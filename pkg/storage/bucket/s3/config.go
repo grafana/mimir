@@ -124,6 +124,7 @@ type Config struct {
 	BucketLookupType     s3.BucketLookupType `yaml:"bucket_lookup_type" category:"advanced"`
 	StorageClass         string              `yaml:"storage_class" category:"experimental"`
 	NativeAWSAuthEnabled bool                `yaml:"native_aws_auth_enabled" category:"experimental"`
+	DisableMultipart     bool                `yaml:"disable_multipart" category:"experimental"`
 	PartSize             uint64              `yaml:"part_size" category:"experimental"`
 	SendContentMd5       bool                `yaml:"send_content_md5" category:"experimental"`
 	STSEndpoint          string              `yaml:"sts_endpoint"`
@@ -149,6 +150,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.ListObjectsVersion, prefix+"s3.list-objects-version", "", "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.")
 	f.StringVar(&cfg.StorageClass, prefix+"s3.storage-class", "", "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: "+strings.Join(supportedStorageClasses, ", "))
 	f.BoolVar(&cfg.NativeAWSAuthEnabled, prefix+"s3.native-aws-auth-enabled", false, "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.")
+	f.BoolVar(&cfg.DisableMultipart, prefix+"s3.disable-multipart", false, "Whether or not to disable multipart uploads.")
 	f.Uint64Var(&cfg.PartSize, prefix+"s3.part-size", 0, "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.")
 	f.BoolVar(&cfg.SendContentMd5, prefix+"s3.send-content-md5", false, "If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.")
 	f.Var(newBucketLookupTypeValue(s3.AutoLookup, &cfg.BucketLookupType), prefix+"s3.bucket-lookup-type", fmt.Sprintf("Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: %s.", strings.Join(supportedBucketLookupTypes, ", ")))
