@@ -21,7 +21,7 @@ var (
 		return make([]promql.FPoint, 0, size)
 	})
 
-	hPointSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, 10, func(size int) []promql.HPoint {
+	hPointSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, seriesPerResultBucketFactor, func(size int) []promql.HPoint {
 		return make([]promql.HPoint, 0, size)
 	})
 
