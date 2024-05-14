@@ -44,4 +44,16 @@ spec:
       {{- end }}
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus
+  {{- $autoscaling := .Values.querier.kedaAutoscaling -}}
+  {{- if .Values.querier.kedaAutoscaling.predictiveScalingEnabled }}
+  - metadata:
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5"}[{{$autoscaling.predictiveScalingLookback}}] offset {{$autoscaling.predictiveScalingPeriod}}))
+      serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
+      threshold: {{ $autoscaling.querySchedulerInflightRequestsThreshold | quote }}
+      {{- if .Values.kedaAutoscaling.customHeaders }}
+      customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
+      {{- end }}
+    name: cortex_querier_hpa_default
+    type: prometheus
+  {{- end }}
 {{- end }}

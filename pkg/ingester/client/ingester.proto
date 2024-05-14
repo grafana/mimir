@@ -136,6 +136,11 @@ message ExemplarQueryRequest {
 
 message ActiveSeriesRequest {
   repeated LabelMatcher matchers = 1;
+  enum RequestType {
+    SERIES = 0;
+    NATIVE_HISTOGRAM_SERIES = 1;
+  }
+  RequestType type = 2;
 }
 
 message QueryResponse {
@@ -237,6 +242,9 @@ message MetricsMetadataResponse {
 
 message ActiveSeriesResponse {
   repeated cortexpb.Metric metric = 1;
+  // bucket_count is only used when the request type was NATIVE_HISTOGRAM_SERIES.
+  // bucket_count contains the native histogram active buckets count for each series in "metric" above.
+  repeated uint64 bucket_count = 2;
 }
 
 message TimeSeriesChunk {

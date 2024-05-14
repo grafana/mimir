@@ -35,6 +35,8 @@ const (
 )
 
 type record struct {
+	// Context holds the tracing (and potentially other) info, that the record was enriched with on fetch from Kafka.
+	ctx      context.Context
 	tenantID string
 	content  []byte
 }
@@ -69,17 +71,17 @@ type PartitionReader struct {
 	reg    prometheus.Registerer
 }
 
-func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, consumerGroup string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	consumer := newPusherConsumer(pusher, reg, logger)
-	return newPartitionReader(kafkaCfg, partitionID, consumerGroup, consumer, logger, reg)
+	return newPartitionReader(kafkaCfg, partitionID, instanceID, consumer, logger, reg)
 }
 
-func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, consumerGroup string, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	r := &PartitionReader{
 		kafkaCfg:              kafkaCfg,
 		partitionID:           partitionID,
 		consumer:              consumer,
-		consumerGroup:         consumerGroup,
+		consumerGroup:         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		metrics:               newReaderMetrics(partitionID, reg),
 		commitInterval:        time.Second,
 		consumedOffsetWatcher: newPartitionOffsetWatcher(),
@@ -317,12 +319,15 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		minOffset = math.MaxInt
 		maxOffset = 0
 	)
-	fetches.EachRecord(func(r *kgo.Record) {
-		minOffset = min(minOffset, int(r.Offset))
-		maxOffset = max(maxOffset, int(r.Offset))
+	fetches.EachRecord(func(rec *kgo.Record) {
+		minOffset = min(minOffset, int(rec.Offset))
+		maxOffset = max(maxOffset, int(rec.Offset))
 		records = append(records, record{
-			content:  r.Value,
-			tenantID: string(r.Key),
+			// This context carries the tracing data for this individual record;
+			// kotel populates this data when it fetches the messages.
+			ctx:      rec.Context,
+			tenantID: string(rec.Key),
+			content:  rec.Value,
 		})
 	})
 
@@ -346,7 +351,6 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		)
 		boff.Wait()
 	}
-
 }
 
 func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {

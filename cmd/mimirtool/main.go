@@ -26,10 +26,12 @@ var (
 	configCommand         commands.ConfigCommand
 	loadgenCommand        commands.LoadgenCommand
 	logConfig             commands.LoggerConfig
+	promQLCommand         commands.PromQLCommand
 	pushGateway           commands.PushGatewayConfig
 	remoteReadCommand     commands.RemoteReadCommand
 	ruleCommand           commands.RuleCommand
 	backfillCommand       commands.BackfillCommand
+	runtimeConfigCommand  commands.RuntimeConfigCommand
 )
 
 func main() {
@@ -45,9 +47,11 @@ func main() {
 	configCommand.Register(app, envVars)
 	loadgenCommand.Register(app, envVars, prometheus.DefaultRegisterer)
 	logConfig.Register(app, envVars)
+	promQLCommand.Register(app, envVars)
 	pushGateway.Register(app, envVars)
 	remoteReadCommand.Register(app, envVars)
 	ruleCommand.Register(app, envVars, prometheus.DefaultRegisterer)
+	runtimeConfigCommand.Register(app)
 
 	app.Command("version", "Get the version of the mimirtool CLI").Action(func(*kingpin.ParseContext) error {
 		fmt.Fprintln(os.Stdout, mimirversion.Print("Mimirtool"))

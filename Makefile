@@ -260,7 +260,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr7831-88527a12da
+LATEST_BUILD_IMAGE_TAG ?= pr8107-6dc27b0894
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -349,7 +349,6 @@ lint: check-makefiles
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/storage/sharding/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/api/...
-	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/util/globalerror
 
 	# Ensure all errors are report as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
@@ -449,6 +448,12 @@ lint: check-makefiles
 	# Do not use the object storage client intended only for tools within Mimir itself
 	faillint -paths \
 		"github.com/grafana/mimir/pkg/util/objtools" \
+		./pkg/... ./cmd/... ./integration/...
+
+	# Use the more performant metadata.ValueFromIncomingContext wherever possible (if not possible, we can always put
+	# a lint ignore directive to skip linting).
+	faillint -paths \
+		"google.golang.org/grpc/metadata.{FromIncomingContext}=google.golang.org/grpc/metadata.ValueFromIncomingContext" \
 		./pkg/... ./cmd/... ./integration/...
 
 format: ## Run gofmt and goimports.

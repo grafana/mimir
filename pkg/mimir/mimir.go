@@ -144,7 +144,7 @@ type Config struct {
 	TimeseriesUnmarshalCachingOptimizationEnabled bool `yaml:"timeseries_unmarshal_caching_optimization_enabled" category:"experimental"`
 }
 
-// RegisterFlags registers flag.
+// RegisterFlags registers flags.
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ApplicationName = "Grafana Mimir"
 	c.Server.MetricsNamespace = "cortex"
@@ -268,7 +268,14 @@ func (c *Config) Validate(log log.Logger) error {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
 	if err := c.Ingester.Validate(log); err != nil {
-		return errors.Wrap(err, "invalid ingester config")
+		// We check for "ingester" module here because, as of today, its config has a special mode, that assumes
+		// passing a unique set of per instance flags, e.g. "-ingester.ring.instance-id".
+		// Such a scenario breaks the validation of other modules if those flags aren't also passed to each instance (ref
+		// grafana/mimir#7822). Otherwise, log the fact and move on.
+		if c.isAnyModuleEnabled(Ingester, Write, All) || !errors.Is(err, ingester.ErrSpreadMinimizingValidation) {
+			return errors.Wrap(err, "invalid ingester config")
+		}
+		level.Debug(log).Log("ingester config is invalid; moving on because the \"ingester\" module is not in this process's targets", "err", err.Error())
 	}
 	if err := c.Worker.Validate(); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")

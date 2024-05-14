@@ -842,6 +842,11 @@ ha_tracker:
 # CLI flag: -distributor.max-recv-msg-size
 [max_recv_msg_size: <int> | default = 104857600]
 
+# (experimental) Max size of the pooled buffers used for marshaling write
+# requests. If 0, no max size is enforced.
+# CLI flag: -distributor.max-request-pool-buffer-size
+[max_request_pool_buffer_size: <int> | default = 0]
+
 # (advanced) Timeout for downstream ingesters.
 # CLI flag: -distributor.remote-timeout
 [remote_timeout: <duration> | default = 2s]
@@ -1334,6 +1339,12 @@ store_gateway_client:
 # (experimental) PromQL engine to use, either 'standard' or 'streaming'
 # CLI flag: -querier.promql-engine
 [promql_engine: <string> | default = "standard"]
+
+# (experimental) If set to true and the streaming engine is in use, fall back to
+# using the Prometheus PromQL engine for any queries not supported by the
+# streaming engine.
+# CLI flag: -querier.enable-promql-engine-fallback
+[enable_promql_engine_fallback: <boolean> | default = true]
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
@@ -3007,6 +3018,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-native-histogram-buckets
 [max_native_histogram_buckets: <int> | default = 0]
 
+# (experimental) Maximum number of exemplars per series per request. 0 to
+# disable limit in request. The exceeding exemplars are dropped.
+# CLI flag: -distributor.max-exemplars-per-series-per-request
+[max_exemplars_per_series_per_request: <int> | default = 0]
+
 # Whether to reduce or reject native histogram samples with more buckets than
 # the configured limit.
 # CLI flag: -validation.reduce-native-histogram-over-max-buckets
@@ -3015,8 +3031,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (advanced) Controls how far into the future incoming samples and exemplars are
 # accepted compared to the wall clock. Any sample or exemplar will be rejected
 # if its timestamp is greater than '(now + grace_period)'. This configuration is
-# enforced in the distributor, ingester and query-frontend (to avoid querying
-# too far into the future).
+# enforced in the distributor and ingester.
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
 
@@ -3514,6 +3529,13 @@ bucket_store:
   # storage. The limit is shared across all tenants.
   # CLI flag: -blocks-storage.bucket-store.max-concurrent
   [max_concurrent: <int> | default = 100]
+
+  # (advanced) Timeout for the queue of queries waiting for execution. If the
+  # queue is full and the timeout is reached, the query will be retried on
+  # another store-gateway. 0 means no timeout and all queries will wait
+  # indefinitely for their turn.
+  # CLI flag: -blocks-storage.bucket-store.max-concurrent-queue-timeout
+  [max_concurrent_queue_timeout: <duration> | default = 0s]
 
   # (advanced) Maximum number of concurrent tenants synching blocks.
   # CLI flag: -blocks-storage.bucket-store.tenant-sync-concurrency
@@ -4723,6 +4745,25 @@ http:
   # (advanced) Maximum number of connections per host. 0 means no limit.
   # CLI flag: -<prefix>.s3.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
+
+  # (advanced) Path to the CA certificates to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -<prefix>.s3.http.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Path to the client certificate, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -<prefix>.s3.http.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
+  # CLI flag: -<prefix>.s3.http.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -<prefix>.s3.http.tls-server-name
+  [tls_server_name: <string> | default = ""]
 ```
 
 ### gcs_storage_backend

@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -56,7 +57,8 @@ type Config struct {
 	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"advanced"`
 	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
 
-	PromQLEngine string `yaml:"promql_engine" category:"experimental"`
+	PromQLEngine               string `yaml:"promql_engine" category:"experimental"`
+	EnablePromQLEngineFallback bool   `yaml:"enable_promql_engine_fallback" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -88,6 +90,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
 
 	f.StringVar(&cfg.PromQLEngine, "querier.promql-engine", standardPromQLEngine, fmt.Sprintf("PromQL engine to use, either '%v' or '%v'", standardPromQLEngine, streamingPromQLEngine))
+	f.BoolVar(&cfg.EnablePromQLEngineFallback, "querier.enable-promql-engine-fallback", true, "If set to true and the streaming engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the streaming engine.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
@@ -161,11 +164,16 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 	case standardPromQLEngine:
 		eng = promql.NewEngine(opts)
 	case streamingPromQLEngine:
-		var err error
-
-		eng, err = streamingpromql.NewEngine(opts)
+		streamingEngine, err := streamingpromql.NewEngine(opts)
 		if err != nil {
 			return nil, nil, nil, err
+		}
+
+		if cfg.EnablePromQLEngineFallback {
+			prometheusEngine := promql.NewEngine(opts)
+			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
+		} else {
+			eng = streamingEngine
 		}
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.PromQLEngine))

@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1492,14 +1491,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				})
 				stats.failedExemplarsCount += len(ts.Exemplars)
 			} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
-				if len(ts.Exemplars) > 1 {
-					// We can get multiple exemplars for native histograms.
-					// Sort exemplars by timestamp to ensure they are ingested in order.
-					// OpenTelemetry in particular does not order exemplars.
-					sort.Slice(ts.Exemplars, func(i, j int) bool {
-						return ts.Exemplars[i].TimestampMs < ts.Exemplars[j].TimestampMs
-					})
-				}
 				outOfOrderExemplars := 0
 				for _, ex := range ts.Exemplars {
 					if ex.TimestampMs > maxTimestampMs {
@@ -1650,6 +1641,13 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	vals, _, err := q.LabelValues(ctx, labelName, matchers...)
 	if err != nil {
 		return nil, err
+	}
+
+	// The label value strings are sometimes pointing to memory mapped file
+	// regions that may become unmapped anytime after Querier.Close is called.
+	// So we copy those strings.
+	for i, s := range vals {
+		vals[i] = strings.Clone(s)
 	}
 
 	return &client.LabelValuesResponse{

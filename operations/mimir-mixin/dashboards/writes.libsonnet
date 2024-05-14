@@ -174,13 +174,13 @@ local filename = 'mimir-writes.json';
         ) +
         $.queryPanel(
           [
-            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
+            'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
             'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
             'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
             'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
           ],
           [
-            '50th percentile',
+            'avg',
             '99th percentile',
             '99.9th percentile',
             '100th percentile',
@@ -301,13 +301,13 @@ local filename = 'mimir-writes.json';
         ) +
         $.queryPanel(
           [
-            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
-            '50th percentile',
+            'avg',
             '99th percentile',
             '99.9th percentile',
             '100th percentile',
@@ -332,13 +332,13 @@ local filename = 'mimir-writes.json';
         ) +
         $.queryPanel(
           [
-            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
-            '50th percentile',
+            'avg',
             '99th percentile',
             '99.9th percentile',
             '100th percentile',
@@ -360,13 +360,13 @@ local filename = 'mimir-writes.json';
         ) +
         $.queryPanel(
           [
-            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
-            '50th percentile',
+            'avg',
             '99th percentile',
             '99.9th percentile',
             '100th percentile',
@@ -414,13 +414,13 @@ local filename = 'mimir-writes.json';
         ) +
         $.queryPanel(
           [
-            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
-            '50th percentile',
+            'avg',
             '99th percentile',
             '99.9th percentile',
             '100th percentile',
@@ -439,6 +439,41 @@ local filename = 'mimir-writes.json';
     .addRowIf(
       $._config.autoscaling.distributor.enabled,
       $.cpuAndMemoryBasedAutoScalingRow('Distributor'),
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels && $._config.autoscaling.ingester.enabled,
+      $.row('Ingester (ingest storage) – autoscaling')
+      .addPanel(
+        $.autoScalingActualReplicas('ingester') + { title: 'Replicas (ReplicaTemplate)' } +
+        $.panelDescription(
+          'Replicas (ReplicaTemplate)',
+          |||
+            The maximum and current number of replicas for ReplicaTemplate object.
+            Rollout-operator will keep ingester replicas updated based on this object.
+            <br /><br />
+            Note: The current number of replicas can still show 1 replica even when scaled to 0.
+            Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
+          |||
+        )
+      )
+      .addPanel(
+        $.timeseriesPanel('Replicas') +
+        $.panelDescription('Replicas', 'Number of ingester replicas.') +
+        $.queryPanel(
+          [
+            'sum by (%s) (up{%s})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            '{{ %(per_job_label)s }}' % $._config.per_job_label,
+          ],
+        ),
+      )
+      .addPanel(
+        $.autoScalingDesiredReplicasByScalingMetricPanel('ingester', '', '') + { title: 'Desired replicas (ReplicaTemplate)' }
+      )
+      .addPanel(
+        $.autoScalingFailuresPanel('ingester') + { title: 'Autoscaler failures rate (ReplicaTemplate)' }
+      ),
     )
     .addRow(
       $.kvStoreRow('Distributor - key-value store for high-availability (HA) deduplication', 'distributor', 'distributor-hatracker')

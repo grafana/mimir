@@ -48,6 +48,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Alerts: exclude `529` and `598` status codes from failure codes in `MimirRequestsError`. #7889
 * [ENHANCEMENT] The new value `metaMonitoring.grafanaAgent.logs.clusterLabel` controls whether to add a `cluster` label and with what content to PodLogs logs. #7764
 * [ENHANCEMENT] The new values `global.extraVolumes` and `global.extraVolumeMounts` adds volumes and volumeMounts to all pods directly managed by mimir-distributed. #7922
+* [ENHANCEMENT] Smoke-test: Parameterized `backoffLimit` for smoke tests in Helm chart to accommodate slower startup environments like k3d. #8025
+* [ENHANCEMENT] Add a volumeClaimTemplates section to the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` components. #8016
+* [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966
 
 ## 5.3.0
 
@@ -84,6 +87,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Recording rules: add native histogram recording rules to `cortex_request_duration_seconds`. #7528
 * [ENHANCEMENT] Make the port used in ServiceMonitor for kube-state-metrics configurable. #7507
 * [ENHANCEMENT] Produce a clearer error messages when multiple X-Scope-OrgID headers are present. #7704
+* [ENHANCEMENT] Add `querier.kedaAutoscaling.predictiveScalingEnabled` to scale querier based on inflight queries 7 days ago. #7775
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
 * [BUGFIX] Recording rules: drop rules for metrics removed in 2.0: `cortex_memcache_request_duration_seconds` and `cortex_cache_request_duration_seconds`. #7514
 * [BUGFIX] Store-gateway: setting "resources.requests.memory" with a quantity that used power-of-ten SI suffix, caused an error. #7506

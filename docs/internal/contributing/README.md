@@ -116,7 +116,7 @@ We document the common user-visible errors so it is easy for the user to search 
 
 To add a new error:
 
-- Under `pkg/util/globalerror/errors.go`, create a new unique ID string as a constant. After your changes make it into a public release, do not change this string.
+- Under `pkg/util/globalerror/user.go`, create a new unique ID string as a constant. After your changes make it into a public release, do not change this string.
 - When returning the error, use one of the functions in `globalerror` to generate the message. If you return the same error from multiple places, create a new function to return that error so that its message string is defined in only one place. Then, add a simple test for that function to compare its actual output with the expected message which is defined as a hard-coded string.
 - Update the runbook in `docs/sources/mimir/manage/mimir-runbooks/_index.md` with details about why the error happens, and if possible how to address it.
 

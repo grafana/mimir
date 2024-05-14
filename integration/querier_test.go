@@ -445,10 +445,6 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			const shippedBlocks = 2
 			require.NoError(t, cluster.WaitSumMetrics(e2e.GreaterOrEqual(float64(shippedBlocks*seriesReplicationFactor)), "cortex_bucket_store_blocks_loaded"))
 
-			// Start the compactor to have the bucket index created before querying.
-			compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, s.StartAndWaitReady(compactor))
-
 			var expectedCacheRequests int
 
 			// Query back the series (1 only in the storage, 1 only in the ingesters, 1 on both).

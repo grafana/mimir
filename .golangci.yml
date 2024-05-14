@@ -63,5 +63,5 @@ run:
 
 issues:
   exclude-rules:
-    - linters: [revive]
+    - linters: [ revive ]
       text: "if-return"

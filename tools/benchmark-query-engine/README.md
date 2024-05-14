@@ -13,3 +13,5 @@ Usage:
 - `go run . -bench=abc`: run all benchmarks with names matching regex `abc`
 - `go run . -count=X`: run all benchmarks X times
 - `go run . -bench=abc -count=X`: run all benchmarks with names matching regex `abc` X times
+- `go run . -start-ingester`: start ingester and wait (run no benchmarks)
+- `go run . -use-existing-ingester=localhost:1234`: use existing ingester started with `-start-ingester` to reduce startup time

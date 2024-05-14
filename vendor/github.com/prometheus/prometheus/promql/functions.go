@@ -342,7 +342,6 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	// Run the smoothing operation.
 	var x, y float64
 	for i := 1; i < l; i++ {
-
 		// Scale the raw value against the smoothing factor.
 		x = sf * samples.Floats[i].F
 
@@ -949,15 +948,6 @@ func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	return enh.Out, nil
 }
 
-func kahanSum(samples []float64) float64 {
-	var sum, c float64
-
-	for _, v := range samples {
-		sum, c = kahanSumInc(v, sum, c)
-	}
-	return sum + c
-}
-
 func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 	t := sum + inc
 	// Using Neumaier improvement, swap if next term larger than sum.
@@ -1240,7 +1230,6 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
 		}
 		mb.buckets = append(mb.buckets, bucket{upperBound, sample.F})
-
 	}
 
 	// Now deal with the histograms.

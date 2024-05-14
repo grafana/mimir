@@ -33,10 +33,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -62,6 +63,7 @@ type Config struct {
 
 	// These configuration options are injected internally.
 	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
+	LookBackDelta           time.Duration             `yaml:"-"`
 	QueryStoreAfter         time.Duration             `yaml:"-"`
 }
 
@@ -149,12 +151,13 @@ type enqueueResult struct {
 }
 
 // NewFrontend creates a new frontend.
-func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Registerer) (*Frontend, error) {
+func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Registerer, codec querymiddleware.Codec) (*Frontend, error) {
 	requestsCh := make(chan *frontendRequest)
 	toSchedulerAdapter := frontendToSchedulerAdapter{
 		log:    log,
 		cfg:    cfg,
 		limits: limits,
+		codec:  codec,
 	}
 
 	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, net.JoinHostPort(cfg.Addr, strconv.Itoa(cfg.Port)), requestsCh, toSchedulerAdapter, log, reg)
@@ -375,7 +378,7 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
 	defer func(s frontendv2pb.FrontendForQuerier_QueryResultStreamServer) {
 		err := s.SendAndClose(&frontendv2pb.QueryResultResponse{})
-		if err != nil && !errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
+		if err != nil && !errors.Is(globalerror.WrapGrpcContextError(err), context.Canceled) {
 			level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
 		}
 	}(stream)
