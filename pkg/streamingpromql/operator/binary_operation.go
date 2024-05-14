@@ -153,29 +153,27 @@ func (b *BinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) 
 // - a list indicating which series from the left side are needed to compute the output
 // - a list indicating which series from the right side are needed to compute the output
 func (b *BinaryOperation) computeOutputSeries() ([]SeriesMetadata, []*binaryOperationOutputSeries, []bool, []bool) {
-	// TODO: Prometheus' engine uses strings for the key here, which would avoid issues with hash collisions, but seems much slower.
-	// Either we should use strings, or we'll need to deal with hash collisions.
-	hashFunc := b.hashFunc()
-	outputSeriesMap := map[uint64]*binaryOperationOutputSeries{}
+	labelsFunc := b.labelsFunc()
+	outputSeriesMap := map[string]*binaryOperationOutputSeries{}
 
 	// TODO: is it better to use whichever side has fewer series for this first loop? Should result in a smaller map and therefore less work later on
 	// Would need to be careful about 'or' and 'unless' cases
 	for idx, s := range b.leftMetadata {
-		hash := hashFunc(s.Labels)
-		series, exists := outputSeriesMap[hash]
+		groupLabels := labelsFunc(s.Labels).String()
+		series, exists := outputSeriesMap[groupLabels]
 
 		if !exists {
 			series = &binaryOperationOutputSeries{}
-			outputSeriesMap[hash] = series
+			outputSeriesMap[groupLabels] = series
 		}
 
 		series.leftSeriesIndices = append(series.leftSeriesIndices, idx)
 	}
 
 	for idx, s := range b.rightMetadata {
-		hash := hashFunc(s.Labels)
+		groupLabels := labelsFunc(s.Labels).String()
 
-		if series, exists := outputSeriesMap[hash]; exists {
+		if series, exists := outputSeriesMap[groupLabels]; exists {
 			series.rightSeriesIndices = append(series.rightSeriesIndices, idx)
 		}
 
@@ -183,17 +181,16 @@ func (b *BinaryOperation) computeOutputSeries() ([]SeriesMetadata, []*binaryOper
 	}
 
 	// Remove series that cannot produce samples.
-	for hash, outputSeries := range outputSeriesMap {
+	for seriesLabels, outputSeries := range outputSeriesMap {
 		if len(outputSeries.leftSeriesIndices) == 0 || len(outputSeries.rightSeriesIndices) == 0 {
 			// FIXME: this is incorrect for 'or' and 'unless'
 			// No matching series on at least one side for this output series, so output series will have no samples. Remove it.
-			delete(outputSeriesMap, hash)
+			delete(outputSeriesMap, seriesLabels)
 		}
 	}
 
 	allMetadata := make([]SeriesMetadata, 0, len(outputSeriesMap))
 	allSeries := make([]*binaryOperationOutputSeries, 0, len(outputSeriesMap))
-	labelsFunc := b.labelsFunc()
 	leftSeriesUsed := GetBoolSlice(len(b.leftMetadata))[:len(b.leftMetadata)]
 	rightSeriesUsed := GetBoolSlice(len(b.rightMetadata))[:len(b.rightMetadata)]
 
@@ -289,31 +286,6 @@ func (g favourRightSideSorter) Swap(i, j int) {
 func (g favourLeftSideSorter) Swap(i, j int) {
 	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
 	g.series[i], g.series[j] = g.series[j], g.series[i]
-}
-
-// hashFunc returns a function that computes the hash of the output group this series belongs to.
-func (b *BinaryOperation) hashFunc() func(labels.Labels) uint64 {
-	buf := make([]byte, 0, 1024)
-	names := b.VectorMatching.MatchingLabels
-
-	if b.VectorMatching.On {
-		slices.Sort(names)
-
-		return func(l labels.Labels) uint64 {
-			var hash uint64
-			hash, buf = l.HashForLabels(buf, names...)
-			return hash
-		}
-	}
-
-	names = append([]string{labels.MetricName}, names...)
-	slices.Sort(names)
-
-	return func(l labels.Labels) uint64 {
-		var hash uint64
-		hash, buf = l.HashWithoutLabels(buf, names...)
-		return hash
-	}
 }
 
 // labelsFunc returns a function that computes the labels of the output group this series belongs to.
