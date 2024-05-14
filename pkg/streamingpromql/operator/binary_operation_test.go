@@ -455,7 +455,7 @@ func TestBinaryOperation_Sorting(t *testing.T) {
 			require.Len(t, testCase.expectedOrderFavouringRightSide, len(testCase.series), "invalid test case: should have same number of input and output series for order favouring right side")
 
 			metadata := make([]SeriesMetadata, len(testCase.series))
-			for i, _ := range testCase.series {
+			for i := range testCase.series {
 				metadata[i] = SeriesMetadata{labels.FromStrings("series", strconv.Itoa(i))}
 			}
 
