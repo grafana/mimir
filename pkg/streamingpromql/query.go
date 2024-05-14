@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 	"golang.org/x/exp/slices"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operator"
 )
 
@@ -77,7 +78,7 @@ func newQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, sta
 			return nil, err
 		}
 	default:
-		return nil, NewNotSupportedError(fmt.Sprintf("%s value as top-level expression", parser.DocumentedType(expr.Type())))
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("%s value as top-level expression", parser.DocumentedType(expr.Type())))
 	}
 
 	return q, nil
@@ -102,7 +103,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 		}
 
 		if e.OriginalOffset != 0 || e.Offset != 0 {
-			return nil, NewNotSupportedError("instant vector selector with 'offset'")
+			return nil, compat.NewNotSupportedError("instant vector selector with 'offset'")
 		}
 
 		return &operator.InstantVectorSelector{
@@ -118,7 +119,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 		}, nil
 	case *parser.AggregateExpr:
 		if e.Op != parser.SUM {
-			return nil, NewNotSupportedError(fmt.Sprintf("'%s' aggregation", e.Op))
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation", e.Op))
 		}
 
 		if e.Param != nil {
@@ -127,7 +128,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 		}
 
 		if e.Without {
-			return nil, NewNotSupportedError("grouping with 'without'")
+			return nil, compat.NewNotSupportedError("grouping with 'without'")
 		}
 
 		slices.Sort(e.Grouping)
@@ -146,7 +147,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 		}, nil
 	case *parser.Call:
 		if e.Func.Name != "rate" {
-			return nil, NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 		}
 
 		if len(e.Args) != 1 {
@@ -162,13 +163,33 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 		return &operator.RangeVectorFunction{
 			Inner: inner,
 		}, nil
+	case *parser.BinaryExpr:
+		if e.LHS.Type() != parser.ValueTypeVector || e.RHS.Type() != parser.ValueTypeVector {
+			return nil, compat.NewNotSupportedError("binary expression with scalars")
+		}
+
+		if e.VectorMatching.Card != parser.CardOneToOne {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching", e.VectorMatching.Card))
+		}
+
+		lhs, err := q.convertToInstantVectorOperator(e.LHS)
+		if err != nil {
+			return nil, err
+		}
+
+		rhs, err := q.convertToInstantVectorOperator(e.RHS)
+		if err != nil {
+			return nil, err
+		}
+
+		return operator.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op)
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToInstantVectorOperator(e.Expr)
 	case *parser.ParenExpr:
 		return q.convertToInstantVectorOperator(e.Expr)
 	default:
-		return nil, NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
 	}
 }
 
@@ -182,7 +203,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (operator.RangeVe
 		vectorSelector := e.VectorSelector.(*parser.VectorSelector)
 
 		if vectorSelector.OriginalOffset != 0 || vectorSelector.Offset != 0 {
-			return nil, NewNotSupportedError("range vector selector with 'offset'")
+			return nil, compat.NewNotSupportedError("range vector selector with 'offset'")
 		}
 
 		interval := q.statement.Interval
@@ -208,7 +229,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (operator.RangeVe
 	case *parser.ParenExpr:
 		return q.convertToRangeVectorOperator(e.Expr)
 	default:
-		return nil, NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
 	}
 }
 
@@ -251,7 +272,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		}
 	default:
 		// This should be caught in newQuery above.
-		return &promql.Result{Err: NewNotSupportedError(fmt.Sprintf("unsupported result type %s", parser.DocumentedType(q.statement.Expr.Type())))}
+		return &promql.Result{Err: compat.NewNotSupportedError(fmt.Sprintf("unsupported result type %s", parser.DocumentedType(q.statement.Expr.Type())))}
 	}
 
 	return q.result

@@ -9,13 +9,15 @@ import (
 )
 
 const (
-	maxExpectedPointsPerSeries = 100_000 // There's not too much science behind this number: 100000 points allows for a point per minute for just under 70 days.
+	maxExpectedPointsPerSeries  = 100_000 // There's not too much science behind this number: 100000 points allows for a point per minute for just under 70 days.
+	pointsPerSeriesBucketFactor = 2.0
 
-	maxExpectedSeriesPerResult = 10_000_000 // Likewise, there's not too much science behind this number: this is the based on examining the largest queries seen at Grafana Labs.
+	maxExpectedSeriesPerResult  = 10_000_000 // Likewise, there's not too much science behind this number: this is the based on examining the largest queries seen at Grafana Labs.
+	seriesPerResultBucketFactor = 2.0
 )
 
 var (
-	fPointSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, 10, func(size int) []promql.FPoint {
+	fPointSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.FPoint {
 		return make([]promql.FPoint, 0, size)
 	})
 
@@ -23,23 +25,23 @@ var (
 		return make([]promql.HPoint, 0, size)
 	})
 
-	matrixPool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, 10, func(size int) promql.Matrix {
+	matrixPool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, seriesPerResultBucketFactor, func(size int) promql.Matrix {
 		return make(promql.Matrix, 0, size)
 	})
 
-	vectorPool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, 10, func(size int) promql.Vector {
+	vectorPool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) promql.Vector {
 		return make(promql.Vector, 0, size)
 	})
 
-	seriesMetadataSlicePool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, 10, func(size int) []SeriesMetadata {
+	seriesMetadataSlicePool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, seriesPerResultBucketFactor, func(size int) []SeriesMetadata {
 		return make([]SeriesMetadata, 0, size)
 	})
 
-	floatSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, 10, func(_ int) []float64 {
+	floatSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(_ int) []float64 {
 		// Don't allocate a new slice now - we'll allocate one in GetFloatSlice if we need it, so we can differentiate between reused and new slices.
 		return nil
 	})
-	boolSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, 10, func(_ int) []bool {
+	boolSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(_ int) []bool {
 		// Don't allocate a new slice now - we'll allocate one in GetBoolSlice if we need it, so we can differentiate between reused and new slices.
 		return nil
 	})

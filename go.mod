@@ -32,7 +32,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.27.0
-	github.com/prometheus/client_golang v1.19.0
+	github.com/prometheus/client_golang v1.19.1
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.53.0
 	github.com/prometheus/prometheus v1.99.0
@@ -70,10 +70,10 @@ require (
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/prometheus/procfs v0.12.0
-	github.com/thanos-io/objstore v0.0.0-20240506104147-63052b4c4867
+	github.com/thanos-io/objstore v0.0.0-20240512204237-71ef2d0cf7c4
 	github.com/twmb/franz-go v1.16.1
 	github.com/twmb/franz-go/pkg/kadm v1.10.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240430054423-8b5395896363
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240509060506-c77d58eb5693
 	github.com/twmb/franz-go/pkg/kmsg v1.7.0
 	github.com/twmb/franz-go/plugin/kotel v1.4.1
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
@@ -84,7 +84,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f
 	google.golang.org/api v0.177.0
-	google.golang.org/protobuf v1.34.0
+	google.golang.org/protobuf v1.34.1
 	sigs.k8s.io/kustomize/kyaml v0.16.0
 )
 
@@ -257,7 +257,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240510123742-0edca884f9ab
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240513175929-0d2cdfa9ed71
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

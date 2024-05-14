@@ -14,9 +14,10 @@
 * [FEATURE] Continuous-test: now runable as a module with `mimir -target=continuous-test`. #7747
 * [FEATURE] Store-gateway: Allow specific tenants to be enabled or disabled via `-store-gateway.enabled-tenants` or `-store-gateway.disabled-tenants` CLI flags or their corresponding YAML settings. #7653
 * [FEATURE] New `-<prefix>.s3.bucket-lookup-type` flag configures lookup style type, used to access bucket in s3 compatible providers. #7684
-* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.promql-engine=streaming`. #7693 #7898 #7899 #8023 #8058
+* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.promql-engine=streaming`. #7693 #7898 #7899 #8023 #8058 #8096
 * [FEATURE] New `/ingester/unregister-on-shutdown` HTTP endpoint allows dynamic access to ingesters' `-ingester.ring.unregister-on-shutdown` configuration. #7739
 * [FEATURE] Server: added experimental [PROXY protocol support](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt). The PROXY protocol support can be enabled via `-server.proxy-protocol-enabled=true`. When enabled, the support is added both to HTTP and gRPC listening ports. #7698
+* [FEATURE] mimirtool: Add `runtime-config verify` sub-command, for verifying Mimir runtime config files. #8123
 * [ENHANCEMENT] Reduced memory allocations in functions used to propagate contextual information between gRPC calls. #7529
 * [ENHANCEMENT] Distributor: add experimental limit for exemplars per series per request, enabled with `-distributor.max-exemplars-per-series-per-request`, the number of discarded exemplars are tracked with `cortex_discarded_exemplars_total{reason="too_many_exemplars_per_series_per_request"}` #7989 #8010
 * [ENHANCEMENT] Store-gateway: merge series from different blocks concurrently. #7456
@@ -62,6 +63,7 @@
 * [BUGFIX] All: don't increment `thanos_objstore_bucket_operation_failures_total` metric for cancelled requests. #8072
 * [BUGFIX] Query-frontend: fix empty metric name matcher not being applied under certain conditions. #8076
 * [BUGFIX] Querying: Fix regex matching of multibyte runes with dot operator. #8089
+* [BUGFIX] Querying: matrix results returned from instant queries were not sorted by series. #8113
 
 ### Mixin
 

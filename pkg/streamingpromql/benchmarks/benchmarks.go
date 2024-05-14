@@ -107,13 +107,20 @@ func TestCases(metricSizes []int) []BenchCase {
 		//	Expr: "-a_X",
 		//},
 		//// Binary operators.
-		//{
-		//	Expr: "a_X - b_X",
-		//},
-		//{
-		//	Expr:  "a_X - b_X",
-		//	Steps: 10000,
-		//},
+		{
+			Expr: "a_X - b_X",
+		},
+		{
+			Expr:  "a_X - b_X",
+			Steps: 10000,
+		},
+		// Test the case where one side of a binary operation has many more series than the other.
+		{
+			Expr: `a_100{l=~"[13579]."} - b_100`,
+		},
+		{
+			Expr: `a_2000{l=~"1..."} - b_2000`,
+		},
 		//{
 		//	Expr: "a_X and b_X{l=~'.*[0-4]$'}",
 		//},
@@ -163,9 +170,12 @@ func TestCases(metricSizes []int) []BenchCase {
 		//	Expr: "topk(5, a_X)",
 		//},
 		//// Combinations.
-		//{
-		//	Expr: "rate(a_X[1m]) + rate(b_X[1m])",
-		//},
+		{
+			Expr: "rate(a_X[1m]) + rate(b_X[1m])",
+		},
+		{
+			Expr: "sum(a_X + b_X)",
+		},
 		{
 			Expr: "sum by (le)(rate(h_X[1m]))",
 		},

@@ -3,6 +3,7 @@
 package streamingpromql
 
 import (
+	"math"
 	"time"
 
 	"github.com/prometheus/prometheus/promql"
@@ -12,7 +13,7 @@ func NewTestEngineOpts() promql.EngineOpts {
 	return promql.EngineOpts{
 		Logger:               nil,
 		Reg:                  nil,
-		MaxSamples:           50000000,
+		MaxSamples:           math.MaxInt,
 		Timeout:              100 * time.Second,
 		EnableAtModifier:     true,
 		EnableNegativeOffset: true,
