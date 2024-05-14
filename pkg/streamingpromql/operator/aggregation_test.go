@@ -97,19 +97,3 @@ func labelsToSeriesMetadata(lbls []labels.Labels) []SeriesMetadata {
 
 	return m
 }
-
-type testOperator struct {
-	series []labels.Labels
-}
-
-func (t *testOperator) SeriesMetadata(_ context.Context) ([]SeriesMetadata, error) {
-	return labelsToSeriesMetadata(t.series), nil
-}
-
-func (t *testOperator) NextSeries(_ context.Context) (InstantVectorSeriesData, error) {
-	panic("NextSeries() not supported")
-}
-
-func (t *testOperator) Close() {
-	panic("Close() not supported")
-}
