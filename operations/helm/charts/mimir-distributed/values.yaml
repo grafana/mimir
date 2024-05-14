@@ -2626,9 +2626,9 @@ nginx:
         server {
           listen 8080;
           listen [::]:8080;
-          {{ if .Values.nginx.nginxConfig.clientMaxBodySize }}
+          {{- if .Values.nginx.nginxConfig.clientMaxBodySize }}
           client_max_body_size {{ .Values.nginx.nginxConfig.clientMaxBodySize }};
-          {{ end }}
+          {{- end }}
 
           {{- if .Values.nginx.basicAuth.enabled }}
           auth_basic           "Mimir";
