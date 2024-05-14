@@ -548,6 +548,7 @@ func newBinaryOperationSeriesBuffer(source InstantVectorOperator, seriesUsed []b
 
 // getSeries returns the data for the series in seriesIndices.
 // The returned slice is only safe to use until getSeries is called again.
+// seriesIndices should be sorted in ascending order to avoid unnecessary buffering.
 func (b *binaryOperationSeriesBuffer) getSeries(ctx context.Context, seriesIndices []int) ([]InstantVectorSeriesData, error) {
 	if cap(b.output) < len(seriesIndices) {
 		b.output = make([]InstantVectorSeriesData, len(seriesIndices))
