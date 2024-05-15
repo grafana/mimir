@@ -43,14 +43,14 @@ func BenchmarkQuery(b *testing.B) {
 	cases := TestCases(MetricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	standardEngine := promql.NewEngine(opts)
+	prometheusEngine := promql.NewEngine(opts)
 	streamingEngine, err := streamingpromql.NewEngine(opts)
 	require.NoError(b, err)
 
 	// Important: the names below must remain in sync with the names used in tools/benchmark-query-engine.
 	engines := map[string]promql.QueryEngine{
-		"standard":  standardEngine,
-		"streaming": streamingEngine,
+		"Prometheus": prometheusEngine,
+		"streaming":  streamingEngine,
 	}
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
@@ -65,12 +65,12 @@ func BenchmarkQuery(b *testing.B) {
 		b.Run(c.Name(), func(b *testing.B) {
 			if !skipCompareResults {
 				// Check both engines produce the same result before running the benchmark.
-				standardResult, standardClose := c.Run(ctx, b, start, end, interval, standardEngine, q)
+				prometheusResult, prometheusClose := c.Run(ctx, b, start, end, interval, prometheusEngine, q)
 				streamingResult, streamingClose := c.Run(ctx, b, start, end, interval, streamingEngine, q)
 
-				requireEqualResults(b, standardResult, streamingResult)
+				requireEqualResults(b, prometheusResult, streamingResult)
 
-				standardClose()
+				prometheusClose()
 				streamingClose()
 			}
 
@@ -95,7 +95,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	cases := TestCases(metricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	standardEngine := promql.NewEngine(opts)
+	prometheusEngine := promql.NewEngine(opts)
 	streamingEngine, err := streamingpromql.NewEngine(opts)
 	require.NoError(t, err)
 
@@ -106,12 +106,12 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)
 			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
-			standardResult, standardClose := c.Run(ctx, t, start, end, interval, standardEngine, q)
+			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
 			streamingResult, streamingClose := c.Run(ctx, t, start, end, interval, streamingEngine, q)
 
-			requireEqualResults(t, standardResult, streamingResult)
+			requireEqualResults(t, prometheusResult, streamingResult)
 
-			standardClose()
+			prometheusClose()
 			streamingClose()
 		})
 	}

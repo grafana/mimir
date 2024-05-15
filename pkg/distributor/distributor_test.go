@@ -7507,7 +7507,7 @@ func TestHandlePushError(t *testing.T) {
 			pushError:          httpGrpc5xxErr,
 			expectedOtherError: httpGrpc5xxErr,
 		},
-		"a distributorError gives the error returned by toGRPCError()": {
+		"an Error gives the error returned by toGRPCError()": {
 			pushError:         mockDistributorErr(testErrorMsg),
 			expectedGRPCError: status.Convert(toGRPCError(mockDistributorErr(testErrorMsg), false)),
 		},
@@ -7533,8 +7533,8 @@ func TestHandlePushError(t *testing.T) {
 				require.Equal(t, testData.expectedOtherError, err)
 			} else {
 				var expectedDetails *mimirpb.ErrorDetails
-				if distributorErr, ok := testData.pushError.(distributorError); ok {
-					expectedDetails = &mimirpb.ErrorDetails{Cause: distributorErr.errorCause()}
+				if distributorErr, ok := testData.pushError.(Error); ok {
+					expectedDetails = &mimirpb.ErrorDetails{Cause: distributorErr.Cause()}
 				}
 				checkGRPCError(t, testData.expectedGRPCError, expectedDetails, err)
 			}

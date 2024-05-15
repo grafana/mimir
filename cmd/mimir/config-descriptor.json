@@ -1199,6 +1199,17 @@
         },
         {
           "kind": "field",
+          "name": "max_request_pool_buffer_size",
+          "required": false,
+          "desc": "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.max-request-pool-buffer-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "remote_timeout",
           "required": false,
           "desc": "Timeout for downstream ingesters.",

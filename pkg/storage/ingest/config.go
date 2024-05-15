@@ -22,6 +22,7 @@ const (
 var (
 	ErrMissingKafkaAddress    = errors.New("the Kafka address has not been configured")
 	ErrMissingKafkaTopic      = errors.New("the Kafka topic has not been configured")
+	ErrInvalidWriteClients    = errors.New("the configured number of write clients is invalid (must be greater than 0)")
 	ErrInvalidConsumePosition = errors.New("the configured consume position is invalid")
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
@@ -61,8 +62,10 @@ type KafkaConfig struct {
 	ClientID     string        `yaml:"client_id"`
 	DialTimeout  time.Duration `yaml:"dial_timeout"`
 	WriteTimeout time.Duration `yaml:"write_timeout"`
+	WriteClients int           `yaml:"write_clients"`
 
-	ConsumerGroup string `yaml:"consumer_group"`
+	ConsumerGroup                     string        `yaml:"consumer_group"`
+	ConsumerGroupOffsetCommitInterval time.Duration `yaml:"consumer_group_offset_commit_interval"`
 
 	LastProducedOffsetPollInterval time.Duration `yaml:"last_produced_offset_poll_interval"`
 	LastProducedOffsetRetryTimeout time.Duration `yaml:"last_produced_offset_retry_timeout"`
@@ -85,8 +88,10 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.StringVar(&cfg.ClientID, prefix+".client-id", "", "The Kafka client ID.")
 	f.DurationVar(&cfg.DialTimeout, prefix+".dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
 	f.DurationVar(&cfg.WriteTimeout, prefix+".write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
+	f.IntVar(&cfg.WriteClients, prefix+".write-clients", 1, "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. An higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.")
 
 	f.StringVar(&cfg.ConsumerGroup, prefix+".consumer-group", "", "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it will be replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir will use the ingester instance ID to guarantee uniqueness.")
+	f.DurationVar(&cfg.ConsumerGroupOffsetCommitInterval, prefix+".consumer-group-offset-commit-interval", time.Second, "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.")
 
 	f.DurationVar(&cfg.LastProducedOffsetPollInterval, prefix+".last-produced-offset-poll-interval", time.Second, "How frequently to poll the last produced offset, used to enforce strong read consistency.")
 	f.DurationVar(&cfg.LastProducedOffsetRetryTimeout, prefix+".last-produced-offset-retry-timeout", 10*time.Second, "How long to retry a failed request to get the last produced offset.")
@@ -104,6 +109,9 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 	if cfg.Topic == "" {
 		return ErrMissingKafkaTopic
+	}
+	if cfg.WriteClients < 1 {
+		return ErrInvalidWriteClients
 	}
 	if !slices.Contains(consumeFromPositionOptions, cfg.ConsumeFromPositionAtStartup) {
 		return ErrInvalidConsumePosition
