@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/common/version"
 	"github.com/rs/cors"
 
-	"github.com/prometheus/alertmanager/api/metrics"
 	open_api_models "github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/alertmanager/api/v2/restapi"
 	"github.com/prometheus/alertmanager/api/v2/restapi/operations"
@@ -42,10 +41,13 @@ import (
 	general_ops "github.com/prometheus/alertmanager/api/v2/restapi/operations/general"
 	receiver_ops "github.com/prometheus/alertmanager/api/v2/restapi/operations/receiver"
 	silence_ops "github.com/prometheus/alertmanager/api/v2/restapi/operations/silence"
+
+	"github.com/prometheus/alertmanager/api/metrics"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/dispatch"
 	"github.com/prometheus/alertmanager/matchers/compat"
+	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/alertmanager/provider"
 	"github.com/prometheus/alertmanager/silence"
@@ -53,7 +55,7 @@ import (
 	"github.com/prometheus/alertmanager/types"
 )
 
-// API represents an Alertmanager API v2
+// API represents an Alertmanager API v2.
 type API struct {
 	peer           cluster.ClusterPeer
 	silences       *silence.Silences
@@ -73,7 +75,8 @@ type API struct {
 	logger log.Logger
 	m      *metrics.Alerts
 
-	Handler http.Handler
+	Handler   http.Handler
+	receivers []*notify.Receiver
 }
 
 type (
@@ -82,7 +85,7 @@ type (
 	setAlertStatusFn func(prometheus_model.LabelSet)
 )
 
-// NewAPI returns a new Alertmanager API v2
+// NewAPI returns a new Alertmanager API v2.
 func NewAPI(
 	alerts provider.Alerts,
 	gf groupsFn,
@@ -155,13 +158,14 @@ func (api *API) requestLogger(req *http.Request) log.Logger {
 }
 
 // Update sets the API struct members that may change between reloads of alertmanager.
-func (api *API) Update(cfg *config.Config, setAlertStatus setAlertStatusFn) {
+func (api *API) Update(cfg *config.Config, setAlertStatus setAlertStatusFn, receivers []*notify.Receiver) {
 	api.mtx.Lock()
 	defer api.mtx.Unlock()
 
 	api.alertmanagerConfig = cfg
 	api.route = dispatch.NewRoute(cfg.Route, nil)
 	api.setAlertStatus = setAlertStatus
+	api.receivers = receivers
 }
 
 func (api *API) getStatusHandler(params general_ops.GetStatusParams) middleware.Responder {
@@ -222,11 +226,40 @@ func (api *API) getStatusHandler(params general_ops.GetStatusParams) middleware.
 
 func (api *API) getReceiversHandler(params receiver_ops.GetReceiversParams) middleware.Responder {
 	api.mtx.RLock()
-	defer api.mtx.RUnlock()
+	configReceivers := api.receivers
+	api.mtx.RUnlock()
 
-	receivers := make([]*open_api_models.Receiver, 0, len(api.alertmanagerConfig.Receivers))
-	for i := range api.alertmanagerConfig.Receivers {
-		receivers = append(receivers, &open_api_models.Receiver{Name: &api.alertmanagerConfig.Receivers[i].Name})
+	receivers := make([]*open_api_models.Receiver, 0, len(configReceivers))
+	for _, r := range configReceivers {
+		integrations := make([]*open_api_models.Integration, 0, len(r.Integrations()))
+
+		for _, integration := range r.Integrations() {
+			notify, duration, err := integration.GetReport()
+			iname := integration.String()
+			sendResolved := integration.SendResolved()
+			integrations = append(integrations, &open_api_models.Integration{
+				Name:                      &iname,
+				SendResolved:              &sendResolved,
+				LastNotifyAttempt:         strfmt.DateTime(notify.UTC()),
+				LastNotifyAttemptDuration: duration.String(),
+				LastNotifyAttemptError: func() string {
+					if err != nil {
+						return err.Error()
+					}
+					return ""
+				}(),
+			})
+		}
+
+		rName := r.Name()
+		active := r.Active()
+		model := &open_api_models.Receiver{
+			Name:         &rName,
+			Active:       &active,
+			Integrations: integrations,
+		}
+
+		receivers = append(receivers, model)
 	}
 
 	return receiver_ops.NewGetReceiversOK().WithPayload(receivers)
@@ -545,9 +578,9 @@ var silenceStateOrder = map[types.SilenceState]int{
 
 // SortSilences sorts first according to the state "active, pending, expired"
 // then by end time or start time depending on the state.
-// active silences should show the next to expire first
+// Active silences should show the next to expire first
 // pending silences are ordered based on which one starts next
-// expired are ordered based on which one expired most recently
+// expired are ordered based on which one expired most recently.
 func SortSilences(sils open_api_models.GettableSilences) {
 	sort.Slice(sils, func(i, j int) bool {
 		state1 := types.SilenceState(*sils[i].Status.State)
