@@ -538,4 +538,3 @@ The example is generated with the following steps:
    ```
 
    Lines starting with "`-`" were removed and lines starting with "`+`" were added. The change to the annotation `checksum/config` means the pods will be restarted when this change is applied.
-

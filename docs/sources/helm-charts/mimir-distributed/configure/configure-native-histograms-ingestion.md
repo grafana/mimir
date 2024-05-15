@@ -46,4 +46,3 @@ To configure bucket limits for native histograms, refer to [Configure native his
 To configure Grafana Agent or Prometheus to write native histograms to Grafana Mimir, refer to [Send native histograms to Mimir].
 
 To visualize native histograms in Mimir, refer to [Visualize native histograms].
-

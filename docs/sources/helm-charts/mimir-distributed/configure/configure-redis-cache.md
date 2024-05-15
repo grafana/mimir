@@ -51,4 +51,3 @@ mimir:
         redis:
           endpoint: <redis-url>:6379
 ```
-
