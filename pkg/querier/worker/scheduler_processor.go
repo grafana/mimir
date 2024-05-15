@@ -305,6 +305,10 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	response.Headers, hasStreamHeader = removeStreamingHeader(response.Headers)
 	shouldStream := hasStreamHeader && sp.streamingEnabled && len(response.Body) > responseStreamingBodyChunkSizeBytes
 
+	// Protect against not-yet-exited querier handler goroutines that could
+	// still be incrementing stats when sent for marshaling below.
+	stats = stats.Copy()
+
 	for bof.Ongoing() {
 		c, err = sp.frontendPool.GetClientFor(frontendAddress)
 		if err != nil {
