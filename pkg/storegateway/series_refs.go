@@ -149,6 +149,13 @@ func (b seriesChunkRefsSet) makeReleasable() seriesChunkRefsSet {
 	return seriesChunkRefsSet{b.series, true}
 }
 
+// makeUnreleasable returns a new seriesChunkRefsSet that cannot be released on a subsequent call to release.
+//
+// This is useful for scenarios where a set will be used multiple times and so it is not safe for consumers to release it.
+func (b seriesChunkRefsSet) makeUnreleasable() seriesChunkRefsSet {
+	return seriesChunkRefsSet{b.series, false}
+}
+
 // seriesChunkRefs holds a series with a list of chunk references.
 type seriesChunkRefs struct {
 	lset labels.Labels
@@ -1489,6 +1496,10 @@ func (s *postingsSetsIterator) At() []storage.SeriesRef {
 func (s *postingsSetsIterator) Reset() {
 	s.currentBatch = nil
 	s.nextBatchPostingsOffset = 0
+}
+
+func (s *postingsSetsIterator) HasMultipleBatches() bool {
+	return len(s.postings) > s.batchSize
 }
 
 func (s *postingsSetsIterator) IsFirstAndOnlyBatch() bool {

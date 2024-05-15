@@ -2356,22 +2356,18 @@ func TestPostingsSetsIterator(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			iterator := newPostingsSetsIterator(testCase.postings, testCase.batchSize)
 
+			if len(testCase.expectedBatches) > 1 {
+				require.True(t, iterator.HasMultipleBatches())
+			} else {
+				require.False(t, iterator.HasMultipleBatches())
+			}
+
 			var actualBatches [][]storage.SeriesRef
 			for iterator.Next() {
 				actualBatches = append(actualBatches, iterator.At())
-
-				if len(testCase.expectedBatches) != 1 {
-					assert.False(t, iterator.IsFirstAndOnlyBatch())
-				}
 			}
 
 			assert.ElementsMatch(t, testCase.expectedBatches, actualBatches)
-
-			if len(testCase.expectedBatches) == 1 {
-				assert.True(t, iterator.IsFirstAndOnlyBatch())
-			} else if len(testCase.expectedBatches) == 0 {
-				assert.False(t, iterator.IsFirstAndOnlyBatch())
-			}
 		})
 	}
 }
