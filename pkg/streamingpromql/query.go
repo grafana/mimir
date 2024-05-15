@@ -278,14 +278,14 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	return q.result
 }
 
+func returnSeriesDataSlices(d operator.InstantVectorSeriesData) {
+	operator.PutFPointSlice(d.Floats)
+	operator.PutHPointSlice(d.Histograms)
+}
+
 func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o operator.InstantVectorOperator, series []operator.SeriesMetadata) (promql.Vector, error) {
 	ts := timeMilliseconds(q.statement.Start)
 	v := operator.GetVector(len(series))
-
-	returnSlices := func(f []promql.FPoint, h []promql.HPoint) {
-		operator.PutFPointSlice(f)
-		operator.PutHPointSlice(h)
-	}
 
 	for i, s := range series {
 		d, err := o.NextSeries(ctx)
@@ -312,14 +312,14 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o o
 				H:      point.H,
 			})
 		} else {
-			returnSlices(d.Floats, d.Histograms)
+			returnSeriesDataSlices(d)
 			// A series may have no data points.
 			if len(d.Floats) == 0 && len(d.Histograms) == 0 {
 				continue
 			}
 			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
 		}
-		returnSlices(d.Floats, d.Histograms)
+		returnSeriesDataSlices(d)
 	}
 
 	return v, nil
