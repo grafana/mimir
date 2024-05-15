@@ -1038,7 +1038,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 			},
 		},
-		"shard size = 1, scale ingesters up and down, series move to new ingster": {
+		"shard size = 1, scale ingesters up and down, series move to new ingester": {
 			registerPartitionID: 1,
 
 			limits: map[string]*validation.Limits{
