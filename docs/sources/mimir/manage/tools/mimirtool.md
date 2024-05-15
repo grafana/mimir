@@ -276,6 +276,16 @@ The following command retrieves all rule groups in the Grafana Mimir instance an
 mimirtool rules print
 ```
 
+To save all the rules for editing and re-upload to Mimir, use the `--output-dir` flag.
+The default output directory is the current directory.
+The output file has the format required by `mimirtool rules load` or `mimirtool rules sync`.
+
+For example, to save the file in the `rules` subdirectory:
+
+```bash
+mimirtool rules print --output-dir="rules"
+```
+
 #### Get rule group
 
 The following command retrieves a single rule group and prints it to the terminal.
@@ -284,9 +294,9 @@ The following command retrieves a single rule group and prints it to the termina
 mimirtool rules get <namespace> <rule_group_name>
 ```
 
-To save the rule group for editing and re-upload to mimir , use the `--output-dir` flag.
+To save the rule group for editing and re-upload to Mimir, use the `--output-dir` flag.
 The default output directory is the current directory.
-The output file has the format required by `mimirtool rules load`.
+The output file has the format required by `mimirtool rules load` or `mimirtool rules sync`.
 
 For example, to save the file in the `rules` subdirectory:
 
