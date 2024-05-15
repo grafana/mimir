@@ -1704,6 +1704,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				maxT,
 				newSafeQueryStats(),
 				log.NewNopLogger(),
+				nil,
 			)
 			require.NoError(t, err)
 
@@ -1804,6 +1805,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 					block.meta.MaxTime,
 					newSafeQueryStats(),
 					log.NewNopLogger(),
+					nil,
 				)
 				require.NoError(t, err)
 				allSets := readAllSeriesChunkRefsSet(iterator)
@@ -1867,6 +1869,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 							block.meta.MaxTime,
 							newSafeQueryStats(),
 							log.NewNopLogger(),
+							nil,
 						)
 						require.NoError(b, err)
 
@@ -2195,6 +2198,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						b.meta.MaxTime,
 						statsColdCache,
 						log.NewNopLogger(),
+						nil,
 					)
 
 					require.NoError(t, err)
@@ -2225,6 +2229,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						b.meta.MaxTime,
 						statsWarmCache,
 						log.NewNopLogger(),
+						nil,
 					)
 					require.NoError(t, err)
 					lset = extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))

@@ -707,6 +707,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	stats *safeQueryStats,
 	logger log.Logger,
+	wrapper func(strategy seriesIteratorStrategy, postingsSetsIterator *postingsSetsIterator, factory iteratorFactory) iterator[seriesChunkRefsSet], // Optional function called to wrap created iterators.
 ) (iterator[seriesChunkRefsSet], error) {
 	if batchSize <= 0 {
 		return nil, errors.New("set size must be a positive number")
@@ -717,10 +718,38 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
+	psi := newPostingsSetsIterator(ps, batchSize)
+
+	factory := func(strategy seriesIteratorStrategy) iterator[seriesChunkRefsSet] {
+		return openBlockSeriesChunkRefsSetsIteratorFromPostings(ctx, tenantID, indexr, indexCache, blockMeta, shard, seriesHasher, strategy, minTime, maxTime, stats, psi, pendingMatchers, logger)
+	}
+
+	if wrapper == nil {
+		return factory(strategy), nil
+	}
+
+	return wrapper(strategy, psi, factory), nil
+}
+
+func openBlockSeriesChunkRefsSetsIteratorFromPostings(
+	ctx context.Context,
+	tenantID string,
+	indexr *bucketIndexReader, // Index reader for block.
+	indexCache indexcache.IndexCache,
+	blockMeta *block.Meta,
+	shard *sharding.ShardSelector, // Shard selector.
+	seriesHasher seriesHasher,
+	strategy seriesIteratorStrategy,
+	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
+	stats *safeQueryStats,
+	postingsSetsIterator *postingsSetsIterator,
+	pendingMatchers []*labels.Matcher,
+	logger log.Logger,
+) iterator[seriesChunkRefsSet] {
 	var it iterator[seriesChunkRefsSet]
 	it = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
-		newPostingsSetsIterator(ps, batchSize),
+		postingsSetsIterator,
 		indexr,
 		indexCache,
 		stats,
@@ -733,11 +762,12 @@ func openBlockSeriesChunkRefsSetsIterator(
 		tenantID,
 		logger,
 	)
+
 	if len(pendingMatchers) > 0 {
 		it = newFilteringSeriesChunkRefsSetIterator(pendingMatchers, it, stats)
 	}
 
-	return it, nil
+	return it
 }
 
 // seriesIteratorStrategy defines the strategy to use when loading the series and their chunk refs.

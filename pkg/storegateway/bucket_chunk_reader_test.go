@@ -45,6 +45,7 @@ func TestBucketChunkReader_refetchChunks(t *testing.T) {
 		block.meta.MaxTime,
 		newSafeQueryStats(),
 		log.NewNopLogger(),
+		nil,
 	)
 	require.NoError(t, err)
 
