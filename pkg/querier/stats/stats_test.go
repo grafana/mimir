@@ -180,7 +180,7 @@ func TestStats_Merge(t *testing.T) {
 }
 
 func TestStats_Copy(t *testing.T) {
-	s := &Stats{
+	s1 := &Stats{
 		WallTime:             1,
 		FetchedSeriesCount:   2,
 		FetchedChunkBytes:    3,
@@ -191,8 +191,9 @@ func TestStats_Copy(t *testing.T) {
 		EstimatedSeriesCount: 8,
 		QueueTime:            9,
 	}
-	s2 := s.Copy()
-	assert.EqualValues(t, s, s2)
+	s2 := s1.Copy()
+	assert.NotSame(t, s1, s2)
+	assert.EqualValues(t, s1, s2)
 
 	assert.Nil(t, (*Stats)(nil).Copy())
 }
