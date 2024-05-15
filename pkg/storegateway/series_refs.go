@@ -296,17 +296,12 @@ func (c flattenedSeriesChunkRefsIterator) Err() error {
 	return c.from.Err()
 }
 
-func (c flattenedSeriesChunkRefsIterator) Reset() {
-	c.from.Reset()
-}
-
 type emptySeriesChunkRefsSetIterator struct {
 }
 
 func (emptySeriesChunkRefsSetIterator) Next() bool             { return false }
 func (emptySeriesChunkRefsSetIterator) At() seriesChunkRefsSet { return seriesChunkRefsSet{} }
 func (emptySeriesChunkRefsSetIterator) Err() error             { return nil }
-func (emptySeriesChunkRefsSetIterator) Reset()                 {}
 
 func mergedSeriesChunkRefsSetIterators(mergedBatchSize int, all ...iterator[seriesChunkRefsSet]) iterator[seriesChunkRefsSet] {
 	switch len(all) {
@@ -394,14 +389,6 @@ func (s *mergedSeriesChunkRefsSet) Next() bool {
 
 	s.current = next
 	return true
-}
-
-func (s *mergedSeriesChunkRefsSet) Reset() {
-	s.a.Reset()
-	s.b.Reset()
-	s.done = false
-	s.aAt = newSeriesChunkRefsIterator(seriesChunkRefsSet{})
-	s.bAt = newSeriesChunkRefsIterator(seriesChunkRefsSet{})
 }
 
 func (s *mergedSeriesChunkRefsSet) ensureCursors(curr1, curr2 *seriesChunkRefsIterator, set1, set2 iterator[seriesChunkRefsSet]) error {
@@ -641,20 +628,10 @@ func (s *deduplicatingSeriesChunkRefsSetIterator) Next() bool {
 	return true
 }
 
-func (s *deduplicatingSeriesChunkRefsSetIterator) Reset() {
-	s.from.Reset()
-	s.peek = nil
-}
-
 type limitingSeriesChunkRefsSetIterator struct {
 	from          iterator[seriesChunkRefsSet]
 	chunksLimiter ChunksLimiter
 	seriesLimiter SeriesLimiter
-
-	chunksSeen        uint64 // Number of chunks seen since last call to Reset()
-	maxChunksSeenEver uint64 // Maximum number of chunks ever seen across calls to Reset(), used to avoid double-counting after Reset()
-	seriesSeen        uint64 // Number of series seen since last call to Reset()
-	maxSeriesSeenEver uint64 // Maximum number of chunks ever seen across calls to Reset(), used to avoid double-counting after Reset()
 
 	err          error
 	currentBatch seriesChunkRefsSet
@@ -679,32 +656,21 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 	}
 
 	l.currentBatch = l.from.At()
-	l.seriesSeen += uint64(l.currentBatch.len())
-
-	if l.seriesSeen > l.maxSeriesSeenEver {
-		newSeries := l.seriesSeen - l.maxSeriesSeenEver
-
-		if err := l.seriesLimiter.Reserve(newSeries); err != nil {
-			l.err = err
-			return false
-		}
-
-		l.maxSeriesSeenEver = l.seriesSeen
+	err := l.seriesLimiter.Reserve(uint64(l.currentBatch.len()))
+	if err != nil {
+		l.err = err
+		return false
 	}
 
+	var totalChunks int
 	for _, s := range l.currentBatch.series {
-		l.chunksSeen += uint64(len(s.refs))
+		totalChunks += len(s.refs)
 	}
 
-	if l.chunksSeen > l.maxChunksSeenEver {
-		newChunks := l.chunksSeen - l.maxChunksSeenEver
-
-		if err := l.chunksLimiter.Reserve(newChunks); err != nil {
-			l.err = err
-			return false
-		}
-
-		l.maxChunksSeenEver = l.chunksSeen
+	err = l.chunksLimiter.Reserve(uint64(totalChunks))
+	if err != nil {
+		l.err = err
+		return false
 	}
 
 	return true
@@ -716,12 +682,6 @@ func (l *limitingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 
 func (l *limitingSeriesChunkRefsSetIterator) Err() error {
 	return l.err
-}
-
-func (l *limitingSeriesChunkRefsSetIterator) Reset() {
-	l.chunksSeen = 0
-	l.seriesSeen = 0
-	l.from.Reset()
 }
 
 type loadingSeriesChunkRefsSetIterator struct {
@@ -1157,31 +1117,6 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 	return s.err
 }
 
-func (s *loadingSeriesChunkRefsSetIterator) Reset() {
-	if s.err != nil {
-		return
-	}
-
-	// Resetting this iterator only makes sense if chunks streaming is enabled.
-	if !s.strategy.isForChunksStreaming() {
-		return
-	}
-
-	if s.postingsSetIterator.IsFirstAndOnlyBatch() {
-		s.resetToFirstSet = true
-
-		// We expect that the second iteration through this iterator is the last iteration, so allow releasing the set.
-		s.currentSet = s.currentSet.makeReleasable()
-	} else {
-		s.currentSet = seriesChunkRefsSet{}
-	}
-
-	s.postingsSetIterator.Reset()
-
-	// We want to load chunk refs on the second iteration, so that we can send chunks to queriers.
-	s.strategy = s.strategy.withChunkRefs()
-}
-
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
 func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) ([]symbolizedLabel, []chunks.Meta, error) {
 	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, &s.chunkMetasBuffer, s.strategy.isNoChunkRefsOnEntireBlock(), stats, lsetPool)
@@ -1327,10 +1262,6 @@ func (m *filteringSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 
 func (m *filteringSeriesChunkRefsSetIterator) Err() error {
 	return m.from.Err()
-}
-
-func (m *filteringSeriesChunkRefsSetIterator) Reset() {
-	m.from.Reset()
 }
 
 // cachedSeriesForPostingsID contains enough information to be able to tell whether a cache entry

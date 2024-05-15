@@ -87,7 +87,3 @@ func (i *chunksStreamingCachingSeriesChunkRefsSetIterator) PrepareForChunksStrea
 		i.it = i.factory(i.strategy.withChunkRefs())
 	}
 }
-
-func (i *chunksStreamingCachingSeriesChunkRefsSetIterator) Reset() {
-	panic("THIS METHOD SHOULD BE REMOVED FROM THE iterator INTERFACE ALTOGETHER")
-}
