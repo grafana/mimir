@@ -2291,7 +2291,7 @@ func TestPostingsSetsIterator(t *testing.T) {
 		"empty postings": {
 			postings:        []storage.SeriesRef{},
 			batchSize:       2,
-			expectedBatches: [][]storage.SeriesRef{},
+			expectedBatches: nil,
 		},
 	}
 
@@ -2311,7 +2311,16 @@ func TestPostingsSetsIterator(t *testing.T) {
 				actualBatches = append(actualBatches, iterator.At())
 			}
 
-			assert.ElementsMatch(t, testCase.expectedBatches, actualBatches)
+			require.Equal(t, testCase.expectedBatches, actualBatches)
+
+			iterator.Reset()
+
+			var actualBatchesAfterReset [][]storage.SeriesRef
+			for iterator.Next() {
+				actualBatchesAfterReset = append(actualBatchesAfterReset, iterator.At())
+			}
+
+			require.Equal(t, testCase.expectedBatches, actualBatchesAfterReset)
 		})
 	}
 }

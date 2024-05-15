@@ -9,9 +9,10 @@ type iteratorFactory func(strategy seriesIteratorStrategy) iterator[seriesChunkR
 // It wraps another iterator that does the actual work. If that iterator is expected to produce only a single batch,
 // this iterator caches that batch for the chunks streaming phase, to avoid repeating work done during the series label sending phase.
 type chunksStreamingCachingSeriesChunkRefsSetIterator struct {
-	strategy seriesIteratorStrategy
-	factory  iteratorFactory
-	it       iterator[seriesChunkRefsSet]
+	strategy             seriesIteratorStrategy
+	postingsSetsIterator *postingsSetsIterator
+	factory              iteratorFactory
+	it                   iterator[seriesChunkRefsSet]
 
 	expectSingleBatch                    bool
 	inChunksStreamingPhaseForSingleBatch bool
@@ -33,10 +34,11 @@ func newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy seriesIterator
 	}
 
 	return &chunksStreamingCachingSeriesChunkRefsSetIterator{
-		strategy:          strategy,
-		factory:           factory,
-		it:                factory(initialStrategy),
-		expectSingleBatch: expectSingleBatch,
+		strategy:             strategy,
+		postingsSetsIterator: postingsSetsIterator,
+		factory:              factory,
+		it:                   factory(initialStrategy),
+		expectSingleBatch:    expectSingleBatch,
 	}
 }
 
@@ -80,6 +82,8 @@ func (i *chunksStreamingCachingSeriesChunkRefsSetIterator) Err() error {
 }
 
 func (i *chunksStreamingCachingSeriesChunkRefsSetIterator) PrepareForChunksStreamingPhase() {
+	i.postingsSetsIterator.Reset()
+
 	if i.expectSingleBatch {
 		i.inChunksStreamingPhaseForSingleBatch = true
 		i.currentBatchIndex = -1

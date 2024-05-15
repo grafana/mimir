@@ -1410,3 +1410,8 @@ func (s *postingsSetsIterator) At() []storage.SeriesRef {
 func (s *postingsSetsIterator) HasMultipleBatches() bool {
 	return len(s.postings) > s.batchSize
 }
+
+func (s *postingsSetsIterator) Reset() {
+	s.currentBatch = nil
+	s.nextBatchPostingsOffset = 0
+}

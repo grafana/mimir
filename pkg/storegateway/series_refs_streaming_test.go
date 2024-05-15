@@ -228,6 +228,8 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 		factoryCalls++
 		factoryStrategy = strategy
 
+		require.Equal(t, 0, psi.nextBatchPostingsOffset, "should reset postings set iterator before creating iterator")
+
 		if factoryCalls == 1 {
 			return newSliceSeriesChunkRefsSetIterator(nil, firstBatchWithNoChunkRefs, secondBatchWithNoChunkRefs)
 		}
@@ -246,6 +248,11 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 	batches := readAllBatches(it)
 	require.NoError(t, it.Err())
 	require.Equal(t, []seriesChunkRefsSet{firstBatchWithNoChunkRefs, secondBatchWithNoChunkRefs}, batches)
+
+	// Simulate the underlying iterator advancing the postings set iterator to the end.
+	for psi.Next() {
+		// Nothing to do, we just want to advance.
+	}
 
 	// Prepare for chunks streaming phase. Inner iterator should be recreated with chunk refs enabled.
 	it.PrepareForChunksStreamingPhase()
