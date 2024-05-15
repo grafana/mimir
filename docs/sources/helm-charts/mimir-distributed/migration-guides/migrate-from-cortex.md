@@ -273,4 +273,3 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
    ```
 
 To verify that the cluster is operating correctly, use the [monitoring mixin dashboards].
-

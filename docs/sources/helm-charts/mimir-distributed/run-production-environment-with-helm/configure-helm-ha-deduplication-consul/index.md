@@ -170,4 +170,3 @@ select Format = Table. In the result you can see the several time series with di
 
 The most important thing is you will not find `__replica__` label (or any label that you set in `ha_replica_label`
 config) anymore. This means you have configured the deduplication successfully.
-

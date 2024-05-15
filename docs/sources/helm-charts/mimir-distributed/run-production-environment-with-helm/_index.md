@@ -363,4 +363,3 @@ rollout_operator:
 >   --set 'mimir-distributed.rollout_operator.podSecurityContext.runAsUser=null' \
 >   --set 'mimir-distributed.rollout_operator.podSecurityContext.runAsGroup=null'
 > ```
-

@@ -41,4 +41,3 @@ remote_write:
   - url: <your-url>
     send_native_histograms: true
 ```
-

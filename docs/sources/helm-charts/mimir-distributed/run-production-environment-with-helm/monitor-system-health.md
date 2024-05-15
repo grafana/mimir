@@ -145,4 +145,3 @@ metaMonitoring:
           passwordSecretName: gem-tokens
           passwordSecretKey: metamonitoring
 ```
-

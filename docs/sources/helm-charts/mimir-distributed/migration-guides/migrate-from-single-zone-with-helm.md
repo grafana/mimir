@@ -804,4 +804,3 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 1. Undo the doubling of series limits done in the first step.
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
-
