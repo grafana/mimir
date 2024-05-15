@@ -64,6 +64,7 @@
 * [BUGFIX] Query-frontend: fix empty metric name matcher not being applied under certain conditions. #8076
 * [BUGFIX] Querying: Fix regex matching of multibyte runes with dot operator. #8089
 * [BUGFIX] Querying: matrix results returned from instant queries were not sorted by series. #8113
+* [BUGFIX] Query scheduler: Fix a crash in result marshaling. #8140
 
 ### Mixin
 
