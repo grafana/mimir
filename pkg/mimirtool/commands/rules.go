@@ -205,6 +205,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 
 	// Print Rules Command
 	printRulesCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
+	printRulesCmd.Flag("output-dir", "The directory where the rules will be written to.").ExistingDirVar(&r.OutputDir)
 
 	// Get RuleGroup Command
 	getRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to retrieve.").Required().StringVar(&r.Namespace)
@@ -414,6 +415,19 @@ func (r *RuleCommand) printRules(_ *kingpin.ParseContext) error {
 	}
 
 	p := printer.New(r.DisableColor)
+
+	if r.OutputDir != "" {
+		log.Infof("Output dir detected writing rules to directory: %s", r.OutputDir)
+		for namespace, rule := range ruleNS {
+			if err = saveNamespaceRuleGroup(namespace, rule, r.OutputDir); err != nil {
+				return err
+			}
+		}
+
+		// Don't print the rule set if we've specified an output directory to save the rule files. It gets too noisy.
+		return nil
+	}
+
 	return p.PrintRuleGroups(ruleNS)
 }
 
@@ -428,7 +442,7 @@ func saveNamespaceRuleGroup(ns string, ruleGroup []rwrulefmt.RuleGroup, dir stri
 		Filepath:  file,
 		Groups:    ruleGroup,
 	}}
-	log.Debugf("Saving namespace group rules to file %s", file)
+	log.Infof("Saving namespace group rules to file %s", file)
 	if err := save(rule, true); err != nil {
 		return err
 	}
@@ -446,11 +460,10 @@ func (r *RuleCommand) getRuleGroup(_ *kingpin.ParseContext) error {
 	}
 
 	if r.OutputDir != "" {
-		log.Debugf("Writing to file %s.yaml", r.Namespace)
+		log.Infof("Output dir detected, writing group '%s' of namespace '%s' to directory: %s", r.RuleGroup, r.Namespace, r.OutputDir)
 		err := saveNamespaceRuleGroup(r.Namespace, []rwrulefmt.RuleGroup{*group}, r.OutputDir)
-		if err != nil {
-			return err
-		}
+
+		return err
 	}
 
 	p := printer.New(r.DisableColor)
