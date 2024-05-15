@@ -210,17 +210,9 @@ func (s *Stats) Copy() *Stats {
 	if s == nil {
 		return nil
 	}
-	return &Stats{
-		WallTime:             s.LoadWallTime(),
-		FetchedSeriesCount:   s.LoadFetchedSeries(),
-		FetchedChunkBytes:    s.LoadFetchedChunkBytes(),
-		FetchedChunksCount:   s.LoadFetchedChunks(),
-		ShardedQueries:       s.LoadShardedQueries(),
-		SplitQueries:         s.LoadSplitQueries(),
-		FetchedIndexBytes:    s.LoadFetchedIndexBytes(),
-		EstimatedSeriesCount: s.LoadEstimatedSeriesCount(),
-		QueueTime:            s.LoadQueueTime(),
-	}
+	c := &Stats{}
+	c.Merge(s)
+	return c
 }
 
 func ShouldTrackHTTPGRPCResponse(r *httpgrpc.HTTPResponse) bool {
