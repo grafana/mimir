@@ -293,7 +293,9 @@ func (m *ActiveMetricWithBucketCount) UpdateAverage() {
 }
 
 type ActiveNativeHistogramMetricsResponse struct {
-	Data []ActiveMetricWithBucketCount `json:"data"`
+	Data   []ActiveMetricWithBucketCount `json:"data"`
+	Status string                        `json:"status,omitempty"`
+	Error  string                        `json:"error,omitempty"`
 }
 
 // DecodeActiveSeriesRequest decodes the input http.Request into an ActiveSeriesRequest.

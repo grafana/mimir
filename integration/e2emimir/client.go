@@ -628,18 +628,20 @@ func (c *Client) ActiveNativeHistogramMetrics(selector string, options ...Active
 		_ = body.Close()
 	}(resp.Body)
 
-	var bodyReader io.Reader = resp.Body
-	if resp.Header.Get("Content-Encoding") == "x-snappy-framed" {
-		bodyReader = s2.NewReader(bodyReader)
-	}
-
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(bodyReader)
 		return nil, fmt.Errorf("unexpected status code %d, body: %s", resp.StatusCode, body)
 	}
 
+	if resp.Header.Get("Content-Encoding") == "snappy" {
+		body, err = snappy.Decode(nil, body)
+		if err != nil {
+			return nil, fmt.Errorf("error decoding snappy response: %w", err)
+		}
+	}
+
 	res := &cardinality.ActiveNativeHistogramMetricsResponse{}
-	err = json.NewDecoder(bodyReader).Decode(res)
+	err = json.Unmarshal(body, res)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding active native histograms response: %w", err)
 	}

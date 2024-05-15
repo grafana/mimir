@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/golang/snappy"
 	"github.com/grafana/dskit/user"
 	"github.com/klauspost/compress/s2"
 	"github.com/pkg/errors"
@@ -102,26 +103,26 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 		},
 		"upstream response: invalid type for data field": {
 			request:        validReq,
-			responseStatus: http.StatusOK,
+			responseStatus: http.StatusInternalServerError,
 			responseBody:   `{"data": "unexpected"}`,
 
-			// We don't expect an error here because it only occurs later as the response is
-			// being streamed.
 			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
-				return assert.NoError(t, err)
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "received unexpected response from upstream")
+				return false
 			},
 			expectedShardCount: tenantShardCount,
 			expect:             resultActiveNativeHistogramMetrics{Status: "error", Error: "expected data field to contain an array"},
 		},
 		"upstream response: no data field": {
 			request:        validReq,
-			responseStatus: http.StatusOK,
+			responseStatus: http.StatusInternalServerError,
 			responseBody:   `{unexpected: "response"}`,
 
-			// We don't expect an error here because it only occurs later as the response is
-			// being streamed.
 			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
-				return assert.NoError(t, err)
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "received unexpected response from upstream")
+				return false
 			},
 			expectedShardCount: tenantShardCount,
 			expect:             resultActiveNativeHistogramMetrics{Status: "error", Error: "expected data field at top level"},
@@ -387,7 +388,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 		"honours Accept-Encoding header": {
 			request: func() *http.Request {
 				r := validReq()
-				r.Header.Add("Accept-Encoding", encodingTypeSnappyFramed)
+				r.Header.Add("Accept-Encoding", "snappy")
 				r.Header.Add(totalShardsControlHeader, "2")
 				return r
 			},
@@ -448,7 +449,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 				},
 			},
 			expectedShardCount:    2,
-			expectContentEncoding: encodingTypeSnappyFramed,
+			expectContentEncoding: "snappy",
 		},
 		"builds correct request shards for GET requests": {
 			request: func() *http.Request {
@@ -579,11 +580,13 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 
 			var br io.Reader = resp.Body
 			assert.Equal(t, tt.expectContentEncoding, resp.Header.Get("Content-Encoding"))
-			if resp.Header.Get("Content-Encoding") == encodingTypeSnappyFramed {
-				br = s2.NewReader(br)
-			}
 			body, err := io.ReadAll(br)
 			assert.NoError(t, err)
+
+			if resp.Header.Get("Content-Encoding") == "snappy" {
+				body, err = snappy.Decode(nil, body)
+				assert.NoError(t, err)
+			}
 
 			var res resultActiveNativeHistogramMetrics
 			err = json.Unmarshal(body, &res)

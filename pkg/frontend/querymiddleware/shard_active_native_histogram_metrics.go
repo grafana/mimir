@@ -3,6 +3,7 @@
 package querymiddleware
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -11,10 +12,8 @@ import (
 	"sync"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
+	"github.com/golang/snappy"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
@@ -47,8 +46,6 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) RoundTrip(r *http.Request)
 }
 
 func (s *shardActiveNativeHistogramMetricsMiddleware) mergeResponses(ctx context.Context, responses []*http.Response, encoding string) *http.Response {
-	reader, writer := io.Pipe()
-
 	mtx := sync.Mutex{}
 	metricIdx := make(map[string]int, 0)
 	metricBucketCount := make([]*cardinality.ActiveMetricWithBucketCount, 0)
@@ -137,95 +134,39 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) mergeResponses(ctx context
 		})
 	}
 
-	// Cannot start streaming until we merged all results.
+	// Need to wait for all shards to be able to calculate the end result.
 	err := g.Wait()
 
-	// Sort the results by metric name, unless there was an error.
-	if err == nil {
+	merged := cardinality.ActiveNativeHistogramMetricsResponse{}
+	resp := &http.Response{StatusCode: http.StatusInternalServerError, Header: http.Header{}}
+	resp.Header.Set("Content-Type", "application/json")
+
+	if err != nil {
+		merged.Status = "error"
+		merged.Error = fmt.Sprintf("error merging partial responses: %s", err.Error())
+	} else {
+		resp.StatusCode = http.StatusOK
 		sort.Slice(metricBucketCount, func(i, j int) bool {
 			return metricBucketCount[i].Metric < metricBucketCount[j].Metric
 		})
-	} else {
-		metricBucketCount = nil
+
+		for _, item := range metricBucketCount {
+			item.UpdateAverage()
+			merged.Data = append(merged.Data, *item)
+		}
 	}
 
-	resp := &http.Response{Body: reader, StatusCode: http.StatusOK, Header: http.Header{}}
-	resp.Header.Set("Content-Type", "application/json")
-	if encoding == encodingTypeSnappyFramed {
-		resp.Header.Set("Content-Encoding", encodingTypeSnappyFramed)
+	body, err := jsoniter.Marshal(merged)
+	if err != nil {
+		resp.StatusCode = http.StatusInternalServerError
+		body = []byte(fmt.Sprintf(`{"status":"error","error":"%s"}`, err.Error()))
 	}
 
-	go s.writeMergedResponse(ctx, err, writer, metricBucketCount, encoding)
+	if encoding == "snappy" {
+		resp.Header.Set("Content-Encoding", encoding)
+		body = snappy.Encode(nil, body)
+	}
 
+	resp.Body = io.NopCloser(bytes.NewReader(body))
 	return resp
-}
-
-func (s *shardActiveNativeHistogramMetricsMiddleware) writeMergedResponse(ctx context.Context, mergeError error, w io.WriteCloser, metricBucketCount []*cardinality.ActiveMetricWithBucketCount, encoding string) {
-	defer w.Close()
-
-	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveNativeHistogramMetrics.writeMergedResponse")
-	defer span.Finish()
-
-	var out io.Writer = w
-	if encoding == encodingTypeSnappyFramed {
-		span.LogFields(otlog.String("encoding", encodingTypeSnappyFramed))
-		enc := getSnappyWriter(w)
-		out = enc
-		defer func() {
-			enc.Close()
-			// Reset the encoder before putting it back to pool to avoid it to hold the writer.
-			enc.Reset(nil)
-			snappyWriterPool.Put(enc)
-		}()
-	} else {
-		span.LogFields(otlog.String("encoding", "none"))
-	}
-
-	stream := jsoniter.ConfigFastest.BorrowStream(out)
-	defer func(stream *jsoniter.Stream) {
-		_ = stream.Flush()
-
-		if cap(stream.Buffer()) > jsoniterMaxBufferSize {
-			return
-		}
-		jsoniter.ConfigFastest.ReturnStream(stream)
-	}(stream)
-
-	stream.WriteObjectStart()
-	defer stream.WriteObjectEnd()
-
-	stream.WriteObjectField("data")
-	stream.WriteArrayStart()
-	firstItem := true
-	for idx := range metricBucketCount {
-		if ctx.Err() != nil {
-			mergeError = ctx.Err()
-			break
-		}
-		if firstItem {
-			firstItem = false
-		} else {
-			stream.WriteMore()
-		}
-		// Update the average before sending
-		metricBucketCount[idx].UpdateAverage()
-		stream.WriteVal(metricBucketCount[idx])
-
-		// Flush the stream buffer if it's getting too large.
-		if stream.Buffered() > jsoniterMaxBufferSize {
-			_ = stream.Flush()
-		}
-	}
-	stream.WriteArrayEnd()
-
-	if mergeError != nil {
-		level.Error(s.logger).Log("msg", "error merging partial responses", "err", mergeError.Error())
-		span.LogFields(otlog.Error(mergeError))
-		stream.WriteMore()
-		stream.WriteObjectField("status")
-		stream.WriteString("error")
-		stream.WriteMore()
-		stream.WriteObjectField("error")
-		stream.WriteString(fmt.Sprintf("error merging partial responses: %s", mergeError.Error()))
-	}
 }
