@@ -315,6 +315,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonRingChanged)
 				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
+				c.checkActiveSeriesCount(t, 0)
 
 				// remove the second ingester, moving the series back to the original ingester
 				c.removeSecondIngester(t)
