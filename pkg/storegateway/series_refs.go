@@ -662,7 +662,6 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 		l.err = err
 		return false
 	}
-
 	return true
 }
 
