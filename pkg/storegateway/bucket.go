@@ -631,7 +631,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 			seriesLimiter   = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 		)
 
-		seriesSet, streamingIterators, err = s.streamingSeriesForBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+		seriesSet, streamingIterators, err = s.createIteratorForChunksStreamingLabelsPhase(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 		if err != nil {
 			return err
 		}
@@ -659,11 +659,11 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 
 	start := time.Now()
 	if req.StreamingChunksBatchSize > 0 {
-		seriesChunkIt := s.streamingChunksSetForBlocks(ctx, readers, stats, chunksLimiter, seriesLimiter, streamingIterators)
+		seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, streamingIterators)
 		err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
 	} else {
 		var seriesSet storepb.SeriesSet
-		seriesSet, err = s.nonStreamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+		seriesSet, err = s.createIteratorForNonChunksStreamingRequest(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 		if err != nil {
 			return err
 		}
@@ -1021,8 +1021,8 @@ func chunksSize(chks []storepb.AggrChunk) (size int) {
 	return size
 }
 
-// nonStreamingSeriesSetForBlocks is used when the streaming feature is not enabled.
-func (s *BucketStore) nonStreamingSeriesSetForBlocks(
+// createIteratorForNonChunksStreamingRequest is used when the streaming feature is not enabled.
+func (s *BucketStore) createIteratorForNonChunksStreamingRequest(
 	ctx context.Context,
 	req *storepb.SeriesRequest,
 	blocks []*bucketBlock,
@@ -1053,10 +1053,10 @@ func (s *BucketStore) nonStreamingSeriesSetForBlocks(
 	return set, nil
 }
 
-// streamingSeriesForBlocks is used when streaming feature is enabled.
+// createIteratorForChunksStreamingLabelsPhase is used when streaming feature is enabled.
 // It returns a series set that only contains the series labels without any chunks information.
 // The streamingSeriesIterators should be re-used when getting chunks to save on computation.
-func (s *BucketStore) streamingSeriesForBlocks(
+func (s *BucketStore) createIteratorForChunksStreamingLabelsPhase(
 	ctx context.Context,
 	req *storepb.SeriesRequest,
 	blocks []*bucketBlock,
@@ -1108,10 +1108,10 @@ func (i *streamingSeriesIterators) prepareForChunksStreamingPhase() []iterator[s
 	return prepared
 }
 
-// streamingChunksSetForBlocks is used when streaming feature is enabled.
-// It returns an iterator to go over the chunks for the series returned in the streamingSeriesForBlocks call.
-// It is recommended to pass the iterator returned by the streamingSeriesForBlocks call for reuse.
-func (s *BucketStore) streamingChunksSetForBlocks(
+// createIteratorForChunksStreamingChunksPhase is used when streaming feature is enabled.
+// It returns an iterator to go over the chunks for the series returned in the createIteratorForChunksStreamingLabelsPhase call.
+// It is required to pass the iterators returned by the createIteratorForChunksStreamingLabelsPhase call for reuse.
+func (s *BucketStore) createIteratorForChunksStreamingChunksPhase(
 	ctx context.Context,
 	chunkReaders *bucketChunkReaders,
 	stats *safeQueryStats,
