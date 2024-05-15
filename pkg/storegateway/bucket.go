@@ -1169,13 +1169,17 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
 
-	mergedIterator := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)
+	return s.getSeriesIteratorFromPerBlockIterators(batches, chunksLimiter, seriesLimiter), nil
+}
+
+func (s *BucketStore) getSeriesIteratorFromPerBlockIterators(perBlockIterators []iterator[seriesChunkRefsSet], chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter) iterator[seriesChunkRefsSet] {
+	mergedIterator := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, perBlockIterators...)
 
 	// Apply limits after the merging, so that if the same series is part of multiple blocks it just gets
 	// counted once towards the limit.
 	mergedIterator = newLimitingSeriesChunkRefsSetIterator(mergedIterator, chunksLimiter, seriesLimiter)
 
-	return mergedIterator, nil
+	return mergedIterator
 }
 
 func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
