@@ -4377,6 +4377,17 @@
         },
         {
           "kind": "field",
+          "name": "ruler_max_concurrent_rule_evaluations_per_tenant",
+          "required": false,
+          "desc": "Maximum number of independent rules that can run concurrently for each tenant. Depends on `-ruler.max-global-rule-evaluation-concurrency` being more than 0 and ideally this flag should be a lower value. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 4,
+          "fieldFlag": "ruler.max-concurrent-rule-evaluations-per-tenant",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.",
@@ -12556,6 +12567,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "max_global_rule_evaluation_concurrency",
+          "required": false,
+          "desc": "Allow rules that don't have dependencies to be evaluated concurrently. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.max-global-rule-evaluation-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

@@ -2081,6 +2081,11 @@ tenant_federation:
   # then these rules groups will be skipped during evaluations.
   # CLI flag: -ruler.tenant-federation.enabled
   [enabled: <boolean> | default = false]
+
+# (experimental) Allow rules that don't have dependencies to be evaluated
+# concurrently. 0 to disable.
+# CLI flag: -ruler.max-global-rule-evaluation-concurrency
+[max_global_rule_evaluation_concurrency: <int> | default = 0]
 ```
 
 ### ruler_storage
@@ -3521,6 +3526,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # is given as a comma-separated list.
 # CLI flag: -ruler.protected-namespaces
 [ruler_protected_namespaces: <string> | default = ""]
+
+# (experimental) Maximum number of independent rules that can run concurrently
+# for each tenant. Depends on `-ruler.max-global-rule-evaluation-concurrency`
+# being more than 0 and ideally this flag should be a lower value. 0 to disable.
+# CLI flag: -ruler.max-concurrent-rule-evaluations-per-tenant
+[ruler_max_concurrent_rule_evaluations_per_tenant: <int> | default = 4]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are

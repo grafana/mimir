@@ -46,7 +46,7 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil)
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, nil)
 	require.NoError(t, err)
 
 	// Initialise the manager with some rules and start it.
@@ -132,7 +132,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil)
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(m.Stop)
 
@@ -309,7 +309,7 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 		NotificationTimeout:              10 * time.Second,
 		DrainNotificationQueueOnShutdown: true,
 	}
-	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil)
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, nil)
 	require.NoError(t, err)
 
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{

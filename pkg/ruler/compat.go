@@ -151,6 +151,7 @@ type RulesLimits interface {
 	RulerAlertingRulesEvaluationEnabled(userID string) bool
 	RulerSyncRulesOnChangesEnabled(userID string) bool
 	RulerProtectedNamespaces(userID string) []string
+	RulerMaxConcurrentRuleEvaluationsPerTenant(userID string) int64
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter, remoteQuerier bool) rules.QueryFunc {
@@ -269,6 +270,7 @@ func DefaultTenantManagerFactory(
 	p Pusher,
 	queryable storage.Queryable,
 	queryFunc rules.QueryFunc,
+	concurrencyController MultiTenantRuleConcurrencyController,
 	overrides RulesLimits,
 	reg prometheus.Registerer,
 ) ManagerFactory {
@@ -336,6 +338,7 @@ func DefaultTenantManagerFactory(
 				// to metric that haven't been forwarded to Mimir yet.
 				return overrides.EvaluationDelay(userID)
 			},
+			RuleConcurrencyController: concurrencyController,
 		})
 	}
 }
