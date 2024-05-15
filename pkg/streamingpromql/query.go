@@ -297,24 +297,14 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o o
 			return nil, err
 		}
 
-		// A series may have no data points.
-		if len(d.Floats)+len(d.Histograms) == 0 {
-			continue
-		}
-
-		if len(d.Floats)+len(d.Histograms) != 1 {
-			returnSlices(d.Floats, d.Histograms)
-			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v Floats, %v Histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
-		}
-
-		if len(d.Floats) == 1 {
+		if len(d.Floats) == 1 && len(d.Histograms) == 0 {
 			point := d.Floats[0]
 			v = append(v, promql.Sample{
 				Metric: s.Labels,
 				T:      ts,
 				F:      point.F,
 			})
-		} else if len(d.Histograms) == 1 {
+		} else if len(d.Floats) == 0 && len(d.Histograms) == 1 {
 			point := d.Histograms[0]
 			v = append(v, promql.Sample{
 				Metric: s.Labels,
@@ -323,7 +313,11 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o o
 			})
 		} else {
 			returnSlices(d.Floats, d.Histograms)
-			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v Floats, %v Histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
+			// A series may have no data points.
+			if len(d.Floats) == 0 && len(d.Histograms) == 0 {
+				continue
+			}
+			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
 		}
 		returnSlices(d.Floats, d.Histograms)
 	}
