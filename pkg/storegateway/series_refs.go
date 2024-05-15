@@ -141,14 +141,6 @@ func (b seriesChunkRefsSet) release() {
 	seriesChunkRefsSetPool.Put(&reuse)
 }
 
-// makeReleasable returns a new seriesChunkRefsSet that can be released on a subsequent call to release.
-//
-// This is useful for scenarios where a set is used multiple times (eg. during chunks streaming), so initial consumers
-// must not release the set, but we know it is safe for the last consumer of the set to release it.
-func (b seriesChunkRefsSet) makeReleasable() seriesChunkRefsSet {
-	return seriesChunkRefsSet{b.series, true}
-}
-
 // makeUnreleasable returns a new seriesChunkRefsSet that cannot be released on a subsequent call to release.
 //
 // This is useful for scenarios where a set will be used multiple times and so it is not safe for consumers to release it.
