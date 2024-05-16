@@ -61,7 +61,7 @@ type Scheduler struct {
 	activeUsers  *util.ActiveUsersCleanupService
 
 	inflightRequestsMu sync.Mutex
-	// schedulerInflightRequests tracks requests from the time they are enqueued by the scheduler
+	// schedulerInflightRequests tracks requests from the time they are received to be enqueued by the scheduler
 	// to the time they are completed by the querier or failed due to cancel, timeout, or disconnect.
 	schedulerInflightRequests map[requestKey]*queue.SchedulerRequest
 
@@ -127,7 +127,7 @@ func (cfg *Config) Validate() error {
 // NewScheduler creates a new Scheduler.
 func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Scheduler, error) {
 	var err error
-	queryComponentLoad, err := queue.NewQueryComponentLoad(queue.QueryComponentDefaultOverloadFactor)
+	queryComponentLoad, err := queue.NewQueryComponentLoad(queue.QueryComponentDefaultOverloadFactor, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -465,6 +465,16 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 	queryComponentName := queue.QueryComponentForRequest(req)
 	s.queryComponentLoad.IncrementForComponentName(queryComponentName)
 	defer s.queryComponentLoad.DecrementForComponentName(queryComponentName)
+
+	// temporary observation of query component load balancing behavior before full implementation
+	isIngester, isStoreGateway := queue.QueryComponentFlags(queryComponentName)
+	if s.queryComponentLoad.IsOverloadedForComponentFlags(isIngester, isStoreGateway) {
+		level.Warn(s.log).Log(
+			"msg", "query component overloaded for request",
+			"queryComponentIsIngester", isIngester,
+			"queryComponentIsStoreGateway", isStoreGateway,
+		)
+	}
 
 	// Handle the stream sending & receiving on a goroutine so we can
 	// monitor the contexts in a select and cancel things appropriately.
