@@ -1190,8 +1190,7 @@ func TestPartitionCommitter(t *testing.T) {
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
 
-		interval := time.Second
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, interval, logger, reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, logger, reg)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), committer))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), committer))
@@ -1209,7 +1208,7 @@ func TestPartitionCommitter(t *testing.T) {
 		commitRequestsShouldFail.Store(false)
 
 		// Now we expect the commit to succeed, once the committer will trigger the commit the next interval.
-		test.Poll(t, 10*interval, nil, func() interface{} {
+		test.Poll(t, 10*cfg.ConsumerGroupOffsetCommitInterval, nil, func() interface{} {
 			return promtest.GatherAndCompare(reg, strings.NewReader(`
 				# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 				# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
@@ -1231,7 +1230,7 @@ func TestPartitionCommitter(t *testing.T) {
 		// Since we haven't enqueued any other offset and the last enqueued one has been successfully committed,
 		// we expect the committer to not issue any other request in the future.
 		expectedRequestsCount := commitRequestsCount.Load()
-		time.Sleep(3 * interval)
+		time.Sleep(3 * cfg.ConsumerGroupOffsetCommitInterval)
 		assert.Equal(t, expectedRequestsCount, commitRequestsCount.Load())
 	})
 }
@@ -1257,7 +1256,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, time.Second, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, log.NewNopLogger(), reg)
 
 		require.NoError(t, committer.commit(context.Background(), 123))
 
@@ -1297,7 +1296,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, time.Second, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, log.NewNopLogger(), reg)
 
 		require.Error(t, committer.commit(context.Background(), 123))
 
@@ -1342,19 +1341,18 @@ func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, t
 }
 
 type readerTestCfg struct {
-	kafka          KafkaConfig
-	partitionID    int32
-	consumer       recordConsumer
-	registry       *prometheus.Registry
-	logger         log.Logger
-	commitInterval time.Duration
+	kafka       KafkaConfig
+	partitionID int32
+	consumer    recordConsumer
+	registry    *prometheus.Registry
+	logger      log.Logger
 }
 
 type readerTestCfgOtp func(cfg *readerTestCfg)
 
 func withCommitInterval(i time.Duration) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
-		cfg.commitInterval = i
+		cfg.kafka.ConsumerGroupOffsetCommitInterval = i
 	}
 }
 
@@ -1391,12 +1389,11 @@ func withRegistry(reg *prometheus.Registry) func(cfg *readerTestCfg) {
 
 func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
 	return &readerTestCfg{
-		registry:       prometheus.NewPedanticRegistry(),
-		logger:         testutil.NewLogger(t),
-		kafka:          createTestKafkaConfig(addr, topicName),
-		partitionID:    partitionID,
-		consumer:       consumer,
-		commitInterval: 10 * time.Second,
+		registry:    prometheus.NewPedanticRegistry(),
+		logger:      testutil.NewLogger(t),
+		kafka:       createTestKafkaConfig(addr, topicName),
+		partitionID: partitionID,
+		consumer:    consumer,
 	}
 }
 
@@ -1407,7 +1404,6 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	}
 	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
 	require.NoError(t, err)
-	reader.commitInterval = cfg.commitInterval
 
 	return reader
 }

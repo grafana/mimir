@@ -84,7 +84,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f
 	google.golang.org/api v0.177.0
-	google.golang.org/protobuf v1.34.0
+	google.golang.org/protobuf v1.34.1
 	sigs.k8s.io/kustomize/kyaml v0.16.0
 )
 
@@ -257,7 +257,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240513021354-adfd251514bd
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240515135245-e5b85c151ba8
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

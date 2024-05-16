@@ -10,11 +10,14 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/runtimeconfig"
+	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/distributor"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -221,4 +224,25 @@ func runtimeConfigHandler(runtimeCfgManager *runtimeconfig.Manager, defaultLimit
 		}
 		util.WriteYAMLResponse(w, output)
 	}
+}
+
+// NewRuntimeManager returns a runtimeconfig.Manager, a services.Service that must be explicitly started to perform any work.
+// cfg is initialized as necessary, before being passed to runtimeconfig.New.
+func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logger log.Logger) (*runtimeconfig.Manager, error) {
+	loader := runtimeConfigLoader{validate: cfg.ValidateLimits}
+	cfg.RuntimeConfig.Loader = loader.load
+
+	// DeprecatedAlignQueriesWithStep is moving from a global config that can in the frontend yaml to a limit config
+	// We need to preserve the option in the frontend yaml for two releases
+	// If the frontend config is configured by the user, the default limit is overwritten
+	// TODO: Remove in Mimir 2.14
+	if cfg.Frontend.QueryMiddleware.DeprecatedAlignQueriesWithStep != querymiddleware.DefaultDeprecatedAlignQueriesWithStep {
+		cfg.LimitsConfig.AlignQueriesWithStep = cfg.Frontend.QueryMiddleware.DeprecatedAlignQueriesWithStep
+	}
+
+	// Make sure to set default limits before we start loading configuration into memory.
+	validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)
+	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Ingester.DefaultLimits)
+	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Distributor.DefaultLimits)
+	return runtimeconfig.New(cfg.RuntimeConfig, name, reg, logger)
 }

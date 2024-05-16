@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 )
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
@@ -26,29 +28,34 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"a + b":                       "PromQL expression type *parser.BinaryExpr",
-		"1 + 2":                       "scalar value as top-level expression",
-		"metric{} + other_metric{}":   "PromQL expression type *parser.BinaryExpr",
-		"1":                           "scalar value as top-level expression",
-		"metric{} offset 2h":          "instant vector selector with 'offset'",
-		"avg(metric{})":               "'avg' aggregation",
-		"sum without(l) (metric{})":   "grouping with 'without'",
-		"rate(metric{}[5m:1m])":       "PromQL expression type *parser.SubqueryExpr",
-		"avg_over_time(metric{}[5m])": "'avg_over_time' function",
-		"-sum(metric{})":              "PromQL expression type *parser.UnaryExpr",
+		"1 + 2":                      "scalar value as top-level expression",
+		"1 + metric{}":               "binary expression with scalars",
+		"metric{} + 1":               "binary expression with scalars",
+		"metric{} < other_metric{}":  "binary expression with '<'",
+		"metric{} or other_metric{}": "binary expression with many-to-many matching",
+		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
+		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
+		"1":                            "scalar value as top-level expression",
+		"metric{} offset 2h":           "instant vector selector with 'offset'",
+		"avg(metric{})":                "'avg' aggregation",
+		"sum without(l) (metric{})":    "grouping with 'without'",
+		"rate(metric{}[5m] offset 2h)": "range vector selector with 'offset'",
+		"rate(metric{}[5m:1m])":        "PromQL expression type *parser.SubqueryExpr",
+		"avg_over_time(metric{}[5m])":  "'avg_over_time' function",
+		"-sum(metric{})":               "PromQL expression type *parser.UnaryExpr",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
 			qry, err := engine.NewRangeQuery(ctx, nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
 			require.Error(t, err)
-			require.ErrorIs(t, err, NotSupportedError{})
+			require.ErrorIs(t, err, compat.NotSupportedError{})
 			require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
 			require.Nil(t, qry)
 
 			qry, err = engine.NewInstantQuery(ctx, nil, nil, expression, time.Now())
 			require.Error(t, err)
-			require.ErrorIs(t, err, NotSupportedError{})
+			require.ErrorIs(t, err, compat.NotSupportedError{})
 			require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
 			require.Nil(t, qry)
 		})
@@ -65,7 +72,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		t.Run(expression, func(t *testing.T) {
 			qry, err := engine.NewInstantQuery(ctx, nil, nil, expression, time.Now())
 			require.Error(t, err)
-			require.ErrorIs(t, err, NotSupportedError{})
+			require.ErrorIs(t, err, compat.NotSupportedError{})
 			require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
 			require.Nil(t, qry)
 		})

@@ -44,6 +44,8 @@ type app struct {
 	testFilter      string
 	listTests       bool
 	justRunIngester bool
+	cpuProfilePath  string
+	memProfilePath  string
 }
 
 func (a *app) run() error {
@@ -60,6 +62,16 @@ func (a *app) run() error {
 	if a.listTests {
 		a.printTests(filteredNames)
 		return nil
+	}
+
+	if a.cpuProfilePath != "" || a.memProfilePath != "" {
+		if a.count != 1 {
+			return fmt.Errorf("must run exactly one iteration when emitting profile, but have -count=%d", a.count)
+		}
+
+		if len(filteredNames) != 1 {
+			return fmt.Errorf("must select exactly one benchmark with -bench when emitting profile, but have %v benchmarks selected", len(filteredNames))
+		}
 	}
 
 	if err := a.findBenchmarkPackageDir(); err != nil {
@@ -134,6 +146,8 @@ func (a *app) parseArgs() error {
 	flag.BoolVar(&a.listTests, "list", false, "list known benchmarks and exit")
 	flag.BoolVar(&a.justRunIngester, "start-ingester", false, "start ingester and wait, run no benchmarks")
 	flag.StringVar(&a.ingesterAddress, "use-existing-ingester", "", "use existing ingester rather than creating a new one")
+	flag.StringVar(&a.cpuProfilePath, "cpuprofile", "", "write CPU profile to file, only supported when running a single iteration of one benchmark")
+	flag.StringVar(&a.memProfilePath, "memprofile", "", "write memory profile to file, only supported when running a single iteration of one benchmark")
 
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Printf("%v\n", err)
@@ -287,7 +301,19 @@ func (a *app) filteredTestCaseNames() ([]string, error) {
 }
 
 func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
-	cmd := exec.Command(a.binaryPath, "-test.bench="+regexp.QuoteMeta(name), "-test.run=NoTestsWillMatchThisPattern", "-test.benchmem")
+	args := []string{
+		"-test.bench=" + regexp.QuoteMeta(name), "-test.run=NoTestsWillMatchThisPattern", "-test.benchmem",
+	}
+
+	if a.cpuProfilePath != "" {
+		args = append(args, "-test.cpuprofile="+a.cpuProfilePath)
+	}
+
+	if a.memProfilePath != "" {
+		args = append(args, "-test.memprofile="+a.memProfilePath)
+	}
+
+	cmd := exec.Command(a.binaryPath, args...)
 	buf := &bytes.Buffer{}
 	cmd.Stdout = buf
 	cmd.Stderr = os.Stderr
@@ -295,6 +321,7 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 	cmd.Env = append(cmd.Env, "STREAMING_PROMQL_ENGINE_BENCHMARK_SKIP_COMPARE_RESULTS=true")
 
 	if err := cmd.Run(); err != nil {
+		slog.Warn("output from failed command", "output", buf.String())
 		return fmt.Errorf("executing command failed: %w", err)
 	}
 
