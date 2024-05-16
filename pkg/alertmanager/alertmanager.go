@@ -388,6 +388,14 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 		return err
 	}
 
+	activeReceivers := alertingNotify.GetActiveReceiversMap(dispatch.NewRoute(cfg.Route, nil))
+	var receivers []*notify.Receiver
+	for k, v := range integrationsMap {
+		_, active := activeReceivers[k]
+		receivers = append(receivers, notify.NewReceiver(k, active, v))
+	}
+	am.api.Update(&cfg, receivers, func(_ model.LabelSet) {})
+
 	timeIntervals := make(map[string][]timeinterval.TimeInterval, len(conf.MuteTimeIntervals)+len(conf.TimeIntervals))
 	for _, ti := range conf.MuteTimeIntervals {
 		timeIntervals[ti.Name] = ti.TimeIntervals
@@ -397,30 +405,6 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 		timeIntervals[ti.Name] = ti.TimeIntervals
 	}
 	intervener := timeinterval.NewIntervener(timeIntervals)
-
-	r := dispatch.NewRoute(cfg.Route, nil)
-	activeReceivers := make(map[string]struct{})
-	r.Walk(func(r *dispatch.Route) {
-		// Track which receivers are being used.
-		activeReceivers[r.RouteOpts.Receiver] = struct{}{}
-	})
-
-	var receivers []*notify.Receiver
-	for k, v := range integrationsMap {
-		// TODO(santiago): which receivers are active?
-		_, active := activeReceivers[k]
-		if !active {
-			// Skip creating receiver if it's not used.
-			receivers = append(receivers, notify.NewReceiver(k, false, nil))
-			continue
-		}
-
-		// NewReceiver expects slice of pointers...
-		receivers = append(receivers, notify.NewReceiver(k, true, v))
-	}
-
-	// NOTE: Update now needs a slice of receivers.
-	am.api.Update(&cfg, receivers, func(_ model.LabelSet) {})
 
 	pipeline := am.pipelineBuilder.New(
 		receivers,

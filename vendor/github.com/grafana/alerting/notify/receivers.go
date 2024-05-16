@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/dispatch"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
@@ -68,12 +69,12 @@ type TestIntegrationConfigResult struct {
 }
 
 type GrafanaIntegrationConfig struct {
-	UID                   string            `json:"uid"`
-	Name                  string            `json:"name"`
-	Type                  string            `json:"type"`
-	DisableResolveMessage bool              `json:"disableResolveMessage"`
-	Settings              json.RawMessage   `json:"settings"`
-	SecureSettings        map[string]string `json:"secureSettings"`
+	UID                   string            `json:"uid" yaml:"uid"`
+	Name                  string            `json:"name" yaml:"name"`
+	Type                  string            `json:"type" yaml:"type"`
+	DisableResolveMessage bool              `json:"disableResolveMessage" yaml:"disableResolveMessage"`
+	Settings              json.RawMessage   `json:"settings" yaml:"settings"`
+	SecureSettings        map[string]string `json:"secureSettings" yaml:"secureSettings"`
 }
 
 type ConfigReceiver = config.Receiver
@@ -545,6 +546,17 @@ func decodeSecretsFromBase64(secrets map[string]string) (map[string][]byte, erro
 		secureSettings[k] = d
 	}
 	return secureSettings, nil
+}
+
+// GetActiveReceiversMap returns all receivers that are in use by a route.
+func GetActiveReceiversMap(r *dispatch.Route) map[string]struct{} {
+	receiversMap := make(map[string]struct{})
+	visitFunc := func(r *dispatch.Route) {
+		receiversMap[r.RouteOpts.Receiver] = struct{}{}
+	}
+	r.Walk(visitFunc)
+
+	return receiversMap
 }
 
 func newNotifierConfig[T interface{}](receiver *GrafanaIntegrationConfig, settings T) *NotifierConfig[T] {
