@@ -320,7 +320,7 @@ func (a *API) RegisterIngester(i Ingester) {
 
 	a.RegisterRoute("/ingester/load/more", http.HandlerFunc(ingester.MoreLoadHandler), false, true, "GET")
 	a.RegisterRoute("/ingester/load/less", http.HandlerFunc(ingester.LessLoadHandler), false, true, "GET")
-	a.RegisterRoute("/ingester/deadline-exceeded/{duration}/{failurePercentage}", http.HandlerFunc(ingester.DeadlineExceededHandler), false, true, "GET", "POST")
+	a.RegisterRoute("/ingester/deadline-exceeded/{duration}/{delay}/{failurePercentage}/{cpuUsage}", http.HandlerFunc(ingester.DeadlineExceededHandler), false, true, "GET", "POST")
 }
 
 // RegisterRuler registers routes associated with the Ruler service.

@@ -3865,13 +3865,14 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 
 	level.Info(i.logger).Log("msg", "Push is being executed", "ingester", ingesterID)
 
-	if shouldDelayPushRequest() {
+	if nextPushRequestDelay := getNextPushRequestDelay(); nextPushRequestDelay != 0 {
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		time.Sleep(5 * time.Second)
-		level.Error(i.logger).Log("msg", "slept for 5s and will continue", "user", userID, "ingester", i.cfg.IngesterRing.InstanceID)
+		time.Sleep(nextPushRequestDelay)
+		msg := fmt.Sprintf("slept for %s and will continue", nextPushRequestDelay.String())
+		level.Error(i.logger).Log("msg", msg, "user", userID, "ingester", i.cfg.IngesterRing.InstanceID)
 	}
 
 	err := i.PushToStorage(ctx, req)
