@@ -8520,6 +8520,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "lazy_loading_concurrency_queue_timeout",
+                  "required": false,
+                  "desc": "Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "verify_on_load",
                   "required": false,
                   "desc": "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.",
