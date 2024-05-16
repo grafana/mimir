@@ -445,7 +445,7 @@ func (t timeoutGate) Start(ctx context.Context) error {
 	defer cancel()
 
 	err := t.delegate.Start(ctx)
-	if errors.Is(context.Cause(ctx), errGateTimeout) {
+	if err != nil && errors.Is(context.Cause(ctx), errGateTimeout) {
 		_ = spanlogger.FromContext(ctx, log.NewNopLogger()).Error(err)
 		err = errGateTimeout
 	}
