@@ -56,7 +56,8 @@ type QueryComponentLoad struct {
 	// schedulerQuerierInflightRequestsByQueryComponent tracks requests from the time they are forwarded to a querier
 	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
 	// Unlike the Scheduler's schedulerInflightRequests, tracking begins only when the request is sent to a querier.
-	// Scheduler-Querier inflight requests are broken out by the query component,
+	//
+	// Scheduler-Querier inflight requests are broken out by the query component flags,
 	// representing whether the query request will be served by the ingesters, store-gateways, or both.
 	// Query requests utilizing both ingesters and store-gateways are tracked in the map entry for both keys.
 	schedulerQuerierInflightRequestsByQueryComponent map[QueryComponent]int //nolint: unused

@@ -4,10 +4,48 @@ package queue
 
 import (
 	"math/rand"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+// getForComponent is a test utility, not intended for use by consumers of QueryComponentLoad
+func (qcl *QueryComponentLoad) getForComponent(queryComponent QueryComponent) int {
+	qcl.inflightRequestsMu.RLock()
+	defer qcl.inflightRequestsMu.RUnlock()
+	return qcl.schedulerQuerierInflightRequestsByQueryComponent[queryComponent]
+}
+
+func TestQueryComponentLoad_Concurrency(t *testing.T) {
+
+	requestCount := 100
+	testOverloadFactor := 2.0
+	queryComponentLoad, err := NewQueryComponentLoad(testOverloadFactor)
+	require.NoError(t, err)
+
+	mockForwardRequestToQuerier := func(t *testing.T, load *QueryComponentLoad) {
+		expectedQueryComponent := randAdditionalQueueDimension(false)[0]
+
+		load.IncrementForComponentName(expectedQueryComponent)
+		require.GreaterOrEqual(t, load.getForComponent(Ingester), 0)
+		require.GreaterOrEqual(t, load.getForComponent(StoreGateway), 0)
+
+		load.DecrementForComponentName(expectedQueryComponent)
+		require.GreaterOrEqual(t, load.getForComponent(Ingester), 0)
+		require.GreaterOrEqual(t, load.getForComponent(StoreGateway), 0)
+	}
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < requestCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mockForwardRequestToQuerier(t, queryComponentLoad)
+		}()
+	}
+	wg.Wait()
+}
 
 func TestIsOverloadedForQueryComponents(t *testing.T) {
 	testOverloadFactor := 2.0
