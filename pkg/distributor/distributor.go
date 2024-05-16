@@ -2175,7 +2175,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 
 		stream, err := client.ActiveSeries(ctx, req)
 		if err != nil {
-			if errors.Is(globalerror.WrapGrpcContextError(err), context.Canceled) {
+			if errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
 				return ignored{}, nil
 			}
 			level.Error(log).Log("msg", "error creating active series response stream", "err", err)
@@ -2185,7 +2185,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 
 		defer func() {
 			err = util.CloseAndExhaust[*ingester_client.ActiveSeriesResponse](stream)
-			if err != nil && !errors.Is(globalerror.WrapGrpcContextError(err), context.Canceled) {
+			if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
 				level.Warn(d.log).Log("msg", "error closing active series response stream", "err", err)
 			}
 		}()
@@ -2196,7 +2196,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 				if errors.Is(err, io.EOF) {
 					break
 				}
-				if errors.Is(globalerror.WrapGrpcContextError(err), context.Canceled) {
+				if errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
 					return ignored{}, nil
 				}
 				level.Error(log).Log("msg", "error receiving active series response", "err", err)

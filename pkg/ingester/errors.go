@@ -47,7 +47,7 @@ func newErrorWithStatus(originalErr error, code codes.Code) globalerror.ErrorWit
 	if errors.As(originalErr, &ingesterErr) {
 		errorDetails = &mimirpb.ErrorDetails{Cause: ingesterErr.errorCause()}
 	}
-	return globalerror.NewErrorWithGRPCStatus(originalErr, code, errorDetails)
+	return globalerror.WrapErrorWithGRPCStatus(originalErr, code, errorDetails)
 }
 
 // newErrorWithHTTPStatus creates a new ErrorWithStatus backed by the given error,
