@@ -258,7 +258,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 }
 
 func TestSchedulerProcessor_QueryTime(t *testing.T) {
-	runTest := func(t *testing.T, statsEnabled bool) {
+	runTest := func(t *testing.T, statsEnabled bool, statsRace bool) {
 		fp, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
 
 		recvCount := atomic.NewInt64(0)
@@ -291,6 +291,11 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 
 			if statsEnabled {
 				require.Equal(t, queueTime, stat.LoadQueueTime())
+
+				if statsRace {
+					// This triggers the race detector reliably if the same stats object is marshaled.
+					go stat.AddEstimatedSeriesCount(1)
+				}
 			} else {
 				require.Equal(t, time.Duration(0), stat.LoadQueueTime())
 			}
@@ -306,11 +311,15 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 	}
 
 	t.Run("query stats enabled should record queue time", func(t *testing.T) {
-		runTest(t, true)
+		runTest(t, true, false)
+	})
+
+	t.Run("query stats enabled should not trigger race detector", func(t *testing.T) {
+		runTest(t, true, true)
 	})
 
 	t.Run("query stats disabled will not record queue time", func(t *testing.T) {
-		runTest(t, false)
+		runTest(t, false, false)
 	})
 }
 
