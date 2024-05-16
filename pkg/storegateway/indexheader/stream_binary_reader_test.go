@@ -12,10 +12,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	promtestutil "github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -92,4 +94,35 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 			})
 		}
 	}
+}
+
+func TestStreamBinaryReader_LabelValuesOffsetsHonorsContextCancel(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := filepath.Join(t.TempDir(), "test-stream-binary-reader-cancel")
+	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+
+	seriesCount := streamindex.CheckContextEveryNIterations * 10
+	// Create block.
+	lbls := make([]labels.Labels, 0, seriesCount)
+	for i := 0; i < seriesCount; i++ {
+		lbls = append(lbls, labels.FromStrings("a", fmt.Sprintf("%d", i)))
+	}
+	blockID, err := block.CreateBlock(ctx, tmpDir, lbls, 1, 0, 10, labels.FromStrings("ext1", "1"))
+	require.NoError(t, err)
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
+
+	// Write sparse index headers to disk on first build.
+	r, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	require.NoError(t, err)
+
+	// LabelValuesOffsets will read all series and check for cancelation every CheckContextEveryNIterations,
+	// we set ctx to fail after half of the series are read.
+	failAfter := uint64(seriesCount / 2 / streamindex.CheckContextEveryNIterations)
+	ctx = &promtestutil.MockContextErrAfter{FailAfter: failAfter}
+	_, err = r.LabelValuesOffsets(ctx, "a", "", func(string) bool { return true })
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
 }
