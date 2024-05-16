@@ -67,14 +67,24 @@ func TestWrapContextError(t *testing.T) {
 				expectedGrpcCode:   codes.DeadlineExceeded,
 				expectedContextErr: context.DeadlineExceeded,
 			},
+			"ErrorWithStatus with Canceled status": {
+				origErr:            WrapErrorWithGRPCStatus(errors.New("cancel error"), codes.Canceled, nil),
+				expectedGrpcCode:   codes.Canceled,
+				expectedContextErr: context.Canceled,
+			},
+			"ErrorWithStatus with DeadlineExceeded status": {
+				origErr:            WrapErrorWithGRPCStatus(errors.New("timeout error"), codes.DeadlineExceeded, nil),
+				expectedGrpcCode:   codes.DeadlineExceeded,
+				expectedContextErr: context.DeadlineExceeded,
+			},
 		}
 
 		for testName, testData := range tests {
 			t.Run(testName, func(t *testing.T) {
-				wrapped := WrapGrpcContextError(testData.origErr)
+				wrapped := WrapGRPCErrorWithContextError(testData.origErr)
 
 				assert.NotEqual(t, testData.origErr, wrapped)
-				assert.Equal(t, testData.origErr, errors.Unwrap(wrapped))
+				assert.ErrorIs(t, wrapped, testData.origErr)
 
 				assert.True(t, errors.Is(wrapped, testData.expectedContextErr))
 				assert.Equal(t, testData.expectedGrpcCode, grpcutil.ErrorToStatusCode(wrapped))
@@ -98,15 +108,15 @@ func TestWrapContextError(t *testing.T) {
 
 	t.Run("should return the input error on a non-gRPC error", func(t *testing.T) {
 		orig := errors.New("mock error")
-		assert.Equal(t, orig, WrapGrpcContextError(orig))
+		assert.Equal(t, orig, WrapGRPCErrorWithContextError(orig))
 
-		assert.Equal(t, context.Canceled, WrapGrpcContextError(context.Canceled))
-		assert.Equal(t, context.DeadlineExceeded, WrapGrpcContextError(context.DeadlineExceeded))
-		assert.Equal(t, io.EOF, WrapGrpcContextError(io.EOF))
+		assert.Equal(t, context.Canceled, WrapGRPCErrorWithContextError(context.Canceled))
+		assert.Equal(t, context.DeadlineExceeded, WrapGRPCErrorWithContextError(context.DeadlineExceeded))
+		assert.Equal(t, io.EOF, WrapGRPCErrorWithContextError(io.EOF))
 	})
 }
 
-func TestErrorWithStatus(t *testing.T) {
+func TestWrapErrorWithGRPCStatus(t *testing.T) {
 	genericErrMsg := "this is an error"
 	genericErr := errors.New(genericErrMsg)
 
@@ -144,9 +154,12 @@ func TestErrorWithStatus(t *testing.T) {
 	for name, data := range tests {
 		t.Run(name, func(t *testing.T) {
 			const statusCode = codes.Unimplemented
-			errWithStatus := NewErrorWithGRPCStatus(data.originErr, statusCode, data.details)
+			errWithStatus := WrapErrorWithGRPCStatus(data.originErr, statusCode, data.details)
 			require.Error(t, errWithStatus)
 			require.Errorf(t, errWithStatus, data.expectedErrorMessage)
+
+			// Ensure that errWithStatus preserves the original error
+			require.ErrorIs(t, errWithStatus, data.originErr)
 
 			// Ensure gogo's status.FromError recognizes errWithStatus.
 			//lint:ignore faillint We want to explicitly assert on status.FromError()
@@ -181,6 +194,82 @@ func TestErrorWithStatus(t *testing.T) {
 				shouldLog, _ := optional.ShouldLog(context.Background())
 				require.False(t, shouldLog)
 			}
+		})
+	}
+}
+
+func TestErrorWithStatus_Err(t *testing.T) {
+	genericErrMsg := "this is an error"
+	genericErr := errors.New(genericErrMsg)
+
+	tests := map[string]struct {
+		originErr            error
+		details              *mimirpb.ErrorDetails
+		expectedErrorMessage string
+		expectedErrorDetails *mimirpb.ErrorDetails
+	}{
+		"Err() of an ErrorWithStatus backed by a genericErr contains ErrorDetails": {
+			originErr:            genericErr,
+			details:              &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedErrorMessage: genericErrMsg,
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+		},
+		"Err() of an ErrorWithStatus backed by a DoNotLog error of genericErr contains ErrorDetails": {
+			originErr:            middleware.DoNotLogError{Err: genericErr},
+			details:              &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedErrorMessage: genericErrMsg,
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+		},
+		"Err() of an ErrorWithStatus without ErrorDetails backed by a DoNotLog error of genericErr contains ErrorDetails": {
+			originErr:            middleware.DoNotLogError{Err: genericErr},
+			expectedErrorMessage: genericErrMsg,
+		},
+		"Err() of an ErrorWithStatus without ErrorDetails": {
+			originErr:            genericErr,
+			expectedErrorMessage: genericErrMsg,
+		},
+	}
+
+	for name, data := range tests {
+		t.Run(name, func(t *testing.T) {
+			const statusCode = codes.Unimplemented
+			errWithStatus := WrapErrorWithGRPCStatus(data.originErr, statusCode, data.details)
+			err := errWithStatus.Err()
+			require.Error(t, err)
+			require.Errorf(t, err, data.expectedErrorMessage)
+
+			// Ensure that err does not preserve the original error
+			require.NotErrorIs(t, err, data.originErr)
+
+			// Ensure gogo's status.FromError recognizes errWithStatus.
+			//lint:ignore faillint We want to explicitly assert on status.FromError()
+			stat, ok := status.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, statusCode, stat.Code())
+			require.Equal(t, stat.Message(), data.expectedErrorMessage)
+			checkErrorWithStatusDetails(t, stat.Details(), data.expectedErrorDetails)
+
+			// Ensure dskit's grpcutil.ErrorToStatus recognizes errWithHTTPStatus.
+			stat, ok = grpcutil.ErrorToStatus(err)
+			require.True(t, ok)
+			require.Equal(t, statusCode, stat.Code())
+			require.Equal(t, stat.Message(), data.expectedErrorMessage)
+			checkErrorWithStatusDetails(t, stat.Details(), data.expectedErrorDetails)
+
+			// Ensure grpc's status.FromError recognizes errWithStatus.
+			//lint:ignore faillint We want to explicitly assert on status.FromError()
+			st, ok := grpcstatus.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, statusCode, st.Code())
+			require.Equal(t, st.Message(), data.expectedErrorMessage)
+
+			// Ensure httpgrpc's HTTPResponseFromError doesn't recognize errWithStatus.
+			resp, ok := httpgrpc.HTTPResponseFromError(err)
+			require.False(t, ok)
+			require.Nil(t, resp)
+
+			var optional middleware.OptionalLogging
+			require.False(t, errors.As(err, &optional))
 		})
 	}
 }

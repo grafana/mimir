@@ -28,24 +28,26 @@ import (
 )
 
 const (
-	day                               = 24 * time.Hour
-	queryRangePathSuffix              = "/api/v1/query_range"
-	instantQueryPathSuffix            = "/api/v1/query"
-	cardinalityLabelNamesPathSuffix   = "/api/v1/cardinality/label_names"
-	cardinalityLabelValuesPathSuffix  = "/api/v1/cardinality/label_values"
-	cardinalityActiveSeriesPathSuffix = "/api/v1/cardinality/active_series"
-	labelNamesPathSuffix              = "/api/v1/labels"
+	day                                               = 24 * time.Hour
+	queryRangePathSuffix                              = "/api/v1/query_range"
+	instantQueryPathSuffix                            = "/api/v1/query"
+	cardinalityLabelNamesPathSuffix                   = "/api/v1/cardinality/label_names"
+	cardinalityLabelValuesPathSuffix                  = "/api/v1/cardinality/label_values"
+	cardinalityActiveSeriesPathSuffix                 = "/api/v1/cardinality/active_series"
+	cardinalityActiveNativeHistogramMetricsPathSuffix = "/api/v1/cardinality/active_native_histogram_metrics"
+	labelNamesPathSuffix                              = "/api/v1/labels"
 
 	// DefaultDeprecatedAlignQueriesWithStep is the default value for the deprecated querier frontend config DeprecatedAlignQueriesWithStep
 	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.14
 	DefaultDeprecatedAlignQueriesWithStep = false
 
-	queryTypeInstant      = "query"
-	queryTypeRange        = "query_range"
-	queryTypeCardinality  = "cardinality"
-	queryTypeLabels       = "label_names_and_values"
-	queryTypeActiveSeries = "active_series"
-	queryTypeOther        = "other"
+	queryTypeInstant                      = "query"
+	queryTypeRange                        = "query_range"
+	queryTypeCardinality                  = "cardinality"
+	queryTypeLabels                       = "label_names_and_values"
+	queryTypeActiveSeries                 = "active_series"
+	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
+	queryTypeOther                        = "other"
 )
 
 var (
@@ -327,6 +329,7 @@ func newQueryTripperware(
 		next = newQueryDetailsStartEndRoundTripper(next)
 		cardinality := next
 		activeSeries := next
+		activeNativeHistogramMetrics := next
 		labels := next
 
 		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
@@ -337,6 +340,7 @@ func newQueryTripperware(
 
 		if cfg.ShardActiveSeriesQueries {
 			activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.UseActiveSeriesDecoder, limits, log)
+			activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, limits, log)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -349,6 +353,8 @@ func newQueryTripperware(
 				return cardinality.RoundTrip(r)
 			case IsActiveSeriesQuery(r.URL.Path):
 				return activeSeries.RoundTrip(r)
+			case IsActiveNativeHistogramMetricsQuery(r.URL.Path):
+				return activeNativeHistogramMetrics.RoundTrip(r)
 			case IsLabelsQuery(r.URL.Path):
 				return labels.RoundTrip(r)
 			default:
@@ -402,6 +408,8 @@ func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 				op = queryTypeCardinality
 			case IsActiveSeriesQuery(r.URL.Path):
 				op = queryTypeActiveSeries
+			case IsActiveNativeHistogramMetricsQuery(r.URL.Path):
+				op = queryTypeActiveNativeHistogramMetrics
 			case IsLabelsQuery(r.URL.Path):
 				op = queryTypeLabels
 			}
@@ -447,4 +455,8 @@ func IsLabelsQuery(path string) bool {
 
 func IsActiveSeriesQuery(path string) bool {
 	return strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix)
+}
+
+func IsActiveNativeHistogramMetricsQuery(path string) bool {
+	return strings.HasSuffix(path, cardinalityActiveNativeHistogramMetricsPathSuffix)
 }

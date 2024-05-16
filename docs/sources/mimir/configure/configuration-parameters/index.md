@@ -3295,8 +3295,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.label-values-max-cardinality-label-names-per-request
 [label_values_max_cardinality_label_names_per_request: <int> | default = 100]
 
-# (experimental) Maximum size of an active series request result shard in bytes.
-# 0 to disable.
+# (experimental) Maximum size of an active series or active native histogram
+# series request result shard in bytes. 0 to disable.
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
 
@@ -3758,6 +3758,12 @@ bucket_store:
     # tenants. If set to 0, concurrency is unlimited.
     # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency
     [lazy_loading_concurrency: <int> | default = 4]
+
+    # (experimental) Timeout for the queue of index header loads. If the queue
+    # is full and the timeout is reached, the load will return an error. 0 means
+    # no timeout and the load will wait indefinitely.
+    # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout
+    [lazy_loading_concurrency_queue_timeout: <duration> | default = 0s]
 
     # (advanced) If true, verify the checksum of index headers upon loading them
     # (either on startup or lazily when lazy loading is enabled). Setting to
