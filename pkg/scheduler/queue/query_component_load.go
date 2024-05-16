@@ -22,15 +22,15 @@ const ingesterQueueDimension = "ingester"
 const storeGatewayQueueDimension = "store-gateway"
 const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
 
-// QueryComponentFlagsForRequest wraps QueryComponentFlags to parse the expected query component from a request.
+// QueryComponentForRequest wraps QueryComponentFlags to parse the expected query component from a request.
 // nolint: unused
-func QueryComponentFlagsForRequest(req *SchedulerRequest) (isIngester, isStoreGateway bool) {
+func QueryComponentForRequest(req *SchedulerRequest) string {
 	var expectedQueryComponent string
 	if len(req.AdditionalQueueDimensions) > 0 {
 		expectedQueryComponent = req.AdditionalQueueDimensions[0]
 	}
 
-	return QueryComponentFlags(expectedQueryComponent)
+	return expectedQueryComponent
 }
 
 // QueryComponentFlags interprets annotations by the frontend for the expected query component,
@@ -66,8 +66,8 @@ type QueryComponentLoad struct {
 	overloadFactor float64 // nolint: unused
 }
 
-// nolint: unused
-const defaultOverloadFactor = 2.0 // component is overloaded if it has double the inflight requests as the other
+// QueryComponentDefaultOverloadFactor component is overloaded if it has double the inflight requests as the other
+const QueryComponentDefaultOverloadFactor = 2.0
 
 func NewQueryComponentLoad(overloadFactor float64) (*QueryComponentLoad, error) {
 	if overloadFactor <= 1 {

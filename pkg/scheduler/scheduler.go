@@ -65,6 +65,11 @@ type Scheduler struct {
 	// to the time they are completed by the querier or failed due to cancel, timeout, or disconnect.
 	schedulerInflightRequests map[requestKey]*queue.SchedulerRequest
 
+	// queryComponentLoad encapsulates tracking requests from the time they are forwarded to a querier
+	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
+	// schedulerInflightRequests, tracking begins only when the request is sent to a querier.
+	queryComponentLoad *queue.QueryComponentLoad
+
 	// The ring is used to let other components discover query-scheduler replicas.
 	// The ring is optional.
 	schedulerLifecycler *ring.BasicLifecycler
@@ -122,6 +127,10 @@ func (cfg *Config) Validate() error {
 // NewScheduler creates a new Scheduler.
 func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Scheduler, error) {
 	var err error
+	queryComponentLoad, err := queue.NewQueryComponentLoad(queue.QueryComponentDefaultOverloadFactor)
+	if err != nil {
+		return nil, err
+	}
 
 	s := &Scheduler{
 		cfg:    cfg,
@@ -129,6 +138,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		limits: limits,
 
 		schedulerInflightRequests: map[requestKey]*queue.SchedulerRequest{},
+		queryComponentLoad:        queryComponentLoad,
 		connectedFrontends:        map[string]*connectedFrontend{},
 		subservicesWatcher:        services.NewFailureWatcher(),
 	}
