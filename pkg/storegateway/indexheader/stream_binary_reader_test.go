@@ -99,7 +99,7 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 func TestStreamBinaryReader_LabelValuesOffsetsHonorsContextCancel(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir := filepath.Join(t.TempDir(), "test-sparse index headers")
+	tmpDir := filepath.Join(t.TempDir(), "test-stream-binary-reader-cancel")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
@@ -118,6 +118,8 @@ func TestStreamBinaryReader_LabelValuesOffsetsHonorsContextCancel(t *testing.T) 
 	r, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
 
+	// LabelValuesOffsets will read all series and check for cancelation every CheckContextEveryNIterations,
+	// we set ctx to fail after half of the series are read.
 	failAfter := uint64(seriesCount / 2 / streamindex.CheckContextEveryNIterations)
 	ctx = &promtestutil.MockContextErrAfter{FailAfter: failAfter}
 	_, err = r.LabelValuesOffsets(ctx, "a", "", func(string) bool { return true })
