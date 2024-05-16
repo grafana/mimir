@@ -18,10 +18,10 @@ type Config struct {
 
 func NewConfig(jsonData json.RawMessage) (Config, error) {
 	type emailSettingsRaw struct {
-		SingleEmail bool   `json:"singleEmail,omitempty"`
-		Addresses   string `json:"addresses,omitempty"`
-		Message     string `json:"message,omitempty"`
-		Subject     string `json:"subject,omitempty"`
+		SingleEmail bool   `json:"singleEmail,omitempty" yaml:"singleEmail,omitempty"`
+		Addresses   string `json:"addresses,omitempty" yaml:"addresses,omitempty"`
+		Message     string `json:"message,omitempty" yaml:"message,omitempty"`
+		Subject     string `json:"subject,omitempty" yaml:"subject,omitempty"`
 	}
 
 	var settings emailSettingsRaw

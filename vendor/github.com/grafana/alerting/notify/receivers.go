@@ -69,12 +69,12 @@ type TestIntegrationConfigResult struct {
 }
 
 type GrafanaIntegrationConfig struct {
-	UID                   string            `json:"uid"`
-	Name                  string            `json:"name"`
-	Type                  string            `json:"type"`
-	DisableResolveMessage bool              `json:"disableResolveMessage"`
-	Settings              json.RawMessage   `json:"settings"`
-	SecureSettings        map[string]string `json:"secureSettings"`
+	UID                   string            `json:"uid" yaml:"uid"`
+	Name                  string            `json:"name" yaml:"name"`
+	Type                  string            `json:"type" yaml:"type"`
+	DisableResolveMessage bool              `json:"disableResolveMessage" yaml:"disableResolveMessage"`
+	Settings              json.RawMessage   `json:"settings" yaml:"settings"`
+	SecureSettings        map[string]string `json:"secureSettings" yaml:"secureSettings"`
 }
 
 type ConfigReceiver = config.Receiver
