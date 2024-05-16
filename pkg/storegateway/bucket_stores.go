@@ -446,6 +446,9 @@ func (t timeoutGate) Start(ctx context.Context) error {
 	defer cancel()
 
 	err := t.delegate.Start(ctx)
+	// Note that we only return an error for a timeout when the delegate has also returned an
+	// error. This ensures that when we get a slot in the delegate, our caller will call Done()
+	// and release the slot.
 	if err != nil && errors.Is(context.Cause(ctx), errGateTimeout) {
 		_ = spanlogger.FromContext(ctx, log.NewNopLogger()).Error(err)
 		err = errGateTimeout
