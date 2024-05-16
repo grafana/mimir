@@ -23,8 +23,8 @@ import (
 
 const (
 	postingLengthFieldSize = 4
-	// checkContextEveryNIterations is used in some tight loops to check if the context is done.
-	checkContextEveryNIterations = 1024
+	// CheckContextEveryNIterations is used in some tight loops to check if the context is done.
+	CheckContextEveryNIterations = 1024
 )
 
 type PostingOffsetTable interface {
@@ -299,7 +299,7 @@ func (t *PostingOffsetTableV1) LabelValuesOffsets(ctx context.Context, name, pre
 	values := make([]PostingListOffset, 0, len(e))
 	count := 1
 	for k, r := range e {
-		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+		if count%CheckContextEveryNIterations == 0 && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		count++
@@ -558,7 +558,7 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 
 	count := 1
 	for d.Err() == nil && !currEntry.isLast {
-		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+		if count%CheckContextEveryNIterations == 0 && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		count++
