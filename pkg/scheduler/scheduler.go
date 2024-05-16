@@ -127,7 +127,7 @@ func (cfg *Config) Validate() error {
 // NewScheduler creates a new Scheduler.
 func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Scheduler, error) {
 	var err error
-	queryComponentLoad, err := queue.NewQueryComponentLoad(queue.QueryComponentDefaultOverloadFactor)
+	queryComponentLoad, err := queue.NewQueryComponentLoad(queue.QueryComponentDefaultOverloadFactor, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -483,6 +483,16 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 
 	queryComponentName := req.ExpectedQueryComponentName()
 	defer s.requestQueue.QueryComponentUtilization.DecrementForComponentName(queryComponentName)
+
+	// temporary observation of query component load balancing behavior before full implementation
+	isIngester, isStoreGateway := queue.QueryComponentFlags(queryComponentName)
+	if s.queryComponentLoad.IsOverloadedForComponentFlags(isIngester, isStoreGateway) {
+		level.Warn(s.log).Log(
+			"msg", "query component overloaded for request",
+			"queryComponentIsIngester", isIngester,
+			"queryComponentIsStoreGateway", isStoreGateway,
+		)
+	}
 
 	// Handle the stream sending & receiving on a goroutine so we can
 	// monitor the contexts in a select and cancel things appropriately.

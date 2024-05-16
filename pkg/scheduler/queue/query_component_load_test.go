@@ -7,33 +7,27 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 )
-
-// getForComponent is a test utility, not intended for use by consumers of QueryComponentLoad
-func (qcl *QueryComponentLoad) getForComponent(queryComponent QueryComponent) int {
-	qcl.inflightRequestsMu.RLock()
-	defer qcl.inflightRequestsMu.RUnlock()
-	return qcl.schedulerQuerierInflightRequestsByQueryComponent[queryComponent]
-}
 
 func TestQueryComponentLoad_Concurrency(t *testing.T) {
 
 	requestCount := 100
 	testOverloadFactor := 2.0
-	queryComponentLoad, err := NewQueryComponentLoad(testOverloadFactor)
+	queryComponentLoad, err := NewQueryComponentLoad(testOverloadFactor, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	mockForwardRequestToQuerier := func(t *testing.T, load *QueryComponentLoad) {
 		expectedQueryComponent := randAdditionalQueueDimension(false)[0]
 
 		load.IncrementForComponentName(expectedQueryComponent)
-		require.GreaterOrEqual(t, load.getForComponent(Ingester), 0)
-		require.GreaterOrEqual(t, load.getForComponent(StoreGateway), 0)
+		require.GreaterOrEqual(t, load.GetForComponent(Ingester), 0)
+		require.GreaterOrEqual(t, load.GetForComponent(StoreGateway), 0)
 
 		load.DecrementForComponentName(expectedQueryComponent)
-		require.GreaterOrEqual(t, load.getForComponent(Ingester), 0)
-		require.GreaterOrEqual(t, load.getForComponent(StoreGateway), 0)
+		require.GreaterOrEqual(t, load.GetForComponent(Ingester), 0)
+		require.GreaterOrEqual(t, load.GetForComponent(StoreGateway), 0)
 	}
 
 	wg := sync.WaitGroup{}
@@ -183,12 +177,12 @@ func TestIsOverloadedForQueryComponents(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			queryComponentLoad, err := NewQueryComponentLoad(testOverloadFactor)
+			queryComponentLoad, err := NewQueryComponentLoad(testOverloadFactor, prometheus.NewPedanticRegistry())
 			require.NoError(t, err)
 
 			alwaysNotOverloaded := &QueryComponentLoad{
-				schedulerQuerierInflightRequestsByQueryComponent: make(map[QueryComponent]int),
-				schedulerQuerierTotalInflightRequests:            0,
+				inflightRequestsByComponent: make(map[QueryComponent]int),
+				inflightRequestsTotal:       0,
 				// constructor disallows anything <=1; set it manually here
 				overloadFactor: rand.Float64(),
 			}
@@ -203,13 +197,13 @@ func TestIsOverloadedForQueryComponents(t *testing.T) {
 
 			require.Equal(t,
 				testCase.expectedIsOverloaded,
-				queryComponentLoad.IsOverloadedForQueryComponents(testCase.isIngester, testCase.isStoreGateway),
+				queryComponentLoad.IsOverloadedForComponentFlags(testCase.isIngester, testCase.isStoreGateway),
 			)
 
 			// if overloadFactor is somehow set below 1, it should be ignored and always return not overloaded
 			require.Equal(t,
 				false,
-				alwaysNotOverloaded.IsOverloadedForQueryComponents(testCase.isIngester, testCase.isStoreGateway),
+				alwaysNotOverloaded.IsOverloadedForComponentFlags(testCase.isIngester, testCase.isStoreGateway),
 			)
 		})
 	}
