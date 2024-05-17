@@ -15,7 +15,7 @@ import (
 func (qcl *QueryComponentLoad) getForComponent(queryComponent QueryComponent) int {
 	qcl.inflightRequestsMu.RLock()
 	defer qcl.inflightRequestsMu.RUnlock()
-	return qcl.inflightRequestsByComponent[queryComponent]
+	return qcl.querierInflightRequestsByComponent[queryComponent]
 }
 
 func TestQueryComponentLoad_Concurrency(t *testing.T) {
@@ -192,8 +192,8 @@ func TestIsOverloadedForQueryComponents(t *testing.T) {
 			require.NoError(t, err)
 
 			alwaysNotOverloaded := &QueryComponentLoad{
-				inflightRequestsByComponent: make(map[QueryComponent]int),
-				inflightRequestsTotal:       0,
+				querierInflightRequestsByComponent: make(map[QueryComponent]int),
+				querierInflightRequestsTotal:       0,
 				// constructor disallows anything <=1; set it manually here
 				overloadFactor: rand.Float64(),
 			}
