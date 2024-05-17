@@ -43,7 +43,7 @@ func getTimeDuration(arg string, defaultDuration time.Duration, req *http.Reques
 		response = fmt.Sprintf("DeadlineExceededHandler: duration of %s will be used for \"%s\"", duration.String(), arg)
 		return duration, response
 	}
-	response = fmt.Sprintf("DeadlineExceededHandler: invalid duration '%s' has been specified, so the default duration of %s will be used for \"%s\"", defaultDuration.String(), durationArg)
+	response = fmt.Sprintf("DeadlineExceededHandler: invalid duration '%s' has been specified, so the default duration of %s will be used for \"%s\"", durationArg, defaultDuration.String(), arg)
 	return defaultDuration, response
 }
 
