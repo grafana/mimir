@@ -11,32 +11,26 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-type QueryComponent int
+type QueryComponent string
 
 const (
-	StoreGateway QueryComponent = iota
-	Ingester
+	StoreGateway QueryComponent = "store-gateway"
+	Ingester     QueryComponent = "ingester"
 )
 
-func (qc QueryComponent) String() string {
-	switch qc {
-	case StoreGateway:
-		return "store-gateway"
-	case Ingester:
-		return "ingester"
-	}
-	return ""
+var QueryComponents = []QueryComponent{
+	StoreGateway,
+	Ingester,
 }
 
 // cannot import constants from frontend/v2 due to import cycle
-// other options do not need to be checked explicitly
+// these are attached to the request's AdditionalQueueDimensions by the frontend.
 const ingesterQueueDimension = "ingester"
 const storeGatewayQueueDimension = "store-gateway"
 const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
 
-// QueryComponentForRequest wraps QueryComponentFlags to parse the expected query component from a request.
-// nolint: unused
-func QueryComponentForRequest(req *SchedulerRequest) string {
+// QueryComponentNameForRequest parses the expected query component from a annotations by the frontend..
+func QueryComponentNameForRequest(req *SchedulerRequest) string {
 	var expectedQueryComponent string
 	if len(req.AdditionalQueueDimensions) > 0 {
 		expectedQueryComponent = req.AdditionalQueueDimensions[0]
@@ -45,16 +39,15 @@ func QueryComponentForRequest(req *SchedulerRequest) string {
 	return expectedQueryComponent
 }
 
-// QueryComponentFlags interprets annotations by the frontend for the expected query component,
+// queryComponentFlags interprets annotations by the frontend for the expected query component,
 // and flags whether a query request is expected to be served by the ingesters, store-gateways, or both.
-// nolint: unused
-func QueryComponentFlags(expectedQueryComponent string) (isIngester, isStoreGateway bool) {
+func queryComponentFlags(queryComponentName string) (isIngester, isStoreGateway bool) {
 	// Annotations from the frontend representing "both" or "unknown" do not need to be checked explicitly.
 	// Conservatively, we assume a query request will be served by both query components
 	// as we prefer to overestimate query component load rather than underestimate.
 	isIngester, isStoreGateway = true, true
 
-	switch expectedQueryComponent {
+	switch queryComponentName {
 	case ingesterQueueDimension:
 		isStoreGateway = false
 	case storeGatewayQueueDimension:
@@ -63,20 +56,20 @@ func QueryComponentFlags(expectedQueryComponent string) (isIngester, isStoreGate
 	return isIngester, isStoreGateway
 }
 
+// QueryComponentLoad tracks requests from the time they are forwarded to a querier
+// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
+// Unlike the Scheduler's schedulerInflightRequests, tracking begins only when the request is sent to a querier.
+//
+// Scheduler-Querier inflight requests are broken out by the query component flags,
+// representing whether the query request will be served by the ingesters, store-gateways, or both.
+// Query requests utilizing both ingesters and store-gateways are tracked in the map entry for both keys,
+// therefore the sum of inflight requests by component is likely to exceed the inflight requests total.
 type QueryComponentLoad struct {
-	overloadFactor float64 // nolint: unused
+	overloadFactor float64
 
-	inflightRequestsMu sync.RWMutex //nolint: unused
-	// inflightRequestsByComponent tracks requests from the time they are forwarded to a querier
-	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
-	// Unlike the Scheduler's schedulerInflightRequests, tracking begins only when the request is sent to a querier.
-	//
-	// Scheduler-Querier inflight requests are broken out by the query component flags,
-	// representing whether the query request will be served by the ingesters, store-gateways, or both.
-	// Query requests utilizing both ingesters and store-gateways are tracked in the map entry for both keys,
-	// therefore the sum of inflightRequestsByComponent is likely to exceed inflightRequestsTotal.
-	inflightRequestsByComponent map[QueryComponent]int //nolint: unused
-	inflightRequestsTotal       int                    //nolint: unused
+	inflightRequestsMu          sync.RWMutex
+	inflightRequestsByComponent map[QueryComponent]int
+	inflightRequestsTotal       int
 
 	inflightRequestsGauge *prometheus.GaugeVec
 }
@@ -103,68 +96,41 @@ func NewQueryComponentLoad(overloadFactor float64, registerer prometheus.Registe
 	}, nil
 }
 
-// GetForComponent is a test utility, not intended for use by consumers of QueryComponentLoad
-func (qcl *QueryComponentLoad) GetForComponent(queryComponent QueryComponent) int {
-	qcl.inflightRequestsMu.RLock()
-	defer qcl.inflightRequestsMu.RUnlock()
-	return qcl.inflightRequestsByComponent[queryComponent]
-}
+// IsOverloadedForComponentName checks if load for a query component name is at or above the overload threshold.
+// The component name can indicate the usage of one or more QueryComponents but only one component
+// can be considered to be overloaded as the overaload threshold is determined by the second-most-loaded-component.
+func (qcl *QueryComponentLoad) IsOverloadedForComponentName(name string) (bool, QueryComponent) {
+	isIngester, isStoreGateway := queryComponentFlags(name)
 
-// IsOverloadedForComponent checks if TODO
-// nolint: unused
-func (qcl *QueryComponentLoad) IsOverloadedForComponent(queryComponent QueryComponent) bool {
 	qcl.inflightRequestsMu.RLock()
 	defer qcl.inflightRequestsMu.RUnlock()
 
 	overloadThreshold := qcl.overloadThreshold()
 	if overloadThreshold <= 0 {
-		return false
-	}
-
-	switch queryComponent {
-	case Ingester:
-		return qcl.inflightRequestsByComponent[Ingester] >= overloadThreshold
-	case StoreGateway:
-		return qcl.inflightRequestsByComponent[StoreGateway] >= overloadThreshold
-	}
-
-	return false
-}
-
-// IsOverloadedForComponentFlags checks if TODO
-// nolint: unused
-func (qcl *QueryComponentLoad) IsOverloadedForComponentFlags(isIngester, isStoreGateway bool) bool {
-	qcl.inflightRequestsMu.RLock()
-	defer qcl.inflightRequestsMu.RUnlock()
-
-	overloadThreshold := qcl.overloadThreshold()
-	if overloadThreshold <= 0 {
-		return false
+		return false, ""
 	}
 
 	if isIngester {
 		if qcl.inflightRequestsByComponent[Ingester] >= overloadThreshold {
-			return true
+			return true, Ingester
 		}
 	}
 	if isStoreGateway {
 		if qcl.inflightRequestsByComponent[StoreGateway] >= overloadThreshold {
-			return true
+			return true, StoreGateway
 		}
 	}
-	return false
+	return false, ""
 }
 
-// nolint: unused
-// called within a read lock
+// overloadThreshold calculates the minimum number of inflight requests to qualify a query component as overloaded.
+// This is determined by (inflight requests for second-most-loaded component) * (overload factor).
+// Intended to only be called within a read lock on inflightRequestsMu.
 func (qcl *QueryComponentLoad) overloadThreshold() int {
 	// overload factor is expected to be > 1; any misconfiguration of this should be a no-op
 	if qcl.overloadFactor <= 1 {
 		return 0
 	}
-
-	//qcl.inflightRequestsMu.RLock()
-	//defer qcl.inflightRequestsMu.RUnlock()
 
 	// no overloaded component if there are no inflight requests at all.
 	if qcl.inflightRequestsTotal == 0 {
@@ -194,30 +160,27 @@ func (qcl *QueryComponentLoad) overloadThreshold() int {
 }
 
 // IncrementForComponentName is called when a request is sent to a querier
-// nolint: unused
 func (qcl *QueryComponentLoad) IncrementForComponentName(expectedQueryComponent string) {
 	qcl.updateForComponentName(expectedQueryComponent, 1)
 }
 
 // DecrementForComponentName is called when a querier completes or fails a request
-// nolint: unused
 func (qcl *QueryComponentLoad) DecrementForComponentName(expectedQueryComponent string) {
 	qcl.updateForComponentName(expectedQueryComponent, -1)
 }
 
-// nolint: unused
 func (qcl *QueryComponentLoad) updateForComponentName(expectedQueryComponent string, increment int) {
-	isIngester, isStoreGateway := QueryComponentFlags(expectedQueryComponent)
+	isIngester, isStoreGateway := queryComponentFlags(expectedQueryComponent)
 
 	qcl.inflightRequestsMu.Lock()
 	defer qcl.inflightRequestsMu.Unlock()
 	if isIngester {
 		qcl.inflightRequestsByComponent[Ingester] += increment
-		qcl.inflightRequestsGauge.WithLabelValues(Ingester.String()).Add(float64(increment))
+		qcl.inflightRequestsGauge.WithLabelValues(string(Ingester)).Add(float64(increment))
 	}
 	if isStoreGateway {
 		qcl.inflightRequestsByComponent[StoreGateway] += increment
-		qcl.inflightRequestsGauge.WithLabelValues(StoreGateway.String()).Add(float64(increment))
+		qcl.inflightRequestsGauge.WithLabelValues(string(StoreGateway)).Add(float64(increment))
 	}
 	qcl.inflightRequestsTotal += increment
 }
