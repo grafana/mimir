@@ -11,6 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// getForComponent is a test utility, not intended for use by consumers of QueryComponentLoad
+func (qcl *QueryComponentLoad) getForComponent(queryComponent QueryComponent) int {
+	qcl.inflightRequestsMu.RLock()
+	defer qcl.inflightRequestsMu.RUnlock()
+	return qcl.inflightRequestsByComponent[queryComponent]
+}
+
 func TestQueryComponentLoad_Concurrency(t *testing.T) {
 
 	requestCount := 100
@@ -22,22 +29,25 @@ func TestQueryComponentLoad_Concurrency(t *testing.T) {
 		expectedQueryComponent := randAdditionalQueueDimension(false)[0]
 
 		load.IncrementForComponentName(expectedQueryComponent)
-		require.GreaterOrEqual(t, load.GetForComponent(Ingester), 0)
-		require.GreaterOrEqual(t, load.GetForComponent(StoreGateway), 0)
+		require.GreaterOrEqual(t, load.getForComponent(Ingester), 0)
+		require.GreaterOrEqual(t, load.getForComponent(StoreGateway), 0)
 
 		load.DecrementForComponentName(expectedQueryComponent)
-		require.GreaterOrEqual(t, load.GetForComponent(Ingester), 0)
-		require.GreaterOrEqual(t, load.GetForComponent(StoreGateway), 0)
+		require.GreaterOrEqual(t, load.getForComponent(Ingester), 0)
+		require.GreaterOrEqual(t, load.getForComponent(StoreGateway), 0)
 	}
 
 	wg := sync.WaitGroup{}
+	start := make(chan struct{})
 	for i := 0; i < requestCount; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			<-start
 			mockForwardRequestToQuerier(t, queryComponentLoad)
 		}()
 	}
+	close(start)
 	wg.Wait()
 }
 
@@ -48,26 +58,23 @@ func TestIsOverloadedForQueryComponents(t *testing.T) {
 		name                         string
 		ingesterInflightRequests     int
 		storegatewayInflightRequests int
-		isIngester                   bool
-		isStoreGateway               bool
-		expectedIsOverloaded         bool
+		queryComponentName           string
+		expectedOverloadedComponent  QueryComponent
 	}{
 		// single-component request, not overloaded cases
 		{
 			name:                         "ingester only, ingester below overload threshold: not overloaded",
 			ingesterInflightRequests:     16,
 			storegatewayInflightRequests: 9,
-			isIngester:                   true,
-			isStoreGateway:               false,
-			expectedIsOverloaded:         false,
+			queryComponentName:           ingesterQueueDimension,
+			expectedOverloadedComponent:  "",
 		},
 		{
 			name:                         "store-gateway only, store-gateway below overload threshold: not overloaded",
 			ingesterInflightRequests:     10,
 			storegatewayInflightRequests: 19,
-			isIngester:                   true,
-			isStoreGateway:               false,
-			expectedIsOverloaded:         false,
+			queryComponentName:           storeGatewayQueueDimension,
+			expectedOverloadedComponent:  "",
 		},
 
 		// single-component request, overloaded cases
@@ -75,17 +82,16 @@ func TestIsOverloadedForQueryComponents(t *testing.T) {
 			name:                         "ingester only, ingester at overload threshold: is overloaded",
 			ingesterInflightRequests:     14,
 			storegatewayInflightRequests: 7,
-			isIngester:                   true,
-			isStoreGateway:               false,
-			expectedIsOverloaded:         true,
+			queryComponentName:           ingesterQueueDimension,
+			expectedOverloadedComponent:  Ingester,
 		},
 		{
 			name:                         "store-gateway only, store-gateway at overload threshold: is overloaded",
 			ingesterInflightRequests:     10,
 			storegatewayInflightRequests: 20,
-			isIngester:                   false,
-			isStoreGateway:               true,
-			expectedIsOverloaded:         true,
+			queryComponentName:           storeGatewayQueueDimension,
+
+			expectedOverloadedComponent: StoreGateway,
 		},
 
 		// dual-component request, not overloaded cases
@@ -93,17 +99,16 @@ func TestIsOverloadedForQueryComponents(t *testing.T) {
 			name:                         "ingester and store-gateway, ingester below threshold: not overloaded",
 			ingesterInflightRequests:     15,
 			storegatewayInflightRequests: 8,
-			isIngester:                   true,
-			isStoreGateway:               true,
-			expectedIsOverloaded:         false,
+			queryComponentName:           ingesterAndStoreGatewayQueueDimension,
+			expectedOverloadedComponent:  "",
 		},
 		{
 			name:                         "ingester and store-gateway, store-gateway below overload threshold: not overloaded",
 			ingesterInflightRequests:     5,
 			storegatewayInflightRequests: 9,
-			isIngester:                   true,
-			isStoreGateway:               true,
-			expectedIsOverloaded:         false,
+			queryComponentName:           ingesterAndStoreGatewayQueueDimension,
+
+			expectedOverloadedComponent: "",
 		},
 
 		// dual-component request, overloaded cases
@@ -111,17 +116,15 @@ func TestIsOverloadedForQueryComponents(t *testing.T) {
 			name:                         "ingester and store-gateway, ingester above overload threshold: is overloaded",
 			ingesterInflightRequests:     18,
 			storegatewayInflightRequests: 8,
-			isIngester:                   true,
-			isStoreGateway:               true,
-			expectedIsOverloaded:         true,
+			queryComponentName:           ingesterAndStoreGatewayQueueDimension,
+			expectedOverloadedComponent:  Ingester,
 		},
 		{
 			name:                         "ingester and store-gateway, store-gateway above overload threshold: is overloaded",
 			ingesterInflightRequests:     5,
 			storegatewayInflightRequests: 11,
-			isIngester:                   true,
-			isStoreGateway:               true,
-			expectedIsOverloaded:         true,
+			queryComponentName:           ingesterAndStoreGatewayQueueDimension,
+			expectedOverloadedComponent:  StoreGateway,
 		},
 
 		// possible corner cases
@@ -129,49 +132,57 @@ func TestIsOverloadedForQueryComponents(t *testing.T) {
 			name:                         "ingester only, equal load: not overloaded",
 			ingesterInflightRequests:     1,
 			storegatewayInflightRequests: 1,
-			isIngester:                   true,
-			isStoreGateway:               false,
-			expectedIsOverloaded:         false,
+			queryComponentName:           ingesterQueueDimension,
+			expectedOverloadedComponent:  "",
 		},
 		{
 			name:                         "store-gateway only, equal load: not overloaded",
 			ingesterInflightRequests:     2,
 			storegatewayInflightRequests: 2,
-			isIngester:                   false,
-			isStoreGateway:               true,
-			expectedIsOverloaded:         false,
+			queryComponentName:           storeGatewayQueueDimension,
+			expectedOverloadedComponent:  "",
 		},
 		{
 			name:                         "ingester and store-gateway, equal load: not overloaded",
 			ingesterInflightRequests:     3,
 			storegatewayInflightRequests: 3,
-			isIngester:                   true,
-			isStoreGateway:               true,
-			expectedIsOverloaded:         false,
+			queryComponentName:           ingesterAndStoreGatewayQueueDimension,
+			expectedOverloadedComponent:  "",
 		},
 		{
 			name:                         "ingester only, zero load: not overloaded",
 			ingesterInflightRequests:     0,
 			storegatewayInflightRequests: 0,
-			isIngester:                   true,
-			isStoreGateway:               false,
-			expectedIsOverloaded:         false,
+			queryComponentName:           ingesterQueueDimension,
+			expectedOverloadedComponent:  "",
 		},
 		{
 			name:                         "store-gateway only, zero load: not overloaded",
 			ingesterInflightRequests:     0,
 			storegatewayInflightRequests: 0,
-			isIngester:                   false,
-			isStoreGateway:               true,
-			expectedIsOverloaded:         false,
+			queryComponentName:           storeGatewayQueueDimension,
+			expectedOverloadedComponent:  "",
 		},
 		{
 			name:                         "ingester and store-gateway, zero load: not overloaded",
 			ingesterInflightRequests:     0,
 			storegatewayInflightRequests: 0,
-			isIngester:                   true,
-			isStoreGateway:               true,
-			expectedIsOverloaded:         false,
+			queryComponentName:           storeGatewayQueueDimension,
+			expectedOverloadedComponent:  "",
+		},
+		{
+			name:                         "ingester only, other component with zero load: not overloaded",
+			ingesterInflightRequests:     10000,
+			storegatewayInflightRequests: 0,
+			queryComponentName:           ingesterQueueDimension,
+			expectedOverloadedComponent:  "",
+		},
+		{
+			name:                         "store-gateway only, other component with zero load: not overloaded",
+			ingesterInflightRequests:     0,
+			storegatewayInflightRequests: 10000,
+			queryComponentName:           storeGatewayQueueDimension,
+			expectedOverloadedComponent:  "",
 		},
 	}
 
@@ -195,16 +206,12 @@ func TestIsOverloadedForQueryComponents(t *testing.T) {
 				queryComponentLoad.IncrementForComponentName(storeGatewayQueueDimension)
 			}
 
-			require.Equal(t,
-				testCase.expectedIsOverloaded,
-				queryComponentLoad.IsOverloadedForComponentFlags(testCase.isIngester, testCase.isStoreGateway),
-			)
+			_, overloadedComponent := queryComponentLoad.IsOverloadedForComponentName(testCase.queryComponentName)
+			require.Equal(t, overloadedComponent, testCase.expectedOverloadedComponent)
 
 			// if overloadFactor is somehow set below 1, it should be ignored and always return not overloaded
-			require.Equal(t,
-				false,
-				alwaysNotOverloaded.IsOverloadedForComponentFlags(testCase.isIngester, testCase.isStoreGateway),
-			)
+			isOverloaded, _ := alwaysNotOverloaded.IsOverloadedForComponentName(testCase.queryComponentName)
+			require.False(t, isOverloaded)
 		})
 	}
 }

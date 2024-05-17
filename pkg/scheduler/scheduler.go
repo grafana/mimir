@@ -484,14 +484,17 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 	queryComponentName := req.ExpectedQueryComponentName()
 	defer s.requestQueue.QueryComponentUtilization.DecrementForComponentName(queryComponentName)
 
-	// temporary observation of query component load balancing behavior before full implementation
-	isIngester, isStoreGateway := queue.QueryComponentFlags(queryComponentName)
-	if s.queryComponentLoad.IsOverloadedForComponentFlags(isIngester, isStoreGateway) {
-		level.Warn(s.log).Log(
-			"msg", "query component overloaded for request",
-			"queryComponentIsIngester", isIngester,
-			"queryComponentIsStoreGateway", isStoreGateway,
-		)
+	{
+		// temporary observation of query component load balancing behavior before full implementation
+		isOverloaded, overloadedComponent := s.queryComponentLoad.IsOverloadedForComponentName(queryComponentName)
+
+		if isOverloaded {
+			level.Warn(s.log).Log(
+				"msg", "query component overloaded for request",
+				"query_component_name", queryComponentName,
+				"overloaded_query_component", overloadedComponent,
+			)
+		}
 	}
 
 	// Handle the stream sending & receiving on a goroutine so we can
