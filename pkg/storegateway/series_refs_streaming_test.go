@@ -45,7 +45,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_H
 	require.NoError(t, it.Err())
 
 	// During label sending phase, the single batch should be returned and not be releasable.
-	batches := readAllBatches(it)
+	batches := readAllSeriesChunkRefsSet(it)
 	require.NoError(t, it.Err())
 
 	unreleasableBatch := seriesChunkRefsSet{
@@ -60,7 +60,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_H
 	require.NoError(t, it.Err())
 
 	// During chunks streaming phase, the single batch should be returned but be releasable this time.
-	batches = readAllBatches(it)
+	batches = readAllSeriesChunkRefsSet(it)
 	require.NoError(t, it.Err())
 
 	releasableBatch := seriesChunkRefsSet{
@@ -92,7 +92,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_I
 	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, psi, factory)
 
 	// During label sending phase, the single batch should be returned and not be releasable.
-	batches := readAllBatches(it)
+	batches := readAllSeriesChunkRefsSet(it)
 	require.NoError(t, it.Err())
 	require.Equal(t, []seriesChunkRefsSet{unreleasableBatch}, batches)
 
@@ -102,7 +102,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_I
 	require.NoError(t, it.Err())
 
 	// During chunks streaming phase, the single batch should be returned and still not be releasable.
-	batches = readAllBatches(it)
+	batches = readAllSeriesChunkRefsSet(it)
 	require.NoError(t, it.Err())
 	require.Equal(t, []seriesChunkRefsSet{unreleasableBatch}, batches)
 }
@@ -131,7 +131,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_A
 	require.NoError(t, it.Err())
 
 	// Label sending phase.
-	batches := readAllBatches(it)
+	batches := readAllSeriesChunkRefsSet(it)
 	require.NoError(t, it.Err())
 	require.Empty(t, batches)
 
@@ -141,7 +141,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_A
 	require.NoError(t, it.Err())
 
 	// Chunks streaming phase.
-	batches = readAllBatches(it)
+	batches = readAllSeriesChunkRefsSet(it)
 	require.NoError(t, it.Err())
 	require.Empty(t, batches)
 }
@@ -170,7 +170,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_I
 	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, psi, factory)
 
 	// During label sending phase, the error should be returned.
-	_ = readAllBatches(it)
+	_ = readAllSeriesChunkRefsSet(it)
 	require.Equal(t, iteratorError, it.Err())
 
 	// Prepare for chunks streaming phase. Inner iterator should not be recreated.
@@ -178,7 +178,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_I
 	require.Equal(t, 1, factoryCalls)
 
 	// During chunks streaming phase, the error should be returned.
-	_ = readAllBatches(it)
+	_ = readAllSeriesChunkRefsSet(it)
 	require.Equal(t, iteratorError, it.Err())
 }
 
@@ -245,7 +245,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 	require.NoError(t, it.Err())
 
 	// During label sending phase, the batches should be returned as-is.
-	batches := readAllBatches(it)
+	batches := readAllSeriesChunkRefsSet(it)
 	require.NoError(t, it.Err())
 	require.Equal(t, []seriesChunkRefsSet{firstBatchWithNoChunkRefs, secondBatchWithNoChunkRefs}, batches)
 
@@ -261,7 +261,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 	require.NoError(t, it.Err())
 
 	// During chunks streaming phase, the batches should be returned as-is from the new iterator.
-	batches = readAllBatches(it)
+	batches = readAllSeriesChunkRefsSet(it)
 	require.NoError(t, it.Err())
 	require.Equal(t, []seriesChunkRefsSet{firstBatchWithChunkRefs, secondBatchWithChunkRefs}, batches)
 }
@@ -290,7 +290,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 	require.NoError(t, it.Err())
 
 	// Label sending phase.
-	batches := readAllBatches(it)
+	batches := readAllSeriesChunkRefsSet(it)
 	require.NoError(t, it.Err())
 	require.Empty(t, batches)
 
@@ -301,7 +301,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 	require.NoError(t, it.Err())
 
 	// Chunks streaming phase.
-	batches = readAllBatches(it)
+	batches = readAllSeriesChunkRefsSet(it)
 	require.NoError(t, it.Err())
 	require.Empty(t, batches)
 }
@@ -330,7 +330,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 	require.Equal(t, 1, factoryCalls)
 
 	// During label sending phase, the error from the original iterator should be returned.
-	_ = readAllBatches(it)
+	_ = readAllSeriesChunkRefsSet(it)
 	require.EqualError(t, it.Err(), "error #1")
 
 	// Prepare for chunks streaming phase. Inner iterator should be recreated.
@@ -338,16 +338,6 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 	require.Equal(t, 2, factoryCalls)
 
 	// During chunks streaming phase, the error from the new iterator should be returned.
-	_ = readAllBatches(it)
+	_ = readAllSeriesChunkRefsSet(it)
 	require.EqualError(t, it.Err(), "error #2")
-}
-
-func readAllBatches(it iterator[seriesChunkRefsSet]) []seriesChunkRefsSet {
-	var batches []seriesChunkRefsSet
-
-	for it.Next() {
-		batches = append(batches, it.At())
-	}
-
-	return batches
 }
