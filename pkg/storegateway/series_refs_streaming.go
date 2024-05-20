@@ -107,7 +107,7 @@ func newStreamingSeriesIterators() *streamingSeriesIterators {
 	}
 }
 
-func (i *streamingSeriesIterators) iteratorWrapper(strategy seriesIteratorStrategy, postingsSetsIterator *postingsSetsIterator, factory iteratorFactory) iterator[seriesChunkRefsSet] {
+func (i *streamingSeriesIterators) wrapIterator(strategy seriesIteratorStrategy, postingsSetsIterator *postingsSetsIterator, factory iteratorFactory) iterator[seriesChunkRefsSet] {
 	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy, postingsSetsIterator, factory)
 
 	i.mtx.Lock()
@@ -126,4 +126,8 @@ func (i *streamingSeriesIterators) prepareForChunksStreamingPhase() []iterator[s
 	}
 
 	return prepared
+}
+
+type seriesChunkRefsIteratorWrapper interface {
+	wrapIterator(strategy seriesIteratorStrategy, postingsSetsIterator *postingsSetsIterator, factory iteratorFactory) iterator[seriesChunkRefsSet]
 }

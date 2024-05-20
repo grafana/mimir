@@ -1030,8 +1030,8 @@ func (s *BucketStore) createIteratorForNonChunksStreamingRequest(
 	chunkReaders *bucketChunkReaders,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,
-	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
-	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
+	chunksLimiter ChunksLimiter,
+	seriesLimiter SeriesLimiter,
 	stats *safeQueryStats,
 ) (storepb.SeriesSet, error) {
 	strategy := defaultStrategy
@@ -1063,12 +1063,12 @@ func (s *BucketStore) createIteratorForChunksStreamingLabelsPhase(
 	indexReaders map[ulid.ULID]*bucketIndexReader,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,
-	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
-	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
+	chunksLimiter ChunksLimiter,
+	seriesLimiter SeriesLimiter,
 	stats *safeQueryStats,
 ) (storepb.SeriesSet, *streamingSeriesIterators, error) {
 	streamingIterators := newStreamingSeriesIterators()
-	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, overlapMintMaxt, streamingIterators.iteratorWrapper)
+	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, overlapMintMaxt, streamingIterators)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1105,7 +1105,7 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	stats *safeQueryStats,
 	strategy seriesIteratorStrategy,
-	wrapper func(strategy seriesIteratorStrategy, postingsSetsIterator *postingsSetsIterator, factory iteratorFactory) iterator[seriesChunkRefsSet],
+	wrapper seriesChunkRefsIteratorWrapper,
 ) (iterator[seriesChunkRefsSet], error) {
 	var (
 		mtx                      = sync.Mutex{}

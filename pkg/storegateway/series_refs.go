@@ -697,17 +697,17 @@ func openBlockSeriesChunkRefsSetsIterator(
 	ctx context.Context,
 	batchSize int,
 	tenantID string,
-	indexr *bucketIndexReader, // Index reader for block.
+	indexr *bucketIndexReader,
 	indexCache indexcache.IndexCache,
 	blockMeta *block.Meta,
-	matchers []*labels.Matcher, // Series matchers.
-	shard *sharding.ShardSelector, // Shard selector.
+	matchers []*labels.Matcher,
+	shard *sharding.ShardSelector,
 	seriesHasher seriesHasher,
 	strategy seriesIteratorStrategy,
-	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
+	minTime, maxTime int64,
 	stats *safeQueryStats,
 	logger log.Logger,
-	wrapper func(strategy seriesIteratorStrategy, postingsSetsIterator *postingsSetsIterator, factory iteratorFactory) iterator[seriesChunkRefsSet], // Optional function called to wrap created iterators.
+	wrapper seriesChunkRefsIteratorWrapper,
 ) (iterator[seriesChunkRefsSet], error) {
 	if batchSize <= 0 {
 		return nil, errors.New("set size must be a positive number")
@@ -728,7 +728,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return factory(strategy), nil
 	}
 
-	return wrapper(strategy, psi, factory), nil
+	return wrapper.wrapIterator(strategy, psi, factory), nil
 }
 
 func openBlockSeriesChunkRefsSetsIteratorFromPostings(
