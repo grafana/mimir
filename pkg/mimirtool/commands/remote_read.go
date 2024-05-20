@@ -120,10 +120,10 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 	remoteWriteCmd.Flag("write.key", "Basic auth password to use when contacting Grafana Mimir.").
 		Default("").
 		StringVar(&c.write.apiKey)
-	remoteWriteCmd.Flag("write-timeout", "Timeout for write requests.").
+	remoteWriteCmd.Flag("write.timeout", "Timeout for write requests.").
 		Default("30s").
 		DurationVar(&c.write.timeout)
-	remoteWriteCmd.Flag("batch-size", "Number of timeseries to send in a single request.").
+	remoteWriteCmd.Flag("write.batch-size", "Number of timeseries to send in a single request.").
 		Default("1000").
 		IntVar(&c.write.batchSize)
 }
