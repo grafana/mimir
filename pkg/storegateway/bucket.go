@@ -1076,38 +1076,6 @@ func (s *BucketStore) createIteratorForChunksStreamingLabelsPhase(
 	return newSeriesSetWithoutChunks(ctx, it, stats), streamingIterators, nil
 }
 
-type streamingSeriesIterators struct {
-	iterators []*chunksStreamingCachingSeriesChunkRefsSetIterator
-	mtx       *sync.RWMutex
-}
-
-func newStreamingSeriesIterators() *streamingSeriesIterators {
-	return &streamingSeriesIterators{
-		mtx: &sync.RWMutex{},
-	}
-}
-
-func (i *streamingSeriesIterators) iteratorWrapper(strategy seriesIteratorStrategy, postingsSetsIterator *postingsSetsIterator, factory iteratorFactory) iterator[seriesChunkRefsSet] {
-	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy, postingsSetsIterator, factory)
-
-	i.mtx.Lock()
-	i.iterators = append(i.iterators, it)
-	i.mtx.Unlock()
-
-	return it
-}
-
-func (i *streamingSeriesIterators) prepareForChunksStreamingPhase() []iterator[seriesChunkRefsSet] {
-	prepared := make([]iterator[seriesChunkRefsSet], 0, len(i.iterators))
-
-	for _, it := range i.iterators {
-		it.PrepareForChunksStreamingPhase()
-		prepared = append(prepared, it)
-	}
-
-	return prepared
-}
-
 // createIteratorForChunksStreamingChunksPhase is used when streaming feature is enabled.
 // It returns an iterator to go over the chunks for the series returned in the createIteratorForChunksStreamingLabelsPhase call.
 // It is required to pass the iterators returned by the createIteratorForChunksStreamingLabelsPhase call for reuse.

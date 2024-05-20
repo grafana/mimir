@@ -2,6 +2,8 @@
 
 package storegateway
 
+import "sync"
+
 type iteratorFactory func(strategy seriesIteratorStrategy) iterator[seriesChunkRefsSet]
 
 // chunksStreamingCachingSeriesChunkRefsSetIterator is an iterator used while streaming chunks from store-gateways to queriers.
@@ -90,4 +92,38 @@ func (i *chunksStreamingCachingSeriesChunkRefsSetIterator) PrepareForChunksStrea
 	} else {
 		i.it = i.factory(i.strategy.withChunkRefs())
 	}
+}
+
+// streamingSeriesIterators represents a collection of iterators that will be used to handle a
+// Series() request that uses chunks streaming.
+type streamingSeriesIterators struct {
+	iterators []*chunksStreamingCachingSeriesChunkRefsSetIterator
+	mtx       *sync.RWMutex
+}
+
+func newStreamingSeriesIterators() *streamingSeriesIterators {
+	return &streamingSeriesIterators{
+		mtx: &sync.RWMutex{},
+	}
+}
+
+func (i *streamingSeriesIterators) iteratorWrapper(strategy seriesIteratorStrategy, postingsSetsIterator *postingsSetsIterator, factory iteratorFactory) iterator[seriesChunkRefsSet] {
+	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy, postingsSetsIterator, factory)
+
+	i.mtx.Lock()
+	i.iterators = append(i.iterators, it)
+	i.mtx.Unlock()
+
+	return it
+}
+
+func (i *streamingSeriesIterators) prepareForChunksStreamingPhase() []iterator[seriesChunkRefsSet] {
+	prepared := make([]iterator[seriesChunkRefsSet], 0, len(i.iterators))
+
+	for _, it := range i.iterators {
+		it.PrepareForChunksStreamingPhase()
+		prepared = append(prepared, it)
+	}
+
+	return prepared
 }
