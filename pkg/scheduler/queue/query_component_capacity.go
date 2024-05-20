@@ -97,7 +97,28 @@ func NewQueryComponentCapacity(
 }
 
 // ExceedsCapacityForComponentName checks whether a query component has exceeded the capacity utilization threshold.
-// The component name can indicate the usage of one or more QueryComponents
+// This enables the dequeuing algorithm to skip requests for a query component experiencing heavy load,
+// reserving querier-worker connection capacity to continue servicing requests for the other component.
+//
+// Capacity utilization for a QueryComponent is defined by the portion of the querier-worker connections
+// which are currently in flight processing a query which requires that QueryComponent.
+//
+// The component name can indicate the usage of one or both of ingesters and store-gateways,
+// and will be indicated as exceeding the threshold if either ingesters or store-gateways
+// are currently in excess of the reserved capacity.
+//
+// The threshold for a QueryComponent's utilization of querier-worker connections
+// can only be exceeded by one QueryComponent at a time as long as targetReservedCapacity is < 0.5.
+// Therefore, both QueryComponents cannot be in excess of the reserved capacity at the same time,
+// and one of the components will always be given the OK to dequeue queries for.
+//
+// Capacity reservation only occurs when the queue backlogged, where backlogged is defined as
+// (length of the query queue) >= (number of querier-worker connections waiting for a query).
+//
+// A QueryComponent's utilization is allowed to exceed the reserved capacity when the queue is not backlogged.
+// If an influx of queries then creates a backlog, this method will indicate to skip queries for the component.
+// As the inflight queries complete or fail, the component's utilization will naturally decrease.
+// This method will continue to indicate to skip queries for the component until it is back under the threshold.
 func (qcl *QueryComponentCapacity) ExceedsCapacityForComponentName(
 	name string, connectedWorkers *atomic.Int64, queueLen, waitingWorkers int,
 ) (bool, QueryComponent) {
@@ -121,7 +142,6 @@ func (qcl *QueryComponentCapacity) ExceedsCapacityForComponentName(
 		),
 	)
 
-	// check if re
 	isIngester, isStoreGateway := queryComponentFlags(name)
 	if isIngester {
 		if connectedWorkers.Load()-(qcl.ingesterInflightRequests.Load()) <= minReservedConnections {

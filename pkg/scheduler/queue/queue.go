@@ -303,22 +303,26 @@ func (q *RequestQueue) trySendNextRequestForQuerier(call *nextRequestForQuerierC
 	}
 
 	{
-		queryComponentName := QueryComponentNameForRequest(req.req.(*SchedulerRequest))
 		// temporary observation of query component load balancing behavior before full implementation
-		exceedsCapacity, queryComponent := q.QueryComponentCapacity.ExceedsCapacityForComponentName(
-			queryComponentName,
-			q.connectedQuerierWorkers,
-			q.queueBroker.tenantQueuesTree.ItemCount(),
-			q.waitingNextRequestForQuerierCalls.Len(),
-		)
-
-		if exceedsCapacity {
-			level.Warn(q.log).Log(
-				"msg", "querier worker connections in use by query component exceed reserve capacity",
-				"query_component_name", queryComponentName,
-				"overloaded_query_component", queryComponent,
+		schedulerRequest, ok := req.req.(*SchedulerRequest)
+		if ok {
+			queryComponentName := QueryComponentNameForRequest(schedulerRequest)
+			exceedsCapacity, queryComponent := q.QueryComponentCapacity.ExceedsCapacityForComponentName(
+				queryComponentName,
+				q.connectedQuerierWorkers,
+				q.queueBroker.tenantQueuesTree.ItemCount(),
+				q.waitingNextRequestForQuerierCalls.Len(),
 			)
+
+			if exceedsCapacity {
+				level.Warn(q.log).Log(
+					"msg", "querier worker connections in use by query component exceed reserve capacity",
+					"query_component_name", queryComponentName,
+					"overloaded_query_component", queryComponent,
+				)
+			}
 		}
+
 	}
 
 	reqForQuerier := nextRequestForQuerier{
