@@ -2,7 +2,11 @@
 
 package storegateway
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/prometheus/prometheus/storage"
+)
 
 type seriesChunkRefsIteratorFactory func(strategy seriesIteratorStrategy, psi *postingsSetsIterator) iterator[seriesChunkRefsSet]
 type postingsSetsIteratorFactory func() *postingsSetsIterator
@@ -12,10 +16,12 @@ type postingsSetsIteratorFactory func() *postingsSetsIterator
 // It wraps another iterator that does the actual work. If that iterator is expected to produce only a single batch,
 // this iterator caches that batch for the chunks streaming phase, to avoid repeating work done during the series label sending phase.
 type chunksStreamingCachingSeriesChunkRefsSetIterator struct {
-	strategy                    seriesIteratorStrategy
-	postingsSetsIteratorFactory postingsSetsIteratorFactory
-	iteratorFactory             seriesChunkRefsIteratorFactory
-	it                          iterator[seriesChunkRefsSet]
+	strategy        seriesIteratorStrategy
+	iteratorFactory seriesChunkRefsIteratorFactory
+	postings        []storage.SeriesRef
+	batchSize       int
+
+	it iterator[seriesChunkRefsSet]
 
 	expectSingleBatch                    bool
 	inChunksStreamingPhaseForSingleBatch bool
@@ -25,24 +31,32 @@ type chunksStreamingCachingSeriesChunkRefsSetIterator struct {
 	cachedBatch       seriesChunkRefsSet
 }
 
-func newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy seriesIteratorStrategy, postingsSetsIteratorFactory postingsSetsIteratorFactory, iteratorFactory seriesChunkRefsIteratorFactory) *chunksStreamingCachingSeriesChunkRefsSetIterator {
-	psi := postingsSetsIteratorFactory()
-	expectSingleBatch := !psi.HasMultipleBatches()
+func newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy seriesIteratorStrategy, postings []storage.SeriesRef, batchSize int, iteratorFactory seriesChunkRefsIteratorFactory) *chunksStreamingCachingSeriesChunkRefsSetIterator {
+	expectSingleBatch := len(postings) <= batchSize
 	var initialStrategy seriesIteratorStrategy
+	var psi *postingsSetsIterator
 
 	if expectSingleBatch {
 		initialStrategy = strategy.withChunkRefs()
+
+		// No need to make a copy: we're only going to use the postings once.
+		psi = newPostingsSetsIterator(postings, batchSize)
 	} else {
 		// We'll load chunk refs during the chunks streaming phase.
 		initialStrategy = strategy.withNoChunkRefs()
+
+		copiedPostings := make([]storage.SeriesRef, len(postings))
+		copy(copiedPostings, postings)
+		psi = newPostingsSetsIterator(copiedPostings, batchSize)
 	}
 
 	return &chunksStreamingCachingSeriesChunkRefsSetIterator{
-		strategy:                    strategy,
-		postingsSetsIteratorFactory: postingsSetsIteratorFactory,
-		iteratorFactory:             iteratorFactory,
-		it:                          iteratorFactory(initialStrategy, psi),
-		expectSingleBatch:           expectSingleBatch,
+		strategy:          strategy,
+		postings:          postings,
+		batchSize:         batchSize,
+		iteratorFactory:   iteratorFactory,
+		it:                iteratorFactory(initialStrategy, psi),
+		expectSingleBatch: expectSingleBatch,
 	}
 }
 
@@ -90,7 +104,9 @@ func (i *chunksStreamingCachingSeriesChunkRefsSetIterator) PrepareForChunksStrea
 		i.inChunksStreamingPhaseForSingleBatch = true
 		i.currentBatchIndex = -1
 	} else {
-		psi := i.postingsSetsIteratorFactory()
+		// No need to make a copy of postings here like we do in newChunksStreamingCachingSeriesChunkRefsSetIterator:
+		// we're not expecting to use them again after this, so we don't care if they're modified.
+		psi := newPostingsSetsIterator(i.postings, i.batchSize)
 		i.it = i.iteratorFactory(i.strategy.withChunkRefs(), psi)
 	}
 }
@@ -108,8 +124,8 @@ func newStreamingSeriesIterators() *streamingSeriesIterators {
 	}
 }
 
-func (i *streamingSeriesIterators) wrapIterator(strategy seriesIteratorStrategy, postingsSetsIteratorFactory postingsSetsIteratorFactory, iteratorFactory seriesChunkRefsIteratorFactory) iterator[seriesChunkRefsSet] {
-	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy, postingsSetsIteratorFactory, iteratorFactory)
+func (i *streamingSeriesIterators) wrapIterator(strategy seriesIteratorStrategy, ps []storage.SeriesRef, batchSize int, iteratorFactory seriesChunkRefsIteratorFactory) iterator[seriesChunkRefsSet] {
+	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy, ps, batchSize, iteratorFactory)
 
 	i.mtx.Lock()
 	i.iterators = append(i.iterators, it)

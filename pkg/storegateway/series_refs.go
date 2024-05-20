@@ -727,15 +727,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return iteratorFactory(strategy, psi), nil
 	}
 
-	postingsSetsIteratorFactory := func() *postingsSetsIterator {
-		// Create a copy of ps so that any modifications aren't persisted for a later chunks streaming phase.
-		// For example, loadingSeriesChunkRefsSetIterator removes series that don't match the selected shard.
-		duplicatePS := make([]storage.SeriesRef, len(ps))
-		copy(duplicatePS, ps)
-		return newPostingsSetsIterator(duplicatePS, batchSize)
-	}
-
-	return streamingIterators.wrapIterator(strategy, postingsSetsIteratorFactory, iteratorFactory), nil
+	return streamingIterators.wrapIterator(strategy, ps, batchSize, iteratorFactory), nil
 }
 
 func openBlockSeriesChunkRefsSetsIteratorFromPostings(

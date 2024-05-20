@@ -13,8 +13,8 @@ import (
 )
 
 func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_HappyPath(t *testing.T) {
-	postingsSetsIteratorFactory := func() *postingsSetsIterator { return newPostingsSetsIterator([]storage.SeriesRef{1, 2, 3}, 4) }
-
+	postings := []storage.SeriesRef{1, 2, 3}
+	batchSize := 4
 	factoryCalls := 0
 	var factoryStrategy seriesIteratorStrategy
 
@@ -37,7 +37,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_H
 		)
 	}
 
-	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postingsSetsIteratorFactory, iteratorFactory)
+	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postings, batchSize, iteratorFactory)
 
 	// Inner iterator should be created with chunk refs enabled.
 	require.Equal(t, 1, factoryCalls)
@@ -71,8 +71,8 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_H
 }
 
 func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_InnerIteratorReturnsUnreleasableSet(t *testing.T) {
-	postingsSetsIteratorFactory := func() *postingsSetsIterator { return newPostingsSetsIterator([]storage.SeriesRef{1, 2, 3}, 4) }
-
+	postings := []storage.SeriesRef{1, 2, 3}
+	batchSize := 4
 	factoryCalls := 0
 
 	unreleasableBatch := seriesChunkRefsSet{
@@ -89,7 +89,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_I
 		return newSliceSeriesChunkRefsSetIterator(nil, unreleasableBatch)
 	}
 
-	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postingsSetsIteratorFactory, iteratorFactory)
+	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postings, batchSize, iteratorFactory)
 
 	// During label sending phase, the single batch should be returned and not be releasable.
 	batches := readAllSeriesChunkRefsSet(it)
@@ -108,8 +108,8 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_I
 }
 
 func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_AllBatchesFilteredOut(t *testing.T) {
-	postingsSetsIteratorFactory := func() *postingsSetsIterator { return newPostingsSetsIterator([]storage.SeriesRef{1, 2, 3}, 4) }
-
+	postings := []storage.SeriesRef{1, 2, 3}
+	batchSize := 4
 	factoryCalls := 0
 	var factoryStrategy seriesIteratorStrategy
 
@@ -123,7 +123,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_A
 		)
 	}
 
-	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postingsSetsIteratorFactory, iteratorFactory)
+	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postings, batchSize, iteratorFactory)
 
 	// Inner iterator should be created with chunk refs enabled.
 	require.Equal(t, 1, factoryCalls)
@@ -147,7 +147,8 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_A
 }
 
 func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_IteratorReturnsError(t *testing.T) {
-	postingsSetsIteratorFactory := func() *postingsSetsIterator { return newPostingsSetsIterator([]storage.SeriesRef{1, 2, 3}, 4) }
+	postings := []storage.SeriesRef{1, 2, 3}
+	batchSize := 4
 	factoryCalls := 0
 	iteratorError := errors.New("something went wrong")
 
@@ -167,7 +168,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_I
 		)
 	}
 
-	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postingsSetsIteratorFactory, iteratorFactory)
+	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postings, batchSize, iteratorFactory)
 
 	// During label sending phase, the error should be returned.
 	_ = readAllSeriesChunkRefsSet(it)
@@ -183,8 +184,8 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_I
 }
 
 func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatches_HappyPath(t *testing.T) {
-	postingsSetsIteratorFactory := func() *postingsSetsIterator { return newPostingsSetsIterator([]storage.SeriesRef{1, 2, 3, 4, 5, 6}, 3) }
-
+	postings := []storage.SeriesRef{1, 2, 3, 4, 5, 6}
+	batchSize := 3
 	factoryCalls := 0
 	var factoryStrategy seriesIteratorStrategy
 
@@ -242,7 +243,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 		return newSliceSeriesChunkRefsSetIterator(nil, firstBatchWithChunkRefs, secondBatchWithChunkRefs)
 	}
 
-	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postingsSetsIteratorFactory, iteratorFactory)
+	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postings, batchSize, iteratorFactory)
 
 	// Inner iterator should be created with chunk refs disabled.
 	require.Equal(t, 1, factoryCalls)
@@ -267,8 +268,8 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 }
 
 func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatches_AllBatchesFilteredOut(t *testing.T) {
-	postingsSetsIteratorFactory := func() *postingsSetsIterator { return newPostingsSetsIterator([]storage.SeriesRef{1, 2, 3, 4, 5, 6}, 3) }
-
+	postings := []storage.SeriesRef{1, 2, 3, 4, 5, 6}
+	batchSize := 3
 	factoryCalls := 0
 	var factoryStrategy seriesIteratorStrategy
 
@@ -282,7 +283,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 		)
 	}
 
-	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postingsSetsIteratorFactory, iteratorFactory)
+	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postings, batchSize, iteratorFactory)
 
 	// Inner iterator should be created with chunk refs disabled.
 	require.Equal(t, 1, factoryCalls)
@@ -307,7 +308,8 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 }
 
 func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatches_IteratorReturnsError(t *testing.T) {
-	postingsSetsIteratorFactory := func() *postingsSetsIterator { return newPostingsSetsIterator([]storage.SeriesRef{1, 2, 3, 4, 5, 6}, 3) }
+	postings := []storage.SeriesRef{1, 2, 3, 4, 5, 6}
+	batchSize := 3
 	factoryCalls := 0
 
 	iteratorFactory := func(_ seriesIteratorStrategy, _ *postingsSetsIterator) iterator[seriesChunkRefsSet] {
@@ -326,7 +328,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 		)
 	}
 
-	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postingsSetsIteratorFactory, iteratorFactory)
+	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(defaultStrategy, postings, batchSize, iteratorFactory)
 	require.Equal(t, 1, factoryCalls)
 
 	// During label sending phase, the error from the original iterator should be returned.
