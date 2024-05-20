@@ -1405,7 +1405,3 @@ func (s *postingsSetsIterator) Next() bool {
 func (s *postingsSetsIterator) At() []storage.SeriesRef {
 	return s.currentBatch
 }
-
-func (s *postingsSetsIterator) HasMultipleBatches() bool {
-	return len(s.postings) > s.batchSize
-}
