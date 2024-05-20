@@ -117,7 +117,7 @@ By default, a store-gateway downloads the index-headers to disk and doesn't load
 When required by a query, index-headers are loaded and automatically released by the store-gateway after the amount of inactivity time you specify in `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout` has passed.
 
 Grafana Mimir provides a configuration flag `-blocks-storage.bucket-store.index-header.lazy-loading-enabled=false` to disable index-header lazy loading.
-When disabled, the store-gateway loads all index-headers, which provides faster access to the data in the index-header.
+When disabled, the store-gateway loads all index-headers at startup, which provides faster access to the data in the index-header when querying at the cost of longer startup times.
 However, in a cluster with a large number of blocks, each store-gateway might have a large amount of loaded index-headers, regardless of how frequently they are used at query time.
 
 When the index-header is loaded, only a portion of it is kept in memory to reduce memory usage.
