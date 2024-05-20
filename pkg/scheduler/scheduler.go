@@ -65,11 +65,6 @@ type Scheduler struct {
 	// to the time they are completed by the querier or failed due to cancel, timeout, or disconnect.
 	schedulerInflightRequests map[requestKey]*queue.SchedulerRequest
 
-	// queryComponentLoad encapsulates tracking requests from the time they are forwarded to a querier
-	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
-	// schedulerInflightRequests, tracking begins only when the request is sent to a querier.
-	queryComponentLoad *queue.QueryComponentLoad
-
 	// The ring is used to let other components discover query-scheduler replicas.
 	// The ring is optional.
 	schedulerLifecycler *ring.BasicLifecycler
@@ -127,10 +122,6 @@ func (cfg *Config) Validate() error {
 // NewScheduler creates a new Scheduler.
 func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Scheduler, error) {
 	var err error
-	queryComponentLoad, err := queue.NewQueryComponentLoad(queue.QueryComponentDefaultOverloadFactor, registerer)
-	if err != nil {
-		return nil, err
-	}
 
 	s := &Scheduler{
 		cfg:    cfg,
@@ -138,7 +129,6 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		limits: limits,
 
 		schedulerInflightRequests: map[requestKey]*queue.SchedulerRequest{},
-		queryComponentLoad:        queryComponentLoad,
 		connectedFrontends:        map[string]*connectedFrontend{},
 		subservicesWatcher:        services.NewFailureWatcher(),
 	}
@@ -160,7 +150,26 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Name: "cortex_query_scheduler_enqueue_duration_seconds",
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
 	})
-	s.requestQueue = queue.NewRequestQueue(s.log, cfg.MaxOutstandingPerTenant, cfg.AdditionalQueryQueueDimensionsEnabled, cfg.QuerierForgetDelay, s.queueLength, s.discardedRequests, enqueueDuration)
+	querierInflightRequestsGauge := promauto.With(registerer).NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "cortex_query_scheduler_querier_inflight_requests",
+			Help: "Number of inflight requests being processed on a querier-scheduler connection.",
+		},
+		[]string{"query_component"},
+	)
+	s.requestQueue, err = queue.NewRequestQueue(
+		s.log,
+		cfg.MaxOutstandingPerTenant,
+		cfg.AdditionalQueryQueueDimensionsEnabled,
+		cfg.QuerierForgetDelay,
+		s.queueLength,
+		s.discardedRequests,
+		enqueueDuration,
+		querierInflightRequestsGauge,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	s.queueDuration = promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_query_scheduler_queue_duration_seconds",
@@ -463,21 +472,8 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 	defer s.cancelRequestAndRemoveFromPending(req.FrontendAddress, req.QueryID, "request complete")
 
 	queryComponentName := queue.QueryComponentNameForRequest(req)
-	s.queryComponentLoad.IncrementForComponentName(queryComponentName)
-	defer s.queryComponentLoad.DecrementForComponentName(queryComponentName)
-
-	{
-		// temporary observation of query component load balancing behavior before full implementation
-		isOverloaded, overloadedComponent := s.queryComponentLoad.IsOverloadedForComponentName(queryComponentName)
-
-		if isOverloaded {
-			level.Warn(s.log).Log(
-				"msg", "query component overloaded for request",
-				"query_component_name", queryComponentName,
-				"overloaded_query_component", overloadedComponent,
-			)
-		}
-	}
+	s.requestQueue.QueryComponentCapacity.IncrementForComponentName(queryComponentName)
+	defer s.requestQueue.QueryComponentCapacity.DecrementForComponentName(queryComponentName)
 
 	// Handle the stream sending & receiving on a goroutine so we can
 	// monitor the contexts in a select and cancel things appropriately.

@@ -126,15 +126,17 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 			Help: "[test] total time spent by items in queue before getting picked up by a consumer",
 		}, []string{"additional_queue_dimensions"})
 
-		queue := NewRequestQueue(
+		queue, err := NewRequestQueue(
 			log.NewNopLogger(),
 			maxOutstandingRequestsPerTenant,
 			additionalQueueDimensionsEnabled,
 			forgetQuerierDelay,
-			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"tenant"}),
-			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"tenant"}),
+			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 			promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		)
+		require.NoError(t, err)
 
 		ctx := context.Background()
 		require.NoError(t, queue.starting(ctx))
@@ -187,7 +189,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 		}
 
 		close(startConsumersChan)
-		err := queueConsumerErrGroup.Wait()
+		err = queueConsumerErrGroup.Wait()
 		require.NoError(t, err)
 
 		// record total queue duration by queue dimensions and whether the queue splitting was enabled
@@ -229,15 +231,17 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 					// Queriers run with parallelism of 16 when query sharding is enabled.
 					for _, numConsumers := range []int{16, 160, 1600} {
 						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
-							queue := NewRequestQueue(
+							queue, err := NewRequestQueue(
 								log.NewNopLogger(),
 								maxOutstandingRequestsPerTenant,
 								true,
 								forgetQuerierDelay,
-								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"tenant"}),
-								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"tenant"}),
+								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 							)
+							require.NoError(b, err)
 
 							startSignalChan := make(chan struct{})
 							queueActorsErrGroup, ctx := errgroup.WithContext(context.Background())
@@ -269,7 +273,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 
 							b.ResetTimer()
 							close(startSignalChan)
-							err := queueActorsErrGroup.Wait()
+							err = queueActorsErrGroup.Wait()
 							if err != nil {
 								require.NoError(b, err)
 							}
@@ -400,14 +404,16 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	const forgetDelay = 3 * time.Second
 	const testTimeout = 10 * time.Second
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1, true,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	// Start the queue service.
 	ctx := context.Background()
@@ -467,14 +473,16 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	const forgetDelay = 3 * time.Second
 	const testTimeout = 10 * time.Second
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1, true,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	// Start the queue service.
 	ctx := context.Background()
@@ -548,7 +556,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1,
 		true,
@@ -556,7 +564,9 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), queue))
 	t.Cleanup(func() {
@@ -587,7 +597,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1,
 		true,
@@ -595,7 +605,9 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
@@ -606,7 +618,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	queue.SubmitRegisterQuerierConnection(querierID)
 	queue.SubmitNotifyQuerierShutdown(querierID)
 
-	_, _, err := queue.GetNextRequestForQuerier(context.Background(), FirstTenant(), querierID)
+	_, _, err = queue.GetNextRequestForQuerier(context.Background(), FirstTenant(), querierID)
 	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
 }
 
@@ -614,7 +626,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1,
 		true,
@@ -622,7 +634,9 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	// bypassing queue dispatcher loop for direct usage of the queueBroker and
 	// passing a nextRequestForQuerierCall for a canceled querier connection
