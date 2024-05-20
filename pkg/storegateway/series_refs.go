@@ -734,13 +734,13 @@ func openBlockSeriesChunkRefsSetsIterator(
 func openBlockSeriesChunkRefsSetsIteratorFromPostings(
 	ctx context.Context,
 	tenantID string,
-	indexr *bucketIndexReader, // Index reader for block.
+	indexr *bucketIndexReader,
 	indexCache indexcache.IndexCache,
 	blockMeta *block.Meta,
-	shard *sharding.ShardSelector, // Shard selector.
+	shard *sharding.ShardSelector,
 	seriesHasher seriesHasher,
 	strategy seriesIteratorStrategy,
-	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
+	minTime, maxTime int64,
 	stats *safeQueryStats,
 	postingsSetsIterator *postingsSetsIterator,
 	pendingMatchers []*labels.Matcher,
