@@ -376,8 +376,8 @@ func (r *StreamBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) 
 	}, nil
 }
 
-func (r *StreamBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
-	return r.postingsOffsetTable.LabelValuesOffsets(name, prefix, filter)
+func (r *StreamBinaryReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
+	return r.postingsOffsetTable.LabelValuesOffsets(ctx, name, prefix, filter)
 }
 
 func (r *StreamBinaryReader) LabelNames() ([]string, error) {

@@ -885,13 +885,13 @@ func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
 	return iir.Reader.LabelNames()
 }
 
-func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]index.PostingListOffset, error) {
+func (iir *interceptedIndexReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]index.PostingListOffset, error) {
 	if iir.onLabelValuesOffsetsCalled != nil {
 		if err := iir.onLabelValuesOffsetsCalled(name); err != nil {
 			return nil, err
 		}
 	}
-	return iir.Reader.LabelValuesOffsets(name, prefix, filter)
+	return iir.Reader.LabelValuesOffsets(ctx, name, prefix, filter)
 }
 
 func (iir *interceptedIndexReader) IndexVersion() (int, error) {

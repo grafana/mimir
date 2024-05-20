@@ -2,7 +2,6 @@
 package util
 
 import (
-	"runtime/debug"
 	"testing"
 	"unsafe"
 
@@ -11,15 +10,9 @@ import (
 )
 
 func TestRequestBuffers(t *testing.T) {
-	// Disable GC
-	originalGCPercent := debug.SetGCPercent(-1)
-	defer debug.SetGCPercent(originalGCPercent)
-
 	const maxBufferSize = 32 * 1024
 
-	p := NewBucketedBufferPool(1024, maxBufferSize, 2)
-
-	rb := NewRequestBuffers(p)
+	rb := NewRequestBuffers(&fakePool{maxBufferSize: maxBufferSize})
 	t.Cleanup(rb.CleanUp)
 
 	b := rb.Get(1024)
@@ -65,4 +58,26 @@ func TestRequestBuffers(t *testing.T) {
 		assert.Equal(t, 1024, b.Cap())
 		assert.Zero(t, b.Len())
 	})
+}
+
+type fakePool struct {
+	maxBufferSize int
+	buffers       [][]byte
+}
+
+func (p *fakePool) Get(sz int) []byte {
+	if sz <= p.maxBufferSize {
+		for i, b := range p.buffers {
+			if cap(b) < sz {
+				continue
+			}
+			p.buffers = append(p.buffers[:i], p.buffers[i+1:]...)
+			return b
+		}
+	}
+	return make([]byte, 0, sz)
+}
+
+func (p *fakePool) Put(s []byte) {
+	p.buffers = append(p.buffers, s[:0])
 }

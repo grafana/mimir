@@ -614,14 +614,17 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 func (u *userTSDB) computeOwnedSeries() int {
 	// This can happen if ingester doesn't own this tenant anymore.
 	if len(u.ownedTokenRanges) == 0 {
+		u.activeSeries.Clear()
 		return 0
 	}
 
 	count := 0
 	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
-		for _, sh := range secondaryHashes {
+		for i, sh := range secondaryHashes {
 			if u.ownedTokenRanges.IncludesKey(sh) {
 				count++
+			} else {
+				u.activeSeries.Delete(refs[i])
 			}
 		}
 	})

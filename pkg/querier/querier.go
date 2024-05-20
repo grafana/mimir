@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -170,7 +171,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 
 		if cfg.EnablePromQLEngineFallback {
 			prometheusEngine := promql.NewEngine(opts)
-			eng = streamingpromql.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
+			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
 		} else {
 			eng = streamingEngine
 		}
