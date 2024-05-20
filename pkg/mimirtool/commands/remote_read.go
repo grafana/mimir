@@ -59,6 +59,8 @@ type RemoteReadCommand struct {
 		apiKey   string
 
 		timeout time.Duration
+
+		batchSize int
 	}
 }
 
@@ -121,6 +123,9 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 	remoteWriteCmd.Flag("write-timeout", "Timeout for write requests.").
 		Default("30s").
 		DurationVar(&c.write.timeout)
+	remoteWriteCmd.Flag("batch-size", "Number of timeseries to send in a single request.").
+		Default("1000").
+		IntVar(&c.write.batchSize)
 }
 
 type setTenantIDTransport struct {
@@ -501,24 +506,38 @@ func (c *RemoteReadCommand) remoteWrite(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	req := prompb.WriteRequest{Timeseries: make([]prompb.TimeSeries, 0, len(timeseries))}
 	samples, exemplars, histograms := 0, 0, 0
 	for _, ts := range timeseries {
-		req.Timeseries = append(req.Timeseries, *ts)
-
 		samples += len(ts.Samples)
 		exemplars += len(ts.Exemplars)
 		histograms += len(ts.Histograms)
 	}
-	log.Infof("Writing %d samples, %d exemplars, %d histograms for %d timeseries", samples, exemplars, histograms, len(timeseries))
+	log.Infof("Got %d samples, %d exemplars, %d histograms for %d timeseries", samples, exemplars, histograms, len(timeseries))
 
-	data, err := proto.Marshal(&req)
-	if err != nil {
-		return err
+	req := prompb.WriteRequest{Timeseries: make([]prompb.TimeSeries, 0, c.write.batchSize)}
+	compressed := make([]byte, 0, 1024*1024)
+	pbuf := proto.NewBuffer(nil)
+	for idx, ts := range timeseries {
+		req.Timeseries = append(req.Timeseries, *ts)
+
+		if idx == 0 || idx%c.write.batchSize != 0 {
+			continue
+		}
+
+		// Send a batch.
+		pbuf.Reset()
+		if err := pbuf.Marshal(&req); err != nil {
+			return err
+		}
+
+		compressed = snappy.Encode(compressed[:0], pbuf.Bytes())
+		if err := write.Store(context.Background(), compressed, 0); err != nil {
+			return fmt.Errorf("failed sending batch: %w", err)
+		}
+		log.Infof("Sent %d of %d. Last batch size %d bytes.", idx, len(timeseries), len(compressed))
 	}
-
-	compressed := snappy.Encode(nil, data)
-	return write.Store(context.Background(), compressed, 0)
+	log.Infof("Sent all %d timeseries.", len(timeseries))
+	return nil
 }
 
 func (c *RemoteReadCommand) writeClient() (remote.WriteClient, error) {
