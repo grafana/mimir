@@ -9,7 +9,6 @@ import (
 )
 
 type seriesChunkRefsIteratorFactory func(strategy seriesIteratorStrategy, psi *postingsSetsIterator) iterator[seriesChunkRefsSet]
-type postingsSetsIteratorFactory func() *postingsSetsIterator
 
 // chunksStreamingCachingSeriesChunkRefsSetIterator is an iterator used while streaming chunks from store-gateways to queriers.
 //

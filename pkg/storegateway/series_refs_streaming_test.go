@@ -24,7 +24,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_H
 		{lset: labels.FromStrings("series", "3")},
 	}
 
-	iteratorFactory := func(strategy seriesIteratorStrategy, psi *postingsSetsIterator) iterator[seriesChunkRefsSet] {
+	iteratorFactory := func(strategy seriesIteratorStrategy, _ *postingsSetsIterator) iterator[seriesChunkRefsSet] {
 		factoryCalls++
 		factoryStrategy = strategy
 
@@ -113,7 +113,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingSingleBatch_A
 	factoryCalls := 0
 	var factoryStrategy seriesIteratorStrategy
 
-	iteratorFactory := func(strategy seriesIteratorStrategy, psi *postingsSetsIterator) iterator[seriesChunkRefsSet] {
+	iteratorFactory := func(strategy seriesIteratorStrategy, _ *postingsSetsIterator) iterator[seriesChunkRefsSet] {
 		factoryCalls++
 		factoryStrategy = strategy
 
@@ -273,7 +273,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 	factoryCalls := 0
 	var factoryStrategy seriesIteratorStrategy
 
-	iteratorFactory := func(strategy seriesIteratorStrategy, psi *postingsSetsIterator) iterator[seriesChunkRefsSet] {
+	iteratorFactory := func(strategy seriesIteratorStrategy, _ *postingsSetsIterator) iterator[seriesChunkRefsSet] {
 		factoryCalls++
 		factoryStrategy = strategy
 
