@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -48,16 +50,27 @@ type RemoteReadCommand struct {
 	selector string
 	from     string
 	to       string
+
+	write struct {
+		address         string
+		remoteWritePath string
+
+		tenantID string
+		apiKey   string
+
+		timeout time.Duration
+	}
 }
 
 func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	remoteReadCmd := app.Command("remote-read", "Inspect stored series in Grafana Mimir using the remote read API.")
 	exportCmd := remoteReadCmd.Command("export", "Export metrics remote read series into a local TSDB.").Action(c.export)
+	remoteWriteCmd := remoteReadCmd.Command("remote-write", "Export metrics remote read series into a remote-write endpoint.").Action(c.remoteWrite)
 	dumpCmd := remoteReadCmd.Command("dump", "Dump remote read series.").Action(c.dump)
 	statsCmd := remoteReadCmd.Command("stats", "Show statistic of remote read series.").Action(c.stats)
 
 	now := time.Now()
-	for _, cmd := range []*kingpin.CmdClause{exportCmd, dumpCmd, statsCmd} {
+	for _, cmd := range []*kingpin.CmdClause{exportCmd, remoteWriteCmd, dumpCmd, statsCmd} {
 		cmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").
 			Envar(envVars.Address).
 			Required().
@@ -73,7 +86,7 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 			Envar(envVars.APIKey).
 			Default("").
 			StringVar(&c.apiKey)
-		cmd.Flag("read-timeout", "timeout for read requests").
+		cmd.Flag("read-timeout", "Timeout for read requests.").
 			Default("30s").
 			DurationVar(&c.readTimeout)
 
@@ -92,6 +105,22 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 	exportCmd.Flag("tsdb-path", "Path to the folder where to store the TSDB blocks, if not set a new directory in $TEMP is created.").
 		Default("").
 		StringVar(&c.tsdbPath)
+
+	remoteWriteCmd.Flag("write.address", "Address of the Grafana Mimir cluster to write the samples.").
+		Required().
+		StringVar(&c.write.address)
+	remoteWriteCmd.Flag("write.remote-write-path", "Path of the remote write endpoint.").
+		Default("/api/v1/push").
+		StringVar(&c.write.remoteWritePath)
+	remoteWriteCmd.Flag("write.id", "Grafana Mimir tenant ID. Used for basic auth and as X-Scope-OrgID HTTP header.").
+		Default("").
+		StringVar(&c.write.tenantID)
+	remoteWriteCmd.Flag("write.key", "Basic auth password to use when contacting Grafana Mimir.").
+		Default("").
+		StringVar(&c.write.apiKey)
+	remoteWriteCmd.Flag("write-timeout", "Timeout for write requests.").
+		Default("30s").
+		DurationVar(&c.write.timeout)
 }
 
 type setTenantIDTransport struct {
@@ -195,15 +224,21 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 
 	addressURL = addressURL.ResolveReference(remoteReadPathURL)
 
+	// only set basic auth if tenantID was not empty.
+	var basicAuth *config_util.BasicAuth
+	if c.tenantID != "" {
+		basicAuth = &config_util.BasicAuth{
+			Username: c.tenantID,
+			Password: config_util.Secret(c.apiKey),
+		}
+	}
+
 	// build client
 	readClient, err := remote.NewReadClient("remote-read", &remote.ClientConfig{
 		URL:     &config_util.URL{URL: addressURL},
 		Timeout: model.Duration(c.readTimeout),
 		HTTPClientConfig: config_util.HTTPClientConfig{
-			BasicAuth: &config_util.BasicAuth{
-				Username: c.tenantID,
-				Password: config_util.Secret(c.apiKey),
-			},
+			BasicAuth: basicAuth,
 		},
 		Headers: map[string]string{
 			"User-Agent": client.UserAgent(),
@@ -448,4 +483,95 @@ func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 	}
 
 	return nil
+}
+
+func (c *RemoteReadCommand) remoteWrite(_ *kingpin.ParseContext) error {
+	write, err := c.writeClient()
+	if err != nil {
+		return fmt.Errorf("creating remote write client: %w", err)
+	}
+
+	query, _, _, err := c.prepare()
+	if err != nil {
+		return err
+	}
+
+	timeseries, err := query(context.Background())
+	if err != nil {
+		return err
+	}
+
+	req := prompb.WriteRequest{Timeseries: make([]prompb.TimeSeries, 0, len(timeseries))}
+	samples, exemplars, histograms := 0, 0, 0
+	for _, ts := range timeseries {
+		req.Timeseries = append(req.Timeseries, *ts)
+
+		samples += len(ts.Samples)
+		exemplars += len(ts.Exemplars)
+		histograms += len(ts.Histograms)
+	}
+	log.Infof("Writing %d samples, %d exemplars, %d histograms for %d timeseries", samples, exemplars, histograms, len(timeseries))
+
+	data, err := proto.Marshal(&req)
+	if err != nil {
+		return err
+	}
+
+	compressed := snappy.Encode(nil, data)
+	return write.Store(context.Background(), compressed, 0)
+}
+
+func (c *RemoteReadCommand) writeClient() (remote.WriteClient, error) {
+	// validate inputs
+	addressURL, err := url.Parse(c.write.address)
+	if err != nil {
+		return nil, err
+	}
+
+	remoteWritePathURL, err := url.Parse(c.write.remoteWritePath)
+	if err != nil {
+		return nil, err
+	}
+
+	addressURL = addressURL.ResolveReference(remoteWritePathURL)
+
+	// only set basic auth if tenantID was not empty.
+	var basicAuth *config_util.BasicAuth
+	if c.write.tenantID != "" {
+		basicAuth = &config_util.BasicAuth{
+			Username: c.write.tenantID,
+			Password: config_util.Secret(c.write.apiKey),
+		}
+	}
+
+	// build client
+	writeClient, err := remote.NewWriteClient("remote-write", &remote.ClientConfig{
+		URL:     &config_util.URL{URL: addressURL},
+		Timeout: model.Duration(c.write.timeout),
+		HTTPClientConfig: config_util.HTTPClientConfig{
+			BasicAuth: basicAuth,
+		},
+		Headers: map[string]string{
+			"User-Agent": client.UserAgent(),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// if tenant ID is set, add a tenant ID header to every request
+	if c.write.tenantID != "" {
+		client, ok := writeClient.(*remote.Client)
+		if !ok {
+			return nil, fmt.Errorf("unexpected type %T", writeClient)
+		}
+		client.Client.Transport = &setTenantIDTransport{
+			RoundTripper: client.Client.Transport,
+			tenantID:     c.write.tenantID,
+		}
+	}
+
+	log.Infof("Created remote write client using endpoint '%s'", redactedURL(addressURL))
+
+	return writeClient, nil
 }
