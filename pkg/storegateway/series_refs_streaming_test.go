@@ -231,7 +231,7 @@ func TestChunksStreamingCachingSeriesChunkRefsSetIterator_ExpectingMultipleBatch
 		require.Equal(t, 0, psi.nextBatchPostingsOffset, "postings set iterator should be at beginning when creating iterator")
 
 		if factoryCalls == 1 {
-			// Simulate the underlying iterator advancing the postings set iterator to the end.
+			// Simulate the underlying iterator advancing the postings set iterator to the end, to ensure we get a fresh iterator next time.
 			for psi.Next() {
 				// Nothing to do, we just want to advance.
 			}
