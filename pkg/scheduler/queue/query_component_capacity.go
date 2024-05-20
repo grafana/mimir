@@ -70,7 +70,8 @@ type QueryComponentCapacity struct {
 	querierInflightRequestsGauge *prometheus.GaugeVec
 }
 
-// DefaultReservedQueryComponentCapacity reserves 1 / 3 of capacity for the least-loaded query component
+// DefaultReservedQueryComponentCapacity reserves 1 / 3 of querier-worker connections
+// for the query component utilizing fewer of the available connections.
 const DefaultReservedQueryComponentCapacity = 0.33
 
 const MinReservedQueryComponentCapacity = 0.1
@@ -109,8 +110,7 @@ func NewQueryComponentCapacity(
 //
 // The threshold for a QueryComponent's utilization of querier-worker connections
 // can only be exceeded by one QueryComponent at a time as long as targetReservedCapacity is < 0.5.
-// Therefore, both QueryComponents cannot be in excess of the reserved capacity at the same time,
-// and one of the components will always be given the OK to dequeue queries for.
+// Therefore, one of the components will always be given the OK to dequeue queries for.
 //
 // Capacity reservation only occurs when the queue backlogged, where backlogged is defined as
 // (length of the query queue) >= (number of querier-worker connections waiting for a query).
@@ -130,10 +130,6 @@ func (qcl *QueryComponentCapacity) ExceedsCapacityForComponentName(
 		// corner case; cannot reserve capacity with only one worker available
 		return false, ""
 	}
-
-	// Queries waiting in queue exceed the number of available querier-worker connections.
-	// In case one query component has become congested under load, we want to reserve some capacity
-	// to continue servicing queries which do not utilize the loaded query component.
 
 	// reserve at least one connection in case (connected workers) * (reserved capacity) is less than one
 	minReservedConnections := int64(
