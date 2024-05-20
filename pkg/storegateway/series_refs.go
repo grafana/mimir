@@ -707,7 +707,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	minTime, maxTime int64,
 	stats *safeQueryStats,
 	logger log.Logger,
-	wrapper seriesChunkRefsIteratorWrapper,
+	streamingIterators *streamingSeriesIterators,
 ) (iterator[seriesChunkRefsSet], error) {
 	if batchSize <= 0 {
 		return nil, errors.New("set size must be a positive number")
@@ -722,7 +722,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return openBlockSeriesChunkRefsSetsIteratorFromPostings(ctx, tenantID, indexr, indexCache, blockMeta, shard, seriesHasher, strategy, minTime, maxTime, stats, psi, pendingMatchers, logger)
 	}
 
-	if wrapper == nil {
+	if streamingIterators == nil {
 		psi := newPostingsSetsIterator(ps, batchSize)
 		return iteratorFactory(strategy, psi), nil
 	}
@@ -735,7 +735,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return newPostingsSetsIterator(duplicatePS, batchSize)
 	}
 
-	return wrapper.wrapIterator(strategy, postingsSetsIteratorFactory, iteratorFactory), nil
+	return streamingIterators.wrapIterator(strategy, postingsSetsIteratorFactory, iteratorFactory), nil
 }
 
 func openBlockSeriesChunkRefsSetsIteratorFromPostings(

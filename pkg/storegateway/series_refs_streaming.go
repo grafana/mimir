@@ -7,10 +7,6 @@ import "sync"
 type seriesChunkRefsIteratorFactory func(strategy seriesIteratorStrategy, psi *postingsSetsIterator) iterator[seriesChunkRefsSet]
 type postingsSetsIteratorFactory func() *postingsSetsIterator
 
-type seriesChunkRefsIteratorWrapper interface {
-	wrapIterator(strategy seriesIteratorStrategy, postingsSetsIteratorFactory postingsSetsIteratorFactory, factory seriesChunkRefsIteratorFactory) iterator[seriesChunkRefsSet]
-}
-
 // chunksStreamingCachingSeriesChunkRefsSetIterator is an iterator used while streaming chunks from store-gateways to queriers.
 //
 // It wraps another iterator that does the actual work. If that iterator is expected to produce only a single batch,

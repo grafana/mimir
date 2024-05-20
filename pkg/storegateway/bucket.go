@@ -1105,7 +1105,7 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	stats *safeQueryStats,
 	strategy seriesIteratorStrategy,
-	wrapper seriesChunkRefsIteratorWrapper,
+	streamingIterators *streamingSeriesIterators,
 ) (iterator[seriesChunkRefsSet], error) {
 	var (
 		mtx                      = sync.Mutex{}
@@ -1141,7 +1141,7 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 				req.MinTime, req.MaxTime,
 				stats,
 				s.logger,
-				wrapper,
+				streamingIterators,
 			)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
