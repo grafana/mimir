@@ -4,17 +4,22 @@ package storegateway
 
 import "sync"
 
-type seriesChunkRefsIteratorFactory func(strategy seriesIteratorStrategy) iterator[seriesChunkRefsSet]
+type seriesChunkRefsIteratorFactory func(strategy seriesIteratorStrategy, psi *postingsSetsIterator) iterator[seriesChunkRefsSet]
+type postingsSetsIteratorFactory func() *postingsSetsIterator
+
+type seriesChunkRefsIteratorWrapper interface {
+	wrapIterator(strategy seriesIteratorStrategy, postingsSetsIteratorFactory postingsSetsIteratorFactory, factory seriesChunkRefsIteratorFactory) iterator[seriesChunkRefsSet]
+}
 
 // chunksStreamingCachingSeriesChunkRefsSetIterator is an iterator used while streaming chunks from store-gateways to queriers.
 //
 // It wraps another iterator that does the actual work. If that iterator is expected to produce only a single batch,
 // this iterator caches that batch for the chunks streaming phase, to avoid repeating work done during the series label sending phase.
 type chunksStreamingCachingSeriesChunkRefsSetIterator struct {
-	strategy             seriesIteratorStrategy
-	postingsSetsIterator *postingsSetsIterator
-	factory              seriesChunkRefsIteratorFactory
-	it                   iterator[seriesChunkRefsSet]
+	strategy                    seriesIteratorStrategy
+	postingsSetsIteratorFactory postingsSetsIteratorFactory
+	iteratorFactory             seriesChunkRefsIteratorFactory
+	it                          iterator[seriesChunkRefsSet]
 
 	expectSingleBatch                    bool
 	inChunksStreamingPhaseForSingleBatch bool
@@ -24,8 +29,9 @@ type chunksStreamingCachingSeriesChunkRefsSetIterator struct {
 	cachedBatch       seriesChunkRefsSet
 }
 
-func newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy seriesIteratorStrategy, postingsSetsIterator *postingsSetsIterator, factory seriesChunkRefsIteratorFactory) *chunksStreamingCachingSeriesChunkRefsSetIterator {
-	expectSingleBatch := !postingsSetsIterator.HasMultipleBatches()
+func newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy seriesIteratorStrategy, postingsSetsIteratorFactory postingsSetsIteratorFactory, iteratorFactory seriesChunkRefsIteratorFactory) *chunksStreamingCachingSeriesChunkRefsSetIterator {
+	psi := postingsSetsIteratorFactory()
+	expectSingleBatch := !psi.HasMultipleBatches()
 	var initialStrategy seriesIteratorStrategy
 
 	if expectSingleBatch {
@@ -36,11 +42,11 @@ func newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy seriesIterator
 	}
 
 	return &chunksStreamingCachingSeriesChunkRefsSetIterator{
-		strategy:             strategy,
-		postingsSetsIterator: postingsSetsIterator,
-		factory:              factory,
-		it:                   factory(initialStrategy),
-		expectSingleBatch:    expectSingleBatch,
+		strategy:                    strategy,
+		postingsSetsIteratorFactory: postingsSetsIteratorFactory,
+		iteratorFactory:             iteratorFactory,
+		it:                          iteratorFactory(initialStrategy, psi),
+		expectSingleBatch:           expectSingleBatch,
 	}
 }
 
@@ -84,13 +90,12 @@ func (i *chunksStreamingCachingSeriesChunkRefsSetIterator) Err() error {
 }
 
 func (i *chunksStreamingCachingSeriesChunkRefsSetIterator) PrepareForChunksStreamingPhase() {
-	i.postingsSetsIterator.Reset()
-
 	if i.expectSingleBatch {
 		i.inChunksStreamingPhaseForSingleBatch = true
 		i.currentBatchIndex = -1
 	} else {
-		i.it = i.factory(i.strategy.withChunkRefs())
+		psi := i.postingsSetsIteratorFactory()
+		i.it = i.iteratorFactory(i.strategy.withChunkRefs(), psi)
 	}
 }
 
@@ -107,8 +112,8 @@ func newStreamingSeriesIterators() *streamingSeriesIterators {
 	}
 }
 
-func (i *streamingSeriesIterators) wrapIterator(strategy seriesIteratorStrategy, postingsSetsIterator *postingsSetsIterator, factory seriesChunkRefsIteratorFactory) iterator[seriesChunkRefsSet] {
-	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy, postingsSetsIterator, factory)
+func (i *streamingSeriesIterators) wrapIterator(strategy seriesIteratorStrategy, postingsSetsIteratorFactory postingsSetsIteratorFactory, iteratorFactory seriesChunkRefsIteratorFactory) iterator[seriesChunkRefsSet] {
+	it := newChunksStreamingCachingSeriesChunkRefsSetIterator(strategy, postingsSetsIteratorFactory, iteratorFactory)
 
 	i.mtx.Lock()
 	i.iterators = append(i.iterators, it)
@@ -126,8 +131,4 @@ func (i *streamingSeriesIterators) prepareForChunksStreamingPhase() []iterator[s
 	}
 
 	return prepared
-}
-
-type seriesChunkRefsIteratorWrapper interface {
-	wrapIterator(strategy seriesIteratorStrategy, postingsSetsIterator *postingsSetsIterator, factory seriesChunkRefsIteratorFactory) iterator[seriesChunkRefsSet]
 }

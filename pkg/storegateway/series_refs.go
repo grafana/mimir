@@ -718,17 +718,24 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
-	psi := newPostingsSetsIterator(ps, batchSize)
-
-	factory := func(strategy seriesIteratorStrategy) iterator[seriesChunkRefsSet] {
+	iteratorFactory := func(strategy seriesIteratorStrategy, psi *postingsSetsIterator) iterator[seriesChunkRefsSet] {
 		return openBlockSeriesChunkRefsSetsIteratorFromPostings(ctx, tenantID, indexr, indexCache, blockMeta, shard, seriesHasher, strategy, minTime, maxTime, stats, psi, pendingMatchers, logger)
 	}
 
 	if wrapper == nil {
-		return factory(strategy), nil
+		psi := newPostingsSetsIterator(ps, batchSize)
+		return iteratorFactory(strategy, psi), nil
 	}
 
-	return wrapper.wrapIterator(strategy, psi, factory), nil
+	postingsSetsIteratorFactory := func() *postingsSetsIterator {
+		// Create a copy of ps so that any modifications aren't persisted for a later chunks streaming phase.
+		// For example, loadingSeriesChunkRefsSetIterator removes series that don't match the selected shard.
+		duplicatePS := make([]storage.SeriesRef, len(ps))
+		copy(duplicatePS, ps)
+		return newPostingsSetsIterator(duplicatePS, batchSize)
+	}
+
+	return wrapper.wrapIterator(strategy, postingsSetsIteratorFactory, iteratorFactory), nil
 }
 
 func openBlockSeriesChunkRefsSetsIteratorFromPostings(
@@ -1409,9 +1416,4 @@ func (s *postingsSetsIterator) At() []storage.SeriesRef {
 
 func (s *postingsSetsIterator) HasMultipleBatches() bool {
 	return len(s.postings) > s.batchSize
-}
-
-func (s *postingsSetsIterator) Reset() {
-	s.currentBatch = nil
-	s.nextBatchPostingsOffset = 0
 }

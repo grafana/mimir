@@ -2312,15 +2312,6 @@ func TestPostingsSetsIterator(t *testing.T) {
 			}
 
 			require.Equal(t, testCase.expectedBatches, actualBatches)
-
-			iterator.Reset()
-
-			var actualBatchesAfterReset [][]storage.SeriesRef
-			for iterator.Next() {
-				actualBatchesAfterReset = append(actualBatchesAfterReset, iterator.At())
-			}
-
-			require.Equal(t, testCase.expectedBatches, actualBatchesAfterReset)
 		})
 	}
 }
