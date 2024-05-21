@@ -91,7 +91,8 @@ func (v *InstantVectorSelector) NextSeries(_ context.Context) (InstantVectorSeri
 		// So check if histograms is nil first. If we don't have a histogram, then we should have a value and vice-versa.
 		if h != nil {
 			if len(data.Histograms) == 0 {
-				// Only create the slice once we know the series is a histogram or not
+				// Only create the slice once we know the series is a histogram or not.
+				// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
 				data.Histograms = GetHPointSlice(v.numSteps)
 			}
 			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
