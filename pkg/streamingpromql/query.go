@@ -339,8 +339,7 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o o
 		}
 
 		if len(d.Floats) == 0 && len(d.Histograms) == 0 {
-			operator.PutFPointSlice(d.Floats)
-			operator.PutHPointSlice(d.Histograms)
+			returnSeriesDataSlices(d)
 			continue
 		}
 
