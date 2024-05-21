@@ -25,8 +25,8 @@
 (import 'shuffle-sharding.libsonnet') +
 (import 'query-sharding.libsonnet') +
 (import 'multi-zone.libsonnet') +
+(import 'rollout-operator.libsonnet') +
 (import 'ruler-remote-evaluation.libsonnet') +
-(import 'memberlist.libsonnet') +
 (import 'continuous-test.libsonnet') +
 
 // Import autoscaling after other features because it overrides deployments.
@@ -40,4 +40,12 @@
 
 // Automated downscale of ingesters and store-gateways
 (import 'ingester-automated-downscale.libsonnet') +
-(import 'store-gateway-automated-downscale.libsonnet')
+(import 'store-gateway-automated-downscale.libsonnet') +
+
+// Experimental ingest storage.
+(import 'ingest-storage.libsonnet') +
+(import 'ingest-storage-ingester-autoscaling.libsonnet') +
+(import 'ingest-storage-migration.libsonnet') +
+
+// Add memberlist support. Keep it at the end because it overrides all Mimir components.
+(import 'memberlist.libsonnet')

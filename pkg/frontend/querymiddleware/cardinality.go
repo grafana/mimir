@@ -115,7 +115,7 @@ func (c *cardinalityEstimation) lookupCardinalityForKey(ctx context.Context, key
 	if c.cache == nil {
 		return 0, false
 	}
-	res := c.cache.Fetch(ctx, []string{key})
+	res := c.cache.GetMulti(ctx, []string{key})
 	if val, ok := res[key]; ok {
 		qs := &QueryStatistics{}
 		err := proto.Unmarshal(val, qs)
@@ -142,7 +142,7 @@ func (c *cardinalityEstimation) storeCardinalityForKey(key string, count uint64)
 	}
 	// The store is executed asynchronously, potential errors are logged and not
 	// propagated back up the stack.
-	c.cache.StoreAsync(map[string][]byte{key: marshaled}, cardinalityEstimateTTL)
+	c.cache.SetMultiAsync(map[string][]byte{key: marshaled}, cardinalityEstimateTTL)
 }
 
 func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {

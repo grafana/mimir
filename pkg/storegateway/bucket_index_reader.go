@@ -189,7 +189,7 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
 func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
-	postingGroups, err := toPostingGroups(ms, r.block.indexHeaderReader)
+	postingGroups, err := toPostingGroups(ctx, ms, r.block.indexHeaderReader)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "toPostingGroups")
 	}
@@ -314,7 +314,7 @@ var allPostingsKey = func() labels.Label {
 
 // toPostingGroups returns a set of labels for which to look up postings lists. It guarantees that
 // each postingGroup's keys exist in the index.
-func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, error) {
+func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, error) {
 	var (
 		rawPostingGroups = make([]rawPostingGroup, 0, len(ms))
 		allRequested     = false
@@ -354,7 +354,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 	// Based on the previous sorting, we start with the ones that have a known set of values because it's less expensive to check them in
 	// the index header.
 	for _, rawGroup := range rawPostingGroups {
-		pg, err := rawGroup.toPostingGroup(indexhdr)
+		pg, err := rawGroup.toPostingGroup(ctx, indexhdr)
 		if err != nil {
 			return nil, errors.Wrap(err, "filtering posting group")
 		}

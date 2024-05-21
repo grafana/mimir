@@ -16,7 +16,9 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 var (
@@ -83,6 +85,11 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 	if cfg.AutoCreateTopicEnabled {
 		opts = append(opts, kgo.AllowAutoTopicCreation())
 	}
+
+	tracer := kotel.NewTracer(
+		kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{})),
+	)
+	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(tracer)).Hooks()...))
 
 	if metrics != nil {
 		opts = append(opts, kgo.WithHooks(metrics))

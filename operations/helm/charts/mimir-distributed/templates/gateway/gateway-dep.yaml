@@ -79,7 +79,7 @@ spec:
             - name: active-queries
               mountPath: /active-query-tracker
         {{- else }}
-        - name: nginx
+        - name: gateway
           image: {{ .nginx.image.registry }}/{{ .nginx.image.repository }}:{{ .nginx.image.tag }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           args:

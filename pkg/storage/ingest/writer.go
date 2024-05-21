@@ -36,9 +36,10 @@ type Writer struct {
 	logger     log.Logger
 	registerer prometheus.Registerer
 
-	// We create 1 writer per partition to better parallelize the workload.
+	// We support multiple Kafka clients to better parallelize the workload. The number of
+	// clients is fixed during the Writer lifecycle, but they're initialised lazily.
 	writersMx sync.RWMutex
-	writers   map[int32]*kgo.Client
+	writers   []*kgo.Client
 
 	// Metrics.
 	writeLatency    prometheus.Histogram
@@ -53,7 +54,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		kafkaCfg:                   kafkaCfg,
 		logger:                     logger,
 		registerer:                 reg,
-		writers:                    map[int32]*kgo.Client{},
+		writers:                    make([]*kgo.Client, kafkaCfg.WriteClients),
 		maxInflightProduceRequests: 20,
 
 		// Metrics.
@@ -87,9 +88,13 @@ func (w *Writer) stopping(_ error) error {
 	w.writersMx.Lock()
 	defer w.writersMx.Unlock()
 
-	for partitionID, client := range w.writers {
+	for idx, client := range w.writers {
+		if client == nil {
+			continue
+		}
+
 		client.Close()
-		delete(w.writers, partitionID)
+		w.writers[idx] = nil
 	}
 
 	return nil
@@ -112,8 +117,9 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 
 	// Prepare the record to write.
 	record := &kgo.Record{
-		Key:   []byte(userID), // We don't partition based on the key, so the value here doesn't make any difference.
-		Value: data,
+		Key:       []byte(userID), // We don't partition based on the key, so the value here doesn't make any difference.
+		Value:     data,
+		Partition: partitionID,
 	}
 
 	// Write to backend.
@@ -141,7 +147,7 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, record *kg
 	// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
 	// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
 	// cases may cause all requests to fail with context cancelled.
-	client.Produce(context.Background(), record, func(_ *kgo.Record, err error) {
+	client.Produce(context.WithoutCancel(ctx), record, func(_ *kgo.Record, err error) {
 		errCh <- err
 	})
 
@@ -157,7 +163,8 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, record *kg
 func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kgo.Client, error) {
 	// Check if the writer has already been created.
 	w.writersMx.RLock()
-	writer := w.writers[partitionID]
+	clientID := int(partitionID) % len(w.writers)
+	writer := w.writers[clientID]
 	w.writersMx.RUnlock()
 
 	if writer != nil {
@@ -168,25 +175,25 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kgo.Client, err
 	defer w.writersMx.Unlock()
 
 	// Ensure a new writer wasn't created in the meanwhile. If so, use it.
-	writer = w.writers[partitionID]
+	writer = w.writers[clientID]
 	if writer != nil {
 		return writer, nil
 	}
-	newWriter, err := w.newKafkaWriter(partitionID)
+	newWriter, err := w.newKafkaWriter(clientID)
 	if err != nil {
 		return nil, err
 	}
-	w.writers[partitionID] = newWriter
+	w.writers[clientID] = newWriter
 	return newWriter, nil
 }
 
-// newKafkaWriter creates a new Kafka client used to write to a specific partition.
-func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
-	logger := log.With(w.logger, "partition", partitionID)
+// newKafkaWriter creates a new Kafka client.
+func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
+	logger := log.With(w.logger, "client_id", clientID)
 
 	// Do not export the client ID, because we use it to specify options to the backend.
 	metrics := kprom.NewMetrics("cortex_ingest_storage_writer",
-		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, w.registerer)),
+		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"client_id": strconv.Itoa(clientID)}, w.registerer)),
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
 	opts := append(
@@ -194,8 +201,8 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.DefaultProduceTopic(w.kafkaCfg.Topic),
 
-		// Use a static partitioner because we want to be in control of the partition.
-		kgo.RecordPartitioner(newKafkaStaticPartitioner(int(partitionID))),
+		// We set the partition field in each record.
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 
 		// Set the upper bounds the size of a record batch.
 		kgo.ProducerBatchMaxBytes(16_000_000),
@@ -232,31 +239,4 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
 	)
 	return kgo.NewClient(opts...)
-}
-
-type kafkaStaticPartitioner struct {
-	partitionID int
-}
-
-func newKafkaStaticPartitioner(partitionID int) *kafkaStaticPartitioner {
-	return &kafkaStaticPartitioner{
-		partitionID: partitionID,
-	}
-}
-
-// ForTopic implements kgo.Partitioner.
-func (p *kafkaStaticPartitioner) ForTopic(string) kgo.TopicPartitioner {
-	return p
-}
-
-// RequiresConsistency implements kgo.TopicPartitioner.
-func (p *kafkaStaticPartitioner) RequiresConsistency(_ *kgo.Record) bool {
-	// Never let Kafka client to write the record to another partition
-	// if the partition is down.
-	return true
-}
-
-// Partition implements kgo.TopicPartitioner.
-func (p *kafkaStaticPartitioner) Partition(_ *kgo.Record, _ int) int {
-	return p.partitionID
 }

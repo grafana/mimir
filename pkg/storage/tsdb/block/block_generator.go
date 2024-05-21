@@ -123,7 +123,7 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 
 	chunkwClosed = true
 	if err := chunkw.Close(); err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	// Write index.

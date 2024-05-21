@@ -569,7 +569,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     )
     .addPanel(
-      $.timeseriesPanel('TCP connections (per pod)') +
+      local title = 'Ingress TCP connections (per pod)';
+
+      $.timeseriesPanel(title) +
+      $.panelDescription(
+        title,
+        'The number of ingress TCP connections (HTTP and gRPC protocol).'
+      ) +
       $.queryPanel([
         'avg(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
         'max(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
@@ -653,7 +659,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.panelDescription(
       title,
       |||
-        The maximum and current number of %s replicas.
+        The maximum and current number of %s replicas.<br /><br />
         Note: The current number of replicas can still show 1 replica even when scaled to 0.
         Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
       ||| % [componentTitle]
@@ -678,7 +684,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
   autoScalingDesiredReplicasByScalingMetricPanel(componentName, scalingMetricName, scalingMetricID)::
-    local title = 'Scaling metric (%s): Desired replicas' % scalingMetricName;
+    local title = if scalingMetricName != '' then 'Scaling metric (%s): Desired replicas' % scalingMetricName else 'Desired replicas';
+    local scalerSelector = if scalingMetricID != '' then ('.*%s.*' % scalingMetricID) else '.+';
 
     $.timeseriesPanel(title) +
     $.queryPanel(
@@ -686,7 +693,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         |||
           sum by (scaler) (
             label_replace(
-              keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~".*%(scaling_metric_id)s.*"},
+              keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~"%(scaler_selector)s"},
               "namespace", "$1", "exported_namespace", "(.*)"
             )
             /
@@ -704,7 +711,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           hpa_prefix: $._config.autoscaling_hpa_prefix,
           hpa_name: $._config.autoscaling[componentName].hpa_name,
           namespace: $.namespaceMatcher(),
-          scaling_metric_id: scalingMetricID,
+          scaler_selector: scalerSelector,
         },
       ], [
         '{{ scaler }}',
@@ -737,7 +744,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   cpuAndMemoryBasedAutoScalingRow(componentTitle)::
     local componentName = std.strReplace(std.asciiLower(componentTitle), '-', '_');
-    super.row('%s - autoscaling' % [componentTitle])
+    super.row('%s – autoscaling' % [componentTitle])
     .addPanel(
       $.autoScalingActualReplicas(componentName)
     )

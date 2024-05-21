@@ -265,7 +265,7 @@ type DB struct {
 	compactor      Compactor
 	blocksToDelete BlocksToDeleteFunc
 
-	// Mutex for that must be held when modifying the general block layout or lastGarbageCollectedMmapRef.
+	// mtx must be held when modifying the general block layout or lastGarbageCollectedMmapRef.
 	mtx    sync.RWMutex
 	blocks []*Block
 
@@ -1500,7 +1500,7 @@ func (db *DB) reloadBlocks() (err error) {
 		db.metrics.reloads.Inc()
 	}()
 
-	// Now that we reload TSDB every minute, there is high chance for race condition with a reload
+	// Now that we reload TSDB every minute, there is a high chance for a race condition with a reload
 	// triggered by CleanTombstones(). We need to lock the reload to avoid the situation where
 	// a normal reload and CleanTombstones try to delete the same block.
 	db.mtx.Lock()
@@ -1840,7 +1840,6 @@ func OverlappingBlocks(bm []BlockMeta) Overlaps {
 	// Fetch the critical overlapped time range foreach overlap groups.
 	overlapGroups := Overlaps{}
 	for _, overlap := range overlaps {
-
 		minRange := TimeRange{Min: 0, Max: math.MaxInt64}
 		for _, b := range overlap {
 			if minRange.Max > b.MaxTime {

@@ -23,6 +23,8 @@ type ProxyMetrics struct {
 	requestDuration        *prometheus.HistogramVec
 	responsesTotal         *prometheus.CounterVec
 	responsesComparedTotal *prometheus.CounterVec
+	relativeDuration       *prometheus.HistogramVec
+	proportionalDuration   *prometheus.HistogramVec
 }
 
 func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
@@ -43,6 +45,18 @@ func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
 			Name:      "responses_compared_total",
 			Help:      "Total number of responses compared per route name by result.",
 		}, []string{"route", "result"}),
+		relativeDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
+			Namespace:                   queryTeeMetricsNamespace,
+			Name:                        "backend_response_relative_duration_seconds",
+			Help:                        "Time (in seconds) of preferred backend less secondary backend.",
+			NativeHistogramBucketFactor: 2,
+		}, []string{"route"}),
+		proportionalDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
+			Namespace:                   queryTeeMetricsNamespace,
+			Name:                        "backend_response_relative_duration_proportional",
+			Help:                        "Response time of preferred backend, as a proportion of secondary backend response time.",
+			NativeHistogramBucketFactor: 2,
+		}, []string{"route"}),
 	}
 
 	return m

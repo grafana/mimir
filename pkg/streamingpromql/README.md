@@ -53,13 +53,13 @@ flowchart TB
 ```
 
 Each of these operators satisfies the `InstantVectorOperator` interface, defined [here](./operator/operator.go).
-The two key methods of this interface are `SeriesMetadata()` and `Next()`:
+The two key methods of this interface are `SeriesMetadata()` and `NextSeries()`:
 
 `SeriesMetadata()` returns the list of all series' labels that will be returned by the operator[^2].
 In our example, the instant vector selector operator would return all the matching `some_metric` series, and the `sum` aggregation operator would return one series for each unique value of `environment`.
 
-`Next()` is then called by the consuming operator to read each series' data, one series at a time.
-In our example, the `sum` aggregation operator would call `Next()` on the instant vector selector operator to get the first series' data, then again to get the second series' data and so on.
+`NextSeries()` is then called by the consuming operator to read each series' data, one series at a time.
+In our example, the `sum` aggregation operator would call `NextSeries()` on the instant vector selector operator to get the first series' data, then again to get the second series' data and so on.
 
 Elaborating on the example from before, the overall query would proceed like this, assuming the request is received over HTTP:
 
@@ -75,16 +75,16 @@ Elaborating on the example from before, the overall query would proceed like thi
          1. `sum` aggregation operator computes output series (one per unique value of `environment`) based on input series from instant vector selector
       1. `max` aggregation operator computes output series based on input series from `sum` aggregation operator
          - in this case, there's just one output series, given no grouping is being performed
-   1. root of the query calls `Next()` on `max` aggregation operator until all series have been returned
-      1. `max` aggregation operator calls `Next()` on `sum` aggregation operator
-         1. `sum` aggregation operator calls `Next()` on instant vector selector operator
+   1. root of the query calls `NextSeries()` on `max` aggregation operator until all series have been returned
+      1. `max` aggregation operator calls `NextSeries()` on `sum` aggregation operator
+         1. `sum` aggregation operator calls `NextSeries()` on instant vector selector operator
             - instant vector selector returns samples for next series
          1. `sum` aggregation operator updates its running totals for the relevant output series
          1. if all input series have now been seen for the output series just updated, `sum` aggregation operator returns that output series and removes it from its internal state
-         1. otherwise, it calls `Next()` again and repeats
+         1. otherwise, it calls `NextSeries()` again and repeats
       1. `max` aggregation operator updates its running maximum based on the series returned
       1. if all input series have been seen, `max` aggregation operator returns
-      1. otherwise, it calls `Next()` again and repeats
+      1. otherwise, it calls `NextSeries()` again and repeats
 1. query HTTP API handler converts returned result to wire format (either JSON or Protobuf) and sends to caller
 1. query HTTP API handler calls `Query.Close()` to release remaining resources
 

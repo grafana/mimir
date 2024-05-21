@@ -11,9 +11,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -136,6 +136,11 @@ cortex_prometheus_rule_group_rules{rule_group="group_one",user="user3"} 100000
 cortex_prometheus_rule_group_rules{rule_group="group_two",user="user1"} 1000
 cortex_prometheus_rule_group_rules{rule_group="group_two",user="user2"} 10000
 cortex_prometheus_rule_group_rules{rule_group="group_two",user="user3"} 100000
+# HELP cortex_prometheus_rule_group_last_restore_duration_seconds The duration of the last alert rules alerts restoration using the `+"`ALERTS_FOR_STATE`"+` series across all rule groups.
+# TYPE cortex_prometheus_rule_group_last_restore_duration_seconds gauge
+cortex_prometheus_rule_group_last_restore_duration_seconds{user="user1"} 20
+cortex_prometheus_rule_group_last_restore_duration_seconds{user="user2"} 200
+cortex_prometheus_rule_group_last_restore_duration_seconds{user="user3"} 2000
 `))
 	require.NoError(t, err)
 }
@@ -143,129 +148,36 @@ cortex_prometheus_rule_group_rules{rule_group="group_two",user="user3"} 100000
 func populateManager(base float64) *prometheus.Registry {
 	r := prometheus.NewRegistry()
 
-	metrics := newGroupMetrics(r)
+	metrics := rules.NewGroupMetrics(r)
 
-	metrics.evalDuration.Observe(base)
-	metrics.iterationDuration.Observe(base)
+	metrics.EvalDuration.Observe(base)
+	metrics.IterationDuration.Observe(base)
 
-	metrics.iterationsScheduled.WithLabelValues("group_one").Add(base)
-	metrics.iterationsScheduled.WithLabelValues("group_two").Add(base)
-	metrics.iterationsMissed.WithLabelValues("group_one").Add(base)
-	metrics.iterationsMissed.WithLabelValues("group_two").Add(base)
-	metrics.evalTotal.WithLabelValues("group_one").Add(base)
-	metrics.evalTotal.WithLabelValues("group_two").Add(base)
-	metrics.evalFailures.WithLabelValues("group_one").Add(base)
-	metrics.evalFailures.WithLabelValues("group_two").Add(base)
+	metrics.IterationsScheduled.WithLabelValues("group_one").Add(base)
+	metrics.IterationsScheduled.WithLabelValues("group_two").Add(base)
+	metrics.IterationsMissed.WithLabelValues("group_one").Add(base)
+	metrics.IterationsMissed.WithLabelValues("group_two").Add(base)
+	metrics.EvalTotal.WithLabelValues("group_one").Add(base)
+	metrics.EvalTotal.WithLabelValues("group_two").Add(base)
+	metrics.EvalFailures.WithLabelValues("group_one").Add(base)
+	metrics.EvalFailures.WithLabelValues("group_two").Add(base)
 
-	metrics.groupLastEvalTime.WithLabelValues("group_one").Add(base * 1000)
-	metrics.groupLastEvalTime.WithLabelValues("group_two").Add(base * 1000)
+	metrics.GroupLastEvalTime.WithLabelValues("group_one").Add(base * 1000)
+	metrics.GroupLastEvalTime.WithLabelValues("group_two").Add(base * 1000)
 
-	metrics.groupLastDuration.WithLabelValues("group_one").Add(base * 1000)
-	metrics.groupLastDuration.WithLabelValues("group_two").Add(base * 1000)
+	metrics.GroupLastDuration.WithLabelValues("group_one").Add(base * 1000)
+	metrics.GroupLastDuration.WithLabelValues("group_two").Add(base * 1000)
 
-	metrics.groupRules.WithLabelValues("group_one").Add(base * 1000)
-	metrics.groupRules.WithLabelValues("group_two").Add(base * 1000)
+	metrics.GroupRules.WithLabelValues("group_one").Add(base * 1000)
+	metrics.GroupRules.WithLabelValues("group_two").Add(base * 1000)
 
-	metrics.groupLastEvalSamples.WithLabelValues("group_one").Add(base * 1000)
-	metrics.groupLastEvalSamples.WithLabelValues("group_two").Add(base * 1000)
+	metrics.GroupSamples.WithLabelValues("group_one").Add(base * 1000)
+	metrics.GroupSamples.WithLabelValues("group_two").Add(base * 1000)
+
+	metrics.GroupLastRestoreDuration.WithLabelValues("group_one").Add(base * 10)
+	metrics.GroupLastRestoreDuration.WithLabelValues("group_two").Add(base * 10)
 
 	return r
-}
-
-// Copied from github.com/prometheus/rules/manager.go
-type groupMetrics struct {
-	evalDuration         prometheus.Summary
-	iterationDuration    prometheus.Summary
-	iterationsMissed     *prometheus.CounterVec
-	iterationsScheduled  *prometheus.CounterVec
-	evalTotal            *prometheus.CounterVec
-	evalFailures         *prometheus.CounterVec
-	groupInterval        *prometheus.GaugeVec
-	groupLastEvalTime    *prometheus.GaugeVec
-	groupLastDuration    *prometheus.GaugeVec
-	groupRules           *prometheus.GaugeVec
-	groupLastEvalSamples *prometheus.GaugeVec
-}
-
-func newGroupMetrics(r prometheus.Registerer) *groupMetrics {
-	m := &groupMetrics{
-		evalDuration: promauto.With(r).NewSummary(
-			prometheus.SummaryOpts{
-				Name:       "prometheus_rule_evaluation_duration_seconds",
-				Help:       "The duration for a rule to execute.",
-				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-			}),
-		iterationDuration: promauto.With(r).NewSummary(prometheus.SummaryOpts{
-			Name:       "prometheus_rule_group_duration_seconds",
-			Help:       "The duration of rule group evaluations.",
-			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
-		}),
-		iterationsMissed: promauto.With(r).NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "prometheus_rule_group_iterations_missed_total",
-				Help: "The total number of rule group evaluations missed due to slow rule group evaluation.",
-			},
-			[]string{"rule_group"},
-		),
-		iterationsScheduled: promauto.With(r).NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "prometheus_rule_group_iterations_total",
-				Help: "The total number of scheduled rule group evaluations, whether executed or missed.",
-			},
-			[]string{"rule_group"},
-		),
-		evalTotal: promauto.With(r).NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "prometheus_rule_evaluations_total",
-				Help: "The total number of rule evaluations.",
-			},
-			[]string{"rule_group"},
-		),
-		evalFailures: promauto.With(r).NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "prometheus_rule_evaluation_failures_total",
-				Help: "The total number of rule evaluation failures.",
-			},
-			[]string{"rule_group"},
-		),
-		groupInterval: promauto.With(r).NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "prometheus_rule_group_interval_seconds",
-				Help: "The interval of a rule group.",
-			},
-			[]string{"rule_group"},
-		),
-		groupLastEvalTime: promauto.With(r).NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "prometheus_rule_group_last_evaluation_timestamp_seconds",
-				Help: "The timestamp of the last rule group evaluation in seconds.",
-			},
-			[]string{"rule_group"},
-		),
-		groupLastDuration: promauto.With(r).NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "prometheus_rule_group_last_duration_seconds",
-				Help: "The duration of the last rule group evaluation.",
-			},
-			[]string{"rule_group"},
-		),
-		groupRules: promauto.With(r).NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "prometheus_rule_group_rules",
-				Help: "The number of rules.",
-			},
-			[]string{"rule_group"},
-		),
-		groupLastEvalSamples: promauto.With(r).NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "prometheus_rule_group_last_evaluation_samples",
-				Help: "The number of samples returned during the last rule group evaluation.",
-			},
-			[]string{"rule_group"},
-		),
-	}
-
-	return m
 }
 
 func TestMetricsArePerUser(t *testing.T) {

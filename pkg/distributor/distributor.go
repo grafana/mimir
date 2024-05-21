@@ -13,6 +13,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -152,7 +153,12 @@ type Distributor struct {
 	exemplarValidationMetrics *exemplarValidationMetrics
 	metadataValidationMetrics *metadataValidationMetrics
 
+	// Metrics to be passed to distributor push handlers
+	PushMetrics *PushMetrics
+
 	PushWithMiddlewares PushFunc
+
+	RequestBufferPool util.Pool
 
 	// Pool of []byte used when marshalling write requests.
 	writeRequestBytePool sync.Pool
@@ -177,8 +183,9 @@ type Config struct {
 	RetryConfig     RetryConfig     `yaml:"retry_after_header"`
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
-	MaxRecvMsgSize int           `yaml:"max_recv_msg_size" category:"advanced"`
-	RemoteTimeout  time.Duration `yaml:"remote_timeout" category:"advanced"`
+	MaxRecvMsgSize           int           `yaml:"max_recv_msg_size" category:"advanced"`
+	MaxRequestPoolBufferSize int           `yaml:"max_request_pool_buffer_size" category:"experimental"`
+	RemoteTimeout            time.Duration `yaml:"remote_timeout" category:"advanced"`
 
 	// Distributors ring
 	DistributorRing RingConfig `yaml:"ring"`
@@ -225,6 +232,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.RetryConfig.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
+	f.IntVar(&cfg.MaxRequestPoolBufferSize, "distributor.max-request-pool-buffer-size", 0, "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", true, "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.")
@@ -251,6 +259,44 @@ const (
 	limitLabel               = "limit"
 )
 
+type PushMetrics struct {
+	otlpRequestCounter   *prometheus.CounterVec
+	uncompressedBodySize *prometheus.HistogramVec
+}
+
+func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
+	return &PushMetrics{
+		otlpRequestCounter: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_otlp_requests_total",
+			Help: "The total number of OTLP requests that have come in to the distributor.",
+		}, []string{"user"}),
+		uncompressedBodySize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_uncompressed_request_body_size_bytes",
+			Help:                            "Size of uncompressed request body in bytes.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
+	}
+}
+
+func (m *PushMetrics) IncOTLPRequest(user string) {
+	if m != nil {
+		m.otlpRequestCounter.WithLabelValues(user).Inc()
+	}
+}
+
+func (m *PushMetrics) ObserveUncompressedBodySize(user string, size float64) {
+	if m != nil {
+		m.uncompressedBodySize.WithLabelValues(user).Observe(size)
+	}
+}
+
+func (m *PushMetrics) deleteUserMetrics(user string) {
+	m.otlpRequestCounter.DeleteLabelValues(user)
+	m.uncompressedBodySize.DeleteLabelValues(user)
+}
+
 // New constructs a new Distributor
 func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
@@ -270,10 +316,18 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	subservices := []services.Service(nil)
 	subservices = append(subservices, haTracker)
 
+	var requestBufferPool util.Pool
+	if cfg.MaxRequestPoolBufferSize > 0 {
+		requestBufferPool = util.NewBucketedBufferPool(1<<10, cfg.MaxRequestPoolBufferSize, 4)
+	} else {
+		requestBufferPool = util.NewBufferPool()
+	}
+
 	d := &Distributor{
 		cfg:                   cfg,
 		log:                   log,
 		ingestersRing:         ingestersRing,
+		RequestBufferPool:     requestBufferPool,
 		partitionsRing:        partitionsRing,
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
@@ -376,6 +430,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_hash_collisions_total",
 			Help: "Number of times a hash collision was detected when de-duplicating samples.",
 		}),
+
+		PushMetrics: newPushMetrics(reg),
 	}
 
 	// Initialize expected rejected request labels
@@ -478,7 +534,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	// Register each metric only if the corresponding storage is enabled.
 	// Some queries in the mixin use the presence of these metrics as indication whether Mimir is running with ingest storage or not.
-	exportStorageModeMetrics(reg, cfg.IngestStorageConfig.Enabled, ingestersRing.ReplicationFactor())
+	exportStorageModeMetrics(reg, cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled || !cfg.IngestStorageConfig.Enabled, cfg.IngestStorageConfig.Enabled, ingestersRing.ReplicationFactor())
 
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
@@ -491,7 +547,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	return d, nil
 }
 
-func exportStorageModeMetrics(reg prometheus.Registerer, ingestStorageEnabled bool, classicStorageReplicationFactor int) {
+func exportStorageModeMetrics(reg prometheus.Registerer, classicStorageEnabled, ingestStorageEnabled bool, classicStorageReplicationFactor int) {
 	ingestStorageEnabledVal := float64(0)
 	if ingestStorageEnabled {
 		ingestStorageEnabledVal = 1
@@ -501,7 +557,7 @@ func exportStorageModeMetrics(reg prometheus.Registerer, ingestStorageEnabled bo
 		Help: "Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.",
 	}).Set(ingestStorageEnabledVal)
 
-	if !ingestStorageEnabled {
+	if classicStorageEnabled {
 		promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_distributor_replication_factor",
 			Help: "The configured replication factor.",
@@ -591,6 +647,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.incomingMetadata.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
+
+	d.PushMetrics.deleteUserMetrics(userID)
 
 	filter := prometheus.Labels{"user": userID}
 	d.dedupedSamples.DeletePartialMatch(filter)
@@ -684,6 +742,14 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 		return nil
 	}
 
+	allowedExemplars := d.limits.MaxExemplarsPerSeriesPerRequest(userID)
+	if allowedExemplars > 0 && len(ts.Exemplars) > allowedExemplars {
+		d.exemplarValidationMetrics.tooManyExemplars.WithLabelValues(userID).Add(float64(len(ts.Exemplars) - allowedExemplars))
+		ts.ResizeExemplars(allowedExemplars)
+	}
+
+	var previousExemplarTS int64 = math.MinInt64
+	isInOrder := true
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
 		if err := validateExemplar(d.exemplarValidationMetrics, userID, ts.Labels, e); err != nil {
@@ -698,7 +764,15 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 			// Don't increase index i. After moving last exemplar to this index, we want to check it again.
 			continue
 		}
+		// We want to check if exemplars are in order. If they are not, we will sort them and invalidate the cache.
+		if isInOrder && previousExemplarTS > ts.Exemplars[i].TimestampMs {
+			isInOrder = false
+		}
+		previousExemplarTS = ts.Exemplars[i].TimestampMs
 		i++
+	}
+	if !isInOrder {
+		ts.SortExemplars()
 	}
 	return nil
 }
@@ -728,7 +802,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
@@ -794,7 +868,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
@@ -853,7 +927,7 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 // filtering empty values. This is a protection mechanism for ingesters.
 func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
@@ -896,7 +970,7 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 
 func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
@@ -1035,7 +1109,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 // including data that later gets modified or dropped.
 func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
@@ -1223,7 +1297,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			d.cleanupAfterPushFinished(rs)
 		})
 
-		next, maybeCleanup := nextOrCleanup(next, pushReq)
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
@@ -1254,9 +1328,11 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 	}
 }
 
-// nextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
+// NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
 // The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
-func nextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
+//
+// This function is used outside of this codebase.
+func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
 	cleanupInDefer := true
 	return func(ctx context.Context, req *Request) error {
 			cleanupInDefer = false
@@ -1923,11 +1999,20 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
-	// When the ingest storage is enabled a partition is owned by only 1 ingester per zone,
-	// so regardless the number of zones we have it's behaving like multi-zone is always enabled.
-	isMultiZone := d.cfg.IngestStorageConfig.Enabled || (len(replicationSets) > 0 && replicationSets[0].ZoneCount() > 1)
+	zonesTotal := 0
+	if len(replicationSets) > 0 {
+		zonesTotal = replicationSets[0].ZoneCount()
+	}
+	approximateFromZonesFunc := func(countByZone map[string]uint64) uint64 {
+		return approximateFromZones(zonesTotal, d.ingestersRing.ReplicationFactor(), countByZone)
+	}
+	// When the ingest storage is enabled a partition is owned by only 1 ingester per zone.
+	// So we always approximate the resulting stats as max of what a single zone has.
+	if d.cfg.IngestStorageConfig.Enabled {
+		approximateFromZonesFunc = maxFromZones[uint64]
+	}
 
-	return cardinalityConcurrentMap.toResponse(isMultiZone, d.ingestersRing.ReplicationFactor()), nil
+	return cardinalityConcurrentMap.toResponse(approximateFromZonesFunc), nil
 }
 
 func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelValuesCardinalityRequest, error) {
@@ -2017,7 +2102,7 @@ func (cm *labelValuesCardinalityConcurrentMap) processMessage(replicationSetIdx 
 
 // toResponse adjust builds and returns LabelValuesCardinalityResponse containing the count of series by label name
 // and value.
-func (cm *labelValuesCardinalityConcurrentMap) toResponse(isMultiZone bool, replicationFactor int) *ingester_client.LabelValuesCardinalityResponse {
+func (cm *labelValuesCardinalityConcurrentMap) toResponse(approximateFromZonesFunc func(countByZone map[string]uint64) uint64) *ingester_client.LabelValuesCardinalityResponse {
 	// we need to acquire the lock to prevent concurrent read/write to the map
 	cm.labelValuesCountersMx.Lock()
 	defer cm.labelValuesCountersMx.Unlock()
@@ -2034,7 +2119,7 @@ func (cm *labelValuesCardinalityConcurrentMap) toResponse(isMultiZone bool, repl
 			total := uint64(0)
 
 			for _, countByZone := range dataByReplicationSet {
-				total += approximateFromZones(isMultiZone, replicationFactor, countByZone)
+				total += approximateFromZonesFunc(countByZone)
 			}
 
 			countByLabelValue[labelValue] = total
@@ -2054,6 +2139,34 @@ func (cm *labelValuesCardinalityConcurrentMap) toResponse(isMultiZone bool, repl
 // ActiveSeries queries the ingester replication set for active series matching
 // the given selector. It combines and deduplicates the results.
 func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error) {
+	res, err := d.deduplicateActiveSeries(ctx, matchers, false)
+	if err != nil {
+		return nil, err
+	}
+
+	deduplicatedSeries, fetchedSeries := res.result()
+
+	reqStats := stats.FromContext(ctx)
+	reqStats.AddFetchedSeries(fetchedSeries)
+
+	return deduplicatedSeries, nil
+}
+
+func (d *Distributor) ActiveNativeHistogramMetrics(ctx context.Context, matchers []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+	res, err := d.deduplicateActiveSeries(ctx, matchers, true)
+	if err != nil {
+		return nil, err
+	}
+
+	metrics, fetchedSeries := res.metricResult()
+
+	reqStats := stats.FromContext(ctx)
+	reqStats.AddFetchedSeries(fetchedSeries)
+
+	return &cardinality.ActiveNativeHistogramMetricsResponse{Data: metrics}, nil
+}
+
+func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*labels.Matcher, nativeHistograms bool) (*activeSeriesResponse, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -2069,6 +2182,9 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 	if err != nil {
 		return nil, err
 	}
+	if nativeHistograms {
+		req.Type = ingester_client.NATIVE_HISTOGRAM_SERIES
+	}
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -2079,7 +2195,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 	if limit := d.limits.ActiveSeriesResultsMaxSizeBytes(tenantID); limit > 0 {
 		maxResponseSize = limit
 	}
-	res := newActiveSeriesResponse(d.hashCollisionCount, maxResponseSize)
+	res := newActiveSeriesResponse(d.hashCollisionCount, maxResponseSize, !nativeHistograms)
 
 	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
 		// This function is invoked purely for its side effects on the captured
@@ -2091,7 +2207,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 
 		stream, err := client.ActiveSeries(ctx, req)
 		if err != nil {
-			if errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
+			if errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
 				return ignored{}, nil
 			}
 			level.Error(log).Log("msg", "error creating active series response stream", "err", err)
@@ -2101,7 +2217,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 
 		defer func() {
 			err = util.CloseAndExhaust[*ingester_client.ActiveSeriesResponse](stream)
-			if err != nil && !errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
+			if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
 				level.Warn(d.log).Log("msg", "error closing active series response stream", "err", err)
 			}
 		}()
@@ -2112,7 +2228,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 				if errors.Is(err, io.EOF) {
 					break
 				}
-				if errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
+				if errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
 					return ignored{}, nil
 				}
 				level.Error(log).Log("msg", "error receiving active series response", "err", err)
@@ -2120,7 +2236,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 				return nil, err
 			}
 
-			err = res.add(msg.Metric)
+			err = res.add(msg.Metric, msg.BucketCount)
 			if err != nil {
 				return nil, err
 			}
@@ -2134,21 +2250,22 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 		return nil, err
 	}
 
-	deduplicatedSeries := res.result()
+	return res, nil
+}
 
-	reqStats := stats.FromContext(ctx)
-	reqStats.AddFetchedSeries(uint64(len(deduplicatedSeries)))
-
-	return deduplicatedSeries, nil
+type labelsWithBucketCount struct {
+	labels.Labels
+	bucketCount uint64
 }
 
 type entry struct {
-	first      labels.Labels
-	collisions []labels.Labels
+	first      labelsWithBucketCount
+	collisions []labelsWithBucketCount
 }
 
 // activeSeriesResponse is a helper to merge/deduplicate ActiveSeries responses from ingesters.
 type activeSeriesResponse struct {
+	ignoreBucketCount  bool
 	m                  sync.Mutex
 	series             map[uint64]entry
 	builder            labels.ScratchBuilder
@@ -2160,8 +2277,9 @@ type activeSeriesResponse struct {
 	maxSize int
 }
 
-func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int) *activeSeriesResponse {
+func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int, ignoreBucketCount bool) *activeSeriesResponse {
 	return &activeSeriesResponse{
+		ignoreBucketCount:  ignoreBucketCount,
 		series:             map[uint64]entry{},
 		builder:            labels.NewScratchBuilder(40),
 		hashCollisionCount: hashCollisionCount,
@@ -2171,12 +2289,12 @@ func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int)
 
 var ErrResponseTooLarge = errors.New("response too large")
 
-func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
+func (r *activeSeriesResponse) add(series []*mimirpb.Metric, bucketCounts []uint64) error {
 
 	r.m.Lock()
 	defer r.m.Unlock()
 
-	for _, metric := range series {
+	for i, metric := range series {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&r.builder, metric.Labels, &r.lbls)
 		lblHash := r.lbls.Hash()
 		if e, ok := r.series[lblHash]; !ok {
@@ -2187,18 +2305,21 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
 			if r.size > r.maxSize {
 				return ErrResponseTooLarge
 			}
-
-			r.series[lblHash] = entry{first: l}
+			if r.ignoreBucketCount {
+				r.series[lblHash] = entry{first: labelsWithBucketCount{labels.Labels(l), 0}}
+			} else {
+				r.series[lblHash] = entry{first: labelsWithBucketCount{labels.Labels(l), bucketCounts[i]}}
+			}
 		} else {
 			// A series with this hash is already present in the result set, we need to
 			// detect potential hash collisions by comparing the labels of the candidate to
 			// the labels in the result set and add the candidate if it's not present.
-			present := labels.Equal(e.first, r.lbls)
+			present := labels.Equal(e.first.Labels, r.lbls)
 			for _, lbls := range e.collisions {
 				if present {
 					break
 				}
-				present = labels.Equal(lbls, r.lbls)
+				present = labels.Equal(lbls.Labels, r.lbls)
 			}
 
 			if !present {
@@ -2209,8 +2330,11 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
 				if r.size > r.maxSize {
 					return ErrResponseTooLarge
 				}
-
-				e.collisions = append(e.collisions, l)
+				if r.ignoreBucketCount {
+					e.collisions = append(e.collisions, labelsWithBucketCount{labels.Labels(l), 0})
+				} else {
+					e.collisions = append(e.collisions, labelsWithBucketCount{labels.Labels(l), bucketCounts[i]})
+				}
 				r.series[lblHash] = e
 				r.hashCollisionCount.Inc()
 			}
@@ -2220,49 +2344,125 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
 	return nil
 }
 
-func (r *activeSeriesResponse) result() []labels.Labels {
+func (r *activeSeriesResponse) result() ([]labels.Labels, uint64) {
 	r.m.Lock()
 	defer r.m.Unlock()
 
 	result := make([]labels.Labels, 0, len(r.series))
 	for _, series := range r.series {
-		result = append(result, series.first)
-		result = append(result, series.collisions...)
+		result = append(result, series.first.Labels)
+		for _, collision := range series.collisions {
+			result = append(result, collision.Labels)
+		}
 	}
-	return result
+	return result, uint64(len(result))
 }
 
-// approximateFromZones computes a zonal value while factoring in replication.
+type metricBucketCounts struct {
+	SeriesCount    uint64
+	BucketCount    uint64
+	MaxBucketCount uint64
+	MinBucketCount uint64
+}
+
+// Aggregate native histogram bucket counts on metric level.
+func (r *activeSeriesResponse) metricResult() ([]cardinality.ActiveMetricWithBucketCount, uint64) {
+	metrics, fetchedSeries := r.getMetricCounts()
+	result := make([]cardinality.ActiveMetricWithBucketCount, 0, len(metrics))
+	for name, metric := range metrics {
+		result = append(result, cardinality.ActiveMetricWithBucketCount{
+			Metric:         name,
+			SeriesCount:    metric.SeriesCount,
+			BucketCount:    metric.BucketCount,
+			MaxBucketCount: metric.MaxBucketCount,
+			MinBucketCount: metric.MinBucketCount,
+			AvgBucketCount: float64(metric.BucketCount) / float64(metric.SeriesCount),
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Metric < result[j].Metric
+	})
+	return result, fetchedSeries
+}
+
+func (r *activeSeriesResponse) getMetricCounts() (map[string]*metricBucketCounts, uint64) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	fetchedSeries := uint64(0)
+	metrics := map[string]*metricBucketCounts{}
+	for _, series := range r.series {
+		fetchedSeries += 1 + uint64(len(series.collisions))
+		updateMetricCounts(metrics, series.first)
+		for _, collision := range series.collisions {
+			updateMetricCounts(metrics, collision)
+		}
+	}
+	return metrics, fetchedSeries
+}
+
+func updateMetricCounts(metrics map[string]*metricBucketCounts, series labelsWithBucketCount) {
+	bucketCount := series.bucketCount
+	if m, ok := metrics[series.Get(model.MetricNameLabel)]; ok {
+		m.SeriesCount++
+		m.BucketCount += bucketCount
+		if m.MaxBucketCount < bucketCount {
+			m.MaxBucketCount = bucketCount
+		}
+		if m.MinBucketCount > bucketCount {
+			m.MinBucketCount = bucketCount
+		}
+	} else {
+		metrics[series.Get(model.MetricNameLabel)] = &metricBucketCounts{
+			SeriesCount:    1,
+			BucketCount:    bucketCount,
+			MaxBucketCount: bucketCount,
+			MinBucketCount: bucketCount,
+		}
+	}
+}
+
+// approximateFromZones computes a zonal value while factoring in replication;
 // e.g. series cardinality or ingestion rate.
 //
 // If Mimir isn't deployed in a multi-zone configuration, approximateFromZones
 // divides the sum of all values by the replication factor to come up with an approximation.
-func approximateFromZones[T ~float64 | ~uint64](isMultiZone bool, replicationFactor int, seriesCountMapByZone map[string]T) T {
+func approximateFromZones[T ~float64 | ~uint64](zonesTotal, replicationFactor int, seriesCountByZone map[string]T) T {
 	// If we have more than one zone, we return the max value across zones.
 	// Values can be different across zones due to incomplete replication or
 	// other issues. Any inconsistency should always be an underestimation of
 	// the real value, so we take the max to get the best available
 	// approximation.
-	if isMultiZone {
-		var max T
-		for _, seriesCount := range seriesCountMapByZone {
-			if seriesCount > max {
-				max = seriesCount
-			}
+	if zonesTotal > 1 {
+		val := maxFromZones(seriesCountByZone)
+		if zonesTotal <= replicationFactor {
+			return val
 		}
-		return max
+		// When the number of zones is larger than the replication factor, we factor
+		// that into the approximation. We multiply the max of all zones to a ratio
+		// of number of zones to the replication factor to approximate how series
+		// are spread across zones.
+		return T(math.Round(float64(val) * float64(zonesTotal) / float64(replicationFactor)))
 	}
 
-	// If we have a single zone: we can't return the value directly because
-	// series will be replicated randomly across ingesters, and there's no way
-	// here to know how many unique series really exist. In this case, dividing
-	// by the replication factor will give us an approximation of the real
-	// value.
+	// If we have a single zone or number of zones is larger than RF, we can't return
+	// the value directly. The series will be replicated randomly across ingesters, and there's no way
+	// here to know how many unique series really exist. In this case, dividing by the replication factor
+	// will give us an approximation of the real value.
 	var sum T
-	for _, seriesCount := range seriesCountMapByZone {
+	for _, seriesCount := range seriesCountByZone {
 		sum += seriesCount
 	}
 	return T(math.Round(float64(sum) / float64(replicationFactor)))
+}
+
+func maxFromZones[T ~float64 | ~uint64](seriesCountByZone map[string]T) (val T) {
+	for _, seriesCount := range seriesCountByZone {
+		if seriesCount > val {
+			val = seriesCount
+		}
+	}
+	return val
 }
 
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching
@@ -2468,14 +2668,19 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 			zoneNumSeries[r.zone] += r.resp.NumSeries
 		}
 
-		// When the ingest storage is enabled a partition is owned by only 1 ingester per zone,
-		// so regardless the number of zones we have it's behaving like multi-zone is always enabled.
-		isMultiZone := d.cfg.IngestStorageConfig.Enabled || replicationSet.ZoneCount() > 1
-
-		totalStats.IngestionRate += approximateFromZones(isMultiZone, d.ingestersRing.ReplicationFactor(), zoneIngestionRate)
-		totalStats.APIIngestionRate += approximateFromZones(isMultiZone, d.ingestersRing.ReplicationFactor(), zoneAPIIngestionRate)
-		totalStats.RuleIngestionRate += approximateFromZones(isMultiZone, d.ingestersRing.ReplicationFactor(), zoneRuleIngestionRate)
-		totalStats.NumSeries += approximateFromZones(isMultiZone, d.ingestersRing.ReplicationFactor(), zoneNumSeries)
+		// When the ingest storage is enabled, a partition is owned by only 1 ingester per zone.
+		// So we always approximate the resulting stats as max of what a single zone has.
+		if d.cfg.IngestStorageConfig.Enabled {
+			totalStats.IngestionRate += maxFromZones(zoneIngestionRate)
+			totalStats.APIIngestionRate += maxFromZones(zoneAPIIngestionRate)
+			totalStats.RuleIngestionRate += maxFromZones(zoneRuleIngestionRate)
+			totalStats.NumSeries += maxFromZones(zoneNumSeries)
+		} else {
+			totalStats.IngestionRate += approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneIngestionRate)
+			totalStats.APIIngestionRate += approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneAPIIngestionRate)
+			totalStats.RuleIngestionRate += approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneRuleIngestionRate)
+			totalStats.NumSeries += approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneNumSeries)
+		}
 	}
 
 	return totalStats, nil

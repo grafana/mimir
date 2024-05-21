@@ -113,7 +113,7 @@ func (t *OpenTelemetryTracerBridge) Start(ctx context.Context, spanName string, 
 			mappedOptions = append(mappedOptions, opentracing.StartTime(cfg.Timestamp()))
 		}
 		if len(cfg.Attributes()) > 0 {
-			tags := make(map[string]interface{}, len(cfg.Attributes()))
+			tags := make(map[string]any, len(cfg.Attributes()))
 
 			for _, attr := range cfg.Attributes() {
 				if !attr.Valid() {
@@ -124,6 +124,24 @@ func (t *OpenTelemetryTracerBridge) Start(ctx context.Context, spanName string, 
 			}
 
 			mappedOptions = append(mappedOptions, opentracing.Tags(tags))
+		}
+	}
+
+	// If the context contains a valid *remote* OTel span, and there isn't yet an OpenTelemetry span there,
+	// we manually link this OTel span to the OT child we are about to start before.
+	// This allows preserving a minimal parent-child relationship with OTel spans, which were extracted
+	// via OTel propagators. Otherwise, the relation gets lost.
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() && sc.IsRemote() {
+		if parentSpan := opentracing.SpanFromContext(ctx); parentSpan == nil {
+			// Create a new Jaeger span context with minimum required options.
+			jsc := jaeger.NewSpanContext(
+				jaegerFromOTelTraceID(sc.TraceID()),
+				jaegerFromOTelSpanID(sc.SpanID()),
+				0,
+				sc.IsSampled(),
+				nil,
+			)
+			mappedOptions = append(mappedOptions, opentracing.ChildOf(jsc))
 		}
 	}
 
@@ -207,8 +225,8 @@ func (s *OpenTelemetrySpanBridge) SpanContext() trace.SpanContext {
 	flags = flags.WithSampled(sctx.IsSampled())
 
 	return trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID:    jaegerToOpenTelemetryTraceID(sctx.TraceID()),
-		SpanID:     jaegerToOpenTelemetrySpanID(sctx.SpanID()),
+		TraceID:    jaegerToOTelTraceID(sctx.TraceID()),
+		SpanID:     jaegerToOTelSpanID(sctx.SpanID()),
 		TraceFlags: flags,
 
 		// Unsupported because we can't read it from the Jaeger span context.
@@ -266,15 +284,26 @@ func (s *OpenTelemetrySpanBridge) logFieldWithAttributes(field log.Field, attrib
 	s.span.LogFields(fields...)
 }
 
-func jaegerToOpenTelemetryTraceID(input jaeger.TraceID) trace.TraceID {
+func jaegerToOTelTraceID(input jaeger.TraceID) trace.TraceID {
 	var traceID trace.TraceID
 	binary.BigEndian.PutUint64(traceID[0:8], input.High)
 	binary.BigEndian.PutUint64(traceID[8:16], input.Low)
 	return traceID
 }
 
-func jaegerToOpenTelemetrySpanID(input jaeger.SpanID) trace.SpanID {
+func jaegerToOTelSpanID(input jaeger.SpanID) trace.SpanID {
 	var spanID trace.SpanID
 	binary.BigEndian.PutUint64(spanID[0:8], uint64(input))
 	return spanID
+}
+
+func jaegerFromOTelTraceID(input trace.TraceID) jaeger.TraceID {
+	var traceID jaeger.TraceID
+	traceID.High = binary.BigEndian.Uint64(input[0:8])
+	traceID.Low = binary.BigEndian.Uint64(input[8:16])
+	return traceID
+}
+
+func jaegerFromOTelSpanID(input trace.SpanID) jaeger.SpanID {
+	return jaeger.SpanID(binary.BigEndian.Uint64(input[0:8]))
 }

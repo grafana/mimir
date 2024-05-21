@@ -167,20 +167,6 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 		}
 	}
 
-	// Enforce the max end time.
-	creationGracePeriod := validation.LargestPositiveNonZeroDurationPerTenant(tenantIDs, l.CreationGracePeriod)
-	maxEndTime := util.TimeToMillis(time.Now().Add(creationGracePeriod))
-	if r.GetEnd() > maxEndTime {
-		// Replace the end time in the request.
-		level.Debug(log).Log(
-			"msg", "the end time of the query has been manipulated because of the 'creation grace period' setting",
-			"original", util.FormatTimeMillis(r.GetEnd()),
-			"updated", util.FormatTimeMillis(maxEndTime),
-			"creationGracePeriod", creationGracePeriod)
-
-		r = r.WithStartEnd(r.GetStart(), maxEndTime)
-	}
-
 	// Enforce max query size, in bytes.
 	if maxQuerySize := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, l.MaxQueryExpressionSizeBytes); maxQuerySize > 0 {
 		querySize := len(r.GetQuery())

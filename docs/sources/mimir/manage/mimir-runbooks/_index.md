@@ -1393,6 +1393,8 @@ How to **investigate**:
 
 - Check if ingester is fast enough to process all data in Kafka.
 
+See also "[Ingester is overloaded when consuming from Kafka](#ingester-is-overloaded-when-consuming-from-kafka)".
+
 ### MimirRunningIngesterReceiveDelayTooHigh
 
 This alert fires when "receive delay" reported by ingester while it's running reaches alert threshold.
@@ -1409,6 +1411,8 @@ How to **investigate**:
 - Check if ingester is fast enough to process all data in Kafka.
 - If ingesters are too slow, consider scaling ingesters horizontally to spread incoming series between more ingesters.
 
+See also "[Ingester is overloaded when consuming from Kafka](#ingester-is-overloaded-when-consuming-from-kafka)".
+
 ### MimirIngesterFailsToProcessRecordsFromKafka
 
 This alert fires when ingester is unable to process incoming records from Kafka due to internal errors. If ingest-storage wasn't used, such push requests would end up with 5xx errors.
@@ -1422,6 +1426,22 @@ How it **works**:
 How to **investigate**:
 
 - Check ingester logs to see why requests are failing, and troubleshoot based on that.
+
+### MimirIngesterStuckProcessingRecordsFromKafka
+
+This alert fires when an ingester has successfully fetched records from Kafka but it's not processing them at all.
+
+How it **works**:
+
+- Ingester reads records from Kafka, and processes them locally. Processing means unmarshalling the data and handling write requests stored in records.
+- Fetched records, containing write requests, are expected to be processed by ingesting the write requests data into the ingester.
+- This alert fires if no processing is occurring at all, like if the processing is stuck (e.g. a deadlock in ingester).
+
+How to **investigate**:
+
+- Take goroutine profile of the ingester and check if there's any routine calling `pushToStorage`:
+  - If the call exists and it's waiting on a lock then there may be a deadlock.
+  - If the call doesn't exist then it could either mean processing is not stuck (false positive) or the `pushToStorage` wasn't called at all, and so you should investigate the callers in the code.
 
 ### MimirIngesterFailsEnforceStrongConsistencyOnReadPath
 
@@ -1437,6 +1457,47 @@ How to **investigate**:
 
 - Check wait latency of requests with strong-consistency on `Mimir / Queries` dashboard.
 - Check if ingester needs to process too many records, and whether ingesters need to be scaled up (vertically or horizontally).
+
+### Ingester is overloaded when consuming from Kafka
+
+This runbook covers the case an ingester is overloaded when ingesting metrics data (consuming) from Kafka.
+
+For example, if the amount of active series written to a partition exceeds the ingester capacity, the write-path will keep writing to the partition, but then the ingesters owning that partition will fail ingesting the data. Possible symptoms of this situation:
+
+- The ingester is lagging behind replaying metrics data from Kafka, and [`MimirStartingIngesterKafkaReceiveDelayIncreasing`](#MimirStartingIngesterKafkaReceiveDelayIncreasing) or [`MimirRunningIngesterReceiveDelayTooHigh`](#MimirRunningIngesterReceiveDelayTooHigh) alerts are firing.
+- The ingester logs [`err-mimir-ingester-max-series`](#err-mimir-ingester-max-series) when ingesting metrics data from Kafka.
+- The ingester is OOMKilled.
+
+How it **works**:
+
+- An ingester owns 1 and only 1 partition. A partition can be owned by multiple ingesters, but each ingester always own a single partition.
+- Metrics data is written to a partition by distributors, and the amount of written data is driven by the incoming traffic in the write-path. Distributors don't know whether the per-partition load is "too much" for the ingesters that will consume from that partition.
+- Ingesters are expected to autoscale. When the number of active series in ingesters grow above the scaling threshold, more ingesters will be added to the cluster. When ingesters are scaled out, new partitions are added and incoming metrics data re-balanced between partitions. However, the old data (already written to partitions) will not be moved, and the load will be re-balanced only for metrics data ingested after the scaling.
+
+How to **fix**:
+
+- **Vertical scale ingesters** (no data loss)
+  - Add more CPU/memory/disk to ingesters, depending on the saturated resources.
+  - Increase the ingester max series instance limit (see [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook).
+- **Skip replaying overloading backlog from partition** (data loss)
+
+  1. Ensure ingesters have been scaled out, and the new partitions are ACTIVE in the partitions ring. If autoscaler didn't scaled out ingesters yet, manually add more ingester replicas (e.g. increasing HPA min replicas or manually setting the desired number of ingester replicas if ingester autoscaling is disabled).
+  1. Find out the timestamp at which new partitions were created and became ACTIVE in the ring (e.g. looking at new ingesters logs).
+  1. Temporarily restart ingesters with the following configuration:
+
+     ```
+     # Set <value> to the timestamp retrieved from previous step. The timestamp should be Unix epoch with milliseconds precision.
+     -ingest-storage.kafka.consume-from-position-at-startup=timestamp
+     -ingest-storage.kafka.consume-from-timestamp-at-startup=<value>
+     ```
+
+     Alternatively, if you can quickly find the timestamp at which new partitions became ACTIVE in the ring, you can temporarily configure ingesters to replay a partition from the end:
+
+     ```
+     -ingest-storage.kafka.consume-from-position-at-startup=end
+     ```
+
+  1. Once ingesters are stable, revert the temporarily config applied in the previous step.
 
 ## Errors catalog
 
@@ -2139,6 +2200,7 @@ This error only occurs when an administrator has explicitly define a blocked lis
 - `/cortex.Ingester/Push`
 - `api_v1_push`
 - `api_v1_push_influx_write`
+- `otlp_v1_metrics`
 
 **Read path**:
 

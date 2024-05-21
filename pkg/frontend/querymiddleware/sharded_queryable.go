@@ -110,7 +110,11 @@ func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []st
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.
 	err := concurrency.ForEachJob(ctx, len(queries), len(queries), func(ctx context.Context, idx int) error {
-		resp, err := q.handler.Do(ctx, q.req.WithQuery(queries[idx]))
+		query, err := q.req.WithQuery(queries[idx])
+		if err != nil {
+			return err
+		}
+		resp, err := q.handler.Do(ctx, query)
 		if err != nil {
 			return err
 		}

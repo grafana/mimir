@@ -35,6 +35,8 @@ const (
 )
 
 type record struct {
+	// Context holds the tracing (and potentially other) info, that the record was enriched with on fetch from Kafka.
+	ctx      context.Context
 	tenantID string
 	content  []byte
 }
@@ -57,8 +59,7 @@ type PartitionReader struct {
 	consumer recordConsumer
 	metrics  readerMetrics
 
-	committer      *partitionCommitter
-	commitInterval time.Duration
+	committer *partitionCommitter
 
 	// consumedOffsetWatcher is used to wait until a given offset has been consumed.
 	// This gets initialised with -1 which means nothing has been consumed from the partition yet.
@@ -69,19 +70,18 @@ type PartitionReader struct {
 	reg    prometheus.Registerer
 }
 
-func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, consumerGroup string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	consumer := newPusherConsumer(pusher, reg, logger)
-	return newPartitionReader(kafkaCfg, partitionID, consumerGroup, consumer, logger, reg)
+	return newPartitionReader(kafkaCfg, partitionID, instanceID, consumer, logger, reg)
 }
 
-func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, consumerGroup string, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	r := &PartitionReader{
 		kafkaCfg:              kafkaCfg,
 		partitionID:           partitionID,
 		consumer:              consumer,
-		consumerGroup:         consumerGroup,
+		consumerGroup:         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		metrics:               newReaderMetrics(partitionID, reg),
-		commitInterval:        time.Second,
 		consumedOffsetWatcher: newPartitionOffsetWatcher(),
 		logger:                log.With(logger, "partition", partitionID),
 		reg:                   reg,
@@ -117,7 +117,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	if err != nil {
 		return errors.Wrap(err, "creating kafka reader client")
 	}
-	r.committer = newPartitionCommitter(r.kafkaCfg, kadm.NewClient(r.client), r.partitionID, r.consumerGroup, r.commitInterval, r.logger, r.reg)
+	r.committer = newPartitionCommitter(r.kafkaCfg, kadm.NewClient(r.client), r.partitionID, r.consumerGroup, r.logger, r.reg)
 
 	r.offsetReader = newPartitionOffsetReader(r.client, r.kafkaCfg.Topic, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.reg, r.logger)
 
@@ -317,12 +317,15 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		minOffset = math.MaxInt
 		maxOffset = 0
 	)
-	fetches.EachRecord(func(r *kgo.Record) {
-		minOffset = min(minOffset, int(r.Offset))
-		maxOffset = max(maxOffset, int(r.Offset))
+	fetches.EachRecord(func(rec *kgo.Record) {
+		minOffset = min(minOffset, int(rec.Offset))
+		maxOffset = max(maxOffset, int(rec.Offset))
 		records = append(records, record{
-			content:  r.Value,
-			tenantID: string(r.Key),
+			// This context carries the tracing data for this individual record;
+			// kotel populates this data when it fetches the messages.
+			ctx:      rec.Context,
+			tenantID: string(rec.Key),
+			content:  rec.Value,
 		})
 	})
 
@@ -346,7 +349,6 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		)
 		boff.Wait()
 	}
-
 }
 
 func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {
@@ -572,10 +574,9 @@ func (r *PartitionReader) WaitReadConsistency(ctx context.Context) (returnErr er
 type partitionCommitter struct {
 	services.Service
 
-	kafkaCfg       KafkaConfig
-	commitInterval time.Duration
-	partitionID    int32
-	consumerGroup  string
+	kafkaCfg      KafkaConfig
+	partitionID   int32
+	consumerGroup string
 
 	toCommit  *atomic.Int64
 	admClient *kadm.Client
@@ -589,15 +590,14 @@ type partitionCommitter struct {
 	lastCommittedOffset   prometheus.Gauge
 }
 
-func newPartitionCommitter(kafkaCfg KafkaConfig, admClient *kadm.Client, partitionID int32, consumerGroup string, commitInterval time.Duration, logger log.Logger, reg prometheus.Registerer) *partitionCommitter {
+func newPartitionCommitter(kafkaCfg KafkaConfig, admClient *kadm.Client, partitionID int32, consumerGroup string, logger log.Logger, reg prometheus.Registerer) *partitionCommitter {
 	c := &partitionCommitter{
-		logger:         logger,
-		kafkaCfg:       kafkaCfg,
-		partitionID:    partitionID,
-		consumerGroup:  consumerGroup,
-		toCommit:       atomic.NewInt64(-1),
-		admClient:      admClient,
-		commitInterval: commitInterval,
+		logger:        logger,
+		kafkaCfg:      kafkaCfg,
+		partitionID:   partitionID,
+		consumerGroup: consumerGroup,
+		toCommit:      atomic.NewInt64(-1),
+		admClient:     admClient,
 
 		commitRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_ingest_storage_reader_offset_commit_requests_total",
@@ -637,7 +637,7 @@ func (r *partitionCommitter) enqueueOffset(o int64) {
 }
 
 func (r *partitionCommitter) run(ctx context.Context) error {
-	commitTicker := time.NewTicker(r.commitInterval)
+	commitTicker := time.NewTicker(r.kafkaCfg.ConsumerGroupOffsetCommitInterval)
 	defer commitTicker.Stop()
 
 	previousOffset := r.toCommit.Load()

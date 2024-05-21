@@ -208,17 +208,17 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		return err
 	}
 
-	f.requestQueue.RegisterQuerierConnection(querierID)
-	defer f.requestQueue.UnregisterQuerierConnection(querierID)
+	f.requestQueue.SubmitRegisterQuerierConnection(querierID)
+	defer f.requestQueue.SubmitUnregisterQuerierConnection(querierID)
 
-	lastUserIndex := queue.FirstUser()
+	lastTenantIndex := queue.FirstTenant()
 
 	for {
-		reqWrapper, idx, err := f.requestQueue.GetNextRequestForQuerier(server.Context(), lastUserIndex, querierID)
+		reqWrapper, idx, err := f.requestQueue.GetNextRequestForQuerier(server.Context(), lastTenantIndex, querierID)
 		if err != nil {
 			return err
 		}
-		lastUserIndex = idx
+		lastTenantIndex = idx
 
 		req := reqWrapper.(*request)
 
@@ -238,7 +238,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		  it's possible that it's own queue would perpetually contain only expired requests.
 		*/
 		if req.originalCtx.Err() != nil {
-			lastUserIndex = lastUserIndex.ReuseLastUser()
+			lastTenantIndex = lastTenantIndex.ReuseLastTenant()
 			continue
 		}
 
@@ -294,7 +294,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 
 func (f *Frontend) NotifyClientShutdown(_ context.Context, req *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
 	level.Info(f.log).Log("msg", "received shutdown notification from querier", "querier", req.GetClientID())
-	f.requestQueue.NotifyQuerierShutdown(req.GetClientID())
+	f.requestQueue.SubmitNotifyQuerierShutdown(req.GetClientID())
 
 	return &frontendv1pb.NotifyClientShutdownResponse{}, nil
 }

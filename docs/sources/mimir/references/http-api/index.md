@@ -56,6 +56,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Range query](#range-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
 | [Exemplar query](#exemplar-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
 | [Get series by label matchers](#get-series-by-label-matchers) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/series` |
+| [Get active series by selector](#get-active-series-by-selector) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/active_series` |
 | [Get label names](#get-label-names) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/labels` |
 | [Get label values](#get-label-values) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/label/{name}/values` |
 | [Get metric metadata](#get-metric-metadata) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/metadata` |
@@ -530,6 +531,66 @@ GET,POST <prometheus-http-prefix>/api/v1/series
 For more information, refer to Prometheus [series endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#finding-series-by-label-matchers).
 
 Requires [authentication](#authentication).
+
+### Get active series by selector
+
+```
+GET,POST <prometheus-http-prefix>/api/v1/cardinality/active_series
+```
+
+Returns the label sets of all active series matching a PromQL selector.
+
+This endpoint is similar to the [series endpoint](#get-series-by-label-matchers) but operates on the set of series considered _active_ at the time of query processing.
+A series is considered active if any data has been written for it within the period specified by `-ingester.active-series-metrics-idle-timeout`.
+
+This endpoint is disabled by default; you can enable it via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML configuration option).
+
+Requires [authentication](#authentication).
+
+#### Query parameters
+
+- **selector** - _mandatory_ - PromQL selector used to filter the result set.
+
+#### Headers
+
+- `Sharding-Control` - _optional_ - Integer value specifying how many shards to use for request execution.
+
+#### Response format
+
+The response format is a subset of the [series endpoint](#get-series-by-label-matchers) format including only the `data` field.
+The following shows an example request/response pair for this endpoint. Each item in the `data` array corresponds to a matched series.
+
+```shell
+$ curl 'http://localhost:9090/api/v1/cardinality/active_series' \
+    --header 'Sharding-Control: 4' \ # optional
+    --data-urlencode 'selector=up'
+```
+
+```shell
+{
+   "data" : [
+      {
+         "__name__" : "up",
+         "job" : "prometheus",
+         "instance" : "localhost:9090"
+      },
+      {
+         "__name__" : "up",
+         "job" : "node",
+         "instance" : "localhost:9091"
+      },
+      {
+         "__name__" : "process_start_time_seconds",
+         "job" : "prometheus",
+         "instance" : "localhost:9090"
+      }
+   ]
+}
+```
+
+#### Caching
+
+Responses for the active series endpoint are never cached.
 
 ### Get label names
 

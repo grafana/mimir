@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
@@ -632,7 +633,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 	for _, tc := range protobufCodecScenarios {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, formatProtobuf)
+			codec := NewPrometheusCodec(reg, 0*time.Minute, formatProtobuf)
 
 			body, err := tc.payload.Marshal()
 			require.NoError(t, err)
@@ -673,7 +674,7 @@ func TestProtobufFormat_EncodeResponse(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, formatProtobuf)
+			codec := NewPrometheusCodec(reg, 0*time.Minute, formatProtobuf)
 
 			expectedBodyBytes, err := tc.payload.Marshal()
 			require.NoError(t, err)
@@ -713,7 +714,7 @@ func TestProtobufFormat_EncodeResponse(t *testing.T) {
 func BenchmarkProtobufFormat_DecodeResponse(b *testing.B) {
 	headers := http.Header{"Content-Type": []string{mimirpb.QueryResponseMimeType}}
 	reg := prometheus.NewPedanticRegistry()
-	codec := NewPrometheusCodec(reg, formatProtobuf)
+	codec := NewPrometheusCodec(reg, 0*time.Minute, formatProtobuf)
 
 	for _, tc := range protobufCodecScenarios {
 		body, err := tc.payload.Marshal()
@@ -738,7 +739,7 @@ func BenchmarkProtobufFormat_DecodeResponse(b *testing.B) {
 
 func BenchmarkProtobufFormat_EncodeResponse(b *testing.B) {
 	reg := prometheus.NewPedanticRegistry()
-	codec := NewPrometheusCodec(reg, formatProtobuf)
+	codec := NewPrometheusCodec(reg, 0*time.Minute, formatProtobuf)
 
 	req := &http.Request{
 		Header: http.Header{"Accept": []string{mimirpb.QueryResponseMimeType}},

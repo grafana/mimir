@@ -29,11 +29,18 @@ type Aggregation struct {
 	remainingGroups             []*group // One entry per group, in the order we want to return them
 }
 
-type group struct {
+type groupWithLabels struct {
 	labels labels.Labels
+	group  *group
+}
 
+type group struct {
 	// The number of input series that belong to this group that we haven't yet seen.
 	remainingSeriesCount uint
+
+	// The index of the last series that contributes to this group.
+	// Used to sort groups in the order that they'll be completed in.
+	lastSeriesIndex int
 
 	// Sum and presence for each step.
 	sums    []float64
@@ -61,12 +68,12 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, err
 	}
 
 	// Determine the groups we'll return
-	groups := map[uint64]*group{}
+	groups := map[uint64]groupWithLabels{}
 	buf := make([]byte, 0, 1024)
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries))
 
-	for _, series := range innerSeries {
+	for seriesIdx, series := range innerSeries {
 		// Note that this doesn't handle potential hash collisions between groups.
 		// This is something we should likely fix, but at present, Prometheus' PromQL engine doesn't handle collisions either,
 		// so at least both engines will be incorrect in the same way.
@@ -75,15 +82,16 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, err
 		g, groupExists := groups[groupingKey]
 
 		if !groupExists {
-			g = groupPool.Get()
 			g.labels = a.labelsForGroup(series.Labels, lb)
-			g.remainingSeriesCount = 0
+			g.group = groupPool.Get()
+			g.group.remainingSeriesCount = 0
 
 			groups[groupingKey] = g
 		}
 
-		g.remainingSeriesCount++
-		a.remainingInnerSeriesToGroup = append(a.remainingInnerSeriesToGroup, g)
+		g.group.remainingSeriesCount++
+		g.group.lastSeriesIndex = seriesIdx
+		a.remainingInnerSeriesToGroup = append(a.remainingInnerSeriesToGroup, g.group)
 	}
 
 	// Sort the list of series we'll return, and maintain the order of the corresponding groups at the same time
@@ -92,7 +100,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, err
 
 	for _, g := range groups {
 		seriesMetadata = append(seriesMetadata, SeriesMetadata{Labels: g.labels})
-		a.remainingGroups = append(a.remainingGroups, g)
+		a.remainingGroups = append(a.remainingGroups, g.group)
 	}
 
 	sort.Sort(groupSorter{seriesMetadata, a.remainingGroups})
@@ -110,7 +118,7 @@ func (a *Aggregation) labelsForGroup(m labels.Labels, lb *labels.Builder) labels
 	return lb.Labels()
 }
 
-func (a *Aggregation) Next(ctx context.Context) (InstantVectorSeriesData, error) {
+func (a *Aggregation) NextSeries(ctx context.Context) (InstantVectorSeriesData, error) {
 	if len(a.remainingGroups) == 0 {
 		// No more groups left.
 		return InstantVectorSeriesData{}, EOS
@@ -127,7 +135,7 @@ func (a *Aggregation) Next(ctx context.Context) (InstantVectorSeriesData, error)
 
 	// Iterate through inner series until the desired group is complete
 	for thisGroup.remainingSeriesCount > 0 {
-		s, err := a.Inner.Next(ctx)
+		s, err := a.Inner.NextSeries(ctx)
 
 		if err != nil {
 			if errors.Is(err, EOS) {
@@ -197,7 +205,7 @@ func (g groupSorter) Len() int {
 }
 
 func (g groupSorter) Less(i, j int) bool {
-	return labels.Compare(g.metadata[i].Labels, g.metadata[j].Labels) < 0
+	return g.groups[i].lastSeriesIndex < g.groups[j].lastSeriesIndex
 }
 
 func (g groupSorter) Swap(i, j int) {

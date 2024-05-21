@@ -352,7 +352,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 
 	// Lookup the cache.
 	s.metrics.cacheRequests.Add(float64(len(keys)))
-	founds := s.cache.Fetch(ctx, hashedKeys)
+	founds := s.cache.GetMulti(ctx, hashedKeys)
 	s.metrics.cacheHits.Add(float64(len(founds)))
 
 	// Decode all cached responses.
@@ -455,7 +455,7 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []stri
 		return
 	}
 
-	s.cache.StoreAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
+	s.cache.SetMultiAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
 }
 
 func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e Extent) time.Duration {
@@ -626,29 +626,34 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 	return resps, g.Wait()
 }
 
-func splitQueryByInterval(r MetricsQueryRequest, interval time.Duration) ([]MetricsQueryRequest, error) {
+func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]MetricsQueryRequest, error) {
 	// Replace @ modifier function to their respective constant values in the query.
 	// This way subqueries will be evaluated at the same time as the parent query.
-	query, err := evaluateAtModifierFunction(r.GetQuery(), r.GetStart(), r.GetEnd())
+	query, err := evaluateAtModifierFunction(req.GetQuery(), req.GetStart(), req.GetEnd())
 	if err != nil {
 		return nil, err
 	}
 	var reqs []MetricsQueryRequest
-	for start := r.GetStart(); start <= r.GetEnd(); {
-		end := nextIntervalBoundary(start, r.GetStep(), interval)
-		if end > r.GetEnd() {
-			end = r.GetEnd()
+	for start := req.GetStart(); start <= req.GetEnd(); {
+		end := nextIntervalBoundary(start, req.GetStep(), interval)
+		if end > req.GetEnd() {
+			end = req.GetEnd()
 		}
 
 		// If step isn't too big, and adding another step saves us one extra request,
 		// then extend the current request to cover the extra step too.
-		if end+r.GetStep() == r.GetEnd() && r.GetStep() <= 5*time.Minute.Milliseconds() {
-			end = r.GetEnd()
+		if end+req.GetStep() == req.GetEnd() && req.GetStep() <= 5*time.Minute.Milliseconds() {
+			end = req.GetEnd()
 		}
 
-		reqs = append(reqs, r.WithQuery(query).WithStartEnd(start, end))
+		splitReq, err := req.WithQuery(query)
+		if err != nil {
+			return nil, err
+		}
+		splitReq = splitReq.WithStartEnd(start, end)
+		reqs = append(reqs, splitReq)
 
-		start = end + r.GetStep()
+		start = end + splitReq.GetStep()
 	}
 	return reqs, nil
 }

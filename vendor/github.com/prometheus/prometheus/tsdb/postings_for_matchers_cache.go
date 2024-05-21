@@ -37,6 +37,10 @@ type IndexPostingsReader interface {
 	// Found IDs are not strictly required to point to a valid Series, e.g.
 	// during background garbage collections. Input values must be sorted.
 	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
+
+	// PostingsForLabelMatching returns a sorted iterator over postings having a label with the given name and a value for which match returns true.
+	// If no postings are found having at least one matching label, an empty iterator is returned.
+	PostingsForLabelMatching(ctx context.Context, name string, match func(value string) bool) index.Postings
 }
 
 // NewPostingsForMatchersCache creates a new PostingsForMatchersCache.

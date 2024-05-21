@@ -34,7 +34,7 @@ import (
 
 func TestRangeTripperware(t *testing.T) {
 	var (
-		query        = "/api/v1/query_range?end=1536716880&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120"
+		query        = "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120"
 		responseBody = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[1536673680,"137"],[1536673780,"137"]]}]}}`
 	)
 
@@ -349,6 +349,18 @@ func TestTripperware_Metrics(t *testing.T) {
 				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
 				# TYPE cortex_query_frontend_queries_total counter
 				cortex_query_frontend_queries_total{op="active_series",user="user-1"} 1
+			`,
+		},
+		"cardinality active native histogram metrics": {
+			path: "/api/v1/cardinality/active_native_histogram_metrics?selector=%7Bjob%3D%22test%22%7D",
+			expectedMetrics: `
+			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+			cortex_query_frontend_non_step_aligned_queries_total 0
+
+			# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+			# TYPE cortex_query_frontend_queries_total counter
+			cortex_query_frontend_queries_total{op="active_native_histogram_metrics",user="user-1"} 1
 			`,
 		},
 		"unknown query type": {

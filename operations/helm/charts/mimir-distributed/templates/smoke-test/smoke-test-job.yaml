@@ -12,7 +12,7 @@ metadata:
     "helm.sh/hook": test
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  backoffLimit: 5
+  backoffLimit: {{ .Values.smoke_test.backoffLimit }}
   completions: 1
   parallelism: 1
   selector:

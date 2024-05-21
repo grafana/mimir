@@ -683,18 +683,18 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			t.Parallel()
 			reqs := []MetricsQueryRequest{
 				&PrometheusInstantQueryRequest{
-					Path:  "/query",
-					Time:  util.TimeToMillis(end),
-					Query: testData.query,
+					path:      "/query",
+					time:      util.TimeToMillis(end),
+					queryExpr: parseQuery(t, testData.query),
 				},
 			}
 			if !testData.noRangeQuery {
 				reqs = append(reqs, &PrometheusRangeQueryRequest{
-					Path:  "/query_range",
-					Start: util.TimeToMillis(start),
-					End:   util.TimeToMillis(end),
-					Step:  step.Milliseconds(),
-					Query: testData.query,
+					path:      "/query_range",
+					start:     util.TimeToMillis(start),
+					end:       util.TimeToMillis(end),
+					step:      step.Milliseconds(),
+					queryExpr: parseQuery(t, testData.query),
 				})
 			}
 
@@ -795,11 +795,11 @@ func TestQuerySharding_NonMonotonicHistogramBuckets(t *testing.T) {
 	for _, query := range queries {
 		t.Run(query, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				Path:  "/query_range",
-				Start: util.TimeToMillis(start),
-				End:   util.TimeToMillis(end),
-				Step:  step.Milliseconds(),
-				Query: query,
+				path:      "/query_range",
+				start:     util.TimeToMillis(start),
+				end:       util.TimeToMillis(end),
+				step:      step.Milliseconds(),
+				queryExpr: parseQuery(t, query),
 			}
 
 			// Run the query without sharding.
@@ -906,9 +906,9 @@ func TestQueryshardingDeterminism(t *testing.T) {
 	downstream := &downstreamHandler{engine: newEngine(), queryable: storageSeriesQueryable(storageSeries)}
 
 	req := &PrometheusInstantQueryRequest{
-		Path:  "/query",
-		Time:  to.UnixMilli(),
-		Query: `sum(metric)`,
+		path:      "/query",
+		time:      to.UnixMilli(),
+		queryExpr: parseQuery(t, `sum(metric)`),
 	}
 
 	var lastVal float64
@@ -1097,11 +1097,11 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 		for _, query := range mkQueries(tc.tpl, tc.fn, tc.rangeQuery, tc.args) {
 			t.Run(query, func(t *testing.T) {
 				req := &PrometheusRangeQueryRequest{
-					Path:  "/query_range",
-					Start: util.TimeToMillis(start),
-					End:   util.TimeToMillis(end),
-					Step:  step.Milliseconds(),
-					Query: query,
+					path:      "/query_range",
+					start:     util.TimeToMillis(start),
+					end:       util.TimeToMillis(end),
+					step:      step.Milliseconds(),
+					queryExpr: parseQuery(t, query),
 				}
 
 				reg := prometheus.NewPedanticRegistry()
@@ -1164,12 +1164,12 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 
 func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
-		Step:  step.Milliseconds(),
-		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
-		Options: Options{
+		path:      "/query_range",
+		start:     util.TimeToMillis(start),
+		end:       util.TimeToMillis(end),
+		step:      step.Milliseconds(),
+		queryExpr: parseQuery(t, "sum by (foo) (rate(bar{}[1m]))"), // shardable query.
+		options: Options{
 			ShardingDisabled: true,
 		},
 	}
@@ -1189,12 +1189,12 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 
 func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
-		Step:  step.Milliseconds(),
-		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
-		Options: Options{
+		path:      "/query_range",
+		start:     util.TimeToMillis(start),
+		end:       util.TimeToMillis(end),
+		step:      step.Milliseconds(),
+		queryExpr: parseQuery(t, "sum by (foo) (rate(bar{}[1m]))"), // shardable query.
+		options: Options{
 			TotalShards: 128,
 		},
 	}
@@ -1330,12 +1330,12 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				Path:  "/query_range",
-				Start: util.TimeToMillis(start),
-				End:   util.TimeToMillis(end),
-				Step:  step.Milliseconds(),
-				Query: testData.query,
-				Hints: testData.hints,
+				path:      "/query_range",
+				start:     util.TimeToMillis(start),
+				end:       util.TimeToMillis(end),
+				step:      step.Milliseconds(),
+				queryExpr: parseQuery(t, testData.query),
+				hints:     testData.hints,
 			}
 
 			limits := mockLimits{
@@ -1423,11 +1423,11 @@ func TestQuerySharding_ShouldSupportMaxRegexpSizeBytes(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				Path:  "/query_range",
-				Start: util.TimeToMillis(start),
-				End:   util.TimeToMillis(end),
-				Step:  step.Milliseconds(),
-				Query: testData.query,
+				path:      "/query_range",
+				start:     util.TimeToMillis(start),
+				end:       util.TimeToMillis(end),
+				step:      step.Milliseconds(),
+				queryExpr: parseQuery(t, testData.query),
 			}
 
 			limits := mockLimits{
@@ -1467,11 +1467,11 @@ func TestQuerySharding_ShouldSupportMaxRegexpSizeBytes(t *testing.T) {
 
 func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
-		Step:  step.Milliseconds(),
-		Query: "vector(1)", // A non shardable query.
+		path:      "/query_range",
+		start:     util.TimeToMillis(start),
+		end:       util.TimeToMillis(end),
+		step:      step.Milliseconds(),
+		queryExpr: parseQuery(t, "vector(1)"), // A non shardable query.
 	}
 
 	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
@@ -1578,11 +1578,11 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				Path:  "/query_range",
-				Start: util.TimeToMillis(start),
-				End:   util.TimeToMillis(end),
-				Step:  step.Milliseconds(),
-				Query: "sum(bar1)",
+				path:      "/query_range",
+				start:     util.TimeToMillis(start),
+				end:       util.TimeToMillis(end),
+				step:      step.Milliseconds(),
+				queryExpr: parseQuery(t, "sum(bar1)"),
 			}
 
 			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), tc.engineSharding, mockLimits{totalShards: 3}, 0, nil)
@@ -1638,11 +1638,11 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 	})
 
 	req := &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
-		Step:  step.Milliseconds(),
-		Query: `sum by (group_1) (metric_counter) - on(group_1) group_right(unique) (sum by (group_1,unique) (metric_counter))`,
+		path:      "/query_range",
+		start:     util.TimeToMillis(start),
+		end:       util.TimeToMillis(end),
+		step:      step.Milliseconds(),
+		queryExpr: parseQuery(t, `sum by (group_1) (metric_counter) - on(group_1) group_right(unique) (sum by (group_1,unique) (metric_counter))`),
 	}
 
 	downstream := &downstreamHandler{engine: newEngine(), queryable: queryable}
@@ -1656,11 +1656,11 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 
 func TestQuerySharding_WrapMultipleTime(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
-		Step:  step.Milliseconds(),
-		Query: "vector(1)", // A non shardable query.
+		path:      "/query_range",
+		start:     util.TimeToMillis(start),
+		end:       util.TimeToMillis(end),
+		step:      step.Milliseconds(),
+		queryExpr: parseQuery(t, "vector(1)"), // A non shardable query.
 	}
 
 	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, prometheus.NewRegistry())
@@ -1675,8 +1675,8 @@ func TestQuerySharding_WrapMultipleTime(t *testing.T) {
 
 func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 	req := &PrometheusInstantQueryRequest{
-		Time:  util.TimeToMillis(start),
-		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
+		time:      util.TimeToMillis(start),
+		queryExpr: parseQuery(t, "sum by (foo) (rate(bar{}[1m]))"), // shardable query.
 	}
 
 	tests := []struct {
@@ -1783,11 +1783,11 @@ func TestQuerySharding_Warnings(t *testing.T) {
 		t.Run(template, func(t *testing.T) {
 			query := fmt.Sprintf(template, seriesName)
 			req := &PrometheusRangeQueryRequest{
-				Path:  "/query_range",
-				Start: 0,
-				End:   int64(endTime * 1000),
-				Step:  step.Milliseconds(),
-				Query: query,
+				path:      "/query_range",
+				start:     0,
+				end:       int64(endTime * 1000),
+				step:      step.Milliseconds(),
+				queryExpr: parseQuery(t, query),
 			}
 
 			injectedContext := user.InjectOrgID(context.Background(), "test")
@@ -1901,12 +1901,11 @@ func BenchmarkQuerySharding(b *testing.B) {
 			)
 
 			req := &PrometheusRangeQueryRequest{
-				Path:    "/query_range",
-				Start:   start,
-				End:     end,
-				Step:    step,
-				Timeout: time.Minute,
-				Query:   tc.query,
+				path:      "/query_range",
+				start:     start,
+				end:       end,
+				step:      step,
+				queryExpr: parseQuery(b, tc.query),
 			}
 
 			for _, shardFactor := range shards {

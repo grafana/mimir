@@ -19,6 +19,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/parser"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -44,90 +45,364 @@ func newEmptyPrometheusResponse() *PrometheusResponse {
 }
 
 type PrometheusRangeQueryRequest struct {
-	Path    string
-	Start   int64
-	End     int64
-	Step    int64
-	Timeout time.Duration
-	Query   string
-	Options Options
+	path  string
+	start int64
+	end   int64
+	step  int64
+	// lookback is set at query engine level rather than per request, but required to know minT and maxT
+	lookbackDelta time.Duration
+	queryExpr     parser.Expr
+	minT          int64
+	maxT          int64
+
 	// ID of the request used to correlate downstream requests and responses.
-	ID int64
-	// Hints that could be optionally attached to the request to pass down the stack.
+	id      int64
+	options Options
+	// hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
-	Hints *Hints
+	hints *Hints
 }
 
-func (r *PrometheusRangeQueryRequest) GetPath() string {
-	return r.Path
-}
+func NewPrometheusRangeQueryRequest(
+	urlPath string,
+	start, end, step int64,
+	lookbackDelta time.Duration,
+	queryExpr parser.Expr,
+	options Options,
+	hints *Hints,
+) *PrometheusRangeQueryRequest {
+	minT, maxT := start, end
+	if queryExpr != nil {
+		// protect against panics
+		minT, maxT = decodeQueryMinMaxTime(
+			queryExpr, start, end, step, lookbackDelta,
+		)
+	}
 
-func (r *PrometheusRangeQueryRequest) GetStart() int64 {
-	return r.Start
-}
-
-func (r *PrometheusRangeQueryRequest) GetEnd() int64 {
-	return r.End
-}
-
-func (r *PrometheusRangeQueryRequest) GetStep() int64 {
-	return r.Step
-}
-
-func (r *PrometheusRangeQueryRequest) GetTimeout() time.Duration {
-	return r.Timeout
-}
-
-func (r *PrometheusRangeQueryRequest) GetQuery() string {
-	return r.Query
-}
-
-func (r *PrometheusRangeQueryRequest) GetOptions() Options {
-	return r.Options
+	return &PrometheusRangeQueryRequest{
+		path:          urlPath,
+		start:         start,
+		end:           end,
+		step:          step,
+		lookbackDelta: lookbackDelta,
+		queryExpr:     queryExpr,
+		minT:          minT,
+		maxT:          maxT,
+		options:       options,
+		hints:         hints,
+	}
 }
 
 func (r *PrometheusRangeQueryRequest) GetID() int64 {
-	return r.ID
+	return r.id
+}
+
+func (r *PrometheusRangeQueryRequest) GetPath() string {
+	return r.path
+}
+
+func (r *PrometheusRangeQueryRequest) GetStart() int64 {
+	return r.start
+}
+
+func (r *PrometheusRangeQueryRequest) GetEnd() int64 {
+	return r.end
+}
+
+func (r *PrometheusRangeQueryRequest) GetStep() int64 {
+	return r.step
+}
+
+func (r *PrometheusRangeQueryRequest) GetQuery() string {
+	if r.queryExpr != nil {
+		return r.queryExpr.String()
+	}
+	return ""
+}
+
+// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
+// as determined from the start timestamp and any range vector or offset in the query.
+func (r *PrometheusRangeQueryRequest) GetMinT() int64 {
+	return r.minT
+}
+
+// GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
+// as determined from the end timestamp and any offset in the query.
+func (r *PrometheusRangeQueryRequest) GetMaxT() int64 {
+	return r.maxT
+}
+
+func (r *PrometheusRangeQueryRequest) GetOptions() Options {
+	return r.options
 }
 
 func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
-	return r.Hints
+	return r.hints
+}
+
+// WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
+func (r *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.id = id
+	return &newRequest
+}
+
+// WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
+func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.start = start
+	newRequest.end = end
+	if newRequest.queryExpr != nil {
+		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
+			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
+		)
+	}
+	return &newRequest
+}
+
+// WithQuery clones the current `PrometheusRangeQueryRequest` with a new query; returns error if query parse fails.
+func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryRequest, error) {
+	queryExpr, err := parser.ParseExpr(query)
+	if err != nil {
+		return nil, err
+	}
+
+	newRequest := *r
+	newRequest.queryExpr = queryExpr
+	if newRequest.queryExpr != nil {
+		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
+			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
+		)
+	}
+	return &newRequest, nil
+}
+
+// WithExpr clones the current `PrometheusRangeQueryRequest` with a new query expression.
+func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.queryExpr = queryExpr
+	if newRequest.queryExpr != nil {
+		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
+			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
+		)
+	}
+	return &newRequest
+}
+
+// WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
+// added Hint value for TotalQueries.
+func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
+	newRequest := *r
+	if newRequest.hints == nil {
+		newRequest.hints = &Hints{TotalQueries: totalQueries}
+	} else {
+		*newRequest.hints = *(r.hints)
+		newRequest.hints.TotalQueries = totalQueries
+	}
+	return &newRequest
+}
+
+// WithEstimatedSeriesCountHint clones the current `PrometheusRangeQueryRequest`
+// with an added Hint value for EstimatedCardinality.
+func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
+	newRequest := *r
+	if newRequest.hints == nil {
+		newRequest.hints = &Hints{
+			CardinalityEstimate: &EstimatedSeriesCount{count},
+		}
+	} else {
+		*newRequest.hints = *(r.hints)
+		newRequest.hints.CardinalityEstimate = &EstimatedSeriesCount{count}
+	}
+	return &newRequest
+}
+
+// AddSpanTags writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
+// ("attributes" in OpenTelemetry parlance).
+func (r *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
+	sp.SetTag("query", r.GetQuery())
+	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
+	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+	sp.SetTag("step_ms", r.GetStep())
 }
 
 type PrometheusInstantQueryRequest struct {
-	Path    string
-	Time    int64
-	Query   string
-	Options Options
+	path string
+	time int64
+	// lookback is set at query engine level rather than per request, but required to know minT and maxT
+	lookbackDelta time.Duration
+	queryExpr     parser.Expr
+	minT          int64
+	maxT          int64
+
 	// ID of the request used to correlate downstream requests and responses.
-	ID int64
-	// Hints that could be optionally attached to the request to pass down the stack.
+	id      int64
+	options Options
+	// hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
-	Hints *Hints
+	hints *Hints
 }
 
-func (r *PrometheusInstantQueryRequest) GetPath() string {
-	return r.Path
-}
-
-func (r *PrometheusInstantQueryRequest) GetTime() int64 {
-	return r.Time
-}
-
-func (r *PrometheusInstantQueryRequest) GetQuery() string {
-	return r.Query
-}
-
-func (r *PrometheusInstantQueryRequest) GetOptions() Options {
-	return r.Options
+func NewPrometheusInstantQueryRequest(
+	urlPath string,
+	time int64,
+	lookbackDelta time.Duration,
+	queryExpr parser.Expr,
+	options Options,
+	hints *Hints,
+) *PrometheusInstantQueryRequest {
+	minT, maxT := time, time
+	if queryExpr != nil {
+		// protect against panics
+		minT, maxT = decodeQueryMinMaxTime(
+			queryExpr, time, time, 0, lookbackDelta,
+		)
+	}
+	return &PrometheusInstantQueryRequest{
+		path:          urlPath,
+		time:          time,
+		lookbackDelta: lookbackDelta,
+		queryExpr:     queryExpr,
+		minT:          minT,
+		maxT:          maxT,
+		options:       options,
+		hints:         hints,
+	}
 }
 
 func (r *PrometheusInstantQueryRequest) GetID() int64 {
-	return r.ID
+	return r.id
+}
+
+func (r *PrometheusInstantQueryRequest) GetPath() string {
+	return r.path
+}
+
+func (r *PrometheusInstantQueryRequest) GetTime() int64 {
+	return r.time
+}
+
+func (r *PrometheusInstantQueryRequest) GetQuery() string {
+	if r.queryExpr != nil {
+		return r.queryExpr.String()
+	}
+	return ""
+}
+
+func (r *PrometheusInstantQueryRequest) GetStart() int64 {
+	return r.GetTime()
+}
+
+func (r *PrometheusInstantQueryRequest) GetEnd() int64 {
+	return r.GetTime()
+}
+
+func (r *PrometheusInstantQueryRequest) GetStep() int64 {
+	return 0
+}
+
+// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
+// as determined from the start timestamp and any range vector or offset in the query.
+func (r *PrometheusInstantQueryRequest) GetMinT() int64 {
+	minT, _ := decodeQueryMinMaxTime(
+		r.queryExpr, r.GetStart(), r.GetEnd(), r.GetStep(), r.lookbackDelta,
+	)
+	return minT
+}
+
+// GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
+// as determined from the end timestamp and any offset in the query.
+func (r *PrometheusInstantQueryRequest) GetMaxT() int64 {
+	_, maxT := decodeQueryMinMaxTime(
+		r.queryExpr, r.GetStart(), r.GetEnd(), r.GetStep(), r.lookbackDelta,
+	)
+	return maxT
+}
+
+func (r *PrometheusInstantQueryRequest) GetOptions() Options {
+	return r.options
 }
 
 func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
-	return r.Hints
+	return r.hints
+}
+
+func (r *PrometheusInstantQueryRequest) WithID(id int64) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.id = id
+	return &newRequest
+}
+
+// WithStartEnd clones the current `PrometheusInstantQueryRequest` with a new `time` timestamp.
+func (r *PrometheusInstantQueryRequest) WithStartEnd(time int64, _ int64) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.time = time
+	if newRequest.queryExpr != nil {
+		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
+			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
+		)
+	}
+	return &newRequest
+}
+
+// WithQuery clones the current `PrometheusInstantQueryRequest` with a new query; returns error if query parse fails.
+func (r *PrometheusInstantQueryRequest) WithQuery(query string) (MetricsQueryRequest, error) {
+	queryExpr, err := parser.ParseExpr(query)
+	if err != nil {
+		return nil, err
+	}
+
+	newRequest := *r
+	newRequest.queryExpr = queryExpr
+	if newRequest.queryExpr != nil {
+		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
+			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
+		)
+	}
+	return &newRequest, nil
+}
+
+// WithExpr clones the current `PrometheusInstantQueryRequest` with a new query expression.
+func (r *PrometheusInstantQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.queryExpr = queryExpr
+	if newRequest.queryExpr != nil {
+		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
+			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
+		)
+	}
+	return &newRequest
+}
+
+func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
+	newRequest := *r
+	if newRequest.hints == nil {
+		newRequest.hints = &Hints{TotalQueries: totalQueries}
+	} else {
+		*newRequest.hints = *(r.hints)
+		newRequest.hints.TotalQueries = totalQueries
+	}
+	return &newRequest
+}
+
+func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
+	newRequest := *r
+	if newRequest.hints == nil {
+		newRequest.hints = &Hints{
+			CardinalityEstimate: &EstimatedSeriesCount{count},
+		}
+	} else {
+		*newRequest.hints = *(r.hints)
+		newRequest.hints.CardinalityEstimate = &EstimatedSeriesCount{count}
+	}
+	return &newRequest
+}
+
+// AddSpanTags writes query information about the current `PrometheusInstantQueryRequest`
+// to a span's tag ("attributes" in OpenTelemetry parlance).
+func (r *PrometheusInstantQueryRequest) AddSpanTags(sp opentracing.Span) {
+	sp.SetTag("query", r.GetQuery())
+	sp.SetTag("time", timestamp.Time(r.GetTime()).String())
 }
 
 type Hints struct {
@@ -154,126 +429,6 @@ func (h *Hints) GetEstimatedSeriesCount() uint64 {
 
 type EstimatedSeriesCount struct {
 	EstimatedSeriesCount uint64
-}
-
-// WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
-func (r *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
-	newRequest := *r
-	newRequest.ID = id
-	return &newRequest
-}
-
-// WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
-func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) MetricsQueryRequest {
-	newRequest := *r
-	newRequest.Start = start
-	newRequest.End = end
-	return &newRequest
-}
-
-// WithQuery clones the current `PrometheusRangeQueryRequest` with a new query.
-func (r *PrometheusRangeQueryRequest) WithQuery(query string) MetricsQueryRequest {
-	newRequest := *r
-	newRequest.Query = query
-	return &newRequest
-}
-
-// WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
-// added Hint value for TotalQueries.
-func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
-	newRequest := *r
-	if newRequest.Hints == nil {
-		newRequest.Hints = &Hints{TotalQueries: totalQueries}
-	} else {
-		*newRequest.Hints = *(r.Hints)
-		newRequest.Hints.TotalQueries = totalQueries
-	}
-	return &newRequest
-}
-
-// WithEstimatedSeriesCountHint clones the current `PrometheusRangeQueryRequest`
-// with an added Hint value for EstimatedCardinality.
-func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
-	newRequest := *r
-	if newRequest.Hints == nil {
-		newRequest.Hints = &Hints{
-			CardinalityEstimate: &EstimatedSeriesCount{count},
-		}
-	} else {
-		*newRequest.Hints = *(r.Hints)
-		newRequest.Hints.CardinalityEstimate = &EstimatedSeriesCount{count}
-	}
-	return &newRequest
-}
-
-// AddSpanTags writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
-// ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("query", r.GetQuery())
-	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
-	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
-	sp.SetTag("step_ms", r.GetStep())
-}
-
-func (r *PrometheusInstantQueryRequest) GetStart() int64 {
-	return r.GetTime()
-}
-
-func (r *PrometheusInstantQueryRequest) GetEnd() int64 {
-	return r.GetTime()
-}
-
-func (r *PrometheusInstantQueryRequest) GetStep() int64 {
-	return 0
-}
-
-func (r *PrometheusInstantQueryRequest) WithID(id int64) MetricsQueryRequest {
-	newRequest := *r
-	newRequest.ID = id
-	return &newRequest
-}
-
-func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, _ int64) MetricsQueryRequest {
-	newRequest := *r
-	newRequest.Time = startTime
-	return &newRequest
-}
-
-func (r *PrometheusInstantQueryRequest) WithQuery(s string) MetricsQueryRequest {
-	newRequest := *r
-	newRequest.Query = s
-	return &newRequest
-}
-
-func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
-	newRequest := *r
-	if newRequest.Hints == nil {
-		newRequest.Hints = &Hints{TotalQueries: totalQueries}
-	} else {
-		*newRequest.Hints = *(r.Hints)
-		newRequest.Hints.TotalQueries = totalQueries
-	}
-	return &newRequest
-}
-
-func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
-	newRequest := *r
-	if newRequest.Hints == nil {
-		newRequest.Hints = &Hints{
-			CardinalityEstimate: &EstimatedSeriesCount{count},
-		}
-	} else {
-		*newRequest.Hints = *(r.Hints)
-		newRequest.Hints.CardinalityEstimate = &EstimatedSeriesCount{count}
-	}
-	return &newRequest
-}
-
-// AddSpanTags writes query information about the current `PrometheusInstantQueryRequest`
-// to a span's tag ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusInstantQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("query", r.GetQuery())
-	sp.SetTag("time", timestamp.Time(r.GetTime()).String())
 }
 
 func (r *PrometheusLabelNamesQueryRequest) GetLabelName() string {

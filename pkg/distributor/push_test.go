@@ -46,7 +46,7 @@ import (
 func TestHandler_remoteWrite(t *testing.T) {
 	req := createRequest(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
-	handler := Handler(100000, nil, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), log.NewNopLogger())
+	handler := Handler(100000, nil, nil, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -300,7 +300,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 				t.Cleanup(pushReq.CleanUp)
 				return tt.verifyFunc(t, pushReq)
 			}
-			handler := OTLPHandler(tt.maxMsgSize, nil, false, tt.enableOtelMetadataStorage, limits, RetryConfig{}, nil, pusher, log.NewNopLogger())
+			handler := OTLPHandler(tt.maxMsgSize, nil, nil, false, tt.enableOtelMetadataStorage, limits, RetryConfig{}, pusher, nil, nil, log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -361,14 +361,14 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, nil, false, true, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 3)
 		assert.False(t, request.SkipLabelNameValidation)
 		pushReq.CleanUp()
 		return nil
-	}, log.NewNopLogger())
+	}, nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -407,14 +407,14 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, nil, false, true, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
-		assert.NoError(t, err)
-		assert.Len(t, request.Timeseries, 2)
+		t.Cleanup(pushReq.CleanUp)
+		require.NoError(t, err)
+		assert.Len(t, request.Timeseries, 1)
 		assert.False(t, request.SkipLabelNameValidation)
-		pushReq.CleanUp()
 		return nil
-	}, log.NewNopLogger())
+	}, nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 
@@ -433,14 +433,14 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req = createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+	handler = OTLPHandler(100000, nil, nil, false, true, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
-		assert.NoError(t, err)
-		assert.Len(t, request.Timeseries, 10) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
+		t.Cleanup(pushReq.CleanUp)
+		require.NoError(t, err)
+		assert.Len(t, request.Timeseries, 9) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
 		assert.False(t, request.SkipLabelNameValidation)
-		pushReq.CleanUp()
 		return nil
-	}, log.NewNopLogger())
+	}, nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -461,7 +461,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	handler := OTLPHandler(140, nil, false, true, nil, RetryConfig{}, nil, readBodyPushFunc(t), log.NewNopLogger())
+	handler := OTLPHandler(140, nil, nil, false, true, nil, RetryConfig{}, readBodyPushFunc(t), nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := io.ReadAll(resp.Body)
@@ -473,7 +473,7 @@ func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
-	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), log.NewNopLogger())
+	handler := Handler(100000, nil, sourceIPs, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -482,10 +482,10 @@ func TestHandler_contextCanceledRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
-	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, func(_ context.Context, req *Request) error {
+	handler := Handler(100000, nil, sourceIPs, false, nil, RetryConfig{}, func(_ context.Context, req *Request) error {
 		defer req.CleanUp()
 		return fmt.Errorf("the request failed: %w", context.Canceled)
-	}, log.NewNopLogger())
+	}, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 499, resp.Code)
 }
@@ -591,7 +591,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
-			handler := Handler(100000, nil, tc.allowSkipLabelNameValidation, nil, RetryConfig{}, tc.verifyReqHandler, log.NewNopLogger())
+			handler := Handler(100000, nil, nil, tc.allowSkipLabelNameValidation, nil, RetryConfig{}, tc.verifyReqHandler, nil, log.NewNopLogger())
 			if !tc.includeAllowSkiplabelNameValidationHeader {
 				tc.req.Header.Set(SkipLabelNameValidationHeader, "true")
 			}
@@ -632,6 +632,12 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 	req.Header.Add("Content-Encoding", "snappy")
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+
+	const tenantID = "test"
+	req.Header.Set("X-Scope-OrgID", tenantID)
+	ctx := user.InjectOrgID(context.Background(), tenantID)
+	req = req.WithContext(ctx)
+
 	return req
 }
 
@@ -713,7 +719,7 @@ func BenchmarkPushHandler(b *testing.B) {
 		pushReq.CleanUp()
 		return nil
 	}
-	handler := Handler(100000, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger())
+	handler := Handler(100000, nil, nil, false, nil, RetryConfig{}, pushFunc, nil, log.NewNopLogger())
 	b.ResetTimer()
 	for iter := 0; iter < b.N; iter++ {
 		req.Body = bufCloser{Buffer: buf} // reset Body so it can be read each time round the loop
@@ -769,7 +775,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				return err
 			}
 
-			h := handler(10, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger(), parserFunc)
+			h := handler(10, nil, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger(), parserFunc)
 
 			recorder := httptest.NewRecorder()
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
@@ -838,7 +844,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				}
 				return tc.err
 			}
-			h := handler(10, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger(), parserFunc)
+			h := handler(10, nil, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger(), parserFunc)
 			recorder := httptest.NewRecorder()
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
 

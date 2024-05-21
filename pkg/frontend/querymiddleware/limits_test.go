@@ -93,8 +93,8 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				Start: util.TimeToMillis(testData.reqStartTime),
-				End:   util.TimeToMillis(testData.reqEndTime),
+				start: util.TimeToMillis(testData.reqStartTime),
+				end:   util.TimeToMillis(testData.reqEndTime),
 			}
 
 			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback, compactorBlocksRetentionPeriod: testData.blocksRetentionPeriod}
@@ -167,9 +167,9 @@ func TestLimitsMiddleware_MaxQueryExpressionSizeBytes(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				Query: testData.query,
-				Start: util.TimeToMillis(now.Add(-time.Hour * 2)),
-				End:   util.TimeToMillis(now.Add(-time.Hour)),
+				queryExpr: parseQuery(t, testData.query),
+				start:     util.TimeToMillis(now.Add(-time.Hour * 2)),
+				end:       util.TimeToMillis(now.Add(-time.Hour)),
 			}
 
 			limits := multiTenantMockLimits{
@@ -256,8 +256,8 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				Start: util.TimeToMillis(testData.reqStartTime),
-				End:   util.TimeToMillis(testData.reqEndTime),
+				start: util.TimeToMillis(testData.reqStartTime),
+				end:   util.TimeToMillis(testData.reqEndTime),
 			}
 
 			limits := mockLimits{maxQueryLength: testData.maxQueryLength, maxTotalQueryLength: testData.maxTotalQueryLength}
@@ -286,66 +286,6 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 				assert.Equal(t, util.TimeToMillis(testData.reqStartTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetStart())
 				assert.Equal(t, util.TimeToMillis(testData.reqEndTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd())
 			}
-		})
-	}
-}
-
-func TestLimitsMiddleware_CreationGracePeriod(t *testing.T) {
-	now := time.Now()
-
-	tests := map[string]struct {
-		reqStartTime        time.Time
-		reqEndTime          time.Time
-		creationGracePeriod time.Duration
-		expectedEndTime     time.Time
-	}{
-		"should manipulate time range if creation grace period is set to 0": {
-			reqStartTime:        now.Add(-time.Hour),
-			reqEndTime:          now.Add(2 * time.Hour),
-			creationGracePeriod: 0,
-			expectedEndTime:     now,
-		},
-		"should not manipulate time range for a query in now + creation_grace_period": {
-			reqStartTime:        now.Add(-time.Hour),
-			reqEndTime:          now.Add(30 * time.Minute),
-			creationGracePeriod: time.Hour,
-			expectedEndTime:     now.Add(30 * time.Minute),
-		},
-		"should manipulate time range for a query over now + creation_grace_period": {
-			reqStartTime:        now.Add(-time.Hour),
-			reqEndTime:          now.Add(2 * time.Hour),
-			creationGracePeriod: time.Hour,
-			expectedEndTime:     now.Add(time.Hour),
-		},
-	}
-
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			req := &PrometheusRangeQueryRequest{
-				Start: util.TimeToMillis(testData.reqStartTime),
-				End:   util.TimeToMillis(testData.reqEndTime),
-			}
-
-			limits := mockLimits{creationGracePeriod: testData.creationGracePeriod}
-			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
-
-			innerRes := newEmptyPrometheusResponse()
-			inner := &mockHandler{}
-			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
-
-			ctx := user.InjectOrgID(context.Background(), "test")
-			outer := middleware.Wrap(inner)
-			res, err := outer.Do(ctx, req)
-			require.NoError(t, err)
-
-			// We expect the response returned by the inner handler.
-			assert.Same(t, innerRes, res)
-
-			// Assert on the time range of the request passed to the inner handler (5s delta).
-			delta := float64(5000)
-			require.Len(t, inner.Calls, 1)
-
-			assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd(), delta)
 		})
 	}
 }
@@ -597,11 +537,11 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 
 	codec := newTestPrometheusCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
-		Path:  "/api/v1/query_range",
-		Start: time.Now().Add(time.Hour).Unix(),
-		End:   util.TimeToMillis(time.Now()),
-		Step:  int64(1 * time.Second * time.Millisecond),
-		Query: `foo`,
+		path:      "/api/v1/query_range",
+		start:     time.Now().Add(time.Hour).Unix(),
+		end:       util.TimeToMillis(time.Now()),
+		step:      int64(1 * time.Second * time.Millisecond),
+		queryExpr: parseQuery(t, `foo`),
 	})
 	require.Nil(t, err)
 
@@ -641,11 +581,11 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 
 	codec := newTestPrometheusCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
-		Path:  "/api/v1/query_range",
-		Start: time.Now().Add(time.Hour).Unix(),
-		End:   util.TimeToMillis(time.Now()),
-		Step:  int64(1 * time.Second * time.Millisecond),
-		Query: `foo`,
+		path:      "/api/v1/query_range",
+		start:     time.Now().Add(time.Hour).Unix(),
+		end:       util.TimeToMillis(time.Now()),
+		step:      int64(1 * time.Second * time.Millisecond),
+		queryExpr: parseQuery(t, `foo`),
 	})
 	require.Nil(t, err)
 
@@ -682,11 +622,11 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 
 	codec := newTestPrometheusCodec()
 	r, err := codec.EncodeMetricsQueryRequest(reqCtx, &PrometheusRangeQueryRequest{
-		Path:  "/api/v1/query_range",
-		Start: time.Now().Add(time.Hour).Unix(),
-		End:   util.TimeToMillis(time.Now()),
-		Step:  int64(1 * time.Second * time.Millisecond),
-		Query: `foo`,
+		path:      "/api/v1/query_range",
+		start:     time.Now().Add(time.Hour).Unix(),
+		end:       util.TimeToMillis(time.Now()),
+		step:      int64(1 * time.Second * time.Millisecond),
+		queryExpr: parseQuery(t, `foo`),
 	})
 	require.Nil(t, err)
 
@@ -739,11 +679,11 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 
 	codec := newTestPrometheusCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
-		Path:  "/api/v1/query_range",
-		Start: time.Now().Add(time.Hour).Unix(),
-		End:   util.TimeToMillis(time.Now()),
-		Step:  int64(1 * time.Second * time.Millisecond),
-		Query: `foo`,
+		path:      "/api/v1/query_range",
+		start:     time.Now().Add(time.Hour).Unix(),
+		end:       util.TimeToMillis(time.Now()),
+		step:      int64(1 * time.Second * time.Millisecond),
+		queryExpr: parseQuery(b, `foo`),
 	})
 	require.Nil(b, err)
 

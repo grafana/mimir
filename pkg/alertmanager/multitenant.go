@@ -592,7 +592,7 @@ func (am *MultitenantAlertmanager) stopping(_ error) error {
 // loadAlertmanagerConfigs Loads (and filters) the alertmanagers configuration from object storage, taking into consideration the sharding strategy. Returns:
 // - The list of discovered users (all users with a configuration in storage)
 // - The configurations of users owned by this instance.
-func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]alertspb.AlertConfigDesc, error) {
+func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]alertspb.AlertConfigDescs, error) {
 	// Find all users with an alertmanager config.
 	allUserIDs, err := am.store.ListAllUsers(ctx)
 	if err != nil {
@@ -631,10 +631,10 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 	return alertmanagers.Includes(am.ringLifecycler.GetInstanceAddr())
 }
 
-func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertConfigDesc) {
+func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertConfigDescs) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgs))
 	for user, cfg := range cfgs {
-		err := am.setConfig(cfg)
+		err := am.setConfig(cfg.Mimir)
 		if err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err)

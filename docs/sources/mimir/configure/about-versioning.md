@@ -69,6 +69,10 @@ The following features are currently experimental:
     - `-distributor.retry-after-header.enabled`
     - `-distributor.retry-after-header.base-seconds`
     - `-distributor.retry-after-header.max-backoff-exponent`
+  - Limit exemplars per series per request
+    - `-distributor.max-exemplars-per-series-per-request`
+  - Enforce a maximum pool buffer size for write requests
+    - `-distributor.max-request-pool-buffer-size`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -126,7 +130,7 @@ The following features are currently experimental:
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
-  - Streaming PromQL engine (`-querier.promql-engine=streaming`)
+  - Streaming PromQL engine (`-querier.promql-engine=streaming` and `-querier.enable-promql-engine-fallback`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
@@ -142,6 +146,7 @@ The following features are currently experimental:
   - Use of Redis cache backend (`-blocks-storage.bucket-store.chunks-cache.backend=redis`, `-blocks-storage.bucket-store.index-cache.backend=redis`, `-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - `-blocks-storage.bucket-store.series-selection-strategy`
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
+  - Set a timeout for index-header lazy loading (`-blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout`)
 - Read-write deployment mode
 - API endpoints:
   - `/api/v1/user_limits`

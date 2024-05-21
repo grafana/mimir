@@ -42,7 +42,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: nginx
+        - name: gateway
           image: docker.io/nginxinc/nginx-unprivileged:1.25-alpine
           imagePullPolicy: IfNotPresent
           args:

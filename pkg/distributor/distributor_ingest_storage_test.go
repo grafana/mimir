@@ -136,6 +136,11 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				ingestStorageEnabled:    true,
 				ingestStoragePartitions: 3,
 				limits:                  limits,
+				configure: func(cfg *Config) {
+					// Run a number of clients equal to the number of partitions, so that each partition
+					// has its own client, as requested by some test cases.
+					cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
+				},
 			}
 
 			distributors, _, regs, kafkaCluster := prepare(t, testConfig)

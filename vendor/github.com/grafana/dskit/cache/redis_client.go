@@ -26,7 +26,7 @@ var (
 	ErrRedisConfigNoEndpoint               = errors.New("no redis endpoint provided")
 	ErrRedisMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
 
-	_ RemoteCacheClient = (*RedisClient)(nil)
+	_ Cache = (*RedisClient)(nil)
 )
 
 // RedisClientConfig is the config accepted by RedisClient.

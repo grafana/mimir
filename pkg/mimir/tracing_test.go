@@ -20,28 +20,48 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func TestJaegerToOpenTelemetryTraceID(t *testing.T) {
-	expected, _ := generateOpenTelemetryIDs()
+func TestJaegerToOTelTraceID(t *testing.T) {
+	expected, _ := generateOTelIDs()
 
 	jaegerTraceID, err := jaeger.TraceIDFromString(expected.String())
 	require.NoError(t, err)
 
-	actual := jaegerToOpenTelemetryTraceID(jaegerTraceID)
+	actual := jaegerToOTelTraceID(jaegerTraceID)
 	assert.Equal(t, expected, actual)
 }
 
-func TestJaegerToOpenTelemetrySpanID(t *testing.T) {
-	_, expected := generateOpenTelemetryIDs()
+func TestJaegerToOTelSpanID(t *testing.T) {
+	_, expected := generateOTelIDs()
 
 	jaegerSpanID, err := jaeger.SpanIDFromString(expected.String())
 	require.NoError(t, err)
 
-	actual := jaegerToOpenTelemetrySpanID(jaegerSpanID)
+	actual := jaegerToOTelSpanID(jaegerSpanID)
 	assert.Equal(t, expected, actual)
 }
 
-// generateOpenTelemetryIDs generated trace and span IDs. The implementation has been copied from open telemetry.
-func generateOpenTelemetryIDs() (trace.TraceID, trace.SpanID) {
+func TestJaegerFromOTelTraceID(t *testing.T) {
+	traceID, _ := generateOTelIDs()
+
+	expected, err := jaeger.TraceIDFromString(traceID.String())
+	require.NoError(t, err)
+
+	actual := jaegerFromOTelTraceID(traceID)
+	assert.Equal(t, expected, actual)
+}
+
+func TestJaegerFromOTelSpanID(t *testing.T) {
+	_, spanID := generateOTelIDs()
+
+	expected, err := jaeger.SpanIDFromString(spanID.String())
+	require.NoError(t, err)
+
+	actual := jaegerFromOTelSpanID(spanID)
+	assert.Equal(t, expected, actual)
+}
+
+// generateOTelIDs generated trace and span IDs. The implementation has been copied from open telemetry.
+func generateOTelIDs() (trace.TraceID, trace.SpanID) {
 	var rngSeed int64
 	_ = binary.Read(crand.Reader, binary.LittleEndian, &rngSeed)
 	randSource := rand.New(rand.NewSource(rngSeed))
