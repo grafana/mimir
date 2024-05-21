@@ -100,6 +100,8 @@ func NewQueryComponentCapacity(
 // ExceedsCapacityForComponentName checks whether a query component has exceeded the capacity utilization threshold.
 // This enables the dequeuing algorithm to skip requests for a query component experiencing heavy load,
 // reserving querier-worker connection capacity to continue servicing requests for the other component.
+// If there are no requests in queue for the other, less-utilized component, the dequeuing algorithm may choose
+// to continue servicing requests for the component which has exceeded the reserved capacity threshold.
 //
 // Capacity utilization for a QueryComponent is defined by the portion of the querier-worker connections
 // which are currently in flight processing a query which requires that QueryComponent.
