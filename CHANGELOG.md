@@ -75,6 +75,7 @@
 * [CHANGE] Alerts: Removed obsolete `MimirQueriesIncorrect` alert that used test-exporter metrics. Test-exporter support was however removed in Mimir 2.0 release. #7774
 * [CHANGE] Alerts: Change threshold for `MimirBucketIndexNotUpdated` alert to fire before queries begin to fail due to bucket index age. #7879
 * [FEATURE] Dashboards: added 'Remote ruler reads networking' dashboard. #7751
+* [FEATURE] Alerts: Add `MimirIngesterStuckProcessingRecordsFromKafka` alert. #8147
 * [ENHANCEMENT] Alerts: allow configuring alerts range interval via `_config.base_alerts_range_interval_minutes`. #7591
 * [ENHANCEMENT] Dashboards: Add panels for monitoring distributor and ingester when using ingest-storage. These panels are disabled by default, but can be enabled using `show_ingest_storage_panels: true` config option. Similarly existing panels used when distributors and ingesters use gRPC for forwarding requests can be disabled by setting `show_grpc_ingestion_panels: false`. #7670 #7699
 * [ENHANCEMENT] Alerts: add the following alerts when using ingest-storage: #7699 #7702
