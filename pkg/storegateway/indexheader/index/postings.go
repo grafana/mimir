@@ -6,6 +6,7 @@
 package index
 
 import (
+	"context"
 	"fmt"
 	"hash/crc32"
 	"sort"
@@ -20,7 +21,11 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexheader/indexheaderpb"
 )
 
-const postingLengthFieldSize = 4
+const (
+	postingLengthFieldSize = 4
+	// CheckContextEveryNIterations is used in some tight loops to check if the context is done.
+	CheckContextEveryNIterations = 1024
+)
 
 type PostingOffsetTable interface {
 	// PostingsOffset returns the byte range of the postings section for the label with the given name and value.
@@ -32,7 +37,7 @@ type PostingOffsetTable interface {
 	// LabelValuesOffsets returns all postings lists for the label named name that match filter and have the prefix provided.
 	// The ranges of each posting list are the same as returned by PostingsOffset.
 	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
-	LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error)
+	LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool) ([]PostingListOffset, error)
 
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
@@ -286,13 +291,18 @@ func (t *PostingOffsetTableV1) PostingsOffset(name string, value string) (index.
 	return rng, true, nil
 }
 
-func (t *PostingOffsetTableV1) LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
+func (t *PostingOffsetTableV1) LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
 	}
 	values := make([]PostingListOffset, 0, len(e))
+	count := 1
 	for k, r := range e {
+		if count%CheckContextEveryNIterations == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		count++
 		if strings.HasPrefix(k, prefix) && (filter == nil || filter(k)) {
 			values = append(values, PostingListOffset{LabelValue: k, Off: r})
 		}
@@ -468,7 +478,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 	return index.Range{}, false, nil
 }
 
-func (t *PostingOffsetTableV2) LabelValuesOffsets(name, prefix string, filter func(string) bool) (_ []PostingListOffset, err error) {
+func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool) (_ []PostingListOffset, err error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
@@ -546,7 +556,12 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(name, prefix string, filter fu
 		nextEntry pEntry
 	)
 
+	count := 1
 	for d.Err() == nil && !currEntry.isLast {
+		if count%CheckContextEveryNIterations == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		count++
 		// Populate the current list either reading it from the pre-populated "next" or reading it from the index.
 		if nextEntry != (pEntry{}) {
 			currEntry = nextEntry

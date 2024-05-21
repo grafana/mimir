@@ -709,9 +709,9 @@ func mapSeriesError(err error) error {
 	case errors.As(err, &stGwErr):
 		switch cause := stGwErr.errorCause(); cause {
 		case mimirpb.INSTANCE_LIMIT:
-			return globalerror.NewErrorWithGRPCStatus(stGwErr, codes.Unavailable, &mimirpb.ErrorDetails{Cause: cause})
+			return globalerror.WrapErrorWithGRPCStatus(stGwErr, codes.Unavailable, &mimirpb.ErrorDetails{Cause: cause}).Err()
 		default:
-			return globalerror.NewErrorWithGRPCStatus(stGwErr, codes.Internal, &mimirpb.ErrorDetails{Cause: cause})
+			return globalerror.WrapErrorWithGRPCStatus(stGwErr, codes.Internal, &mimirpb.ErrorDetails{Cause: cause}).Err()
 		}
 	default:
 		code := codes.Internal
@@ -1639,7 +1639,7 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 	}
 
 	// TODO: if matchers contains labelName, we could use it to filter out label values here.
-	allValuesPostingOffsets, err := b.indexHeaderReader.LabelValuesOffsets(labelName, "", nil)
+	allValuesPostingOffsets, err := b.indexHeaderReader.LabelValuesOffsets(ctx, labelName, "", nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "index header label values")
 	}

@@ -6,6 +6,7 @@
 package storegateway
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"sort"
@@ -80,7 +81,7 @@ func newLazySubtractingPostingGroup(m *labels.Matcher) rawPostingGroup {
 
 // toPostingGroup returns a postingGroup which shares the underlying keys slice with g.
 // This means that after calling toPostingGroup g.keys will be modified.
-func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, error) {
+func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reader) (postingGroup, error) {
 	var (
 		keys      []labels.Label
 		totalSize int64
@@ -90,7 +91,7 @@ func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, err
 		if g.isSubtract {
 			filter = not(filter)
 		}
-		vals, err := r.LabelValuesOffsets(g.labelName, g.prefix, filter)
+		vals, err := r.LabelValuesOffsets(ctx, g.labelName, g.prefix, filter)
 		if err != nil {
 			return postingGroup{}, err
 		}

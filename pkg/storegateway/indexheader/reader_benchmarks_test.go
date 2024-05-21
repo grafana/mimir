@@ -177,7 +177,7 @@ func BenchmarkLabelValuesOffsetsIndexV1(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			name := names[i%len(names)]
 
-			values, err := br.LabelValuesOffsets(name, "", func(string) bool {
+			values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
 				return true
 			})
 
@@ -221,7 +221,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			name := names[i%len(names)]
 
-			values, err := br.LabelValuesOffsets(name, "", func(string) bool {
+			values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
 				return true
 			})
 
@@ -241,7 +241,7 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 			for _, tc := range tcs {
 				b.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
-						values, err := r.LabelValuesOffsets(lbl, tc.prefix, tc.filter)
+						values, err := r.LabelValuesOffsets(context.Background(), lbl, tc.prefix, tc.filter)
 						require.NoError(b, err)
 						require.Equal(b, tc.expected, len(values))
 					}

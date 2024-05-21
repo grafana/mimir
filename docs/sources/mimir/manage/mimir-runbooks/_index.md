@@ -1427,6 +1427,22 @@ How to **investigate**:
 
 - Check ingester logs to see why requests are failing, and troubleshoot based on that.
 
+### MimirIngesterStuckProcessingRecordsFromKafka
+
+This alert fires when an ingester has successfully fetched records from Kafka but it's not processing them at all.
+
+How it **works**:
+
+- Ingester reads records from Kafka, and processes them locally. Processing means unmarshalling the data and handling write requests stored in records.
+- Fetched records, containing write requests, are expected to be processed by ingesting the write requests data into the ingester.
+- This alert fires if no processing is occurring at all, like if the processing is stuck (e.g. a deadlock in ingester).
+
+How to **investigate**:
+
+- Take goroutine profile of the ingester and check if there's any routine calling `pushToStorage`:
+  - If the call exists and it's waiting on a lock then there may be a deadlock.
+  - If the call doesn't exist then it could either mean processing is not stuck (false positive) or the `pushToStorage` wasn't called at all, and so you should investigate the callers in the code.
+
 ### MimirIngesterFailsEnforceStrongConsistencyOnReadPath
 
 This alert fires when too many read-requests with strong consistency are failing.

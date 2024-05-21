@@ -527,6 +527,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. Ignored if index-header lazy loading is disabled. (default true)
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
     	Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
+  -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout duration
+    	[experimental] Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely.
   -blocks-storage.bucket-store.index-header.lazy-loading-enabled
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout duration
@@ -1668,7 +1670,7 @@ Usage of ./cmd/mimir/mimir:
   -print.config
     	Print the config and exit.
   -querier.active-series-results-max-size-bytes int
-    	[experimental] Maximum size of an active series request result shard in bytes. 0 to disable. (default 419430400)
+    	[experimental] Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable. (default 419430400)
   -querier.cardinality-analysis-enabled
     	Enables endpoints used for cardinality analysis.
   -querier.default-evaluation-interval duration

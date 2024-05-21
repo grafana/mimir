@@ -52,6 +52,9 @@ const (
 	indexFilename = "index"
 
 	seriesByteAlign = 16
+
+	// checkContextEveryNIterations is used in some tight loops to check if the context is done.
+	checkContextEveryNIterations = 100
 )
 
 type indexWriterSeries struct {
@@ -1818,7 +1821,7 @@ func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, ma
 	var its []Postings
 	count := 1
 	for val, offset := range e {
-		if count%100 == 0 && ctx.Err() != nil {
+		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
 			return ErrPostings(ctx.Err())
 		}
 		count++
