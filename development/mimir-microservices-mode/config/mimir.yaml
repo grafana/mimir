@@ -37,7 +37,7 @@ blocks_storage:
     # in development. However, setting this lower than 2m can cause the ruler's
     # write requests to fail with out of bounds errors
     block_ranges_period: ["2m"]
-    # retention_period must be larger than block_ranges_period and query_store_after
+    # retention_period must be larger than block_ranges_period and querier.query_store_after
     retention_period: 15m
     ship_interval: 1m
 
@@ -52,7 +52,7 @@ blocks_storage:
     # ignore_blocks_within and sync_interval must be small enough for the store-gateways
     # to discover & load new blocks shipped from the ingesters before they begin to be queried.
     # With querier.query_store_after: 10m and sync_interval: 1m, anything larger than 4m causes issues.
-    # Slightly larger values for may work if sync_interval is reduced.
+    # Slightly larger values for ignore_blocks_within work if sync_interval is reduced.
     ignore_blocks_within: 4m
 
     index_cache:
