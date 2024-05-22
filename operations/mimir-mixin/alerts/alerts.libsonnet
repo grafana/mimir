@@ -317,9 +317,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('StoreGatewayTooManyFailedOperations'),
           'for': '5m',
           expr: |||
-            sum by(%(alert_aggregation_labels)s, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[%(range_interval)s])) > 0
+            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[%(range_interval)s])) > 0
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
             range_interval: $.alertRangeInterval(1),
           },
           labels: {
