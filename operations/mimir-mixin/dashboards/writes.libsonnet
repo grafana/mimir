@@ -651,15 +651,25 @@ local filename = 'mimir-writes.json';
         $.queryPanel(
           |||
             sum(
-              %(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m{%(ingester)s}
-              / on(%(group_by_cluster)s) group_left
+              sum by (%(group_by_cluster)s) (%(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m{%(ingester)s})
+              /
               max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+              or
+              sum by (%(group_by_cluster)s) (
+                max by (ingester_id, %(group_by_cluster)s) (
+                  label_replace(
+                    %(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m{%(ingester)s},
+                    "ingester_id", "$1", "%(instance)s", ".*-([0-9]+)$"
+                  )
+                )
+              )
             )
           ||| % {
             ingester: $.jobMatcher($._config.job_names.ingester),
             distributor: $.jobMatcher($._config.job_names.distributor),
             group_by_cluster: $._config.group_by_cluster,
             group_prefix_jobs: $._config.group_prefix_jobs,
+            instance: $._config.per_instance_label,
           },
           'ingested exemplars',
         ) +
@@ -677,18 +687,13 @@ local filename = 'mimir-writes.json';
         local title = 'Ingester appended exemplars rate';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          |||
-            sum(
-              %(group_prefix_jobs)s:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{%(ingester)s}
-              / on(%(group_by_cluster)s) group_left
-              max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-            )
-          ||| % {
-            ingester: $.jobMatcher($._config.job_names.ingester),
-            distributor: $.jobMatcher($._config.job_names.distributor),
-            group_by_cluster: $._config.group_by_cluster,
-            group_prefix_jobs: $._config.group_prefix_jobs,
-          },
+          'sum(%s)' % [
+            local perIngesterQuery = '%(group_prefix_jobs)s:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{%(ingester)s}' % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+              group_prefix_jobs: $._config.group_prefix_jobs,
+            };
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterQuery, $._config.group_by_cluster),
+          ],
           'appended exemplars',
         ) +
         { fieldConfig+: { defaults+: { unit: 'ex/s' } } } +
