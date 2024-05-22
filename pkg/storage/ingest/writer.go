@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strconv"
 	"sync"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -311,24 +311,29 @@ func (p *kafkaStaticPartitioner) Partition(_ *kgo.Record, _ int) int {
 // maxDataLength, than the resulting record will be bigger than the limit as well.
 // TODO unit test
 func marshalWriteRequestToRecords(tenantID string, req *mimirpb.WriteRequest, maxDataLength int) ([]*kgo.Record, int, error) {
-	return marshalWriteRequestsToRecords(tenantID, req.SplitByMaxMarshalSize(maxDataLength))
+	marshalled, err := req.Marshal()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	subrequests, err := mimirpb.SplitWriteRequestRequest(marshalled, maxDataLength)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to split write request: %w", err)
+	}
+
+	return marshalWriteRequestsToRecords(tenantID, subrequests)
 }
 
-func marshalWriteRequestsToRecords(tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, int, error) {
+func marshalWriteRequestsToRecords(tenantID string, reqs [][]byte) ([]*kgo.Record, int, error) {
 	records := make([]*kgo.Record, 0, len(reqs))
 	recordsDataSizeBytes := 0
 
 	for _, req := range reqs {
-		data, err := req.Marshal()
-		if err != nil {
-			return nil, 0, errors.Wrap(err, "failed to serialise data")
-		}
-
 		records = append(records, &kgo.Record{
 			Key:   []byte(tenantID), // We don't partition based on the key, so the value here doesn't make any difference.
-			Value: data,
+			Value: req,
 		})
-		recordsDataSizeBytes += len(data)
+		recordsDataSizeBytes += len(req)
 	}
 
 	return records, recordsDataSizeBytes, nil
