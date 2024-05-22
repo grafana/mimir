@@ -673,8 +673,6 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertCon
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
 func (am *MultitenantAlertmanager) setConfig(cfgs alertspb.AlertConfigDescs) error {
-	fmt.Println("Mimir raw config:", cfgs.Mimir.RawConfig)
-	fmt.Println("Grafana raw config:", cfgs.Grafana.RawConfig)
 	// TODO: move!
 	var cfg alertspb.AlertConfigDesc
 	switch {

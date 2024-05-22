@@ -372,7 +372,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
 
-	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
+	integrationsMap, err := buildIntegrationsMap(am.logger, conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      userID,
@@ -475,14 +475,11 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a
 // list of receiver config.
-func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*notify.Integration, error) {
+func buildIntegrationsMap(l log.Logger, nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*notify.Integration, error) {
 	integrationsMap := make(map[string][]*notify.Integration, len(nc))
 
 	for _, rcv := range nc {
-		fmt.Println("Receiver name:", rcv.Name)
-
 		if rcv.Type() == definition.GrafanaReceiverType {
-			fmt.Println("Congrats, it's a Grafana integration!")
 			integrationConfigs := make([]*alertingNotify.GrafanaIntegrationConfig, 0, len(rcv.GrafanaManagedReceivers))
 			for _, r := range rcv.GrafanaManagedReceivers {
 				integrationConfigs = append(integrationConfigs, &alertingNotify.GrafanaIntegrationConfig{
@@ -506,7 +503,7 @@ func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.T
 			}
 
 			// TODO: tenantID
-			integrations, err := alertingNotify.BuildReceiverIntegrations(receiverCfg, tmpl, &images.UnavailableProvider{}, loggerFactory, whSenderFn, emailSenderFn, 0, "test")
+			integrations, err := alertingNotify.BuildReceiverIntegrations(receiverCfg, tmpl, &images.UnavailableProvider{}, loggerFactory(l), whSenderFn, emailSenderFn, 0, "test")
 			if err != nil {
 				return nil, err
 			}
@@ -599,9 +596,6 @@ func noopDecryptFn(_ context.Context, sjd map[string][]byte, key string, fallbac
 		return string(v)
 	}
 	return fallback
-}
-func loggerFactory(logger string, ctx ...interface{}) alertingLogging.Logger {
-	return alertingLogging.FakeLogger{}
 }
 func whSenderFn(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
 	return NewSender(alertingLogging.FakeLogger{}), nil
