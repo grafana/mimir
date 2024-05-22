@@ -112,7 +112,7 @@ alertmanager_storage:
     insecure:          true
 
 compactor:
-  data_dir: "/tmp/cortex-compactor"
+  data_dir: "/tmp/mimir-compactor"
   block_ranges: [ 4m, 8m, 16m ]
   compaction_interval: 1m
   compaction_concurrency: 2
