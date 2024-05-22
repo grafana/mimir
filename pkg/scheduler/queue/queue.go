@@ -51,6 +51,14 @@ type SchedulerRequest struct {
 	ParentSpanContext opentracing.SpanContext
 }
 
+// ExpectedQueryComponentName parses the expected query component from annotations by the frontend.
+func (req *SchedulerRequest) ExpectedQueryComponentName() string {
+	if len(req.AdditionalQueueDimensions) > 0 {
+		return req.AdditionalQueueDimensions[0]
+	}
+	return ""
+}
+
 // TenantIndex is opaque type that allows to resume iteration over tenants
 // between successive calls of RequestQueue.GetNextRequestForQuerier method.
 type TenantIndex struct {
@@ -306,17 +314,17 @@ func (q *RequestQueue) trySendNextRequestForQuerier(call *nextRequestForQuerierC
 		// temporary observation of query component load balancing behavior before full implementation
 		schedulerRequest, ok := req.req.(*SchedulerRequest)
 		if ok {
-			queryComponentName := QueryComponentNameForRequest(schedulerRequest)
+			queryComponentName := schedulerRequest.ExpectedQueryComponentName()
 			exceedsCapacity, queryComponent := q.QueryComponentCapacity.ExceedsCapacityForComponentName(
 				queryComponentName,
-				q.connectedQuerierWorkers,
+				q.connectedQuerierWorkers.Load(),
 				q.queueBroker.tenantQueuesTree.ItemCount(),
 				q.waitingNextRequestForQuerierCalls.Len(),
 			)
 
 			if exceedsCapacity {
-				level.Warn(q.log).Log(
-					"msg", "querier worker connections in use by query component exceed reserve capacity",
+				level.Info(q.log).Log(
+					"msg", "experimental: querier worker connections in use by query component exceed reserve capacity. no action taken",
 					"query_component_name", queryComponentName,
 					"overloaded_query_component", queryComponent,
 				)

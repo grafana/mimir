@@ -116,7 +116,7 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 	querierInflightRequests := promauto.With(registerer).NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "cortex_query_frontend_querier_inflight_requests",
-			Help: "Number of inflight requests being processed on a querier-scheduler connection.",
+			Help: "Number of inflight requests being processed on all querier-scheduler connections.",
 		},
 		[]string{"query_component"},
 	)

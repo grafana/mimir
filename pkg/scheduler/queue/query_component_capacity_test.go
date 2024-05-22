@@ -68,7 +68,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 		queueLen                     int
 		waitingWorkers               int
 		ingesterInflightRequests     int
-		storegatewayInflightRequests int
+		storeGatewayInflightRequests int
 
 		queryComponentName         string
 		thresholdExceededComponent QueryComponent
@@ -81,7 +81,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     1,
 			waitingWorkers:               2,
 			ingesterInflightRequests:     8,
-			storegatewayInflightRequests: 0,
+			storeGatewayInflightRequests: 0,
 			queryComponentName:           ingesterQueueDimension,
 			thresholdExceededComponent:   "",
 		},
@@ -90,7 +90,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     1,
 			waitingWorkers:               2,
 			ingesterInflightRequests:     0,
-			storegatewayInflightRequests: 8,
+			storeGatewayInflightRequests: 8,
 			queryComponentName:           storeGatewayQueueDimension,
 			thresholdExceededComponent:   "",
 		},
@@ -99,8 +99,8 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     2,
 			waitingWorkers:               3,
 			ingesterInflightRequests:     7,
-			storegatewayInflightRequests: 0,
-			queryComponentName:           ingesterQueueDimension,
+			storeGatewayInflightRequests: 0,
+			queryComponentName:           ingesterAndStoreGatewayQueueDimension,
 			thresholdExceededComponent:   "",
 		},
 		{
@@ -108,8 +108,8 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     2,
 			waitingWorkers:               3,
 			ingesterInflightRequests:     0,
-			storegatewayInflightRequests: 7,
-			queryComponentName:           storeGatewayQueueDimension,
+			storeGatewayInflightRequests: 7,
+			queryComponentName:           ingesterAndStoreGatewayQueueDimension,
 			thresholdExceededComponent:   "",
 		},
 		{
@@ -117,7 +117,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     3,
 			waitingWorkers:               4,
 			ingesterInflightRequests:     6,
-			storegatewayInflightRequests: 0,
+			storeGatewayInflightRequests: 0,
 			queryComponentName:           "abc",
 			thresholdExceededComponent:   "",
 		},
@@ -126,7 +126,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     3,
 			waitingWorkers:               4,
 			ingesterInflightRequests:     0,
-			storegatewayInflightRequests: 6,
+			storeGatewayInflightRequests: 6,
 			queryComponentName:           "xyz",
 			thresholdExceededComponent:   "",
 		},
@@ -139,7 +139,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     10,
 			waitingWorkers:               1,
 			ingesterInflightRequests:     5,
-			storegatewayInflightRequests: 4,
+			storeGatewayInflightRequests: 4,
 			queryComponentName:           ingesterQueueDimension,
 			thresholdExceededComponent:   "",
 		},
@@ -148,7 +148,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     10,
 			waitingWorkers:               1,
 			ingesterInflightRequests:     4,
-			storegatewayInflightRequests: 5,
+			storeGatewayInflightRequests: 5,
 			queryComponentName:           storeGatewayQueueDimension,
 			thresholdExceededComponent:   "",
 		},
@@ -157,7 +157,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     10,
 			waitingWorkers:               2,
 			ingesterInflightRequests:     4,
-			storegatewayInflightRequests: 4,
+			storeGatewayInflightRequests: 4,
 			queryComponentName:           ingesterAndStoreGatewayQueueDimension,
 			thresholdExceededComponent:   "",
 		},
@@ -166,7 +166,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     10,
 			waitingWorkers:               2,
 			ingesterInflightRequests:     4,
-			storegatewayInflightRequests: 4,
+			storeGatewayInflightRequests: 4,
 			queryComponentName:           "abc",
 			thresholdExceededComponent:   "",
 		},
@@ -179,7 +179,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     10,
 			waitingWorkers:               1,
 			ingesterInflightRequests:     6,
-			storegatewayInflightRequests: 3,
+			storeGatewayInflightRequests: 3,
 			queryComponentName:           ingesterQueueDimension,
 			thresholdExceededComponent:   Ingester,
 		},
@@ -188,7 +188,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     10,
 			waitingWorkers:               1,
 			ingesterInflightRequests:     3,
-			storegatewayInflightRequests: 6,
+			storeGatewayInflightRequests: 6,
 			queryComponentName:           storeGatewayQueueDimension,
 			thresholdExceededComponent:   StoreGateway,
 		},
@@ -197,7 +197,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     10,
 			waitingWorkers:               1,
 			ingesterInflightRequests:     6,
-			storegatewayInflightRequests: 3,
+			storeGatewayInflightRequests: 3,
 			queryComponentName:           ingesterAndStoreGatewayQueueDimension,
 			thresholdExceededComponent:   Ingester,
 		},
@@ -206,7 +206,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     10,
 			waitingWorkers:               1,
 			ingesterInflightRequests:     3,
-			storegatewayInflightRequests: 6,
+			storeGatewayInflightRequests: 6,
 			queryComponentName:           ingesterAndStoreGatewayQueueDimension,
 			thresholdExceededComponent:   StoreGateway,
 		},
@@ -215,7 +215,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     10,
 			waitingWorkers:               1,
 			ingesterInflightRequests:     7,
-			storegatewayInflightRequests: 2,
+			storeGatewayInflightRequests: 2,
 			queryComponentName:           "abc",
 			thresholdExceededComponent:   Ingester,
 		},
@@ -224,7 +224,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queueLen:                     10,
 			waitingWorkers:               1,
 			ingesterInflightRequests:     2,
-			storegatewayInflightRequests: 7,
+			storeGatewayInflightRequests: 7,
 			queryComponentName:           "xyz",
 			thresholdExceededComponent:   StoreGateway,
 		},
@@ -241,13 +241,13 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 				queryComponentLoad.IncrementForComponentName(ingesterQueueDimension)
 			}
 
-			for i := 0; i < testCase.storegatewayInflightRequests; i++ {
+			for i := 0; i < testCase.storeGatewayInflightRequests; i++ {
 				queryComponentLoad.IncrementForComponentName(storeGatewayQueueDimension)
 			}
 
 			exceedsCapacity, queryComponent := queryComponentLoad.ExceedsCapacityForComponentName(
 				testCase.queryComponentName,
-				connectedWorkers,
+				connectedWorkers.Load(),
 				testCase.queueLen,
 				testCase.waitingWorkers,
 			)

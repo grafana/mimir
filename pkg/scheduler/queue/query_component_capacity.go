@@ -23,16 +23,6 @@ const ingesterQueueDimension = "ingester"
 const storeGatewayQueueDimension = "store-gateway"
 const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
 
-// QueryComponentNameForRequest parses the expected query component from annotations by the frontend.
-func QueryComponentNameForRequest(req *SchedulerRequest) string {
-	var expectedQueryComponent string
-	if len(req.AdditionalQueueDimensions) > 0 {
-		expectedQueryComponent = req.AdditionalQueueDimensions[0]
-	}
-
-	return expectedQueryComponent
-}
-
 // queryComponentFlags interprets annotations by the frontend for the expected query component,
 // and flags whether a query request is expected to be served by the ingesters, store-gateways, or both.
 func queryComponentFlags(queryComponentName string) (isIngester, isStoreGateway bool) {
@@ -72,9 +62,14 @@ type QueryComponentCapacity struct {
 
 // DefaultReservedQueryComponentCapacity reserves 1 / 3 of querier-worker connections
 // for the query component utilizing fewer of the available connections.
+// Chosen to represent an even balance between the three possible combinations of query components:
+// ingesters only, store-gateways only, or both ingesters and store-gateways.
 const DefaultReservedQueryComponentCapacity = 0.33
 
-const MinReservedQueryComponentCapacity = 0.1
+// MaxReservedQueryComponentCapacity is an exclusive upper bound on the targetReservedCapacity.
+// The threshold for a QueryComponent's utilization of querier-worker connections
+// can only be exceeded by one QueryComponent at a time as long as targetReservedCapacity is < 0.5.
+// Therefore, one of the components will always be given the OK to dequeue queries for.
 const MaxReservedQueryComponentCapacity = 0.5
 
 func NewQueryComponentCapacity(
@@ -82,7 +77,7 @@ func NewQueryComponentCapacity(
 	querierInflightRequests *prometheus.GaugeVec,
 ) (*QueryComponentCapacity, error) {
 
-	if targetReservedCapacity < MinReservedQueryComponentCapacity || targetReservedCapacity >= MaxReservedQueryComponentCapacity {
+	if targetReservedCapacity >= MaxReservedQueryComponentCapacity {
 		return nil, errors.New("invalid targetReservedCapacity")
 	}
 
@@ -110,10 +105,6 @@ func NewQueryComponentCapacity(
 // and will be indicated as exceeding the threshold if either ingesters or store-gateways
 // are currently in excess of the reserved capacity.
 //
-// The threshold for a QueryComponent's utilization of querier-worker connections
-// can only be exceeded by one QueryComponent at a time as long as targetReservedCapacity is < 0.5.
-// Therefore, one of the components will always be given the OK to dequeue queries for.
-//
 // Capacity reservation only occurs when the queue backlogged, where backlogged is defined as
 // (length of the query queue) >= (number of querier-worker connections waiting for a query).
 //
@@ -122,32 +113,36 @@ func NewQueryComponentCapacity(
 // As the inflight queries complete or fail, the component's utilization will naturally decrease.
 // This method will continue to indicate to skip queries for the component until it is back under the threshold.
 func (qcl *QueryComponentCapacity) ExceedsCapacityForComponentName(
-	name string, connectedWorkers *atomic.Int64, queueLen, waitingWorkers int,
+	name string, connectedWorkers int64, queueLen, waitingWorkers int,
 ) (bool, QueryComponent) {
 	if waitingWorkers > queueLen {
 		// excess querier-worker capacity; no need to reserve any for now
 		return false, ""
 	}
-	if connectedWorkers.Load() <= 1 {
+	if connectedWorkers <= 1 {
 		// corner case; cannot reserve capacity with only one worker available
 		return false, ""
 	}
 
-	// reserve at least one connection in case (connected workers) * (reserved capacity) is less than one
-	minReservedConnections := int64(
-		math.Ceil(
-			math.Max(qcl.targetReservedCapacity*float64(connectedWorkers.Load()), 1),
-		),
-	)
+	// allow the functionality to be turned off via setting targetReservedCapacity to 0
+	minReservedConnections := int64(0)
+	if qcl.targetReservedCapacity > 0 {
+		// reserve at least one connection in case (connected workers) * (reserved capacity) is less than one
+		minReservedConnections = int64(
+			math.Ceil(
+				math.Max(qcl.targetReservedCapacity*float64(connectedWorkers), 1),
+			),
+		)
+	}
 
 	isIngester, isStoreGateway := queryComponentFlags(name)
 	if isIngester {
-		if connectedWorkers.Load()-(qcl.ingesterInflightRequests.Load()) <= minReservedConnections {
+		if connectedWorkers-(qcl.ingesterInflightRequests.Load()) <= minReservedConnections {
 			return true, Ingester
 		}
 	}
 	if isStoreGateway {
-		if connectedWorkers.Load()-(qcl.storeGatewayInflightRequests.Load()) <= minReservedConnections {
+		if connectedWorkers-(qcl.storeGatewayInflightRequests.Load()) <= minReservedConnections {
 			return true, StoreGateway
 		}
 	}

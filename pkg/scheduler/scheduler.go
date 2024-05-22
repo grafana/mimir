@@ -153,7 +153,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	querierInflightRequestsGauge := promauto.With(registerer).NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "cortex_query_scheduler_querier_inflight_requests",
-			Help: "Number of inflight requests being processed on a querier-scheduler connection.",
+			Help: "Number of inflight requests being processed on all querier-scheduler connections.",
 		},
 		[]string{"query_component"},
 	)
@@ -471,7 +471,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 	// Make sure to cancel request at the end to clean up resources.
 	defer s.cancelRequestAndRemoveFromPending(req.FrontendAddress, req.QueryID, "request complete")
 
-	queryComponentName := queue.QueryComponentNameForRequest(req)
+	queryComponentName := req.ExpectedQueryComponentName()
 	s.requestQueue.QueryComponentCapacity.IncrementForComponentName(queryComponentName)
 	defer s.requestQueue.QueryComponentCapacity.DecrementForComponentName(queryComponentName)
 
