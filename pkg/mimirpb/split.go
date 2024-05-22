@@ -79,6 +79,8 @@ func SplitWriteRequestRequest(writeRequest []byte, sizeLimit int) ([][]byte, err
 		totalFieldSize := tagSize
 
 		switch tagVal {
+
+		// these are wireTypeLen types, there's LENGTH (int32 varint) and then submessage with that length.
 		case timeseriesFieldTag, metadataFieldTag:
 			decodedLength, decodedLengthSize := binary.Uvarint(writeRequest[tagSize:])
 			if decodedLengthSize <= 0 {
@@ -93,6 +95,7 @@ func SplitWriteRequestRequest(writeRequest []byte, sizeLimit int) ([][]byte, err
 
 			totalFieldSize += decodedLengthSize + int(decodedLength)
 
+		// these are wireTypeVarint, value is just varint.
 		case sourceFieldTag, skipLabelNameValidationFieldTag:
 			val, valSize := binary.Uvarint(writeRequest[tagSize:])
 			if valSize <= 0 {
