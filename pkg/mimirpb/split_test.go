@@ -16,14 +16,21 @@ func prepareRequest() *WriteRequest {
 	const numSeriesPerRequest = 100
 
 	metrics := make([][]LabelAdapter, 0, numSeriesPerRequest)
-	samples := make([]Sample, 0, 100)
+	samples := make([]Sample, 0, numSeriesPerRequest)
+	metadata := make([]*MetricMetadata, 0, numSeriesPerRequest)
 
 	for i := 0; i < numSeriesPerRequest; i++ {
 		metrics = append(metrics, []LabelAdapter{{Name: labels.MetricName, Value: "metric"}, {Name: "cardinality", Value: strconv.Itoa(i)}})
 		samples = append(samples, Sample{Value: float64(i), TimestampMs: time.Now().UnixMilli()})
+		metadata = append(metadata, &MetricMetadata{
+			Type:             1 + MetricMetadata_MetricType(i)%STATESET,
+			MetricFamilyName: fmt.Sprintf("metric_%d", i),
+			Help:             fmt.Sprintf("help for metric_%d", i),
+			Unit:             "unit",
+		})
 	}
 
-	return ToWriteRequest(metrics, samples, nil, nil, API)
+	return ToWriteRequest(metrics, samples, nil, metadata, API)
 }
 
 func TestSplitRequestWithWeirdSource(t *testing.T) {
