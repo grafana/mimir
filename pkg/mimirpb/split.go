@@ -23,6 +23,9 @@ var (
 	sourceFieldTag     = tag(sourceField, wireTypeVarint)
 	sourceFieldTagSize = varintLength(sourceFieldTag)
 
+	timeseriesFieldTag = tag(timeseriesField, wireTypeLen)
+	metadataFieldTag   = tag(metadataField, wireTypeLen)
+
 	skipLabelNameValidationFieldTag     = tag(skipLabelNameValidationField, wireTypeVarint)
 	skipLabelNameValidationFieldTagSize = varintLength(skipLabelNameValidationFieldTag)
 
@@ -71,23 +74,12 @@ func SplitWriteRequestRequest(writeRequest []byte, sizeLimit int) ([][]byte, err
 		if tagSize <= 0 {
 			return nil, io.ErrUnexpectedEOF
 		}
-		if tagVal > math.MaxUint32 {
-			return nil, fmt.Errorf("invalid tag: %d", tagVal)
-		}
-
-		// decode tag into field number and type
-		fieldNum := tagVal >> 3
-		wireType := tagVal & 7
 
 		// totalFieldSize is updated later depending on the type and covers entire field, starting with tag.
 		totalFieldSize := tagSize
 
-		switch fieldNum {
-		case timeseriesField, metadataField:
-			if wireType != wireTypeLen {
-				return nil, fmt.Errorf("unexpected wire type for field %d: %d", fieldNum, wireType)
-			}
-
+		switch tagVal {
+		case timeseriesFieldTag, metadataFieldTag:
 			decodedLength, decodedLengthSize := binary.Uvarint(writeRequest[tagSize:])
 			if decodedLengthSize <= 0 {
 				return nil, io.ErrUnexpectedEOF
@@ -101,26 +93,22 @@ func SplitWriteRequestRequest(writeRequest []byte, sizeLimit int) ([][]byte, err
 
 			totalFieldSize += decodedLengthSize + int(decodedLength)
 
-		case sourceField, skipLabelNameValidationField:
-			if wireType != wireTypeVarint {
-				return nil, fmt.Errorf("unexpected wire type for field %d: %d", fieldNum, wireType)
-			}
-
+		case sourceFieldTag, skipLabelNameValidationFieldTag:
 			val, valSize := binary.Uvarint(writeRequest[tagSize:])
 			if valSize <= 0 {
 				return nil, io.ErrUnexpectedEOF
 			}
 
-			if fieldNum == sourceField { // Source, any int32 value is allowed.
+			if tagVal == sourceFieldTag { // Source, any int32 value is allowed.
 				if val > math.MaxInt32 {
-					return nil, fmt.Errorf("invalid value %d for field %d", val, fieldNum)
+					return nil, fmt.Errorf("invalid value %d for tag %d", val, tagVal)
 				}
 				hasSource = true
 				source = int32(val)
 				sourceSize = valSize
 			}
 
-			if fieldNum == skipLabelNameValidationField {
+			if tagVal == skipLabelNameValidationFieldTag {
 				hasSkipLabelNameValidation = true
 				if val == 0 {
 					skipLabelNameValidation = false
@@ -133,7 +121,7 @@ func SplitWriteRequestRequest(writeRequest []byte, sizeLimit int) ([][]byte, err
 
 		default:
 			// We can't handle unexpected fields.
-			return nil, fmt.Errorf("unexpected field %d, type %d", fieldNum, wireType)
+			return nil, fmt.Errorf("unexpected tag %d", tagVal)
 		}
 
 		// index to current subrequest, always the last one in the slice.
