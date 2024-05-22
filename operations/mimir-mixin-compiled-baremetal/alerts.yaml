@@ -194,7 +194,7 @@ groups:
             message: Mimir store-gateway {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstoregatewaytoomanyfailedoperations
           expr: |
-            sum by(cluster, namespace, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[1m])) > 0
+            sum by(cluster, namespace, instance, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[1m])) > 0
           for: 5m
           labels:
             severity: warning
@@ -697,10 +697,10 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
           expr: |
             # alert when there are more than one corruptions
-            count by (cluster, namespace) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
+            count by (cluster, namespace, instance) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
             and
             # and there is only one zone
-            count by (cluster, namespace) (group by (cluster, namespace, job) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
+            count by (cluster, namespace, instance) (group by (cluster, namespace, instance, job) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
           labels:
             deployment: single-zone
             severity: critical
@@ -710,10 +710,10 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
           expr: |
             # alert when there are more than one corruptions
-            count by (cluster, namespace) (sum by (cluster, namespace, job) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
+            count by (cluster, namespace, instance) (sum by (cluster, namespace, instance, job) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
             and
             # and there are multiple zones
-            count by (cluster, namespace) (group by (cluster, namespace, job) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
+            count by (cluster, namespace, instance) (group by (cluster, namespace, instance, job) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
           labels:
             deployment: multi-zone
             severity: critical
