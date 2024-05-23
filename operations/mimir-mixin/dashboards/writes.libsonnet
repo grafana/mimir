@@ -61,36 +61,29 @@ local filename = 'mimir-writes.json';
       .addPanel(
         local title = 'In-memory series';
         $.panel(title) +
-        $.statPanel(|||
-          sum(cortex_ingester_memory_series{%(ingester)s}
-          / on(%(group_by_cluster)s) group_left
-          max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s}))
-        ||| % ($._config) {
-          ingester: $.jobMatcher($._config.job_names.ingester),
-          distributor: $.jobMatcher($._config.job_names.distributor),
-        }, format='short') +
+        $.statPanel('sum(%s)' % [
+          local perIngesterQuery = 'cortex_ingester_memory_series{%s}' % [$.jobMatcher($._config.job_names.ingester)];
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterQuery, $._config.group_by_cluster),
+        ], format='short') +
         $.panelDescription(
           title,
           |||
             The number of series not yet flushed to object storage that are held in ingester memory.
+            Series are deduplicated according to the replication strategy.
           |||
         ),
       )
       .addPanel(
         local title = 'Exemplars in ingesters';
         $.panel(title) +
-        $.statPanel(|||
-          sum(cortex_ingester_tsdb_exemplar_exemplars_in_storage{%(ingester)s}
-          / on(%(group_by_cluster)s) group_left
-          max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s}))
-        ||| % ($._config) {
-          ingester: $.jobMatcher($._config.job_names.ingester),
-          distributor: $.jobMatcher($._config.job_names.distributor),
-        }, format='short') +
+        $.statPanel('sum(%s)' % [
+          local perIngesterQuery = 'cortex_ingester_tsdb_exemplar_exemplars_in_storage{%s}' % [$.jobMatcher($._config.job_names.ingester)];
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterQuery, $._config.group_by_cluster),
+        ], format='short') +
         $.panelDescription(
           title,
           |||
-            Number of TSDB exemplars currently in ingesters' storage.
+            Number of TSDB exemplars currently in ingesters' storage. Series are deduplicated according to the replication strategy.
           |||
         ),
       )
@@ -649,28 +642,13 @@ local filename = 'mimir-writes.json';
         local title = 'Ingester ingested exemplars rate';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          |||
-            sum(
-              sum by (%(group_by_cluster)s) (%(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m{%(ingester)s})
-              /
-              max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              or
-              sum by (%(group_by_cluster)s) (
-                max by (ingester_id, %(group_by_cluster)s) (
-                  label_replace(
-                    %(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m{%(ingester)s},
-                    "ingester_id", "$1", "%(instance)s", ".*-([0-9]+)$"
-                  )
-                )
-              )
-            )
-          ||| % {
-            ingester: $.jobMatcher($._config.job_names.ingester),
-            distributor: $.jobMatcher($._config.job_names.distributor),
-            group_by_cluster: $._config.group_by_cluster,
-            group_prefix_jobs: $._config.group_prefix_jobs,
-            instance: $._config.per_instance_label,
-          },
+          'sum(%s)' % [
+            local perIngesterQuery = '%(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m{%(ingester)s}' % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+              group_prefix_jobs: $._config.group_prefix_jobs,
+            };
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterQuery, $._config.group_by_cluster),
+          ],
           'ingested exemplars',
         ) +
         { fieldConfig+: { defaults+: { unit: 'ex/s' } } } +
@@ -678,7 +656,8 @@ local filename = 'mimir-writes.json';
           title,
           |||
             The rate of exemplars ingested in the ingesters.
-            Every exemplar is sent to the replication factor number of ingesters, so the sum of rates from all ingesters is divided by the replication factor.
+            Every exemplar is replicated to a number of ingesters. With classic storage we the sum of rates from all ingesters is divided by the replication factor.
+            With ingest storage we take the maximum rate of each ingest partition.
             This ingested exemplars rate should match the distributor's received exemplars rate.
           |||
         ),
