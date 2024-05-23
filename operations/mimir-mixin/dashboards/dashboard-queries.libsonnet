@@ -243,8 +243,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         max by (%(groupByCluster)s) (cortex_distributor_replication_factor{%(distributor)s})
         or on (%(groupByCluster)s)
         # Ingest storage
-        sum by (%(groupByCluster)s) (
-          max by (ingester_id, %(groupByCluster)s) (
+        sum by (%(groupByCluster)s, %(groupByLabels)s) (
+          max by (ingester_id, %(groupByCluster)s, %(groupByLabels)s) (
             label_replace(
               %(perIngesterQuery)s,
               "ingester_id", "$1", "%(instance)s", ".*-([0-9]+)$"
