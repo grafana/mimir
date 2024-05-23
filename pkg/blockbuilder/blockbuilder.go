@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/util/validation"
 	"net"
 	"net/http"
 	"strconv"
@@ -32,6 +34,7 @@ type BlockBuilder struct {
 
 	cfg    Config
 	logger log.Logger
+	limits *validation.Overrides
 
 	ringl          *ring.BasicLifecycler
 	ring           *ring.Ring
@@ -45,6 +48,7 @@ type BlockBuilder struct {
 func NewBlockBuilder(
 	cfg Config,
 	logger log.Logger,
+	limits *validation.Overrides,
 	partitionRing partitionRingReader,
 	reg prometheus.Registerer,
 ) (_ *BlockBuilder, err error) {
@@ -52,6 +56,7 @@ func NewBlockBuilder(
 		cfg:            cfg,
 		logger:         logger,
 		partRingReader: partitionRing,
+		limits:         limits,
 	}
 
 	b.ring, b.ringl, err = newRingAndLifecycler(b.cfg.Ring, b.logger, reg)
@@ -115,8 +120,10 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 	}
 
 	// TODO(v): configure consumption interval
-	tick := time.NewTicker(30 * time.Second)
-	defer tick.Stop()
+	// TODO(codesome): validate the consumption interval. Must be <=2h and .
+	blockRange := time.Hour
+	nextBlockTime := time.Now().Truncate(blockRange).Add(blockRange + (15 * time.Minute))
+	waitTime := time.Until(nextBlockTime)
 
 	go func() {
 		// TODO(v): can remove after debugging the ring
@@ -129,8 +136,16 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 
 	for {
 		select {
-		case <-tick.C:
+		case <-time.After(waitTime):
 			_ = b.consumeRecords(ctx)
+			// If we took more than blockRange time to consume the records, this
+			// will immediately start the next consumption.
+			nextBlockTime = nextBlockTime.Add(blockRange)
+			waitTime = time.Until(nextBlockTime)
+			if waitTime < 0 {
+				// TODO(codesome): track "-waitTime", which is the time we ran over.
+				// This probably needs to be alerted if it goes beyond a certain point consistently.
+			}
 		case <-ctx.Done():
 			return nil
 		case err := <-b.subservicesWatcher.Chan():
@@ -153,6 +168,8 @@ func (b *BlockBuilder) watchPartitionRing(_ context.Context) error {
 
 func (b *BlockBuilder) consumeRecords(ctx context.Context) error {
 	// TODO(v): advance the per-partition offset
+	// TODO(codesome): consume multiple partitions here
+	// TODO(codesome): start from last checkpointed offset
 	offset := kgo.NewOffset().AtStart()
 	return b.consumePartition(ctx, 1, offset)
 }
@@ -176,7 +193,7 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, part int32, offset 
 
 	level.Info(b.logger).Log("msg", "consuming partition", "part", part, "offset", offset.String())
 
-	builder := newTSDBBuilder(b.logger)
+	builder := newTSDBBuilder(b.logger, b.limits, b.cfg.BlocksStorageConfig)
 	checkpointOffset := int64(-1)
 	lastOffset := offset.EpochOffset().Offset
 	for ctx.Err() == nil {
@@ -242,8 +259,9 @@ func (b *BlockBuilder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 type Config struct {
-	Ring  RingConfig  `yaml:"ring"`
-	Kafka KafkaConfig `yaml:"kafka"`
+	Ring                RingConfig                     `yaml:"ring"`
+	Kafka               KafkaConfig                    `yaml:"kafka"`
+	BlocksStorageConfig mimir_tsdb.BlocksStorageConfig `yaml:"-"` // TODO(codesome): check how this is passed. Copied over form ingester.
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.

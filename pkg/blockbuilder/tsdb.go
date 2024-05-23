@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/oklog/ulid"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"os"
 	"path/filepath"
 	"sync"
@@ -36,14 +40,19 @@ type tsdbBuilder struct {
 	logger log.Logger
 
 	// tenant-to-tsdb
-	tsdbs   map[string]*tsdb.DB // TODO: Use tsdb.DB instead
+	tsdbs   map[string]*userTSDB // TODO: Use tsdb.DB instead
 	tsdbsMu sync.RWMutex
+
+	limits              *validation.Overrides
+	blocksStorageConfig mimir_tsdb.BlocksStorageConfig
 }
 
-func newTSDBBuilder(logger log.Logger) *tsdbBuilder {
+func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, blocksStorageConfig mimir_tsdb.BlocksStorageConfig) *tsdbBuilder {
 	return &tsdbBuilder{
-		tsdbs:  make(map[string]*tsdb.DB),
-		logger: logger,
+		tsdbs:               make(map[string]*userTSDB),
+		logger:              logger,
+		limits:              limits,
+		blocksStorageConfig: blocksStorageConfig,
 	}
 }
 
@@ -52,14 +61,14 @@ func newTSDBBuilder(logger log.Logger) *tsdbBuilder {
 // lastEnd: "end" time of the previous block building cycle.
 // end: end time of the block we are looking at right now.
 // Returns true if all the samples were taken to be put in a block, false if at least one sample
-func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, end int64, recordProcessedBefore bool) (bool, error) {
+func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, end int64, recordProcessedBefore bool) (_ bool, err error) {
 	tenantID := string(rec.Key)
 
 	req := mimirpb.WriteRequest{}
 	defer mimirpb.ReuseSlice(req.Timeseries)
 
 	// TODO(codesome): see if we can skip parsing exemplars. They are not persisted in the block so we can save some parsing here.
-	err := req.Unmarshal(rec.Value)
+	err = req.Unmarshal(rec.Value)
 	if err != nil {
 		return false, fmt.Errorf("unmarshal record key %s: %w", rec.Key, err)
 	}
@@ -75,8 +84,10 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, end
 
 	app := db.Appender(rec.Context).(extendedAppender)
 	defer func() {
-		if err := app.Rollback(); err != nil && !errors.Is(err, tsdb.ErrAppenderClosed) {
-			level.Warn(b.logger).Log("msg", "failed to rollback appender on error", "tenant", tenantID, "err", err)
+		if err != nil {
+			if e := app.Rollback(); e != nil && !errors.Is(e, tsdb.ErrAppenderClosed) {
+				level.Warn(b.logger).Log("msg", "failed to rollback appender on error", "tenant", tenantID, "err", e)
+			}
 		}
 	}()
 
@@ -104,7 +115,6 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, end
 				// This sample was already processed in the previous cycle.
 				continue
 			}
-			var err error
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
 				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
@@ -134,9 +144,8 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, end
 				continue
 			}
 			var (
-				err error
-				ih  *histogram.Histogram
-				fh  *histogram.FloatHistogram
+				ih *histogram.Histogram
+				fh *histogram.FloatHistogram
 			)
 
 			if h.IsFloatHistogram() {
@@ -170,7 +179,7 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, end
 	return allSamplesProcessed, app.Commit()
 }
 
-func (b *tsdbBuilder) getOrCreateTSDB(tenantID string) (*tsdb.DB, error) {
+func (b *tsdbBuilder) getOrCreateTSDB(tenantID string) (*userTSDB, error) {
 	b.tsdbsMu.RLock()
 	db, _ := b.tsdbs[tenantID]
 	b.tsdbsMu.RUnlock()
@@ -199,54 +208,52 @@ func (b *tsdbBuilder) getOrCreateTSDB(tenantID string) (*tsdb.DB, error) {
 	return db, nil
 }
 
-func (b *tsdbBuilder) newTSDB(tenantID string) (*tsdb.DB, error) {
+func (b *tsdbBuilder) newTSDB(tenantID string) (*userTSDB, error) {
 	udir := blocksDir(tenantID)
 
 	userLogger := util_log.WithUserID(tenantID, b.logger)
 
-	return tsdb.Open(udir, userLogger, nil, &tsdb.Options{
+	udb := &userTSDB{
+		userID: tenantID,
+	}
+
+	db, err := tsdb.Open(udir, userLogger, nil, &tsdb.Options{
 		RetentionDuration:           0,
 		MinBlockDuration:            2 * time.Hour.Milliseconds(),
 		MaxBlockDuration:            2 * time.Hour.Milliseconds(),
 		NoLockfile:                  true,
-		StripeSize:                  128, // TODO i.cfg.BlocksStorageConfig.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:   128, // TODO i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksEndTimeVariance:   0,   // TODO i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
-		WALSegmentSize:              -1,  // No WAL
-		SeriesLifecycleCallback:     nil, // TODO
-		BlocksToDelete:              nil, // TODO
-		SeriesHashCache:             nil, // TODO: do we need it? I dont think so
+		StripeSize:                  b.blocksStorageConfig.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:   b.blocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksEndTimeVariance:   b.blocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
+		HeadChunksWriteQueueSize:    b.blocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
+		WALSegmentSize:              -1, // No WAL
+		SeriesLifecycleCallback:     udb,
+		BlocksToDelete:              udb.blocksToDelete,
 		IsolationDisabled:           true,
-		HeadChunksWriteQueueSize:    128,                          // TODO i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		EnableOverlappingCompaction: false,                        // always false since Mimir only uploads lvl 1 compacted blocks
-		OutOfOrderTimeWindow:        2 * time.Hour.Milliseconds(), // i.limits.OutOfOrderTimeWindow(userID)
-		OutOfOrderCapMax:            30,                           // TODO int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
-		EnableNativeHistograms:      true,                         // TODO i.limits.NativeHistogramsIngestionEnabled(userID),
-		SecondaryHashFunction:       nil,                          // TODO secondaryTSDBHashFunctionForUser(userID),
+		EnableOverlappingCompaction: false, // always false since Mimir only uploads lvl 1 compacted blocks
+		// TODO(codesome): take into consideration the block builder's processing interval and set this properly.
+		OutOfOrderTimeWindow:   b.limits.OutOfOrderTimeWindow(tenantID).Milliseconds(), // The unit must be same as our timestamps.
+		OutOfOrderCapMax:       int64(b.blocksStorageConfig.TSDB.OutOfOrderCapacityMax),
+		EnableNativeHistograms: b.limits.NativeHistogramsIngestionEnabled(tenantID),
+		// TODO(codesome): this is used to determine the owned series by an ingesters. May need when applying limits.
+		SecondaryHashFunction: nil, // TODO secondaryTSDBHashFunctionForUser(userID),
 	}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	udb.db = db
+
+	return udb, nil
 }
 
 // compactBlocks compacts the blocks of all the TSDBs.
 func (b *tsdbBuilder) compactAndCloseDBs(ctx context.Context) error {
-	blockRange := 2 * time.Hour.Milliseconds()
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
-	for userID, db := range b.tsdbs {
-		// Compact the in-order data.
-		mint, maxt := db.Head().MinTime(), db.Head().MaxTime()
-		mint = blockRange * mint / blockRange
-		for blockMint := mint; blockMint <= maxt; blockMint += blockRange {
-			blockMaxt := blockMint + blockRange - 1
-			rh := tsdb.NewRangeHead(db.Head(), blockMint, blockMaxt)
-			// TODO(codesome): this also truncates the memory here. We can skip it since we will close
-			// this TSDB right after all the compactions. We will save a good chunks of computation this way.
-			if err := db.CompactHead(rh); err != nil {
-				return err
-			}
-		}
 
-		// Compact the out-of-order data.
-		if err := db.CompactOOOHead(ctx); err != nil {
+	for userID, db := range b.tsdbs {
+		if err := db.compactEverything(ctx); err != nil {
 			return err
 		}
 
@@ -254,7 +261,6 @@ func (b *tsdbBuilder) compactAndCloseDBs(ctx context.Context) error {
 		// So, if we choose to not truncation while compacting the in-prder head above, we should try to
 		// truncate the entire Head efficiently before closing the DB since closing the DB does not release
 		// the memory either. NOTE: this is unnecessary if it does not reduce the memory spikes of compaction.
-
 		if err := db.Close(); err != nil {
 			return err
 		}
@@ -264,11 +270,76 @@ func (b *tsdbBuilder) compactAndCloseDBs(ctx context.Context) error {
 
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
 	// we want to reuse the tsdbBuilder.
-	b.tsdbs = make(map[string]*tsdb.DB)
+	b.tsdbs = make(map[string]*userTSDB)
 	return nil
 }
 
 type extendedAppender interface {
 	storage.Appender
 	storage.GetRef
+}
+
+type userTSDB struct {
+	db      *tsdb.DB
+	userID  string
+	shipper BlocksUploader
+}
+
+// BlocksUploader interface is used to have an easy way to mock it in tests.
+type BlocksUploader interface {
+	Sync(ctx context.Context) (uploaded int, err error)
+}
+
+func (u *userTSDB) Head() *tsdb.Head {
+	return u.db.Head()
+}
+
+func (u *userTSDB) Close() error {
+	return u.db.Close()
+}
+
+func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
+	return u.db.Appender(ctx)
+}
+
+func (u *userTSDB) compactEverything(ctx context.Context) error {
+	blockRange := 2 * time.Hour.Milliseconds()
+
+	// Compact the in-order data.
+	mint, maxt := u.Head().MinTime(), u.Head().MaxTime()
+	mint = blockRange * mint / blockRange
+	for blockMint := mint; blockMint <= maxt; blockMint += blockRange {
+		blockMaxt := blockMint + blockRange - 1
+		rh := tsdb.NewRangeHead(u.Head(), blockMint, blockMaxt)
+		// TODO(codesome): this also truncates the memory here. We can skip it since we will close
+		// this TSDB right after all the compactions. We will save a good chunks of computation this way.
+		if err := u.db.CompactHead(rh); err != nil {
+			return err
+		}
+	}
+
+	// Compact the out-of-order data.
+	if err := u.db.CompactOOOHead(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (u *userTSDB) PreCreation(metric labels.Labels) error {
+	// TODO: Implement
+	return nil
+}
+
+func (u *userTSDB) PostCreation(metric labels.Labels) {
+	// TODO: Implement
+}
+
+func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
+	// TODO: Implement
+}
+
+func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
+	// TODO(codesome): delete all the blocks that have been shipped.
+	return map[ulid.ULID]struct{}{}
 }
