@@ -206,7 +206,7 @@ spec:
               message: Mimir store-gateway {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstoregatewaytoomanyfailedoperations
             expr: |
-              sum by(cluster, namespace, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[1m])) > 0
+              sum by(cluster, namespace, pod, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[1m])) > 0
             for: 5m
             labels:
               severity: warning
@@ -723,10 +723,10 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
             expr: |
               # alert when there are more than one corruptions
-              count by (cluster, namespace) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
+              count by (cluster, namespace, pod) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
               and
               # and there is only one zone
-              count by (cluster, namespace) (group by (cluster, namespace, job) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
+              count by (cluster, namespace, pod) (group by (cluster, namespace, pod, job) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
             labels:
               deployment: single-zone
               severity: critical
@@ -736,10 +736,10 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
             expr: |
               # alert when there are more than one corruptions
-              count by (cluster, namespace) (sum by (cluster, namespace, job) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
+              count by (cluster, namespace, pod) (sum by (cluster, namespace, pod, job) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
               and
               # and there are multiple zones
-              count by (cluster, namespace) (group by (cluster, namespace, job) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
+              count by (cluster, namespace, pod) (group by (cluster, namespace, pod, job) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
             labels:
               deployment: multi-zone
               severity: critical
@@ -994,9 +994,9 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterstuckprocessingrecordsfromkafka
             expr: |
               # Alert if the reader is not processing any records, but there buffered records to process in the Kafka client.
-              # NOTE: the cortex_ingest_storage_reader_buffered_fetch_records_total metric is a gauge showing the current number of buffered records.
               (sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_records_total[5m])) == 0)
               and
+              # NOTE: the cortex_ingest_storage_reader_buffered_fetch_records_total metric is a gauge showing the current number of buffered records.
               (sum by (cluster, namespace, pod) (cortex_ingest_storage_reader_buffered_fetch_records_total) > 0)
             for: 5m
             labels:
