@@ -336,7 +336,9 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 	})
 
 	for boff.Ongoing() {
+		consumeStart := time.Now()
 		err := r.consumer.consume(ctx, records)
+		r.metrics.consumeLatency.Observe(time.Since(consumeStart).Seconds())
 		if err == nil {
 			break
 		}
