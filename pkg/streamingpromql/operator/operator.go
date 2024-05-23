@@ -21,6 +21,7 @@ type Operator interface {
 
 	// Close frees all resources associated with this operator.
 	// Calling SeriesMetadata or NextSeries after calling Close may result in unpredictable behaviour, corruption or crashes.
+	// It must be safe to call Close at any time, including if SeriesMetadata or NextSeries have returned an error.
 	Close()
 }
 
@@ -70,7 +71,14 @@ type SeriesMetadata struct {
 }
 
 type InstantVectorSeriesData struct {
-	Floats     []promql.FPoint
+	// Floats contains floating point samples for this series.
+	// Samples must be sorted in timestamp order, earliest timestamps first.
+	// Samples must not have duplicate timestamps.
+	Floats []promql.FPoint
+
+	// Histograms contains histogram samples for this series.
+	// Samples must be sorted in timestamp order, earliest timestamps first.
+	// Samples must not have duplicate timestamps.
 	Histograms []promql.HPoint
 }
 

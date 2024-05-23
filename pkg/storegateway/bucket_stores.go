@@ -114,8 +114,9 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	lazyLoadingGate := gate.NewNoop()
 	lazyLoadingMax := cfg.BucketStore.IndexHeader.LazyLoadingConcurrency
 	if lazyLoadingMax != 0 {
-		blockingGate := gate.NewBlocking(cfg.BucketStore.IndexHeader.LazyLoadingConcurrency)
-		lazyLoadingGate = gate.NewInstrumented(lazyLoadingGateReg, cfg.BucketStore.IndexHeader.LazyLoadingConcurrency, blockingGate)
+		lazyLoadingGate = gate.NewBlocking(cfg.BucketStore.IndexHeader.LazyLoadingConcurrency)
+		lazyLoadingGate = gate.NewInstrumented(lazyLoadingGateReg, cfg.BucketStore.IndexHeader.LazyLoadingConcurrency, lazyLoadingGate)
+		lazyLoadingGate = timeoutGate{delegate: lazyLoadingGate, timeout: cfg.BucketStore.IndexHeader.LazyLoadingConcurrencyQueueTimeout}
 	}
 
 	u := &BucketStores{
@@ -445,7 +446,10 @@ func (t timeoutGate) Start(ctx context.Context) error {
 	defer cancel()
 
 	err := t.delegate.Start(ctx)
-	if errors.Is(context.Cause(ctx), errGateTimeout) {
+	// Note that we only return an error for a timeout when the delegate has also returned an
+	// error. This ensures that when we get a slot in the delegate, our caller will call Done()
+	// and release the slot.
+	if err != nil && errors.Is(context.Cause(ctx), errGateTimeout) {
 		_ = spanlogger.FromContext(ctx, log.NewNopLogger()).Error(err)
 		err = errGateTimeout
 	}

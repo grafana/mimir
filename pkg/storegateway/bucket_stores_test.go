@@ -1042,3 +1042,24 @@ func must[T any](v T, err error) T {
 	}
 	return v
 }
+
+func TestTimeoutGate_CancellationRace(t *testing.T) {
+	gate := timeoutGate{
+		delegate: alwaysSuccessfulAfterDelayGate{time.Second},
+		timeout:  time.Nanosecond,
+	}
+
+	err := gate.Start(context.Background())
+	require.NoError(t, err, "must not return failure if delegated gate returns success even after timeout expires")
+}
+
+type alwaysSuccessfulAfterDelayGate struct {
+	delay time.Duration
+}
+
+func (a alwaysSuccessfulAfterDelayGate) Start(_ context.Context) error {
+	<-time.After(a.delay)
+	return nil
+}
+
+func (a alwaysSuccessfulAfterDelayGate) Done() {}

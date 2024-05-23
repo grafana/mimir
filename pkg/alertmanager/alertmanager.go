@@ -477,7 +477,7 @@ func buildIntegrationsMap(l log.Logger, userID string, nc []*definition.Postable
 				orgID = 0
 			}
 			// TODO: email sender is no-op for now.
-			integrations, err := alertingNotify.BuildReceiverIntegrations(rCfg, tmpl, &images.UnavailableProvider{}, loggerFactory(l), whSenderFn, emailSenderFn, orgID, version.Version)
+			integrations, err := alertingNotify.BuildReceiverIntegrations(rCfg, tmpl, &images.UnavailableProvider{}, newLoggerFactory(l), whSenderFn, emailSenderFn, orgID, version.Version)
 			if err != nil {
 				return nil, err
 			}

@@ -711,6 +711,11 @@ func (m *mockDistributor) ActiveSeries(ctx context.Context, matchers []*labels.M
 	return args.Get(0).([]labels.Labels), args.Error(1)
 }
 
+func (m *mockDistributor) ActiveNativeHistogramMetrics(ctx context.Context, matchers []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+	args := m.Called(ctx, matchers)
+	return args.Get(0).(*cardinality.ActiveNativeHistogramMetricsResponse), args.Error(1)
+}
+
 type mockConfigProvider struct {
 	queryIngestersWithin time.Duration
 	seenUserIDs          []string

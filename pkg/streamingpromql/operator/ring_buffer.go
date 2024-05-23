@@ -10,6 +10,12 @@ type RingBuffer struct {
 	size       int // Number of points in this buffer.
 }
 
+var (
+	// Overrides used only during tests.
+	getFPointSliceForRingBuffer = GetFPointSlice
+	putFPointSliceForRingBuffer = PutFPointSlice
+)
+
 // DiscardPointsBefore discards all points in this buffer with timestamp less than t.
 func (b *RingBuffer) DiscardPointsBefore(t int64) {
 	for b.size > 0 && b.points[b.firstIndex].T < t {
@@ -31,7 +37,7 @@ func (b *RingBuffer) DiscardPointsBefore(t int64) {
 // Callers must not modify the values in the returned slices or return them to a pool.
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
-// The returned slices are no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset).
+// The returned slices are no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
 //
 // FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
 // Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
@@ -65,7 +71,7 @@ func (b *RingBuffer) CopyPoints(maxT int64) []promql.FPoint {
 	}
 
 	head, tail := b.UnsafePoints(maxT)
-	combined := GetFPointSlice(len(head) + len(tail))
+	combined := getFPointSliceForRingBuffer(len(head) + len(tail))
 	combined = append(combined, head...)
 	combined = append(combined, tail...)
 
@@ -109,13 +115,13 @@ func (b *RingBuffer) Append(p promql.FPoint) {
 			newSize = 2
 		}
 
-		newSlice := GetFPointSlice(newSize)
+		newSlice := getFPointSliceForRingBuffer(newSize)
 		newSlice = newSlice[:cap(newSlice)]
 		pointsAtEnd := b.size - b.firstIndex
 		copy(newSlice, b.points[b.firstIndex:])
 		copy(newSlice[pointsAtEnd:], b.points[:b.firstIndex])
 
-		PutFPointSlice(b.points)
+		putFPointSliceForRingBuffer(b.points)
 		b.points = newSlice
 		b.firstIndex = 0
 	}
@@ -134,7 +140,7 @@ func (b *RingBuffer) Reset() {
 // Close releases any resources associated with this buffer.
 func (b *RingBuffer) Close() {
 	b.Reset()
-	PutFPointSlice(b.points)
+	putFPointSliceForRingBuffer(b.points)
 	b.points = nil
 }
 
