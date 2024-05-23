@@ -40,7 +40,7 @@ func queryComponentFlags(queryComponentName string) (isIngester, isStoreGateway 
 	return isIngester, isStoreGateway
 }
 
-// QueryComponentCapacity tracks requests from the time they are forwarded to a querier
+// QueryComponentUtilization tracks requests from the time they are forwarded to a querier
 // to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
 // Unlike the Scheduler's schedulerInflightRequests, tracking begins only when the request is sent to a querier.
 //
@@ -48,7 +48,7 @@ func queryComponentFlags(queryComponentName string) (isIngester, isStoreGateway 
 // representing whether the query request will be served by the ingesters, store-gateways, or both.
 // Query requests utilizing both ingesters and store-gateways are tracked in the atomics for both component,
 // therefore the sum of inflight requests by component is likely to exceed the inflight requests total.
-type QueryComponentCapacity struct {
+type QueryComponentUtilization struct {
 	// targetReservedCapacity sets the portion of querier-worker connections we attempt to reserve
 	// for queries to the less-loaded query component when the query queue becomes backlogged.
 	targetReservedCapacity float64
@@ -72,16 +72,16 @@ const DefaultReservedQueryComponentCapacity = 0.33
 // Therefore, one of the components will always be given the OK to dequeue queries for.
 const MaxReservedQueryComponentCapacity = 0.5
 
-func NewQueryComponentCapacity(
+func NewQueryComponentUtilization(
 	targetReservedCapacity float64,
 	querierInflightRequests *prometheus.GaugeVec,
-) (*QueryComponentCapacity, error) {
+) (*QueryComponentUtilization, error) {
 
 	if targetReservedCapacity >= MaxReservedQueryComponentCapacity {
 		return nil, errors.New("invalid targetReservedCapacity")
 	}
 
-	return &QueryComponentCapacity{
+	return &QueryComponentUtilization{
 		targetReservedCapacity: targetReservedCapacity,
 
 		ingesterInflightRequests:     atomic.NewInt64(0),
@@ -92,7 +92,7 @@ func NewQueryComponentCapacity(
 	}, nil
 }
 
-// ExceedsCapacityForComponentName checks whether a query component has exceeded the capacity utilization threshold.
+// ExceedsThresholdForComponentName checks whether a query component has exceeded the capacity utilization threshold.
 // This enables the dequeuing algorithm to skip requests for a query component experiencing heavy load,
 // reserving querier-worker connection capacity to continue servicing requests for the other component.
 // If there are no requests in queue for the other, less-utilized component, the dequeuing algorithm may choose
@@ -101,9 +101,9 @@ func NewQueryComponentCapacity(
 // Capacity utilization for a QueryComponent is defined by the portion of the querier-worker connections
 // which are currently in flight processing a query which requires that QueryComponent.
 //
-// The component name can indicate the usage of one or both of ingesters and store-gateways,
-// and will be indicated as exceeding the threshold if either ingesters or store-gateways
-// are currently in excess of the reserved capacity.
+// The component name can indicate the usage of one or both of ingesters and store-gateways.
+// If both ingesters and store-gateways will be used, this method will flag the threshold as exceeded
+// if either ingesters or store-gateways are currently in excess of the reserved capacity.
 //
 // Capacity reservation only occurs when the queue backlogged, where backlogged is defined as
 // (length of the query queue) >= (number of querier-worker connections waiting for a query).
@@ -112,7 +112,7 @@ func NewQueryComponentCapacity(
 // If an influx of queries then creates a backlog, this method will indicate to skip queries for the component.
 // As the inflight queries complete or fail, the component's utilization will naturally decrease.
 // This method will continue to indicate to skip queries for the component until it is back under the threshold.
-func (qcl *QueryComponentCapacity) ExceedsCapacityForComponentName(
+func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
 	name string, connectedWorkers int64, queueLen, waitingWorkers int,
 ) (bool, QueryComponent) {
 	if waitingWorkers > queueLen {
@@ -150,16 +150,16 @@ func (qcl *QueryComponentCapacity) ExceedsCapacityForComponentName(
 }
 
 // IncrementForComponentName is called when a request is sent to a querier
-func (qcl *QueryComponentCapacity) IncrementForComponentName(expectedQueryComponent string) {
+func (qcl *QueryComponentUtilization) IncrementForComponentName(expectedQueryComponent string) {
 	qcl.updateForComponentName(expectedQueryComponent, 1)
 }
 
 // DecrementForComponentName is called when a querier completes or fails a request
-func (qcl *QueryComponentCapacity) DecrementForComponentName(expectedQueryComponent string) {
+func (qcl *QueryComponentUtilization) DecrementForComponentName(expectedQueryComponent string) {
 	qcl.updateForComponentName(expectedQueryComponent, -1)
 }
 
-func (qcl *QueryComponentCapacity) updateForComponentName(expectedQueryComponent string, increment int64) {
+func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryComponent string, increment int64) {
 	isIngester, isStoreGateway := queryComponentFlags(expectedQueryComponent)
 
 	if isIngester {

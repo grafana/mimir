@@ -108,10 +108,10 @@ type RequestQueue struct {
 	nextRequestForQuerierCalls        chan *nextRequestForQuerierCall
 	waitingNextRequestForQuerierCalls *list.List
 
-	// QueryComponentCapacity encapsulates tracking requests from the time they are forwarded to a querier
+	// QueryComponentUtilization encapsulates tracking requests from the time they are forwarded to a querier
 	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
-	// schedulerInflightRequests, tracking begins only when the request is sent to a querier.
-	QueryComponentCapacity *QueryComponentCapacity
+	// Unlike schedulerInflightRequests, tracking begins only when the request is sent to a querier.
+	QueryComponentUtilization *QueryComponentUtilization
 
 	queueBroker *queueBroker
 }
@@ -148,7 +148,7 @@ func NewRequestQueue(
 	enqueueDuration prometheus.Histogram,
 	querierInflightRequests *prometheus.GaugeVec,
 ) (*RequestQueue, error) {
-	queryComponentCapacity, err := NewQueryComponentCapacity(DefaultReservedQueryComponentCapacity, querierInflightRequests)
+	queryComponentCapacity, err := NewQueryComponentUtilization(DefaultReservedQueryComponentCapacity, querierInflightRequests)
 	if err != nil {
 		return nil, err
 	}
@@ -174,8 +174,8 @@ func NewRequestQueue(
 		nextRequestForQuerierCalls:        make(chan *nextRequestForQuerierCall),
 		waitingNextRequestForQuerierCalls: list.New(),
 
-		QueryComponentCapacity: queryComponentCapacity,
-		queueBroker:            newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, forgetDelay),
+		QueryComponentUtilization: queryComponentCapacity,
+		queueBroker:               newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, forgetDelay),
 	}
 
 	q.Service = services.NewTimerService(forgetCheckPeriod, q.starting, q.forgetDisconnectedQueriers, q.stop).WithName("request queue")
@@ -315,20 +315,21 @@ func (q *RequestQueue) trySendNextRequestForQuerier(call *nextRequestForQuerierC
 		schedulerRequest, ok := req.req.(*SchedulerRequest)
 		if ok {
 			queryComponentName := schedulerRequest.ExpectedQueryComponentName()
-			exceedsCapacity, queryComponent := q.QueryComponentCapacity.ExceedsCapacityForComponentName(
+			exceedsThreshold, queryComponent := q.QueryComponentUtilization.ExceedsThresholdForComponentName(
 				queryComponentName,
 				q.connectedQuerierWorkers.Load(),
 				q.queueBroker.tenantQueuesTree.ItemCount(),
 				q.waitingNextRequestForQuerierCalls.Len(),
 			)
 
-			if exceedsCapacity {
+			if exceedsThreshold {
 				level.Info(q.log).Log(
-					"msg", "experimental: querier worker connections in use by query component exceed reserve capacity. no action taken",
+					"msg", "experimental: querier worker connections in use by query component exceed utilization threshold. no action taken",
 					"query_component_name", queryComponentName,
 					"overloaded_query_component", queryComponent,
 				)
 			}
+			q.QueryComponentUtilization.IncrementForComponentName(queryComponentName)
 		}
 
 	}

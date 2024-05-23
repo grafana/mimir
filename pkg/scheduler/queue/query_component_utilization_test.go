@@ -9,7 +9,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 )
 
 func testQuerierInflightRequestsGauge() *prometheus.GaugeVec {
@@ -19,24 +18,24 @@ func testQuerierInflightRequestsGauge() *prometheus.GaugeVec {
 	}, []string{"query_component"})
 }
 
-func TestQueryComponentCapacity_Concurrency(t *testing.T) {
+func TestQueryComponentUtilization_Concurrency(t *testing.T) {
 
 	requestCount := 100
-	queryComponentLoad, err := NewQueryComponentCapacity(
+	queryComponentUtilization, err := NewQueryComponentUtilization(
 		DefaultReservedQueryComponentCapacity, testQuerierInflightRequestsGauge(),
 	)
 	require.NoError(t, err)
 
-	mockForwardRequestToQuerier := func(t *testing.T, capacity *QueryComponentCapacity) {
+	mockForwardRequestToQuerier := func(t *testing.T, utilization *QueryComponentUtilization) {
 		expectedQueryComponent := randAdditionalQueueDimension(false)[0]
 
-		capacity.IncrementForComponentName(expectedQueryComponent)
-		require.GreaterOrEqual(t, capacity.ingesterInflightRequests.Load(), int64(0))
-		require.GreaterOrEqual(t, capacity.storeGatewayInflightRequests.Load(), int64(0))
+		utilization.IncrementForComponentName(expectedQueryComponent)
+		require.GreaterOrEqual(t, utilization.ingesterInflightRequests.Load(), int64(0))
+		require.GreaterOrEqual(t, utilization.storeGatewayInflightRequests.Load(), int64(0))
 
-		capacity.DecrementForComponentName(expectedQueryComponent)
-		require.GreaterOrEqual(t, capacity.ingesterInflightRequests.Load(), int64(0))
-		require.GreaterOrEqual(t, capacity.storeGatewayInflightRequests.Load(), int64(0))
+		utilization.DecrementForComponentName(expectedQueryComponent)
+		require.GreaterOrEqual(t, utilization.ingesterInflightRequests.Load(), int64(0))
+		require.GreaterOrEqual(t, utilization.storeGatewayInflightRequests.Load(), int64(0))
 	}
 
 	wg := sync.WaitGroup{}
@@ -46,18 +45,18 @@ func TestQueryComponentCapacity_Concurrency(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			mockForwardRequestToQuerier(t, queryComponentLoad)
+			mockForwardRequestToQuerier(t, queryComponentUtilization)
 		}()
 	}
 	close(start)
 	wg.Wait()
-	require.Equal(t, int64(0), queryComponentLoad.ingesterInflightRequests.Load())
-	require.Equal(t, int64(0), queryComponentLoad.storeGatewayInflightRequests.Load())
-	require.Equal(t, int64(0), queryComponentLoad.querierInflightRequestsTotal.Load())
+	require.Equal(t, int64(0), queryComponentUtilization.ingesterInflightRequests.Load())
+	require.Equal(t, int64(0), queryComponentUtilization.storeGatewayInflightRequests.Load())
+	require.Equal(t, int64(0), queryComponentUtilization.querierInflightRequestsTotal.Load())
 }
 
-func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
-	connectedWorkers := atomic.NewInt64(10)
+func TestExceedsUtilizationThresholdForQueryComponents(t *testing.T) {
+	connectedWorkers := int64(10)
 	// with 10 connected workers, if queue len >= waiting workers,
 	// no component can have more than 6 inflight requests.
 	testReservedCapacity := 0.4
@@ -74,7 +73,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 		thresholdExceededComponent QueryComponent
 	}{
 		// No queue backlog, threshold met or exceeded cases: we do not signal to skip the request.
-		// In these cases, one component's inflight requests meet or exceed the capacity threshold,
+		// In these cases, one component's inflight requests meet or exceed the utilization threshold,
 		// but there are more waiting workers than items in the queue.
 		{
 			name:                         "ingester only, no backlog, ingester utilization above threshold",
@@ -133,7 +132,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 
 		// Queue backlog, threshold not exceeded cases: we do not signal to skip the request.
 		// In these cases, there are more items in the queue than waiting workers,
-		// but no component's inflight requests meet or exceed the capacity threshold.
+		// but no component's inflight requests meet or exceed the utilization threshold.
 		{
 			name:                         "ingester only, queue backlog, ingester utilization below threshold",
 			queueLen:                     10,
@@ -173,7 +172,7 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 
 		// Queue backlog, threshold exceeded cases: we signal to skip the request.
 		// In these cases, there are more items in the queue than waiting workers,
-		// and one component's inflight requests meet or exceed the capacity threshold.
+		// and one component's inflight requests meet or exceed the utilization threshold.
 		{
 			name:                         "ingester only, queue backlog, ingester utilization at threshold",
 			queueLen:                     10,
@@ -228,32 +227,43 @@ func TestExceedsReservedCapacityForQueryComponents(t *testing.T) {
 			queryComponentName:           "xyz",
 			thresholdExceededComponent:   StoreGateway,
 		},
+
+		// corner cases
+		{
+			name:                         "uncategorized queue component, queue backlog, store gateway utilization above threshold",
+			queueLen:                     10,
+			waitingWorkers:               1,
+			ingesterInflightRequests:     2,
+			storeGatewayInflightRequests: 7,
+			queryComponentName:           "xyz",
+			thresholdExceededComponent:   StoreGateway,
+		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			queryComponentLoad, err := NewQueryComponentCapacity(
+			queryComponentUtilization, err := NewQueryComponentUtilization(
 				testReservedCapacity, testQuerierInflightRequestsGauge(),
 			)
 			require.NoError(t, err)
 
 			for i := 0; i < testCase.ingesterInflightRequests; i++ {
-				queryComponentLoad.IncrementForComponentName(ingesterQueueDimension)
+				queryComponentUtilization.IncrementForComponentName(ingesterQueueDimension)
 			}
 
 			for i := 0; i < testCase.storeGatewayInflightRequests; i++ {
-				queryComponentLoad.IncrementForComponentName(storeGatewayQueueDimension)
+				queryComponentUtilization.IncrementForComponentName(storeGatewayQueueDimension)
 			}
 
-			exceedsCapacity, queryComponent := queryComponentLoad.ExceedsCapacityForComponentName(
+			exceedsThreshold, queryComponent := queryComponentUtilization.ExceedsThresholdForComponentName(
 				testCase.queryComponentName,
-				connectedWorkers.Load(),
+				connectedWorkers,
 				testCase.queueLen,
 				testCase.waitingWorkers,
 			)
 			require.Equal(t, queryComponent, testCase.thresholdExceededComponent)
-			// we should only return a component when exceedsCapacity is true and vice versa
-			require.Equal(t, exceedsCapacity, testCase.thresholdExceededComponent != "")
+			// we should only return a component when exceedsThreshold is true and vice versa
+			require.Equal(t, exceedsThreshold, testCase.thresholdExceededComponent != "")
 		})
 	}
 }

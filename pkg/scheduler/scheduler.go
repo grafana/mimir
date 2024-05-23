@@ -472,8 +472,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 	defer s.cancelRequestAndRemoveFromPending(req.FrontendAddress, req.QueryID, "request complete")
 
 	queryComponentName := req.ExpectedQueryComponentName()
-	s.requestQueue.QueryComponentCapacity.IncrementForComponentName(queryComponentName)
-	defer s.requestQueue.QueryComponentCapacity.DecrementForComponentName(queryComponentName)
+	defer s.requestQueue.QueryComponentUtilization.DecrementForComponentName(queryComponentName)
 
 	// Handle the stream sending & receiving on a goroutine so we can
 	// monitor the contexts in a select and cancel things appropriately.
