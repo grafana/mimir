@@ -32113,7 +32113,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(\n  (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n    - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, ) ((\n  cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n)\n)\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, ) (\n  max by (ingester_id, cluster, namespace, ) (\n    label_replace(\n      (\n  cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n)\n,\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "in-memory",
                             "legendLink": null
@@ -32125,19 +32125,19 @@ data:
                             "legendLink": null
                          },
                          {
-                            "expr": "sum(\n  cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, ) (cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, ) (\n  max by (ingester_id, cluster, namespace, ) (\n    label_replace(\n      cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "active",
                             "legendLink": null
                          },
                          {
-                            "expr": "sum(\n  cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, ) (cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, ) (\n  max by (ingester_id, cluster, namespace, ) (\n    label_replace(\n      cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "owned",
                             "legendLink": null
                          },
                          {
-                            "expr": "sum by (name) (\n  cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n) > 0\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, name) (cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, name) (\n  max by (ingester_id, cluster, namespace, name) (\n    label_replace(\n      cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "active ({{ name }})",
                             "legendLink": null
@@ -32352,7 +32352,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum(\n  cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, ) (cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, ) (\n  max by (ingester_id, cluster, namespace, ) (\n    label_replace(\n      cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "series",
                             "legendLink": null
@@ -32469,13 +32469,13 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum(\n  cortex_ingester_active_native_histogram_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, ) (cortex_ingester_active_native_histogram_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, ) (\n  max by (ingester_id, cluster, namespace, ) (\n    label_replace(\n      cortex_ingester_active_native_histogram_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "active",
                             "legendLink": null
                          },
                          {
-                            "expr": "sum by (name) (\n  cortex_ingester_active_native_histogram_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n) > 0\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, name) (cortex_ingester_active_native_histogram_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, name) (\n  max by (ingester_id, cluster, namespace, name) (\n    label_replace(\n      cortex_ingester_active_native_histogram_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "active ({{ name }})",
                             "legendLink": null
@@ -32543,13 +32543,13 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum(\n  cortex_ingester_active_native_histogram_buckets{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, ) (cortex_ingester_active_native_histogram_buckets{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, ) (\n  max by (ingester_id, cluster, namespace, ) (\n    label_replace(\n      cortex_ingester_active_native_histogram_buckets{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "buckets",
                             "legendLink": null
                          },
                          {
-                            "expr": "sum by (name) (\n  cortex_ingester_active_native_histogram_buckets_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n) > 0\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, name) (cortex_ingester_active_native_histogram_buckets_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, name) (\n  max by (ingester_id, cluster, namespace, name) (\n    label_replace(\n      cortex_ingester_active_native_histogram_buckets_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "buckets ({{ name }})",
                             "legendLink": null
@@ -33235,7 +33235,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum(\n  rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval])\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, ) (rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, ) (\n  max by (ingester_id, cluster, namespace, ) (\n    label_replace(\n      rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]),\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "rate",
                             "legendLink": null
@@ -34816,7 +34816,7 @@ data:
                       ],
                       "targets": [
                          {
-                            "expr": "topk($limit,\n  sum by (user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n  )\n)\n",
+                            "expr": "topk($limit, # Classic storage\nsum by (cluster, namespace, user) (cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, user) (\n  max by (ingester_id, cluster, namespace, user) (\n    label_replace(\n      cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n)\n",
                             "format": "table",
                             "instant": true,
                             "legendFormat": "",
@@ -34957,7 +34957,7 @@ data:
                       ],
                       "targets": [
                          {
-                            "expr": "topk($limit, sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"} )\n)\n)",
+                            "expr": "topk($limit, # Classic storage\nsum by (cluster, namespace, user) ((\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n)\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, user) (\n  max by (ingester_id, cluster, namespace, user) (\n    label_replace(\n      (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n,\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n)",
                             "format": "table",
                             "instant": true,
                             "legendFormat": "",
@@ -35052,7 +35052,7 @@ data:
                       "span": 12,
                       "targets": [
                          {
-                            "expr": "sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"} )\n)\n\nand\ntopk($limit, sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end())\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end())\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"} @ end())\n)\n - sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start())\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start())\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"} @ start())\n)\n)\n",
+                            "expr": "(# Classic storage\nsum by (cluster, namespace, user) ((\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n)\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, user) (\n  max by (ingester_id, cluster, namespace, user) (\n    label_replace(\n      (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n,\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n)\nand\ntopk($limit,\n  (\n    # Classic storage\nsum by (cluster, namespace, user) ((\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n)\n)\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, user) (\n  max by (ingester_id, cluster, namespace, user) (\n    label_replace(\n      (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n)\n,\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n\n  )\n  -\n  (\n    # Classic storage\nsum by (cluster, namespace, user) ((\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n)\n)\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, user) (\n  max by (ingester_id, cluster, namespace, user) (\n    label_replace(\n      (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n)\n,\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{ user }}",
                             "legendLink": null
@@ -35560,7 +35560,7 @@ data:
                       ],
                       "targets": [
                          {
-                            "expr": "topk($limit,\n  sum by (user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n  )\n)\n",
+                            "expr": "topk($limit, # Classic storage\nsum by (cluster, namespace, user) (cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, user) (\n  max by (ingester_id, cluster, namespace, user) (\n    label_replace(\n      cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n)\n",
                             "format": "table",
                             "instant": true,
                             "legendFormat": "",
@@ -38584,7 +38584,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### In-memory series\nThe number of series not yet flushed to object storage that are held in ingester memory.\n\n",
+                      "description": "### In-memory series\nThe number of series not yet flushed to object storage that are held in ingester memory.\nSeries are deduplicated according to the replication strategy.\n\n",
                       "fill": 1,
                       "format": "short",
                       "id": 4,
@@ -38612,7 +38612,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum(cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n/ on(cluster, namespace) group_left\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}))\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, ) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, ) (\n  max by (ingester_id, cluster, namespace, ) (\n    label_replace(\n      cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "instant": true,
                             "refId": "A"
@@ -38660,7 +38660,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Exemplars in ingesters\nNumber of TSDB exemplars currently in ingesters' storage.\n\n",
+                      "description": "### Exemplars in ingesters\nNumber of TSDB exemplars currently in ingesters' storage. Series are deduplicated according to the replication strategy.\n\n",
                       "fill": 1,
                       "format": "short",
                       "id": 5,
@@ -38688,7 +38688,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum(cortex_ingester_tsdb_exemplar_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n/ on(cluster, namespace) group_left\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}))\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, ) (cortex_ingester_tsdb_exemplar_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, ) (\n  max by (ingester_id, cluster, namespace, ) (\n    label_replace(\n      cortex_ingester_tsdb_exemplar_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "instant": true,
                             "refId": "A"
@@ -41303,7 +41303,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Ingester ingested exemplars rate\nThe rate of exemplars ingested in the ingesters.\nEvery exemplar is sent to the replication factor number of ingesters, so the sum of rates from all ingesters is divided by the replication factor.\nThis ingested exemplars rate should match the distributor's received exemplars rate.\n\n",
+                      "description": "### Ingester ingested exemplars rate\nThe rate of exemplars ingested in the ingesters.\nEvery exemplar is replicated to a number of ingesters. With classic storage we the sum of rates from all ingesters is divided by the replication factor.\nWith ingest storage we take the maximum rate of each ingest partition.\nThis ingested exemplars rate should match the distributor's received exemplars rate.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -41341,7 +41341,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum(\n  cluster_namespace_job:cortex_ingester_ingested_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, ) (cluster_namespace_job:cortex_ingester_ingested_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, ) (\n  max by (ingester_id, cluster, namespace, ) (\n    label_replace(\n      cluster_namespace_job:cortex_ingester_ingested_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "ingested exemplars",
                             "legendLink": null
@@ -41390,7 +41390,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum(\n  cluster_namespace_job:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                            "expr": "# Classic storage\nsum by (cluster, namespace, ) (cluster_namespace_job:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n/ on (cluster, namespace) group_left()\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\nor on (cluster, namespace)\n# Ingest storage\nsum by (cluster, namespace, ) (\n  max by (ingester_id, cluster, namespace, ) (\n    label_replace(\n      cluster_namespace_job:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n      \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "appended exemplars",
                             "legendLink": null
