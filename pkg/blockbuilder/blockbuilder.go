@@ -40,8 +40,6 @@ type BlockBuilder struct {
 
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
-
-	builder *tsdbBuilder
 }
 
 func NewBlockBuilder(
@@ -54,7 +52,6 @@ func NewBlockBuilder(
 		cfg:            cfg,
 		logger:         logger,
 		partRingReader: partitionRing,
-		builder:        newTSDBBuilder(logger),
 	}
 
 	b.ring, b.ringl, err = newRingAndLifecycler(b.cfg.Ring, b.logger, reg)
@@ -179,6 +176,9 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, part int32, offset 
 
 	level.Info(b.logger).Log("msg", "consuming partition", "part", part, "offset", offset.String())
 
+	builder := newTSDBBuilder(b.logger)
+	checkpointOffset := int64(-1)
+	lastOffset := offset.EpochOffset().Offset
 	for ctx.Err() == nil {
 		ctx1, cancel := context.WithTimeout(ctx, time.Second)
 		fetches := kafkaClient.PollFetches(ctx1)
@@ -197,12 +197,26 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, part int32, offset 
 		for !recIter.Done() {
 			rec := recIter.Next()
 
-			err := b.builder.process(ctx, rec)
+			allSamplesProcessed, err := builder.process(ctx, rec, 0, 0, false)
+			if !allSamplesProcessed && checkpointOffset < 0 {
+				checkpointOffset = rec.Offset
+			}
 			if err != nil {
 				level.Error(b.logger).Log("msg", "failed to process record", "err", err)
+				// TODO(codesome): do we just ignore this? What if it was Mimir's issue and this leading to data loss?
 			}
+
+			lastOffset = rec.Offset
 		}
 	}
+
+	if err := builder.compactAndCloseDBs(ctx); err != nil {
+		return err
+	}
+
+	// TODO(codesome): create kafka checkpoint for checkpointOffset
+	// TODO(codesome): store the lastOffset as a metadata in the checkpoint
+	_ = lastOffset // temporary to avoid unused variable error
 
 	return nil
 }
