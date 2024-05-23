@@ -96,6 +96,7 @@
           },
         },
 
+        // Alert firing if an ingester is failing to read from Kafka.
         {
           alert: $.alertName('IngesterFailsToProcessRecordsFromKafka'),
           'for': '5m',
@@ -107,6 +108,25 @@
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s fails to consume write requests read from Kafka due to internal errors.' % $._config,
+          },
+        },
+
+        // Alert firing is an ingester is reading from Kafka, there are buffered records to process, but processing is stuck.
+        {
+          alert: $.alertName('IngesterStuckProcessingRecordsFromKafka'),
+          'for': '5m',
+          expr: |||
+            # Alert if the reader is not processing any records, but there buffered records to process in the Kafka client.
+            (sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_records_total[5m])) == 0)
+            and
+            # NOTE: the cortex_ingest_storage_reader_buffered_fetch_records_total metric is a gauge showing the current number of buffered records.
+            (sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingest_storage_reader_buffered_fetch_records_total) > 0)
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s is stuck processing write requests from Kafka.' % $._config,
           },
         },
 

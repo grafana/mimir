@@ -503,7 +503,7 @@ func buildIntegrationsMap(l log.Logger, nc []*definition.PostableApiReceiver, tm
 			}
 
 			// TODO: tenantID
-			integrations, err := alertingNotify.BuildReceiverIntegrations(receiverCfg, tmpl, &images.UnavailableProvider{}, loggerFactory(l), whSenderFn, emailSenderFn, 0, "test")
+			integrations, err := alertingNotify.BuildReceiverIntegrations(receiverCfg, tmpl, &images.UnavailableProvider{}, newLoggerFactory(l), whSenderFn, emailSenderFn, 0, "test")
 			if err != nil {
 				return nil, err
 			}
