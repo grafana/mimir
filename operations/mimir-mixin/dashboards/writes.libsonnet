@@ -61,10 +61,10 @@ local filename = 'mimir-writes.json';
       .addPanel(
         local title = 'In-memory series';
         $.panel(title) +
-        $.statPanel('sum(%s)' % [
-          local perIngesterQuery = 'cortex_ingester_memory_series{%s}' % [$.jobMatcher($._config.job_names.ingester)];
-          $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterQuery, $._config.group_by_cluster),
-        ], format='short') +
+        $.statPanel(
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_memory_series{%s}' % [$.jobMatcher($._config.job_names.ingester)]),
+          format='short'
+        ) +
         $.panelDescription(
           title,
           |||
@@ -76,10 +76,10 @@ local filename = 'mimir-writes.json';
       .addPanel(
         local title = 'Exemplars in ingesters';
         $.panel(title) +
-        $.statPanel('sum(%s)' % [
-          local perIngesterQuery = 'cortex_ingester_tsdb_exemplar_exemplars_in_storage{%s}' % [$.jobMatcher($._config.job_names.ingester)];
-          $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterQuery, $._config.group_by_cluster),
-        ], format='short') +
+        $.statPanel(
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_tsdb_exemplar_exemplars_in_storage{%s}' % [$.jobMatcher($._config.job_names.ingester)]),
+          format='short'
+        ) +
         $.panelDescription(
           title,
           |||
@@ -642,13 +642,10 @@ local filename = 'mimir-writes.json';
         local title = 'Ingester ingested exemplars rate';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          'sum(%s)' % [
-            local perIngesterQuery = '%(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m{%(ingester)s}' % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
-              group_prefix_jobs: $._config.group_prefix_jobs,
-            };
-            $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterQuery, $._config.group_by_cluster),
-          ],
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('%(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m{%(ingester)s}' % {
+            ingester: $.jobMatcher($._config.job_names.ingester),
+            group_prefix_jobs: $._config.group_prefix_jobs,
+          }),
           'ingested exemplars',
         ) +
         { fieldConfig+: { defaults+: { unit: 'ex/s' } } } +
@@ -666,13 +663,10 @@ local filename = 'mimir-writes.json';
         local title = 'Ingester appended exemplars rate';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          'sum(%s)' % [
-            local perIngesterQuery = '%(group_prefix_jobs)s:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{%(ingester)s}' % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
-              group_prefix_jobs: $._config.group_prefix_jobs,
-            };
-            $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterQuery, $._config.group_by_cluster),
-          ],
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('%(group_prefix_jobs)s:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{%(ingester)s}' % {
+            ingester: $.jobMatcher($._config.job_names.ingester),
+            group_prefix_jobs: $._config.group_prefix_jobs,
+          }),
           'appended exemplars',
         ) +
         { fieldConfig+: { defaults+: { unit: 'ex/s' } } } +
