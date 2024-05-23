@@ -69,7 +69,8 @@ local filename = 'mimir-writes.json';
           title,
           |||
             The number of series not yet flushed to object storage that are held in ingester memory.
-            Series are deduplicated according to the replication strategy.
+            With classic storage we the sum of series from all ingesters is divided by the replication factor.
+            With ingest storage we take the maximum series of each ingest partition.
           |||
         ),
       )
@@ -83,7 +84,9 @@ local filename = 'mimir-writes.json';
         $.panelDescription(
           title,
           |||
-            Number of TSDB exemplars currently in ingesters' storage. Series are deduplicated according to the replication strategy.
+            Number of TSDB exemplars currently in ingesters' storage.
+            With classic storage we the sum of exemplars from all ingesters is divided by the replication factor.
+            With ingest storage we take the maximum exemplars of each ingest partition.
           |||
         ),
       )
