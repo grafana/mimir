@@ -215,6 +215,8 @@ type Config struct {
 
 	// This config can be overridden in tests.
 	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
+
+	CircuitBreakerConfig CircuitBreakerConfig `yaml:"circuit_breaker" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -223,6 +225,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.IngesterPartitionRing.RegisterFlags(f)
 	cfg.DefaultLimits.RegisterFlags(f)
 	cfg.ActiveSeriesMetrics.RegisterFlags(f)
+	cfg.CircuitBreakerConfig.RegisterFlags(f)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
@@ -258,7 +261,13 @@ func (cfg *Config) Validate(logger log.Logger) error {
 		util.WarnDeprecatedConfig(deprecatedReturnOnlyGRPCErrorsFlag, logger)
 	}
 
-	return cfg.IngesterRing.Validate()
+	err := cfg.IngesterRing.Validate()
+
+	if err == nil {
+		return cfg.CircuitBreakerConfig.Validate()
+	}
+
+	return err
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -349,6 +358,8 @@ type Ingester struct {
 	ingestReader              *ingest.PartitionReader
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
+
+	circuitBreaker *circuitBreaker
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -392,6 +403,10 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
+
+	if cfg.CircuitBreakerConfig.Enabled {
+		i.circuitBreaker = newCircuitBreaker(i)
+	}
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
@@ -960,6 +975,9 @@ type pushRequestState struct {
 // StartPushRequest checks if ingester can start push request, and increments relevant counters.
 // If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are updated.
 func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context.Context, error) {
+	if i.isCircuitBreakerActive() {
+		return i.circuitBreaker.StartPushRequest(ctx, reqSize)
+	}
 	ctx, _, err := i.startPushRequest(ctx, reqSize)
 	return ctx, err
 }
@@ -3749,8 +3767,22 @@ func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest)
 	return nil
 }
 
+func (i *Ingester) isCircuitBreakerActive() bool {
+	if i.circuitBreaker == nil {
+		return false
+	}
+	return i.circuitBreaker.isActive()
+}
+
 // Push implements client.IngesterServer, which is registered into gRPC server.
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+	if i.isCircuitBreakerActive() {
+		return i.circuitBreaker.Push(ctx, req)
+	}
+	return i.push(ctx, req)
+}
+
+func (i *Ingester) push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	if !i.cfg.PushGrpcMethodEnabled {
 		return nil, errPushGrpcDisabled
 	}

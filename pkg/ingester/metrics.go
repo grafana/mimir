@@ -83,6 +83,9 @@ type ingesterMetrics struct {
 
 	// Count number of requests rejected due to utilization based limiting.
 	utilizationLimitedRequests *prometheus.CounterVec
+
+	circuitBreakerTransitions *prometheus.CounterVec
+	circuitBreakerResults     *prometheus.CounterVec
 }
 
 func newIngesterMetrics(
@@ -375,6 +378,15 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_prepare_shutdown_requested",
 			Help: "If the ingester has been requested to prepare for shutdown via endpoint or marker file.",
 		}),
+
+		circuitBreakerTransitions: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_circuit_breaker_transitions_total",
+			Help: "Number of times the circuit breaker has entered a state",
+		}, []string{"ingester", "state"}),
+		circuitBreakerResults: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_circuit_breaker_results_total",
+			Help: "Results of executing requests via the circuit breaker",
+		}, []string{"ingester", "result"}),
 	}
 
 	// Initialize expected rejected request labels
