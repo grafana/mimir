@@ -228,7 +228,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.queryPanel(queries, legends, legendLink) +
     $.showAllTooltip +
     {
-      options: {
+      options+: {
         legend+: {
           showLegend: false,
           // Work round Grafana turning showLegend back on when we have
@@ -371,7 +371,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
       },
-
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
