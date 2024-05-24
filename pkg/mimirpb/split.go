@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+
+	"github.com/dennwc/varint"
 )
 
 const (
@@ -21,15 +23,15 @@ const (
 
 var (
 	sourceFieldTag     = tag(sourceField, wireTypeVarint)
-	sourceFieldTagSize = varintLength(sourceFieldTag)
+	sourceFieldTagSize = varint.UvarintSize(sourceFieldTag)
 
 	timeseriesFieldTag = tag(timeseriesField, wireTypeLen)
 	metadataFieldTag   = tag(metadataField, wireTypeLen)
 
 	skipLabelNameValidationFieldTag     = tag(skipLabelNameValidationField, wireTypeVarint)
-	skipLabelNameValidationFieldTagSize = varintLength(skipLabelNameValidationFieldTag)
+	skipLabelNameValidationFieldTagSize = varint.UvarintSize(skipLabelNameValidationFieldTag)
 
-	maxExtraBytes = sourceFieldTagSize + varintLength(math.MaxInt32) + skipLabelNameValidationFieldTagSize + boolValueVarintLength
+	maxExtraBytes = sourceFieldTagSize + varint.UvarintSize(math.MaxInt32) + skipLabelNameValidationFieldTagSize + boolValueVarintLength
 )
 
 // SplitWriteRequestRequest splits marshalled WriteRequest, produced by WriteRequest.Marshal(),
@@ -45,8 +47,12 @@ func SplitWriteRequestRequest(writeRequest []byte, sizeLimit int) ([][]byte, err
 	}
 
 	// Save some bytes for extra source and skipLabelNameValidation fields
-	// that we may need to add to all subrequests.
+	// that we may need to add to all subrequests, so that we don't need run over the size limit
+	// in case we need to add all extra bytes.
 	sizeLimit -= maxExtraBytes
+	if sizeLimit <= 0 {
+		return nil, fmt.Errorf("sizeLimit too small")
+	}
 
 	// we always return at least 1 subrequest
 	subrequests := make([][]byte, 1, 1+(len(writeRequest)/sizeLimit))
@@ -70,7 +76,7 @@ func SplitWriteRequestRequest(writeRequest []byte, sizeLimit int) ([][]byte, err
 	// invariant: writeRequest starts at the next field.
 	for len(writeRequest) > 0 {
 		// Decode tag. Tag is (field numer << 3 | type), encoded as uint32 varint.
-		tagVal, tagSize := binary.Uvarint(writeRequest)
+		tagVal, tagSize := varint.Uvarint(writeRequest)
 		if tagSize <= 0 {
 			return nil, io.ErrUnexpectedEOF
 		}
@@ -82,22 +88,22 @@ func SplitWriteRequestRequest(writeRequest []byte, sizeLimit int) ([][]byte, err
 
 		// these are wireTypeLen types, there's LENGTH (int32 varint) and then submessage with that length.
 		case timeseriesFieldTag, metadataFieldTag:
-			decodedLength, decodedLengthSize := binary.Uvarint(writeRequest[tagSize:])
+			decodedLength, decodedLengthSize := varint.Uvarint(writeRequest[tagSize:])
 			if decodedLengthSize <= 0 {
 				return nil, io.ErrUnexpectedEOF
 			}
 			if decodedLength <= 0 || decodedLength > math.MaxInt32 {
 				return nil, fmt.Errorf("invalid decoded length: %d", decodedLength)
 			}
-			if len(writeRequest) < int(decodedLength) {
-				return nil, fmt.Errorf("length too big: %d", decodedLength)
+			if len(writeRequest) < tagSize+decodedLengthSize+int(decodedLength) {
+				return nil, fmt.Errorf("message too short, expected length: %d, remaining buffer: %d", decodedLength, len(writeRequest)-tagSize-decodedLengthSize)
 			}
 
 			totalFieldSize += decodedLengthSize + int(decodedLength)
 
 		// these are wireTypeVarint, value is just varint.
 		case sourceFieldTag, skipLabelNameValidationFieldTag:
-			val, valSize := binary.Uvarint(writeRequest[tagSize:])
+			val, valSize := varint.Uvarint(writeRequest[tagSize:])
 			if valSize <= 0 {
 				return nil, io.ErrUnexpectedEOF
 			}
@@ -113,18 +119,14 @@ func SplitWriteRequestRequest(writeRequest []byte, sizeLimit int) ([][]byte, err
 
 			if tagVal == skipLabelNameValidationFieldTag {
 				hasSkipLabelNameValidation = true
-				if val == 0 {
-					skipLabelNameValidation = false
-				} else {
-					skipLabelNameValidation = true
-				}
+				skipLabelNameValidation = val != 0
 			}
 
 			totalFieldSize += valSize
 
 		default:
 			// We can't handle unexpected fields.
-			return nil, fmt.Errorf("unexpected tag %d", tagVal)
+			return nil, fmt.Errorf("unexpected tag %d (field: %d, type: %d)", tagVal, tagVal>>3, tagVal&0x7)
 		}
 
 		// index to current subrequest, always the last one in the slice.
@@ -184,12 +186,6 @@ func SplitWriteRequestRequest(writeRequest []byte, sizeLimit int) ([][]byte, err
 
 func tag(field, typ uint64) uint64 {
 	return field<<3 | typ
-}
-
-func varintLength(val uint64) int {
-	var buf [binary.MaxVarintLen64]byte
-	n := binary.PutUvarint(buf[:], val)
-	return n
 }
 
 func putUvarintWithExpectedLength(buf []byte, val uint64, expLength int) int {

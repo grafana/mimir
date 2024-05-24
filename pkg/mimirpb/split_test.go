@@ -33,6 +33,55 @@ func prepareRequest() *WriteRequest {
 	return ToWriteRequest(metrics, samples, nil, metadata, API)
 }
 
+func TestSplitRequestErrors(t *testing.T) {
+	const timeseriesFieldSize = 100
+
+	t.Run("unknown field", func(t *testing.T) {
+		msg := []byte(nil)
+		msg = append(msg, toVarint(tag(timeseriesField, wireTypeLen))...)
+		msg = append(msg, toVarint(timeseriesFieldSize)...)
+		msg = append(msg, make([]byte, timeseriesFieldSize)...)
+
+		msg = append(msg, toVarint(tag(555, wireTypeVarint))...)
+
+		_, err := SplitWriteRequestRequest(msg, len(msg)-1) // force splitting by using smaller maxSizeLimit
+		require.ErrorContains(t, err, "unexpected tag 4440 (field: 555, type: 0)")
+	})
+
+	t.Run("wireTypeLen with too big length", func(t *testing.T) {
+		msg := []byte(nil)
+		msg = append(msg, toVarint(tag(timeseriesField, wireTypeLen))...)
+		msg = append(msg, toVarint(math.MaxInt32+1)...)
+		msg = append(msg, make([]byte, timeseriesFieldSize)...)
+
+		_, err := SplitWriteRequestRequest(msg, len(msg)-1) // force splitting by using smaller maxSizeLimit
+		require.ErrorContains(t, err, "invalid decoded length: 2147483648")
+	})
+
+	t.Run("short message", func(t *testing.T) {
+		msg := []byte(nil)
+		msg = append(msg, toVarint(tag(timeseriesField, wireTypeLen))...)
+		msg = append(msg, toVarint(timeseriesFieldSize)...)
+		msg = append(msg, make([]byte, timeseriesFieldSize-1)...)
+
+		_, err := SplitWriteRequestRequest(msg, len(msg)-1) // force splitting by using smaller maxSizeLimit
+		require.ErrorContains(t, err, "message too short, expected length: 100, remaining buffer: 99")
+	})
+
+	t.Run("invalid source value", func(t *testing.T) {
+		msg := []byte(nil)
+		msg = append(msg, toVarint(tag(timeseriesField, wireTypeLen))...)
+		msg = append(msg, toVarint(timeseriesFieldSize)...)
+		msg = append(msg, make([]byte, timeseriesFieldSize)...)
+
+		msg = append(msg, toVarint(sourceFieldTag)...)
+		msg = append(msg, toVarint(math.MaxInt32+1)...)
+
+		_, err := SplitWriteRequestRequest(msg, len(msg)-1) // force splitting by using smaller maxSizeLimit
+		require.ErrorContains(t, err, "invalid value 2147483648 for tag 16")
+	})
+}
+
 func TestSplitRequestWithWeirdSource(t *testing.T) {
 	testCases := map[string]func(t *testing.T) []byte{
 		"simple": func(t *testing.T) []byte {
