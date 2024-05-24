@@ -84,7 +84,7 @@ type BucketStore struct {
 	userID          string
 	logger          log.Logger
 	metrics         *BucketStoreMetrics
-	bkt             objstore.InstrumentedBucketReader
+	bkt             objstore.InstrumentedBucket
 	fetcher         block.MetadataFetcher
 	dir             string
 	indexCache      indexcache.IndexCache
@@ -199,7 +199,7 @@ func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 // an object store bucket. It is optimized to work against high latency backends.
 func NewBucketStore(
 	userID string,
-	bkt objstore.InstrumentedBucketReader,
+	bkt objstore.InstrumentedBucket,
 	fetcher block.MetadataFetcher,
 	dir string,
 	bucketStoreConfig tsdb.BucketStoreConfig,

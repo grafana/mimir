@@ -21,7 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// TestStreamBinaryReader_ShouldBuildSparseHeadersFromFile tests if StreamBinaryReader constructs
+// TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple tests if StreamBinaryReader constructs
 // and writes sparse index headers on first build and reads from disk on the second build.
 func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T) {
 	ctx := context.Background()
@@ -91,6 +91,17 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 
 				// Check correctness of sparse index headers.
 				compareIndexToHeader(t, b, r2)
+
+				// Delete sparse index header from disk.
+				sparseHeadersPath := filepath.Join(tmpDir, blockID.String(), block.SparseIndexHeaderFilename)
+				require.NoError(t, os.Remove(sparseHeadersPath))
+
+				// Read sparse index header from object storage on third build.
+				r3, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+				require.NoError(t, err)
+
+				// Check correctness of sparse index headers.
+				compareIndexToHeader(t, b, r3)
 			})
 		}
 	}

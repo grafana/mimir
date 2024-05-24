@@ -269,7 +269,7 @@ func initBucketAndBlocksForTest(t *testing.T) (string, *filesystem.Bucket, ulid.
 	return tmpDir, bkt, blockID
 }
 
-func testLazyBinaryReader(t *testing.T, bkt objstore.BucketReader, dir string, id ulid.ULID, test func(t *testing.T, r *LazyBinaryReader, err error)) {
+func testLazyBinaryReader(t *testing.T, bkt objstore.Bucket, dir string, id ulid.ULID, test func(t *testing.T, r *LazyBinaryReader, err error)) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 	factory := func() (Reader, error) {
