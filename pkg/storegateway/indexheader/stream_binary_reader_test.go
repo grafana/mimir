@@ -260,4 +260,10 @@ func TestBucketAndDiskSparseHeaderLoader_AvailableOnlyInBucket(t *testing.T) {
 	loaded, err := loader.SparseHeader()
 	assert.NoError(t, err)
 	assert.Equal(t, sparseHeader, loaded)
+
+	// The header should now be on disk
+	require.NoError(t, bkt.Delete(context.Background(), block.SparseIndexHeaderFilename))
+	loaded, err = loader.SparseHeader()
+	assert.NoError(t, err)
+	assert.Equal(t, sparseHeader, loaded)
 }

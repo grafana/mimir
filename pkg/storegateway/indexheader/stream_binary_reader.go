@@ -367,9 +367,16 @@ func (l bucketAndDiskSparseHeaderLoader) SparseHeader() (*indexheaderpb.Sparse, 
 		level.Debug(l.logger).Log("msg", "read and parsed sparse index header", "path", l.localPath, "elapsed", time.Since(start))
 	}(time.Now())
 
-	sparseData, err := l.sparseHeaderBytes()
+	sparseData, existsLocally, err := l.sparseHeaderBytes()
 	if err != nil {
 		return nil, err
+	}
+	if len(sparseData) > 0 && !existsLocally {
+		err = l.persistHeaderToDisk(sparseData)
+		if err != nil {
+			level.Error(l.logger).Log("msg", "couldn't persist sparse index to disk; will download from object store next time too", "path", l.localPath, "err", err)
+			// otherwise ignore the error because loading the header is the priority; not persisting it to disk
+		}
 	}
 
 	sparseHeaders, err := l.parseSparseHeader(sparseData)
@@ -379,10 +386,10 @@ func (l bucketAndDiskSparseHeaderLoader) SparseHeader() (*indexheaderpb.Sparse, 
 	return sparseHeaders, nil
 }
 
-func (l bucketAndDiskSparseHeaderLoader) sparseHeaderBytes() ([]byte, error) {
+func (l bucketAndDiskSparseHeaderLoader) sparseHeaderBytes() (b []byte, existsLocally bool, _ error) {
 	b, err := os.ReadFile(l.localPath)
 	if err == nil {
-		return b, nil
+		return b, true, nil
 	}
 	if !os.IsNotExist(err) {
 		level.Warn(l.logger).Log("msg", "failed to read sparse index-header from disk; trying to find it in object store", "err", err)
@@ -391,14 +398,14 @@ func (l bucketAndDiskSparseHeaderLoader) sparseHeaderBytes() ([]byte, error) {
 	reader, err := l.bkt.Get(l.ctx, block.SparseIndexHeaderFilename)
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to find sparse index-header in object store; recreating", "err", err)
-		return nil, err
+		return nil, false, err
 	}
 	b, err = io.ReadAll(reader)
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to read sparse index-header from object store; recreating", "err", err)
-		return nil, err
+		return nil, false, err
 	}
-	return b, nil
+	return b, false, nil
 }
 
 func (l bucketAndDiskSparseHeaderLoader) parseSparseHeader(sparseData []byte) (*indexheaderpb.Sparse, error) {
@@ -431,29 +438,47 @@ func (l bucketAndDiskSparseHeaderLoader) PersistSparseHeader(sparseHeader *index
 	}(time.Now())
 	level.Debug(l.logger).Log("msg", "persisting sparse index-header", "path", l.localPath)
 
+	sparseData, err := l.serializeSparseHeader(sparseHeader)
+	if err != nil {
+		return err
+	}
+	err = l.persistHeaderToDisk(sparseData)
+	if err != nil {
+		return err
+	}
+	return l.persistHeaderToBucket(sparseData)
+}
+
+func (l bucketAndDiskSparseHeaderLoader) serializeSparseHeader(sparseHeader *indexheaderpb.Sparse) ([]byte, error) {
 	out, err := sparseHeader.Marshal()
 	if err != nil {
-		return fmt.Errorf("failed to encode sparse index-header: %w", err)
+		return nil, fmt.Errorf("failed to encode sparse index-header: %w", err)
 	}
 
 	gzipped := &bytes.Buffer{}
 	gzipWriter := gzip.NewWriter(gzipped)
 
 	if _, err := gzipWriter.Write(out); err != nil {
-		return fmt.Errorf("failed to gzip sparse index-header: %w", err)
+		return nil, fmt.Errorf("failed to gzip sparse index-header: %w", err)
 	}
 
 	if err := gzipWriter.Close(); err != nil {
-		return fmt.Errorf("failed to close gzip sparse index-header: %w", err)
+		return nil, fmt.Errorf("failed to close gzip sparse index-header: %w", err)
 	}
+	return gzipped.Bytes(), nil
+}
 
-	if err := os.WriteFile(l.localPath, gzipped.Bytes(), 0600); err != nil {
+func (l bucketAndDiskSparseHeaderLoader) persistHeaderToDisk(gzipped []byte) error {
+	if err := os.WriteFile(l.localPath, gzipped, 0600); err != nil {
 		return fmt.Errorf("failed to write sparse index-header to disk: %w", err)
 	}
 
-	if err := l.bkt.Upload(l.ctx, block.SparseIndexHeaderFilename, gzipped); err != nil {
+	return nil
+}
+
+func (l bucketAndDiskSparseHeaderLoader) persistHeaderToBucket(gzipped []byte) error {
+	if err := l.bkt.Upload(l.ctx, block.SparseIndexHeaderFilename, bytes.NewReader(gzipped)); err != nil {
 		return fmt.Errorf("failed to upload sparse index-header to object store: %w", err)
 	}
-
 	return nil
 }
