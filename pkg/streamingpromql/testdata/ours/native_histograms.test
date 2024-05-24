@@ -9,3 +9,8 @@ load 5m
 
 eval instant at 5m single_histogram
 	{__name__="single_histogram"} {{count:4 sum:5 buckets:[1 2 1]}}
+
+eval range from 0 to 4m step 1m single_histogram
+	{__name__="single_histogram"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}x4
+
+clear
