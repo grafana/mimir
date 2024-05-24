@@ -18,7 +18,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple tests if StreamBinaryReader constructs
@@ -46,11 +45,10 @@ func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T)
 
 	// Read sparse index headers to disk on second build.
 	sparseHeadersPath := filepath.Join(tmpDir, blockID.String(), block.SparseIndexHeaderFilename)
-	sparseData, err := os.ReadFile(sparseHeadersPath)
+	header, err := sparseHeaderLoader{sparseHeadersPath: sparseHeadersPath, logger: log.NewNopLogger()}.sparseHeader()
 	require.NoError(t, err)
 
-	logger := spanlogger.FromContext(context.Background(), log.NewNopLogger())
-	err = r.loadFromSparseIndexHeader(logger, blockID, sparseHeadersPath, sparseData, 3)
+	err = r.loadFromSparseIndexHeader(header, 3)
 	require.NoError(t, err)
 }
 
