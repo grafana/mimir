@@ -892,6 +892,35 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  tablePanel(queries, labelStyles)::
+    super.tablePanel(queries, labelStyles={}) + {
+      // Hides styles field, as it makes Grafana 11 use the deprecate "Table (old)" plugin.
+      styles:: super.styles,
+      local stylesToProps(s) =
+        if std.type(s) == 'string' then [
+          $.overrideProperty('displayName', s),
+          $.overrideProperty('decimals', 0),
+          $.overrideProperty('unit', 'short'),
+        ] else [
+          if std.objectHas(s, 'alias') then $.overrideProperty('displayName', s.alias),
+          if std.objectHas(s, 'type') && s.type == 'hidden' then $.overrideProperty('custom.hidden', true),
+          $.overrideProperty('decimals', if std.objectHas(s, 'decimals') then s.decimals else 2),
+          $.overrideProperty('unit', if std.objectHas(s, 'unit') then s.unit else 'short'),
+        ],
+      fieldConfig+: {
+        overrides+: [
+          // Hide time column by default, like jsonnet-lib/grafana-builder does.
+          $.overrideFieldByName('Time', [
+            $.overrideProperty('displayName', 'Time'),
+            $.overrideProperty('custom.hidden', true),
+          ]),
+        ] + [
+          $.overrideFieldByName(label, std.prune(stylesToProps(labelStyles[label])))
+          for label in std.objectFields(labelStyles)
+        ],
+      },
+    },
+
   // Enables stacking of timeseries on top of each.
   // It overrites the "stack" mixin from jsonnet-lib/grafana-builder, to make it compatible with timeseriesPanel.
   stack:: {
