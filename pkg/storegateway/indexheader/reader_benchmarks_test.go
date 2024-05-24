@@ -14,6 +14,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/exp/slices"
 
@@ -206,7 +207,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
 	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
 
-	br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, br.Close()) })
 
@@ -233,7 +234,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 
 func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 	tests, blockID, blockDir := labelValuesTestCases(test.NewTB(b))
-	r, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, blockDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	r, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), objstore.NewInMemBucket(), blockDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
 
 	for lbl, tcs := range tests {
@@ -274,7 +275,7 @@ func BenchmarkPostingsOffset(b *testing.B) {
 		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
 
 		b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
-			br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			require.NoError(b, err)
 			b.Cleanup(func() {
 				require.NoError(b, br.Close())
@@ -298,7 +299,7 @@ func BenchmarkPostingsOffset(b *testing.B) {
 }
 
 func benchmarkReader(b *testing.B, bucketDir string, id ulid.ULID, benchmark func(b *testing.B, br Reader)) {
-	br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), objstore.NewInMemBucket(), bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
 	b.Cleanup(func() {
 		require.NoError(b, br.Close())
@@ -330,7 +331,7 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 
 			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
-					br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+					br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 					require.NoError(b, err)
 					b.Cleanup(func() {
 						require.NoError(b, br.Close())
