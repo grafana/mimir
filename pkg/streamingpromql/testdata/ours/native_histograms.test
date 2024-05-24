@@ -14,3 +14,10 @@ eval range from 0 to 4m step 1m single_histogram
 	{__name__="single_histogram"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}x4
 
 clear
+
+# Test metric with mixed floats and histograms
+load 1m
+	mixed_metric 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}}
+
+eval range from 0 to 4m step 1m mixed_metric
+	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
