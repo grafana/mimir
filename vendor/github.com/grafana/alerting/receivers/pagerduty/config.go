@@ -15,6 +15,7 @@ const (
 	DefaultClass    = "default"
 	DefaultGroup    = "default"
 	DefaultClient   = "Grafana"
+	DefaultURL      = "https://events.pagerduty.com/v2/enqueue"
 )
 
 var defaultDetails = map[string]string{
@@ -52,6 +53,7 @@ type Config struct {
 	Source    string            `json:"source,omitempty" yaml:"source,omitempty"`
 	Client    string            `json:"client,omitempty" yaml:"client,omitempty"`
 	ClientURL string            `json:"client_url,omitempty" yaml:"client_url,omitempty"`
+	URL       string            `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
 func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Config, error) {
@@ -88,6 +90,9 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	}
 	if settings.ClientURL == "" {
 		settings.ClientURL = "{{ .ExternalURL }}"
+	}
+	if settings.URL == "" {
+		settings.URL = DefaultURL
 	}
 	if settings.Source == "" {
 		source, err := getHostname()

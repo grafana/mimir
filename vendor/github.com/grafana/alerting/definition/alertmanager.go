@@ -203,6 +203,15 @@ type PostableApiAlertingConfig struct {
 	Receivers []*PostableApiReceiver `yaml:"receivers,omitempty" json:"receivers,omitempty"`
 }
 
+// Load parses a slice of bytes (json/yaml) into a configuration and validates it.
+func Load(rawCfg []byte) (*PostableApiAlertingConfig, error) {
+	var cfg PostableApiAlertingConfig
+	if err := yaml.Unmarshal(rawCfg, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
 func (c *PostableApiAlertingConfig) GetReceivers() []*PostableApiReceiver {
 	return c.Receivers
 }

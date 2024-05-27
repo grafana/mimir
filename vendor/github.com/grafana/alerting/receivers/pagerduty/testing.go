@@ -10,7 +10,8 @@ const FullValidConfigForTesting = `{
 	"summary": "test-summary", 
 	"source": "test-source",
 	"client" : "test-client",
-	"client_url": "test-client-url"
+	"client_url": "test-client-url",
+	"url": "test-api-url"
 }`
 
 // FullValidSecretsForTesting is a string representation of JSON object that contains all fields that can be overridden from secrets

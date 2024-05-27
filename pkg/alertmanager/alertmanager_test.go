@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
@@ -84,7 +85,7 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := loadConfig([]byte(cfgRaw))
+	cfg, err := definition.Load([]byte(cfgRaw))
 	require.NoError(t, err)
 	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
 
@@ -168,7 +169,7 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := loadConfig([]byte(cfgRaw))
+	cfg, err := definition.Load([]byte(cfgRaw))
 	require.NoError(t, err)
 	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
 
