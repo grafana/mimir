@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-RESULTS_FILE="$1" # Should be the path to a file produced by a command like `go run ./tools/benchmark-query-engine -count=6 | tee output.txt`
+RESULTS_FILE="$1" # Should be the path to a file produced by a command like `go run . -count=6 | tee output.txt`
 
 PROMETHEUS_RESULTS_FILE=$(mktemp /tmp/prometheus.XXXX)
 STREAMING_RESULTS_FILE=$(mktemp /tmp/streaming.XXXX)
