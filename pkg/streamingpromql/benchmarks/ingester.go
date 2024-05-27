@@ -14,6 +14,7 @@ import (
 	"net"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -174,7 +175,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 	totalMetrics := 0
 
 	for _, size := range metricSizes {
-		totalMetrics += (2 + histogramBuckets + 1) * size // 2 non-histogram metrics + 5 metrics for histogram buckets + 1 metric for +Inf histogram bucket
+		totalMetrics += (2 + histogramBuckets + 1 + 1) * size // 2 non-histogram metrics + 5 metrics for histogram buckets + 1 metric for +Inf histogram bucket + 1 metric for native-histograms
 	}
 
 	metrics := make([]labels.Labels, 0, totalMetrics)
@@ -183,6 +184,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 		aName := "a_" + strconv.Itoa(size)
 		bName := "b_" + strconv.Itoa(size)
 		histogramName := "h_" + strconv.Itoa(size)
+		nativeHistogramName := "nh_" + strconv.Itoa(size)
 
 		if size == 1 {
 			// We don't want a "l" label on metrics with one series (some test cases rely on this label not being present).
@@ -192,6 +194,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 				metrics = append(metrics, labels.FromStrings("__name__", histogramName, "le", strconv.Itoa(le)))
 			}
 			metrics = append(metrics, labels.FromStrings("__name__", histogramName, "le", "+Inf"))
+			metrics = append(metrics, labels.FromStrings("__name__", nativeHistogramName))
 		} else {
 			for i := 0; i < size; i++ {
 				metrics = append(metrics, labels.FromStrings("__name__", aName, "l", strconv.Itoa(i)))
@@ -200,6 +203,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 					metrics = append(metrics, labels.FromStrings("__name__", histogramName, "l", strconv.Itoa(i), "le", strconv.Itoa(le)))
 				}
 				metrics = append(metrics, labels.FromStrings("__name__", histogramName, "l", strconv.Itoa(i), "le", "+Inf"))
+				metrics = append(metrics, labels.FromStrings("__name__", nativeHistogramName, "l", strconv.Itoa(i)))
 			}
 		}
 	}
@@ -219,19 +223,41 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 		}
 
 		for j, m := range metrics {
-			series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(m.Copy()),
-				Samples: make([]mimirpb.Sample, end-i),
-			}}
+			if strings.HasPrefix(m.Get("__name__"), "nh_") {
+				series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+					Labels:     mimirpb.FromLabelsToLabelAdapters(m.Copy()),
+					Histograms: make([]mimirpb.Histogram, end-i),
+				}}
 
-			for s := i; s < end; s++ {
-				series.Samples[s-i].TimestampMs = int64(s) * interval.Milliseconds()
-				series.Samples[s-i].Value = float64(s) + float64(j)/float64(len(metrics))
+				for s := i; s < end; s++ {
+					// TODO(jhesketh): Fix this with some better data
+					series.Histograms[s-i].Timestamp = int64(s) * interval.Milliseconds()
+					series.Histograms[s-i].Count = &mimirpb.Histogram_CountInt{CountInt: 12}
+					series.Histograms[s-i].ZeroCount = &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 2}
+					series.Histograms[s-i].ZeroThreshold = 0.001
+					series.Histograms[s-i].Sum = 18.4
+					series.Histograms[s-i].Schema = 0
+					series.Histograms[s-i].NegativeSpans = []mimirpb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}}
+					series.Histograms[s-i].NegativeDeltas = []int64{1, 1, -1, 0}
+					series.Histograms[s-i].PositiveSpans = []mimirpb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}}
+					series.Histograms[s-i].PositiveDeltas = []int64{1, 1, -1, 0}
+				}
+
+				req.Timeseries[j] = series
+			} else {
+				series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+					Labels:  mimirpb.FromLabelsToLabelAdapters(m.Copy()),
+					Samples: make([]mimirpb.Sample, end-i),
+				}}
+
+				for s := i; s < end; s++ {
+					series.Samples[s-i].TimestampMs = int64(s) * interval.Milliseconds()
+					series.Samples[s-i].Value = float64(s) + float64(j)/float64(len(metrics))
+				}
+
+				req.Timeseries[j] = series
 			}
-
-			req.Timeseries[j] = series
 		}
-
 		if _, err := ing.Push(ctx, req); err != nil {
 			return fmt.Errorf("failed to push samples to ingester: %w", err)
 		}
