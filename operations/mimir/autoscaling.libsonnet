@@ -478,7 +478,7 @@
           local name = 'ruler-querier-queries',
           local querier_max_concurrent = $.ruler_querier_args['querier.max-concurrent'],
 
-          metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+          metric_name: '%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
           // Each ruler-query-scheduler tracks *at regular intervals* the number of inflight requests
           // (both enqueued and processing queries) as a summary. With the following query we target
