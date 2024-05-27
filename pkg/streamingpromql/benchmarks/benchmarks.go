@@ -76,6 +76,10 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "a_X",
 		},
+		// Histogram retrieval
+		{
+			Expr: "nh_X",
+		},
 		// Range vector selector.
 		{
 			Expr:             "a_X[1m]",
