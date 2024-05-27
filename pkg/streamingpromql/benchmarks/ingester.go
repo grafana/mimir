@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc"
 
@@ -64,6 +65,7 @@ func startBenchmarkIngester(rootDataDir string) (*ingester.Ingester, string, fun
 
 	limits := defaultLimitsTestConfig()
 	limits.NativeHistogramsIngestionEnabled = true
+	limits.OutOfOrderTimeWindow = model.Duration(time.Duration(NumIntervals+1) * interval)
 
 	overrides, err := validation.NewOverrides(limits, nil)
 	if err != nil {
@@ -205,29 +207,43 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 	}
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
-	req := &mimirpb.WriteRequest{
-		Timeseries: make([]mimirpb.PreallocTimeseries, len(metrics)),
-	}
 
-	for i, m := range metrics {
-		series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-			Labels:  mimirpb.FromLabelsToLabelAdapters(m),
-			Samples: make([]mimirpb.Sample, NumIntervals),
-		}}
+	// Send the samples in batches to reduce total startup memory usage
+	numBatches := 10
+	batchSize := int(math.Ceil(float64(totalMetrics) / float64(numBatches)))
 
-		for s := 0; s < NumIntervals; s++ {
-			series.Samples[s].TimestampMs = int64(s) * interval.Milliseconds()
-			series.Samples[s].Value = float64(s) + float64(i)/float64(len(metrics))
+	for i := 0; i < totalMetrics; i += batchSize {
+		end := i + batchSize
+		if end > totalMetrics {
+			end = totalMetrics
+		}
+		batch := metrics[i:end]
+
+		// Create a request per batch
+		req := &mimirpb.WriteRequest{
+			Timeseries: make([]mimirpb.PreallocTimeseries, len(batch)),
 		}
 
-		req.Timeseries[i] = series
-	}
+		for j, m := range batch {
+			series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+				Labels:  mimirpb.FromLabelsToLabelAdapters(m),
+				Samples: make([]mimirpb.Sample, NumIntervals),
+			}}
 
-	if _, err := ing.Push(ctx, req); err != nil {
-		return fmt.Errorf("failed to push samples to ingester: %w", err)
-	}
+			for s := 0; s < NumIntervals; s++ {
+				series.Samples[s].TimestampMs = int64(s) * interval.Milliseconds()
+				series.Samples[s].Value = float64(s) + float64(i+j)/float64(len(batch))
+			}
 
-	ing.Flush()
+			req.Timeseries[j] = series
+		}
+
+		if _, err := ing.Push(ctx, req); err != nil {
+			return fmt.Errorf("failed to push samples to ingester: %w", err)
+		}
+
+		ing.Flush()
+	}
 
 	return nil
 }
