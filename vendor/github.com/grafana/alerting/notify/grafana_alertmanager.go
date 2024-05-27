@@ -403,7 +403,7 @@ func (am *GrafanaAlertmanager) ApplyConfig(cfg Configuration) (err error) {
 
 	// TODO: This has not been upstreamed yet. Should be aligned when https://github.com/prometheus/alertmanager/pull/3016 is merged.
 	var receivers []*notify.Receiver
-	activeReceivers := am.getActiveReceiversMap(am.route)
+	activeReceivers := GetActiveReceiversMap(am.route)
 	for name := range integrationsMap {
 		stage := am.createReceiverStage(name, integrationsMap[name], am.waitFunc, am.notificationLog)
 		routingStage[name] = notify.MultiStage{meshStage, silencingStage, timeMuteStage, inhibitionStage, stage}
@@ -577,17 +577,6 @@ func (am *GrafanaAlertmanager) createReceiverStage(name string, integrations []*
 		fs = append(fs, s)
 	}
 	return fs
-}
-
-// getActiveReceiversMap returns all receivers that are in use by a route.
-func (am *GrafanaAlertmanager) getActiveReceiversMap(r *dispatch.Route) map[string]struct{} {
-	receiversMap := make(map[string]struct{})
-	visitFunc := func(r *dispatch.Route) {
-		receiversMap[r.RouteOpts.Receiver] = struct{}{}
-	}
-	r.Walk(visitFunc)
-
-	return receiversMap
 }
 
 func (am *GrafanaAlertmanager) waitFunc() time.Duration {

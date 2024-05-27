@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/dispatch"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
@@ -68,12 +69,12 @@ type TestIntegrationConfigResult struct {
 }
 
 type GrafanaIntegrationConfig struct {
-	UID                   string            `json:"uid"`
-	Name                  string            `json:"name"`
-	Type                  string            `json:"type"`
-	DisableResolveMessage bool              `json:"disableResolveMessage"`
-	Settings              json.RawMessage   `json:"settings"`
-	SecureSettings        map[string]string `json:"secureSettings"`
+	UID                   string            `json:"uid" yaml:"uid"`
+	Name                  string            `json:"name" yaml:"name"`
+	Type                  string            `json:"type" yaml:"type"`
+	DisableResolveMessage bool              `json:"disableResolveMessage" yaml:"disableResolveMessage"`
+	Settings              json.RawMessage   `json:"settings" yaml:"settings"`
+	SecureSettings        map[string]string `json:"secureSettings" yaml:"secureSettings"`
 }
 
 type ConfigReceiver = config.Receiver
@@ -365,6 +366,14 @@ type NotifierConfig[T interface{}] struct {
 // the given key. If the key is not present, then it returns the fallback value.
 type GetDecryptedValueFn func(ctx context.Context, sjd map[string][]byte, key string, fallback string) string
 
+// NoopDecrypt is a GetDecryptedValueFn that returns a value without decrypting it.
+func NoopDecrypt(_ context.Context, sjd map[string][]byte, key string, fallback string) string {
+	if v, ok := sjd[key]; ok {
+		return string(v)
+	}
+	return fallback
+}
+
 // BuildReceiverConfiguration parses, decrypts and validates the APIReceiver.
 func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decrypt GetDecryptedValueFn) (GrafanaReceiverConfig, error) {
 	result := GrafanaReceiverConfig{
@@ -386,7 +395,11 @@ func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decrypt G
 func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver *GrafanaIntegrationConfig, decrypt GetDecryptedValueFn) error {
 	secureSettings, err := decodeSecretsFromBase64(receiver.SecureSettings)
 	if err != nil {
-		return err
+		// An error means that the secure settings are not base-64 encoded.
+		secureSettings = make(map[string][]byte, len(receiver.SecureSettings))
+		for k, v := range receiver.SecureSettings {
+			secureSettings[k] = []byte(v)
+		}
 	}
 
 	decryptFn := func(key string, fallback string) string {
@@ -533,6 +546,17 @@ func decodeSecretsFromBase64(secrets map[string]string) (map[string][]byte, erro
 		secureSettings[k] = d
 	}
 	return secureSettings, nil
+}
+
+// GetActiveReceiversMap returns all receivers that are in use by a route.
+func GetActiveReceiversMap(r *dispatch.Route) map[string]struct{} {
+	receiversMap := make(map[string]struct{})
+	visitFunc := func(r *dispatch.Route) {
+		receiversMap[r.RouteOpts.Receiver] = struct{}{}
+	}
+	r.Walk(visitFunc)
+
+	return receiversMap
 }
 
 func newNotifierConfig[T interface{}](receiver *GrafanaIntegrationConfig, settings T) *NotifierConfig[T] {

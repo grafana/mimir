@@ -377,9 +377,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	}
 
 	cfg := grafanaToUpstreamConfig(conf)
-	activeReceivers := getActiveReceiversMap(dispatch.NewRoute(cfg.Route, nil))
-	receivers := buildReceivers(integrationsMap, activeReceivers)
-	am.api.Update(&cfg, receivers, func(_ model.LabelSet) {})
+	am.api.Update(&cfg, func(_ model.LabelSet) {})
 
 	timeIntervals := make(map[string][]timeinterval.TimeInterval, len(conf.MuteTimeIntervals)+len(conf.TimeIntervals))
 	for _, ti := range conf.MuteTimeIntervals {
@@ -392,7 +390,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	intervener := timeinterval.NewIntervener(timeIntervals)
 
 	pipeline := am.pipelineBuilder.New(
-		receivers,
+		integrationsMap,
 		waitFunc,
 		am.inhibitor,
 		silence.NewSilencer(am.silences, am.marker, am.logger),
@@ -460,8 +458,8 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a
 // list of receiver config.
-func buildIntegrationsMap(l log.Logger, userID string, nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*notify.Integration, error) {
-	integrationsMap := make(map[string][]*notify.Integration, len(nc))
+func buildIntegrationsMap(l log.Logger, userID string, nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
+	integrationsMap := make(map[string][]notify.Integration, len(nc))
 	for _, rcv := range nc {
 		// Check if it's a Grafana or an upstream receiver and build the integrations accordingly.
 		if rcv.Type() == definition.GrafanaReceiverType {
@@ -481,7 +479,14 @@ func buildIntegrationsMap(l log.Logger, userID string, nc []*definition.Postable
 			if err != nil {
 				return nil, err
 			}
-			integrationsMap[rcv.Name] = integrations
+
+			// Dereference pointers to the actual notifier.
+			// TODO: Fix in alerting repo / AM fork.
+			var finalIntegrations []notify.Integration
+			for _, v := range integrations {
+				finalIntegrations = append(finalIntegrations, *v)
+			}
+			integrationsMap[rcv.Name] = finalIntegrations
 		} else {
 			integrations, err := buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, logger, notifierWrapper)
 			if err != nil {
@@ -493,22 +498,13 @@ func buildIntegrationsMap(l log.Logger, userID string, nc []*definition.Postable
 	return integrationsMap, nil
 }
 
-func buildReceivers(integrationsMap map[string][]*notify.Integration, activeReceivers map[string]struct{}) []*notify.Receiver {
-	var receivers []*notify.Receiver
-	for k, v := range integrationsMap {
-		_, active := activeReceivers[k]
-		receivers = append(receivers, notify.NewReceiver(k, active, v))
-	}
-	return receivers
-}
-
 // buildReceiverIntegrations builds a list of integration notifiers off of a
 // receiver config.
 // Taken from https://github.com/prometheus/alertmanager/blob/94d875f1227b29abece661db1a68c001122d1da5/cmd/alertmanager/main.go#L112-L159.
-func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]*notify.Integration, error) {
+func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]notify.Integration, error) {
 	var (
 		errs         types.MultiError
-		integrations []*notify.Integration
+		integrations []notify.Integration
 		add          = func(name string, i int, rs notify.ResolvedSender, f func(l log.Logger) (notify.Notifier, error)) {
 			n, err := f(log.With(logger, "integration", name))
 			if err != nil {
