@@ -465,7 +465,7 @@ func buildIntegrationsMap(l log.Logger, userID string, nc []*definition.Postable
 		if rcv.Type() == definition.GrafanaReceiverType {
 			// The decrypt functions and the context are used to decrypt the configuration.
 			// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
-			rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), postableApiReceiverToApiReceiver(rcv), noopDecryptFn)
+			rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), postableApiReceiverToApiReceiver(rcv), alertingNotify.NoopDecrypt)
 			if err != nil {
 				return nil, err
 			}
@@ -567,14 +567,6 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 	return integrations, nil
 }
 
-// noopDecryptFn implements alertingNotify.DecryptFn.
-// TODO: make part of alerting package.
-func noopDecryptFn(_ context.Context, sjd map[string][]byte, key string, fallback string) string {
-	if v, ok := sjd[key]; ok {
-		return string(v)
-	}
-	return fallback
-}
 func whSenderFn(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
 	return &Sender{}, nil
 }

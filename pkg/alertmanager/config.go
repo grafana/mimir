@@ -13,7 +13,6 @@ import (
 	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	amconfig "github.com/prometheus/alertmanager/config"
-	"github.com/prometheus/alertmanager/dispatch"
 	"gopkg.in/yaml.v3"
 )
 
@@ -88,13 +87,4 @@ func postableGrafanaReceiverToGrafanaIntegrationConfig(p *definition.PostableGra
 		Settings:              json.RawMessage(p.Settings),
 		SecureSettings:        p.SecureSettings,
 	}
-}
-
-// TODO: move to alerting package.
-func getActiveReceiversMap(r *dispatch.Route) map[string]struct{} {
-	activeReceivers := make(map[string]struct{})
-	r.Walk(func(r *dispatch.Route) {
-		activeReceivers[r.RouteOpts.Receiver] = struct{}{}
-	})
-	return activeReceivers
 }
