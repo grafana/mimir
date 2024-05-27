@@ -46,6 +46,7 @@ type producer struct {
 	// field on recBufs that is toggled on flush. If we did, then a new
 	// recBuf could be created and records sent to while we are flushing.
 	flushing atomicI32 // >0 if flushing, can Flush many times concurrently
+	blocked  atomicI32 // >0 if over max recs or bytes
 
 	aborting atomicI32 // >0 if aborting, can abort many times concurrently
 
@@ -425,6 +426,12 @@ func (cl *Client) produce(
 			"over_max_records", overMaxRecs,
 			"over_max_bytes", overMaxBytes,
 		)
+		// Before we potentially unlinger, add that we are blocked.
+		// Lingering always checks blocked, so we will not start a
+		// linger while we are blocked. We THEN wakeup anything that
+		// is actively lingering.
+		cl.producer.blocked.Add(1)
+		cl.unlingerDueToMaxRecsBuffered()
 		// If the client ctx cancels or the produce ctx cancels, we
 		// need to un-count our buffering of this record. We also need
 		// to drain a slot from the waitBuffer chan, which could be
@@ -432,6 +439,7 @@ func (cl *Client) produce(
 		drainBuffered := func(err error) {
 			p.promiseRecord(promisedRec{ctx, promise, r}, err)
 			<-p.waitBuffer
+			cl.producer.blocked.Add(-1)
 		}
 		if !block || cl.cfg.manualFlushing {
 			drainBuffered(ErrMaxBuffered)
@@ -961,6 +969,18 @@ func (cl *Client) waitUnknownTopic(
 		recs: unknown.buffered,
 		err:  err,
 	})
+}
+
+func (cl *Client) unlingerDueToMaxRecsBuffered() {
+	if cl.cfg.linger <= 0 {
+		return
+	}
+	for _, parts := range cl.producer.topics.load() {
+		for _, part := range parts.load().partitions {
+			part.records.unlingerAndManuallyDrain()
+		}
+	}
+	cl.cfg.logger.Log(LogLevelDebug, "unlingered all partitions due to hitting max buffered")
 }
 
 // Flush hangs waiting for all buffered records to be flushed, stopping all
