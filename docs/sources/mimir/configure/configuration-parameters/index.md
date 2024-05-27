@@ -1930,6 +1930,11 @@ tenant_federation:
   # then these rules groups will be skipped during evaluations.
   # CLI flag: -ruler.tenant-federation.enabled
   [enabled: <boolean> | default = false]
+
+# (advanced) Allow rules that don't have dependencies to be evaluated
+# concurrently.
+# CLI flag: -ruler.concurrent-rule-evaluation
+[enable_concurrent_rule_evaluation: <boolean> | default = false]
 ```
 
 ### ruler_storage
@@ -3337,6 +3342,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # configuration change triggers the re-sync.
 # CLI flag: -ruler.sync-rules-on-changes-enabled
 [ruler_sync_rules_on_changes_enabled: <boolean> | default = true]
+
+# (advanced) Maximum number of independent rules that can run concurrently. 0 to
+# disable.
+# CLI flag: -ruler.max-concurrent-rule-evaluations
+[ruler_max_concurrent_rule_evaluations: <int> | default = 4]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are

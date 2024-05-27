@@ -150,6 +150,7 @@ type RulesLimits interface {
 	RulerRecordingRulesEvaluationEnabled(userID string) bool
 	RulerAlertingRulesEvaluationEnabled(userID string) bool
 	RulerSyncRulesOnChangesEnabled(userID string) bool
+	RulerMaxConcurrentRuleEvaluations(userID string) int64
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter, remoteQuerier bool) rules.QueryFunc {
@@ -316,6 +317,9 @@ func DefaultTenantManagerFactory(
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
 
+		// Determine if we need to enable concurrent evaluations based on the global flag and per-tenant limits.
+		concurrentEvaluationEnabled := cfg.EnableConcurrentRuleEvaluation && overrides.RulerMaxConcurrentRuleEvaluations(userID) > 0
+
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 NewPusherAppendable(p, userID, totalWrites, failedWrites),
 			Queryable:                  wrappedQueryable,
@@ -335,6 +339,8 @@ func DefaultTenantManagerFactory(
 				// to metric that haven't been forwarded to Mimir yet.
 				return overrides.EvaluationDelay(userID)
 			},
+			ConcurrentEvalsEnabled: concurrentEvaluationEnabled,
+			MaxConcurrentEvals:     overrides.RulerMaxConcurrentRuleEvaluations(userID),
 		})
 	}
 }
