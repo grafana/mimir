@@ -454,7 +454,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 
 		if exceedsThreshold {
 			level.Info(s.requestQueue.Log).Log(
-				"msg", "experimental: querier worker connections in use by query component exceed utilization threshold. dropping request",
+				"msg", "experimental: querier worker connections in use by query component exceed utilization threshold. request dropped",
 				"query_component_name", queryComponentName,
 				"overloaded_query_component", queryComponent,
 			)
