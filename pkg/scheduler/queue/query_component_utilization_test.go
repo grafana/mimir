@@ -242,8 +242,14 @@ func TestExceedsUtilizationThresholdForQueryComponents(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
+			var err error
 			queryComponentUtilization, err := NewQueryComponentUtilization(
 				testReservedCapacity, testQuerierInflightRequestsGauge(),
+			)
+			require.NoError(t, err)
+
+			disabledComponentUtilization, err := NewQueryComponentUtilization(
+				0, testQuerierInflightRequestsGauge(),
 			)
 			require.NoError(t, err)
 
@@ -264,6 +270,26 @@ func TestExceedsUtilizationThresholdForQueryComponents(t *testing.T) {
 			require.Equal(t, queryComponent, testCase.thresholdExceededComponent)
 			// we should only return a component when exceedsThreshold is true and vice versa
 			require.Equal(t, exceedsThreshold, testCase.thresholdExceededComponent != "")
+
+			// with 1 connected worker, a component should never be marked as exceeding the threshold
+			exceedsThreshold, queryComponent = queryComponentUtilization.ExceedsThresholdForComponentName(
+				testCase.queryComponentName,
+				1,
+				testCase.queueLen,
+				testCase.waitingWorkers,
+			)
+			require.False(t, exceedsThreshold)
+			require.Equal(t, queryComponent, QueryComponent(""))
+
+			// a component utilization with reserved capacity 0 disables capacity checks
+			exceedsThreshold, queryComponent = disabledComponentUtilization.ExceedsThresholdForComponentName(
+				testCase.queryComponentName,
+				connectedWorkers,
+				testCase.queueLen,
+				testCase.waitingWorkers,
+			)
+			require.False(t, exceedsThreshold)
+			require.Equal(t, queryComponent, QueryComponent(""))
 		})
 	}
 }
