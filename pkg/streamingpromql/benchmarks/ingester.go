@@ -205,29 +205,38 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 	}
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
-	req := &mimirpb.WriteRequest{
-		Timeseries: make([]mimirpb.PreallocTimeseries, len(metrics)),
-	}
 
-	for i, m := range metrics {
-		series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-			Labels:  mimirpb.FromLabelsToLabelAdapters(m),
-			Samples: make([]mimirpb.Sample, NumIntervals),
-		}}
-
-		for s := 0; s < NumIntervals; s++ {
-			series.Samples[s].TimestampMs = int64(s) * interval.Milliseconds()
-			series.Samples[s].Value = float64(s) + float64(i)/float64(len(metrics))
+	// Batch samples into separate requests
+	batchSize := 100
+	for i := 0; i < NumIntervals; i += batchSize {
+		end := i + batchSize
+		if end > NumIntervals {
+			end = NumIntervals
 		}
 
-		req.Timeseries[i] = series
-	}
+		req := &mimirpb.WriteRequest{
+			Timeseries: make([]mimirpb.PreallocTimeseries, len(metrics)),
+		}
 
-	if _, err := ing.Push(ctx, req); err != nil {
-		return fmt.Errorf("failed to push samples to ingester: %w", err)
-	}
+		for j, m := range metrics {
+			series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+				Labels:  mimirpb.FromLabelsToLabelAdapters(m.Copy()),
+				Samples: make([]mimirpb.Sample, end-i),
+			}}
 
-	ing.Flush()
+			for s := i; s < end; s++ {
+				series.Samples[s-i].TimestampMs = int64(s) * interval.Milliseconds()
+				series.Samples[s-i].Value = float64(s) + float64(j)/float64(len(metrics))
+			}
+
+			req.Timeseries[j] = series
+		}
+
+		if _, err := ing.Push(ctx, req); err != nil {
+			return fmt.Errorf("failed to push samples to ingester: %w", err)
+		}
+		ing.Flush()
+	}
 
 	return nil
 }
