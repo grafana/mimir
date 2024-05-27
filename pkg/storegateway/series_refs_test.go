@@ -1256,7 +1256,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				return []seriesChunkRefsSet{set}
 			}(),
 		},
-		"works with many series in many batches batch": {
+		"works with many series in many batches": {
 			blockFactory: largerTestBlockFactory,
 			minT:         0,
 			maxT:         math.MaxInt64,
@@ -1466,7 +1466,7 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir st
 				assert.True(t, uint64(prevChunkRef)+prevChunkLen <= uint64(promChunk.Ref),
 					"estimated length shouldn't extend into the next chunk [%d, %d, %d]", i, j, k)
 				assert.True(t, actualChunk.length <= uint32(tsdb.EstimatedMaxChunkSize),
-					"chunks can be larger than 16KB, but the estimted length should be capped to 16KB to limit the impact of bugs in estimations [%d, %d, %d]", i, j, k)
+					"chunks can be larger than 16KB, but the estimated length should be capped to 16KB to limit the impact of bugs in estimations [%d, %d, %d]", i, j, k)
 
 				prevChunkRef, prevChunkLen = promChunk.Ref, uint64(actualChunk.length)
 			}
@@ -1703,8 +1703,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				minT,
 				maxT,
 				newSafeQueryStats(),
-				nil,
 				log.NewNopLogger(),
+				nil,
 			)
 			require.NoError(t, err)
 
@@ -1804,8 +1804,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 					block.meta.MinTime,
 					block.meta.MaxTime,
 					newSafeQueryStats(),
-					nil,
 					log.NewNopLogger(),
+					nil,
 				)
 				require.NoError(t, err)
 				allSets := readAllSeriesChunkRefsSet(iterator)
@@ -1868,8 +1868,8 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 							block.meta.MinTime,
 							block.meta.MaxTime,
 							newSafeQueryStats(),
-							nil,
 							log.NewNopLogger(),
+							nil,
 						)
 						require.NoError(b, err)
 
@@ -2197,8 +2197,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						statsColdCache,
-						nil,
 						log.NewNopLogger(),
+						nil,
 					)
 
 					require.NoError(t, err)
@@ -2213,7 +2213,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						cached: testCase.cachedSeriesHashesWithWarmCache,
 					}
 
-					statsWarnCache := newSafeQueryStats()
+					statsWarmCache := newSafeQueryStats()
 					ss, err = openBlockSeriesChunkRefsSetsIterator(
 						context.Background(),
 						batchSize,
@@ -2227,15 +2227,15 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						noChunkRefs,
 						b.meta.MinTime,
 						b.meta.MaxTime,
-						statsWarnCache,
-						nil,
+						statsWarmCache,
 						log.NewNopLogger(),
+						nil,
 					)
 					require.NoError(t, err)
 					lset = extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
 					require.NoError(t, ss.Err())
 					assert.Equal(t, testCase.expectedLabelSets, lset)
-					assert.Equal(t, testCase.expectedSeriesReadFromBlockWithWarmCache, statsWarnCache.export().seriesFetched)
+					assert.Equal(t, testCase.expectedSeriesReadFromBlockWithWarmCache, statsWarmCache.export().seriesFetched)
 				})
 			}
 		})
@@ -2291,7 +2291,7 @@ func TestPostingsSetsIterator(t *testing.T) {
 		"empty postings": {
 			postings:        []storage.SeriesRef{},
 			batchSize:       2,
-			expectedBatches: [][]storage.SeriesRef{},
+			expectedBatches: nil,
 		},
 	}
 
@@ -2305,48 +2305,8 @@ func TestPostingsSetsIterator(t *testing.T) {
 				actualBatches = append(actualBatches, iterator.At())
 			}
 
-			assert.ElementsMatch(t, testCase.expectedBatches, actualBatches)
+			require.Equal(t, testCase.expectedBatches, actualBatches)
 		})
-	}
-}
-
-func TestReusedPostingsAndMatchers(t *testing.T) {
-	postingsList := [][]storage.SeriesRef{
-		nil,
-		{},
-		{1, 2, 3},
-	}
-	matchersList := [][]*labels.Matcher{
-		nil,
-		{},
-		{labels.MustNewMatcher(labels.MatchEqual, "a", "b")},
-	}
-
-	for _, firstPostings := range postingsList {
-		for _, firstMatchers := range matchersList {
-			for _, secondPostings := range postingsList {
-				for _, secondMatchers := range matchersList {
-					r := reusedPostingsAndMatchers{}
-					require.False(t, r.isSet())
-
-					verify := func() {
-						r.set(firstPostings, firstMatchers)
-						require.True(t, r.isSet())
-						if firstPostings == nil {
-							require.Equal(t, []storage.SeriesRef{}, r.ps)
-						} else {
-							require.Equal(t, firstPostings, r.ps)
-						}
-						require.Equal(t, firstMatchers, r.matchers)
-					}
-					verify()
-
-					// This should not overwrite the first set.
-					r.set(secondPostings, secondMatchers)
-					verify()
-				}
-			}
-		}
 	}
 }
 
@@ -2679,4 +2639,11 @@ type mockIndexCacheEntry struct {
 
 func (c mockIndexCache) FetchSeriesForPostings(context.Context, string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey) ([]byte, bool) {
 	return c.fetchSeriesForPostingsResponse.contents, c.fetchSeriesForPostingsResponse.cached
+}
+
+func TestSeriesIteratorStrategy(t *testing.T) {
+	require.False(t, defaultStrategy.isNoChunkRefs())
+	require.True(t, defaultStrategy.withNoChunkRefs().isNoChunkRefs())
+	require.False(t, defaultStrategy.withNoChunkRefs().withChunkRefs().isNoChunkRefs())
+	require.False(t, defaultStrategy.withChunkRefs().isNoChunkRefs())
 }
