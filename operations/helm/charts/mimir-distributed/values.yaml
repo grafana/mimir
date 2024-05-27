@@ -1288,7 +1288,7 @@ ruler:
   # -- This is useful for isolating the ruler queries from other queriers (api/grafana).
   remoteEvaluationDedicatedQueryPath: false
 
-# -- Only deployed if .Values.remoteEvaluation.enabled && .Values.remoteEvaluation.dedicatedQueryPath
+# -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_querier:
   replicas: 2
 
@@ -1398,7 +1398,7 @@ ruler_querier:
   # Set to 'null' to use the Jaeger client's default value
   jaegerReporterMaxQueueSize: 5000
 
-# -- Only deployed if .Values.remoteEvaluation.enabled && .Values.remoteEvaluation.dedicatedQueryPath
+# -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_frontend:
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -1500,7 +1500,7 @@ ruler_query_frontend:
   # Set to 'null' to use the Jaeger client's default value
   jaegerReporterMaxQueueSize: 5000
 
-# -- Only deployed if .Values.remoteEvaluation.enabled && .Values.remoteEvaluation.dedicatedQueryPath
+# -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_scheduler:
   replicas: 2
 
