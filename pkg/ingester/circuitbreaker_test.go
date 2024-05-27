@@ -35,7 +35,7 @@ func TestIngester_Push_CircuitBreaker(t *testing.T) {
 			expectedErrorWhenCircuitBreakerClosed: nil,
 			limits:                                InstanceLimits{MaxInMemoryTenants: 3},
 			ctx: func(ctx context.Context) context.Context {
-				return context.WithValue(ctx, testDelayKey, (2 * pushTimeout).String())
+				return context.WithValue(ctx, testDelayKey, 2*pushTimeout)
 			},
 		},
 		"instance limit hit": {
@@ -51,6 +51,7 @@ func TestIngester_Push_CircuitBreaker(t *testing.T) {
 				metricNames := []string{
 					"cortex_ingester_circuit_breaker_results_total",
 					"cortex_ingester_circuit_breaker_transitions_total",
+					"cortex_ingester_circuit_breaker_current_state",
 				}
 
 				registry := prometheus.NewRegistry()
@@ -147,28 +148,38 @@ func TestIngester_Push_CircuitBreaker(t *testing.T) {
 				var expectedMetrics string
 				if initialDelayEnabled {
 					expectedMetrics = `
-						# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker
+						# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 						# TYPE cortex_ingester_circuit_breaker_results_total counter
 						cortex_ingester_circuit_breaker_results_total{ingester="localhost",result="error"} 0
 						cortex_ingester_circuit_breaker_results_total{ingester="localhost",result="success"} 0
-						# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state
+						# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 						# TYPE cortex_ingester_circuit_breaker_transitions_total counter
 						cortex_ingester_circuit_breaker_transitions_total{ingester="localhost",state="closed"} 0
 						cortex_ingester_circuit_breaker_transitions_total{ingester="localhost",state="half-open"} 0
         				cortex_ingester_circuit_breaker_transitions_total{ingester="localhost",state="open"} 0
+						# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
+        	            # TYPE cortex_ingester_circuit_breaker_current_state gauge
+						cortex_ingester_circuit_breaker_current_state{state="open"} 0
+						cortex_ingester_circuit_breaker_current_state{state="half-open"} 0
+						cortex_ingester_circuit_breaker_current_state{state="closed"} 0
     				`
 				} else {
 					expectedMetrics = `
-						# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker
+						# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 						# TYPE cortex_ingester_circuit_breaker_results_total counter
 						cortex_ingester_circuit_breaker_results_total{ingester="localhost",result="circuit_breaker_open"} 2
 						cortex_ingester_circuit_breaker_results_total{ingester="localhost",result="error"} 2
 						cortex_ingester_circuit_breaker_results_total{ingester="localhost",result="success"} 1
-						# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state
+						# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 						# TYPE cortex_ingester_circuit_breaker_transitions_total counter
 						cortex_ingester_circuit_breaker_transitions_total{ingester="localhost",state="closed"} 0
 						cortex_ingester_circuit_breaker_transitions_total{ingester="localhost",state="half-open"} 0
         				cortex_ingester_circuit_breaker_transitions_total{ingester="localhost",state="open"} 1
+						# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
+        	            # TYPE cortex_ingester_circuit_breaker_current_state gauge
+						cortex_ingester_circuit_breaker_current_state{state="open"} 1
+						cortex_ingester_circuit_breaker_current_state{state="half-open"} 0
+						cortex_ingester_circuit_breaker_current_state{state="closed"} 0
     				`
 				}
 				assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))

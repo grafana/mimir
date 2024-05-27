@@ -263,11 +263,11 @@ func (cfg *Config) Validate(logger log.Logger) error {
 
 	err := cfg.IngesterRing.Validate()
 
-	if err == nil {
-		return cfg.CircuitBreakerConfig.Validate()
+	if err != nil {
+		return err
 	}
 
-	return err
+	return cfg.CircuitBreakerConfig.Validate()
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -405,7 +405,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.activeGroups = activeGroupsCleanupService
 
 	if cfg.CircuitBreakerConfig.Enabled {
-		i.circuitBreaker = newCircuitBreaker(i)
+		i.circuitBreaker = newCircuitBreaker(cfg.CircuitBreakerConfig, cfg.IngesterRing.InstanceID, logger, registerer)
 	}
 
 	if registerer != nil {
@@ -975,8 +975,8 @@ type pushRequestState struct {
 // StartPushRequest checks if ingester can start push request, and increments relevant counters.
 // If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are updated.
 func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context.Context, error) {
-	if i.isCircuitBreakerActive() {
-		return i.circuitBreaker.StartPushRequest(ctx, reqSize)
+	if i.circuitBreaker.isActive() {
+		return i.circuitBreaker.StartPushRequest(ctx, reqSize, i.startPushRequest)
 	}
 	ctx, _, err := i.startPushRequest(ctx, reqSize)
 	return ctx, err
@@ -3767,17 +3767,10 @@ func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest)
 	return nil
 }
 
-func (i *Ingester) isCircuitBreakerActive() bool {
-	if i.circuitBreaker == nil {
-		return false
-	}
-	return i.circuitBreaker.isActive()
-}
-
 // Push implements client.IngesterServer, which is registered into gRPC server.
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	if i.isCircuitBreakerActive() {
-		return i.circuitBreaker.Push(ctx, req)
+	if i.circuitBreaker.isActive() {
+		return i.circuitBreaker.Push(ctx, req, i.push)
 	}
 	return i.push(ctx, req)
 }

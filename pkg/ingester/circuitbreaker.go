@@ -5,7 +5,6 @@ package ingester
 import (
 	"context"
 	"flag"
-	"fmt"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go"
@@ -14,6 +13,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/middleware"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -28,6 +29,34 @@ const (
 	defaultTimeout            = 2 * time.Second
 	testDelayKey   testCtxKey = "test-delay"
 )
+
+type circuitBreakerMetrics struct {
+	circuitBreakerCurrentState *prometheus.GaugeVec
+
+	circuitBreakerTransitions *prometheus.CounterVec
+	circuitBreakerResults     *prometheus.CounterVec
+}
+
+type startPushRequestFn func(context.Context, int64) (context.Context, bool, error)
+
+type pushRequestFn func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
+
+func newCircuitBreakerMetrics(r prometheus.Registerer) *circuitBreakerMetrics {
+	return &circuitBreakerMetrics{
+		circuitBreakerCurrentState: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_circuit_breaker_current_state",
+			Help: "Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.",
+		}, []string{"state"}),
+		circuitBreakerTransitions: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_circuit_breaker_transitions_total",
+			Help: "Number of times the circuit breaker has entered a state.",
+		}, []string{"ingester", "state"}),
+		circuitBreakerResults: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_circuit_breaker_results_total",
+			Help: "Results of executing requests via the circuit breaker.",
+		}, []string{"ingester", "result"}),
+	}
+}
 
 type CircuitBreakerConfig struct {
 	Enabled                   bool          `yaml:"enabled" category:"experimental"`
@@ -56,22 +85,26 @@ func (cfg *CircuitBreakerConfig) Validate() error {
 }
 
 type circuitBreaker struct {
+	cfg CircuitBreakerConfig
 	circuitbreaker.CircuitBreaker[any]
-	ingester  *Ingester
-	executor  failsafe.Executor[any]
-	startTime time.Time
+	executor   failsafe.Executor[any]
+	ingesterID string
+	logger     log.Logger
+	metrics    *circuitBreakerMetrics
+	startTime  time.Time
 }
 
-func newCircuitBreaker(ingester *Ingester) *circuitBreaker {
-	ingesterID := ingester.cfg.IngesterRing.InstanceID
-	cfg := ingester.cfg.CircuitBreakerConfig
-	metrics := ingester.metrics
+func newCircuitBreaker(cfg CircuitBreakerConfig, ingesterID string, logger log.Logger, registerer prometheus.Registerer) *circuitBreaker {
+	metrics := newCircuitBreakerMetrics(registerer)
 	// Initialize each of the known labels for circuit breaker metrics for this particular ingester.
 	transitionOpen := metrics.circuitBreakerTransitions.WithLabelValues(ingesterID, circuitbreaker.OpenState.String())
 	transitionHalfOpen := metrics.circuitBreakerTransitions.WithLabelValues(ingesterID, circuitbreaker.HalfOpenState.String())
 	transitionClosed := metrics.circuitBreakerTransitions.WithLabelValues(ingesterID, circuitbreaker.ClosedState.String())
 	countSuccess := metrics.circuitBreakerResults.WithLabelValues(ingesterID, resultSuccess)
 	countError := metrics.circuitBreakerResults.WithLabelValues(ingesterID, resultError)
+	gaugeOpen := metrics.circuitBreakerCurrentState.WithLabelValues(circuitbreaker.OpenState.String())
+	gaugeHalfOpen := metrics.circuitBreakerCurrentState.WithLabelValues(circuitbreaker.HalfOpenState.String())
+	gaugeClosed := metrics.circuitBreakerCurrentState.WithLabelValues(circuitbreaker.ClosedState.String())
 
 	cbBuilder := circuitbreaker.Builder[any]().
 		WithFailureThreshold(cfg.FailureThreshold).
@@ -84,15 +117,24 @@ func newCircuitBreaker(ingester *Ingester) *circuitBreaker {
 		}).
 		OnClose(func(event circuitbreaker.StateChangedEvent) {
 			transitionClosed.Inc()
-			level.Info(ingester.logger).Log("msg", "circuit breaker is closed", "ingester", ingesterID, "previous", event.OldState, "current", event.NewState)
+			gaugeOpen.Set(0)
+			gaugeHalfOpen.Set(0)
+			gaugeClosed.Set(1)
+			level.Info(logger).Log("msg", "circuit breaker is closed", "ingester", ingesterID, "previous", event.OldState, "current", event.NewState)
 		}).
 		OnOpen(func(event circuitbreaker.StateChangedEvent) {
 			transitionOpen.Inc()
-			level.Info(ingester.logger).Log("msg", "circuit breaker is open", "ingester", ingesterID, "previous", event.OldState, "current", event.NewState)
+			gaugeOpen.Set(1)
+			gaugeHalfOpen.Set(0)
+			gaugeClosed.Set(0)
+			level.Warn(logger).Log("msg", "circuit breaker is open", "ingester", ingesterID, "previous", event.OldState, "current", event.NewState)
 		}).
 		OnHalfOpen(func(event circuitbreaker.StateChangedEvent) {
 			transitionHalfOpen.Inc()
-			level.Info(ingester.logger).Log("msg", "circuit breaker is half-open", "ingester", ingesterID, "previous", event.OldState, "current", event.NewState)
+			gaugeOpen.Set(0)
+			gaugeHalfOpen.Set(1)
+			gaugeClosed.Set(0)
+			level.Info(logger).Log("msg", "circuit breaker is half-open", "ingester", ingesterID, "previous", event.OldState, "current", event.NewState)
 		}).
 		HandleIf(func(_ any, err error) bool { return isFailure(err) })
 
@@ -107,9 +149,12 @@ func newCircuitBreaker(ingester *Ingester) *circuitBreaker {
 
 	cb := cbBuilder.Build()
 	return &circuitBreaker{
+		cfg:            cfg,
 		CircuitBreaker: cb,
-		ingester:       ingester,
 		executor:       failsafe.NewExecutor[any](cb),
+		ingesterID:     ingesterID,
+		logger:         logger,
+		metrics:        metrics,
 		startTime:      time.Now().Add(cfg.InitialDelay),
 	}
 }
@@ -136,47 +181,31 @@ func isFailure(err error) bool {
 }
 
 func (cb *circuitBreaker) isActive() bool {
+	if cb == nil {
+		return false
+	}
 	return cb.startTime.Before(time.Now())
 }
 
-func (cb *circuitBreaker) ingesterID() string {
-	return cb.ingester.cfg.IngesterRing.InstanceID
-}
-
-func (cb *circuitBreaker) logger() log.Logger {
-	return cb.ingester.logger
-}
-
-func (cb *circuitBreaker) metrics() *ingesterMetrics {
-	return cb.ingester.metrics
-}
-
-func (cb *circuitBreaker) config() CircuitBreakerConfig {
-	return cb.ingester.cfg.CircuitBreakerConfig
-}
-
-func (cb *circuitBreaker) get(ctx context.Context, callbackFnName string, callbackFn func() (any, error)) (any, error) {
-	res, err := cb.executor.Get(callbackFn)
+func (cb *circuitBreaker) get(ctx context.Context, op func() (any, error)) (any, error) {
+	res, err := cb.executor.Get(op)
 	if err != nil && errors.Is(err, circuitbreaker.ErrOpen) {
-		cb.metrics().circuitBreakerResults.WithLabelValues(cb.ingesterID(), resultOpen).Inc()
+		cb.metrics.circuitBreakerResults.WithLabelValues(cb.ingesterID, resultOpen).Inc()
 		cbOpenErr := middleware.DoNotLogError{Err: newCircuitBreakerOpenError(cb.RemainingDelay())}
 		return res, newErrorWithStatus(cbOpenErr, codes.Unavailable)
 	}
-	return res, cb.processError(ctx, err, callbackFnName)
+	return res, cb.processError(ctx, err)
 }
 
-func (cb *circuitBreaker) processError(ctx context.Context, err error, callbackFnName string) error {
+func (cb *circuitBreaker) processError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}
 	if errors.Is(err, ctx.Err()) {
-		level.Error(cb.logger()).Log("msg", fmt.Sprintf("callback function %s completed with an error found in the context", callbackFnName), "ingester", cb.ingesterID(), "ctxErr", ctx.Err())
-
 		// ctx.Err() was registered with the circuit breaker's executor, but we don't propagate it
 		return nil
 	}
 
-	level.Error(cb.logger()).Log("msg", fmt.Sprintf("callback function %s completed with an error", callbackFnName), "ingester", cb.ingesterID(), "err", err)
 	return err
 }
 
@@ -185,19 +214,17 @@ func (cb *circuitBreaker) contextWithTimeout(parent context.Context, timeout tim
 		timeout = defaultTimeout
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), timeout)
-	if cb.config().testModeEnabled {
-		if initialDelay, ok := parent.Value(testDelayKey).(string); ok {
-			if d, err := time.ParseDuration(initialDelay); err == nil {
-				time.Sleep(d)
-			}
+	if cb.cfg.testModeEnabled {
+		if initialDelay, ok := parent.Value(testDelayKey).(time.Duration); ok {
+			time.Sleep(initialDelay)
 		}
 	}
 	return ctx, cancel
 }
 
-func (cb *circuitBreaker) StartPushRequest(ctx context.Context, reqSize int64) (context.Context, error) {
-	callbackCtx, callbackErr := cb.get(ctx, "ingester.startPushRequest", func() (any, error) {
-		callbackCtx, _, callbackErr := cb.ingester.startPushRequest(ctx, reqSize)
+func (cb *circuitBreaker) StartPushRequest(ctx context.Context, reqSize int64, startPushRequest startPushRequestFn) (context.Context, error) {
+	callbackCtx, callbackErr := cb.get(ctx, func() (any, error) {
+		callbackCtx, _, callbackErr := startPushRequest(ctx, reqSize)
 		return callbackCtx, callbackErr
 	})
 	if callbackErr == nil {
@@ -206,12 +233,12 @@ func (cb *circuitBreaker) StartPushRequest(ctx context.Context, reqSize int64) (
 	return nil, callbackErr
 }
 
-func (cb *circuitBreaker) Push(parent context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	ctx, cancel := cb.contextWithTimeout(parent, cb.config().PushTimeout)
+func (cb *circuitBreaker) Push(parent context.Context, req *mimirpb.WriteRequest, push pushRequestFn) (*mimirpb.WriteResponse, error) {
+	ctx, cancel := cb.contextWithTimeout(parent, cb.cfg.PushTimeout)
 	defer cancel()
 
-	callbackResult, callbackErr := cb.get(ctx, "ingester.push", func() (any, error) {
-		callbackResult, callbackErr := cb.ingester.push(ctx, req)
+	callbackResult, callbackErr := cb.get(ctx, func() (any, error) {
+		callbackResult, callbackErr := push(ctx, req)
 		if callbackErr != nil {
 			return callbackResult, callbackErr
 		}
