@@ -51,6 +51,14 @@ type SchedulerRequest struct {
 	ParentSpanContext opentracing.SpanContext
 }
 
+// ExpectedQueryComponentName parses the expected query component from annotations by the frontend.
+func (req *SchedulerRequest) ExpectedQueryComponentName() string {
+	if len(req.AdditionalQueueDimensions) > 0 {
+		return req.AdditionalQueueDimensions[0]
+	}
+	return ""
+}
+
 // TenantIndex is opaque type that allows to resume iteration over tenants
 // between successive calls of RequestQueue.GetNextRequestForQuerier method.
 type TenantIndex struct {
@@ -86,7 +94,7 @@ type RequestQueue struct {
 	forgetDelay                      time.Duration
 
 	// metrics for reporting
-	connectedQuerierWorkers *atomic.Int32
+	connectedQuerierWorkers *atomic.Int64
 	// metrics are broken out with "user" label for backwards compat, despite update to "tenant" terminology
 	queueLength       *prometheus.GaugeVec   // per user
 	discardedRequests *prometheus.CounterVec // per user
@@ -95,11 +103,17 @@ type RequestQueue struct {
 	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 
-	querierOperations chan querierOperation
-	requestsToEnqueue chan requestToEnqueue
-	queueBroker       *queueBroker
+	querierOperations                 chan querierOperation
+	requestsToEnqueue                 chan requestToEnqueue
+	nextRequestForQuerierCalls        chan *nextRequestForQuerierCall
+	waitingNextRequestForQuerierCalls *list.List
 
-	nextRequestForQuerierCalls chan *nextRequestForQuerierCall
+	// QueryComponentUtilization encapsulates tracking requests from the time they are forwarded to a querier
+	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
+	// Unlike schedulerInflightRequests, tracking begins only when the request is sent to a querier.
+	QueryComponentUtilization *QueryComponentUtilization
+
+	queueBroker *queueBroker
 }
 
 type querierOperation struct {
@@ -132,7 +146,13 @@ func NewRequestQueue(
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
-) *RequestQueue {
+	querierInflightRequests *prometheus.GaugeVec,
+) (*RequestQueue, error) {
+	queryComponentCapacity, err := NewQueryComponentUtilization(DefaultReservedQueryComponentCapacity, querierInflightRequests)
+	if err != nil {
+		return nil, err
+	}
+
 	q := &RequestQueue{
 		// settings
 		log:                              log,
@@ -141,25 +161,26 @@ func NewRequestQueue(
 		forgetDelay:                      forgetDelay,
 
 		// metrics for reporting
-		connectedQuerierWorkers: atomic.NewInt32(0),
+		connectedQuerierWorkers: atomic.NewInt64(0),
 		queueLength:             queueLength,
 		discardedRequests:       discardedRequests,
 		enqueueDuration:         enqueueDuration,
 
-		stopRequested: make(chan struct{}),
-		stopCompleted: make(chan struct{}),
-
 		// channels must not be buffered so that we can detect when dispatcherLoop() has finished.
-		querierOperations: make(chan querierOperation),
-		requestsToEnqueue: make(chan requestToEnqueue),
-		queueBroker:       newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, forgetDelay),
+		stopRequested:                     make(chan struct{}),
+		stopCompleted:                     make(chan struct{}),
+		querierOperations:                 make(chan querierOperation),
+		requestsToEnqueue:                 make(chan requestToEnqueue),
+		nextRequestForQuerierCalls:        make(chan *nextRequestForQuerierCall),
+		waitingNextRequestForQuerierCalls: list.New(),
 
-		nextRequestForQuerierCalls: make(chan *nextRequestForQuerierCall),
+		QueryComponentUtilization: queryComponentCapacity,
+		queueBroker:               newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, forgetDelay),
 	}
 
 	q.Service = services.NewTimerService(forgetCheckPeriod, q.starting, q.forgetDisconnectedQueriers, q.stop).WithName("request queue")
 
-	return q
+	return q, nil
 }
 
 func (q *RequestQueue) starting(_ context.Context) error {
@@ -171,8 +192,6 @@ func (q *RequestQueue) starting(_ context.Context) error {
 
 func (q *RequestQueue) dispatcherLoop() {
 	stopping := false
-
-	waitingGetNextRequestForQuerierCalls := list.New()
 
 	for {
 		needToDispatchQueries := false
@@ -194,19 +213,19 @@ func (q *RequestQueue) dispatcherLoop() {
 			requestSent := q.trySendNextRequestForQuerier(call)
 			if !requestSent {
 				// No requests available for this querier; add it to the list to try later.
-				waitingGetNextRequestForQuerierCalls.PushBack(call)
+				q.waitingNextRequestForQuerierCalls.PushBack(call)
 			}
 		}
 
 		if needToDispatchQueries {
-			currentElement := waitingGetNextRequestForQuerierCalls.Front()
+			currentElement := q.waitingNextRequestForQuerierCalls.Front()
 
 			for currentElement != nil && !q.queueBroker.isEmpty() {
 				call := currentElement.Value.(*nextRequestForQuerierCall)
 				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
 
 				if q.trySendNextRequestForQuerier(call) {
-					waitingGetNextRequestForQuerierCalls.Remove(currentElement)
+					q.waitingNextRequestForQuerierCalls.Remove(currentElement)
 				}
 
 				currentElement = nextElement
@@ -215,7 +234,7 @@ func (q *RequestQueue) dispatcherLoop() {
 
 		if stopping && (q.queueBroker.isEmpty() || q.connectedQuerierWorkers.Load() == 0) {
 			// Tell any waiting GetNextRequestForQuerier calls that nothing is coming.
-			currentElement := waitingGetNextRequestForQuerierCalls.Front()
+			currentElement := q.waitingNextRequestForQuerierCalls.Front()
 
 			for currentElement != nil {
 				call := currentElement.Value.(*nextRequestForQuerierCall)
@@ -289,6 +308,30 @@ func (q *RequestQueue) trySendNextRequestForQuerier(call *nextRequestForQuerierC
 	if req == nil {
 		// Nothing available for this querier, try again next time.
 		return false
+	}
+
+	{
+		// temporary observation of query component load balancing behavior before full implementation
+		schedulerRequest, ok := req.req.(*SchedulerRequest)
+		if ok {
+			queryComponentName := schedulerRequest.ExpectedQueryComponentName()
+			exceedsThreshold, queryComponent := q.QueryComponentUtilization.ExceedsThresholdForComponentName(
+				queryComponentName,
+				q.connectedQuerierWorkers.Load(),
+				q.queueBroker.tenantQueuesTree.ItemCount(),
+				q.waitingNextRequestForQuerierCalls.Len(),
+			)
+
+			if exceedsThreshold {
+				level.Info(q.log).Log(
+					"msg", "experimental: querier worker connections in use by query component exceed utilization threshold. no action taken",
+					"query_component_name", queryComponentName,
+					"overloaded_query_component", queryComponent,
+				)
+			}
+			q.QueryComponentUtilization.IncrementForComponentName(queryComponentName)
+		}
+
 	}
 
 	reqForQuerier := nextRequestForQuerier{
