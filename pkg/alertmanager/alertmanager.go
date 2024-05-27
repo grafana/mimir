@@ -360,7 +360,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
 
-	integrationsMap, err := buildIntegrationsMap(am.logger, userID, conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
+	integrationsMap, err := buildIntegrationsMap(am.logger, userID, conf.Receivers, tmpl, firewallDialer, func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      userID,
@@ -456,9 +456,16 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 	return am.state.GetFullState()
 }
 
-// buildIntegrationsMap builds a map of name to the list of integration notifiers off of a
-// list of receiver config.
-func buildIntegrationsMap(l log.Logger, userID string, nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
+// buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
+func buildIntegrationsMap(l log.Logger, userID string, nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
+	loggerFactory := newLoggerFactory(l)
+	whFn := func(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
+		return NewSender(l), nil
+	}
+	emailFn := func(n alertingReceivers.Metadata) (alertingReceivers.EmailSender, error) {
+		return NewSender(l), nil
+	}
+
 	integrationsMap := make(map[string][]notify.Integration, len(nc))
 	for _, rcv := range nc {
 		// Check if it's a Grafana or an upstream receiver and build the integrations accordingly.
@@ -475,7 +482,7 @@ func buildIntegrationsMap(l log.Logger, userID string, nc []*definition.Postable
 				orgID = 0
 			}
 			// TODO: email sender is no-op for now.
-			integrations, err := alertingNotify.BuildReceiverIntegrations(rCfg, tmpl, &images.UnavailableProvider{}, newLoggerFactory(l), whSenderFn, emailSenderFn, orgID, version.Version)
+			integrations, err := alertingNotify.BuildReceiverIntegrations(rCfg, tmpl, &images.UnavailableProvider{}, loggerFactory, whFn, emailFn, orgID, version.Version)
 			if err != nil {
 				return nil, err
 			}
@@ -488,7 +495,7 @@ func buildIntegrationsMap(l log.Logger, userID string, nc []*definition.Postable
 			}
 			integrationsMap[rcv.Name] = finalIntegrations
 		} else {
-			integrations, err := buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, logger, notifierWrapper)
+			integrations, err := buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, l, notifierWrapper)
 			if err != nil {
 				return nil, err
 			}
@@ -565,13 +572,6 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 		return nil, &errs
 	}
 	return integrations, nil
-}
-
-func whSenderFn(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
-	return &Sender{}, nil
-}
-func emailSenderFn(n alertingReceivers.Metadata) (alertingReceivers.EmailSender, error) {
-	return &Sender{}, nil
 }
 
 func md5HashAsMetricValue(data []byte) float64 {

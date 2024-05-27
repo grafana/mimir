@@ -16,7 +16,8 @@ import (
 	"net/http"
 	"time"
 
-	alertingLogging "github.com/grafana/alerting/logging"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/pkg/errors"
 
@@ -29,10 +30,10 @@ var (
 
 type Sender struct {
 	c   *http.Client
-	log alertingLogging.Logger
+	log log.Logger
 }
 
-func NewSender(log alertingLogging.Logger) *Sender {
+func NewSender(log log.Logger) *Sender {
 	netTransport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			Renegotiation: tls.RenegotiateFreelyAsClient,
@@ -59,7 +60,7 @@ func (s *Sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 		cmd.HTTPMethod = http.MethodPost
 	}
 
-	s.log.Debug("Sending webhook", "url", cmd.URL, "http method", cmd.HTTPMethod)
+	level.Debug(s.log).Log("msg", "Sending webhook", "url", cmd.URL, "http method", cmd.HTTPMethod)
 
 	if cmd.HTTPMethod != http.MethodPost && cmd.HTTPMethod != http.MethodPut {
 		return ErrInvalidMethod
@@ -91,7 +92,7 @@ func (s *Sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			s.log.Warn("Failed to close response body", "err", err)
+			level.Warn(s.log).Log("msg", "Failed to close response body", "err", err)
 		}
 	}()
 
@@ -103,21 +104,22 @@ func (s *Sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 	if cmd.Validation != nil {
 		err := cmd.Validation(body, resp.StatusCode)
 		if err != nil {
-			s.log.Debug("Webhook failed validation", "url", cmd.URL, "statuscode", resp.Status, "body", string(body))
+			level.Debug(s.log).Log("msg", "Webhook failed validation", "url", cmd.URL, "statuscode", resp.Status, "body", string(body))
 			return fmt.Errorf("webhook failed validation: %w", err)
 		}
 	}
 
 	if resp.StatusCode/100 == 2 {
-		s.log.Debug("Webhook succeeded", "url", cmd.URL, "statuscode", resp.Status)
+		level.Debug(s.log).Log("msg", "Webhook succeeded", "url", cmd.URL, "statuscode", resp.Status)
 		return nil
 	}
 
-	s.log.Debug("Webhook failed", "url", cmd.URL, "statuscode", resp.Status, "body", string(body))
+	level.Debug(s.log).Log("msg", "Webhook failed", "url", cmd.URL, "statuscode", resp.Status, "body", string(body))
 	return fmt.Errorf("webhook response status %v", resp.Status)
 }
 
 // SendEmail implements alertingReceivers.EmailSender.
+// TODO: no-op for now, implement.
 func (s *Sender) SendEmail(ctx context.Context, cmd *alertingReceivers.SendEmailSettings) error {
 	return nil
 }
