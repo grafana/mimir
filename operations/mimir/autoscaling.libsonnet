@@ -473,6 +473,7 @@
       max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
       cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
+      with_cortex_prefix=true,
       extra_triggers=if $._config.autoscaling_ruler_querier_workers_target_utilization <= 0 then [] else [
         {
           local name = 'ruler-querier-queries',

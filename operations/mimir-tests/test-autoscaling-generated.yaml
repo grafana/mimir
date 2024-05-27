@@ -2327,7 +2327,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_querier_cpu_hpa_default
+      metricName: cortex_ruler_querier_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2346,11 +2346,11 @@ spec:
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "200"
-    name: ruler_querier_cpu_hpa_default
+    name: cortex_ruler_querier_cpu_hpa_default
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_querier_memory_hpa_default
+      metricName: cortex_ruler_querier_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2380,7 +2380,7 @@ spec:
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "1073741824"
-    name: ruler_querier_memory_hpa_default
+    name: cortex_ruler_querier_memory_hpa_default
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
