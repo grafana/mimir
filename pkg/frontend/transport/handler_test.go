@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
@@ -61,6 +62,8 @@ func TestWriteError(t *testing.T) {
 }
 
 func TestHandler_ServeHTTP(t *testing.T) {
+	const testRouteName = "the_test_route"
+
 	for _, tt := range []struct {
 		name                    string
 		cfg                     HandlerConfig
@@ -182,6 +185,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 
 			req := tt.request()
 			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
+			req = middleware.WithRouteName(req, testRouteName)
 			resp := httptest.NewRecorder()
 
 			handler.ServeHTTP(resp, req)
@@ -215,6 +219,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Equal(t, "12345", msg["user"])
 				require.Equal(t, req.Method, msg["method"])
 				require.Equal(t, req.URL.Path, msg["path"])
+				require.Equal(t, testRouteName, msg["route_name"])
 				require.Equal(t, req.UserAgent(), msg["user_agent"])
 				require.Contains(t, msg, "response_time")
 				require.Equal(t, int64(len(responseData)), msg["response_size_bytes"])
