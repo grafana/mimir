@@ -267,3 +267,50 @@ func TestBucketAndDiskSparseHeaderLoader_AvailableOnlyInBucket(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, sparseHeader, loaded)
 }
+
+func TestBucketAndDiskSparseHeaderLoader_PersistingMultipleTimes(t *testing.T) {
+	tmpDir := t.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+	loader := bucketAndDiskSparseHeaderLoader{
+		ctx:       context.Background(),
+		bkt:       bkt,
+		localPath: path.Join(tmpDir, block.SparseIndexHeaderFilename),
+		logger:    log.NewNopLogger(),
+	}
+
+	// SparseHeader not found on disk or in object store
+	_, err = loader.SparseHeader()
+	require.Error(t, err)
+
+	// SparseHeader found on disk
+	sparseHeader := &indexheaderpb.Sparse{
+		Symbols: &indexheaderpb.Symbols{
+			Offsets:      []int64{0, 1, 2, 3, 4},
+			SymbolsCount: 6,
+		},
+		PostingsOffsetTable: &indexheaderpb.PostingOffsetTable{
+			Postings: map[string]*indexheaderpb.PostingValueOffsets{
+				"a": {
+					Offsets:       []*indexheaderpb.PostingOffset{{Value: "1", TableOff: 1}},
+					LastValOffset: 5,
+				},
+			},
+		},
+	}
+
+	err = loader.PersistSparseHeader(sparseHeader)
+	require.NoError(t, err)
+
+	loaded, err := loader.SparseHeader()
+	require.NoError(t, err)
+	require.Equal(t, sparseHeader, loaded)
+
+	sparseHeader.Symbols.SymbolsCount--
+	err = loader.PersistSparseHeader(sparseHeader)
+	require.NoError(t, err, "Persisting the a different sparse header multiple times should not return an error and only replace the existing sparse header")
+
+	loaded, err = loader.SparseHeader()
+	require.NoError(t, err)
+	require.Equal(t, sparseHeader, loaded)
+}
