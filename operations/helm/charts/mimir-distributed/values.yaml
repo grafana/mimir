@@ -794,7 +794,7 @@ alertmanager:
         # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
-        noDownscale: true
+        noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator
         # If defined, downscaleLeader: <downscaleLeader>
         # If undefined or set to null (the default), no Annotation is set
@@ -815,7 +815,7 @@ alertmanager:
         # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
-        noDownscale: true
+        noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator
         # If defined, downscaleLeader: <downscaleLeader>
         # If undefined or set to null (the default), no Annotation is set
@@ -836,7 +836,7 @@ alertmanager:
         # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
-        noDownscale: true
+        noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator
         # If defined, downscaleLeader: <downscaleLeader>
         # If undefined or set to null (the default), no Annotation is set
@@ -1174,7 +1174,7 @@ ingester:
         # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
-        noDownscale: true
+        noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator
         # If defined, downscaleLeader: <downscaleLeader>
         # If undefined or set to null (the default), no Annotation is set
@@ -1195,7 +1195,7 @@ ingester:
         # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
-        noDownscale: true
+        noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator
         # If defined, downscaleLeader: <downscaleLeader>
         # If undefined or set to null (the default), no Annotation is set
@@ -1216,7 +1216,7 @@ ingester:
         # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
-        noDownscale: true
+        noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator
         # If defined, downscaleLeader: <downscaleLeader>
         # If undefined or set to null (the default), no Annotation is set
@@ -2332,7 +2332,7 @@ store_gateway:
         # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
-        noDownscale: true
+        noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator
         # If defined, downscaleLeader: <downscaleLeader>
         # If undefined or set to null (the default), no Annotation is set
@@ -2353,7 +2353,7 @@ store_gateway:
         # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
-        noDownscale: true
+        noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator
         # If defined, downscaleLeader: <downscaleLeader>
         # If undefined or set to null (the default), no Annotation is set
@@ -2374,7 +2374,7 @@ store_gateway:
         # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
-        noDownscale: true
+        noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator
         # If defined, downscaleLeader: <downscaleLeader>
         # If undefined or set to null (the default), no Annotation is set

@@ -10,8 +10,23 @@ metadata:
   name: {{ include "mimir.resourceName" $args }}
   labels:
     {{- include "mimir.labels" $args | nindent 4 }}
+    {{- if (eq $rolloutZone.noDownscale true )}}
+    grafana.com/no-downscale: {{$rolloutZone.noDownscale}}
+    {{- else }}
+    {{- if (eq $rolloutZone.prepareDownscale true )}}
+    grafana.com/prepare-downscale: {{$rolloutZone.prepareDownscale}}
+    grafana.com/min-time-between-zones-downscale: 30m
+    {{- end }}
+    {{- end }}
   annotations:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
+    {{- if $rolloutZone.prepareDownscale }}
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: {{ include "mimir.serverHttpListenPort" . }}
+    {{- end -}}
+    {{- if $rolloutZone.downscaleLeader }}
+    grafana.com/rollout-downscale-leader: $rolloutZone.downscaleLeader
+    {{- end }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .Values.store_gateway.podManagementPolicy }}
@@ -62,20 +77,8 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" $args | nindent 8 }}
-        {{- if (eq $rolloutZone.noDownscale true )}}
-        grafana.com/no-downscale: {{$rolloutZone.noDownscale}}
-        {{- else }}
-        grafana.com/prepare-downscale: {{$rolloutZone.prepareDownscale}}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" $args | nindent 8 }}
-         {{- if $rolloutZone.prepareDownscale }}
-        grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
-        grafana.com/prepare-downscale-http-port: {{ include "mimir.serverHttpListenPort" . }}
-        {{- end-}}
-        {{- if $rolloutZone.downscaleLeader }}
-        grafana.com/rollout-downscale-leader: $rolloutZone.downscaleLeader
-        {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       {{- with .Values.store_gateway.schedulerName }}
