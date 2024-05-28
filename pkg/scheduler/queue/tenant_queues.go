@@ -23,7 +23,7 @@ type tenantRequest struct {
 // queueBroker encapsulates access to tenant queues for pending requests
 // and maintains consistency with the tenant-querier assignments
 type queueBroker struct {
-	tenantQueuesTree *TreeQueue
+	TenantQueuesTree *TreeQueue
 
 	tenantQuerierAssignments tenantQuerierAssignments
 
@@ -33,7 +33,7 @@ type queueBroker struct {
 
 func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled bool, forgetDelay time.Duration) *queueBroker {
 	return &queueBroker{
-		tenantQueuesTree: NewTreeQueue("root"),
+		TenantQueuesTree: NewTreeQueue("root"),
 		tenantQuerierAssignments: tenantQuerierAssignments{
 			queriersByID:       map[QuerierID]*querierConn{},
 			querierIDsSorted:   nil,
@@ -48,7 +48,7 @@ func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled boo
 }
 
 func (qb *queueBroker) isEmpty() bool {
-	return qb.tenantQueuesTree.IsEmpty()
+	return qb.TenantQueuesTree.IsEmpty()
 }
 
 // enqueueRequestBack is the standard interface to enqueue requests for dispatch to queriers.
@@ -64,13 +64,13 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 	if err != nil {
 		return err
 	}
-	if tenantQueueNode := qb.tenantQueuesTree.getNode(queuePath[:1]); tenantQueueNode != nil {
+	if tenantQueueNode := qb.TenantQueuesTree.getNode(queuePath[:1]); tenantQueueNode != nil {
 		if tenantQueueNode.ItemCount()+1 > qb.maxTenantQueueSize {
 			return ErrTooManyRequests
 		}
 	}
 
-	err = qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
+	err = qb.TenantQueuesTree.EnqueueBackByPath(queuePath, request)
 	return err
 }
 
@@ -89,7 +89,7 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 	if err != nil {
 		return err
 	}
-	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, request)
+	return qb.TenantQueuesTree.EnqueueFrontByPath(queuePath, request)
 }
 
 func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {
@@ -110,9 +110,9 @@ func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID Q
 	}
 
 	queuePath := QueuePath{string(tenant.tenantID)}
-	queueElement := qb.tenantQueuesTree.DequeueByPath(queuePath)
+	queueElement := qb.TenantQueuesTree.DequeueByPath(queuePath)
 
-	queueNodeAfterDequeue := qb.tenantQueuesTree.getNode(queuePath)
+	queueNodeAfterDequeue := qb.TenantQueuesTree.getNode(queuePath)
 	if queueNodeAfterDequeue == nil {
 		// queue node was deleted due to being empty after dequeue
 		qb.tenantQuerierAssignments.removeTenant(tenant.tenantID)

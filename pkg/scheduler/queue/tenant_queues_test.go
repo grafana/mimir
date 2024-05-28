@@ -105,12 +105,12 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	}
 	// assert item count of tenant node and its subnodes
 	queuePath := QueuePath{"tenant-1"}
-	assert.Equal(t, maxTenantQueueSize, qb.tenantQueuesTree.getNode(queuePath).ItemCount())
+	assert.Equal(t, maxTenantQueueSize, qb.TenantQueuesTree.getNode(queuePath).ItemCount())
 
 	// assert equal distribution of queue items between tenant node and 3 subnodes
 	for _, v := range additionalQueueDimensions {
 		queuePath := append(QueuePath{"tenant-1"}, v...)
-		assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), qb.tenantQueuesTree.getNode(queuePath).LocalQueueLen())
+		assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), qb.TenantQueuesTree.getNode(queuePath).LocalQueueLen())
 	}
 
 	// assert error received when hitting a tenant's enqueue limit,
@@ -485,7 +485,7 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (
 	}
 
 	queuePath := QueuePath{string(tenantID)}
-	return qb.tenantQueuesTree.getOrAddNode(queuePath)
+	return qb.TenantQueuesTree.getOrAddNode(queuePath)
 }
 
 // getQueue is a test utility, not intended for use by consumers of queueBroker
@@ -496,7 +496,7 @@ func (qb *queueBroker) getQueue(tenantID TenantID) *TreeQueue {
 	}
 
 	queuePath := QueuePath{string(tenantID)}
-	tenantQueue := qb.tenantQueuesTree.getNode(queuePath)
+	tenantQueue := qb.TenantQueuesTree.getNode(queuePath)
 	return tenantQueue
 }
 
@@ -504,7 +504,7 @@ func (qb *queueBroker) getQueue(tenantID TenantID) *TreeQueue {
 func (qb *queueBroker) removeTenantQueue(tenantID TenantID) bool {
 	qb.tenantQuerierAssignments.removeTenant(tenantID)
 	queuePath := QueuePath{string(tenantID)}
-	return qb.tenantQueuesTree.deleteNode(queuePath)
+	return qb.TenantQueuesTree.deleteNode(queuePath)
 }
 
 func confirmOrderForQuerier(t *testing.T, qb *queueBroker, querier QuerierID, lastTenantIndex int, queues ...*list.List) int {
@@ -557,7 +557,7 @@ func isConsistent(qb *queueBroker) error {
 		}
 	}
 
-	tenantQueueCount := qb.tenantQueuesTree.NodeCount() - 1 // exclude root node
+	tenantQueueCount := qb.TenantQueuesTree.NodeCount() - 1 // exclude root node
 	if tenantCount != tenantQueueCount {
 		return fmt.Errorf("inconsistent number of tenants list and tenant queues")
 	}

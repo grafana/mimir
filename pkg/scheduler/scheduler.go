@@ -444,6 +444,24 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		  it's possible that its own queue would perpetually contain only expired requests.
 		*/
 
+		queryComponentName := r.ExpectedQueryComponentName()
+		exceedsThreshold, queryComponent := s.requestQueue.QueryComponentUtilization.ExceedsThresholdForComponentName(
+			queryComponentName,
+			s.requestQueue.ConnectedQuerierWorkers.Load(),
+			s.requestQueue.QueueBroker.TenantQueuesTree.ItemCount(),
+			s.requestQueue.WaitingNextRequestForQuerierCalls.Len(),
+		)
+
+		if exceedsThreshold {
+			level.Info(s.requestQueue.Log).Log(
+				"msg", "experimental: querier worker connections in use by query component exceed utilization threshold. request dropped",
+				"query_component_name", queryComponentName,
+				"overloaded_query_component", queryComponent,
+			)
+			s.cancelRequestAndRemoveFromPending(r.FrontendAddress, r.QueryID, "request dropped due to overloaded query component")
+			continue
+		}
+
 		if r.Ctx.Err() != nil {
 			// Remove from pending requests.
 			s.cancelRequestAndRemoveFromPending(r.FrontendAddress, r.QueryID, "request cancelled")
@@ -473,6 +491,19 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 
 	queryComponentName := req.ExpectedQueryComponentName()
 	defer s.requestQueue.QueryComponentUtilization.DecrementForComponentName(queryComponentName)
+
+	{
+		// temporary observation of query component load balancing behavior before full implementation
+		isOverloaded, overloadedComponent := s.queryComponentLoad.IsOverloadedForComponentName(queryComponentName)
+
+		if isOverloaded {
+			level.Warn(s.log).Log(
+				"msg", "query component overloaded for request",
+				"query_component_name", queryComponentName,
+				"overloaded_query_component", overloadedComponent,
+			)
+		}
+	}
 
 	// Handle the stream sending & receiving on a goroutine so we can
 	// monitor the contexts in a select and cancel things appropriately.
