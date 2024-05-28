@@ -122,7 +122,7 @@ func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req 
 			if reason != "" {
 				err = fmt.Errorf("%w (%s)", err, reason)
 			}
-			level.Warn(spanLog).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "err", err, "user", tenantID)
+			level.Warn(spanLog).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "user", tenantID, "insight", "true", "err", err)
 		}
 	}
 	return nil
