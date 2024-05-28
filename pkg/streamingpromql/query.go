@@ -246,6 +246,12 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	defer q.root.Close()
 
 	ctx, cancel := context.WithCancelCause(ctx)
+
+	if q.engine.timeout != 0 {
+		// We don't need to cancel the timeout context, as we'll always cancel the parent context created above.
+		ctx, _ = context.WithTimeoutCause(ctx, q.engine.timeout, fmt.Errorf("%w: query timed out", context.DeadlineExceeded))
+	}
+
 	q.cancel = cancel
 
 	series, err := q.root.SeriesMetadata(ctx)

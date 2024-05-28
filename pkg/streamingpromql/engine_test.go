@@ -313,6 +313,33 @@ func TestQueryCancellation(t *testing.T) {
 	require.Nil(t, res.Value)
 }
 
+func TestQueryTimeout(t *testing.T) {
+	opts := NewTestEngineOpts()
+	opts.Timeout = 20 * time.Millisecond
+	engine, err := NewEngine(opts)
+	require.NoError(t, err)
+
+	// Simulate the query doing some work and check that the query context has been cancelled.
+	//
+	// In both this test and production, we rely on the underlying storage responding to the context cancellation -
+	// we don't explicitly check for context cancellation in the query engine.
+	var q promql.Query
+	queryable := cancellationQueryable{func() {
+		time.Sleep(opts.Timeout * 10)
+	}}
+
+	q, err = engine.NewInstantQuery(context.Background(), queryable, nil, "some_metric", timestamp.Time(0))
+	require.NoError(t, err)
+	defer q.Close()
+
+	res := q.Exec(context.Background())
+
+	require.Error(t, res.Err)
+	require.ErrorIs(t, res.Err, context.DeadlineExceeded)
+	require.EqualError(t, res.Err, "context deadline exceeded: query timed out")
+	require.Nil(t, res.Value)
+}
+
 type cancellationQueryable struct {
 	onQueried func()
 }
