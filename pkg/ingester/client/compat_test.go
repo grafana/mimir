@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -101,11 +102,11 @@ func benchmarkSeriesMap(numSeries int, b *testing.B) {
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		for i, s := range series {
-			sm[LabelsToKeyString(s)] = i
+			sm[LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(s))] = i
 		}
 
 		for _, s := range series {
-			_, ok := sm[LabelsToKeyString(s)]
+			_, ok := sm[LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(s))]
 			if !ok {
 				b.Fatal("element missing")
 			}
@@ -117,21 +118,21 @@ func benchmarkSeriesMap(numSeries int, b *testing.B) {
 	}
 }
 
-func makeSeries(n int) []labels.Labels {
-	series := make([]labels.Labels, 0, n)
+func makeSeries(n int) [][]mimirpb.LabelAdapter {
+	series := make([][]mimirpb.LabelAdapter, 0, n)
 	for i := 0; i < n; i++ {
-		series = append(series, labels.FromMap(map[string]string{
-			"label0": "value0",
-			"label1": "value1",
-			"label2": "value2",
-			"label3": "value3",
-			"label4": "value4",
-			"label5": "value5",
-			"label6": "value6",
-			"label7": "value7",
-			"label8": "value8",
-			"label9": strconv.Itoa(i),
-		}))
+		series = append(series, []mimirpb.LabelAdapter{
+			{Name: "label0", Value: "value0"},
+			{Name: "label1", Value: "value1"},
+			{Name: "label2", Value: "value2"},
+			{Name: "label3", Value: "value3"},
+			{Name: "label4", Value: "value4"},
+			{Name: "label5", Value: "value5"},
+			{Name: "label6", Value: "value6"},
+			{Name: "label7", Value: "value7"},
+			{Name: "label8", Value: "value8"},
+			{Name: "label9", Value: strconv.Itoa(i)},
+		})
 	}
 
 	return series
