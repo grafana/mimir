@@ -60,6 +60,8 @@ func TestPusherConsumer(t *testing.T) {
 		responses   []response
 		expectedWRs []*mimirpb.WriteRequest
 		expErr      string
+
+		expectedLogLines []string
 	}{
 		"single record": {
 			records: []record{
@@ -95,6 +97,9 @@ func TestPusherConsumer(t *testing.T) {
 			},
 			expectedWRs: writeReqs[0:2],
 			expErr:      "",
+			expectedLogLines: []string{
+				"level=error msg=\"failed to parse write request; skipping\" err=\"parsing ingest consumer write request: proto: WriteRequest: illegal tag 0 (wire type 0)\"",
+			},
 		},
 		"failed processing of record": {
 			records: []record{
@@ -148,6 +153,10 @@ func TestPusherConsumer(t *testing.T) {
 			},
 			expectedWRs: writeReqs[0:3],
 			expErr:      "", // since all fof those were client errors, we don't return an error
+			expectedLogLines: []string{
+				"method=pusherConsumer.pushToStorage level=warn msg=\"detected a client error while ingesting write request (the request may have been partially ingested)\" user=t1 insight=true err=\"rpc error: code = InvalidArgument desc = ingester test error\"",
+				"method=pusherConsumer.pushToStorage level=warn msg=\"detected a client error while ingesting write request (the request may have been partially ingested)\" user=t1 insight=true err=\"rpc error: code = Unknown desc = ingester test error\"",
+			},
 		},
 		"ingester server error": {
 			records: []record{
@@ -163,12 +172,16 @@ func TestPusherConsumer(t *testing.T) {
 			},
 			expectedWRs: writeReqs[0:2], // the rest of the requests are not attempted
 			expErr:      "ingester internal error",
+			expectedLogLines: []string{
+				"method=pusherConsumer.pushToStorage level=warn msg=\"detected a client error while ingesting write request (the request may have been partially ingested)\" user=t1 insight=true err=\"rpc error: code = InvalidArgument desc = ingester test error\"",
+			},
 		},
 	}
 
 	for name, tc := range testCases {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
+
 			receivedReqs := 0
 			pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
 				defer func() { receivedReqs++ }()
@@ -185,13 +198,21 @@ func TestPusherConsumer(t *testing.T) {
 
 				return tc.responses[receivedReqs].err
 			})
-			c := newPusherConsumer(pusher, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+
+			logs := &concurrency.SyncBuffer{}
+			c := newPusherConsumer(pusher, prometheus.NewPedanticRegistry(), log.NewLogfmtLogger(logs))
 			err := c.consume(context.Background(), tc.records)
 			if tc.expErr == "" {
 				assert.NoError(t, err)
 			} else {
 				assert.ErrorContains(t, err, tc.expErr)
 			}
+
+			var logLines []string
+			if logsStr := logs.String(); logsStr != "" {
+				logLines = strings.Split(strings.TrimSpace(logsStr), "\n")
+			}
+			assert.Equal(t, tc.expectedLogLines, logLines)
 		})
 	}
 }

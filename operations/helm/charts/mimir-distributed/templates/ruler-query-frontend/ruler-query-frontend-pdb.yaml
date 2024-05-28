@@ -1,0 +1,3 @@
+{{- if .Values.ruler.remoteEvaluationDedicatedQueryPath }}
+{{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "ruler-query-frontend") }}
+{{- end }}

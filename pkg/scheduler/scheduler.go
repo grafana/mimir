@@ -60,8 +60,10 @@ type Scheduler struct {
 	requestQueue *queue.RequestQueue
 	activeUsers  *util.ActiveUsersCleanupService
 
-	pendingRequestsMu sync.Mutex
-	pendingRequests   map[requestKey]*queue.SchedulerRequest // request is kept in this map even after being dispatched to querier. It can still be canceled at that time.
+	inflightRequestsMu sync.Mutex
+	// schedulerInflightRequests tracks requests from the time they are received to be enqueued by the scheduler
+	// to the time they are completed by the querier or failed due to cancel, timeout, or disconnect.
+	schedulerInflightRequests map[requestKey]*queue.SchedulerRequest
 
 	// The ring is used to let other components discover query-scheduler replicas.
 	// The ring is optional.
@@ -126,9 +128,9 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		log:    log,
 		limits: limits,
 
-		pendingRequests:    map[requestKey]*queue.SchedulerRequest{},
-		connectedFrontends: map[string]*connectedFrontend{},
-		subservicesWatcher: services.NewFailureWatcher(),
+		schedulerInflightRequests: map[requestKey]*queue.SchedulerRequest{},
+		connectedFrontends:        map[string]*connectedFrontend{},
+		subservicesWatcher:        services.NewFailureWatcher(),
 	}
 
 	s.queueLength = promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
@@ -148,7 +150,26 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Name: "cortex_query_scheduler_enqueue_duration_seconds",
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
 	})
-	s.requestQueue = queue.NewRequestQueue(s.log, cfg.MaxOutstandingPerTenant, cfg.AdditionalQueryQueueDimensionsEnabled, cfg.QuerierForgetDelay, s.queueLength, s.discardedRequests, enqueueDuration)
+	querierInflightRequestsGauge := promauto.With(registerer).NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "cortex_query_scheduler_querier_inflight_requests",
+			Help: "Number of inflight requests being processed on all querier-scheduler connections.",
+		},
+		[]string{"query_component"},
+	)
+	s.requestQueue, err = queue.NewRequestQueue(
+		s.log,
+		cfg.MaxOutstandingPerTenant,
+		cfg.AdditionalQueryQueueDimensionsEnabled,
+		cfg.QuerierForgetDelay,
+		s.queueLength,
+		s.discardedRequests,
+		enqueueDuration,
+		querierInflightRequestsGauge,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	s.queueDuration = promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_query_scheduler_queue_duration_seconds",
@@ -354,24 +375,24 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	return s.requestQueue.EnqueueRequestToDispatcher(userID, req, maxQueriers, func() {
 		shouldCancel = false
 
-		s.pendingRequestsMu.Lock()
-		s.pendingRequests[requestKey{frontendAddr: frontendAddr, queryID: msg.QueryID}] = req
-		s.pendingRequestsMu.Unlock()
+		s.inflightRequestsMu.Lock()
+		s.schedulerInflightRequests[requestKey{frontendAddr: frontendAddr, queryID: msg.QueryID}] = req
+		s.inflightRequestsMu.Unlock()
 	})
 }
 
 // This method doesn't do removal from the queue.
 func (s *Scheduler) cancelRequestAndRemoveFromPending(frontendAddr string, queryID uint64, reason string) {
-	s.pendingRequestsMu.Lock()
-	defer s.pendingRequestsMu.Unlock()
+	s.inflightRequestsMu.Lock()
+	defer s.inflightRequestsMu.Unlock()
 
 	key := requestKey{frontendAddr: frontendAddr, queryID: queryID}
-	req := s.pendingRequests[key]
+	req := s.schedulerInflightRequests[key]
 	if req != nil {
 		req.CancelFunc(cancellation.NewErrorf(reason))
 	}
 
-	delete(s.pendingRequests, key)
+	delete(s.schedulerInflightRequests, key)
 }
 
 // QuerierLoop is started by querier to receive queries from scheduler.
@@ -449,6 +470,9 @@ func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.No
 func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *queue.SchedulerRequest, queueTime time.Duration) error {
 	// Make sure to cancel request at the end to clean up resources.
 	defer s.cancelRequestAndRemoveFromPending(req.FrontendAddress, req.QueryID, "request complete")
+
+	queryComponentName := req.ExpectedQueryComponentName()
+	defer s.requestQueue.QueryComponentUtilization.DecrementForComponentName(queryComponentName)
 
 	// Handle the stream sending & receiving on a goroutine so we can
 	// monitor the contexts in a select and cancel things appropriately.
@@ -559,9 +583,9 @@ func (s *Scheduler) running(ctx context.Context) error {
 	for {
 		select {
 		case <-inflightRequestsTicker.C:
-			s.pendingRequestsMu.Lock()
-			inflight := len(s.pendingRequests)
-			s.pendingRequestsMu.Unlock()
+			s.inflightRequestsMu.Lock()
+			inflight := len(s.schedulerInflightRequests)
+			s.inflightRequestsMu.Unlock()
 
 			s.inflightRequests.Observe(float64(inflight))
 		case <-ctx.Done():

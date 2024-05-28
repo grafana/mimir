@@ -87,6 +87,8 @@ type request struct {
 
 // New creates a new frontend. Frontend implements service, and must be started and stopped.
 func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Frontend, error) {
+	var err error
+
 	f := &Frontend{
 		cfg:                cfg,
 		log:                log,
@@ -111,12 +113,30 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 		Name: "cortex_query_frontend_enqueue_duration_seconds",
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
 	})
-
+	querierInflightRequests := promauto.With(registerer).NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "cortex_query_frontend_querier_inflight_requests",
+			Help: "Number of inflight requests being processed on all querier-scheduler connections.",
+		},
+		[]string{"query_component"},
+	)
 	// additional queue dimensions not used in v1/frontend
-	f.requestQueue = queue.NewRequestQueue(log, cfg.MaxOutstandingPerTenant, false, cfg.QuerierForgetDelay, f.queueLength, f.discardedRequests, enqueueDuration)
+	f.requestQueue, err = queue.NewRequestQueue(
+		log,
+		cfg.MaxOutstandingPerTenant,
+		false,
+		cfg.QuerierForgetDelay,
+		f.queueLength,
+		f.discardedRequests,
+		enqueueDuration,
+		querierInflightRequests,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	f.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(f.cleanupInactiveUserMetrics)
 
-	var err error
 	f.subservices, err = services.NewManager(f.requestQueue, f.activeUsers)
 	if err != nil {
 		return nil, err

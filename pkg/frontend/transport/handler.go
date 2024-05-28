@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -306,6 +307,7 @@ func (f *Handler) reportQueryStats(
 		"component", "query-frontend",
 		"method", r.Method,
 		"path", r.URL.Path,
+		"route_name", middleware.ExtractRouteName(r.Context()),
 		"user_agent", r.UserAgent(),
 		"status_code", queryResponseStatusCode,
 		"response_time", queryResponseTime,

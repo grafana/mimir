@@ -120,6 +120,6 @@ func (s *Sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 
 // SendEmail implements alertingReceivers.EmailSender.
 // TODO: no-op for now, implement.
-func (s *Sender) SendEmail(ctx context.Context, cmd *alertingReceivers.SendEmailSettings) error {
-	return nil
+func (s *Sender) SendEmail(_ context.Context, _ *alertingReceivers.SendEmailSettings) error {
+	return errors.New("e-mail sending not implemented")
 }
