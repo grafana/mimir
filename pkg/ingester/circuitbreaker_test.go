@@ -157,7 +157,7 @@ func TestIngester_Push_CircuitBreaker(t *testing.T) {
         	            # TYPE cortex_ingester_circuit_breaker_current_state gauge
 						cortex_ingester_circuit_breaker_current_state{state="open"} 0
 						cortex_ingester_circuit_breaker_current_state{state="half-open"} 0
-						cortex_ingester_circuit_breaker_current_state{state="closed"} 0
+						cortex_ingester_circuit_breaker_current_state{state="closed"} 1
     				`
 				} else {
 					expectedMetrics = `

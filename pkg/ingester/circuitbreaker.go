@@ -24,21 +24,58 @@ const (
 	resultError              = "error"
 	resultOpen               = "circuit_breaker_open"
 	testDelayKey  testCtxKey = "test-delay"
+
+	circuitBreakerCurrentStateGaugeName  = "cortex_ingester_circuit_breaker_current_state"
+	circuitBreakerCurrentStateGaugeHelp  = "Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name."
+	circuitBreakerCurrentStateGaugeLabel = "state"
 )
 
 type circuitBreakerMetrics struct {
 	circuitBreakerCurrentState *prometheus.GaugeVec
 
+	circuitBreakerOpenStateGauge     prometheus.GaugeFunc
+	circuitBreakerHalfOpenStateGauge prometheus.GaugeFunc
+	circuitBreakerClosedStateGauge   prometheus.GaugeFunc
+
 	circuitBreakerTransitions *prometheus.CounterVec
 	circuitBreakerResults     *prometheus.CounterVec
 }
 
-func newCircuitBreakerMetrics(r prometheus.Registerer) *circuitBreakerMetrics {
+func newCircuitBreakerMetrics(r prometheus.Registerer, currentStateFn func() circuitbreaker.State) *circuitBreakerMetrics {
 	return &circuitBreakerMetrics{
-		circuitBreakerCurrentState: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ingester_circuit_breaker_current_state",
-			Help: "Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.",
-		}, []string{"state"}),
+		circuitBreakerOpenStateGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        circuitBreakerCurrentStateGaugeName,
+			Help:        circuitBreakerCurrentStateGaugeHelp,
+			ConstLabels: map[string]string{circuitBreakerCurrentStateGaugeLabel: circuitbreaker.OpenState.String()},
+		}, func() float64 {
+			if currentStateFn() == circuitbreaker.OpenState {
+				return 1
+			} else {
+				return 0
+			}
+		}),
+		circuitBreakerHalfOpenStateGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        circuitBreakerCurrentStateGaugeName,
+			Help:        circuitBreakerCurrentStateGaugeHelp,
+			ConstLabels: map[string]string{circuitBreakerCurrentStateGaugeLabel: circuitbreaker.HalfOpenState.String()},
+		}, func() float64 {
+			if currentStateFn() == circuitbreaker.HalfOpenState {
+				return 1
+			} else {
+				return 0
+			}
+		}),
+		circuitBreakerClosedStateGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        circuitBreakerCurrentStateGaugeName,
+			Help:        circuitBreakerCurrentStateGaugeHelp,
+			ConstLabels: map[string]string{circuitBreakerCurrentStateGaugeLabel: circuitbreaker.ClosedState.String()},
+		}, func() float64 {
+			if currentStateFn() == circuitbreaker.ClosedState {
+				return 1
+			} else {
+				return 0
+			}
+		}),
 		circuitBreakerTransitions: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_circuit_breaker_transitions_total",
 			Help: "Number of times the circuit breaker has entered a state.",
@@ -86,37 +123,32 @@ type circuitBreaker struct {
 }
 
 func newCircuitBreaker(cfg CircuitBreakerConfig, ingesterID string, logger log.Logger, registerer prometheus.Registerer) *circuitBreaker {
-	metrics := newCircuitBreakerMetrics(registerer)
+	cb := circuitBreaker{
+		cfg:        cfg,
+		ingesterID: ingesterID,
+		logger:     logger,
+		startTime:  time.Now().Add(cfg.InitialDelay),
+	}
+
+	cb.metrics = newCircuitBreakerMetrics(registerer, cb.State)
 	// Initialize each of the known labels for circuit breaker metrics for this particular ingester.
-	transitionOpen := metrics.circuitBreakerTransitions.WithLabelValues(ingesterID, circuitbreaker.OpenState.String())
-	transitionHalfOpen := metrics.circuitBreakerTransitions.WithLabelValues(ingesterID, circuitbreaker.HalfOpenState.String())
-	transitionClosed := metrics.circuitBreakerTransitions.WithLabelValues(ingesterID, circuitbreaker.ClosedState.String())
-	gaugeOpen := metrics.circuitBreakerCurrentState.WithLabelValues(circuitbreaker.OpenState.String())
-	gaugeHalfOpen := metrics.circuitBreakerCurrentState.WithLabelValues(circuitbreaker.HalfOpenState.String())
-	gaugeClosed := metrics.circuitBreakerCurrentState.WithLabelValues(circuitbreaker.ClosedState.String())
+	transitionOpen := cb.metrics.circuitBreakerTransitions.WithLabelValues(ingesterID, circuitbreaker.OpenState.String())
+	transitionHalfOpen := cb.metrics.circuitBreakerTransitions.WithLabelValues(ingesterID, circuitbreaker.HalfOpenState.String())
+	transitionClosed := cb.metrics.circuitBreakerTransitions.WithLabelValues(ingesterID, circuitbreaker.ClosedState.String())
 
 	cbBuilder := circuitbreaker.Builder[any]().
 		WithFailureThreshold(cfg.FailureThreshold).
 		WithDelay(cfg.CooldownPeriod).
 		OnClose(func(event circuitbreaker.StateChangedEvent) {
 			transitionClosed.Inc()
-			gaugeOpen.Set(0)
-			gaugeHalfOpen.Set(0)
-			gaugeClosed.Set(1)
 			level.Info(logger).Log("msg", "circuit breaker is closed", "ingester", ingesterID, "previous", event.OldState, "current", event.NewState)
 		}).
 		OnOpen(func(event circuitbreaker.StateChangedEvent) {
 			transitionOpen.Inc()
-			gaugeOpen.Set(1)
-			gaugeHalfOpen.Set(0)
-			gaugeClosed.Set(0)
 			level.Warn(logger).Log("msg", "circuit breaker is open", "ingester", ingesterID, "previous", event.OldState, "current", event.NewState)
 		}).
 		OnHalfOpen(func(event circuitbreaker.StateChangedEvent) {
 			transitionHalfOpen.Inc()
-			gaugeOpen.Set(0)
-			gaugeHalfOpen.Set(1)
-			gaugeClosed.Set(0)
 			level.Info(logger).Log("msg", "circuit breaker is half-open", "ingester", ingesterID, "previous", event.OldState, "current", event.NewState)
 		}).
 		HandleIf(func(_ any, err error) bool { return isFailure(err) })
@@ -130,15 +162,8 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, ingesterID string, logger log.L
 		cbBuilder = cbBuilder.WithFailureRateThreshold(cfg.FailureThreshold, cfg.FailureExecutionThreshold, cfg.ThresholdingPeriod)
 	}
 
-	cb := cbBuilder.Build()
-	return &circuitBreaker{
-		cfg:            cfg,
-		CircuitBreaker: cb,
-		ingesterID:     ingesterID,
-		logger:         logger,
-		metrics:        metrics,
-		startTime:      time.Now().Add(cfg.InitialDelay),
-	}
+	cb.CircuitBreaker = cbBuilder.Build()
+	return &cb
 }
 
 func isFailure(err error) bool {
@@ -160,6 +185,10 @@ func isFailure(err error) bool {
 	}
 
 	return false
+}
+
+func (cb *circuitBreaker) State() circuitbreaker.State {
+	return cb.CircuitBreaker.State()
 }
 
 func (cb *circuitBreaker) isActive() bool {
