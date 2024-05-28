@@ -1071,7 +1071,7 @@ func (i *Ingester) finishPushRequest(ctx context.Context, reqSize int64, duratio
 	if reqSize > 0 {
 		i.inflightPushRequestsBytes.Sub(reqSize)
 	}
-	i.circuitBreaker.finishPushRequest(ctx, duration, err)
+	_ = i.circuitBreaker.finishPushRequest(ctx, duration, err)
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.

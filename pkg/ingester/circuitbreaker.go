@@ -34,8 +34,6 @@ const (
 )
 
 type circuitBreakerMetrics struct {
-	circuitBreakerCurrentState *prometheus.GaugeVec
-
 	circuitBreakerOpenStateGauge     prometheus.GaugeFunc
 	circuitBreakerHalfOpenStateGauge prometheus.GaugeFunc
 	circuitBreakerClosedStateGauge   prometheus.GaugeFunc
@@ -53,9 +51,8 @@ func newCircuitBreakerMetrics(r prometheus.Registerer, currentStateFn func() cir
 		}, func() float64 {
 			if currentStateFn() == circuitbreaker.OpenState {
 				return 1
-			} else {
-				return 0
 			}
+			return 0
 		}),
 		circuitBreakerHalfOpenStateGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name:        circuitBreakerCurrentStateGaugeName,
@@ -64,9 +61,8 @@ func newCircuitBreakerMetrics(r prometheus.Registerer, currentStateFn func() cir
 		}, func() float64 {
 			if currentStateFn() == circuitbreaker.HalfOpenState {
 				return 1
-			} else {
-				return 0
 			}
+			return 0
 		}),
 		circuitBreakerClosedStateGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name:        circuitBreakerCurrentStateGaugeName,
@@ -75,9 +71,8 @@ func newCircuitBreakerMetrics(r prometheus.Registerer, currentStateFn func() cir
 		}, func() float64 {
 			if currentStateFn() == circuitbreaker.ClosedState {
 				return 1
-			} else {
-				return 0
 			}
+			return 0
 		}),
 		circuitBreakerTransitions: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_circuit_breaker_transitions_total",
