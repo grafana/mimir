@@ -975,9 +975,6 @@ type pushRequestState struct {
 // StartPushRequest checks if ingester can start push request, and increments relevant counters.
 // If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are updated.
 func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context.Context, error) {
-	if i.circuitBreaker.isActive() {
-		return i.circuitBreaker.StartPushRequest(ctx, reqSize, i.startPushRequest)
-	}
 	ctx, _, err := i.startPushRequest(ctx, reqSize)
 	return ctx, err
 }
@@ -997,6 +994,15 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 //
 // The shouldFinish flag tells if the caller must call finish on this request. If not, there is already someone in the call stack who will do that.
 func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ context.Context, shouldFinish bool, err error) {
+	if err := i.circuitBreaker.tryAcquirePermit(); err != nil {
+		return nil, false, err
+	}
+	defer func() {
+		if err != nil {
+			i.circuitBreaker.recordError(err)
+		}
+	}()
+
 	if err := i.checkAvailableForPush(); err != nil {
 		return nil, false, err
 	}
@@ -1062,7 +1068,7 @@ func (i *Ingester) finishPushRequest(reqSize int64) {
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
-func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanUp func()) error {
+func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanUp func()) (err error) {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
 	defer cleanUp()
@@ -1080,6 +1086,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			defer i.finishPushRequest(reqSize)
 		}
 	}
+
+	start := time.Now()
+	defer func() {
+		i.circuitBreaker.finishPushRequest(ctx, start, err)
+	}()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -3769,13 +3780,6 @@ func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest)
 
 // Push implements client.IngesterServer, which is registered into gRPC server.
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	if i.circuitBreaker.isActive() {
-		return i.circuitBreaker.Push(ctx, req, i.push)
-	}
-	return i.push(ctx, req)
-}
-
-func (i *Ingester) push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	if !i.cfg.PushGrpcMethodEnabled {
 		return nil, errPushGrpcDisabled
 	}

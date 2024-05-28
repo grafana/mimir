@@ -7,15 +7,12 @@ import (
 	"flag"
 	"time"
 
-	"github.com/failsafe-go/failsafe-go"
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/middleware"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -23,11 +20,10 @@ import (
 type testCtxKey string
 
 const (
-	resultSuccess             = "success"
-	resultError               = "error"
-	resultOpen                = "circuit_breaker_open"
-	defaultTimeout            = 2 * time.Second
-	testDelayKey   testCtxKey = "test-delay"
+	resultSuccess            = "success"
+	resultError              = "error"
+	resultOpen               = "circuit_breaker_open"
+	testDelayKey  testCtxKey = "test-delay"
 )
 
 type circuitBreakerMetrics struct {
@@ -36,10 +32,6 @@ type circuitBreakerMetrics struct {
 	circuitBreakerTransitions *prometheus.CounterVec
 	circuitBreakerResults     *prometheus.CounterVec
 }
-
-type startPushRequestFn func(context.Context, int64) (context.Context, bool, error)
-
-type pushRequestFn func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
 
 func newCircuitBreakerMetrics(r prometheus.Registerer) *circuitBreakerMetrics {
 	return &circuitBreakerMetrics{
@@ -85,9 +77,8 @@ func (cfg *CircuitBreakerConfig) Validate() error {
 }
 
 type circuitBreaker struct {
-	cfg CircuitBreakerConfig
 	circuitbreaker.CircuitBreaker[any]
-	executor   failsafe.Executor[any]
+	cfg        CircuitBreakerConfig
 	ingesterID string
 	logger     log.Logger
 	metrics    *circuitBreakerMetrics
@@ -100,8 +91,6 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, ingesterID string, logger log.L
 	transitionOpen := metrics.circuitBreakerTransitions.WithLabelValues(ingesterID, circuitbreaker.OpenState.String())
 	transitionHalfOpen := metrics.circuitBreakerTransitions.WithLabelValues(ingesterID, circuitbreaker.HalfOpenState.String())
 	transitionClosed := metrics.circuitBreakerTransitions.WithLabelValues(ingesterID, circuitbreaker.ClosedState.String())
-	countSuccess := metrics.circuitBreakerResults.WithLabelValues(ingesterID, resultSuccess)
-	countError := metrics.circuitBreakerResults.WithLabelValues(ingesterID, resultError)
 	gaugeOpen := metrics.circuitBreakerCurrentState.WithLabelValues(circuitbreaker.OpenState.String())
 	gaugeHalfOpen := metrics.circuitBreakerCurrentState.WithLabelValues(circuitbreaker.HalfOpenState.String())
 	gaugeClosed := metrics.circuitBreakerCurrentState.WithLabelValues(circuitbreaker.ClosedState.String())
@@ -109,12 +98,6 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, ingesterID string, logger log.L
 	cbBuilder := circuitbreaker.Builder[any]().
 		WithFailureThreshold(cfg.FailureThreshold).
 		WithDelay(cfg.CooldownPeriod).
-		OnFailure(func(failsafe.ExecutionEvent[any]) {
-			countError.Inc()
-		}).
-		OnSuccess(func(failsafe.ExecutionEvent[any]) {
-			countSuccess.Inc()
-		}).
 		OnClose(func(event circuitbreaker.StateChangedEvent) {
 			transitionClosed.Inc()
 			gaugeOpen.Set(0)
@@ -151,7 +134,6 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, ingesterID string, logger log.L
 	return &circuitBreaker{
 		cfg:            cfg,
 		CircuitBreaker: cb,
-		executor:       failsafe.NewExecutor[any](cb),
 		ingesterID:     ingesterID,
 		logger:         logger,
 		metrics:        metrics,
@@ -187,68 +169,48 @@ func (cb *circuitBreaker) isActive() bool {
 	return cb.startTime.Before(time.Now())
 }
 
-func (cb *circuitBreaker) get(ctx context.Context, op func() (any, error)) (any, error) {
-	res, err := cb.executor.Get(op)
-	if err != nil && errors.Is(err, circuitbreaker.ErrOpen) {
+func (cb *circuitBreaker) tryAcquirePermit() error {
+	if !cb.isActive() {
+		return nil
+	}
+	if !cb.CircuitBreaker.TryAcquirePermit() {
 		cb.metrics.circuitBreakerResults.WithLabelValues(cb.ingesterID, resultOpen).Inc()
-		cbOpenErr := middleware.DoNotLogError{Err: newCircuitBreakerOpenError(cb.RemainingDelay())}
-		return res, newErrorWithStatus(cbOpenErr, codes.Unavailable)
+		return newCircuitBreakerOpenError(cb.RemainingDelay())
 	}
-	return res, cb.processError(ctx, err)
+	return nil
 }
 
-func (cb *circuitBreaker) processError(ctx context.Context, err error) error {
-	if err == nil {
-		return nil
+func (cb *circuitBreaker) recordSuccess() {
+	if !cb.isActive() {
+		return
 	}
-	if errors.Is(err, ctx.Err()) {
-		// ctx.Err() was registered with the circuit breaker's executor, but we don't propagate it
-		return nil
-	}
-
-	return err
+	cb.CircuitBreaker.RecordSuccess()
+	cb.metrics.circuitBreakerResults.WithLabelValues(cb.ingesterID, resultSuccess).Inc()
 }
 
-func (cb *circuitBreaker) contextWithTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	if timeout == 0 {
-		timeout = defaultTimeout
+func (cb *circuitBreaker) recordError(err error) {
+	if !cb.isActive() {
+		return
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), timeout)
+	cb.CircuitBreaker.RecordError(err)
+	cb.metrics.circuitBreakerResults.WithLabelValues(cb.ingesterID, resultError).Inc()
+}
+
+func (cb *circuitBreaker) finishPushRequest(ctx context.Context, startTimestamp time.Time, err error) {
+	if !cb.isActive() {
+		return
+	}
 	if cb.cfg.testModeEnabled {
-		if initialDelay, ok := parent.Value(testDelayKey).(time.Duration); ok {
+		if initialDelay, ok := ctx.Value(testDelayKey).(time.Duration); ok {
 			time.Sleep(initialDelay)
 		}
 	}
-	return ctx, cancel
-}
-
-func (cb *circuitBreaker) StartPushRequest(ctx context.Context, reqSize int64, startPushRequest startPushRequestFn) (context.Context, error) {
-	callbackCtx, callbackErr := cb.get(ctx, func() (any, error) {
-		callbackCtx, _, callbackErr := startPushRequest(ctx, reqSize)
-		return callbackCtx, callbackErr
-	})
-	if callbackErr == nil {
-		return callbackCtx.(context.Context), nil
+	if cb.cfg.PushTimeout < time.Since(startTimestamp) {
+		err = context.DeadlineExceeded
 	}
-	return nil, callbackErr
-}
-
-func (cb *circuitBreaker) Push(parent context.Context, req *mimirpb.WriteRequest, push pushRequestFn) (*mimirpb.WriteResponse, error) {
-	ctx, cancel := cb.contextWithTimeout(parent, cb.cfg.PushTimeout)
-	defer cancel()
-
-	callbackResult, callbackErr := cb.get(ctx, func() (any, error) {
-		callbackResult, callbackErr := push(ctx, req)
-		if callbackErr != nil {
-			return callbackResult, callbackErr
-		}
-
-		// We return ctx.Err() in order to register it with the circuit breaker's executor.
-		return callbackResult, ctx.Err()
-	})
-
-	if callbackResult == nil {
-		return nil, callbackErr
+	if err == nil {
+		cb.recordSuccess()
+	} else {
+		cb.recordError(err)
 	}
-	return callbackResult.(*mimirpb.WriteResponse), callbackErr
 }

@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -19,9 +18,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestIngester_Push_CircuitBreaker(t *testing.T) {
@@ -76,8 +75,9 @@ func TestIngester_Push_CircuitBreaker(t *testing.T) {
 					testModeEnabled:  true,
 				}
 
-				i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
+				overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 				require.NoError(t, err)
+				i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, registry)
 				require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 				defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
@@ -95,7 +95,7 @@ func TestIngester_Push_CircuitBreaker(t *testing.T) {
 					nil,
 					mimirpb.API,
 				)
-				_, err = i.Push(ctx, req)
+				err = i.PushToStorage(ctx, req)
 				require.NoError(t, err)
 
 				count := 0
@@ -125,7 +125,7 @@ func TestIngester_Push_CircuitBreaker(t *testing.T) {
 						if testCase.ctx != nil {
 							ctx = testCase.ctx(ctx)
 						}
-						_, err = i.Push(ctx, req)
+						err = i.PushToStorage(ctx, req)
 						if initialDelayEnabled {
 							if testCase.expectedErrorWhenCircuitBreakerClosed != nil {
 								require.ErrorAs(t, err, &testCase.expectedErrorWhenCircuitBreakerClosed)
@@ -148,15 +148,11 @@ func TestIngester_Push_CircuitBreaker(t *testing.T) {
 				var expectedMetrics string
 				if initialDelayEnabled {
 					expectedMetrics = `
-						# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
-						# TYPE cortex_ingester_circuit_breaker_results_total counter
-						cortex_ingester_circuit_breaker_results_total{ingester="localhost",result="error"} 0
-						cortex_ingester_circuit_breaker_results_total{ingester="localhost",result="success"} 0
 						# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 						# TYPE cortex_ingester_circuit_breaker_transitions_total counter
-						cortex_ingester_circuit_breaker_transitions_total{ingester="localhost",state="closed"} 0
-						cortex_ingester_circuit_breaker_transitions_total{ingester="localhost",state="half-open"} 0
-        				cortex_ingester_circuit_breaker_transitions_total{ingester="localhost",state="open"} 0
+						cortex_ingester_circuit_breaker_transitions_total{ingester="ingester-zone-a-0",state="closed"} 0
+						cortex_ingester_circuit_breaker_transitions_total{ingester="ingester-zone-a-0",state="half-open"} 0
+        				cortex_ingester_circuit_breaker_transitions_total{ingester="ingester-zone-a-0",state="open"} 0
 						# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
         	            # TYPE cortex_ingester_circuit_breaker_current_state gauge
 						cortex_ingester_circuit_breaker_current_state{state="open"} 0
@@ -167,14 +163,14 @@ func TestIngester_Push_CircuitBreaker(t *testing.T) {
 					expectedMetrics = `
 						# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 						# TYPE cortex_ingester_circuit_breaker_results_total counter
-						cortex_ingester_circuit_breaker_results_total{ingester="localhost",result="circuit_breaker_open"} 2
-						cortex_ingester_circuit_breaker_results_total{ingester="localhost",result="error"} 2
-						cortex_ingester_circuit_breaker_results_total{ingester="localhost",result="success"} 1
+						cortex_ingester_circuit_breaker_results_total{ingester="ingester-zone-a-0",result="circuit_breaker_open"} 2
+						cortex_ingester_circuit_breaker_results_total{ingester="ingester-zone-a-0",result="error"} 2
+						cortex_ingester_circuit_breaker_results_total{ingester="ingester-zone-a-0",result="success"} 1
 						# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 						# TYPE cortex_ingester_circuit_breaker_transitions_total counter
-						cortex_ingester_circuit_breaker_transitions_total{ingester="localhost",state="closed"} 0
-						cortex_ingester_circuit_breaker_transitions_total{ingester="localhost",state="half-open"} 0
-        				cortex_ingester_circuit_breaker_transitions_total{ingester="localhost",state="open"} 1
+						cortex_ingester_circuit_breaker_transitions_total{ingester="ingester-zone-a-0",state="closed"} 0
+						cortex_ingester_circuit_breaker_transitions_total{ingester="ingester-zone-a-0",state="half-open"} 0
+        				cortex_ingester_circuit_breaker_transitions_total{ingester="ingester-zone-a-0",state="open"} 1
 						# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
         	            # TYPE cortex_ingester_circuit_breaker_current_state gauge
 						cortex_ingester_circuit_breaker_current_state{state="open"} 1
@@ -197,8 +193,4 @@ func checkCircuitBreakerOpenErr(ctx context.Context, err error, t *testing.T) {
 
 	shouldLog, _ := optional.ShouldLog(ctx)
 	require.False(t, shouldLog, "expected not to log via .ShouldLog()")
-
-	s, ok := grpcutil.ErrorToStatus(err)
-	require.True(t, ok, "expected to be able to convert to gRPC status")
-	require.Equal(t, codes.Unavailable, s.Code())
 }
