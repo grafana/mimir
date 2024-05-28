@@ -452,7 +452,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// For every series in a block we expect
 			// - 1 cache request for expanded postings
 			// - 1 cache request for postings for each matcher (provided matchers are simple MatchEQ matchers)
-			// - 2 cache requests for each series: one while sending label values and another while streaming chunks. The second request should be a cache hit.
+			// - 1 cache request for each series
 			//
 			// If the series does not exist in the block, then we return early after checking expanded postings and
 			// subsequently the index on disk.
@@ -460,24 +460,22 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
-			expectedCacheRequests += seriesReplicationFactor * 4                                  // expanded postings, postings, series (retrieving labels and then while streaming chunks)
-			expectedCacheHits += seriesReplicationFactor                                          // one for each series (while streaming chunks)
-			expectedMemcachedOps += (seriesReplicationFactor * 4) + (seriesReplicationFactor * 3) // Same reasoning as for expectedCacheRequests, but this also includes a set for each get that is not a hit
+			expectedCacheRequests += seriesReplicationFactor * 3                                  // expanded postings, postings, series
+			expectedMemcachedOps += (seriesReplicationFactor * 3) + (seriesReplicationFactor * 3) // Same reasoning as for expectedCacheRequests, but this also includes a set for each get that is not a hit
 
 			result, err = c.Query(series2Name, series2Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector2, result.(model.Vector))
-			expectedCacheRequests += seriesReplicationFactor*4 + seriesReplicationFactor          // expanded postings, postings, series for 1 time range; only expanded postings for another
-			expectedCacheHits += seriesReplicationFactor                                          // one for each series (while streaming chunks)
-			expectedMemcachedOps += (seriesReplicationFactor * 4) + (seriesReplicationFactor * 3) // Same reasoning as for expectedCacheRequests, but this also includes a set for each get that is not a hit
+			expectedCacheRequests += seriesReplicationFactor*3 + seriesReplicationFactor      // expanded postings, postings, series for 1 time range; only expanded postings for another
+			expectedMemcachedOps += 2 * (seriesReplicationFactor*3 + seriesReplicationFactor) // Same reasoning as for expectedCacheRequests, but this also includes a set for each get that is not a hit
 
 			result, err = c.Query(series3Name, series3Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector3, result.(model.Vector))
-			expectedCacheRequests += seriesReplicationFactor * 2 // expanded postings for 2 time ranges
-			expectedMemcachedOps += seriesReplicationFactor * 2
+			expectedCacheRequests += seriesReplicationFactor * 2                          // expanded postings for 2 time ranges
+			expectedMemcachedOps += seriesReplicationFactor*2 + seriesReplicationFactor*2 // Same reasoning as for expectedCacheRequests, but this also includes a set for each get that is not a hit
 
 			// Check the in-memory index cache metrics (in the store-gateway).
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedCacheRequests)), "thanos_store_index_cache_requests_total"), "expected %v requests", expectedCacheRequests)
@@ -491,14 +489,14 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 
 			// Query back again the 1st series from storage. This time it should use the index cache.
 			// It should get a hit on expanded postings; this means that it will not request individual postings for matchers.
-			// It should get two hits on series (once for the labels, and again for the labels when streaming chunks).
-			// We expect 3 cache requests and 3 cache hits.
+			// It should get a hit on series.
+			// We expect 2 cache requests and 2 cache hits.
 			result, err = c.Query(series1Name, series1Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
-			expectedCacheRequests += seriesReplicationFactor * 3 // expanded postings and series
-			expectedCacheHits += seriesReplicationFactor * 3
+			expectedCacheRequests += seriesReplicationFactor * 2 // expanded postings and series
+			expectedCacheHits += seriesReplicationFactor * 2
 			expectedMemcachedOps += seriesReplicationFactor * 2 // there is no set after the gets this time
 
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedCacheRequests)), "thanos_store_index_cache_requests_total"), "expected %v requests", expectedCacheRequests)
