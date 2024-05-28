@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-openapi/strfmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/s2"
@@ -1450,6 +1451,49 @@ func (c *Client) GetReceivers(ctx context.Context) ([]string, error) {
 		receivers = append(receivers, v.Name)
 	}
 	return receivers, nil
+}
+
+type Integration struct {
+	LastNotifyAttempt         strfmt.DateTime `json:"lastNotifyAttempt"`
+	LastNotifyAttemptDuration string          `json:"lastNotifyAttemptDuration"`
+	LastNotifyAttemptError    string          `json:"lastNotifyAttemptError"`
+	Name                      string          `json:"name"`
+	SendResolved              bool            `json:"sendResolved"`
+}
+
+type Receiver struct {
+	Name         string        `json:"name"`
+	Active       bool          `json:"active"`
+	Integrations []Integration `json:"integrations"`
+}
+
+func (c *Client) GetReceiversExperimental(ctx context.Context) ([]Receiver, error) {
+	u := c.alertmanagerClient.URL("alertmanager/experimental/api/v1/receivers", nil)
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("getting receivers failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	decoded := []Receiver{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, err
+	}
+
+	return decoded, nil
 }
 
 // DoGet performs a HTTP GET request towards the supplied URL. The request
