@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log/level"
 
 	"github.com/grafana/alerting/cluster"
+	"github.com/grafana/alerting/notify/nfstatus"
 	amv2 "github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/dispatch"
@@ -95,7 +96,7 @@ type GrafanaAlertmanager struct {
 	reloadConfigMtx sync.RWMutex
 	configHash      [16]byte
 	config          []byte
-	receivers       []*notify.Receiver
+	receivers       []*nfstatus.Receiver
 
 	// buildReceiverIntegrationsFunc builds the integrations for a receiver based on its APIReceiver configuration and the current parsed template.
 	buildReceiverIntegrationsFunc func(next *APIReceiver, tmpl *templates.Template) ([]*Integration, error)
@@ -124,18 +125,18 @@ type MaintenanceOptions interface {
 	MaintenanceFunc(state State) (int64, error)
 }
 
-var NewIntegration = notify.NewIntegration
+var NewIntegration = nfstatus.NewIntegration
 
 type InhibitRule = config.InhibitRule
 type MuteTimeInterval = config.MuteTimeInterval
 type TimeInterval = config.TimeInterval
 type Route = config.Route
-type Integration = notify.Integration
+type Integration = nfstatus.Integration
 type DispatcherLimits = dispatch.Limits
 type Notifier = notify.Notifier
 
 //nolint:revive
-type NotifyReceiver = notify.Receiver
+type NotifyReceiver = nfstatus.Receiver
 
 // Configuration is an interface for accessing Alertmanager configuration.
 type Configuration interface {
@@ -402,14 +403,14 @@ func (am *GrafanaAlertmanager) ApplyConfig(cfg Configuration) (err error) {
 	am.dispatcher = dispatch.NewDispatcher(am.alerts, am.route, routingStage, am.marker, am.timeoutFunc, cfg.DispatcherLimits(), am.logger, am.dispatcherMetrics)
 
 	// TODO: This has not been upstreamed yet. Should be aligned when https://github.com/prometheus/alertmanager/pull/3016 is merged.
-	var receivers []*notify.Receiver
+	var receivers []*nfstatus.Receiver
 	activeReceivers := GetActiveReceiversMap(am.route)
 	for name := range integrationsMap {
-		stage := am.createReceiverStage(name, integrationsMap[name], am.waitFunc, am.notificationLog)
+		stage := am.createReceiverStage(name, nfstatus.GetIntegrations(integrationsMap[name]), am.waitFunc, am.notificationLog)
 		routingStage[name] = notify.MultiStage{meshStage, silencingStage, timeMuteStage, inhibitionStage, stage}
 		_, isActive := activeReceivers[name]
 
-		receivers = append(receivers, notify.NewReceiver(name, isActive, integrationsMap[name]))
+		receivers = append(receivers, nfstatus.NewReceiver(name, isActive, integrationsMap[name]))
 	}
 
 	am.setReceiverMetrics(receivers, len(activeReceivers))
@@ -440,7 +441,7 @@ func (am *GrafanaAlertmanager) setInhibitionRulesMetrics(r []InhibitRule) {
 	am.Metrics.configuredInhibitionRules.WithLabelValues(am.tenantString()).Set(float64(len(r)))
 }
 
-func (am *GrafanaAlertmanager) setReceiverMetrics(receivers []*notify.Receiver, countActiveReceivers int) {
+func (am *GrafanaAlertmanager) setReceiverMetrics(receivers []*nfstatus.Receiver, countActiveReceivers int) {
 	am.Metrics.configuredReceivers.WithLabelValues(am.tenantString(), ActiveStateLabelValue).Set(float64(countActiveReceivers))
 	am.Metrics.configuredReceivers.WithLabelValues(am.tenantString(), InactiveStateLabelValue).Set(float64(len(receivers) - countActiveReceivers))
 
