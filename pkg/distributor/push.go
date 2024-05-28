@@ -32,6 +32,21 @@ import (
 // PushFunc defines the type of the push. It is similar to http.HandlerFunc.
 type PushFunc func(ctx context.Context, req *Request) error
 
+// ErrToMsgAndStatusFunc takes an error and context and returns according msg and status code for that error.
+type ErrToMsgAndStatusFunc func(err error, ctx context.Context, limits *validation.Overrides) (msg string, code int)
+
+var defaultErrToMsgAndStatus = func(err error, ctx context.Context, limits *validation.Overrides) (msg string, code int) {
+	if errors.Is(err, context.Canceled) {
+		return err.Error(), statusClientClosedRequest
+	}
+	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+		code, msg = int(resp.Code), string(resp.Body)
+	} else {
+		code, msg = toHTTPStatus(ctx, err, limits), err.Error()
+	}
+	return msg, code
+}
+
 // parserFunc defines how to read the body the request from an HTTP request. It takes an optional RequestBuffers.
 type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error
 
@@ -80,7 +95,7 @@ func Handler(
 	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
+	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, defaultErrToMsgAndStatus, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
 		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
@@ -118,6 +133,7 @@ func handler(
 	limits *validation.Overrides,
 	retryCfg RetryConfig,
 	push PushFunc,
+	wrapError ErrToMsgAndStatusFunc,
 	logger log.Logger,
 	parser parserFunc,
 ) http.Handler {
@@ -175,7 +191,7 @@ func handler(
 				level.Error(logger).Log("msg", "push error", "err", err)
 			}
 			addHeaders(w, err, r, code, retryCfg)
-			http.Error(w, msg, code)
+			http.Error(w, wrapError(msg), code)
 		}
 	})
 }
