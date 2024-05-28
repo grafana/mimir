@@ -74,12 +74,7 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 	defer spanLog.Finish()
 
 	binPath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-	sparseLoader := bucketAndDiskSparseHeaderLoader{
-		ctx:       ctx,
-		bkt:       objstore.NewPrefixedBucket(bkt, id.String()),
-		localPath: filepath.Join(dir, id.String(), block.SparseIndexHeaderFilename),
-		logger:    log.With(logger, "id", id.String()),
-	}
+	sparseLoader := newSparseHeaderLeader(ctx, spanLog, bkt, dir, id)
 	br, err := newFileStreamBinaryReader(sparseLoader, binPath, id, postingOffsetsInMemSampling, spanLog, metrics, cfg)
 	if err == nil {
 		return br, nil
@@ -94,6 +89,16 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 
 	level.Debug(spanLog).Log("msg", "built index-header file", "path", binPath, "elapsed", time.Since(start))
 	return newFileStreamBinaryReader(sparseLoader, binPath, id, postingOffsetsInMemSampling, spanLog, metrics, cfg)
+}
+
+func newSparseHeaderLeader(ctx context.Context, logger log.Logger, bkt objstore.Bucket, localDir string, id ulid.ULID) bucketAndDiskSparseHeaderLoader {
+	sparseLoader := bucketAndDiskSparseHeaderLoader{
+		ctx:       ctx,
+		bkt:       objstore.NewPrefixedBucket(bkt, id.String()),
+		localPath: filepath.Join(localDir, id.String(), block.SparseIndexHeaderFilename),
+		logger:    log.With(logger, "id", id.String()),
+	}
+	return sparseLoader
 }
 
 // newFileStreamBinaryReader loads sparse index-headers from disk or constructs it from the index-header if not available.

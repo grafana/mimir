@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/storegateway/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
@@ -212,16 +214,26 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	}
 
 	if p.lazyReaderEnabled {
+		// Create a sparse header loader. We do it only for lazy loaded blocks because other blocks will automatically get the header loaded. without us having to worry about it.
+		sparseLoader := newSparseHeaderLeader(ctx, logger, bkt, dir, id)
+		// It's a bit iffy to create two instances of the loader and passing them potentially different args.
+		// Perhaps we should refactor this to pass the loader to the lazy reader instead.
 		lazyBinaryReader, lazyErr := NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
 		if lazyErr != nil {
 			return nil, lazyErr
 		}
+		keepLoaded := initialSync && p.preShutdownLoadedBlocks == nil && p.preShutdownLoadedBlocks.IndexHeaderLastUsedTime[id] > 0
 
-		// we only try to eager load only during initialSync
-		if initialSync && p.preShutdownLoadedBlocks != nil {
-			// we only eager load if we have preShutdownLoadedBlocks for the given block id
-			if p.preShutdownLoadedBlocks.IndexHeaderLastUsedTime[id] > 0 {
-				lazyBinaryReader.EagerLoad()
+		// We eager load blocks during the initial sync and if the block was loaded before shutdown.
+		// If the sparse header is empty, we need to construct it. The way of doing this right now is to eager load the block.
+		if h, _ := sparseLoader.SparseHeader(); keepLoaded || h.Equal(indexheaderpb.Sparse{}) {
+			lazyBinaryReader.EagerLoad()
+		}
+
+		if !keepLoaded {
+			err = lazyBinaryReader.Close()
+			if err != nil {
+				return nil, fmt.Errorf("failed to close lazy reader: %w", err)
 			}
 		}
 		reader, err = lazyBinaryReader, lazyErr
