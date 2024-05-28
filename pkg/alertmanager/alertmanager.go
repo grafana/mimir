@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/go-openapi/strfmt"
+	"github.com/grafana/alerting/notify/nfstatus"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
@@ -58,6 +61,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	apimodels "github.com/grafana/mimir/pkg/alertmanager/models"
 	util_net "github.com/grafana/mimir/pkg/util/net"
 )
 
@@ -110,6 +114,7 @@ type Alertmanager struct {
 	wg              sync.WaitGroup
 	mux             *http.ServeMux
 	registry        *prometheus.Registry
+	receivers       []nfstatus.Receiver
 
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage
@@ -291,10 +296,73 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		am.mux.Handle(a, http.NotFoundHandler())
 	}
 
+	// This route is an experimental Mimir extension to the receivers, API, so we put
+	// it under an additional prefix to avoid any confusion with upstream Alertmanager.
+	am.mux.Handle(
+		path.Join(am.cfg.ExternalURL.Path, "/experimental/api/v1/receivers"),
+		http.HandlerFunc(am.GetReceiversHandler))
+
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
 
 	//TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
+}
+
+func (am *Alertmanager) GetReceiversHandler(w http.ResponseWriter, _ *http.Request) {
+	receivers := am.getReceivers()
+
+	d, err := json.Marshal(receivers)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("error marshalling receivers: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("Receivers=%s\n", string(d))
+
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(d); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func (am *Alertmanager) getReceivers() []apimodels.Receiver {
+	receivers := am.receivers
+
+	apiReceivers := make([]apimodels.Receiver, 0, len(receivers))
+	for _, rcv := range receivers {
+		// Build integrations slice for each receiver.
+		integrations := make([]*apimodels.Integration, 0, len(rcv.Integrations()))
+		for _, integration := range rcv.Integrations() {
+			name := integration.Name()
+			sendResolved := integration.SendResolved()
+			ts, d, err := integration.GetReport()
+			integrations = append(integrations, &apimodels.Integration{
+				Name:                      &name,
+				SendResolved:              &sendResolved,
+				LastNotifyAttempt:         strfmt.DateTime(ts),
+				LastNotifyAttemptDuration: d.String(),
+				LastNotifyAttemptError: func() string {
+					if err != nil {
+						return err.Error()
+					}
+					return ""
+				}(),
+			})
+		}
+
+		active := rcv.Active()
+		name := rcv.Name()
+		apiReceivers = append(apiReceivers, apimodels.Receiver{
+			Active:       &active,
+			Integrations: integrations,
+			Name:         &name,
+		})
+	}
+
+	return apiReceivers
 }
 
 func (am *Alertmanager) WaitInitialStateSync(ctx context.Context) error {
@@ -382,8 +450,25 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	}
 	intervener := timeinterval.NewIntervener(timeIntervals)
 
+	route := dispatch.NewRoute(conf.Route, nil)
+
+	receivers := make([]nfstatus.Receiver, 0, len(integrationsMap))
+	activeReceivers := make(map[string]struct{})
+	visitFunc := func(r *dispatch.Route) {
+		activeReceivers[r.RouteOpts.Receiver] = struct{}{}
+	}
+	route.Walk(visitFunc)
+
+	baseIntegrationsMap := make(map[string][]notify.Integration)
+	for name, v := range integrationsMap {
+		_, isActive := activeReceivers[name]
+		receivers = append(receivers, nfstatus.NewReceiver(name, isActive, v))
+		baseIntegrationsMap[name] = nfstatus.GetIntegrations(v)
+	}
+	am.receivers = receivers
+
 	pipeline := am.pipelineBuilder.New(
-		integrationsMap,
+		baseIntegrationsMap,
 		waitFunc,
 		am.inhibitor,
 		silence.NewSilencer(am.silences, am.marker, am.logger),
@@ -394,7 +479,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	am.lastPipeline = pipeline
 	am.dispatcher = dispatch.NewDispatcher(
 		am.alerts,
-		dispatch.NewRoute(conf.Route, nil),
+		route,
 		pipeline,
 		am.marker,
 		timeoutFunc,
@@ -451,8 +536,8 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a
 // list of receiver config.
-func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
-	integrationsMap := make(map[string][]notify.Integration, len(nc))
+func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]nfstatus.Integration, error) {
+	integrationsMap := make(map[string][]nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		integrations, err := buildReceiverIntegrations(rcv, tmpl, firewallDialer, logger, notifierWrapper)
 		if err != nil {
@@ -466,10 +551,10 @@ func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewal
 // buildReceiverIntegrations builds a list of integration notifiers off of a
 // receiver config.
 // Taken from https://github.com/prometheus/alertmanager/blob/94d875f1227b29abece661db1a68c001122d1da5/cmd/alertmanager/main.go#L112-L159.
-func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]notify.Integration, error) {
+func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]nfstatus.Integration, error) {
 	var (
 		errs         types.MultiError
-		integrations []notify.Integration
+		integrations []nfstatus.Integration
 		add          = func(name string, i int, rs notify.ResolvedSender, f func(l log.Logger) (notify.Notifier, error)) {
 			n, err := f(log.With(logger, "integration", name))
 			if err != nil {
@@ -477,7 +562,7 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 				return
 			}
 			n = wrapper(name, n)
-			integrations = append(integrations, notify.NewIntegration(n, rs, name, i, nc.Name))
+			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name))
 		}
 	)
 

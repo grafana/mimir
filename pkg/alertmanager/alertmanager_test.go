@@ -136,6 +136,13 @@ route:
 		alertmanager_dispatcher_aggregation_group_limit_reached_total %d
 	`, expectedFailures)), "alertmanager_dispatcher_aggregation_group_limit_reached_total")
 	})
+
+	recvs := am.getReceivers()
+	for _, recv := range recvs {
+		fmt.Printf("%v\n", *recv.Name)
+		fmt.Printf("%v\n", *recv.Active)
+		fmt.Printf("%v\n", recv.Integrations)
+	}
 }
 
 func TestDispatcherLoggerInsightKey(t *testing.T) {

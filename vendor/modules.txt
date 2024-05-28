@@ -564,10 +564,11 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20240516100902-0cf0ef264288
+# github.com/grafana/alerting v0.0.0-20240527220754-b8d55d26920b
 ## explicit; go 1.21
 github.com/grafana/alerting/definition
 github.com/grafana/alerting/logging
+github.com/grafana/alerting/notify/nfstatus
 github.com/grafana/alerting/receivers
 # github.com/grafana/dskit v0.0.0-20240509115328-a1bba1277f06
 ## explicit; go 1.20
