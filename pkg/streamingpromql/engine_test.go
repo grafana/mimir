@@ -4,6 +4,7 @@ package streamingpromql
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
@@ -281,4 +284,91 @@ func TestRangeVectorSelectors(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestQueryCancellation(t *testing.T) {
+	opts := NewTestEngineOpts()
+	engine, err := NewEngine(opts)
+	require.NoError(t, err)
+
+	// Simulate the query being cancelled by another goroutine by waiting for the Select() call to be made,
+	// then cancel the query and wait for the query context to be cancelled.
+	//
+	// In both this test and production, we rely on the underlying storage responding to the context cancellation -
+	// we don't explicitly check for context cancellation in the query engine.
+	var q promql.Query
+	queryable := cancellationQueryable{func() {
+		q.Cancel()
+	}}
+
+	q, err = engine.NewInstantQuery(context.Background(), queryable, nil, "some_metric", timestamp.Time(0))
+	require.NoError(t, err)
+	defer q.Close()
+
+	res := q.Exec(context.Background())
+
+	require.Error(t, res.Err)
+	require.ErrorIs(t, res.Err, context.Canceled)
+	require.EqualError(t, res.Err, "context canceled: query execution cancelled")
+	require.Nil(t, res.Value)
+}
+
+type cancellationQueryable struct {
+	onQueried func()
+}
+
+func (w cancellationQueryable) Querier(_, _ int64) (storage.Querier, error) {
+	// nolint:gosimple
+	return cancellationQuerier{onQueried: w.onQueried}, nil
+}
+
+type cancellationQuerier struct {
+	onQueried func()
+}
+
+func (w cancellationQuerier) LabelValues(ctx context.Context, _ string, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, w.waitForCancellation(ctx)
+}
+
+func (w cancellationQuerier) LabelNames(ctx context.Context, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, w.waitForCancellation(ctx)
+}
+
+func (w cancellationQuerier) Select(ctx context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+	return errSeriesSet{w.waitForCancellation(ctx)}
+}
+
+func (w cancellationQuerier) Close() error {
+	return nil
+}
+
+func (w cancellationQuerier) waitForCancellation(ctx context.Context) error {
+	w.onQueried()
+
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case <-time.After(time.Second):
+		return errors.New("expected query context to be cancelled after 1 second, but it was not")
+	}
+}
+
+type errSeriesSet struct {
+	err error
+}
+
+func (e errSeriesSet) Next() bool {
+	return false
+}
+
+func (e errSeriesSet) At() storage.Series {
+	return nil
+}
+
+func (e errSeriesSet) Err() error {
+	return e.err
+}
+
+func (e errSeriesSet) Warnings() annotations.Annotations {
+	return nil
 }
