@@ -349,7 +349,7 @@ func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 // a) a query request which was successfully dequeued for the querier, or
 // b) an ErrShuttingDown indicating the querier has been placed in a graceful shutdown state.
 func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierConn) (done bool) {
-	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(waitingConn.lastTenantIndex.last, waitingConn.querierID)
+	req, tenant, err := q.queueBroker.dequeueRequestForQuerier(waitingConn.querierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate WaitForRequestForQuerier with an error now...
 		waitingConn.sendError(err)
@@ -357,7 +357,7 @@ func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierC
 		return true
 	}
 
-	waitingConn.lastTenantIndex.last = idx
+	//waitingConn.lastTenantIndex.last = idx
 	if req == nil {
 		// Nothing available for this querier, try again next time.
 		return false
@@ -394,15 +394,17 @@ func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierC
 	requestSent := waitingConn.send(reqForQuerier)
 	if requestSent {
 		q.queueLength.WithLabelValues(string(tenant.tenantID)).Dec()
-	} else {
-		// should never error; any item previously in the queue already passed validation
-		err := q.queueBroker.enqueueRequestFront(req, tenant.maxQueriers)
-		if err != nil {
-			level.Error(q.log).Log(
-				"msg", "failed to re-enqueue query request after dequeue",
-				"err", err, "tenant", tenant.tenantID, "querier", waitingConn.querierID,
-			)
-		}
+		// TODO (casie): Handle this, though I don't think we should ever have to re-enqueue to front anymore?
+		//  Nvm we do; when queriers fail while dequeuing
+		//} else {
+		//	// should never error; any item previously in the queue already passed validation
+		//	err := q.queueBroker.enqueueRequestFront(req, tenant.maxQueriers)
+		//	if err != nil {
+		//		level.Error(q.log).Log(
+		//			"msg", "failed to re-enqueue query request after dequeue",
+		//			"err", err, "tenant", tenant.tenantID, "querier", waitingConn.querierID,
+		//		)
+		//	}
 	}
 	return true
 }
