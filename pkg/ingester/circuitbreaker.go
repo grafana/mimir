@@ -10,9 +10,12 @@ import (
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/middleware"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -179,6 +182,11 @@ func isFailure(err error) bool {
 		return true
 	}
 
+	statusCode := grpcutil.ErrorToStatusCode(err)
+	if statusCode == codes.DeadlineExceeded {
+		return true
+	}
+
 	var ingesterErr ingesterError
 	if errors.As(err, &ingesterErr) {
 		return ingesterErr.errorCause() == mimirpb.INSTANCE_LIMIT
@@ -204,7 +212,7 @@ func (cb *circuitBreaker) tryAcquirePermit() error {
 	}
 	if !cb.CircuitBreaker.TryAcquirePermit() {
 		cb.metrics.circuitBreakerResults.WithLabelValues(cb.ingesterID, resultOpen).Inc()
-		return newCircuitBreakerOpenError(cb.RemainingDelay())
+		return middleware.DoNotLogError{Err: newCircuitBreakerOpenError(cb.RemainingDelay())}
 	}
 	return nil
 }
@@ -225,16 +233,16 @@ func (cb *circuitBreaker) recordError(err error) {
 	cb.metrics.circuitBreakerResults.WithLabelValues(cb.ingesterID, resultError).Inc()
 }
 
-func (cb *circuitBreaker) finishPushRequest(ctx context.Context, startTimestamp time.Time, err error) {
+func (cb *circuitBreaker) finishPushRequest(ctx context.Context, duration time.Duration, err error) error {
 	if !cb.isActive() {
-		return
+		return nil
 	}
 	if cb.cfg.testModeEnabled {
 		if initialDelay, ok := ctx.Value(testDelayKey).(time.Duration); ok {
-			time.Sleep(initialDelay)
+			duration += initialDelay
 		}
 	}
-	if cb.cfg.PushTimeout < time.Since(startTimestamp) {
+	if cb.cfg.PushTimeout < duration {
 		err = context.DeadlineExceeded
 	}
 	if err == nil {
@@ -242,4 +250,5 @@ func (cb *circuitBreaker) finishPushRequest(ctx context.Context, startTimestamp 
 	} else {
 		cb.recordError(err)
 	}
+	return err
 }
