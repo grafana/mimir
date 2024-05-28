@@ -209,7 +209,6 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.StoreGateway.ShardingRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
-	t.Cfg.BlockBuilder.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 
 	// Update Configs - Redis Clients
 	t.Cfg.BlocksStorage.BucketStore.IndexCache.BackendConfig.Redis.TLS.Reader = t.Vault
@@ -413,7 +412,6 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Cfg.BlockBuilder.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 
 	return serv, err
 }
@@ -1004,7 +1002,6 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.Alertmanager.ShardingRing.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
-	t.Cfg.BlockBuilder.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 
 	return t.MemberlistKV, nil
 }
@@ -1046,14 +1043,10 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 }
 
 func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
-	t.Cfg.BlockBuilder.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
-
-	t.BlockBuilder, err = blockbuilder.NewBlockBuilder(t.Cfg.BlockBuilder, util_log.Logger, t.IngesterPartitionRingWatcher, t.Registerer)
+	t.BlockBuilder, err = blockbuilder.NewBlockBuilder(t.Cfg.BlockBuilder, util_log.Logger, t.Registerer, t.Overrides)
 	if err != nil {
 		return
 	}
-
-	t.API.RegisterBlockBuilderRing(t.BlockBuilder)
 
 	return t.BlockBuilder, nil
 }
@@ -1142,7 +1135,7 @@ func (t *Mimir) setupModuleManager() error {
 		Compactor:                {API, MemberlistKV, Overrides, Vault},
 		StoreGateway:             {API, Overrides, MemberlistKV, Vault},
 		TenantFederation:         {Queryable},
-		BlockBuilder:             {API, MemberlistKV, IngesterPartitionRing},
+		BlockBuilder:             {API, Overrides},
 		ContinuousTest:           {API},
 		Write:                    {Distributor, Ingester},
 		Read:                     {QueryFrontend, Querier},
