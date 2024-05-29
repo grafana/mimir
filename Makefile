@@ -777,7 +777,7 @@ docs: doc
 
 .PHONY: generate-otlp
 generate-otlp:
-	cd pkg/distributor/otlp && rm *_generated.go && go generate
+	cd pkg/distributor/otlp && rm -f *_generated.go && go generate
 
 .PHONY: check-generated-otlp-code
 check-generated-otlp-code: generate-otlp
