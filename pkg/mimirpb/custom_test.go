@@ -88,7 +88,7 @@ func TestWriteRequest_IsEmpty(t *testing.T) {
 	})
 }
 
-func TestWriteRequest_SizeWithoutMetadata_SizeWithoutTimeseries(t *testing.T) {
+func TestWriteRequest_MetadataSize_TimeseriesSize(t *testing.T) {
 	req := &WriteRequest{
 		Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
 			Samples:    []Sample{{TimestampMs: 20}},
@@ -101,17 +101,20 @@ func TestWriteRequest_SizeWithoutMetadata_SizeWithoutTimeseries(t *testing.T) {
 	}
 
 	origSize := req.Size()
-	assert.Less(t, req.SizeWithoutTimeseries(), origSize)
-	assert.Less(t, req.SizeWithoutMetadata(), origSize)
+	metadataSize := req.MetadataSize()
+	timeseriesSize := req.TimeseriesSize()
+
+	assert.Less(t, metadataSize, origSize)
+	assert.Less(t, timeseriesSize, origSize)
 	assert.Equal(t, origSize, req.Size())
 
 	reqWithoutTimeseries := *req
 	reqWithoutTimeseries.Timeseries = nil
-	assert.Equal(t, reqWithoutTimeseries.Size(), reqWithoutTimeseries.SizeWithoutTimeseries())
+	assert.Equal(t, origSize-timeseriesSize, reqWithoutTimeseries.Size())
 
 	reqWithoutMetadata := *req
 	reqWithoutMetadata.Metadata = nil
-	assert.Equal(t, reqWithoutMetadata.Size(), reqWithoutMetadata.SizeWithoutMetadata())
+	assert.Equal(t, origSize-metadataSize, reqWithoutMetadata.Size())
 }
 
 func TestWriteRequest_SplitByMaxMarshalSize(t *testing.T) {
@@ -211,6 +214,8 @@ func TestWriteRequest_SplitByMaxMarshalSize(t *testing.T) {
 		}
 	})
 }
+
+// TODO add a test which fails if WriteRequest fields change
 
 // TODO split the benchmark is end-to-end and not
 func BenchmarkWriteRequest_SplitByMaxMarshalSize(b *testing.B) {
