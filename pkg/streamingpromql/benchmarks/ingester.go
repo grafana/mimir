@@ -215,8 +215,8 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 	// A quick run locally found batching by 100 did not increase the loading time by any noticable amount.
 	// Additionally memory usage maxed about 4GB for the whole process.
 	batchSize := 100
-	for i := 0; i < NumIntervals; i += batchSize {
-		end := i + batchSize
+	for start := 0; start < NumIntervals; start += batchSize {
+		end := start + batchSize
 		if end > NumIntervals {
 			end = NumIntervals
 		}
@@ -225,40 +225,40 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 			Timeseries: make([]mimirpb.PreallocTimeseries, len(metrics)),
 		}
 
-		for j, m := range metrics {
+		for metricIdx, m := range metrics {
 			if strings.HasPrefix(m.Get("__name__"), "nh_") {
 				series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
 					Labels:     mimirpb.FromLabelsToLabelAdapters(m.Copy()),
-					Histograms: make([]mimirpb.Histogram, end-i),
+					Histograms: make([]mimirpb.Histogram, end-start),
 				}}
 
-				for s := i; s < end; s++ {
+				for ts := start; ts < end; ts++ {
 					// TODO(jhesketh): Fix this with some better data
-					series.Histograms[s-i].Timestamp = int64(s) * interval.Milliseconds()
-					series.Histograms[s-i].Count = &mimirpb.Histogram_CountInt{CountInt: 12}
-					series.Histograms[s-i].ZeroCount = &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 2}
-					series.Histograms[s-i].ZeroThreshold = 0.001
-					series.Histograms[s-i].Sum = 18.4
-					series.Histograms[s-i].Schema = 0
-					series.Histograms[s-i].NegativeSpans = []mimirpb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}}
-					series.Histograms[s-i].NegativeDeltas = []int64{1, 1, -1, 0}
-					series.Histograms[s-i].PositiveSpans = []mimirpb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}}
-					series.Histograms[s-i].PositiveDeltas = []int64{1, 1, -1, 0}
+					series.Histograms[ts-start].Timestamp = int64(ts) * interval.Milliseconds()
+					series.Histograms[ts-start].Count = &mimirpb.Histogram_CountInt{CountInt: 12}
+					series.Histograms[ts-start].ZeroCount = &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 2}
+					series.Histograms[ts-start].ZeroThreshold = 0.001
+					series.Histograms[ts-start].Sum = 18.4
+					series.Histograms[ts-start].Schema = 0
+					series.Histograms[ts-start].NegativeSpans = []mimirpb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}}
+					series.Histograms[ts-start].NegativeDeltas = []int64{1, 1, -1, 0}
+					series.Histograms[ts-start].PositiveSpans = []mimirpb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}}
+					series.Histograms[ts-start].PositiveDeltas = []int64{1, 1, -1, 0}
 				}
 
-				req.Timeseries[j] = series
+				req.Timeseries[metricIdx] = series
 			} else {
 				series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
 					Labels:  mimirpb.FromLabelsToLabelAdapters(m.Copy()),
-					Samples: make([]mimirpb.Sample, end-i),
+					Samples: make([]mimirpb.Sample, end-start),
 				}}
 
-				for s := i; s < end; s++ {
-					series.Samples[s-i].TimestampMs = int64(s) * interval.Milliseconds()
-					series.Samples[s-i].Value = float64(s) + float64(j)/float64(len(metrics))
+				for ts := start; ts < end; ts++ {
+					series.Samples[ts-start].TimestampMs = int64(ts) * interval.Milliseconds()
+					series.Samples[ts-start].Value = float64(ts) + float64(metricIdx)/float64(len(metrics))
 				}
 
-				req.Timeseries[j] = series
+				req.Timeseries[metricIdx] = series
 			}
 		}
 		if _, err := ing.Push(ctx, req); err != nil {
