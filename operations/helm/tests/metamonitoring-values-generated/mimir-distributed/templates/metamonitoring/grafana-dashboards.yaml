@@ -12724,8 +12724,8 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
+                            "mode": "multi",
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -12772,8 +12772,8 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
-                            "sort": "none"
+                            "mode": "multi",
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -26210,7 +26210,7 @@ data:
                    "stacking": "none",
                    "tooltip": {
                       "mode": "multi",
-                      "sort": "none"
+                      "sort": "desc"
                    },
                    "xField": "Workload",
                    "xTickLabelRotation": 0,
@@ -34459,7 +34459,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 6,
@@ -37814,7 +37814,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "desc"
                          }
                       },
