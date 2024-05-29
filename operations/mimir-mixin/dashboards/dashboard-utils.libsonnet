@@ -1466,6 +1466,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   getCommonReadsDashboardsRows(
     queryFrontendJobName,
+    querySchedulerJobName,
     queryRoutesRegex,
     rowTitlePrefix='',
   ):: [
@@ -1482,6 +1483,106 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
       $.hiddenLegendQueryPanel(
         'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(queryFrontendJobName), queryRoutesRegex], ''
+      )
+    ),
+    local description = |||
+      <p>
+        The query scheduler is an optional service that moves
+        the internal queue from the query-frontend into a
+        separate component.
+        If this service is not deployed,
+        these panels will show "No data."
+      </p>
+    |||;
+    $.row($.capitalize(rowTitlePrefix + 'query-scheduler'))
+    .addPanel(
+      local title = 'Requests / sec';
+      $.timeseriesPanel(title) +
+      $.panelDescription(title, description) +
+      $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher(querySchedulerJobName))
+    )
+    .addPanel(
+      local title = 'Latency (Time in Queue)';
+      $.timeseriesPanel(title) +
+      $.panelDescription(title, description) +
+      $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher(querySchedulerJobName))
+    )
+    .addPanel(
+      local title = 'Queue length';
+      $.timeseriesPanel(title) +
+      $.panelDescription(title, description) +
+      $.hiddenLegendQueryPanel(
+        'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher(querySchedulerJobName)],
+        'Queue length'
+      ) +
+      {
+        fieldConfig+: {
+          defaults+: {
+            unit: 'queries',
+          },
+        },
+      },
+    ),
+    local description = |||
+      <p>
+        The query scheduler can optionally create subqueues
+        in order to enforce round-robin query queuing fairness
+        across additional queue dimensions beyond the default.
+
+        By default, query queuing fairness is only applied by tenant ID.
+        Queries without additional queue dimensions are labeled 'none'.
+      </p>
+    |||;
+    local metricName = 'cortex_query_scheduler_queue_duration_seconds';
+    local selector = '{%s}' % $.jobMatcher(querySchedulerJobName);
+    local labels = ['additional_queue_dimensions'];
+    local labelReplaceArgSets = [
+      {
+        dstLabel: 'additional_queue_dimensions',
+        replacement: 'none',
+        srcLabel:
+          'additional_queue_dimensions',
+        regex: '^$',
+      },
+    ];
+    $.row($.capitalize(rowTitlePrefix + 'query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions'))
+    .addPanel(
+      local title = '99th Percentile Latency by Queue Dimension';
+      $.timeseriesPanel(title) +
+      $.panelDescription(title, description) +
+      $.latencyPanelLabelBreakout(
+        metricName=metricName,
+        selector=selector,
+        percentiles=['0.99'],
+        includeAverage=false,
+        labels=labels,
+        labelReplaceArgSets=labelReplaceArgSets,
+      )
+    )
+    .addPanel(
+      local title = '50th Percentile Latency by Queue Dimension';
+      $.timeseriesPanel(title) +
+      $.panelDescription(title, description) +
+      $.latencyPanelLabelBreakout(
+        metricName=metricName,
+        selector=selector,
+        percentiles=['0.50'],
+        includeAverage=false,
+        labels=labels,
+        labelReplaceArgSets=labelReplaceArgSets,
+      )
+    )
+    .addPanel(
+      local title = 'Average Latency by Queue Dimension';
+      $.timeseriesPanel(title) +
+      $.panelDescription(title, description) +
+      $.latencyPanelLabelBreakout(
+        metricName=metricName,
+        selector=selector,
+        percentiles=[],
+        includeAverage=true,
+        labels=labels,
+        labelReplaceArgSets=labelReplaceArgSets,
       )
     ),
   ],
