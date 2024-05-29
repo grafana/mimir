@@ -26,6 +26,7 @@ import (
 
 var errQueryCancelled = cancellation.NewErrorf("query execution cancelled")
 var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
+var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Query struct {
 	queryable storage.Queryable
@@ -246,13 +247,18 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	defer q.root.Close()
 
 	ctx, cancel := context.WithCancelCause(ctx)
+	q.cancel = cancel
 
 	if q.engine.timeout != 0 {
-		// We don't need to cancel the timeout context, as we'll always cancel the parent context created above.
-		ctx, _ = context.WithTimeoutCause(ctx, q.engine.timeout, fmt.Errorf("%w: query timed out", context.DeadlineExceeded))
+		var cancelTimeoutCtx context.CancelFunc
+		ctx, cancelTimeoutCtx = context.WithTimeoutCause(ctx, q.engine.timeout, fmt.Errorf("%w: query timed out", context.DeadlineExceeded))
+
+		defer cancelTimeoutCtx()
 	}
 
-	q.cancel = cancel
+	// The order of the deferred cancellations is important: we want to cancel with errQueryFinished first, so we must defer this cancellation last
+	// (so that it runs before the cancellation of the context with timeout created above).
+	defer cancel(errQueryFinished)
 
 	series, err := q.root.SeriesMetadata(ctx)
 	if err != nil {
