@@ -270,19 +270,19 @@ func BenchmarkWriteRequest_SplitByMaxMarshalSize(b *testing.B) {
 
 			// Test with different split size.
 			splitScenarios := map[string]struct {
-				splitSize            int
+				maxSize              int
 				expectedApproxSplits int
 			}{
 				"no splitting": {
-					splitSize:            reqSize * 2,
+					maxSize:              reqSize * 2,
 					expectedApproxSplits: 1,
 				},
 				"split in few requests": {
-					splitSize:            int(float64(reqSize) * 0.8),
+					maxSize:              int(float64(reqSize) * 0.8),
 					expectedApproxSplits: 2,
 				},
 				"split in many requests": {
-					splitSize:            int(float64(reqSize) * 0.11),
+					maxSize:              int(float64(reqSize) * 0.11),
 					expectedApproxSplits: 10,
 				},
 			}
@@ -298,14 +298,24 @@ func BenchmarkWriteRequest_SplitByMaxMarshalSize(b *testing.B) {
 						maxExpectedSplits = 0
 					}
 
-					// Run the check only once, to not influence the benchmark.
-					actualSplits := len(req.SplitByMaxMarshalSize(splitScenario.splitSize))
-					if (actualSplits < minExpectedSplits) || (actualSplits > maxExpectedSplits) {
-						b.Fatalf("expected between %d and %d splits but got %d", minExpectedSplits, maxExpectedSplits, actualSplits)
-					}
-
 					for n := 0; n < b.N; n++ {
-						req.SplitByMaxMarshalSize(splitScenario.splitSize)
+						actualSplits := req.SplitByMaxMarshalSize(splitScenario.maxSize)
+
+						// Ensure the number of splits match the expected ones.
+						if numActualSplits := len(actualSplits); (numActualSplits < minExpectedSplits) || (numActualSplits > maxExpectedSplits) {
+							b.Fatalf("expected between %d and %d splits but got %d", minExpectedSplits, maxExpectedSplits, numActualSplits)
+						}
+
+						// Marshal each split request. The assumption is that the split request will be then marshalled.
+						// This is also offer a fair comparison with an alternative implementation (we're considering)
+						// which does the splitting starting from the marshalled request.
+						for _, split := range actualSplits {
+							if data, err := split.Marshal(); err != nil {
+								b.Fatal(err)
+							} else if len(data) >= splitScenario.maxSize {
+								b.Fatalf("the marshalled split request (%d bytes) is larger than max size (%d bytes)", len(data), splitScenario.maxSize)
+							}
+						}
 					}
 				})
 			}
