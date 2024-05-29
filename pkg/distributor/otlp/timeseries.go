@@ -10,11 +10,15 @@ import (
 
 // TimeSeries returns a slice of the mimirpb.TimeSeries that were converted from OTel format.
 func (c *MimirConverter) TimeSeries() []mimirpb.PreallocTimeseries {
-	conflicts := 0
+	totalCount := len(c.unique)
 	for _, ts := range c.conflicts {
-		conflicts += len(ts)
+		totalCount += len(ts)
 	}
-	allTS := mimirpb.PreallocTimeseriesSliceFromPool()
+
+	allTS := mimirpb.PreallocTimeseriesSliceFromPool()[:0]
+	if cap(allTS) < totalCount {
+		allTS = make([]mimirpb.PreallocTimeseries, 0, totalCount)
+	}
 	for _, ts := range c.unique {
 		allTS = append(allTS, mimirpb.PreallocTimeseries{TimeSeries: ts})
 	}
