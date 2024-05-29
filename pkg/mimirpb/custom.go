@@ -132,7 +132,7 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
 
 	// Split timeseries into partial write requests.
-	nextReq, nextReqEstimatedSize := newPartialReq(estimatedTimeseriesPerPartialReq)
+	nextReq, nextReqSize := newPartialReq(estimatedTimeseriesPerPartialReq)
 	nextReqTimeseriesStart := 0
 	nextReqTimeseriesLength := 0
 
@@ -142,19 +142,19 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 		// Check if the next partial request is full (or close to be full), and so it's time to finalize it and create a new one.
 		// If the next partial request doesn't have any timeseries yet, we add the series anyway, in order to avoid an infinite loop
 		// if a single timeseries is bigger than the limit.
-		if nextReqEstimatedSize+seriesSize > maxSize && nextReqTimeseriesLength > 0 {
+		if nextReqSize+seriesSize > maxSize && nextReqTimeseriesLength > 0 {
 			// Finalize the next partial request.
 			nextReq.Timeseries = req.Timeseries[nextReqTimeseriesStart : nextReqTimeseriesStart+nextReqTimeseriesLength]
 			partialReqs = append(partialReqs, nextReq)
 
 			// Initialize a new partial request.
-			nextReq, nextReqEstimatedSize = newPartialReq(estimatedTimeseriesPerPartialReq)
+			nextReq, nextReqSize = newPartialReq(estimatedTimeseriesPerPartialReq)
 			nextReqTimeseriesStart = i
 			nextReqTimeseriesLength = 0
 		}
 
 		// Add the current series to next partial request.
-		nextReqEstimatedSize += seriesSize + 1 + sovMimir(uint64(seriesSize)) // Math copied from Size().
+		nextReqSize += seriesSize + 1 + sovMimir(uint64(seriesSize)) // Math copied from Size().
 		nextReqTimeseriesLength++
 	}
 
@@ -197,7 +197,7 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
 
 	// Split metadata into partial write requests.
-	nextReq, nextReqEstimatedSize := newPartialReq(estimatedMetadataPerPartialReq)
+	nextReq, nextReqSize := newPartialReq(estimatedMetadataPerPartialReq)
 	nextReqMetadataStart := 0
 	nextReqMetadataLength := 0
 
@@ -207,19 +207,19 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 		// Check if the next partial request is full (or close to be full), and so it's time to finalize it and create a new one.
 		// If the next partial request doesn't have any metadata yet, we add the metadata anyway, in order to avoid an infinite loop
 		// if a single metadata is bigger than the limit.
-		if nextReqEstimatedSize+metadataSize > maxSize && nextReqMetadataLength > 0 {
+		if nextReqSize+metadataSize > maxSize && nextReqMetadataLength > 0 {
 			// Finalize the next partial request.
 			nextReq.Metadata = req.Metadata[nextReqMetadataStart : nextReqMetadataStart+nextReqMetadataLength]
 			partialReqs = append(partialReqs, nextReq)
 
 			// Initialize a new partial request.
-			nextReq, nextReqEstimatedSize = newPartialReq(estimatedMetadataPerPartialReq)
+			nextReq, nextReqSize = newPartialReq(estimatedMetadataPerPartialReq)
 			nextReqMetadataStart = i
 			nextReqMetadataLength = 0
 		}
 
 		// Add the current metadata to next partial request.
-		nextReqEstimatedSize += metadataSize + 1 + sovMimir(uint64(metadataSize)) // Math copied from Size().
+		nextReqSize += metadataSize + 1 + sovMimir(uint64(metadataSize)) // Math copied from Size().
 		nextReqMetadataLength++
 	}
 

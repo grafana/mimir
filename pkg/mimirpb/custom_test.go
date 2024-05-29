@@ -8,6 +8,7 @@ package mimirpb
 import (
 	"fmt"
 	"math/rand"
+	"reflect"
 	"testing"
 	"time"
 
@@ -255,10 +256,66 @@ func TestWriteRequest_SplitByMaxMarshalSize_Fuzzy(t *testing.T) {
 	}
 }
 
-// TODO add a test which fails if WriteRequest fields change
+func TestWriteRequest_SplitByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) {
+	// Get WriteRequest field names.
+	val := reflect.ValueOf(&WriteRequest{})
+	typ := val.Type()
 
-// TODO split the benchmark is end-to-end and not
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+
+	var fieldNames []string
+	for i := 0; i < typ.NumField(); i++ {
+		fieldNames = append(fieldNames, typ.Field(i).Name)
+	}
+
+	// If the fields of WriteRequest haven't changed, then you will probably need to modify
+	// the SplitByMaxMarshalSize() implementation accordingly!
+	assert.ElementsMatch(t, []string{"Timeseries", "Source", "Metadata", "SkipLabelNameValidation"}, fieldNames)
+}
+
 func BenchmarkWriteRequest_SplitByMaxMarshalSize(b *testing.B) {
+	benchmarkWriteRequest_SplitByMaxMarshalSize(b, func(b *testing.B, req *WriteRequest, maxSize int) {
+		for n := 0; n < b.N; n++ {
+			req.SplitByMaxMarshalSize(maxSize)
+		}
+	})
+}
+
+func BenchmarkWriteRequest_SplitByMaxMarshalSize_WithMarshalling(b *testing.B) {
+	// In this benchmark we simulate a behaviour similar to distributor one, where the WriteRequest is
+	// initially unmarshalled, the sharded (skipped in this test), then split by max size and finally
+	// each partial request is marshalled.
+	benchmarkWriteRequest_SplitByMaxMarshalSize(b, func(b *testing.B, req *WriteRequest, maxSize int) {
+		marshalledReq, err := req.Marshal()
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		for n := 0; n < b.N; n++ {
+			// Unmarshal the request.
+			unmarshalledReq := &WriteRequest{}
+			if err := unmarshalledReq.Unmarshal(marshalledReq); err != nil {
+				b.Fatal(err)
+			}
+
+			// Split the request.
+			partialReqs := req.SplitByMaxMarshalSize(maxSize)
+
+			// Marshal each split request.
+			for _, partialReq := range partialReqs {
+				if data, err := partialReq.Marshal(); err != nil {
+					b.Fatal(err)
+				} else if len(data) >= maxSize {
+					b.Fatalf("the marshalled partial request (%d bytes) is larger than max size (%d bytes)", len(data), maxSize)
+				}
+			}
+		}
+	})
+}
+
+func benchmarkWriteRequest_SplitByMaxMarshalSize(b *testing.B, run func(b *testing.B, req *WriteRequest, maxSize int)) {
 	tests := map[string]struct {
 		numSeries           int
 		numLabelsPerSeries  int
@@ -315,54 +372,15 @@ func BenchmarkWriteRequest_SplitByMaxMarshalSize(b *testing.B) {
 			reqSize := req.Size()
 
 			// Test with different split size.
-			splitScenarios := map[string]struct {
-				maxSize              int
-				expectedApproxSplits int
-			}{
-				"no splitting": {
-					maxSize:              reqSize * 2,
-					expectedApproxSplits: 1,
-				},
-				"split in few requests": {
-					maxSize:              int(float64(reqSize) * 0.8),
-					expectedApproxSplits: 2,
-				},
-				"split in many requests": {
-					maxSize:              int(float64(reqSize) * 0.11),
-					expectedApproxSplits: 10,
-				},
+			splitScenarios := map[string]int{
+				"no splitting":           reqSize * 2,
+				"split in few requests":  int(float64(reqSize) * 0.8),
+				"split in many requests": int(float64(reqSize) * 0.11),
 			}
 
-			for splitName, splitScenario := range splitScenarios {
+			for splitName, maxSize := range splitScenarios {
 				b.Run(splitName, func(b *testing.B) {
-					// The actual number of splits may be slightly different then the expected, due to implementation
-					// details (e.g. if a request both contain series and metadata, they're never mixed in the same split request).
-					minExpectedSplits := splitScenario.expectedApproxSplits - 1
-					maxExpectedSplits := splitScenario.expectedApproxSplits + 1
-					if splitScenario.expectedApproxSplits == 0 {
-						minExpectedSplits = 0
-						maxExpectedSplits = 0
-					}
-
-					for n := 0; n < b.N; n++ {
-						actualSplits := req.SplitByMaxMarshalSize(splitScenario.maxSize)
-
-						// Ensure the number of splits match the expected ones.
-						if numActualSplits := len(actualSplits); (numActualSplits < minExpectedSplits) || (numActualSplits > maxExpectedSplits) {
-							b.Fatalf("expected between %d and %d splits but got %d", minExpectedSplits, maxExpectedSplits, numActualSplits)
-						}
-
-						// Marshal each split request. The assumption is that the split request will be then marshalled.
-						// This is also offer a fair comparison with an alternative implementation (we're considering)
-						// which does the splitting starting from the marshalled request.
-						//for _, split := range actualSplits {
-						//	if data, err := split.Marshal(); err != nil {
-						//		b.Fatal(err)
-						//	} else if len(data) >= splitScenario.maxSize {
-						//		b.Fatalf("the marshalled split request (%d bytes) is larger than max size (%d bytes)", len(data), splitScenario.maxSize)
-						//	}
-						//}
-					}
+					run(b, req, maxSize)
 				})
 			}
 		})
