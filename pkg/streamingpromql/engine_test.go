@@ -379,3 +379,73 @@ func (w cancellationQuerier) waitForCancellation(ctx context.Context) error {
 		return errors.New("expected query context to be cancelled after 1 second, but it was not")
 	}
 }
+
+func TestQueryContextCancelledOnceQueryFinished(t *testing.T) {
+	opts := NewTestEngineOpts()
+	engine, err := NewEngine(opts)
+	require.NoError(t, err)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric 0+1x4
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	queryable := &contextCapturingQueryable{inner: storage}
+
+	q, err := engine.NewInstantQuery(context.Background(), queryable, nil, "some_metric", timestamp.Time(0))
+	require.NoError(t, err)
+	defer q.Close()
+
+	res := q.Exec(context.Background())
+	require.NoError(t, res.Err)
+	require.NotNil(t, res.Value)
+
+	contextErr := queryable.capturedContext.Err()
+	require.Equal(t, context.Canceled, contextErr)
+
+	contextCause := context.Cause(queryable.capturedContext)
+	require.ErrorIs(t, contextCause, context.Canceled)
+	require.EqualError(t, contextCause, "context canceled: query execution finished")
+}
+
+type contextCapturingQueryable struct {
+	capturedContext context.Context
+	inner           storage.Queryable
+}
+
+func (q *contextCapturingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	innerQuerier, err := q.inner.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &contextCapturingQuerier{
+		queryable: q,
+		inner:     innerQuerier,
+	}, nil
+}
+
+type contextCapturingQuerier struct {
+	queryable *contextCapturingQueryable
+	inner     storage.Querier
+}
+
+func (q *contextCapturingQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	q.queryable.capturedContext = ctx
+	return q.inner.LabelValues(ctx, name, matchers...)
+}
+
+func (q *contextCapturingQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	q.queryable.capturedContext = ctx
+	return q.inner.LabelNames(ctx, matchers...)
+}
+
+func (q *contextCapturingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	q.queryable.capturedContext = ctx
+	return q.inner.Select(ctx, sortSeries, hints, matchers...)
+}
+
+func (q *contextCapturingQuerier) Close() error {
+	return q.inner.Close()
+}
