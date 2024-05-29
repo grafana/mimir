@@ -5,6 +5,9 @@
 package otlp
 
 import (
+	// Ensure that prometheusremotewrite sources are vendored for generator script.
+	_ "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
