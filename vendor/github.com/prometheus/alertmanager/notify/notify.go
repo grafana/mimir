@@ -288,13 +288,16 @@ func NewMetrics(r prometheus.Registerer, ff featurecontrol.Flagger) *Metrics {
 		numNotificationSuppressedTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "alertmanager",
 			Name:      "notifications_suppressed_total",
-			Help:      "The total number of notifications suppressed for being outside of active time intervals or within muted time intervals.",
+			Help:      "The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.",
 		}, []string{"reason"}),
 		notificationLatencySeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "alertmanager",
-			Name:      "notification_latency_seconds",
-			Help:      "The latency of notifications in seconds.",
-			Buckets:   []float64{1, 5, 10, 15, 20},
+			Namespace:                       "alertmanager",
+			Name:                            "notification_latency_seconds",
+			Help:                            "The latency of notifications in seconds.",
+			Buckets:                         []float64{1, 5, 10, 15, 20},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}, labels),
 		ff: ff,
 	}
@@ -308,7 +311,7 @@ func NewMetrics(r prometheus.Registerer, ff featurecontrol.Flagger) *Metrics {
 	return m
 }
 
-func (m *Metrics) InitializeFor(receiver map[string][]Integration) {
+func (m *Metrics) InitializeFor(receivers map[string][]Integration) {
 	if m.ff.EnableReceiverNamesInMetrics() {
 
 		// Reset the vectors to take into account receiver names changing after hot reloads.
@@ -318,9 +321,8 @@ func (m *Metrics) InitializeFor(receiver map[string][]Integration) {
 		m.notificationLatencySeconds.Reset()
 		m.numTotalFailedNotifications.Reset()
 
-		for name, integrations := range receiver {
+		for name, integrations := range receivers {
 			for _, integration := range integrations {
-
 				m.numNotifications.WithLabelValues(integration.Name(), name)
 				m.numNotificationRequestsTotal.WithLabelValues(integration.Name(), name)
 				m.numNotificationRequestsFailedTotal.WithLabelValues(integration.Name(), name)
@@ -466,7 +468,7 @@ func (ms MultiStage) Exec(ctx context.Context, l log.Logger, alerts ...*types.Al
 	return ctx, alerts, nil
 }
 
-// FanoutStage executes its stages concurrently
+// FanoutStage executes its stages concurrently.
 type FanoutStage []Stage
 
 // Exec attempts to execute all stages concurrently and discards the results.
@@ -514,10 +516,10 @@ func (n *GossipSettleStage) Exec(ctx context.Context, _ log.Logger, alerts ...*t
 }
 
 const (
-	suppressedReasonSilence            = "silence"
-	suppressedReasonInhibition         = "inhibition"
-	suppressedReasonMuteTimeInterval   = "mute_time_interval"
-	suppressedReasonActiveTimeInterval = "active_time_interval"
+	SuppressedReasonSilence            = "silence"
+	SuppressedReasonInhibition         = "inhibition"
+	SuppressedReasonMuteTimeInterval   = "mute_time_interval"
+	SuppressedReasonActiveTimeInterval = "active_time_interval"
 )
 
 // MuteStage filters alerts through a Muter.
@@ -548,17 +550,17 @@ func (n *MuteStage) Exec(ctx context.Context, logger log.Logger, alerts ...*type
 		// TODO(fabxc): increment muted alerts counter if muted.
 	}
 	if len(muted) > 0 {
-		level.Debug(logger).Log("msg", "Notifications will not be sent for muted alerts", "alerts", fmt.Sprintf("%v", muted))
 
 		var reason string
 		switch n.muter.(type) {
 		case *silence.Silencer:
-			reason = suppressedReasonSilence
+			reason = SuppressedReasonSilence
 		case *inhibit.Inhibitor:
-			reason = suppressedReasonInhibition
+			reason = SuppressedReasonInhibition
 		default:
 		}
 		n.metrics.numNotificationSuppressedTotal.WithLabelValues(reason).Add(float64(len(muted)))
+		level.Debug(logger).Log("msg", "Notifications will not be sent for muted alerts", "alerts", fmt.Sprintf("%v", muted), "reason", reason)
 	}
 
 	return ctx, filtered, nil
@@ -613,7 +615,7 @@ func utcNow() time.Time {
 	return time.Now().UTC()
 }
 
-// Wrap a slice in a struct so we can store a pointer in sync.Pool
+// Wrap a slice in a struct so we can store a pointer in sync.Pool.
 type hashBuffer struct {
 	buf []byte
 }
@@ -834,9 +836,11 @@ func (r RetryStage) exec(ctx context.Context, l log.Logger, alerts ...*types.Ale
 		case <-tick.C:
 			now := time.Now()
 			retry, err := r.integration.Notify(ctx, sent...)
-			dur := time.Since(now)
-			r.metrics.notificationLatencySeconds.WithLabelValues(r.labelValues...).Observe(dur.Seconds())
+
+			duration := time.Since(now)
+			r.metrics.notificationLatencySeconds.WithLabelValues(r.labelValues...).Observe(duration.Seconds())
 			r.metrics.numNotificationRequestsTotal.WithLabelValues(r.labelValues...).Inc()
+
 			if err != nil {
 				r.metrics.numNotificationRequestsFailedTotal.WithLabelValues(r.labelValues...).Inc()
 				if !retry {
@@ -857,7 +861,7 @@ func (r RetryStage) exec(ctx context.Context, l log.Logger, alerts ...*types.Ale
 					lvl = level.Debug(log.With(l, "alerts", fmt.Sprintf("%v", alerts)))
 				}
 
-				lvl.Log("msg", "Notify success", "attempts", i, "duration", dur)
+				lvl.Log("msg", "Notify success", "attempts", i, "duration", duration)
 				return ctx, alerts, nil
 			}
 		case <-ctx.Done():
@@ -953,7 +957,7 @@ func (tms TimeMuteStage) Exec(ctx context.Context, l log.Logger, alerts ...*type
 
 	// If the current time is inside a mute time, all alerts are removed from the pipeline.
 	if muted {
-		tms.metrics.numNotificationSuppressedTotal.WithLabelValues(suppressedReasonMuteTimeInterval).Add(float64(len(alerts)))
+		tms.metrics.numNotificationSuppressedTotal.WithLabelValues(SuppressedReasonMuteTimeInterval).Add(float64(len(alerts)))
 		level.Debug(l).Log("msg", "Notifications not sent, route is within mute time", "alerts", len(alerts))
 		return ctx, nil, nil
 	}
@@ -991,7 +995,7 @@ func (tas TimeActiveStage) Exec(ctx context.Context, l log.Logger, alerts ...*ty
 
 	// If the current time is not inside an active time, all alerts are removed from the pipeline
 	if !muted {
-		tas.metrics.numNotificationSuppressedTotal.WithLabelValues(suppressedReasonActiveTimeInterval).Add(float64(len(alerts)))
+		tas.metrics.numNotificationSuppressedTotal.WithLabelValues(SuppressedReasonActiveTimeInterval).Add(float64(len(alerts)))
 		level.Debug(l).Log("msg", "Notifications not sent, route is not within active time", "alerts", len(alerts))
 		return ctx, nil, nil
 	}
