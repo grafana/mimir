@@ -212,7 +212,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 
 	// Batch samples into separate requests
 	// There is no precise science behind this number currently.
-	// A quick run locally found batching by 100 did not increase the loading time by any noticable amount.
+	// A quick run locally found batching by 100 did not increase the loading time by any noticeable amount.
 	// Additionally memory usage maxed about 4GB for the whole process.
 	batchSize := 100
 	for start := 0; start < NumIntervals; start += batchSize {
