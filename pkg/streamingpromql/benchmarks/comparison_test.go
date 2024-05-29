@@ -180,7 +180,11 @@ func TestBenchmarkSetup(t *testing.T) {
 	require.Equal(t, labels.FromStrings("__name__", "nh_1"), series.Metric)
 	require.Len(t, series.Floats, 0)
 	require.Len(t, series.Histograms, 16)
-	// TODO(jhesketh): Maybe check a histogram is set up as expected
+
+	// Check one histogram point is as expected
+	require.Equal(t, int64(0), series.Histograms[0].T)
+	require.Equal(t, 12.0, series.Histograms[0].H.Count)
+	require.Equal(t, 18.4, series.Histograms[0].H.Sum)
 }
 
 // Why do we do this rather than require.Equal(t, expected, actual)?
