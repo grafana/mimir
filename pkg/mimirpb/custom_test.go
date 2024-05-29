@@ -276,7 +276,7 @@ func TestWriteRequest_SplitByMaxMarshalSize_WriteRequestHasChanged(t *testing.T)
 }
 
 func BenchmarkWriteRequest_SplitByMaxMarshalSize(b *testing.B) {
-	benchmarkWriteRequest_SplitByMaxMarshalSize(b, func(b *testing.B, req *WriteRequest, maxSize int) {
+	benchmarkWriteRequestSplitByMaxMarshalSize(b, func(b *testing.B, req *WriteRequest, maxSize int) {
 		for n := 0; n < b.N; n++ {
 			req.SplitByMaxMarshalSize(maxSize)
 		}
@@ -287,7 +287,7 @@ func BenchmarkWriteRequest_SplitByMaxMarshalSize_WithMarshalling(b *testing.B) {
 	// In this benchmark we simulate a behaviour similar to distributor one, where the WriteRequest is
 	// initially unmarshalled, the sharded (skipped in this test), then split by max size and finally
 	// each partial request is marshalled.
-	benchmarkWriteRequest_SplitByMaxMarshalSize(b, func(b *testing.B, req *WriteRequest, maxSize int) {
+	benchmarkWriteRequestSplitByMaxMarshalSize(b, func(b *testing.B, req *WriteRequest, maxSize int) {
 		marshalledReq, err := req.Marshal()
 		if err != nil {
 			b.Fatal(err)
@@ -315,7 +315,7 @@ func BenchmarkWriteRequest_SplitByMaxMarshalSize_WithMarshalling(b *testing.B) {
 	})
 }
 
-func benchmarkWriteRequest_SplitByMaxMarshalSize(b *testing.B, run func(b *testing.B, req *WriteRequest, maxSize int)) {
+func benchmarkWriteRequestSplitByMaxMarshalSize(b *testing.B, run func(b *testing.B, req *WriteRequest, maxSize int)) {
 	tests := map[string]struct {
 		numSeries           int
 		numLabelsPerSeries  int
