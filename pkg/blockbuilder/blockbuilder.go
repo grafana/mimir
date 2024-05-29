@@ -331,7 +331,7 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 		b.kafkaClient.AllowRebalance()
 	}
 
-	if err := builder.compactAndCloseDBs(ctx); err != nil {
+	if err := builder.compactAndRemoveDBs(ctx); err != nil {
 		return err
 	}
 

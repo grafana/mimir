@@ -29,7 +29,7 @@ type tsdbBuilder struct {
 	rootDir string
 
 	// tenant-to-tsdb
-	tsdbs   map[string]*userTSDB // TODO: Use tsdb.DB instead
+	tsdbs   map[string]*userTSDB
 	tsdbsMu sync.RWMutex
 
 	limits              *validation.Overrides
@@ -50,11 +50,11 @@ func (b *tsdbBuilder) blocksDir(userID string) string {
 	return filepath.Join(b.rootDir, userID)
 }
 
-// see (*Ingester).pushSamplesToAppender
-// did not make it into the block in this round.
+// process puts the samples in the TSDB. Some parts taken from (*Ingester).pushSamplesToAppender.
+// It returns false if at least one sample was skipped to process later, true otherwise. true also includes the cases
+// where the sample was not put in the TSDB because it was discarded or was already processed before.
 // lastEnd: "end" time of the previous block building cycle.
-// end: end time of the block we are looking at right now.
-// Returns true if all the samples were taken to be put in a block, false if at least one sample
+// currEnd: end time of the block we are looking at right now.
 func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, currEnd int64, recordProcessedBefore bool) (_ bool, err error) {
 	userID := string(rec.Key)
 
@@ -68,7 +68,7 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, cur
 	}
 
 	if len(req.Timeseries) == 0 {
-		return false, nil
+		return true, nil
 	}
 
 	db, err := b.getOrCreateTSDB(userID)
@@ -246,7 +246,7 @@ func (b *tsdbBuilder) newTSDB(userID string) (*userTSDB, error) {
 }
 
 // compactBlocks compacts the blocks of all the TSDBs.
-func (b *tsdbBuilder) compactAndCloseDBs(ctx context.Context) error {
+func (b *tsdbBuilder) compactAndRemoveDBs(ctx context.Context) error {
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
 
@@ -263,6 +263,23 @@ func (b *tsdbBuilder) compactAndCloseDBs(ctx context.Context) error {
 			return err
 		}
 
+		delete(b.tsdbs, userID)
+	}
+
+	// Clear the map so that it can be released from the memory. Not setting to nil in case
+	// we want to reuse the tsdbBuilder.
+	b.tsdbs = make(map[string]*userTSDB)
+	return nil
+}
+
+func (b *tsdbBuilder) closeAndRemoveDBs() error {
+	b.tsdbsMu.Lock()
+	defer b.tsdbsMu.Unlock()
+
+	for userID, db := range b.tsdbs {
+		if err := db.Close(); err != nil {
+			return err
+		}
 		delete(b.tsdbs, userID)
 	}
 
@@ -311,6 +328,7 @@ func (u *userTSDB) compactEverything(ctx context.Context) error {
 		rh := tsdb.NewRangeHead(u.Head(), blockMint, blockMaxt)
 		// TODO(codesome): this also truncates the memory here. We can skip it since we will close
 		// this TSDB right after all the compactions. We will save a good chunks of computation this way.
+		// See https://github.com/grafana/mimir-prometheus/pull/638
 		if err := u.db.CompactHead(rh); err != nil {
 			return err
 		}

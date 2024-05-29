@@ -62,8 +62,7 @@ func TestTSDBBuilder(t *testing.T) {
 	// TODO(codesome): try an odd hour as well
 	// TODO(codesome): test histograms
 	lastEnd := 2 * processingRange
-	currStart := lastEnd
-	currEnd := currStart + processingRange
+	currEnd := lastEnd + processingRange
 
 	// Add a sample for all the cases and check for correctness.
 	var expSamples []mimirpb.Sample
@@ -86,7 +85,7 @@ func TestTSDBBuilder(t *testing.T) {
 	addSample(builder, lastEnd+200, lastEnd, currEnd, false, true)
 	expSamples = append(expSamples, mimirpb.Sample{TimestampMs: lastEnd + 200, Value: float64(lastEnd + 200)})
 	// c. This sample should be processed in the future.
-	addSample(builder, currEnd+2, lastEnd, currEnd, true, false)
+	addSample(builder, currEnd+2, lastEnd, currEnd, false, false)
 
 	// 3. Out of order sample in a new record.
 	// a. In the current range but out of order w.r.t. the previous sample.
@@ -135,7 +134,7 @@ func TestTSDBBuilder(t *testing.T) {
 
 	dbDir := builder.blocksDir(userID)
 	// This should create the appropriate blocks and close the DB.
-	err = builder.compactAndCloseDBs(context.Background())
+	err = builder.compactAndRemoveDBs(context.Background())
 	require.NoError(t, err)
 	require.Nil(t, builder.getTSDB(userID))
 
@@ -152,13 +151,53 @@ func TestTSDBBuilder(t *testing.T) {
 	require.Equal(t, lastEnd-blockRange, blocks[0].MinTime())
 	require.Equal(t, lastEnd, blocks[0].MaxTime())
 	// One in-order and one out-of-order block for the current range.
-	require.Equal(t, currStart, blocks[1].MinTime())
-	require.Equal(t, currStart+blockRange, blocks[1].MaxTime())
-	require.Equal(t, currStart, blocks[2].MinTime())
-	require.Equal(t, currStart+blockRange, blocks[2].MaxTime())
+	require.Equal(t, lastEnd, blocks[1].MinTime())
+	require.Equal(t, lastEnd+blockRange, blocks[1].MaxTime())
+	require.Equal(t, lastEnd, blocks[2].MinTime())
+	require.Equal(t, lastEnd+blockRange, blocks[2].MaxTime())
 	// Check correctness of samples in the blocks.
 	queryDB(newDB)
 	require.NoError(t, newDB.Close())
+}
+
+// It is important that processing empty request is a success, as in says all samples were processed,
+// so that checkpointing can be done correctly.
+func TestProcessingEmptyRequest(t *testing.T) {
+	userID := "1"
+	lastEnd := 2 * time.Hour.Milliseconds()
+	currEnd := lastEnd + time.Hour.Milliseconds()
+
+	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	require.NoError(t, err)
+	builder := newTSDBBuilder(log.NewNopLogger(), t.TempDir(), overrides, mimir_tsdb.BlocksStorageConfig{})
+
+	// Has a timeseries with no samples.
+	var rec kgo.Record
+	rec.Key = []byte(userID)
+	req := mimirpb.WriteRequest{}
+	req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels:  []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+			Samples: []mimirpb.Sample{},
+		},
+	})
+	data, err := req.Marshal()
+	require.NoError(t, err)
+	rec.Value = data
+	allProcessed, err := builder.process(context.Background(), &rec, lastEnd, currEnd, false)
+	require.NoError(t, err)
+	require.True(t, allProcessed)
+
+	// Has no timeseries.
+	req.Timeseries = req.Timeseries[:0]
+	data, err = req.Marshal()
+	require.NoError(t, err)
+	rec.Value = data
+	allProcessed, err = builder.process(context.Background(), &rec, lastEnd, currEnd, false)
+	require.NoError(t, err)
+	require.True(t, allProcessed)
+
+	require.NoError(t, builder.closeAndRemoveDBs())
 }
 
 func defaultLimitsTestConfig() validation.Limits {
