@@ -76,7 +76,6 @@ func (m *WriteRequest) TimeseriesSize() int {
 //
 // The returned partial WriteRequests are NOT a deep copy of the input one; they contain references to slices
 // and data from the original WriteRequest.
-// TODO benchmark
 func (m *WriteRequest) SplitByMaxMarshalSize(maxSize int) []*WriteRequest {
 	reqSize := m.Size()
 	if reqSize <= maxSize {
