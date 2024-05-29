@@ -232,3 +232,175 @@ func toVarint(val uint64) []byte {
 	n := binary.PutUvarint(buf[:], val)
 	return buf[:n]
 }
+
+func BenchmarkWriteRequest_SplitByMaxMarshalSize(b *testing.B) {
+	tests := map[string]struct {
+		numSeries           int
+		numLabelsPerSeries  int
+		numSamplesPerSeries int
+		numMetadata         int
+	}{
+		"write request with few series, few labels each, and no metadata": {
+			numSeries:           50,
+			numLabelsPerSeries:  10,
+			numSamplesPerSeries: 1,
+			numMetadata:         0,
+		},
+		"write request with few series, many labels each, and no metadata": {
+			numSeries:           50,
+			numLabelsPerSeries:  100,
+			numSamplesPerSeries: 1,
+			numMetadata:         0,
+		},
+		"write request with many series, few labels each, and no metadata": {
+			numSeries:           1000,
+			numLabelsPerSeries:  10,
+			numSamplesPerSeries: 1,
+			numMetadata:         0,
+		},
+		"write request with many series, many labels each, and no metadata": {
+			numSeries:           1000,
+			numLabelsPerSeries:  100,
+			numSamplesPerSeries: 1,
+			numMetadata:         0,
+		},
+		"write request with few metadata, and no series": {
+			numSeries:           0,
+			numLabelsPerSeries:  0,
+			numSamplesPerSeries: 0,
+			numMetadata:         50,
+		},
+		"write request with many metadata, and no series": {
+			numSeries:           0,
+			numLabelsPerSeries:  0,
+			numSamplesPerSeries: 0,
+			numMetadata:         1000,
+		},
+		"write request with both series and metadata": {
+			numSeries:           500,
+			numLabelsPerSeries:  25,
+			numSamplesPerSeries: 1,
+			numMetadata:         500,
+		},
+	}
+
+	for testName, testData := range tests {
+		b.Run(testName, func(b *testing.B) {
+			req := generateWriteRequest(testData.numSeries, testData.numLabelsPerSeries, testData.numSamplesPerSeries, testData.numMetadata)
+			reqSize := req.Size()
+
+			// Test with different split size.
+			splitScenarios := map[string]struct {
+				maxSize              int
+				expectedApproxSplits int
+			}{
+				"no splitting": {
+					maxSize:              reqSize * 2,
+					expectedApproxSplits: 1,
+				},
+				"split in few requests": {
+					maxSize:              int(float64(reqSize) * 0.8),
+					expectedApproxSplits: 2,
+				},
+				"split in many requests": {
+					maxSize:              int(float64(reqSize) * 0.11),
+					expectedApproxSplits: 10,
+				},
+			}
+
+			for splitName, splitScenario := range splitScenarios {
+				b.Run(splitName, func(b *testing.B) {
+					// The actual number of splits may be slightly different then the expected, due to implementation
+					// details (e.g. if a request both contain series and metadata, they're never mixed in the same split request).
+					minExpectedSplits := splitScenario.expectedApproxSplits - 1
+					maxExpectedSplits := splitScenario.expectedApproxSplits + 1
+					if splitScenario.expectedApproxSplits == 0 {
+						minExpectedSplits = 0
+						maxExpectedSplits = 0
+					}
+
+					for n := 0; n < b.N; n++ {
+						// Marshal the request each time. This is also offer a fair comparison with an alternative
+						// implementation (we're considering) which does the splitting before marshalling.
+						marshalled, err := req.Marshal()
+						if err != nil {
+							b.Fatal(err)
+						}
+
+						actualSplits, err := SplitWriteRequestRequest(marshalled, splitScenario.maxSize)
+						if err != nil {
+							b.Fatal(err)
+						}
+
+						// Ensure the number of splits match the expected ones.
+						if numActualSplits := len(actualSplits); (numActualSplits < minExpectedSplits) || (numActualSplits > maxExpectedSplits) {
+							b.Fatalf("expected between %d and %d splits but got %d", minExpectedSplits, maxExpectedSplits, numActualSplits)
+						}
+
+						for _, data := range actualSplits {
+							if len(data) >= splitScenario.maxSize {
+								b.Fatalf("the marshalled split request (%d bytes) is larger than max size (%d bytes)", len(data), splitScenario.maxSize)
+							}
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata int) *WriteRequest {
+	builder := labels.NewScratchBuilder(numLabelsPerSeries)
+
+	// Generate timeseries.
+	timeseries := make([]PreallocTimeseries, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		curr := PreallocTimeseries{TimeSeries: &TimeSeries{}}
+
+		// Generate series labels.
+		builder.Reset()
+		builder.Add(labels.MetricName, fmt.Sprintf("series_%d", i))
+		for l := 1; l < numLabelsPerSeries; l++ {
+			builder.Add(fmt.Sprintf("label_%d", l), fmt.Sprintf("this-is-the-value-of-label-%d", l))
+		}
+		curr.Labels = FromLabelsToLabelAdapters(builder.Labels())
+
+		// Generate samples.
+		curr.Samples = make([]Sample, 0, numSamplesPerSeries)
+		for s := 0; s < numSamplesPerSeries; s++ {
+			curr.Samples = append(curr.Samples, Sample{
+				TimestampMs: int64(s),
+				Value:       float64(s),
+			})
+		}
+
+		// Add an exemplar.
+		builder.Reset()
+		builder.Add("trace_id", fmt.Sprintf("the-trace-id-for-%d", i))
+		curr.Exemplars = []Exemplar{{
+			Labels:      FromLabelsToLabelAdapters(builder.Labels()),
+			TimestampMs: int64(i),
+			Value:       float64(i),
+		}}
+
+		timeseries = append(timeseries, curr)
+	}
+
+	// Generate metadata.
+	metadata := make([]*MetricMetadata, 0, numMetadata)
+	for i := 0; i < numMetadata; i++ {
+		metadata = append(metadata, &MetricMetadata{
+			Type:             COUNTER,
+			MetricFamilyName: fmt.Sprintf("series_%d", i),
+			Help:             fmt.Sprintf("this is the help description for series %d", i),
+			Unit:             "seconds",
+		})
+	}
+
+	return &WriteRequest{
+		Source:                  RULE,
+		SkipLabelNameValidation: true,
+		Timeseries:              timeseries,
+		Metadata:                metadata,
+	}
+}
