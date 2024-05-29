@@ -2,6 +2,7 @@ package blockbuilder
 
 import (
 	"context"
+	"github.com/prometheus/prometheus/tsdb"
 	"math"
 	"sort"
 	"testing"
@@ -56,13 +57,13 @@ func TestTSDBBuilder(t *testing.T) {
 
 	builder := newTSDBBuilder(log.NewNopLogger(), t.TempDir(), overrides, mimir_tsdb.BlocksStorageConfig{})
 
-	blockRange := time.Hour.Milliseconds()
+	processingRange := time.Hour.Milliseconds()
 
 	// TODO(codesome): try an odd hour as well
 	// TODO(codesome): test histograms
-	lastEnd := 2 * blockRange
+	lastEnd := 2 * processingRange
 	currStart := lastEnd
-	currEnd := currStart + blockRange
+	currEnd := currStart + processingRange
 
 	// Add a sample for all the cases and check for correctness.
 	var expSamples []mimirpb.Sample
@@ -100,35 +101,64 @@ func TestTSDBBuilder(t *testing.T) {
 	db, err := builder.getOrCreateTSDB(userID)
 	require.NoError(t, err)
 
-	querier, err := db.db.Querier(math.MinInt64, math.MaxInt64)
-	require.NoError(t, err)
-	ss := querier.Select(
-		context.Background(), true, nil,
-		labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
-	)
+	queryDB := func(db *tsdb.DB) {
+		querier, err := db.Querier(math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		ss := querier.Select(
+			context.Background(), true, nil,
+			labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
+		)
 
-	require.True(t, ss.Next())
-	series := ss.At()
-	require.False(t, ss.Next())
+		require.True(t, ss.Next())
+		series := ss.At()
+		require.False(t, ss.Next())
 
-	require.Equal(t, labels.FromStrings("foo", "bar"), series.Labels())
-	it := series.Iterator(nil)
-	var actSamples []mimirpb.Sample
-	for it.Next() == chunkenc.ValFloat {
-		ts, val := it.At()
-		actSamples = append(actSamples, mimirpb.Sample{TimestampMs: ts, Value: val})
+		require.Equal(t, labels.FromStrings("foo", "bar"), series.Labels())
+		it := series.Iterator(nil)
+		var actSamples []mimirpb.Sample
+		for it.Next() == chunkenc.ValFloat {
+			ts, val := it.At()
+			actSamples = append(actSamples, mimirpb.Sample{TimestampMs: ts, Value: val})
+		}
+		require.NoError(t, it.Err())
+		require.NoError(t, ss.Err())
+		require.NoError(t, querier.Close())
+
+		sort.Slice(expSamples, func(i, j int) bool {
+			return expSamples[i].TimestampMs < expSamples[j].TimestampMs
+		})
+		require.Equal(t, expSamples, actSamples)
 	}
-	require.NoError(t, it.Err())
 
-	sort.Slice(expSamples, func(i, j int) bool {
-		return expSamples[i].TimestampMs < expSamples[j].TimestampMs
-	})
-	require.Equal(t, expSamples, actSamples)
-	//dbDir := builder.blocksDir(userID)
-	//
-	//err = builder.compactAndCloseDBs(ctx)
-	//require.NoError(t, err)
+	// Check the samples in the DB.
+	queryDB(db.db)
 
+	dbDir := builder.blocksDir(userID)
+	// This should create the appropriate blocks and close the DB.
+	err = builder.compactAndCloseDBs(context.Background())
+	require.NoError(t, err)
+	require.Nil(t, builder.getTSDB(userID))
+
+	newDB, err := tsdb.Open(dbDir, log.NewNopLogger(), nil, nil, nil)
+	require.NoError(t, err)
+
+	// One for the in-order current range. Two for the out-of-order blocks: ont for current range
+	// and one for the previous range.
+	blocks := newDB.Blocks()
+	require.Len(t, blocks, 3)
+
+	blockRange := 2 * time.Hour.Milliseconds()
+	// out of order block for the previous range.
+	require.Equal(t, lastEnd-blockRange, blocks[0].MinTime())
+	require.Equal(t, lastEnd, blocks[0].MaxTime())
+	// One in-order and one out-of-order block for the current range.
+	require.Equal(t, currStart, blocks[1].MinTime())
+	require.Equal(t, currStart+blockRange, blocks[1].MaxTime())
+	require.Equal(t, currStart, blocks[2].MinTime())
+	require.Equal(t, currStart+blockRange, blocks[2].MaxTime())
+	// Check correctness of samples in the blocks.
+	queryDB(newDB)
+	require.NoError(t, newDB.Close())
 }
 
 func defaultLimitsTestConfig() validation.Limits {

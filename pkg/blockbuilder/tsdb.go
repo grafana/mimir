@@ -174,11 +174,14 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, cur
 	return allSamplesProcessed, app.Commit()
 }
 
-func (b *tsdbBuilder) getOrCreateTSDB(userID string) (*userTSDB, error) {
+func (b *tsdbBuilder) getTSDB(userID string) *userTSDB {
 	b.tsdbsMu.RLock()
-	db, _ := b.tsdbs[userID]
-	b.tsdbsMu.RUnlock()
+	defer b.tsdbsMu.RUnlock()
+	return b.tsdbs[userID]
+}
 
+func (b *tsdbBuilder) getOrCreateTSDB(userID string) (*userTSDB, error) {
+	db := b.getTSDB(userID)
 	if db != nil {
 		return db, nil
 	}
@@ -302,7 +305,7 @@ func (u *userTSDB) compactEverything(ctx context.Context) error {
 
 	// Compact the in-order data.
 	mint, maxt := u.Head().MinTime(), u.Head().MaxTime()
-	mint = blockRange * mint / blockRange
+	mint = (mint / blockRange) * blockRange
 	for blockMint := mint; blockMint <= maxt; blockMint += blockRange {
 		blockMaxt := blockMint + blockRange - 1
 		rh := tsdb.NewRangeHead(u.Head(), blockMint, blockMaxt)
