@@ -130,23 +130,10 @@ local filename = 'mimir-reads.json';
         )
       )
     )
-    .addRow(
-      $.row('Query-frontend')
-      .addPanel(
-        $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel($.queries.query_frontend.readRequestsPerSecond)
-      )
-      .addPanel(
-        $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.query_frontend), $.queries.read_http_routes_regex], ''
-        )
-      )
-    )
+    .addRows($.getCommonReadsDashboardsRows(
+      queryFrontendJobName=$._config.job_names.query_frontend,
+      queryRoutesRegex=$.queries.read_http_routes_regex,
+    ))
     .addRow(
       local description = |||
         <p>

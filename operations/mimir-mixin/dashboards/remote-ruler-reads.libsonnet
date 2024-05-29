@@ -53,23 +53,12 @@ local filename = 'mimir-remote-ruler-reads.json';
         ),
       )
     )
-    .addRow(
-      $.row('Ruler-query-frontend')
-      .addPanel(
-        $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.ruler_query_frontend), rulerRoutesRegex])
-      )
-      .addPanel(
-        $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ruler_query_frontend) + [utils.selector.re('route', rulerRoutesRegex)])
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler_query_frontend), rulerRoutesRegex], ''
-        )
-      )
-    )
+    .addRows($.getCommonReadsDashboardsRows(
+      queryFrontendJobName=$._config.job_names.ruler_query_frontend,
+      queryRoutesRegex=rulerRoutesRegex,
+
+      rowTitlePrefix='Ruler-',
+    ))
     .addRow(
       local description = |||
         <p>
