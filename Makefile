@@ -231,6 +231,9 @@ images: ## Print all image names.
 PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 
+# Generating OTLP translation code is automated.
+OTLP_GOS := $(shell find ./pkg/distributor/otlp/ -type f -name '*_generated.go' -print)
+
 # Building binaries is now automated. The convention is to build a binary
 # for every directory with main.go in it.
 MAIN_GO := $(shell find . $(DONT_FIND) -type f -name 'main.go' -print)
@@ -774,8 +777,8 @@ docs: doc
 
 .PHONY: generate-otlp
 generate-otlp:
-	cd pkg/distributor/otlp && go generate
+	cd pkg/distributor/otlp && rm *_generated.go && go generate
 
 .PHONY: check-generated-otlp-code
-check-generated-otlp-code:
-	cd pkg/distributor/otlp && go run ./cmd/generate --check
+check-generated-otlp-code: generate-otlp
+	@./tools/find-diff-or-untracked.sh $(OTLP_GOS) || (echo "Please rebuild OTLP code by running 'generate-otlp'" && false)
