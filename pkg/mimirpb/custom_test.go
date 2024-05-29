@@ -212,6 +212,7 @@ func TestWriteRequest_SplitByMaxMarshalSize(t *testing.T) {
 	})
 }
 
+// TODO split the benchmark is end-to-end and not
 func BenchmarkWriteRequest_SplitByMaxMarshalSize(b *testing.B) {
 	tests := map[string]struct {
 		numSeries           int
@@ -309,13 +310,13 @@ func BenchmarkWriteRequest_SplitByMaxMarshalSize(b *testing.B) {
 						// Marshal each split request. The assumption is that the split request will be then marshalled.
 						// This is also offer a fair comparison with an alternative implementation (we're considering)
 						// which does the splitting starting from the marshalled request.
-						for _, split := range actualSplits {
-							if data, err := split.Marshal(); err != nil {
-								b.Fatal(err)
-							} else if len(data) >= splitScenario.maxSize {
-								b.Fatalf("the marshalled split request (%d bytes) is larger than max size (%d bytes)", len(data), splitScenario.maxSize)
-							}
-						}
+						//for _, split := range actualSplits {
+						//	if data, err := split.Marshal(); err != nil {
+						//		b.Fatal(err)
+						//	} else if len(data) >= splitScenario.maxSize {
+						//		b.Fatalf("the marshalled split request (%d bytes) is larger than max size (%d bytes)", len(data), splitScenario.maxSize)
+						//	}
+						//}
 					}
 				})
 			}

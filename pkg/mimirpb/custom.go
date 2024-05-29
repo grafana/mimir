@@ -49,7 +49,32 @@ func (m *WriteRequest) IsEmpty() bool {
 	return len(m.Timeseries) == 0 && len(m.Metadata) == 0
 }
 
+// TODO unit test comparing with the actual Size() implementation removing Metadata
+func (m *WriteRequest) MetadataSize() int {
+	var l, n int
+
+	for _, e := range m.Metadata {
+		l = e.Size()
+		n += 1 + l + sovMimir(uint64(l))
+	}
+
+	return n
+}
+
+// TODO unit test comparing with the actual Size() implementation removing Timeseries
+func (m *WriteRequest) TimeseriesSize() int {
+	var l, n int
+
+	for _, e := range m.Timeseries {
+		l = e.Size()
+		n += 1 + l + sovMimir(uint64(l))
+	}
+
+	return n
+}
+
 // SizeWithoutMetadata is like Size() but subtracts the marshalled Metadata size.
+// TODO remove
 func (m *WriteRequest) SizeWithoutMetadata() int {
 	if len(m.Metadata) == 0 {
 		return m.Size()
@@ -64,6 +89,7 @@ func (m *WriteRequest) SizeWithoutMetadata() int {
 }
 
 // SizeWithoutTimeseries is like Size() but subtracts the marshalled Timeseries size.
+// TODO remove
 func (m *WriteRequest) SizeWithoutTimeseries() int {
 	if len(m.Timeseries) == 0 {
 		return m.Size()
@@ -90,12 +116,13 @@ func (m *WriteRequest) SizeWithoutTimeseries() int {
 // TODO unit test: consider adding a fuzzy test to stress this logic
 // TODO could be simplified using WriteRequest.ForIndexes() ?
 func (m *WriteRequest) SplitByMaxMarshalSize(maxSize int) []*WriteRequest {
-	if m.Size() <= maxSize {
+	reqSize := m.Size()
+	if reqSize <= maxSize {
 		return []*WriteRequest{m}
 	}
 
-	partialReqsWithTimeseries := m.splitTimeseriesByMaxMarshalSize(maxSize)
-	partialReqsWithMetadata := m.splitMetadataByMaxMarshalSize(maxSize)
+	partialReqsWithTimeseries := splitTimeseriesByMaxMarshalSize(m, reqSize, maxSize)
+	partialReqsWithMetadata := splitMetadataByMaxMarshalSize(m, reqSize, maxSize)
 
 	// Most of the times a write request only have either Timeseries or Metadata.
 	if len(partialReqsWithMetadata) == 0 {
@@ -112,7 +139,8 @@ func (m *WriteRequest) SplitByMaxMarshalSize(maxSize int) []*WriteRequest {
 	return merged
 }
 
-func (m *WriteRequest) splitTimeseriesByMaxMarshalSize(maxSize int) []*WriteRequest {
+// TODO rename "m"
+func splitTimeseriesByMaxMarshalSize(m *WriteRequest, reqSize, maxSize int) []*WriteRequest {
 	if len(m.Timeseries) == 0 {
 		return nil
 	}
@@ -129,7 +157,7 @@ func (m *WriteRequest) splitTimeseriesByMaxMarshalSize(maxSize int) []*WriteRequ
 
 	// The partial requests returned by this function will not contain any Metadata,
 	// so we first compute the request size without it.
-	reqSizeWithoutMetadata := m.SizeWithoutMetadata()
+	reqSizeWithoutMetadata := reqSize - m.MetadataSize()
 	if reqSizeWithoutMetadata <= maxSize {
 		partialReq, _ := newPartialReq(0)
 		partialReq.Timeseries = m.Timeseries
@@ -140,34 +168,46 @@ func (m *WriteRequest) splitTimeseriesByMaxMarshalSize(maxSize int) []*WriteRequ
 	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up).
 	estimatedPartialReqs := (reqSizeWithoutMetadata / maxSize) + 2
 	estimatedTimeseriesPerPartialReq := (len(m.Timeseries) / estimatedPartialReqs) + 2
-
-	partialReq, partialReqSize := newPartialReq(estimatedTimeseriesPerPartialReq)
 	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
 
 	// Split timeseries into partial write requests.
-	for _, series := range m.Timeseries {
-		seriesSize := series.Size()
+	nextReq, nextReqEstimatedSize := newPartialReq(estimatedTimeseriesPerPartialReq)
+	nextReqTimeseriesStart := 0
+	nextReqTimeseriesLength := 0
 
-		// If the partial request is empty we add the series anyway, in order to avoid an infinite loop
+	for i := 0; i < len(m.Timeseries); i++ {
+		seriesSize := m.Timeseries[i].Size()
+
+		// Check if the next partial request is full (or close to be full), and so it's time to finalize it and create a new one.
+		// If the next partial request doesn't have any timeseries yet, we add the series anyway, in order to avoid an infinite loop
 		// if a single timeseries is bigger than the limit.
-		if partialReqSize+seriesSize > maxSize && !partialReq.IsEmpty() {
-			// The current partial request is full (or close to be full), so we create a new one.
-			partialReqs = append(partialReqs, partialReq)
-			partialReq, partialReqSize = newPartialReq(estimatedTimeseriesPerPartialReq)
+		if nextReqEstimatedSize+seriesSize > maxSize && nextReqTimeseriesLength > 0 {
+			// Finalize the next partial request.
+			nextReq.Timeseries = m.Timeseries[nextReqTimeseriesStart : nextReqTimeseriesStart+nextReqTimeseriesLength]
+			partialReqs = append(partialReqs, nextReq)
+
+			// Initialize a new partial request.
+			nextReq, nextReqEstimatedSize = newPartialReq(estimatedTimeseriesPerPartialReq)
+			nextReqTimeseriesStart = i
+			nextReqTimeseriesLength = 0
 		}
 
-		partialReq.Timeseries = append(partialReq.Timeseries, series)
-		partialReqSize += seriesSize + estimatedMarshalledSliceEntryOverhead
+		// Add the current series to next partial request.
+		nextReqEstimatedSize += seriesSize + estimatedMarshalledSliceEntryOverhead
+		nextReqTimeseriesLength++
 	}
 
-	if !partialReq.IsEmpty() {
-		partialReqs = append(partialReqs, partialReq)
+	if nextReqTimeseriesLength > 0 {
+		// Finalize the last partial request.
+		nextReq.Timeseries = m.Timeseries[nextReqTimeseriesStart : nextReqTimeseriesStart+nextReqTimeseriesLength]
+		partialReqs = append(partialReqs, nextReq)
 	}
 
 	return partialReqs
 }
 
-func (m *WriteRequest) splitMetadataByMaxMarshalSize(maxSize int) []*WriteRequest {
+// TODO rename "m"
+func splitMetadataByMaxMarshalSize(m *WriteRequest, reqSize, maxSize int) []*WriteRequest {
 	if len(m.Metadata) == 0 {
 		return nil
 	}
@@ -183,7 +223,7 @@ func (m *WriteRequest) splitMetadataByMaxMarshalSize(maxSize int) []*WriteReques
 
 	// The partial requests returned by this function will not contain any Timeseries,
 	// so we first compute the request size without it.
-	reqSizeWithoutTimeseries := m.SizeWithoutTimeseries()
+	reqSizeWithoutTimeseries := reqSize - m.TimeseriesSize()
 	if reqSizeWithoutTimeseries <= maxSize {
 		partialReq, _ := newPartialReq(0)
 		partialReq.Metadata = m.Metadata
@@ -194,28 +234,39 @@ func (m *WriteRequest) splitMetadataByMaxMarshalSize(maxSize int) []*WriteReques
 	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up).
 	estimatedPartialReqs := (reqSizeWithoutTimeseries / maxSize) + 2
 	estimatedMetadataPerPartialReq := (len(m.Metadata) / estimatedPartialReqs) + 2
-
-	partialReq, partialReqSize := newPartialReq(estimatedMetadataPerPartialReq)
 	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
 
 	// Split metadata into partial write requests.
-	for _, metadata := range m.Metadata {
-		metadataSize := metadata.Size()
+	nextReq, nextReqEstimatedSize := newPartialReq(estimatedMetadataPerPartialReq)
+	nextReqMetadataStart := 0
+	nextReqMetadataLength := 0
 
-		// If the partial request is empty we add the metadata anyway, in order to avoid an infinite loop
+	for i := 0; i < len(m.Metadata); i++ {
+		metadataSize := m.Metadata[i].Size()
+
+		// Check if the next partial request is full (or close to be full), and so it's time to finalize it and create a new one.
+		// If the next partial request doesn't have any metadata yet, we add the metadata anyway, in order to avoid an infinite loop
 		// if a single metadata is bigger than the limit.
-		if partialReqSize+metadataSize > maxSize && !partialReq.IsEmpty() {
-			// The current partial request is full (or close to be full), so we create a new one.
-			partialReqs = append(partialReqs, partialReq)
-			partialReq, partialReqSize = newPartialReq(estimatedMetadataPerPartialReq)
+		if nextReqEstimatedSize+metadataSize > maxSize && nextReqMetadataLength > 0 {
+			// Finalize the next partial request.
+			nextReq.Metadata = m.Metadata[nextReqMetadataStart : nextReqMetadataStart+nextReqMetadataLength]
+			partialReqs = append(partialReqs, nextReq)
+
+			// Initialize a new partial request.
+			nextReq, nextReqEstimatedSize = newPartialReq(estimatedMetadataPerPartialReq)
+			nextReqMetadataStart = i
+			nextReqMetadataLength = 0
 		}
 
-		partialReq.Metadata = append(partialReq.Metadata, metadata)
-		partialReqSize += metadataSize + estimatedMarshalledSliceEntryOverhead
+		// Add the current metadata to next partial request.
+		nextReqEstimatedSize += metadataSize + estimatedMarshalledSliceEntryOverhead
+		nextReqMetadataLength++
 	}
 
-	if !partialReq.IsEmpty() {
-		partialReqs = append(partialReqs, partialReq)
+	if nextReqMetadataLength > 0 {
+		// Finalize the last partial request.
+		nextReq.Metadata = m.Metadata[nextReqMetadataStart : nextReqMetadataStart+nextReqMetadataLength]
+		partialReqs = append(partialReqs, nextReq)
 	}
 
 	return partialReqs
