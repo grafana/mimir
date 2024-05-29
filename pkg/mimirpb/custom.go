@@ -74,10 +74,9 @@ func (m *WriteRequest) TimeseriesSize() int {
 // For this reason, this function is a best-effort: if a single Timeseries or Metadata marshalled size is bigger
 // than maxSize, then the returned partial WriteRequest marshalled size will be bigger than maxSize too.
 //
-// The returned partial WriteRequests are NOT a deep copy of the input one; they may contain references to slices
+// The returned partial WriteRequests are NOT a deep copy of the input one; they contain references to slices
 // and data from the original WriteRequest.
 // TODO benchmark
-// TODO unit test: consider adding a fuzzy test to stress this logic
 func (m *WriteRequest) SplitByMaxMarshalSize(maxSize int) []*WriteRequest {
 	reqSize := m.Size()
 	if reqSize <= maxSize {

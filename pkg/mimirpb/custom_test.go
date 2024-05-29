@@ -7,7 +7,9 @@ package mimirpb
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -213,6 +215,44 @@ func TestWriteRequest_SplitByMaxMarshalSize(t *testing.T) {
 			assert.Greater(t, partial.Size(), limit)
 		}
 	})
+}
+
+func TestWriteRequest_SplitByMaxMarshalSize_Fuzzy(t *testing.T) {
+	const numRuns = 1000
+
+	// Randomise the seed but log it in case we need to reproduce the test on failure.
+	seed := time.Now().UnixNano()
+	rnd := rand.New(rand.NewSource(seed))
+	t.Log("random generator seed:", seed)
+
+	for r := 0; r < numRuns; r++ {
+		var (
+			// Gradually increasing request series in each run, up to a limit.
+			numSeries           = rnd.Intn(min(r+1, 100)) + 1
+			numLabelsPerSeries  = rnd.Intn(min(r+1, 100)) + 1
+			numSamplesPerSeries = rnd.Intn(min(r+1, 100)) + 1
+			numMetadata         = rnd.Intn(min(r+1, 100)) + 1
+		)
+
+		req := generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, numMetadata)
+		maxSize := req.Size() / (1 + rnd.Intn(10))
+		partials := req.SplitByMaxMarshalSize(maxSize)
+
+		// Ensure the merge of all partial requests is equal to the original one.
+		merged := &WriteRequest{
+			Timeseries:              []PreallocTimeseries{},
+			Source:                  partials[0].Source,
+			Metadata:                []*MetricMetadata{},
+			SkipLabelNameValidation: partials[0].SkipLabelNameValidation,
+		}
+
+		for _, partial := range partials {
+			merged.Timeseries = append(merged.Timeseries, partial.Timeseries...)
+			merged.Metadata = append(merged.Metadata, partial.Metadata...)
+		}
+
+		assert.Equal(t, req, merged)
+	}
 }
 
 // TODO add a test which fails if WriteRequest fields change
