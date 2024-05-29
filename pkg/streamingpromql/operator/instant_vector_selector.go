@@ -34,13 +34,13 @@ func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]SeriesMet
 	return v.Selector.SeriesMetadata(ctx)
 }
 
-func (v *InstantVectorSelector) NextSeries(_ context.Context) (InstantVectorSeriesData, error) {
+func (v *InstantVectorSelector) NextSeries(ctx context.Context) (InstantVectorSeriesData, error) {
 	if v.memoizedIterator == nil {
 		v.memoizedIterator = storage.NewMemoizedEmptyIterator(v.Selector.LookbackDelta.Milliseconds())
 	}
 
 	var err error
-	v.chunkIterator, err = v.Selector.Next(v.chunkIterator)
+	v.chunkIterator, err = v.Selector.Next(ctx, v.chunkIterator)
 	if err != nil {
 		return InstantVectorSeriesData{}, err
 	}

@@ -43,9 +43,9 @@ func (m *RangeVectorSelector) Range() time.Duration {
 	return m.Selector.Range
 }
 
-func (m *RangeVectorSelector) NextSeries(_ context.Context) error {
+func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	var err error
-	m.chunkIterator, err = m.Selector.Next(m.chunkIterator)
+	m.chunkIterator, err = m.Selector.Next(ctx, m.chunkIterator)
 	if err != nil {
 		return err
 	}
