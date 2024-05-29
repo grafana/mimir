@@ -241,7 +241,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         sum by (%(groupByCluster)s, %(groupByLabels)s) (%(perIngesterQuery)s)
         / on (%(groupByCluster)s) group_left()
         max by (%(groupByCluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-        or on (%(groupByCluster)s)
+        or
         # Ingest storage
         sum by (%(groupByCluster)s, %(groupByLabels)s) (
           max by (ingester_id, %(groupByCluster)s, %(groupByLabels)s) (
