@@ -7,7 +7,6 @@ package operator
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -48,13 +47,11 @@ func (v *InstantVectorSelector) NextSeries(_ context.Context) (InstantVectorSeri
 
 	v.memoizedIterator.Reset(v.chunkIterator)
 
-	data := InstantVectorSeriesData{
-		Floats: GetFPointSlice(v.numSteps), // TODO: only allocate this if we have any floats (once we support native histograms)
-	}
+	data := InstantVectorSeriesData{}
 
 	for stepT := v.Selector.Start; stepT <= v.Selector.End; stepT += v.Selector.Interval {
 		var t int64
-		var val float64
+		var f float64
 		var h *histogram.FloatHistogram
 
 		ts := stepT
@@ -70,26 +67,42 @@ func (v *InstantVectorSelector) NextSeries(_ context.Context) (InstantVectorSeri
 				return InstantVectorSeriesData{}, v.memoizedIterator.Err()
 			}
 		case chunkenc.ValFloat:
-			t, val = v.memoizedIterator.At()
+			t, f = v.memoizedIterator.At()
+		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			t, h = v.memoizedIterator.AtFloatHistogram()
 		default:
 			return InstantVectorSeriesData{}, fmt.Errorf("streaming PromQL engine: unknown value type %s", valueType.String())
 		}
 
 		if valueType == chunkenc.ValNone || t > ts {
 			var ok bool
-			t, val, h, ok = v.memoizedIterator.PeekPrev()
-			if h != nil {
-				return InstantVectorSeriesData{}, errors.New("streaming PromQL engine doesn't support histograms yet")
-			}
+			t, f, h, ok = v.memoizedIterator.PeekPrev()
 			if !ok || t < ts-v.Selector.LookbackDelta.Milliseconds() {
 				continue
 			}
 		}
-		if value.IsStaleNaN(val) || (h != nil && value.IsStaleNaN(h.Sum)) {
+		if value.IsStaleNaN(f) || (h != nil && value.IsStaleNaN(h.Sum)) {
 			continue
 		}
 
-		data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: val})
+		// if (f, h) have been set by PeekPrev, we do not know if f is 0 because that's the actual value, or because
+		// the previous value had a histogram.
+		// PeekPrev will set the histogram to nil, or the value to 0 if the other type exists.
+		// So check if histograms is nil first. If we don't have a histogram, then we should have a value and vice-versa.
+		if h != nil {
+			if len(data.Histograms) == 0 {
+				// Only create the slice once we know the series is a histogram or not.
+				// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
+				data.Histograms = GetHPointSlice(v.numSteps)
+			}
+			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
+		} else {
+			if len(data.Floats) == 0 {
+				// Only create the slice once we know the series is a histogram or not
+				data.Floats = GetFPointSlice(v.numSteps)
+			}
+			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
+		}
 	}
 
 	if v.memoizedIterator.Err() != nil {
