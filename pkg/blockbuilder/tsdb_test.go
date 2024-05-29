@@ -1,1 +1,138 @@
 package blockbuilder
+
+import (
+	"context"
+	"math"
+	"sort"
+	"testing"
+	"time"
+
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/util/validation"
+)
+
+func TestTSDBBuilder(t *testing.T) {
+	limits := defaultLimitsTestConfig()
+	limits.OutOfOrderTimeWindow = 2 * model.Duration(time.Hour)
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
+
+	userID := "1"
+
+	// val is int64 to make calling this function concise.
+	addSample := func(builder *tsdbBuilder, ts int64, lastEnd, currEnd int64, recordProcessedBefore, accepted bool) {
+		var rec kgo.Record
+		rec.Key = []byte(userID)
+
+		req := mimirpb.WriteRequest{}
+
+		req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "foo", Value: "bar"},
+				},
+				Samples: []mimirpb.Sample{
+					{TimestampMs: ts, Value: float64(ts)},
+				},
+			},
+		})
+
+		data, err := req.Marshal()
+		require.NoError(t, err)
+		rec.Value = data
+		allProcessed, err := builder.process(context.Background(), &rec, lastEnd, currEnd, recordProcessedBefore)
+		require.NoError(t, err)
+		require.Equal(t, accepted, allProcessed)
+	}
+
+	builder := newTSDBBuilder(log.NewNopLogger(), t.TempDir(), overrides, mimir_tsdb.BlocksStorageConfig{})
+
+	blockRange := time.Hour.Milliseconds()
+
+	// TODO(codesome): try an odd hour as well
+	// TODO(codesome): test histograms
+	lastEnd := 2 * blockRange
+	currStart := lastEnd
+	currEnd := currStart + blockRange
+
+	// Add a sample for all the cases and check for correctness.
+	var expSamples []mimirpb.Sample
+
+	// 1. Processing records that were processed before (they come first in real world).
+	// a. This sample is already processed. So it should be ignored but say all processed
+	//    because it is already in a block.
+	addSample(builder, lastEnd-10, lastEnd, currEnd, true, true)
+	// b. This goes in this block.
+	addSample(builder, lastEnd+100, lastEnd, currEnd, true, true)
+	expSamples = append(expSamples, mimirpb.Sample{TimestampMs: lastEnd + 100, Value: float64(lastEnd + 100)})
+	// c. This sample should be processed in the future.
+	addSample(builder, currEnd+1, lastEnd, currEnd, true, false)
+
+	// 2. Processing records that were not processed before.
+	// a. Sample that belonged to previous processing period but came in late. Processed in current cycle.
+	addSample(builder, lastEnd-5, lastEnd, currEnd, false, true)
+	expSamples = append(expSamples, mimirpb.Sample{TimestampMs: lastEnd - 5, Value: float64(lastEnd - 5)})
+	// b. Sample that belongs to the current processing period.
+	addSample(builder, lastEnd+200, lastEnd, currEnd, false, true)
+	expSamples = append(expSamples, mimirpb.Sample{TimestampMs: lastEnd + 200, Value: float64(lastEnd + 200)})
+	// c. This sample should be processed in the future.
+	addSample(builder, currEnd+2, lastEnd, currEnd, true, false)
+
+	// 3. Out of order sample in a new record.
+	// a. In the current range but out of order w.r.t. the previous sample.
+	addSample(builder, lastEnd+20, lastEnd, currEnd, false, true)
+	expSamples = append(expSamples, mimirpb.Sample{TimestampMs: lastEnd + 20, Value: float64(lastEnd + 20)})
+	// b. Before current range and out of order w.r.t. the previous sample. Already covered above, but this
+	// exists to explicitly state the case.
+	addSample(builder, lastEnd-20, lastEnd, currEnd, false, true)
+	expSamples = append(expSamples, mimirpb.Sample{TimestampMs: lastEnd - 20, Value: float64(lastEnd - 20)})
+
+	// Query the TSDB for the expected samples.
+	db, err := builder.getOrCreateTSDB(userID)
+	require.NoError(t, err)
+
+	querier, err := db.db.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	ss := querier.Select(
+		context.Background(), true, nil,
+		labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
+	)
+
+	require.True(t, ss.Next())
+	series := ss.At()
+	require.False(t, ss.Next())
+
+	require.Equal(t, labels.FromStrings("foo", "bar"), series.Labels())
+	it := series.Iterator(nil)
+	var actSamples []mimirpb.Sample
+	for it.Next() == chunkenc.ValFloat {
+		ts, val := it.At()
+		actSamples = append(actSamples, mimirpb.Sample{TimestampMs: ts, Value: val})
+	}
+	require.NoError(t, it.Err())
+
+	sort.Slice(expSamples, func(i, j int) bool {
+		return expSamples[i].TimestampMs < expSamples[j].TimestampMs
+	})
+	require.Equal(t, expSamples, actSamples)
+	//dbDir := builder.blocksDir(userID)
+	//
+	//err = builder.compactAndCloseDBs(ctx)
+	//require.NoError(t, err)
+
+}
+
+func defaultLimitsTestConfig() validation.Limits {
+	limits := validation.Limits{}
+	flagext.DefaultValues(&limits)
+	return limits
+}

@@ -4,40 +4,29 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/util/validation"
-	"github.com/oklog/ulid"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// TODO(v): move to config
-var bbRootDir string
-
-func init() {
-	bbRootDir, _ = os.MkdirTemp("", "blockbuilder")
-}
-
-func blocksDir(tenantID string) string {
-	return filepath.Join(bbRootDir, tenantID)
-}
-
 type tsdbBuilder struct {
-	logger log.Logger
+	logger  log.Logger
+	rootDir string
 
 	// tenant-to-tsdb
 	tsdbs   map[string]*userTSDB // TODO: Use tsdb.DB instead
@@ -47,8 +36,9 @@ type tsdbBuilder struct {
 	blocksStorageConfig mimir_tsdb.BlocksStorageConfig
 }
 
-func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, blocksStorageConfig mimir_tsdb.BlocksStorageConfig) *tsdbBuilder {
+func newTSDBBuilder(logger log.Logger, rootDir string, limits *validation.Overrides, blocksStorageConfig mimir_tsdb.BlocksStorageConfig) *tsdbBuilder {
 	return &tsdbBuilder{
+		rootDir:             rootDir,
 		tsdbs:               make(map[string]*userTSDB),
 		logger:              logger,
 		limits:              limits,
@@ -56,13 +46,17 @@ func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, blocksStora
 	}
 }
 
+func (b *tsdbBuilder) blocksDir(userID string) string {
+	return filepath.Join(b.rootDir, userID)
+}
+
 // see (*Ingester).pushSamplesToAppender
 // did not make it into the block in this round.
 // lastEnd: "end" time of the previous block building cycle.
 // end: end time of the block we are looking at right now.
 // Returns true if all the samples were taken to be put in a block, false if at least one sample
-func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, end int64, recordProcessedBefore bool) (_ bool, err error) {
-	tenantID := string(rec.Key)
+func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, currEnd int64, recordProcessedBefore bool) (_ bool, err error) {
+	userID := string(rec.Key)
 
 	req := mimirpb.WriteRequest{}
 	defer mimirpb.ReuseSlice(req.Timeseries)
@@ -77,16 +71,16 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, end
 		return false, nil
 	}
 
-	db, err := b.getOrCreateTSDB(tenantID)
+	db, err := b.getOrCreateTSDB(userID)
 	if err != nil {
-		return false, fmt.Errorf("get tsdb for tenant %s: %w", tenantID, err)
+		return false, fmt.Errorf("get tsdb for tenant %s: %w", userID, err)
 	}
 
-	app := db.Appender(rec.Context).(extendedAppender)
+	app := db.Appender(ctx).(extendedAppender)
 	defer func() {
 		if err != nil {
 			if e := app.Rollback(); e != nil && !errors.Is(e, tsdb.ErrAppenderClosed) {
-				level.Warn(b.logger).Log("msg", "failed to rollback appender on error", "tenant", tenantID, "err", e)
+				level.Warn(b.logger).Log("msg", "failed to rollback appender on error", "tenant", userID, "err", e)
 			}
 		}
 	}()
@@ -96,7 +90,7 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, end
 	var (
 		labelsBuilder       labels.ScratchBuilder
 		nonCopiedLabels     labels.Labels
-		allSamplesProcessed bool
+		allSamplesProcessed = true
 	)
 	for _, ts := range req.Timeseries {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&labelsBuilder, ts.Labels, &nonCopiedLabels)
@@ -106,7 +100,8 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, end
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
 		for _, s := range ts.Samples {
-			if s.TimestampMs >= end {
+			//fmt.Println("P0", s.TimestampMs)
+			if s.TimestampMs >= currEnd {
 				// We will process this sample in the next cycle.
 				allSamplesProcessed = false
 				continue
@@ -134,7 +129,7 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, end
 		}
 
 		for _, h := range ts.Histograms {
-			if h.Timestamp >= end {
+			if h.Timestamp >= currEnd {
 				// We will process this sample in the next cycle.
 				allSamplesProcessed = false
 				continue
@@ -179,9 +174,9 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, end
 	return allSamplesProcessed, app.Commit()
 }
 
-func (b *tsdbBuilder) getOrCreateTSDB(tenantID string) (*userTSDB, error) {
+func (b *tsdbBuilder) getOrCreateTSDB(userID string) (*userTSDB, error) {
 	b.tsdbsMu.RLock()
-	db, _ := b.tsdbs[tenantID]
+	db, _ := b.tsdbs[userID]
 	b.tsdbsMu.RUnlock()
 
 	if db != nil {
@@ -193,28 +188,28 @@ func (b *tsdbBuilder) getOrCreateTSDB(tenantID string) (*userTSDB, error) {
 
 	// Check again for DB in the event it was created in-between locks
 	var ok bool
-	db, ok = b.tsdbs[tenantID]
+	db, ok = b.tsdbs[userID]
 	if ok {
 		return db, nil
 	}
 
-	db, err := b.newTSDB(tenantID)
+	db, err := b.newTSDB(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	b.tsdbs[tenantID] = db
+	b.tsdbs[userID] = db
 
 	return db, nil
 }
 
-func (b *tsdbBuilder) newTSDB(tenantID string) (*userTSDB, error) {
-	udir := blocksDir(tenantID)
+func (b *tsdbBuilder) newTSDB(userID string) (*userTSDB, error) {
+	udir := b.blocksDir(userID)
 
-	userLogger := util_log.WithUserID(tenantID, b.logger)
+	userLogger := util_log.WithUserID(userID, b.logger)
 
 	udb := &userTSDB{
-		userID: tenantID,
+		userID: userID,
 	}
 
 	db, err := tsdb.Open(udir, userLogger, nil, &tsdb.Options{
@@ -232,9 +227,9 @@ func (b *tsdbBuilder) newTSDB(tenantID string) (*userTSDB, error) {
 		IsolationDisabled:           true,
 		EnableOverlappingCompaction: false, // always false since Mimir only uploads lvl 1 compacted blocks
 		// TODO(codesome): take into consideration the block builder's processing interval and set this properly.
-		OutOfOrderTimeWindow:   b.limits.OutOfOrderTimeWindow(tenantID).Milliseconds(), // The unit must be same as our timestamps.
+		OutOfOrderTimeWindow:   b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
 		OutOfOrderCapMax:       int64(b.blocksStorageConfig.TSDB.OutOfOrderCapacityMax),
-		EnableNativeHistograms: b.limits.NativeHistogramsIngestionEnabled(tenantID),
+		EnableNativeHistograms: b.limits.NativeHistogramsIngestionEnabled(userID),
 		// TODO(codesome): this is used to determine the owned series by an ingesters. May need when applying limits.
 		SecondaryHashFunction: nil, // TODO secondaryTSDBHashFunctionForUser(userID),
 	}, nil)

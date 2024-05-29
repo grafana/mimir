@@ -4,8 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/util/validation"
 	"net"
 	"net/http"
 	"strconv"
@@ -22,7 +20,9 @@ import (
 	"github.com/twmb/franz-go/plugin/kotel"
 	"go.opentelemetry.io/otel/propagation"
 
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type partitionRingReader interface {
@@ -193,7 +193,7 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, part int32, offset 
 
 	level.Info(b.logger).Log("msg", "consuming partition", "part", part, "offset", offset.String())
 
-	builder := newTSDBBuilder(b.logger, b.limits, b.cfg.BlocksStorageConfig)
+	builder := newTSDBBuilder(b.logger, "", b.limits, b.cfg.BlocksStorageConfig)
 	checkpointOffset := int64(-1)
 	lastOffset := offset.EpochOffset().Offset
 	for ctx.Err() == nil {
