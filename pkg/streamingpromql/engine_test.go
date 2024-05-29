@@ -362,7 +362,7 @@ func (w cancellationQuerier) LabelNames(ctx context.Context, _ ...*labels.Matche
 }
 
 func (w cancellationQuerier) Select(ctx context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
-	return errSeriesSet{w.waitForCancellation(ctx)}
+	return storage.ErrSeriesSet(w.waitForCancellation(ctx))
 }
 
 func (w cancellationQuerier) Close() error {
@@ -378,24 +378,4 @@ func (w cancellationQuerier) waitForCancellation(ctx context.Context) error {
 	case <-time.After(time.Second):
 		return errors.New("expected query context to be cancelled after 1 second, but it was not")
 	}
-}
-
-type errSeriesSet struct {
-	err error
-}
-
-func (e errSeriesSet) Next() bool {
-	return false
-}
-
-func (e errSeriesSet) At() storage.Series {
-	return nil
-}
-
-func (e errSeriesSet) Err() error {
-	return e.err
-}
-
-func (e errSeriesSet) Warnings() annotations.Annotations {
-	return nil
 }
