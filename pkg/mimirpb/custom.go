@@ -88,6 +88,7 @@ func (m *WriteRequest) SizeWithoutTimeseries() int {
 // and data from the original WriteRequest.
 // TODO benchmark
 // TODO unit test: consider adding a fuzzy test to stress this logic
+// TODO could be simplified using WriteRequest.ForIndexes() ?
 func (m *WriteRequest) SplitByMaxMarshalSize(maxSize int) []*WriteRequest {
 	if m.Size() <= maxSize {
 		return []*WriteRequest{m}

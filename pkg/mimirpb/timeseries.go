@@ -707,6 +707,7 @@ func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 		Timeseries: timeseries,
 		Metadata:   metadata,
 		Source:     p.Source,
+		// TODO SkipLabelNameValidation: (not a bug today because it's only read in distributors, but better to fix it)
 	}
 }
 
