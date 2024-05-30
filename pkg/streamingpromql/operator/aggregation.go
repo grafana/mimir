@@ -153,9 +153,20 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
 
 		if thisSeriesGroup.sums == nil {
-			// First series for this group, populate it
-			thisSeriesGroup.sums = pooling.GetFloatSlice(steps)[:steps]
-			thisSeriesGroup.present = pooling.GetBoolSlice(steps)[:steps]
+			// First series for this group, populate it.
+
+			thisSeriesGroup.sums, err = a.Pool.GetFloatSlice(steps)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+
+			thisSeriesGroup.present, err = a.Pool.GetBoolSlice(steps)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+
+			thisSeriesGroup.sums = thisSeriesGroup.sums[:steps]
+			thisSeriesGroup.present = thisSeriesGroup.present[:steps]
 		}
 
 		for _, p := range s.Floats {
@@ -188,8 +199,8 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 		}
 	}
 
-	pooling.PutFloatSlice(thisGroup.sums)
-	pooling.PutBoolSlice(thisGroup.present)
+	a.Pool.PutFloatSlice(thisGroup.sums)
+	a.Pool.PutBoolSlice(thisGroup.present)
 
 	thisGroup.sums = nil
 	thisGroup.present = nil

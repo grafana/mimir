@@ -105,7 +105,11 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMet
 		return nil, nil
 	}
 
-	allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed := b.computeOutputSeries()
+	allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed, err := b.computeOutputSeries()
+	if err != nil {
+		return nil, err
+	}
+
 	b.sortSeries(allMetadata, allSeries)
 	b.remainingSeries = allSeries
 
@@ -156,7 +160,7 @@ func (b *BinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) 
 // - a corresponding list of the source series for each output series
 // - a list indicating which series from the left side are needed to compute the output
 // - a list indicating which series from the right side are needed to compute the output
-func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*binaryOperationOutputSeries, []bool, []bool) {
+func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*binaryOperationOutputSeries, []bool, []bool, error) {
 	labelsFunc := b.labelsFunc()
 	outputSeriesMap := map[string]*binaryOperationOutputSeries{}
 
@@ -195,8 +199,19 @@ func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*bina
 
 	allMetadata := make([]types.SeriesMetadata, 0, len(outputSeriesMap))
 	allSeries := make([]*binaryOperationOutputSeries, 0, len(outputSeriesMap))
-	leftSeriesUsed := pooling.GetBoolSlice(len(b.leftMetadata))[:len(b.leftMetadata)]
-	rightSeriesUsed := pooling.GetBoolSlice(len(b.rightMetadata))[:len(b.rightMetadata)]
+
+	leftSeriesUsed, err := b.Pool.GetBoolSlice(len(b.leftMetadata))
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	rightSeriesUsed, err := b.Pool.GetBoolSlice(len(b.rightMetadata))
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	leftSeriesUsed = leftSeriesUsed[:len(b.leftMetadata)]
+	rightSeriesUsed = rightSeriesUsed[:len(b.rightMetadata)]
 
 	for _, outputSeries := range outputSeriesMap {
 		firstSeriesLabels := b.leftMetadata[outputSeries.leftSeriesIndices[0]].Labels
@@ -212,7 +227,7 @@ func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*bina
 		}
 	}
 
-	return allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed
+	return allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed, nil
 }
 
 // sortSeries sorts metadata and series in place to try to minimise the number of input series we'll need to buffer in memory.
@@ -611,7 +626,7 @@ func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, serie
 
 func (b *binaryOperationSeriesBuffer) close() {
 	if b.seriesUsed != nil {
-		pooling.PutBoolSlice(b.seriesUsed)
+		b.pool.PutBoolSlice(b.seriesUsed)
 	}
 }
 

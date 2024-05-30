@@ -312,7 +312,10 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 
 func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o operator.InstantVectorOperator, series []types.SeriesMetadata) (promql.Vector, error) {
 	ts := timeMilliseconds(q.statement.Start)
-	v := pooling.GetVector(len(series))
+	v, err := q.pool.GetVector(len(series))
+	if err != nil {
+		return nil, err
+	}
 
 	for i, s := range series {
 		d, err := o.NextSeries(ctx)
@@ -442,7 +445,7 @@ func (q *Query) Close() {
 
 		pooling.PutMatrix(v)
 	case promql.Vector:
-		pooling.PutVector(v)
+		q.pool.PutVector(v)
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
 	}

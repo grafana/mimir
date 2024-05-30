@@ -15,25 +15,36 @@ const (
 	pointsPerSeriesBucketFactor = 2.0
 
 	// Treat a native histogram sample as equivalent to this many float samples when considering max in-memory samples limit.
-	// TODO: should this be configurable?
-	// TODO: what is a reasonable default value for this?
 	nativeHistogramSampleCountFactor = 10
 )
 
+type sizedPool[S any] interface {
+	Get(size int) S
+	Put(s S)
+}
+
 var (
-	fPointSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.FPoint {
+	fPointSlicePool sizedPool[[]promql.FPoint] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.FPoint {
 		return make([]promql.FPoint, 0, size)
 	})
 
-	hPointSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.HPoint {
+	hPointSlicePool sizedPool[[]promql.HPoint] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.HPoint {
 		return make([]promql.HPoint, 0, size)
 	})
 
-	// Overrides used only during tests.
-	getFPointSliceForLimitingPool = fPointSlicePool.Get
-	putFPointSliceForLimitingPool = fPointSlicePool.Put
-	getHPointSliceForLimitingPool = hPointSlicePool.Get
-	putHPointSliceForLimitingPool = hPointSlicePool.Put
+	vectorPool sizedPool[promql.Vector] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) promql.Vector {
+		return make(promql.Vector, 0, size)
+	})
+
+	floatSlicePool sizedPool[[]float64] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(_ int) []float64 {
+		// Don't allocate a new slice now - we'll allocate one in GetFloatSlice if we need it, so we can differentiate between reused and new slices.
+		return nil
+	})
+
+	boolSlicePool sizedPool[[]bool] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(_ int) []bool {
+		// Don't allocate a new slice now - we'll allocate one in GetBoolSlice if we need it, so we can differentiate between reused and new slices.
+		return nil
+	})
 )
 
 // LimitingPool manages sample slices for a single query evaluation, and applies any max in-memory samples limit.
@@ -53,26 +64,22 @@ func NewLimitingPool(maxInMemorySamples int) *LimitingPool {
 	}
 }
 
-// GetFPointSlice returns a slice of promql.FPoint of length 0 and capacity greater than or equal to size.
-// If the capacity of the returned slice would cause the max in-memory samples limit to be exceeded, then an error is returned.
-//
-// Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
-func (p *LimitingPool) GetFPointSlice(size int) ([]promql.FPoint, error) {
+func getWithMultiplier[E any, S ~[]E](p *LimitingPool, pool sizedPool[S], size int, multiplier int) (S, error) {
 	// Check that the requested size fits under the limit.
 	// If not, we can stop right now without taking a slice from the pool.
-	if p.MaxInMemorySamples > 0 && p.CurrentInMemorySamples+size > p.MaxInMemorySamples {
+	if p.MaxInMemorySamples > 0 && p.CurrentInMemorySamples+(size*multiplier) > p.MaxInMemorySamples {
 		return nil, limiter.NewMaxInMemorySamplesPerQueryLimitError(uint64(p.MaxInMemorySamples))
 	}
 
-	s := getFPointSliceForLimitingPool(size)
+	s := pool.Get(size)
 
-	// We must use the capacity of the slice, not 'size', as there's no guarantee the slice will have size 'size' when it's returned to us in PutFPointSlice.
-	size = cap(s)
+	// We must use the capacity of the slice, not 'size', as there's no guarantee the slice will have size 'size' when it's returned to us in putWithMultiplier.
+	size = cap(s) * multiplier
 
 	// Check that the capacity of the slice fits under the limit.
 	// (There's no guarantee that the slice has capacity equal to the size we requested.)
 	if p.MaxInMemorySamples > 0 && p.CurrentInMemorySamples+size > p.MaxInMemorySamples {
-		putFPointSliceForLimitingPool(s)
+		pool.Put(s)
 		return nil, limiter.NewMaxInMemorySamplesPerQueryLimitError(uint64(p.MaxInMemorySamples))
 	}
 
@@ -82,14 +89,65 @@ func (p *LimitingPool) GetFPointSlice(size int) ([]promql.FPoint, error) {
 	return s, nil
 }
 
-// PutFPointSlice returns a slice of promql.FPoint to the pool and updates the current number of in-memory samples.
-func (p *LimitingPool) PutFPointSlice(s []promql.FPoint) {
+func putWithMultiplier[E any, S ~[]E](p *LimitingPool, pool sizedPool[S], multiplier int, s S) {
 	if s == nil {
 		return
 	}
 
-	p.CurrentInMemorySamples -= cap(s)
-	putFPointSliceForLimitingPool(s)
+	p.CurrentInMemorySamples -= cap(s) * multiplier
+	pool.Put(s)
+}
+
+func getForIntrinsicTypeSlice[T any](p *LimitingPool, pool sizedPool[[]T], size int) ([]T, error) {
+	// For slices of intrinsic types, we treat them as if they are equivalent to half a sample per element,
+	// rounded down to the nearest whole number of samples (but always at least 1 sample, to avoid not accounting
+	// for slices with just one element).
+	//
+	// Check that the requested size fits under the limit.
+	// If not, we can stop right now without taking a slice from the pool.
+	if p.MaxInMemorySamples > 0 && p.CurrentInMemorySamples+max(size/2, 1) > p.MaxInMemorySamples {
+		return nil, limiter.NewMaxInMemorySamplesPerQueryLimitError(uint64(p.MaxInMemorySamples))
+	}
+
+	s := pool.Get(size)
+
+	// We must use the capacity of the slice, not 'size', as there's no guarantee the slice will have size 'size' when it's returned to us in putWithMultiplier.
+	size = max(cap(s)/2, 1)
+
+	// Check that the capacity of the slice fits under the limit.
+	// (There's no guarantee that the slice has capacity equal to the size we requested.)
+	if p.MaxInMemorySamples > 0 && p.CurrentInMemorySamples+size > p.MaxInMemorySamples {
+		pool.Put(s)
+		return nil, limiter.NewMaxInMemorySamplesPerQueryLimitError(uint64(p.MaxInMemorySamples))
+	}
+
+	p.CurrentInMemorySamples += size
+	p.PeakInMemorySamples = max(p.PeakInMemorySamples, p.CurrentInMemorySamples)
+
+	return s, nil
+}
+
+func putForIntrinsicTypeSlice[T any](p *LimitingPool, pool sizedPool[[]T], s []T) {
+	if s == nil {
+		return
+	}
+
+	p.CurrentInMemorySamples -= max(cap(s)/2, 1)
+	pool.Put(s)
+}
+
+// GetFPointSlice returns a slice of promql.FPoint of length 0 and capacity greater than or equal to size.
+//
+// If the capacity of the returned slice would cause the max in-memory samples limit to be exceeded, then an error is returned.
+//
+// Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
+func (p *LimitingPool) GetFPointSlice(size int) ([]promql.FPoint, error) {
+	return getWithMultiplier(p, fPointSlicePool, size, 1)
+}
+
+// PutFPointSlice returns a slice of promql.FPoint to the pool and updates the current number of in-memory samples.
+func (p *LimitingPool) PutFPointSlice(s []promql.FPoint) {
+	putWithMultiplier(p, fPointSlicePool, 1, s)
 }
 
 // GetHPointSlice returns a slice of promql.HPoint of length 0 and capacity greater than or equal to size.
@@ -99,38 +157,60 @@ func (p *LimitingPool) PutFPointSlice(s []promql.FPoint) {
 //
 // Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
 func (p *LimitingPool) GetHPointSlice(size int) ([]promql.HPoint, error) {
-	// Check that the requested size fits under the limit.
-	// If not, we can stop right now without taking a slice from the pool.
-	if p.MaxInMemorySamples > 0 && p.CurrentInMemorySamples+(size*nativeHistogramSampleCountFactor) > p.MaxInMemorySamples {
-		return nil, limiter.NewMaxInMemorySamplesPerQueryLimitError(uint64(p.MaxInMemorySamples))
-	}
-
-	s := getHPointSliceForLimitingPool(size)
-
-	// We must use the capacity of the slice, not 'size', as there's no guarantee the slice will have size 'size' when it's returned to us in PutFPointSlice.
-	size = cap(s) * nativeHistogramSampleCountFactor
-
-	// Check that the capacity of the slice fits under the limit.
-	// (There's no guarantee that the slice has capacity equal to the size we requested.)
-	if p.MaxInMemorySamples > 0 && p.CurrentInMemorySamples+size > p.MaxInMemorySamples {
-		putHPointSliceForLimitingPool(s)
-		return nil, limiter.NewMaxInMemorySamplesPerQueryLimitError(uint64(p.MaxInMemorySamples))
-	}
-
-	p.CurrentInMemorySamples += size
-	p.PeakInMemorySamples = max(p.PeakInMemorySamples, p.CurrentInMemorySamples)
-
-	return s, nil
+	return getWithMultiplier(p, hPointSlicePool, size, nativeHistogramSampleCountFactor)
 }
 
 // PutHPointSlice returns a slice of promql.HPoint to the pool and updates the current number of in-memory samples.
 func (p *LimitingPool) PutHPointSlice(s []promql.HPoint) {
-	if s == nil {
-		return
-	}
+	putWithMultiplier(p, hPointSlicePool, nativeHistogramSampleCountFactor, s)
+}
 
-	p.CurrentInMemorySamples -= cap(s) * nativeHistogramSampleCountFactor
-	putHPointSliceForLimitingPool(s)
+// GetVector returns a promql.Vector of length 0 and capacity greater than or equal to size.
+//
+// If the capacity of the returned vector would cause the max in-memory samples limit to be exceeded, then an error is returned.
+//
+// Note that the capacity of the returned vector may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
+func (p *LimitingPool) GetVector(size int) (promql.Vector, error) {
+	return getWithMultiplier(p, vectorPool, size, 1)
+}
+
+// PutVector returns a promql.Vector to the pool and updates the current number of in-memory samples.
+func (p *LimitingPool) PutVector(v promql.Vector) {
+	putWithMultiplier(p, vectorPool, 1, v)
+}
+
+// GetFloatSlice returns a slice of float64 of length 0 and capacity greater than or equal to size.
+//
+// If the capacity of the returned slice would cause the max in-memory samples limit to be exceeded, then an error is returned.
+// The capacity of the slice is converted to an estimated equivalent number of floating point samples.
+//
+// Every element of the returned slice up to the requested size will have value 0.
+//
+// Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
+func (p *LimitingPool) GetFloatSlice(size int) ([]float64, error) {
+	return getForIntrinsicTypeSlice(p, floatSlicePool, size)
+}
+
+// PutFloatSlice returns a slice of float64 to the pool and updates the current number of in-memory samples.
+func (p *LimitingPool) PutFloatSlice(s []float64) {
+	putForIntrinsicTypeSlice(p, floatSlicePool, s)
+}
+
+// GetBoolSlice returns a slice of bool of length 0 and capacity greater than or equal to size.
+//
+// If the capacity of the returned slice would cause the max in-memory samples limit to be exceeded, then an error is returned.
+// The capacity of the slice is converted to an estimated equivalent number of floating point samples.
+//
+// Every element of the returned slice up to the requested size will have value 0.
+//
+// Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
+func (p *LimitingPool) GetBoolSlice(size int) ([]bool, error) {
+	return getForIntrinsicTypeSlice(p, boolSlicePool, size)
+}
+
+// PutBoolSlice returns a slice of bool to the pool and updates the current number of in-memory samples.
+func (p *LimitingPool) PutBoolSlice(s []bool) {
+	putForIntrinsicTypeSlice(p, boolSlicePool, s)
 }
 
 // PutInstantVectorSeriesData is equivalent to calling PutFPointSlice(d.Floats) and PutHPointSlice(d.Histograms).
