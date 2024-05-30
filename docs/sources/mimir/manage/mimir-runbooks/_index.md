@@ -1992,6 +1992,23 @@ How to **fix** it:
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
 - Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
 
+### err-mimir-max-in-memory-samples-per-query
+
+This error occurs when execution of a query exceeds the limit on the total number of in-memory samples at a time.
+
+This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
+This limit only applies when Mimir's query engine is used (ie. `-querier.promql-engine=streaming`).
+To configure the limit on a global basis, use the `-querier.max-in-memory-samples-per-query` option.
+To configure the limit on a per-tenant basis, set `max_in_memory_samples_per_query` in the runtime configuration.
+
+How to **fix** it:
+
+- Consider reducing the time range of the query.
+- Consider reducing the cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
+- Consider applying aggregations such as `sum` or `avg` to the query.
+- Consider increasing the global limit by using the `-querier.max-in-memory-samples-per-query` option.
+- Consider increasing the limit on a per-tenant basis by using the `max_fetched_chunk_bytes_per_query` option in the runtime configuration.
+
 ### err-mimir-max-query-length
 
 This error occurs when the time range of a partial (after possible splitting, sharding by the query-frontend) query exceeds the configured maximum length. For a limit on the total query length, see [err-mimir-max-total-query-length](#err-mimir-max-total-query-length).
