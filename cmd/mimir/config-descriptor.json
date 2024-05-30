@@ -6603,6 +6603,76 @@
               "fieldDefaultValue": 20000000000,
               "fieldFlag": "ingest-storage.kafka.wait-strong-read-consistency-timeout",
               "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "startup_fetch_concurrency",
+              "required": false,
+              "desc": "The number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.startup-fetch-concurrency",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "startup_records_per_fetch",
+              "required": false,
+              "desc": "The number of records per fetch request that the ingester makes when reading data from Kafka during startup. Depends on ingest-storage.kafka.startup-fetch-concurrency being greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2500,
+              "fieldFlag": "ingest-storage.kafka.startup-records-per-fetch",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ongoing_fetch_concurrency",
+              "required": false,
+              "desc": "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless ingest-storage.kafka.startup-fetch-concurrency is greater than 0. It must be greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.ongoing-fetch-concurrency",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ongoing_records_per_fetch",
+              "required": false,
+              "desc": "The number of records per fetch request that the ingester makes when reading data continuously from Kafka after startup. Depends on ingest-storage.kafka.ongoing-fetch-concurrency being greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 30,
+              "fieldFlag": "ingest-storage.kafka.ongoing-records-per-fetch",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "use_compressed_bytes_as_fetch_max_bytes",
+              "required": false,
+              "desc": "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency",
+              "required": false,
+              "desc": "The number of concurrent ingestion streams to the TSDB head. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_batch_size",
+              "required": false,
+              "desc": "The number of timeseries to batch together before ingesting into TSDB. This is only used when ingestion-concurrency is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 128,
+              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-batch-size",
+              "fieldType": "int"
             }
           ],
           "fieldValue": null,

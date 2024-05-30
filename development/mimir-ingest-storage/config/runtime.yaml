@@ -1,1 +1,97 @@
-# This file can be used to set overrides or other runtime config.
+distributor_limits:
+  max_inflight_push_requests: 2000
+  max_inflight_push_requests_bytes: 2.147483648e+09
+ingester_limits:
+  max_inflight_push_requests: 30000
+  max_inflight_push_requests_bytes: 5.36870912e+08
+  max_ingestion_rate: 0
+  max_series: 3e+06
+  max_tenants: 500
+overrides:
+  "17065":
+    compactor_block_upload_enabled: true
+    compactor_blocks_retention_period: 10000d
+    compactor_split_and_merge_shards: 4
+    compactor_split_groups: 8
+    compactor_tenant_shard_size: 0
+    ha_cluster_label: __cluster__
+    ingestion_burst_size: 2.25e+07
+    ingestion_partitions_tenant_shard_size: 174
+    ingestion_rate: 2.25e+06
+    ingestion_tenant_shard_size: 522
+    max_global_exemplars_per_user: 1e+06
+    max_global_metadata_per_metric: 10
+    max_global_metadata_per_user: 1e+07
+    max_global_series_per_user: 5e+07
+    max_labels_query_length: 32d
+    native_histograms_ingestion_enabled: true
+    query_sharding_total_shards: 16
+    ruler_max_rule_groups_per_tenant: 600
+    ruler_max_rules_per_rule_group: 150
+    ruler_tenant_shard_size: 8
+    store_gateway_tenant_shard_size: 24
+  "17923":
+    compactor_block_upload_enabled: true
+    compactor_blocks_retention_period: 10000d
+    compactor_split_and_merge_shards: 4
+    compactor_split_groups: 8
+    compactor_tenant_shard_size: 0
+    ha_cluster_label: __cluster__
+    ingestion_burst_size: 2.25e+07
+    ingestion_partitions_tenant_shard_size: 174
+    ingestion_rate: 2.25e+06
+    ingestion_tenant_shard_size: 522
+    max_global_exemplars_per_user: 1e+06
+    max_global_metadata_per_metric: 10
+    max_global_metadata_per_user: 1e+07
+    max_global_series_per_user: 5e+07
+    max_labels_query_length: 32d
+    native_histograms_ingestion_enabled: true
+    otel_metric_suffixes_enabled: true
+    query_sharding_total_shards: 16
+    ruler_max_rule_groups_per_tenant: 600
+    ruler_max_rules_per_rule_group: 150
+    ruler_tenant_shard_size: 8
+    store_gateway_tenant_shard_size: 24
+  "230448":
+    ingestion_burst_size: 1e+06
+    ingestion_partitions_tenant_shard_size: 0
+    ingestion_rate: 100000
+    ingestion_tenant_shard_size: 0
+    max_global_metadata_per_metric: 10
+    max_global_metadata_per_user: 200000
+    max_global_series_per_user: 1e+06
+    ruler_max_rule_groups_per_tenant: 140
+    ruler_max_rules_per_rule_group: 20
+    ruler_tenant_shard_size: 2
+    store_gateway_tenant_shard_size: 0
+  "295486":
+    ingestion_burst_size: 1e+06
+    ingestion_partitions_tenant_shard_size: 9
+    ingestion_rate: 100000
+    ingestion_tenant_shard_size: 27
+    max_global_exemplars_per_user: 1e+06
+    max_global_metadata_per_metric: 10
+    max_global_metadata_per_user: 200000
+    max_global_series_per_user: 1e+06
+    ruler_max_rule_groups_per_tenant: 140
+    ruler_max_rules_per_rule_group: 20
+    ruler_tenant_shard_size: 2
+    store_gateway_tenant_shard_size: 6
+  load-generator-1:
+    ingestion_burst_size: 1e+06
+    ingestion_partitions_tenant_shard_size: 9
+    ingestion_rate: 100000
+    ingestion_tenant_shard_size: 27
+    max_global_metadata_per_metric: 10
+    max_global_metadata_per_user: 200000
+    max_global_series_per_user: 1e+06
+    ruler_max_rule_groups_per_tenant: 140
+    ruler_max_rules_per_rule_group: 20
+    ruler_tenant_shard_size: 2
+    store_gateway_tenant_shard_size: 6
+  ruler_limits:
+    ruler_max_rule_groups_per_tenant_by_namespace:
+      asserts: 300
+    ruler_max_rules_per_rule_group_by_namespace:
+      asserts: 50

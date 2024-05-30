@@ -8309,10 +8309,14 @@ func matrixToLables(m model.Matrix) [][]mimirpb.LabelAdapter {
 }
 
 func runTestQuery(ctx context.Context, t *testing.T, ing *Ingester, ty labels.MatchType, n, v string) (model.Matrix, *client.QueryRequest, error) {
+	t.Helper()
+
 	return runTestQueryTimes(ctx, t, ing, ty, n, v, model.Earliest, model.Latest)
 }
 
 func runTestQueryTimes(ctx context.Context, t *testing.T, ing *Ingester, ty labels.MatchType, n, v string, start, end model.Time) (model.Matrix, *client.QueryRequest, error) {
+	t.Helper()
+
 	matcher, err := labels.NewMatcher(ty, n, v)
 	if err != nil {
 		return nil, nil, err

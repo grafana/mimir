@@ -3830,6 +3830,46 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
+  # The number of concurrent fetch requests that the ingester makes when reading
+  # data from Kafka during startup. 0 to disable.
+  # CLI flag: -ingest-storage.kafka.startup-fetch-concurrency
+  [startup_fetch_concurrency: <int> | default = 0]
+
+  # The number of records per fetch request that the ingester makes when reading
+  # data from Kafka during startup. Depends on
+  # ingest-storage.kafka.startup-fetch-concurrency being greater than 0.
+  # CLI flag: -ingest-storage.kafka.startup-records-per-fetch
+  [startup_records_per_fetch: <int> | default = 2500]
+
+  # The number of concurrent fetch requests that the ingester makes when reading
+  # data continuously from Kafka after startup. Is disabled unless
+  # ingest-storage.kafka.startup-fetch-concurrency is greater than 0. It must be
+  # greater than 0.
+  # CLI flag: -ingest-storage.kafka.ongoing-fetch-concurrency
+  [ongoing_fetch_concurrency: <int> | default = 0]
+
+  # The number of records per fetch request that the ingester makes when reading
+  # data continuously from Kafka after startup. Depends on
+  # ingest-storage.kafka.ongoing-fetch-concurrency being greater than 0.
+  # CLI flag: -ingest-storage.kafka.ongoing-records-per-fetch
+  [ongoing_records_per_fetch: <int> | default = 30]
+
+  # When enabled, the fetch request MaxBytes field is computed using the
+  # compressed size of previous records. When disabled, MaxBytes is computed
+  # using uncompressed bytes. Different Kafka implementations interpret MaxBytes
+  # differently.
+  # CLI flag: -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes
+  [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
+
+  # The number of concurrent ingestion streams to the TSDB head. 0 to disable.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency
+  [ingestion_concurrency: <int> | default = 0]
+
+  # The number of timeseries to batch together before ingesting into TSDB. This
+  # is only used when ingestion-concurrency is greater than 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-batch-size
+  [ingestion_concurrency_batch_size: <int> | default = 128]
+
 migration:
   # When both this option and ingest storage are enabled, distributors write to
   # both Kafka and ingesters. A write request is considered successful only when

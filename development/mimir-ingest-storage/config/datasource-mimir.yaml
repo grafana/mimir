@@ -9,3 +9,10 @@ datasources:
   isDefault: true
   jsonData:
     prometheusType: Mimir
+    timeInterval: 5s
+- name: Jaeger
+  type: jaeger
+  access: proxy
+  uid: jaeger
+  orgID: 1
+  url: http://jaeger:16686/

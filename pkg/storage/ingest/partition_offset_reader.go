@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/atomic"
 )
 
 var (
@@ -32,6 +33,9 @@ type genericOffsetReader[O any] struct {
 	// request that will be issued (not the current in-flight one, if any).
 	nextResultPromiseMx sync.RWMutex
 	nextResultPromise   *resultPromise[O]
+
+	// lastResultPromise is the last returned offset.
+	lastResultPromise *atomic.Pointer[resultPromise[O]]
 }
 
 func newGenericOffsetReader[O any](fetchLastProducedOffset func(context.Context) (O, error), pollInterval time.Duration, logger log.Logger) *genericOffsetReader[O] {
@@ -39,9 +43,11 @@ func newGenericOffsetReader[O any](fetchLastProducedOffset func(context.Context)
 		logger:                  logger,
 		fetchLastProducedOffset: fetchLastProducedOffset,
 		nextResultPromise:       newResultPromise[O](),
+		lastResultPromise:       atomic.NewPointer(newResultPromise[O]()),
 	}
 
-	p.Service = services.NewTimerService(pollInterval, nil, p.onPollInterval, p.stopping)
+	// Run the poll interval once at startup so we can cache the offset.
+	p.Service = services.NewTimerService(pollInterval, p.onPollInterval, p.onPollInterval, p.stopping)
 
 	return p
 }
@@ -86,6 +92,7 @@ func (r *genericOffsetReader[O]) getAndNotifyLastProducedOffset(ctx context.Cont
 
 	// Notify whoever was waiting for it.
 	promise.notify(offset, err)
+	r.lastResultPromise.Store(promise)
 }
 
 // WaitNextFetchLastProducedOffset returns the result of the *next* "last produced offset" request
@@ -102,6 +109,12 @@ func (r *genericOffsetReader[O]) WaitNextFetchLastProducedOffset(ctx context.Con
 	return promise.wait(ctx)
 }
 
+// CachedOffset returns the last result of fetching the offset. This is likely outdated, but it's useful to get a directionally correct value quickly.
+func (r *genericOffsetReader[O]) CachedOffset() (O, error) {
+	c := r.lastResultPromise.Load()
+	return c.resultValue, c.resultErr
+}
+
 // partitionOffsetReader is responsible to read the offsets of a single partition.
 type partitionOffsetReader struct {
 	*genericOffsetReader[int64]
@@ -112,8 +125,13 @@ type partitionOffsetReader struct {
 }
 
 func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
+	offsetClient := newPartitionOffsetClient(client, topic, reg, logger)
+	return newPartitionOffsetReaderWithOffsetClient(offsetClient, partitionID, pollInterval, logger)
+}
+
+func newPartitionOffsetReaderWithOffsetClient(offsetClient *partitionOffsetClient, partitionID int32, pollInterval time.Duration, logger log.Logger) *partitionOffsetReader {
 	r := &partitionOffsetReader{
-		client:      newPartitionOffsetClient(client, topic, reg, logger),
+		client:      offsetClient,
 		partitionID: partitionID,
 		logger:      logger, // Do not wrap with partition ID because it's already done by the caller.
 	}
