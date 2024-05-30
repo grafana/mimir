@@ -78,7 +78,7 @@ type KafkaConfig struct {
 	AutoCreateTopicDefaultPartitions int  `yaml:"auto_create_topic_default_partitions"`
 
 	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
-	ClientErrorSampleRate int64 `yaml:"-"`
+	FallbackClientErrorSampleRate int64 `yaml:"-"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {

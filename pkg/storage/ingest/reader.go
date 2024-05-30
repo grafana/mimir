@@ -72,7 +72,7 @@ type PartitionReader struct {
 }
 
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
-	consumer := newPusherConsumer(pusher, util_log.NewSampler(kafkaCfg.ClientErrorSampleRate), reg, logger)
+	consumer := newPusherConsumer(pusher, util_log.NewSampler(kafkaCfg.FallbackClientErrorSampleRate), reg, logger)
 	return newPartitionReader(kafkaCfg, partitionID, instanceID, consumer, logger, reg)
 }
 

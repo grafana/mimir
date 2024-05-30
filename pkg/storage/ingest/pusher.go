@@ -33,8 +33,8 @@ type pusherConsumer struct {
 	serverErrRequests     prometheus.Counter
 	totalRequests         prometheus.Counter
 
-	clientErrSampler *util_log.Sampler // Fallback log message sampler client errors that are not sampled yet.
-	logger           log.Logger
+	fallbackClientErrSampler *util_log.Sampler // Fallback log message sampler client errors that are not sampled yet.
+	logger                   log.Logger
 }
 
 type parsedRecord struct {
@@ -45,16 +45,16 @@ type parsedRecord struct {
 	err      error
 }
 
-func newPusherConsumer(p Pusher, clientErrSampler *util_log.Sampler, reg prometheus.Registerer, l log.Logger) *pusherConsumer {
+func newPusherConsumer(p Pusher, fallbackClientErrSampler *util_log.Sampler, reg prometheus.Registerer, l log.Logger) *pusherConsumer {
 	errRequestsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_ingest_storage_reader_records_failed_total",
 		Help: "Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.",
 	}, []string{"cause"})
 
 	return &pusherConsumer{
-		pusher:           p,
-		logger:           l,
-		clientErrSampler: clientErrSampler,
+		pusher:                   p,
+		logger:                   l,
+		fallbackClientErrSampler: fallbackClientErrSampler,
 		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_processing_time_seconds",
 			Help:                            "Time taken to process a single record (write request).",
@@ -139,7 +139,7 @@ func (c pusherConsumer) shouldLogClientError(ctx context.Context, err error) (bo
 	var optional middleware.OptionalLogging
 	if !errors.As(err, &optional) {
 		// If error isn't sampled yet, we wrap it into our sampler and try again.
-		err = c.clientErrSampler.WrapError(err)
+		err = c.fallbackClientErrSampler.WrapError(err)
 		if !errors.As(err, &optional) {
 			// We can get here if c.clientErrSampler is nil.
 			return true, ""
