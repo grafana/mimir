@@ -58,6 +58,7 @@ type Writer struct {
 
 	// The following settings can only be overridden in tests.
 	maxInflightProduceRequests int
+	recordDataMaxBytes         int
 }
 
 func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
@@ -67,6 +68,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		registerer:                 reg,
 		writers:                    make([]*kgo.Client, kafkaCfg.WriteClients),
 		maxInflightProduceRequests: 20,
+		recordDataMaxBytes:         producerRecordDataMaxBytes,
 
 		// Metrics.
 		writeLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
@@ -82,7 +84,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 			Help: "Total number of bytes sent to the ingest storage.",
 		}),
 		recordsPerRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ingest_storage_writer_records_per_request",
+			Name:    "cortex_ingest_storage_writer_records_per_write_request",
 			Help:    "The number of records a single per-partition write request has been split into.",
 			Buckets: prometheus.ExponentialBuckets(1, 2, 8),
 		}),
@@ -127,7 +129,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	}
 
 	// Create records out of the write request.
-	records, recordsSizeBytes, err := marshalWriteRequestToRecords(partitionID, userID, req, producerRecordDataMaxBytes)
+	records, recordsSizeBytes, err := marshalWriteRequestToRecords(partitionID, userID, req, w.recordDataMaxBytes)
 	if err != nil {
 		return err
 	}
@@ -141,7 +143,6 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	// Track the number of records the given WriteRequest has been split into.
 	// Track this before sending records to Kafka so that we track it also for failures (e.g. we want to have
 	// visibility over this metric if records are rejected by Kafka because of MESSAGE_TOO_LARGE).
-	// TODO unit test
 	w.recordsPerRequest.Observe(float64(len(records)))
 
 	err = w.produceSync(ctx, writer, records)
@@ -158,7 +159,6 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 
 // produceSync produces records to Kafka and returns once all records have been successfully committed,
 // or an error occurred.
-// TODO unit test: multiple records
 func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []*kgo.Record) error {
 	var (
 		remaining  = atomic.NewInt64(int64(len(records)))

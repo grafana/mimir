@@ -47,7 +47,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		series3     = []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}
 	)
 
-	t.Run("should block until data has been committed to storage", func(t *testing.T) {
+	t.Run("should block until data has been committed to storage (WriteRequest stored in a single record)", func(t *testing.T) {
 		t.Parallel()
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
@@ -96,7 +96,103 @@ func TestWriter_WriteSync(t *testing.T) {
 			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes sent to the ingest storage.
 			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
 			cortex_ingest_storage_writer_sent_bytes_total %d
-		`, len(fetches.Records()[0].Value))), "cortex_ingest_storage_writer_sent_bytes_total"))
+
+			# HELP cortex_ingest_storage_writer_records_per_write_request The number of records a single per-partition write request has been split into.
+			# TYPE cortex_ingest_storage_writer_records_per_write_request histogram
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="1"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="2"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="4"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="8"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="16"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="32"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="64"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="128"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf"} 1
+			cortex_ingest_storage_writer_records_per_write_request_sum 1
+			cortex_ingest_storage_writer_records_per_write_request_count 1
+		`, len(fetches.Records()[0].Value))), "cortex_ingest_storage_writer_sent_bytes_total", "cortex_ingest_storage_writer_records_per_write_request"))
+	})
+
+	t.Run("should block until data has been committed to storage (WriteRequest stored in multiple records)", func(t *testing.T) {
+		t.Parallel()
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		// Customize the max record size to force splitting the WriteRequest into two records.
+		expectedReq := &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API}
+		writer.recordDataMaxBytes = int(float64(expectedReq.Size()) * 0.8)
+
+		produceRequestProcessed := atomic.NewBool(false)
+
+		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
+			// Add a delay, so that if WriteSync() will not wait then the test will fail.
+			time.Sleep(time.Second)
+			produceRequestProcessed.Store(true)
+
+			return nil, nil, false
+		})
+
+		err := writer.WriteSync(ctx, partitionID, tenantID, expectedReq)
+		require.NoError(t, err)
+
+		// Ensure it was processed before returning.
+		assert.True(t, produceRequestProcessed.Load())
+
+		// Read back from Kafka.
+		consumer, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr), kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{topicName: {int32(partitionID): kgo.NewOffset().AtStart()}}))
+		require.NoError(t, err)
+		t.Cleanup(consumer.Close)
+
+		fetchCtx, cancel := context.WithTimeout(ctx, time.Second)
+		t.Cleanup(cancel)
+
+		// Wait until we received 2 records. The timeout on fetchCtx guarantees it will not wait indefinitely.
+		var records []*kgo.Record
+
+		for len(records) < 2 {
+			fetches := consumer.PollFetches(fetchCtx)
+			require.NoError(t, fetches.Err())
+
+			records = append(records, fetches.Records()...)
+		}
+
+		require.Len(t, records, 2)
+		assert.Equal(t, []byte(tenantID), records[0].Key)
+		assert.Equal(t, []byte(tenantID), records[1].Key)
+
+		actualReq1 := &mimirpb.WriteRequest{}
+		actualReq2 := &mimirpb.WriteRequest{}
+		require.NoError(t, actualReq1.Unmarshal(records[0].Value))
+		require.NoError(t, actualReq2.Unmarshal(records[1].Value))
+
+		actualMergedReq := &(*actualReq1)
+		actualMergedReq.Timeseries = append(actualMergedReq.Timeseries, actualReq2.Timeseries...)
+		actualMergedReq.ClearTimeseriesUnmarshalData()
+		assert.Equal(t, expectedReq, actualMergedReq)
+
+		// Check metrics.
+		expectedBytes := len(records[0].Value) + len(records[1].Value)
+
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes sent to the ingest storage.
+			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
+			cortex_ingest_storage_writer_sent_bytes_total %d
+
+			# HELP cortex_ingest_storage_writer_records_per_write_request The number of records a single per-partition write request has been split into.
+			# TYPE cortex_ingest_storage_writer_records_per_write_request histogram
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="1"} 0
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="2"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="4"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="8"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="16"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="32"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="64"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="128"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf"} 1
+			cortex_ingest_storage_writer_records_per_write_request_sum 2
+			cortex_ingest_storage_writer_records_per_write_request_count 1
+		`, expectedBytes)), "cortex_ingest_storage_writer_sent_bytes_total", "cortex_ingest_storage_writer_records_per_write_request"))
 	})
 
 	t.Run("should write to the requested partition", func(t *testing.T) {
