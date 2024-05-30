@@ -757,7 +757,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
 		if err := validateExemplar(d.exemplarValidationMetrics, userID, ts.Labels, e); err != nil {
-			// OTel sends empty exemplars by default, so let's just skip invalid ones.
+			// OTel sends empty exemplars by default which aren't useful and are discarded by TSDB, so let's just skip invalid ones and ingest the data we can instead of returning an error.
 			ts.DeleteExemplarByMovingLast(i)
 			// Don't increase index i. After moving the last exemplar to this index, we want to check it again.
 			continue
