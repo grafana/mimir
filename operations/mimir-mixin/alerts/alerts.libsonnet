@@ -266,7 +266,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                   max by(ingester_id, %(alert_aggregation_labels)s) (
                     label_replace(cortex_ingester_memory_series,
                       "ingester_id", "$1",
-                      "pod", ".*-([0-9]+)$"
+                      "%(per_instance_label)s", ".*-([0-9]+)$"
                     )
                   )
                 )

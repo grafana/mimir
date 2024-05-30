@@ -164,7 +164,7 @@ groups:
                   max by(ingester_id, cluster, namespace) (
                     label_replace(cortex_ingester_memory_series,
                       "ingester_id", "$1",
-                      "pod", ".*-([0-9]+)$"
+                      "instance", ".*-([0-9]+)$"
                     )
                   )
                 )
