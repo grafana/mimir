@@ -37,6 +37,7 @@ const (
 	MaxChunkBytesPerQueryFlag                = "querier.max-fetched-chunk-bytes-per-query"
 	MaxSeriesPerQueryFlag                    = "querier.max-fetched-series-per-query"
 	MaxEstimatedChunksPerQueryMultiplierFlag = "querier.max-estimated-fetched-chunks-per-query-multiplier"
+	MaxInMemorySamplesPerQueryFlag           = "querier.max-in-memory-samples-per-query"
 	MaxLabelNamesPerSeriesFlag               = "validation.max-label-names-per-series"
 	MaxLabelNameLengthFlag                   = "validation.max-length-label-name"
 	MaxLabelValueLengthFlag                  = "validation.max-length-label-value"
