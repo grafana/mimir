@@ -53,6 +53,8 @@ func OTLPHandler(
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
 	logger log.Logger,
+	prefabMetrics []mimirpb.PreallocTimeseries,
+	prefabMetadata []*mimirpb.MetricMetadata,
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
@@ -154,10 +156,19 @@ func OTLPHandler(
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
-		metrics, err := otelMetricsToTimeseries(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
-		if err != nil {
-			return err
+		var metrics []mimirpb.PreallocTimeseries
+		var metadata []*mimirpb.MetricMetadata
+		if prefabMetrics == nil {
+			metrics, err = otelMetricsToTimeseries(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+			if err != nil {
+				return err
+			}
+			metadata = otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
+		} else {
+			metrics = prefabMetrics
+			metadata = prefabMetadata
 		}
+		req.Metadata = metadata
 
 		metricCount := len(metrics)
 		sampleCount := 0
@@ -179,11 +190,6 @@ func OTLPHandler(
 		)
 
 		req.Timeseries = metrics
-
-		if enableOtelMetadataStorage {
-			metadata := otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
-			req.Metadata = metadata
-		}
 
 		return nil
 	})

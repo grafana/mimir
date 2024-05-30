@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/require"
@@ -23,6 +24,61 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func spansToSpansProto(s []histogram.Span) []mimirpb.BucketSpan {
+	spans := make([]mimirpb.BucketSpan, len(s))
+	for i := 0; i < len(s); i++ {
+		spans[i] = mimirpb.BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
+	}
+
+	return spans
+}
+
+func fakeTimeSeries() ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata) {
+	var samples []mimirpb.Sample
+	for i := 0; i < 1000; i++ {
+		ts := time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Second)
+		samples = append(samples, mimirpb.Sample{
+			Value:       1,
+			TimestampMs: ts.UnixNano(),
+		})
+	}
+	h := test.GenerateTestHistogram(1)
+	sampleSeries := &mimirpb.TimeSeries{
+		Labels: []mimirpb.LabelAdapter{
+			{Name: "__name__", Value: "foo"},
+		},
+		Samples: samples,
+		Histograms: []mimirpb.Histogram{
+			{
+				Count:          &mimirpb.Histogram_CountInt{CountInt: h.Count},
+				Sum:            h.Sum,
+				Schema:         h.Schema,
+				ZeroThreshold:  h.ZeroThreshold,
+				ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount},
+				NegativeSpans:  spansToSpansProto(h.NegativeSpans),
+				NegativeDeltas: h.NegativeBuckets,
+				PositiveSpans:  spansToSpansProto(h.PositiveSpans),
+				PositiveDeltas: h.PositiveBuckets,
+				ResetHint:      mimirpb.Histogram_ResetHint(h.CounterResetHint),
+				Timestamp:      1337,
+			},
+		},
+	}
+	// Sample metadata needs to correspond to every series in the sampleSeries
+	sampleMetadata := []*mimirpb.MetricMetadata{
+		{
+			Help: "metric_help",
+			Unit: "metric_unit",
+		},
+	}
+
+	return []mimirpb.PreallocTimeseries{
+		{
+			TimeSeries: sampleSeries,
+		},
+	}, sampleMetadata
+}
 
 func BenchmarkOTLPHandler(b *testing.B) {
 	var samples []prompb.Sample
@@ -66,7 +122,8 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
 	)
 	require.NoError(b, err)
-	handler := OTLPHandler(100000, nil, nil, false, true, limits, RetryConfig{}, pushFunc, nil, nil, log.NewNopLogger())
+	ts, metadata := fakeTimeSeries()
+	handler := OTLPHandler(100000, nil, nil, false, true, limits, RetryConfig{}, pushFunc, nil, nil, log.NewNopLogger(), ts, metadata)
 
 	b.Run("protobuf", func(b *testing.B) {
 		req := createOTLPProtoRequest(b, exportReq, false)
