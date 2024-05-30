@@ -46,6 +46,11 @@ func TestLimitingPool_Unlimited_FPointSlices(t *testing.T) {
 	require.Equal(t, 201, cap(f200))
 	require.Equal(t, 210, pool.CurrentInMemorySamples)
 	require.Equal(t, 210, pool.PeakInMemorySamples)
+
+	// Ensure we handle nil slices safely.
+	pool.PutFPointSlice(nil)
+	require.Equal(t, 210, pool.CurrentInMemorySamples)
+	require.Equal(t, 210, pool.PeakInMemorySamples)
 }
 
 func TestLimitingPool_Unlimited_HPointSlices(t *testing.T) {
@@ -84,6 +89,11 @@ func TestLimitingPool_Unlimited_HPointSlices(t *testing.T) {
 	h200, err := pool.GetHPointSlice(200)
 	require.NoError(t, err)
 	require.Equal(t, 201, cap(h200))
+	require.Equal(t, 2100, pool.CurrentInMemorySamples)
+	require.Equal(t, 2100, pool.PeakInMemorySamples)
+
+	// Ensure we handle nil slices safely.
+	pool.PutHPointSlice(nil)
 	require.Equal(t, 2100, pool.CurrentInMemorySamples)
 	require.Equal(t, 2100, pool.PeakInMemorySamples)
 }

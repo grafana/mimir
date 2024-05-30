@@ -18,6 +18,7 @@ import (
 
 type InstantVectorSelector struct {
 	Selector *Selector
+	Pool     *LimitingPool
 
 	numSteps int
 
@@ -93,13 +94,19 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (InstantVectorSe
 			if len(data.Histograms) == 0 {
 				// Only create the slice once we know the series is a histogram or not.
 				// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
-				data.Histograms = GetHPointSlice(v.numSteps)
+				var err error
+				if data.Histograms, err = v.Pool.GetHPointSlice(v.numSteps); err != nil {
+					return InstantVectorSeriesData{}, err
+				}
 			}
 			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
 		} else {
 			if len(data.Floats) == 0 {
 				// Only create the slice once we know the series is a histogram or not
-				data.Floats = GetFPointSlice(v.numSteps)
+				var err error
+				if data.Floats, err = v.Pool.GetFPointSlice(v.numSteps); err != nil {
+					return InstantVectorSeriesData{}, err
+				}
 			}
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
 		}

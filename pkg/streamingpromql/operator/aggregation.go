@@ -24,6 +24,7 @@ type Aggregation struct {
 	End      time.Time
 	Interval time.Duration
 	Grouping []string
+	Pool     *LimitingPool
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*group // One entry per group, in the order we want to return them
@@ -160,7 +161,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (InstantVectorSeriesData, 
 			thisSeriesGroup.present[idx] = true
 		}
 
-		PutFPointSlice(s.Floats)
+		a.Pool.PutFPointSlice(s.Floats)
 		thisSeriesGroup.remainingSeriesCount--
 	}
 
@@ -172,7 +173,10 @@ func (a *Aggregation) NextSeries(ctx context.Context) (InstantVectorSeriesData, 
 		}
 	}
 
-	points := GetFPointSlice(pointCount)
+	points, err := a.Pool.GetFPointSlice(pointCount)
+	if err != nil {
+		return InstantVectorSeriesData{}, err
+	}
 
 	for i, havePoint := range thisGroup.present {
 		if havePoint {

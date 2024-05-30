@@ -29,27 +29,11 @@ var (
 	})
 
 	// Overrides used only during tests.
-	getFPointSliceForLimitingPool = GetFPointSlice
-	putFPointSliceForLimitingPool = PutFPointSlice
-	getHPointSliceForLimitingPool = GetHPointSlice
-	putHPointSliceForLimitingPool = PutHPointSlice
+	getFPointSliceForLimitingPool = fPointSlicePool.Get
+	putFPointSliceForLimitingPool = fPointSlicePool.Put
+	getHPointSliceForLimitingPool = hPointSlicePool.Get
+	putHPointSliceForLimitingPool = hPointSlicePool.Put
 )
-
-func GetFPointSlice(size int) []promql.FPoint {
-	return fPointSlicePool.Get(size)
-}
-
-func PutFPointSlice(s []promql.FPoint) {
-	fPointSlicePool.Put(s)
-}
-
-func GetHPointSlice(size int) []promql.HPoint {
-	return hPointSlicePool.Get(size)
-}
-
-func PutHPointSlice(s []promql.HPoint) {
-	hPointSlicePool.Put(s)
-}
 
 // LimitingPool manages sample slices for a single query evaluation, and applies any max in-memory samples limit.
 //
@@ -99,6 +83,10 @@ func (p *LimitingPool) GetFPointSlice(size int) ([]promql.FPoint, error) {
 
 // PutFPointSlice returns a slice of promql.FPoint to the pool and updates the current number of in-memory samples.
 func (p *LimitingPool) PutFPointSlice(s []promql.FPoint) {
+	if s == nil {
+		return
+	}
+
 	p.CurrentInMemorySamples -= cap(s)
 	putFPointSliceForLimitingPool(s)
 }
@@ -136,6 +124,16 @@ func (p *LimitingPool) GetHPointSlice(size int) ([]promql.HPoint, error) {
 
 // PutHPointSlice returns a slice of promql.HPoint to the pool and updates the current number of in-memory samples.
 func (p *LimitingPool) PutHPointSlice(s []promql.HPoint) {
+	if s == nil {
+		return
+	}
+
 	p.CurrentInMemorySamples -= cap(s) * nativeHistogramSampleCountFactor
 	putHPointSliceForLimitingPool(s)
+}
+
+// PutInstantVectorSeriesData is equivalent to calling PutFPointSlice(d.Floats) and PutHPointSlice(d.Histograms).
+func (p *LimitingPool) PutInstantVectorSeriesData(d InstantVectorSeriesData) {
+	p.PutFPointSlice(d.Floats)
+	p.PutHPointSlice(d.Histograms)
 }

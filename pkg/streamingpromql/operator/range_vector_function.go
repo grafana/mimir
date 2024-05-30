@@ -16,6 +16,7 @@ import (
 // RangeVectorFunction performs a rate calculation over a range vector.
 type RangeVectorFunction struct {
 	Inner RangeVectorOperator
+	Pool  *LimitingPool
 
 	numSteps     int
 	rangeSeconds float64
@@ -53,13 +54,18 @@ func (m *RangeVectorFunction) NextSeries(ctx context.Context) (InstantVectorSeri
 	}
 
 	if m.buffer == nil {
-		m.buffer = &RingBuffer{}
+		m.buffer = NewRingBuffer(m.Pool)
 	}
 
 	m.buffer.Reset()
 
+	floats, err := m.Pool.GetFPointSlice(m.numSteps) // TODO: only allocate this if we have any floats (once we support native histograms)
+	if err != nil {
+		return InstantVectorSeriesData{}, err
+	}
+
 	data := InstantVectorSeriesData{
-		Floats: GetFPointSlice(m.numSteps), // TODO: only allocate this if we have any floats (once we support native histograms)
+		Floats: floats,
 	}
 
 	for {

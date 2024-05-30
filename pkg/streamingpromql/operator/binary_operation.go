@@ -26,6 +26,7 @@ type BinaryOperation struct {
 	Left  InstantVectorOperator
 	Right InstantVectorOperator
 	Op    parser.ItemType
+	Pool  *LimitingPool
 
 	VectorMatching parser.VectorMatching
 
@@ -63,7 +64,7 @@ func (s binaryOperationOutputSeries) latestRightSeries() int {
 	return s.rightSeriesIndices[len(s.rightSeriesIndices)-1]
 }
 
-func NewBinaryOperation(left InstantVectorOperator, right InstantVectorOperator, vectorMatching parser.VectorMatching, op parser.ItemType) (*BinaryOperation, error) {
+func NewBinaryOperation(left InstantVectorOperator, right InstantVectorOperator, vectorMatching parser.VectorMatching, op parser.ItemType, pool *LimitingPool) (*BinaryOperation, error) {
 	opFunc := arithmeticOperationFuncs[op]
 	if opFunc == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
@@ -74,6 +75,7 @@ func NewBinaryOperation(left InstantVectorOperator, right InstantVectorOperator,
 		Right:          right,
 		VectorMatching: vectorMatching,
 		Op:             op,
+		Pool:           pool,
 
 		opFunc: opFunc,
 	}, nil
@@ -105,8 +107,8 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata,
 	b.sortSeries(allMetadata, allSeries)
 	b.remainingSeries = allSeries
 
-	b.leftBuffer = newBinaryOperationSeriesBuffer(b.Left, leftSeriesUsed)
-	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right, rightSeriesUsed)
+	b.leftBuffer = newBinaryOperationSeriesBuffer(b.Left, leftSeriesUsed, b.Pool)
+	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right, rightSeriesUsed, b.Pool)
 
 	return allMetadata, nil
 }
@@ -375,7 +377,7 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 	// We'll return the other slices in the for loop below.
 	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
 	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-	defer PutFPointSlice(data[0].Floats)
+	defer b.Pool.PutFPointSlice(data[0].Floats)
 
 	for i := 0; i < len(data)-1; i++ {
 		first := data[i]
@@ -385,7 +387,7 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Floats.
 		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-		defer PutFPointSlice(second.Floats)
+		defer b.Pool.PutFPointSlice(second.Floats)
 
 		// Check if first overlaps with second.
 		// InstantVectorSeriesData.Floats is required to be sorted in timestamp order, so if the last point
@@ -395,7 +397,10 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 		}
 	}
 
-	output := GetFPointSlice(mergedSize)
+	output, err := b.Pool.GetFPointSlice(mergedSize)
+	if err != nil {
+		return InstantVectorSeriesData{}, err
+	}
 
 	if !haveOverlaps {
 		// Fast path: no overlaps, so we can just concatenate the slices together, and there's no
@@ -464,10 +469,10 @@ func (b *BinaryOperation) computeResult(left InstantVectorSeriesData, right Inst
 	// FIXME: this is not safe to do for one-to-many, many-to-one or many-to-many matching, as we may need the input series for later output series.
 	if len(left.Floats) < len(right.Floats) {
 		output = left.Floats[:0]
-		defer PutFPointSlice(right.Floats)
+		defer b.Pool.PutFPointSlice(right.Floats)
 	} else {
 		output = right.Floats[:0]
-		defer PutFPointSlice(left.Floats)
+		defer b.Pool.PutFPointSlice(left.Floats)
 	}
 
 	nextRightIndex := 0
@@ -531,6 +536,8 @@ type binaryOperationSeriesBuffer struct {
 	// FIXME: could use a bitmap here to save some memory
 	seriesUsed []bool
 
+	pool *LimitingPool
+
 	// Stores series read but required for later series.
 	buffer map[int]InstantVectorSeriesData
 
@@ -538,10 +545,11 @@ type binaryOperationSeriesBuffer struct {
 	output []InstantVectorSeriesData
 }
 
-func newBinaryOperationSeriesBuffer(source InstantVectorOperator, seriesUsed []bool) *binaryOperationSeriesBuffer {
+func newBinaryOperationSeriesBuffer(source InstantVectorOperator, seriesUsed []bool, pool *LimitingPool) *binaryOperationSeriesBuffer {
 	return &binaryOperationSeriesBuffer{
 		source:     source,
 		seriesUsed: seriesUsed,
+		pool:       pool,
 		buffer:     map[int]InstantVectorSeriesData{},
 	}
 }
@@ -581,7 +589,7 @@ func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, serie
 			b.buffer[b.nextIndexToRead] = d
 		} else {
 			// We don't need this series at all, return the slice to the pool now.
-			PutFPointSlice(d.Floats)
+			b.pool.PutFPointSlice(d.Floats)
 		}
 
 		b.nextIndexToRead++

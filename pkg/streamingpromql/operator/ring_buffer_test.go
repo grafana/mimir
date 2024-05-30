@@ -13,7 +13,7 @@ import (
 func TestRingBuffer(t *testing.T) {
 	setupRingBufferPoolFunctionsForTesting(t)
 
-	buf := &RingBuffer{}
+	buf := NewRingBuffer(NewLimitingPool(0))
 	shouldHaveNoPoints(t, buf)
 
 	buf.DiscardPointsBefore(1) // Should handle empty buffer.
@@ -69,7 +69,7 @@ func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
 
 	// Set up the buffer so that the first point is part-way through the underlying slice.
 	// We resize in powers of two, and the underlying slice comes from a pool that uses a factor of 2 as well.
-	buf := &RingBuffer{}
+	buf := NewRingBuffer(NewLimitingPool(0))
 	buf.Append(promql.FPoint{T: 1, F: 100})
 	buf.Append(promql.FPoint{T: 2, F: 200})
 	buf.Append(promql.FPoint{T: 3, F: 300})
@@ -148,7 +148,8 @@ func shouldHavePointsAtOrBeforeTime(t *testing.T, buf *RingBuffer, ts int64, exp
 		require.Equal(t, expected, combinedPoints)
 	}
 
-	copiedPoints := buf.CopyPoints(ts)
+	copiedPoints, err := buf.CopyPoints(ts)
+	require.NoError(t, err)
 	require.Equal(t, expected, copiedPoints)
 
 	end, present := buf.LastAtOrBefore(ts)
@@ -169,19 +170,19 @@ func shouldHavePointsAtOrBeforeTime(t *testing.T, buf *RingBuffer, ts int64, exp
 // capacity at least as large as requested. This makes it difficult to consistently test scenarios like
 // wraparound.
 func setupRingBufferPoolFunctionsForTesting(t *testing.T) {
-	originalGet := getFPointSliceForRingBuffer
-	originalPut := putFPointSliceForRingBuffer
+	originalGet := getFPointSliceForLimitingPool
+	originalPut := putFPointSliceForLimitingPool
 
-	getFPointSliceForRingBuffer = func(size int) []promql.FPoint {
+	getFPointSliceForLimitingPool = func(size int) []promql.FPoint {
 		return make([]promql.FPoint, 0, size)
 	}
 
-	putFPointSliceForRingBuffer = func(_ []promql.FPoint) {
+	putFPointSliceForLimitingPool = func(_ []promql.FPoint) {
 		// Drop slice on the floor - we don't need it.
 	}
 
 	t.Cleanup(func() {
-		getFPointSliceForRingBuffer = originalGet
-		putFPointSliceForRingBuffer = originalPut
+		getFPointSliceForLimitingPool = originalGet
+		putFPointSliceForLimitingPool = originalPut
 	})
 }
