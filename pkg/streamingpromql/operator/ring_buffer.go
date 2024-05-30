@@ -3,8 +3,9 @@
 package operator
 
 import (
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/prometheus/prometheus/promql"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type RingBuffer struct {
