@@ -253,9 +253,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_memory_users) == 0)
             and on (%(alert_aggregation_labels)s)
-            # Only if there are more time-series than would be expected due to continuous testing load
-            max by(%(alert_aggregation_labels)s) (
-              sum by(%(per_job_label)s, %(alert_aggregation_labels)s) (cortex_ingester_memory_series)
+            # Only if there are more timeseries than would be expected due to continuous testing load
+            (
+              ( # Classic storage timeseries
+                sum by(%(alert_aggregation_labels)s) (cortex_ingester_memory_series)
+                /
+                max by(%(alert_aggregation_labels)s) (cortex_distributor_replication_factor)
+              )
+              or
+              ( # Ingest storage timeseries
+                sum by(%(alert_aggregation_labels)s) (
+                  max by(ingester_id, %(alert_aggregation_labels)s) (
+                    label_replace(cortex_ingester_memory_series,
+                      "ingester_id", "$1",
+                      "pod", ".*-([0-9]+)$"
+                    )
+                  )
+                )
+              )
             ) > 100000
           ||| % $._config,
           labels: {

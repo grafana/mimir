@@ -151,9 +151,24 @@ groups:
           expr: |
             (min by(cluster, namespace, pod) (cortex_ingester_memory_users) == 0)
             and on (cluster, namespace)
-            # Only if there are more time-series than would be expected due to continuous testing load
-            max by(cluster, namespace) (
-              sum by(job, cluster, namespace) (cortex_ingester_memory_series)
+            # Only if there are more timeseries than would be expected due to continuous testing load
+            (
+              ( # Classic storage timeseries
+                sum by(cluster, namespace) (cortex_ingester_memory_series)
+                /
+                max by(cluster, namespace) (cortex_distributor_replication_factor)
+              )
+              or
+              ( # Ingest storage timeseries
+                sum by(cluster, namespace) (
+                  max by(ingester_id, cluster, namespace) (
+                    label_replace(cortex_ingester_memory_series,
+                      "ingester_id", "$1",
+                      "pod", ".*-([0-9]+)$"
+                    )
+                  )
+                )
+              )
             ) > 100000
           for: 1h
           labels:
