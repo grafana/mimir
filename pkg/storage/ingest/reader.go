@@ -762,13 +762,13 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 			Help: "Total number of Kafka fetches received by the consumer.",
 		}),
 		fetchWaitDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_ingest_storage_reader_fetch_wait_duration_seconds",
-			Help:                        "How long fetching a batch of records from the kafka client took to complete.",
+			Name:                        "cortex_ingest_storage_reader_records_batch_wait_duration_seconds",
+			Help:                        "How long a consumer spent waiting for a batch of records from the Kafka client. If fetching is faster than processing, then this will be close to 0.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		consumeLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_ingest_storage_reader_consume_duration_seconds",
-			Help:                        "How long a request spent consuming a record batch from Kafka.",
+			Name:                        "cortex_ingest_storage_reader_records_batch_process_duration_seconds",
+			Help:                        "How long a consumer spent processing a batch of records from Kafka.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		strongConsistencyRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
