@@ -23,6 +23,7 @@ import (
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.uber.org/atomic"
 
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -71,7 +72,7 @@ type PartitionReader struct {
 }
 
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
-	consumer := newPusherConsumer(pusher, reg, logger)
+	consumer := newPusherConsumer(pusher, util_log.NewSampler(kafkaCfg.FallbackClientErrorSampleRate), reg, logger)
 	return newPartitionReader(kafkaCfg, partitionID, instanceID, consumer, logger, reg)
 }
 

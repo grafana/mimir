@@ -62,3 +62,12 @@ func TestSampledError_ShouldImplementOptionalLoggingInterface(t *testing.T) {
 	var optionalLoggingErr middleware.OptionalLogging
 	require.ErrorAs(t, sampledErr, &optionalLoggingErr)
 }
+
+func TestNilSampler(t *testing.T) {
+	var s *Sampler
+	err := fmt.Errorf("error")
+
+	sampledErr := s.WrapError(err)
+	require.NotNil(t, sampledErr)
+	require.Equal(t, err, sampledErr)
+}

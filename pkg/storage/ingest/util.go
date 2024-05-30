@@ -10,9 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/regexp"
-	"github.com/pkg/errors"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -129,16 +127,6 @@ func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
 	case <-w.done:
 		return w.resultValue, w.resultErr
 	}
-}
-
-// shouldLog returns whether err should be logged.
-func shouldLog(ctx context.Context, err error) (bool, string) {
-	var optional middleware.OptionalLogging
-	if !errors.As(err, &optional) {
-		return true, ""
-	}
-
-	return optional.ShouldLog(ctx)
 }
 
 // setDefaultNumberOfPartitionsForAutocreatedTopics tries to set num.partitions config option on brokers.
