@@ -448,7 +448,7 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 
 	fetchOffset := func(ctx context.Context) (offset, lastConsumedOffset int64, err error) {
 		if r.kafkaCfg.ConsumeFromPositionAtStartup == consumeFromTimestamp {
-			ts := time.Now().Add(-time.Minute)
+			ts := time.UnixMilli(r.kafkaCfg.ConsumeFromTimestampAtStartup)
 			offset, exists, err := r.fetchFirstOffsetAfterTime(ctx, cl, ts)
 			if err != nil {
 				return 0, -1, err
@@ -588,25 +588,40 @@ func (r *PartitionReader) pollFetches(ctx context.Context) kgo.Fetches {
 		r.metrics.fetchWaitDuration.Observe(time.Since(start).Seconds())
 	}(time.Now())
 
+	//_ = r.client.PollFetches(ctx)
+	return r.manualFetch(ctx)
+}
+
+func (r *PartitionReader) manualFetch(ctx context.Context) kgo.Fetches {
+
 	topics, err := kadm.NewClient(r.client).ListTopics(ctx, r.kafkaCfg.Topic)
 	if err != nil {
 		panic(err)
 	}
 	topic := topics[r.kafkaCfg.Topic]
-
+	if r.startOffset < 0 {
+		r.startOffset = 0 // for some reason sending -1 or -2 to the broker causes it to return OFFSET_OUT_OF_RANGE; this is probably handled by franz-go in handleReqResp
+	}
 	level.Info(r.logger).Log("msg", "polling fetches", "offset", r.startOffset, "partition", r.partitionID, "topic", r.kafkaCfg.Topic)
 	topicID := topic.ID
 	req := kmsg.NewFetchRequest()
 	req.Topics = []kmsg.FetchRequestTopic{{
+		Topic:   r.kafkaCfg.Topic,
 		TopicID: topicID,
 		Partitions: []kmsg.FetchRequestTopicPartition{{
 			Partition:          r.partitionID,
-			CurrentLeaderEpoch: -1,
 			FetchOffset:        r.startOffset,
+			CurrentLeaderEpoch: 0, // works for cases with a fresh kafka (like unit tests); needs fixing
 			LastFetchedEpoch:   -1,
 			LogStartOffset:     -1,
+			PartitionMaxBytes:  1000000,
 		}},
 	}}
+	req.MinBytes = 1
+	req.Version = 13
+	req.MaxWaitMillis = 5000
+
+	req.SessionEpoch = 0
 	fetches := kgo.Fetches{
 		{
 			Topics: []kgo.FetchTopic{
@@ -617,14 +632,18 @@ func (r *PartitionReader) pollFetches(ctx context.Context) kgo.Fetches {
 			},
 		},
 	}
-	resp, err := r.client.Request(ctx, &req)
+
+	resp, err := req.RequestWith(ctx, r.client)
 	if err != nil {
 		panic(err)
 	}
 
-	partition := processRespPartition(&resp.(*kmsg.FetchResponse).Topics[0].Partitions[0])
-	level.Error(r.logger).Log("error_code", resp.(*kmsg.FetchResponse).ErrorCode, "num_records", len(partition.Records), "num_topics", len(resp.(*kmsg.FetchResponse).Topics), "num_partitions", len(resp.(*kmsg.FetchResponse).Topics[0].Partitions))
+	partition := processRespPartition(&resp.Topics[0].Partitions[0])
+	level.Error(r.logger).Log("error_code", resp.ErrorCode, "num_records", len(partition.Records), "num_topics", len(resp.Topics), "num_partitions", len(resp.Topics[0].Partitions))
 	fetches[0].Topics[0].Partitions = append(fetches[0].Topics[0].Partitions, partition)
+	if len(partition.Records) > 0 {
+		r.startOffset = partition.Records[len(partition.Records)-1].Offset
+	}
 	return fetches
 }
 
