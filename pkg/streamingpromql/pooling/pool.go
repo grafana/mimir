@@ -9,14 +9,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
-type SampleSlicePool interface {
-	GetFPointSlice(size int) ([]promql.FPoint, error)
-	PutFPointSlice(s []promql.FPoint)
-
-	GetHPointSlice(size int) ([]promql.HPoint, error)
-	PutHPointSlice(s []promql.HPoint)
-}
-
 const (
 	maxExpectedSeriesPerResult  = 10_000_000 // Likewise, there's not too much science behind this number: this is the based on examining the largest queries seen at Grafana Labs.
 	seriesPerResultBucketFactor = 2.0

@@ -28,7 +28,7 @@ type BinaryOperation struct {
 	Left  InstantVectorOperator
 	Right InstantVectorOperator
 	Op    parser.ItemType
-	Pool  pooling.SampleSlicePool
+	Pool  types.SampleSlicePool
 
 	VectorMatching parser.VectorMatching
 
@@ -66,7 +66,7 @@ func (s binaryOperationOutputSeries) latestRightSeries() int {
 	return s.rightSeriesIndices[len(s.rightSeriesIndices)-1]
 }
 
-func NewBinaryOperation(left InstantVectorOperator, right InstantVectorOperator, vectorMatching parser.VectorMatching, op parser.ItemType, pool pooling.SampleSlicePool) (*BinaryOperation, error) {
+func NewBinaryOperation(left InstantVectorOperator, right InstantVectorOperator, vectorMatching parser.VectorMatching, op parser.ItemType, pool types.SampleSlicePool) (*BinaryOperation, error) {
 	opFunc := arithmeticOperationFuncs[op]
 	if opFunc == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
@@ -538,7 +538,7 @@ type binaryOperationSeriesBuffer struct {
 	// FIXME: could use a bitmap here to save some memory
 	seriesUsed []bool
 
-	pool pooling.SampleSlicePool
+	pool types.SampleSlicePool
 
 	// Stores series read but required for later series.
 	buffer map[int]types.InstantVectorSeriesData
@@ -547,7 +547,7 @@ type binaryOperationSeriesBuffer struct {
 	output []types.InstantVectorSeriesData
 }
 
-func newBinaryOperationSeriesBuffer(source InstantVectorOperator, seriesUsed []bool, pool pooling.SampleSlicePool) *binaryOperationSeriesBuffer {
+func newBinaryOperationSeriesBuffer(source InstantVectorOperator, seriesUsed []bool, pool types.SampleSlicePool) *binaryOperationSeriesBuffer {
 	return &binaryOperationSeriesBuffer{
 		source:     source,
 		seriesUsed: seriesUsed,
