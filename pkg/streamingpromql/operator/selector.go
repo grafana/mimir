@@ -29,6 +29,8 @@ type Selector struct {
 
 	querier storage.Querier
 	series  *seriesList
+
+	seriesIdx int
 }
 
 func (s *Selector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
@@ -83,9 +85,18 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error)
 	return s.series.ToSeriesMetadata(), ss.Err()
 }
 
-func (s *Selector) Next(existing chunkenc.Iterator) (chunkenc.Iterator, error) {
+func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, error) {
 	if s.series.Len() == 0 {
 		return nil, EOS
+	}
+
+	s.seriesIdx++
+
+	// Only check for cancellation every 128 series. This avoids a (relatively) expensive check on every iteration, but aborts
+	// queries quickly enough when cancelled.
+	// See https://github.com/prometheus/prometheus/pull/14118 for more explanation of why we use 128 (rather than say 100).
+	if s.seriesIdx%128 == 0 && ctx.Err() != nil {
+		return nil, context.Cause(ctx)
 	}
 
 	return s.series.Pop().Iterator(existing), nil

@@ -37,11 +37,13 @@ func NewEngine(opts promql.EngineOpts) (promql.QueryEngine, error) {
 
 	return &Engine{
 		lookbackDelta: lookbackDelta,
+		timeout:       opts.Timeout,
 	}, nil
 }
 
 type Engine struct {
 	lookbackDelta time.Duration
+	timeout       time.Duration
 }
 
 func (e *Engine) NewInstantQuery(_ context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {

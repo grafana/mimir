@@ -4,6 +4,7 @@ package streamingpromql
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
@@ -281,4 +284,168 @@ func TestRangeVectorSelectors(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestQueryCancellation(t *testing.T) {
+	opts := NewTestEngineOpts()
+	engine, err := NewEngine(opts)
+	require.NoError(t, err)
+
+	// Simulate the query being cancelled by another goroutine by waiting for the Select() call to be made,
+	// then cancel the query and wait for the query context to be cancelled.
+	//
+	// In both this test and production, we rely on the underlying storage responding to the context cancellation -
+	// we don't explicitly check for context cancellation in the query engine.
+	var q promql.Query
+	queryable := cancellationQueryable{func() {
+		q.Cancel()
+	}}
+
+	q, err = engine.NewInstantQuery(context.Background(), queryable, nil, "some_metric", timestamp.Time(0))
+	require.NoError(t, err)
+	defer q.Close()
+
+	res := q.Exec(context.Background())
+
+	require.Error(t, res.Err)
+	require.ErrorIs(t, res.Err, context.Canceled)
+	require.EqualError(t, res.Err, "context canceled: query execution cancelled")
+	require.Nil(t, res.Value)
+}
+
+func TestQueryTimeout(t *testing.T) {
+	opts := NewTestEngineOpts()
+	opts.Timeout = 20 * time.Millisecond
+	engine, err := NewEngine(opts)
+	require.NoError(t, err)
+
+	// Simulate the query doing some work and check that the query context has been cancelled.
+	//
+	// In both this test and production, we rely on the underlying storage responding to the context cancellation -
+	// we don't explicitly check for context cancellation in the query engine.
+	var q promql.Query
+	queryable := cancellationQueryable{func() {
+		time.Sleep(opts.Timeout * 10)
+	}}
+
+	q, err = engine.NewInstantQuery(context.Background(), queryable, nil, "some_metric", timestamp.Time(0))
+	require.NoError(t, err)
+	defer q.Close()
+
+	res := q.Exec(context.Background())
+
+	require.Error(t, res.Err)
+	require.ErrorIs(t, res.Err, context.DeadlineExceeded)
+	require.EqualError(t, res.Err, "context deadline exceeded: query timed out")
+	require.Nil(t, res.Value)
+}
+
+type cancellationQueryable struct {
+	onQueried func()
+}
+
+func (w cancellationQueryable) Querier(_, _ int64) (storage.Querier, error) {
+	// nolint:gosimple
+	return cancellationQuerier{onQueried: w.onQueried}, nil
+}
+
+type cancellationQuerier struct {
+	onQueried func()
+}
+
+func (w cancellationQuerier) LabelValues(ctx context.Context, _ string, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, w.waitForCancellation(ctx)
+}
+
+func (w cancellationQuerier) LabelNames(ctx context.Context, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, w.waitForCancellation(ctx)
+}
+
+func (w cancellationQuerier) Select(ctx context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+	return storage.ErrSeriesSet(w.waitForCancellation(ctx))
+}
+
+func (w cancellationQuerier) Close() error {
+	return nil
+}
+
+func (w cancellationQuerier) waitForCancellation(ctx context.Context) error {
+	w.onQueried()
+
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case <-time.After(time.Second):
+		return errors.New("expected query context to be cancelled after 1 second, but it was not")
+	}
+}
+
+func TestQueryContextCancelledOnceQueryFinished(t *testing.T) {
+	opts := NewTestEngineOpts()
+	engine, err := NewEngine(opts)
+	require.NoError(t, err)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric 0+1x4
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	queryable := &contextCapturingQueryable{inner: storage}
+
+	q, err := engine.NewInstantQuery(context.Background(), queryable, nil, "some_metric", timestamp.Time(0))
+	require.NoError(t, err)
+	defer q.Close()
+
+	res := q.Exec(context.Background())
+	require.NoError(t, res.Err)
+	require.NotNil(t, res.Value)
+
+	contextErr := queryable.capturedContext.Err()
+	require.Equal(t, context.Canceled, contextErr)
+
+	contextCause := context.Cause(queryable.capturedContext)
+	require.ErrorIs(t, contextCause, context.Canceled)
+	require.EqualError(t, contextCause, "context canceled: query execution finished")
+}
+
+type contextCapturingQueryable struct {
+	capturedContext context.Context
+	inner           storage.Queryable
+}
+
+func (q *contextCapturingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	innerQuerier, err := q.inner.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &contextCapturingQuerier{
+		queryable: q,
+		inner:     innerQuerier,
+	}, nil
+}
+
+type contextCapturingQuerier struct {
+	queryable *contextCapturingQueryable
+	inner     storage.Querier
+}
+
+func (q *contextCapturingQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	q.queryable.capturedContext = ctx
+	return q.inner.LabelValues(ctx, name, matchers...)
+}
+
+func (q *contextCapturingQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	q.queryable.capturedContext = ctx
+	return q.inner.LabelNames(ctx, matchers...)
+}
+
+func (q *contextCapturingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	q.queryable.capturedContext = ctx
+	return q.inner.Select(ctx, sortSeries, hints, matchers...)
+}
+
+func (q *contextCapturingQuerier) Close() error {
+	return q.inner.Close()
 }

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/grafana/dskit/cancellation"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -23,6 +24,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operator"
 )
 
+var errQueryCancelled = cancellation.NewErrorf("query execution cancelled")
+var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
+var errQueryFinished = cancellation.NewErrorf("query execution finished")
+
 type Query struct {
 	queryable storage.Queryable
 	opts      promql.QueryOpts
@@ -30,6 +35,7 @@ type Query struct {
 	root      operator.Operator
 	engine    *Engine
 	qs        string
+	cancel    context.CancelCauseFunc
 
 	result *promql.Result
 }
@@ -240,6 +246,20 @@ func (q *Query) IsInstant() bool {
 func (q *Query) Exec(ctx context.Context) *promql.Result {
 	defer q.root.Close()
 
+	ctx, cancel := context.WithCancelCause(ctx)
+	q.cancel = cancel
+
+	if q.engine.timeout != 0 {
+		var cancelTimeoutCtx context.CancelFunc
+		ctx, cancelTimeoutCtx = context.WithTimeoutCause(ctx, q.engine.timeout, fmt.Errorf("%w: query timed out", context.DeadlineExceeded))
+
+		defer cancelTimeoutCtx()
+	}
+
+	// The order of the deferred cancellations is important: we want to cancel with errQueryFinished first, so we must defer this cancellation last
+	// (so that it runs before the cancellation of the context with timeout created above).
+	defer cancel(errQueryFinished)
+
 	series, err := q.root.SeriesMetadata(ctx)
 	if err != nil {
 		return &promql.Result{Err: err}
@@ -392,6 +412,10 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o ope
 }
 
 func (q *Query) Close() {
+	if q.cancel != nil {
+		q.cancel(errQueryClosed)
+	}
+
 	if q.result == nil {
 		return
 	}
@@ -421,7 +445,9 @@ func (q *Query) Stats() *stats.Statistics {
 }
 
 func (q *Query) Cancel() {
-	// Not yet supported.
+	if q.cancel != nil {
+		q.cancel(errQueryCancelled)
+	}
 }
 
 func (q *Query) String() string {
