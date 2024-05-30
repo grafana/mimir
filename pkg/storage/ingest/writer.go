@@ -288,7 +288,6 @@ func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
 // have their data size limited to maxSize. The reason is that the WriteRequest is split
 // by each individual Timeseries and Metadata: if a single Timeseries or Metadata is bigger than
 // maxSize, than the resulting record will be bigger than the limit as well.
-// TODO add a metric to track the distributor of records per writerequest
 func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, int, error) {
 	reqSize := req.Size()
 
