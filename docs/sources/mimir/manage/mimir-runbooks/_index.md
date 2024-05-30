@@ -85,15 +85,19 @@ How to **fix** it:
           sum by (user) ( # total in-memory series for the tenant across ingesters
               cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}
           )
-          > 200000 # show only big tenants - with more than 200k series across ingesters
-          >
-          (
-              max by(user) (cortex_limits_overrides{namespace="<namespace>", limit_name="max_global_series_per_user"}) # global limit
-              *
-              scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"})) # with replication
-              *
-              0.5 # 50%
+          /
+          scalar( # Account for replication
+              ( # Classic storage
+                  max(cortex_distributor_replication_factor{namespace="<namespace>"})
+              )
+              or
+              ( # Ingest storage
+                  # count the number of zones processing writes
+                  count(group by (job) (cortex_ingester_memory_series{namespace="<namespace>"}))
+              )
           )
+          > 70000 # show only big tenants - with more than 70K series before replication
+          > 0.5 * max by(user) (cortex_limits_overrides{namespace="<namespace>", limit_name="max_global_series_per_user"}) # global limit
       )
       and on (pod) ( # intersection with top 3 ingesters by in-memory series
           topk(3,
