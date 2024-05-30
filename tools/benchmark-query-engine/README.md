@@ -4,7 +4,7 @@ Each benchmark is run in a separate process to provide some kind of guarantee th
 
 An ingester is started in the `benchmark-query-engine` process (ie. not the benchmark process) to ensure the TSDB does not skew results.
 
-Results from `benchmark-query-engine` can be summarised with `benchstat`, as well as [`compare.sh`](../../pkg/querier/engine/streaming/compare.sh).
+Results from `benchmark-query-engine` can be summarised with `benchstat`, as well as [`compare.sh`](./compare.sh).
 
 Usage:
 

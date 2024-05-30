@@ -278,6 +278,11 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	return q.result
 }
 
+func returnSeriesDataSlices(d operator.InstantVectorSeriesData) {
+	operator.PutFPointSlice(d.Floats)
+	operator.PutHPointSlice(d.Histograms)
+}
+
 func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o operator.InstantVectorOperator, series []operator.SeriesMetadata) (promql.Vector, error) {
 	ts := timeMilliseconds(q.statement.Start)
 	v := operator.GetVector(len(series))
@@ -292,26 +297,29 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o o
 			return nil, err
 		}
 
-		if len(d.Floats)+len(d.Histograms) != 1 {
-			operator.PutFPointSlice(d.Floats)
-			// TODO: put histogram point slice back in pool
-
-			if len(d.Floats)+len(d.Histograms) == 0 {
+		if len(d.Floats) == 1 && len(d.Histograms) == 0 {
+			point := d.Floats[0]
+			v = append(v, promql.Sample{
+				Metric: s.Labels,
+				T:      ts,
+				F:      point.F,
+			})
+		} else if len(d.Floats) == 0 && len(d.Histograms) == 1 {
+			point := d.Histograms[0]
+			v = append(v, promql.Sample{
+				Metric: s.Labels,
+				T:      ts,
+				H:      point.H,
+			})
+		} else {
+			returnSeriesDataSlices(d)
+			// A series may have no data points.
+			if len(d.Floats) == 0 && len(d.Histograms) == 0 {
 				continue
 			}
-
-			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v", s.Labels.String(), len(d.Floats))
+			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
 		}
-
-		point := d.Floats[0]
-		v = append(v, promql.Sample{
-			Metric: s.Labels,
-			T:      ts,
-			F:      point.F,
-		})
-
-		operator.PutFPointSlice(d.Floats)
-		// TODO: put histogram point slice back in pool
+		returnSeriesDataSlices(d)
 	}
 
 	return v, nil
@@ -331,9 +339,7 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o o
 		}
 
 		if len(d.Floats) == 0 && len(d.Histograms) == 0 {
-			operator.PutFPointSlice(d.Floats)
-			// TODO: put histogram point slice back in pool
-
+			returnSeriesDataSlices(d)
 			continue
 		}
 
@@ -394,7 +400,7 @@ func (q *Query) Close() {
 	case promql.Matrix:
 		for _, s := range v {
 			operator.PutFPointSlice(s.Floats)
-			// TODO: put histogram point slice back in pool
+			operator.PutHPointSlice(s.Histograms)
 		}
 
 		operator.PutMatrix(v)
