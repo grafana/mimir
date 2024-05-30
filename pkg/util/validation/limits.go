@@ -145,6 +145,7 @@ type Limits struct {
 	MaxEstimatedChunksPerQueryMultiplier float64        `yaml:"max_estimated_fetched_chunks_per_query_multiplier" json:"max_estimated_fetched_chunks_per_query_multiplier" category:"experimental"`
 	MaxFetchedSeriesPerQuery             int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
 	MaxFetchedChunkBytesPerQuery         int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
+	MaxInMemorySamplesPerQuery           int            `yaml:"max_in_memory_samples_per_query" json:"max_in_memory_samples_per_query" category:"experimental"`
 	MaxQueryLookback                     model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
 	MaxPartialQueryLength                model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
 	MaxQueryParallelism                  int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
@@ -271,6 +272,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from ingesters and store-gateways. This limit is enforced in the querier and ruler. 0 to disable.")
+	f.IntVar(&l.MaxInMemorySamplesPerQuery, MaxInMemorySamplesPerQueryFlag, 0, "The maximum number of samples a query can hold in memory at once. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.")
 	f.Var(&l.MaxPartialQueryLength, MaxPartialQueryLengthFlag, "Limit the time range for partial queries at the querier level.")
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
@@ -603,6 +605,12 @@ func (o *Overrides) MaxFetchedSeriesPerQuery(userID string) int {
 // chunks from ingesters and blocks storage.
 func (o *Overrides) MaxFetchedChunkBytesPerQuery(userID string) int {
 	return o.getOverridesForUser(userID).MaxFetchedChunkBytesPerQuery
+}
+
+// MaxInMemorySamplesPerQuery returns the maximum number of samples a query can hold in memory at once.
+// This is only effective when using Mimir's query engine (not Prometheus' engine).
+func (o *Overrides) MaxInMemorySamplesPerQuery(userID string) int {
+	return o.getOverridesForUser(userID).MaxInMemorySamplesPerQuery
 }
 
 // MaxQueryLookback returns the max lookback period of queries.

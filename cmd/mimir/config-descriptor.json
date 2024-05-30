@@ -3547,6 +3547,17 @@
         },
         {
           "kind": "field",
+          "name": "max_in_memory_samples_per_query",
+          "required": false,
+          "desc": "The maximum number of samples a query can hold in memory at once. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-in-memory-samples-per-query",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_query_lookback",
           "required": false,
           "desc": "Limit how long back data (series and metadata) can be queried, up until \u003clookback\u003e duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.",
