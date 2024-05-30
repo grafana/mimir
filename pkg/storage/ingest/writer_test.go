@@ -166,10 +166,10 @@ func TestWriter_WriteSync(t *testing.T) {
 		require.NoError(t, actualReq1.Unmarshal(records[0].Value))
 		require.NoError(t, actualReq2.Unmarshal(records[1].Value))
 
-		actualMergedReq := &(*actualReq1)
+		actualMergedReq := *actualReq1
 		actualMergedReq.Timeseries = append(actualMergedReq.Timeseries, actualReq2.Timeseries...)
 		actualMergedReq.ClearTimeseriesUnmarshalData()
-		assert.Equal(t, expectedReq, actualMergedReq)
+		assert.Equal(t, expectedReq, &actualMergedReq)
 
 		// Check metrics.
 		expectedBytes := len(records[0].Value) + len(records[1].Value)
