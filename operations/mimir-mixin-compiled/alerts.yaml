@@ -152,10 +152,8 @@ groups:
             (min by(cluster, namespace, pod) (cortex_ingester_memory_users) == 0)
             and on (cluster, namespace)
             # Only if there are more time-series than would be expected due to continuous testing load
-            (
-              sum by(cluster, namespace) (cortex_ingester_memory_series)
-              /
-              max by(cluster, namespace) (cortex_distributor_replication_factor)
+            max by(cluster, namespace) (
+              sum by(job, cluster, namespace) (cortex_ingester_memory_series)
             ) > 100000
           for: 1h
           labels:
