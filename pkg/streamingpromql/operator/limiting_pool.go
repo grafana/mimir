@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package pooling
+package operator
 
 import (
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/operator"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 var (
 	// Overrides used only during tests.
-	getFPointSliceForLimitingPool = operator.GetFPointSlice
-	putFPointSliceForLimitingPool = operator.PutFPointSlice
+	getFPointSliceForLimitingPool = GetFPointSlice
+	putFPointSliceForLimitingPool = PutFPointSlice
 )
 
 // LimitingPool manages sample slices for a single query evaluation, and applies any max in-memory samples limit.
