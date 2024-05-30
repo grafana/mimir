@@ -138,13 +138,11 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	fi;
 	@echo
 	# We need gcompat -- compatibility layer with glibc, as race-detector currently requires glibc, but Alpine uses musl libc instead.
-	# for grafana/mimir which is based on distroless image, the EXTRA_PACKAGES is just ignored.
 	$(SUDO) docker build \
 		--build-arg=revision=$(GIT_REVISION) \
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
 		--build-arg=BINARY_SUFFIX=_race \
-		--build-arg=EXTRA_PACKAGES="gcompat" \
 		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian12" \
 		-t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
 	@echo
