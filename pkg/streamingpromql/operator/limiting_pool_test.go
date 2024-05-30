@@ -9,12 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLimitingPool_Unlimited(t *testing.T) {
+func TestLimitingPool_Unlimited_FPointSlices(t *testing.T) {
 	setupLimitingPoolFunctionsForTesting(t)
 
 	pool := NewLimitingPool(0)
 
-	// Get a slice from the pool, the current and peak stats should be updated based on the capacity of the slice returned, not the size requested..
+	// Get a slice from the pool, the current and peak stats should be updated based on the capacity of the slice returned, not the size requested.
 	f100, err := pool.GetFPointSlice(100)
 	require.NoError(t, err)
 	require.Equal(t, 101, cap(f100))
@@ -48,7 +48,47 @@ func TestLimitingPool_Unlimited(t *testing.T) {
 	require.Equal(t, 210, pool.PeakInMemorySamples)
 }
 
-func TestLimitingPool_Limited(t *testing.T) {
+func TestLimitingPool_Unlimited_HPointSlices(t *testing.T) {
+	setupLimitingPoolFunctionsForTesting(t)
+
+	pool := NewLimitingPool(0)
+
+	// Get a slice from the pool, the current and peak stats should be updated based on the capacity of the slice returned, not the size requested.
+	// The current and peak in-memory samples stats should be multiplied by the native histogram conversion factor of 10.
+	h100, err := pool.GetHPointSlice(100)
+	require.NoError(t, err)
+	require.Equal(t, 101, cap(h100))
+	require.Equal(t, 1010, pool.CurrentInMemorySamples)
+	require.Equal(t, 1010, pool.PeakInMemorySamples)
+
+	// Get another slice from the pool, the current and peak stats should be updated.
+	h2, err := pool.GetHPointSlice(2)
+	require.NoError(t, err)
+	require.Equal(t, 3, cap(h2))
+	require.Equal(t, 1040, pool.CurrentInMemorySamples)
+	require.Equal(t, 1040, pool.PeakInMemorySamples)
+
+	// Put a slice back into the pool, the current stat should be updated but peak should be unchanged.
+	pool.PutHPointSlice(h100)
+	require.Equal(t, 30, pool.CurrentInMemorySamples)
+	require.Equal(t, 1040, pool.PeakInMemorySamples)
+
+	// Get another slice from the pool that doesn't take us over the previous peak.
+	h5, err := pool.GetHPointSlice(5)
+	require.NoError(t, err)
+	require.Equal(t, 6, cap(h5))
+	require.Equal(t, 90, pool.CurrentInMemorySamples)
+	require.Equal(t, 1040, pool.PeakInMemorySamples)
+
+	// Get another slice from the pool that does take us over the previous peak.
+	h200, err := pool.GetHPointSlice(200)
+	require.NoError(t, err)
+	require.Equal(t, 201, cap(h200))
+	require.Equal(t, 2100, pool.CurrentInMemorySamples)
+	require.Equal(t, 2100, pool.PeakInMemorySamples)
+}
+
+func TestLimitingPool_Limited_FPointSlices(t *testing.T) {
 	setupLimitingPoolFunctionsForTesting(t)
 
 	pool := NewLimitingPool(10)
@@ -85,11 +125,55 @@ func TestLimitingPool_Limited(t *testing.T) {
 	require.Equal(t, 10, pool.PeakInMemorySamples)
 
 	// Get another slice from the pool that would take us right up to the limit.
-	f2, err := pool.GetFPointSlice(1)
+	f1, err = pool.GetFPointSlice(1)
 	require.NoError(t, err)
-	require.Equal(t, 2, cap(f2))
+	require.Equal(t, 2, cap(f1))
 	require.Equal(t, 10, pool.CurrentInMemorySamples)
 	require.Equal(t, 10, pool.PeakInMemorySamples)
+}
+
+func TestLimitingPool_Limited_HPointSlices(t *testing.T) {
+	setupLimitingPoolFunctionsForTesting(t)
+
+	pool := NewLimitingPool(100)
+
+	// Get a slice from the pool beneath the limit.
+	h7, err := pool.GetHPointSlice(7)
+	require.NoError(t, err)
+	require.Equal(t, 8, cap(h7))
+	require.Equal(t, 80, pool.CurrentInMemorySamples)
+	require.Equal(t, 80, pool.PeakInMemorySamples)
+
+	// Get another slice from the pool beneath the limit.
+	h1, err := pool.GetHPointSlice(1)
+	require.NoError(t, err)
+	require.Equal(t, 2, cap(h1))
+	require.Equal(t, 100, pool.CurrentInMemorySamples)
+	require.Equal(t, 100, pool.PeakInMemorySamples)
+
+	// Return a slice to the pool.
+	pool.PutHPointSlice(h1)
+	require.Equal(t, 80, pool.CurrentInMemorySamples)
+	require.Equal(t, 100, pool.PeakInMemorySamples)
+
+	// Try to get a slice where the requested size would push us over the limit.
+	_, err = pool.GetHPointSlice(3)
+	require.ErrorContains(t, err, "the query exceeded the maximum allowed number of in-memory samples (limit: 100 samples) (err-mimir-max-in-memory-samples-per-query)")
+	require.Equal(t, 80, pool.CurrentInMemorySamples)
+	require.Equal(t, 100, pool.PeakInMemorySamples)
+
+	// Try to get a slice where the requested size is under the limit, but the capacity of the slice returned by the pool is over the limit.
+	_, err = pool.GetHPointSlice(2)
+	require.ErrorContains(t, err, "the query exceeded the maximum allowed number of in-memory samples (limit: 100 samples) (err-mimir-max-in-memory-samples-per-query)")
+	require.Equal(t, 80, pool.CurrentInMemorySamples)
+	require.Equal(t, 100, pool.PeakInMemorySamples)
+
+	// Get another slice from the pool that would take us right up to the limit.
+	h1, err = pool.GetHPointSlice(1)
+	require.NoError(t, err)
+	require.Equal(t, 2, cap(h1))
+	require.Equal(t, 100, pool.CurrentInMemorySamples)
+	require.Equal(t, 100, pool.PeakInMemorySamples)
 }
 
 // setupLimitingPoolFunctionsForTesting replaces the global FPoint slice pool used by LimitingPool
@@ -97,8 +181,10 @@ func TestLimitingPool_Limited(t *testing.T) {
 //
 // Each returned slice will have capacity = requested size + 1.
 func setupLimitingPoolFunctionsForTesting(t *testing.T) {
-	originalGet := getFPointSliceForLimitingPool
-	originalPut := putFPointSliceForLimitingPool
+	originalGetFPointSlice := getFPointSliceForLimitingPool
+	originalPutFPointSlice := putFPointSliceForLimitingPool
+	originalGetHPointSlice := getHPointSliceForLimitingPool
+	originalPutHPointSlice := putHPointSliceForLimitingPool
 
 	getFPointSliceForLimitingPool = func(size int) []promql.FPoint {
 		return make([]promql.FPoint, 0, size+1)
@@ -108,8 +194,16 @@ func setupLimitingPoolFunctionsForTesting(t *testing.T) {
 		// Drop slice on the floor - we don't need it.
 	}
 
+	getHPointSliceForLimitingPool = func(size int) []promql.HPoint { return make([]promql.HPoint, 0, size+1) }
+
+	putHPointSliceForLimitingPool = func(_ []promql.HPoint) {
+		// Drop slice on the floor - we don't need it.
+	}
+
 	t.Cleanup(func() {
-		getFPointSliceForLimitingPool = originalGet
-		putFPointSliceForLimitingPool = originalPut
+		getFPointSliceForLimitingPool = originalGetFPointSlice
+		putFPointSliceForLimitingPool = originalPutFPointSlice
+		getHPointSliceForLimitingPool = originalGetHPointSlice
+		putHPointSliceForLimitingPool = originalPutHPointSlice
 	})
 }
