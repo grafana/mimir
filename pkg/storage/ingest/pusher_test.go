@@ -7,18 +7,22 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
-	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -27,6 +31,10 @@ import (
 
 type pusherFunc func(context.Context, *mimirpb.WriteRequest) error
 
+func (p pusherFunc) Close() []error {
+	return nil
+}
+
 func (p pusherFunc) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
 	return p(ctx, request)
 }
@@ -34,7 +42,7 @@ func (p pusherFunc) PushToStorage(ctx context.Context, request *mimirpb.WriteReq
 func TestPusherConsumer(t *testing.T) {
 	const tenantID = "t1"
 	writeReqs := []*mimirpb.WriteRequest{
-		{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1"), mockPreallocTimeseries("series_2")}},
+		{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}},
 		{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
 		{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_4")}},
 		{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_5")}},
@@ -181,12 +189,12 @@ func TestPusherConsumer(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			receivedReqs := 0
+			receivedReqs := atomic.NewInt64(0)
 			pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
-				defer func() { receivedReqs++ }()
-				require.GreaterOrEqualf(t, len(tc.expectedWRs), receivedReqs+1, "received more requests (%d) than expected (%d)", receivedReqs+1, len(tc.expectedWRs))
+				reqIdx := int(receivedReqs.Inc() - 1)
+				require.GreaterOrEqualf(t, len(tc.expectedWRs), reqIdx+1, "received more requests (%d) than expected (%d)", reqIdx+1, len(tc.expectedWRs))
 
-				expectedWR := tc.expectedWRs[receivedReqs]
+				expectedWR := tc.expectedWRs[reqIdx]
 				for i, ts := range request.Timeseries {
 					assert.Truef(t, ts.Equal(expectedWR.Timeseries[i].TimeSeries), "timeseries %d not equal; got %v, expected %v", i, ts, expectedWR.Timeseries[i].TimeSeries)
 				}
@@ -195,12 +203,12 @@ func TestPusherConsumer(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tenantID, actualTenantID)
 
-				return tc.responses[receivedReqs].err
+				return tc.responses[reqIdx].err
 			})
 
 			logs := &concurrency.SyncBuffer{}
-			c := newPusherConsumer(pusher, nil, prometheus.NewPedanticRegistry(), log.NewLogfmtLogger(logs))
-			err := c.consume(context.Background(), tc.records)
+			c := newPusherConsumer(pusher, KafkaConfig{}, newPusherConsumerMetrics(prometheus.NewPedanticRegistry()), log.NewLogfmtLogger(logs))
+			err := c.Consume(context.Background(), tc.records)
 			if tc.expErr == "" {
 				assert.NoError(t, err)
 			} else {
@@ -217,13 +225,13 @@ func TestPusherConsumer(t *testing.T) {
 	}
 }
 
-var unimportantLogFieldsPattern = regexp.MustCompile(`\scaller=\S+\.go:\d+\s`)
+var unimportantLogFieldsPattern = regexp.MustCompile(`(\s?)caller=\S+\.go:\d+\s`)
 
 func removeUnimportantLogFields(lines []string) []string {
 	// The 'caller' field is not important to these tests (we just care about the message and other information),
 	// and can change as we refactor code, making these tests brittle. So we remove it before making assertions about the log lines.
 	for i, line := range lines {
-		lines[i] = unimportantLogFieldsPattern.ReplaceAllString(line, " ")
+		lines[i] = unimportantLogFieldsPattern.ReplaceAllString(line, "$1")
 	}
 
 	return lines
@@ -269,7 +277,8 @@ func TestPusherConsumer_clientErrorSampling(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c := newPusherConsumer(nil, tc.sampler, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+			c := newPusherConsumer(nil, KafkaConfig{}, newPusherConsumerMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
+			c.fallbackClientErrSampler = tc.sampler
 
 			sampled, reason := c.shouldLogClientError(context.Background(), tc.err)
 			assert.Equal(t, tc.expectedSampled, sampled)
@@ -298,7 +307,7 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 
 		reg := prometheus.NewPedanticRegistry()
 		logs := &concurrency.SyncBuffer{}
-		consumer := newPusherConsumer(pusher, nil, reg, log.NewLogfmtLogger(logs))
+		consumer := newPusherConsumer(pusher, KafkaConfig{}, newPusherConsumerMetrics(reg), log.NewLogfmtLogger(logs))
 
 		return consumer, logs, reg
 	}
@@ -308,7 +317,7 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		consumer, logs, reg := setupTest(pusherErr)
 
 		// Should return no error on client errors.
-		require.NoError(t, consumer.consume(context.Background(), []record{reqRecord}))
+		require.NoError(t, consumer.Consume(context.Background(), []record{reqRecord}))
 
 		assert.Contains(t, logs.String(), pusherErr.Error())
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -330,7 +339,7 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		consumer, logs, reg := setupTest(pusherErr)
 
 		// Should return no error on client errors.
-		require.NoError(t, consumer.consume(context.Background(), []record{reqRecord}))
+		require.NoError(t, consumer.Consume(context.Background(), []record{reqRecord}))
 
 		assert.Contains(t, logs.String(), fmt.Sprintf("%s (sampled 1/100)", pusherErr.Error()))
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -351,7 +360,7 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		consumer, logs, reg := setupTest(pusherErr)
 
 		// Should return no error on client errors.
-		require.NoError(t, consumer.consume(context.Background(), []record{reqRecord}))
+		require.NoError(t, consumer.Consume(context.Background(), []record{reqRecord}))
 
 		assert.Empty(t, logs.String())
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -364,42 +373,6 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 
 }
 
-func TestPusherConsumer_consume_ShouldHonorContextCancellation(t *testing.T) {
-	// Create a request that will be used in this test; the content doesn't matter,
-	// since we only test errors.
-	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}}
-	reqBytes, err := req.Marshal()
-	require.NoError(t, err)
-
-	reqRecord := record{
-		ctx:      context.Background(), // The record's context isn't important for the test.
-		tenantID: "user-1",
-		content:  reqBytes,
-	}
-
-	// didPush signals that the testing record was pushed to the pusher.
-	didPush := make(chan struct{}, 1)
-	pusher := pusherFunc(func(ctx context.Context, _ *mimirpb.WriteRequest) error {
-		close(didPush)
-		<-ctx.Done()
-		return context.Cause(ctx)
-	})
-	consumer := newPusherConsumer(pusher, nil, prometheus.NewPedanticRegistry(), log.NewNopLogger())
-
-	wantCancelErr := cancellation.NewErrorf("stop")
-
-	// For this test, cancelling the top-most context must cancel an in-flight call to push,
-	// to prevent pusher from hanging forever.
-	canceledCtx, cancel := context.WithCancelCause(context.Background())
-	go func() {
-		<-didPush
-		cancel(wantCancelErr)
-	}()
-
-	err = consumer.consume(canceledCtx, []record{reqRecord})
-	require.ErrorIs(t, err, wantCancelErr)
-}
-
 // ingesterError mimics how the ingester construct errors
 func ingesterError(cause mimirpb.ErrorCause, statusCode codes.Code, message string) error {
 	errorDetails := &mimirpb.ErrorDetails{Cause: cause}
@@ -408,4 +381,441 @@ func ingesterError(cause mimirpb.ErrorCause, statusCode codes.Code, message stri
 		panic(err)
 	}
 	return statWithDetails.Err()
+}
+
+type mockPusher struct {
+	mock.Mock
+}
+
+func (m *mockPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
+	args := m.Called(ctx, request)
+	return args.Error(0)
+}
+
+func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
+	noopHistogram := promauto.With(prometheus.NewRegistry()).NewHistogram(prometheus.HistogramOpts{Name: "noop", NativeHistogramBucketFactor: 1.1})
+
+	testCases := map[string]struct {
+		shardCount        int
+		batchSize         int
+		requests          []*mimirpb.WriteRequest
+		expectedErrs      []error
+		expectedErrsCount int
+
+		expectedUpstreamPushes []*mimirpb.WriteRequest
+		upstreamPushErrs       []error
+		expectedCloseErr       error
+	}{
+		"push to a single shard and fill exactly capacity": {
+			shardCount: 1,
+			batchSize:  2,
+			requests: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_1")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2_1")}},
+			},
+			expectedErrs: []error{nil, nil},
+
+			expectedUpstreamPushes: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_1_1"),
+					mockPreallocTimeseries("series_2_1"),
+				}},
+			},
+			upstreamPushErrs: []error{nil},
+			expectedCloseErr: nil,
+		},
+		"push to multiple shards and fill exact capacity": {
+			shardCount: 2,
+			batchSize:  2,
+			requests: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_2")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2_2")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_2")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_4_2")}},
+			},
+			expectedErrs: []error{nil, nil, nil, nil},
+
+			expectedUpstreamPushes: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_1_2"),
+					mockPreallocTimeseries("series_3_2"),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_2_2"),
+					mockPreallocTimeseries("series_4_2"),
+				}},
+			},
+			upstreamPushErrs: []error{nil, nil},
+			expectedCloseErr: nil,
+		},
+		"push to single shard and underfill capacity": {
+			shardCount: 1,
+			batchSize:  2,
+			requests: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_3")}},
+			},
+			expectedErrs: []error{nil},
+
+			expectedUpstreamPushes: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_3")}},
+			},
+			upstreamPushErrs: []error{nil},
+			expectedCloseErr: nil,
+		},
+		"push to single shard and overfill capacity": {
+			shardCount: 1,
+			batchSize:  2,
+			requests: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_4")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2_4")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_4")}},
+			},
+			expectedErrs: []error{nil, nil, nil},
+
+			expectedUpstreamPushes: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_1_4"),
+					mockPreallocTimeseries("series_2_4"),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_3_4"),
+				}},
+			},
+			upstreamPushErrs: []error{nil, nil},
+			expectedCloseErr: nil,
+		},
+		"push to single shard and overfill only with the series of a singe request": {
+			shardCount: 1,
+			batchSize:  2,
+			requests: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_1_5"),
+					mockPreallocTimeseries("series_2_5"),
+					mockPreallocTimeseries("series_3_5"),
+				}},
+			},
+			expectedErrs: []error{nil},
+
+			expectedUpstreamPushes: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_1_5"),
+					mockPreallocTimeseries("series_2_5"),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_3_5"),
+				}},
+			},
+			upstreamPushErrs: []error{nil, nil},
+			expectedCloseErr: nil,
+		},
+		"push to multiple shards and overfill capacity on one shard and underfill on another": {
+			shardCount: 2,
+			batchSize:  2,
+			requests: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_6")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2_6")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_6")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_6")}},
+			},
+
+			expectedErrs: []error{nil, nil, nil, nil},
+			expectedUpstreamPushes: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_1_6"),
+					mockPreallocTimeseries("series_3_6"),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_2_6"),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_3_6"),
+				}},
+			},
+			upstreamPushErrs: []error{nil, nil, nil},
+			expectedCloseErr: nil,
+		},
+		"push to single shard and get an error with an underfilled shard (i.e. when calling Close() on the Pusher)": {
+			shardCount: 1,
+			batchSize:  2,
+			requests: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_7")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2_7")}},
+			},
+			expectedErrs: []error{nil, nil},
+
+			expectedUpstreamPushes: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_1_7"),
+					mockPreallocTimeseries("series_2_7"),
+				}},
+			},
+			upstreamPushErrs: []error{assert.AnError},
+			expectedCloseErr: assert.AnError,
+		},
+		"push to single shard and get an error with an overfilled shard (i.e. during some of the pushes)": {
+			shardCount: 1,
+			batchSize:  2,
+			requests: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_8")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2_8")}},
+
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_8")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_8")}},
+
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_8")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_8")}},
+
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_8")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_8")}},
+			},
+			expectedErrsCount: 1, // at least one of those should fail because the first flush failed
+
+			expectedUpstreamPushes: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_1_8"),
+					mockPreallocTimeseries("series_2_8"),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_3_8"),
+					mockPreallocTimeseries("series_3_8"),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_3_8"),
+					mockPreallocTimeseries("series_3_8"),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_3_8"),
+					mockPreallocTimeseries("series_3_8"),
+				}},
+			},
+			upstreamPushErrs: []error{assert.AnError, nil, nil, nil},
+			expectedCloseErr: nil,
+		},
+	}
+
+	for name, tc := range testCases {
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, len(tc.expectedUpstreamPushes), len(tc.upstreamPushErrs))
+			if len(tc.expectedErrs) != 0 && tc.expectedErrsCount > 0 {
+				require.Fail(t, "expectedErrs and expectedErrsCount are mutually exclusive")
+			}
+			if len(tc.expectedErrs) != 0 {
+				require.Equal(t, len(tc.expectedErrs), len(tc.requests))
+			}
+
+			pusher := &mockPusher{}
+			// run with a buffer of one, so some of the tests can fill the buffer and test the error handling
+			const buffer = 1
+			shardingP := newParallelStorageShards(noopHistogram, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
+
+			for i, req := range tc.expectedUpstreamPushes {
+				pusher.On("PushToStorage", mock.Anything, req).Return(tc.upstreamPushErrs[i])
+			}
+			var actualPushErrs []error
+			for _, req := range tc.requests {
+				err := shardingP.ShardWriteRequest(context.Background(), req)
+				actualPushErrs = append(actualPushErrs, err)
+			}
+
+			if len(tc.expectedErrs) > 0 {
+				require.Equal(t, tc.expectedErrs, actualPushErrs)
+			} else {
+				receivedErrs := 0
+				for _, err := range actualPushErrs {
+					if err != nil {
+						receivedErrs++
+					}
+				}
+				require.Equalf(t, tc.expectedErrsCount, receivedErrs, "received %d errors instead of %d: %v", receivedErrs, tc.expectedErrsCount, actualPushErrs)
+			}
+
+			closeErr := shardingP.Stop()
+			require.ErrorIs(t, closeErr, tc.expectedCloseErr)
+			pusher.AssertNumberOfCalls(t, "PushToStorage", len(tc.expectedUpstreamPushes))
+			pusher.AssertExpectations(t)
+		})
+	}
+}
+
+func TestBatchingQueue(t *testing.T) {
+	capacity := 5
+	batchSize := 3
+
+	series1 := mockPreallocTimeseries("series_1")
+	series2 := mockPreallocTimeseries("series_2")
+
+	series := []mimirpb.PreallocTimeseries{series1, series2}
+
+	t.Run("batch not flushed because batch size is 3 and we have 2 items in the queue", func(t *testing.T) {
+		queue := setupQueue(t, capacity, batchSize, series)
+
+		select {
+		case <-queue.Channel():
+			t.Fatal("expected batch to not be flushed")
+		case <-time.After(100 * time.Millisecond):
+		}
+	})
+
+	t.Run("batch flushed because batch size is 3 and we have 3 items in the queue", func(t *testing.T) {
+		queue := setupQueue(t, capacity, batchSize, series)
+
+		series3 := mockPreallocTimeseries("series_3")
+		require.NoError(t, queue.AddToBatch(context.Background(), series3))
+
+		select {
+		case batch := <-queue.Channel():
+			require.Len(t, batch.WriteRequest.Timeseries, 3)
+			require.Equal(t, series1, batch.WriteRequest.Timeseries[0])
+			require.Equal(t, series2, batch.WriteRequest.Timeseries[1])
+			require.Equal(t, series3, batch.WriteRequest.Timeseries[2])
+		case <-time.After(time.Second):
+			t.Fatal("expected batch to be flushed")
+		}
+
+		// after the batch is flushed, the queue should be empty.
+		require.Len(t, queue.currentBatch.Timeseries, 0)
+	})
+
+	t.Run("if you close the queue with items in the queue, the queue should flush the items", func(t *testing.T) {
+		queue := setupQueue(t, capacity, batchSize, series)
+
+		// Channel is empty.
+		select {
+		case <-queue.Channel():
+			t.Fatal("expected batch to not be flushed")
+		case <-time.After(100 * time.Millisecond):
+		}
+
+		// Read in a separate goroutine as when we close the queue, the channel will be closed.
+		var batch flushableWriteRequest
+		go func() {
+			defer queue.Done()
+			for b := range queue.Channel() {
+				batch = b
+				queue.ErrorChannel() <- nil
+			}
+		}()
+
+		// Close the queue, and the items should be flushed.
+		require.NoError(t, queue.Close())
+
+		require.Len(t, batch.WriteRequest.Timeseries, 2)
+		require.Equal(t, series1, batch.WriteRequest.Timeseries[0])
+		require.Equal(t, series2, batch.WriteRequest.Timeseries[1])
+	})
+
+	t.Run("test queue capacity", func(t *testing.T) {
+		queue := setupQueue(t, capacity, batchSize, nil)
+
+		// Queue channel is empty because there are only 2 items in the current currentBatch.
+		require.Len(t, queue.ch, 0)
+		require.Len(t, queue.currentBatch.Timeseries, 0)
+
+		// Add items to the queue until it's full.
+		for i := 0; i < capacity*batchSize; i++ {
+			s := mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
+			require.NoError(t, queue.AddToBatch(context.Background(), s))
+		}
+
+		// We should have 5 items in the queue channel and 0 items in the currentBatch.
+		require.Len(t, queue.ch, 5)
+		require.Len(t, queue.currentBatch.Timeseries, 0)
+
+		// Read one item to free up a queue space.
+		batch := <-queue.Channel()
+		require.Len(t, batch.WriteRequest.Timeseries, 3)
+
+		// Queue should have 4 items now and the currentBatch remains the same.
+		require.Len(t, queue.ch, 4)
+		require.Len(t, queue.currentBatch.Timeseries, 0)
+
+		// Add three more items to fill up the queue again, this shouldn't block.
+		s := mockPreallocTimeseries("series_100")
+		require.NoError(t, queue.AddToBatch(context.Background(), s))
+		require.NoError(t, queue.AddToBatch(context.Background(), s))
+		require.NoError(t, queue.AddToBatch(context.Background(), s))
+
+		require.Len(t, queue.ch, 5)
+		require.Len(t, queue.currentBatch.Timeseries, 0)
+	})
+}
+
+func TestBatchingQueue_ErrorHandling(t *testing.T) {
+	capacity := 2
+	batchSize := 2
+	series1 := mockPreallocTimeseries("series_1")
+	series2 := mockPreallocTimeseries("series_2")
+
+	t.Run("AddToBatch returns all errors and it pushes the batch when the batch is filled ", func(t *testing.T) {
+		queue := setupQueue(t, capacity, batchSize, nil)
+		ctx := context.Background()
+
+		// Push 1 series so that the next push will complete the batch.
+		require.NoError(t, queue.AddToBatch(ctx, series2))
+
+		// Push an error to fill the error channel.
+		queue.ErrorChannel() <- fmt.Errorf("mock error 1")
+		queue.ErrorChannel() <- fmt.Errorf("mock error 2")
+
+		// AddToBatch should return an error now.
+		err := queue.AddToBatch(ctx, series2)
+		assert.Equal(t, "2 errors: mock error 1; mock error 2", err.Error())
+		// Also the batch was pushed.
+		select {
+		case batch := <-queue.Channel():
+			require.Equal(t, series2, batch.WriteRequest.Timeseries[0])
+			require.Equal(t, series2, batch.WriteRequest.Timeseries[1])
+		default:
+			t.Fatal("expected batch to be flushed")
+		}
+
+		// AddToBatch should work again.
+		require.NoError(t, queue.AddToBatch(ctx, series2))
+		require.NoError(t, queue.AddToBatch(ctx, series2))
+	})
+
+	t.Run("Any errors pushed after last AddToBatch call are received on Close", func(t *testing.T) {
+		queue := setupQueue(t, capacity, batchSize, nil)
+		ctx := context.Background()
+
+		// Add a batch to a batch but make sure nothing is pushed.,
+		require.NoError(t, queue.AddToBatch(ctx, series1))
+
+		select {
+		case <-queue.Channel():
+			t.Fatal("expected batch to not be flushed")
+		default:
+		}
+
+		// Push multiple errors
+		queue.ErrorChannel() <- fmt.Errorf("mock error 1")
+		queue.ErrorChannel() <- fmt.Errorf("mock error 2")
+
+		// Close and Done on the queue.
+		queue.Done()
+		err := queue.Close()
+		require.Error(t, err)
+		assert.Equal(t, "2 errors: mock error 1; mock error 2", err.Error())
+
+		// Batch is also pushed.
+		select {
+		case batch := <-queue.Channel():
+			require.Equal(t, series1, batch.WriteRequest.Timeseries[0])
+		default:
+			t.Fatal("expected batch to be flushed")
+		}
+	})
+}
+
+func setupQueue(t *testing.T, capacity, batchSize int, series []mimirpb.PreallocTimeseries) *batchingQueue {
+	t.Helper()
+
+	queue := newBatchingQueue(capacity, batchSize)
+
+	for _, s := range series {
+		require.NoError(t, queue.AddToBatch(context.Background(), s))
+	}
+
+	return queue
 }

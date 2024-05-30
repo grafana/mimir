@@ -235,6 +235,8 @@ type decompressor struct {
 	unzstdPool sync.Pool
 }
 
+var defaultDecompressor = newDecompressor()
+
 func newDecompressor() *decompressor {
 	d := &decompressor{
 		ungzPool: sync.Pool{
