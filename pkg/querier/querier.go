@@ -164,7 +164,8 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 	case standardPromQLEngine:
 		eng = promql.NewEngine(opts)
 	case streamingPromQLEngine:
-		streamingEngine, err := streamingpromql.NewEngine(opts)
+		limitsProvider := &tenantQueryLimitsProvider{limits: limits}
+		streamingEngine, err := streamingpromql.NewEngine(opts, limitsProvider)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -622,4 +623,17 @@ func logClampEvent(spanLog *spanlogger.SpanLogger, originalT, clampedT int64, mi
 		"original", util.TimeFromMillis(originalT).String(),
 		"updated", util.TimeFromMillis(clampedT).String(),
 	)
+}
+
+type tenantQueryLimitsProvider struct {
+	limits *validation.Overrides
+}
+
+func (p *tenantQueryLimitsProvider) GetMaxInMemorySamples(ctx context.Context) (int, error) {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return p.limits.MaxInMemorySamplesPerQuery(tenantID), nil
 }

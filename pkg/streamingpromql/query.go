@@ -43,9 +43,14 @@ type Query struct {
 	result *promql.Result
 }
 
-func newQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration, engine *Engine) (*Query, error) {
+func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration, engine *Engine) (*Query, error) {
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
+	}
+
+	maxInMemorySamples, err := engine.limitsProvider.GetMaxInMemorySamples(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	expr, err := parser.ParseExpr(qs)
@@ -60,7 +65,7 @@ func newQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, sta
 		opts:      opts,
 		engine:    engine,
 		qs:        qs,
-		pool:      pooling.NewLimitingPool(0), // TODO: set this limit
+		pool:      pooling.NewLimitingPool(maxInMemorySamples),
 		statement: &parser.EvalStmt{
 			Expr:          expr,
 			Start:         start,
