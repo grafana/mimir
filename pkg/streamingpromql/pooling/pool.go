@@ -1,12 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operator
+package pooling
 
 import (
 	"github.com/prometheus/prometheus/promql"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
+
+type SampleSlicePool interface {
+	GetFPointSlice(size int) ([]promql.FPoint, error)
+	PutFPointSlice(s []promql.FPoint)
+
+	GetHPointSlice(size int) ([]promql.HPoint, error)
+	PutHPointSlice(s []promql.HPoint)
+}
 
 const (
 	maxExpectedSeriesPerResult  = 10_000_000 // Likewise, there's not too much science behind this number: this is the based on examining the largest queries seen at Grafana Labs.
@@ -22,8 +31,8 @@ var (
 		return make(promql.Vector, 0, size)
 	})
 
-	seriesMetadataSlicePool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, seriesPerResultBucketFactor, func(size int) []SeriesMetadata {
-		return make([]SeriesMetadata, 0, size)
+	seriesMetadataSlicePool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, seriesPerResultBucketFactor, func(size int) []types.SeriesMetadata {
+		return make([]types.SeriesMetadata, 0, size)
 	})
 
 	floatSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(_ int) []float64 {
@@ -53,11 +62,11 @@ func PutVector(v promql.Vector) {
 	vectorPool.Put(v)
 }
 
-func GetSeriesMetadataSlice(size int) []SeriesMetadata {
+func GetSeriesMetadataSlice(size int) []types.SeriesMetadata {
 	return seriesMetadataSlicePool.Get(size)
 }
 
-func PutSeriesMetadataSlice(s []SeriesMetadata) {
+func PutSeriesMetadataSlice(s []types.SeriesMetadata) {
 	seriesMetadataSlicePool.Put(s)
 }
 

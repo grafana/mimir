@@ -13,6 +13,8 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type RangeVectorSelector struct {
@@ -27,7 +29,7 @@ type RangeVectorSelector struct {
 
 var _ RangeVectorOperator = &RangeVectorSelector{}
 
-func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
+func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Compute value we need on every call to NextSeries() once, here.
 	m.rangeMilliseconds = m.Selector.Range.Milliseconds()
 	m.numSteps = stepCount(m.Selector.Start, m.Selector.End, m.Selector.Interval)
@@ -54,9 +56,9 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) NextStepSamples(floats *RingBuffer) (RangeVectorStepData, error) {
+func (m *RangeVectorSelector) NextStepSamples(floats *RingBuffer) (types.RangeVectorStepData, error) {
 	if m.nextT > m.Selector.End {
-		return RangeVectorStepData{}, EOS
+		return types.RangeVectorStepData{}, EOS
 	}
 
 	stepT := m.nextT
@@ -70,12 +72,12 @@ func (m *RangeVectorSelector) NextStepSamples(floats *RingBuffer) (RangeVectorSt
 	floats.DiscardPointsBefore(rangeStart)
 
 	if err := m.fillBuffer(floats, rangeStart, rangeEnd); err != nil {
-		return RangeVectorStepData{}, err
+		return types.RangeVectorStepData{}, err
 	}
 
 	m.nextT += m.Selector.Interval
 
-	return RangeVectorStepData{
+	return types.RangeVectorStepData{
 		StepT:      stepT,
 		RangeStart: rangeStart,
 		RangeEnd:   rangeEnd,

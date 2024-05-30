@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operator
+package pooling
 
 import (
 	"github.com/prometheus/prometheus/promql"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
@@ -24,7 +25,7 @@ var (
 		return make([]promql.FPoint, 0, size)
 	})
 
-	hPointSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, seriesPerResultBucketFactor, func(size int) []promql.HPoint {
+	hPointSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.HPoint {
 		return make([]promql.HPoint, 0, size)
 	})
 
@@ -133,7 +134,7 @@ func (p *LimitingPool) PutHPointSlice(s []promql.HPoint) {
 }
 
 // PutInstantVectorSeriesData is equivalent to calling PutFPointSlice(d.Floats) and PutHPointSlice(d.Histograms).
-func (p *LimitingPool) PutInstantVectorSeriesData(d InstantVectorSeriesData) {
+func (p *LimitingPool) PutInstantVectorSeriesData(d types.InstantVectorSeriesData) {
 	p.PutFPointSlice(d.Floats)
 	p.PutHPointSlice(d.Histograms)
 }

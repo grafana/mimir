@@ -22,6 +22,8 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operator"
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 var errQueryCancelled = cancellation.NewErrorf("query execution cancelled")
@@ -36,7 +38,7 @@ type Query struct {
 	engine    *Engine
 	qs        string
 	cancel    context.CancelCauseFunc
-	pool      *operator.LimitingPool
+	pool      *pooling.LimitingPool
 
 	result *promql.Result
 }
@@ -58,7 +60,7 @@ func newQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, sta
 		opts:      opts,
 		engine:    engine,
 		qs:        qs,
-		pool:      operator.NewLimitingPool(0), // TODO: set this limit
+		pool:      pooling.NewLimitingPool(0), // TODO: set this limit
 		statement: &parser.EvalStmt{
 			Expr:          expr,
 			Start:         start,
@@ -269,7 +271,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	if err != nil {
 		return &promql.Result{Err: err}
 	}
-	defer operator.PutSeriesMetadataSlice(series)
+	defer pooling.PutSeriesMetadataSlice(series)
 
 	switch q.statement.Expr.Type() {
 	case parser.ValueTypeMatrix:
@@ -303,9 +305,9 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	return q.result
 }
 
-func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o operator.InstantVectorOperator, series []operator.SeriesMetadata) (promql.Vector, error) {
+func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o operator.InstantVectorOperator, series []types.SeriesMetadata) (promql.Vector, error) {
 	ts := timeMilliseconds(q.statement.Start)
-	v := operator.GetVector(len(series))
+	v := pooling.GetVector(len(series))
 
 	for i, s := range series {
 		d, err := o.NextSeries(ctx)
@@ -346,8 +348,8 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o o
 	return v, nil
 }
 
-func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o operator.InstantVectorOperator, series []operator.SeriesMetadata) (promql.Matrix, error) {
-	m := operator.GetMatrix(len(series))
+func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o operator.InstantVectorOperator, series []types.SeriesMetadata) (promql.Matrix, error) {
+	m := pooling.GetMatrix(len(series))
 
 	for i, s := range series {
 		d, err := o.NextSeries(ctx)
@@ -378,8 +380,8 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o o
 	return m, nil
 }
 
-func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o operator.RangeVectorOperator, series []operator.SeriesMetadata) (promql.Matrix, error) {
-	m := operator.GetMatrix(len(series))
+func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o operator.RangeVectorOperator, series []types.SeriesMetadata) (promql.Matrix, error) {
+	m := pooling.GetMatrix(len(series))
 	b := operator.NewRingBuffer(q.pool)
 	defer b.Close()
 
@@ -433,9 +435,9 @@ func (q *Query) Close() {
 			q.pool.PutHPointSlice(s.Histograms)
 		}
 
-		operator.PutMatrix(v)
+		pooling.PutMatrix(v)
 	case promql.Vector:
-		operator.PutVector(v)
+		pooling.PutVector(v)
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
 	}

@@ -13,6 +13,9 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // Most of the functionality of the binary operation operator is tested through the test scripts in
@@ -21,19 +24,19 @@ import (
 // The merging behaviour has many edge cases, so it's easier to test it here.
 func TestBinaryOperation_SeriesMerging(t *testing.T) {
 	testCases := map[string]struct {
-		input                []InstantVectorSeriesData
+		input                []types.InstantVectorSeriesData
 		sourceSeriesIndices  []int
-		sourceSeriesMetadata []SeriesMetadata
+		sourceSeriesMetadata []types.SeriesMetadata
 
-		expectedOutput InstantVectorSeriesData
+		expectedOutput types.InstantVectorSeriesData
 		expectedError  string
 	}{
 		"no input series": {
-			input:          []InstantVectorSeriesData{},
-			expectedOutput: InstantVectorSeriesData{},
+			input:          []types.InstantVectorSeriesData{},
+			expectedOutput: types.InstantVectorSeriesData{},
 		},
 		"single input series": {
-			input: []InstantVectorSeriesData{
+			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
 						{T: 1, F: 10},
@@ -42,7 +45,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: InstantVectorSeriesData{
+			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1, F: 10},
 					{T: 2, F: 20},
@@ -51,7 +54,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			},
 		},
 		"two input series with no overlap, series in time order": {
-			input: []InstantVectorSeriesData{
+			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
 						{T: 1, F: 10},
@@ -67,7 +70,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: InstantVectorSeriesData{
+			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1, F: 10},
 					{T: 2, F: 20},
@@ -79,7 +82,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			},
 		},
 		"two input series with no overlap, series not in time order": {
-			input: []InstantVectorSeriesData{
+			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
 						{T: 4, F: 40},
@@ -95,7 +98,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: InstantVectorSeriesData{
+			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1, F: 10},
 					{T: 2, F: 20},
@@ -107,7 +110,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			},
 		},
 		"three input series with no overlap": {
-			input: []InstantVectorSeriesData{
+			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
 						{T: 1, F: 10},
@@ -130,7 +133,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: InstantVectorSeriesData{
+			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1, F: 10},
 					{T: 2, F: 20},
@@ -145,7 +148,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			},
 		},
 		"two input series with overlap": {
-			input: []InstantVectorSeriesData{
+			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
 						{T: 1, F: 10},
@@ -161,7 +164,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: InstantVectorSeriesData{
+			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1, F: 10},
 					{T: 2, F: 20},
@@ -173,7 +176,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			},
 		},
 		"three input series with overlap": {
-			input: []InstantVectorSeriesData{
+			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
 						{T: 1, F: 10},
@@ -193,7 +196,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: InstantVectorSeriesData{
+			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1, F: 10},
 					{T: 2, F: 20},
@@ -205,7 +208,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			},
 		},
 		"input series with conflict": {
-			input: []InstantVectorSeriesData{
+			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
 						{T: 1, F: 10},
@@ -226,7 +229,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 			sourceSeriesIndices: []int{6, 9, 4},
-			sourceSeriesMetadata: []SeriesMetadata{
+			sourceSeriesMetadata: []types.SeriesMetadata{
 				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
 				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
 				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
@@ -251,7 +254,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					On:             true,
 					MatchingLabels: []string{"env"},
 				},
-				Pool: NewLimitingPool(0),
+				Pool: pooling.NewLimitingPool(0),
 			}
 
 			result, err := o.mergeOneSide(testCase.input, testCase.sourceSeriesIndices, testCase.sourceSeriesMetadata, "right")
@@ -456,14 +459,14 @@ func TestBinaryOperation_Sorting(t *testing.T) {
 			require.Len(t, testCase.expectedOrderFavouringLeftSide, len(testCase.series), "invalid test case: should have same number of input and output series for order favouring left side")
 			require.Len(t, testCase.expectedOrderFavouringRightSide, len(testCase.series), "invalid test case: should have same number of input and output series for order favouring right side")
 
-			metadata := make([]SeriesMetadata, len(testCase.series))
+			metadata := make([]types.SeriesMetadata, len(testCase.series))
 			for i := range testCase.series {
-				metadata[i] = SeriesMetadata{labels.FromStrings("series", strconv.Itoa(i))}
+				metadata[i] = types.SeriesMetadata{labels.FromStrings("series", strconv.Itoa(i))}
 			}
 
-			test := func(t *testing.T, series []*binaryOperationOutputSeries, metadata []SeriesMetadata, sorter sort.Interface, expectedOrder []int) {
+			test := func(t *testing.T, series []*binaryOperationOutputSeries, metadata []types.SeriesMetadata, sorter sort.Interface, expectedOrder []int) {
 				expectedSeriesOrder := make([]*binaryOperationOutputSeries, len(series))
-				expectedMetadataOrder := make([]SeriesMetadata, len(metadata))
+				expectedMetadataOrder := make([]types.SeriesMetadata, len(metadata))
 
 				for outputIndex, inputIndex := range expectedOrder {
 					expectedSeriesOrder[outputIndex] = series[inputIndex]
@@ -494,12 +497,12 @@ func TestBinaryOperation_Sorting(t *testing.T) {
 }
 
 func TestBinaryOperationSeriesBuffer(t *testing.T) {
-	series0Data := InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 0}}}
-	series2Data := InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 2}}}
-	series3Data := InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 3}}}
-	series4Data := InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 4}}}
-	series5Data := InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 5}}}
-	series6Data := InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 6}}}
+	series0Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 0}}}
+	series2Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 2}}}
+	series3Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 3}}}
+	series4Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 4}}}
+	series5Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 5}}}
+	series6Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 6}}}
 
 	inner := &testOperator{
 		series: []labels.Labels{
@@ -511,7 +514,7 @@ func TestBinaryOperationSeriesBuffer(t *testing.T) {
 			labels.FromStrings("series", "5"),
 			labels.FromStrings("series", "6"),
 		},
-		data: []InstantVectorSeriesData{
+		data: []types.InstantVectorSeriesData{
 			series0Data,
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
 			series2Data,
@@ -523,35 +526,35 @@ func TestBinaryOperationSeriesBuffer(t *testing.T) {
 	}
 
 	seriesUsed := []bool{true, false, true, true, true}
-	buffer := newBinaryOperationSeriesBuffer(inner, seriesUsed, NewLimitingPool(0))
+	buffer := newBinaryOperationSeriesBuffer(inner, seriesUsed, pooling.NewLimitingPool(0))
 	ctx := context.Background()
 
 	// Read first series.
 	series, err := buffer.getSeries(ctx, []int{0})
 	require.NoError(t, err)
-	require.Equal(t, []InstantVectorSeriesData{series0Data}, series)
+	require.Equal(t, []types.InstantVectorSeriesData{series0Data}, series)
 	require.Empty(t, buffer.buffer) // Should not buffer series that was immediately returned.
 
 	// Read next desired series, skipping over series that won't be used.
 	series, err = buffer.getSeries(ctx, []int{2})
 	require.NoError(t, err)
-	require.Equal(t, []InstantVectorSeriesData{series2Data}, series)
+	require.Equal(t, []types.InstantVectorSeriesData{series2Data}, series)
 	require.Empty(t, buffer.buffer) // Should not buffer series at index 1 that won't be used.
 
 	// Read another desired series, skipping over a series that will be used later.
 	series, err = buffer.getSeries(ctx, []int{4})
 	require.NoError(t, err)
-	require.Equal(t, []InstantVectorSeriesData{series4Data}, series)
+	require.Equal(t, []types.InstantVectorSeriesData{series4Data}, series)
 	require.Len(t, buffer.buffer, 1) // Should only have buffered a single series (index 3).
 
 	// Read the series we just read past from the buffer.
 	series, err = buffer.getSeries(ctx, []int{3})
 	require.NoError(t, err)
-	require.Equal(t, []InstantVectorSeriesData{series3Data}, series)
+	require.Equal(t, []types.InstantVectorSeriesData{series3Data}, series)
 	require.Empty(t, buffer.buffer) // Series that has been returned should be removed from buffer once it's returned.
 
 	// Read multiple series.
 	series, err = buffer.getSeries(ctx, []int{5, 6})
 	require.NoError(t, err)
-	require.Equal(t, []InstantVectorSeriesData{series5Data, series6Data}, series)
+	require.Equal(t, []types.InstantVectorSeriesData{series5Data, series6Data}, series)
 }
