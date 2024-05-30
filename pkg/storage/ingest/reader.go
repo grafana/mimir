@@ -588,22 +588,23 @@ func (r *PartitionReader) pollFetches(ctx context.Context) kgo.Fetches {
 		r.metrics.fetchWaitDuration.Observe(time.Since(start).Seconds())
 	}(time.Now())
 
-	//_ = r.client.PollFetches(ctx)
+	//return r.client.PollFetches(ctx)
 	return r.manualFetch(ctx)
 }
 
 func (r *PartitionReader) manualFetch(ctx context.Context) kgo.Fetches {
-
-	topics, err := kadm.NewClient(r.client).ListTopics(ctx, r.kafkaCfg.Topic)
-	if err != nil {
-		panic(err)
+	err, topicID, k, done, _, _ := r.findTopicID(ctx)
+	if done {
+		return k
 	}
-	topic := topics[r.kafkaCfg.Topic]
-	if r.startOffset < 0 {
-		r.startOffset = 0 // for some reason sending -1 or -2 to the broker causes it to return OFFSET_OUT_OF_RANGE; this is probably handled by franz-go in handleReqResp
+	switch r.startOffset {
+	// TODO dimitarvdimitrov
+	case kafkaOffsetStart:
+		r.startOffset = 0
+	case kafkaOffsetEnd:
+		r.startOffset = 0
 	}
 	level.Info(r.logger).Log("msg", "polling fetches", "offset", r.startOffset, "partition", r.partitionID, "topic", r.kafkaCfg.Topic)
-	topicID := topic.ID
 	req := kmsg.NewFetchRequest()
 	req.Topics = []kmsg.FetchRequestTopic{{
 		Topic:   r.kafkaCfg.Topic,
@@ -619,7 +620,8 @@ func (r *PartitionReader) manualFetch(ctx context.Context) kgo.Fetches {
 	}}
 	req.MinBytes = 1
 	req.Version = 13
-	req.MaxWaitMillis = 5000
+	req.MaxWaitMillis = 500
+	req.MaxBytes = 100_000_000
 
 	req.SessionEpoch = 0
 	fetches := kgo.Fetches{
@@ -635,16 +637,54 @@ func (r *PartitionReader) manualFetch(ctx context.Context) kgo.Fetches {
 
 	resp, err := req.RequestWith(ctx, r.client)
 	if err != nil {
-		panic(err)
+		if errors.Is(err, context.Canceled) {
+			return kgo.Fetches{}
+		}
+		fetches[0].Topics[0].Partitions = append(fetches[0].Topics[0].Partitions, kgo.FetchPartition{
+			Err: fmt.Errorf("fetching from kafka: %w", err),
+		})
+		return fetches
 	}
 
-	partition := processRespPartition(&resp.Topics[0].Partitions[0])
-	level.Error(r.logger).Log("error_code", resp.ErrorCode, "num_records", len(partition.Records), "num_topics", len(resp.Topics), "num_partitions", len(resp.Topics[0].Partitions))
+	partition := processRespPartition(&resp.Topics[0].Partitions[0], r.kafkaCfg.Topic)
+	level.Info(r.logger).Log("msg", "fetched records", "error_code", resp.ErrorCode, "num_records", len(partition.Records), "num_topics", len(resp.Topics), "num_partitions", len(resp.Topics[0].Partitions))
 	fetches[0].Topics[0].Partitions = append(fetches[0].Topics[0].Partitions, partition)
 	if len(partition.Records) > 0 {
-		r.startOffset = partition.Records[len(partition.Records)-1].Offset
+		r.startOffset = partition.Records[len(partition.Records)-1].Offset + 1
 	}
 	return fetches
+}
+
+func (r *PartitionReader) findTopicID(ctx context.Context) (_ error, _ kadm.TopicID, _ kgo.Fetches, _ bool, startOffset, endOffset int64) {
+	client := kadm.NewClient(r.client)
+	topics, err := client.ListTopics(ctx, r.kafkaCfg.Topic)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, kadm.TopicID{}, kgo.Fetches{}, true, 0, 0
+		}
+		return fmt.Errorf("find topic id list topics: %w", err), kadm.TopicID{}, kgo.Fetches{}, false, 0, 0
+	}
+	topic := topics[r.kafkaCfg.Topic]
+	topicID := topic.ID
+
+	//offsets, err := client.ListStartOffsets(ctx, r.kafkaCfg.Topic)
+	//if err != nil {
+	//	if errors.Is(err, context.Canceled) {
+	//		return nil, kadm.TopicID{}, kgo.Fetches{}, true, 0, 0
+	//	}
+	//	return fmt.Errorf("find topic id list start offset: %w", err), kadm.TopicID{}, kgo.Fetches{}, false, 0, 0
+	//}
+	//startOffset = offsets[r.kafkaCfg.Topic][r.partitionID].Offset
+	//
+	//offsets, err = client.ListEndOffsets(ctx, r.kafkaCfg.Topic)
+	//if err != nil {
+	//	if errors.Is(err, context.Canceled) {
+	//		return nil, kadm.TopicID{}, kgo.Fetches{}, true, 0, 0
+	//	}
+	//	return fmt.Errorf("find topic id list end: %w", err), kadm.TopicID{}, kgo.Fetches{}, false, 0, 0
+	//}
+	//endOffset = offsets[r.kafkaCfg.Topic][r.partitionID].Offset
+	return nil, topicID, nil, false, endOffset, startOffset
 }
 
 type readerFrom interface {
@@ -655,7 +695,7 @@ var crc32c = crc32.MakeTable(crc32.Castagnoli) // record crc's use Castagnoli ta
 
 // processRespPartition processes all records in all potentially compressed
 // batches (or message sets).
-func processRespPartition(rp *kmsg.FetchResponseTopicPartition) kgo.FetchPartition {
+func processRespPartition(rp *kmsg.FetchResponseTopicPartition, topic string) kgo.FetchPartition {
 	fp := kgo.FetchPartition{
 		Partition:        rp.Partition,
 		Err:              kerr.ErrorForCode(rp.ErrorCode),
@@ -759,6 +799,16 @@ func processRespPartition(rp *kmsg.FetchResponseTopicPartition) kgo.FetchPartiti
 		}
 
 		in = in[length:]
+
+		switch t := r.(type) {
+		case *kmsg.MessageV0:
+			panic("unkown message type")
+		case *kmsg.MessageV1:
+			panic("unkown message type")
+		case *kmsg.RecordBatch:
+			_, _ = processRecordBatch(topic, &fp, t)
+		}
+
 	}
 
 	return fp
