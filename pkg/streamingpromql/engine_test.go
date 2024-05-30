@@ -488,7 +488,7 @@ func TestInMemorySamplesLimit_RangeQueries(t *testing.T) {
 			instantQueryLimit: 4,
 			shouldSucceed:     false,
 		},
-		"limit enabled, query selects more samples than limit but should not load all of them into memory at once": {
+		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is under limit": {
 			expr: "sum(some_metric)",
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
 			// At peak we'll hold two series' samples in memory: the running total for the sum(), and the next series from the selector.
@@ -498,6 +498,17 @@ func TestInMemorySamplesLimit_RangeQueries(t *testing.T) {
 			// At peak we'll hold two series' samples in memory: the running total for the sum(), and the next series from the selector.
 			instantQueryLimit: 2,
 			shouldSucceed:     true,
+		},
+		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
+			expr: "sum(some_metric)",
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
+			// At peak we'll hold two series' samples in memory: the running total for the sum(), and the next series from the selector.
+			rangeQueryLimit: 15,
+
+			// Each series has one sample, which is already a power of two.
+			// At peak we'll hold two series' samples in memory: the running total for the sum(), and the next series from the selector.
+			instantQueryLimit: 1,
+			shouldSucceed:     false,
 		},
 	}
 
