@@ -282,15 +282,27 @@ func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
 
 // marshalWriteRequestToRecords marshals a mimirpb.WriteRequest to one or more Kafka records.
 // The request may be split to multiple records to get that each single Kafka record
-// data size is not bigger than maxDataLength.
+// data size is not bigger than maxSize.
 //
 // This function is a best-effort. The returned Kafka records are not strictly guaranteed to
-// have their data size limited to maxDataLength. The reason is that the WriteRequest is split
+// have their data size limited to maxSize. The reason is that the WriteRequest is split
 // by each individual Timeseries and Metadata: if a single Timeseries or Metadata is bigger than
-// maxDataLength, than the resulting record will be bigger than the limit as well.
-// TODO unit test
-func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxDataLength int) ([]*kgo.Record, int, error) {
-	return marshalWriteRequestsToRecords(partitionID, tenantID, req.SplitByMaxMarshalSize(maxDataLength))
+// maxSize, than the resulting record will be bigger than the limit as well.
+// TODO add a metric to track the distributor of records per writerequest
+func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, int, error) {
+	reqSize := req.Size()
+
+	if reqSize <= maxSize {
+		// No need to split the request. We can take a fast path.
+		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, reqSize)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		return []*kgo.Record{rec}, len(rec.Value), nil
+	}
+
+	return marshalWriteRequestsToRecords(partitionID, tenantID, mimirpb.SplitWriteRequestByMaxMarshalSize(req, reqSize, maxSize))
 }
 
 func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, int, error) {
@@ -298,18 +310,30 @@ func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*m
 	recordsDataSizeBytes := 0
 
 	for _, req := range reqs {
-		data, err := req.Marshal()
+		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, req.Size())
 		if err != nil {
-			return nil, 0, errors.Wrap(err, "failed to serialise data")
+			return nil, 0, err
 		}
 
-		records = append(records, &kgo.Record{
-			Key:       []byte(tenantID), // We don't partition based on the key, so the value here doesn't make any difference.
-			Value:     data,
-			Partition: partitionID,
-		})
-		recordsDataSizeBytes += len(data)
+		records = append(records, rec)
+		recordsDataSizeBytes += len(rec.Value)
 	}
 
 	return records, recordsDataSizeBytes, nil
+}
+
+func marshalWriteRequestToRecord(partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize int) (*kgo.Record, error) {
+	// Marshal the request.
+	data := make([]byte, reqSize)
+	n, err := req.MarshalToSizedBuffer(data[:reqSize])
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to serialise write request")
+	}
+	data = data[:n]
+
+	return &kgo.Record{
+		Key:       []byte(tenantID), // We don't partition based on the key, so the value here doesn't make any difference.
+		Value:     data,
+		Partition: partitionID,
+	}, nil
 }
