@@ -9,3 +9,4 @@ datasources:
   isDefault: true
   jsonData:
     prometheusType: Mimir
+    timeInterval: 5s

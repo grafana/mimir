@@ -35,28 +35,24 @@ std.manifestYamlDoc({
       extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
       extraVolumes: ['.data-mimir-write-zone-a-3:/data:delegated'],
     }),
-
-    // Zone-b.
-    'mimir-write-zone-b-1': mimirService({
-      name: 'mimir-write-zone-b-1',
+    'mimir-write-zone-c-61': mimirService({
+      name: 'mimir-write-zone-c-61',
       target: 'write',
-      publishedHttpPort: 8011,
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
-      extraVolumes: ['.data-mimir-write-zone-b-1:/data:delegated'],
-    }),
-    'mimir-write-zone-b-2': mimirService({
-      name: 'mimir-write-zone-b-2',
-      target: 'write',
-      publishedHttpPort: 8012,
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
-      extraVolumes: ['.data-mimir-write-zone-b-2:/data:delegated'],
-    }),
-    'mimir-write-zone-b-3': mimirService({
-      name: 'mimir-write-zone-b-3',
-      target: 'write',
-      publishedHttpPort: 8013,
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
-      extraVolumes: ['.data-mimir-write-zone-b-3:/data:delegated'],
+      debug: false,
+      publishedHttpPort: 8064,
+      extraArguments: [
+        '-ingester.ring.instance-availability-zone=zone-c',
+        '-ingester.ring.instance-id=ingester-zone-c-61',
+        '-ingester.partition-ring.prefix=exclusive-prefix',
+        '-ingester.ring.prefix=exclusive-prefix',
+        '-ingest-storage.kafka.consume-from-position-at-startup=start',
+        '-ingest-storage.kafka.consume-from-timestamp-at-startup=0',
+        '-ingest-storage.kafka.replay-shards=2',
+        '-ingest-storage.kafka.batch-size=150',
+        '-ingest-storage.kafka.replay-concurrency=4',
+        '-ingest-storage.kafka.records-per-fetch=6000',
+      ],
+      extraVolumes: ['.data-mimir-write-zone-c-61:/data:delegated'],
     }),
   },
 
@@ -132,6 +128,8 @@ std.manifestYamlDoc({
         'KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093',
         'KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1',
         'KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000',
+        //        'KAFKA_MAX_PARTITION_FETCH_BYTES=5000000',  // 50MB
+        //        'KAFKA_FETCH_MAX_BYTES=5000000',  // 50MB
 
         // Decomment the following config to keep a short retention of records in Kafka.
         // This is useful to test the behaviour when Kafka records are deleted.
@@ -200,6 +198,8 @@ std.manifestYamlDoc({
       },
       env: {},
       extraArguments: [],
+      debug: true,
+      debugPort: self.publishedHttpPort + 3000,
       extraVolumes: [],
       memberlistBindPort: self.publishedHttpPort + 2000,
     },
@@ -212,11 +212,15 @@ std.manifestYamlDoc({
     },
     image: 'mimir',
     command: [
-      './mimir',
-      '-config.file=./config/mimir.yaml' % options,
-      '-target=%(target)s' % options,
-      '-activity-tracker.filepath=/activity/%(name)s' % options,
-    ] + options.extraArguments,
+      'sh',
+      '-c',
+      std.join(' ', [
+        (if options.debug then 'exec ./dlv exec ./mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options else 'exec ./mimir'),
+        '-config.file=./config/mimir.yaml' % options,
+        '-target=%(target)s' % options,
+        '-activity-tracker.filepath=/activity/%(name)s' % options,
+      ] + options.extraArguments),
+    ],
     environment: [
       '%s=%s' % [key, options.env[key]]
       for key in std.objectFields(options.env)
@@ -224,7 +228,7 @@ std.manifestYamlDoc({
     ],
     hostname: options.name,
     // Only publish HTTP port, but not gRPC one.
-    ports: ['%d:8080' % options.publishedHttpPort],
+    ports: ['%d:8080' % options.publishedHttpPort, '%(debugPort)d:%(debugPort)d' % options],
     depends_on: options.dependsOn,
     volumes: ['./config:/mimir/config', './activity:/activity'] + options.extraVolumes,
   },

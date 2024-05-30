@@ -1651,7 +1651,7 @@ func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, t
 type readerTestCfg struct {
 	kafka       KafkaConfig
 	partitionID int32
-	consumer    recordConsumer
+	consumer    consumerFactory
 	registry    *prometheus.Registry
 	logger      log.Logger
 }
@@ -1714,8 +1714,19 @@ func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partit
 		logger:      testutil.NewLogger(t),
 		kafka:       createTestKafkaConfig(addr, topicName),
 		partitionID: partitionID,
-		consumer:    consumer,
+		consumer: consumerFactoryFunc(func() consumerCloser {
+			return nopConsumerCloser{consumer}
+		}),
 	}
+}
+
+// TODO dimitarvdimitrov make all consumers implement Close() and just rename consumerCloser to recordConsumer and keep only one interface
+type nopConsumerCloser struct {
+	recordConsumer
+}
+
+func (nopConsumerCloser) Close(context.Context) []error {
+	return nil
 }
 
 func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {

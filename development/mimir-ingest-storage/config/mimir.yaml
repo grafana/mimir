@@ -17,7 +17,7 @@ ingest_storage:
     last_produced_offset_poll_interval: 500ms
 
 ingester:
-  track_ingester_owned_series: true
+  track_ingester_owned_series: false # suppress log messages in c-61 about empty ring; doesn't affect testing
 
   partition_ring:
     min_partition_owners_count:       2
