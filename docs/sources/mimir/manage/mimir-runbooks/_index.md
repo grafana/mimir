@@ -2119,6 +2119,8 @@ Common **causes**:
 
 - Multiple endpoints are exporting the same metrics, or multiple Prometheus instances are scraping different metrics with identical labels.
 - Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a duplicate sample.
+- If this error is logged by rulers when writing the `ALERTS_FOR_STATE` metric, this can be caused by multiple alerting rules with the same alert name and labels firing at the same time.
+  Check if the alert name mentioned in the error message is defined multiple times, and if this is intentional, ensure each alert rule generates alerts with unique labels.
 
 {{< admonition type="note" >}}
 When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
