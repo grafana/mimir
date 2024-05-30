@@ -73,6 +73,8 @@ The following features are currently experimental:
     - `-distributor.max-exemplars-per-series-per-request`
   - Enforce a maximum pool buffer size for write requests
     - `-distributor.max-request-pool-buffer-size`
+  - Enable direct translation from OTLP write requests to Mimir equivalents
+    - `-distributor.direct-otlp-translation-enabled`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`

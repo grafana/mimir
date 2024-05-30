@@ -26,6 +26,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 	"go.uber.org/multierr"
 
+	"github.com/grafana/mimir/pkg/distributor/otlp"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -53,6 +54,7 @@ func OTLPHandler(
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
 	logger log.Logger,
+	directTranslation bool,
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
@@ -154,9 +156,17 @@ func OTLPHandler(
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
-		metrics, err := otelMetricsToTimeseries(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
-		if err != nil {
-			return err
+		var metrics []mimirpb.PreallocTimeseries
+		if directTranslation {
+			metrics, err = otelMetricsToTimeseries(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+			if err != nil {
+				return err
+			}
+		} else {
+			metrics, err = otelMetricsToTimeseriesOld(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+			if err != nil {
+				return err
+			}
 		}
 
 		metricCount := len(metrics)
@@ -259,6 +269,32 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 }
 
 func otelMetricsToTimeseries(tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+	converter := otlp.NewMimirConverter()
+	errs := converter.FromMetrics(md, otlp.Settings{
+		AddMetricSuffixes: addSuffixes,
+	})
+	mimirTS := converter.TimeSeries()
+	if errs != nil {
+		dropped := len(multierr.Errors(errs))
+		discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(dropped)) // Group is empty here as metrics couldn't be parsed
+
+		parseErrs := errs.Error()
+		if len(parseErrs) > maxErrMsgLen {
+			parseErrs = parseErrs[:maxErrMsgLen]
+		}
+
+		if len(mimirTS) == 0 {
+			return nil, errors.New(parseErrs)
+		}
+
+		level.Warn(logger).Log("msg", "OTLP parse error", "err", parseErrs)
+	}
+
+	return mimirTS, nil
+}
+
+// Old, less efficient, version of otelMetricsToTimeseries.
+func otelMetricsToTimeseriesOld(tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := prometheusremotewrite.NewPrometheusConverter()
 	errs := converter.FromMetrics(md, prometheusremotewrite.Settings{
 		AddMetricSuffixes: addSuffixes,
