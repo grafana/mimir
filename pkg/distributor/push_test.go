@@ -300,7 +300,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 				t.Cleanup(pushReq.CleanUp)
 				return tt.verifyFunc(t, pushReq)
 			}
-			handler := OTLPHandler(tt.maxMsgSize, nil, nil, false, tt.enableOtelMetadataStorage, limits, RetryConfig{}, pusher, nil, nil, log.NewNopLogger())
+			handler := OTLPHandler(tt.maxMsgSize, nil, nil, false, tt.enableOtelMetadataStorage, limits, RetryConfig{}, pusher, nil, nil, log.NewNopLogger(), true)
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -368,7 +368,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 		assert.False(t, request.SkipLabelNameValidation)
 		pushReq.CleanUp()
 		return nil
-	}, nil, nil, log.NewNopLogger())
+	}, nil, nil, log.NewNopLogger(), true)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -414,7 +414,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		assert.Len(t, request.Timeseries, 1)
 		assert.False(t, request.SkipLabelNameValidation)
 		return nil
-	}, nil, nil, log.NewNopLogger())
+	}, nil, nil, log.NewNopLogger(), true)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 
@@ -440,7 +440,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		assert.Len(t, request.Timeseries, 9) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
 		assert.False(t, request.SkipLabelNameValidation)
 		return nil
-	}, nil, nil, log.NewNopLogger())
+	}, nil, nil, log.NewNopLogger(), true)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -461,7 +461,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	handler := OTLPHandler(140, nil, nil, false, true, nil, RetryConfig{}, readBodyPushFunc(t), nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(140, nil, nil, false, true, nil, RetryConfig{}, readBodyPushFunc(t), nil, nil, log.NewNopLogger(), true)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := io.ReadAll(resp.Body)
@@ -660,43 +660,6 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 	inputBytes, err := input.Marshal()
 	require.NoError(t, err)
 	return inputBytes
-}
-
-func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
-	pSpans := make([]mimirpb.BucketSpan, 0, len(h.PositiveSpans))
-	for _, span := range h.PositiveSpans {
-		pSpans = append(
-			pSpans, mimirpb.BucketSpan{
-				Offset: span.Offset,
-				Length: span.Length,
-			},
-		)
-	}
-	nSpans := make([]mimirpb.BucketSpan, 0, len(h.NegativeSpans))
-	for _, span := range h.NegativeSpans {
-		nSpans = append(
-			nSpans, mimirpb.BucketSpan{
-				Offset: span.Offset,
-				Length: span.Length,
-			},
-		)
-	}
-
-	return mimirpb.Histogram{
-		Count:          &mimirpb.Histogram_CountInt{CountInt: h.GetCountInt()},
-		Sum:            h.Sum,
-		Schema:         h.Schema,
-		ZeroThreshold:  h.ZeroThreshold,
-		ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: h.GetZeroCountInt()},
-		NegativeSpans:  nSpans,
-		NegativeDeltas: h.NegativeDeltas,
-		NegativeCounts: h.NegativeCounts,
-		PositiveSpans:  pSpans,
-		PositiveDeltas: h.PositiveDeltas,
-		PositiveCounts: h.PositiveCounts,
-		Timestamp:      h.Timestamp,
-		ResetHint:      mimirpb.Histogram_ResetHint(h.ResetHint),
-	}
 }
 
 func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool) []byte {
