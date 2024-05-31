@@ -2202,8 +2202,8 @@ How it **works**:
 - The distributor shards a write request into N partitions, where N is the tenant partitions shard size.
 - For each partition, the write request data is encoded into one or more Kafka records.
 - The maximum size of a Kafka record is hardcoded, so the per-partition write request data is automatically split into multiple Kafka records in order to ingest large write requests.
-- The splitting uses a single timeseries or metadata entry has a the splittable unit, which means that a single timeseries or metadata entry can't be split into multiple Kafka records.
-- If the write request contains a single timeseries or metadata entry whose size is bigger than the Kafka record size limit, then the ingestion of the write request will fail and return a 4xx HTTP status code. The 4xx status code is used to ensure the client will not retry sending a request which will consistently fail.
+- A single timeseries or metadata is the smallest splittable unit, which means that a single timeseries or metadata entry can't be split into multiple Kafka records.
+- If the write request contains a single timeseries or metadata entry whose size is bigger than the Kafka record size limit, then the ingestion of the write request will fail and the distributor will return a 4xx HTTP status code. The 4xx status code is used to ensure the client will not retry a request which will consistently fail.
 
 How to **fix** it:
 
