@@ -2499,8 +2499,7 @@ container to the existing containers namespace. This allows us to bring in all o
 tools we may need and to not disturb the existing environment.
 That is, we do not need to restart the running container to attach our debug tools.
 
-Creating a debug container
---------------------------
+## Creating a debug container
 
 Kubernetes gives us a command that allows us to start an ephemeral debug container in a pre-existing pod
 attaching it to the same namespace as other containers in that pod. More detail can be read about the command and
@@ -2510,10 +2509,10 @@ attaching it to the same namespace as other containers in that pod. More detail 
 kubectl --namespace mimir debug -it pod/compactor-0 --image=ubuntu:latest --target=compactor -c mimir-debug-container
 ```
 
- - `pod/name` is the pod to attach to.
- - `--target=` is the container within that pod with which to share a kernel namespace.
- - `--image=` is the image of the debug container you wish to use.
- - `-c` is the name to use for the ephemeral container. This is optional, but useful if you want to re-use it.
+- `pod/name` is the pod to attach to.
+- `--target=` is the container within that pod with which to share a kernel namespace.
+- `--image=` is the image of the debug container you wish to use.
+- `-c` is the name to use for the ephemeral container. This is optional, but useful if you want to re-use it.
 
 You can now see all of the processes running in this space. For example:
 
@@ -2534,8 +2533,7 @@ To access the root filesystem of the target container, you can find it in `/proc
 example, the commonly used data directory would be found at `/proc/1/root/data`, and
 binaries of the target container would be somewhere like `/proc/1/root/usr/bin/mimir`.
 
-Copying files from a distroless container
------------------------------------------
+## Copying files from a distroless container
 
 Because distroless images do not have `tar` in them, it is not possible to copy files using `kubectl cp`.
 
@@ -2549,7 +2547,7 @@ For example, after having created a debug container called `mimir-debug-containe
 kubectl --namespace mimir cp compactor-0:/proc/1/root/etc/hostname -c mimir-debug-container ./hostname
 ```
 
- - `-c` is the debug container to execute in.
+- `-c` is the debug container to execute in.
 
 Note, however, that there is a limitation with `kubectl cp` wherein it cannot follow symlinks. To get around this, we can similarly use `exec`
 to create a tar.
@@ -2560,8 +2558,7 @@ For example, can create a tar of the path we are interested in, and extract it t
 kubectl --namespace mimir exec compactor-0 -c mimir-debug-container -- tar cf - "/proc/1/root/etc/cortex" | tar xf -
 ```
 
-Cleanup and Limitations
------------------------
+## Cleanup and Limitations
 
 One downside of using [ephemeral containers](https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/#understanding-ephemeral-containers)
 (which is what `kubectl debug` is a wrapper around), is that they cannot be changed
