@@ -69,6 +69,7 @@
 * [BUGFIX] Querying: matrix results returned from instant queries were not sorted by series. #8113
 * [BUGFIX] Query scheduler: Fix a crash in result marshaling. #8140
 * [BUGFIX] Store-gateway: Allow long-running index scans to be interrupted. #8154
+* [BUGFIX] Distributor: Don't discard time series with invalid exemplars, just drop affected exemplars. #8224
 
 ### Mixin
 
