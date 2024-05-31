@@ -117,14 +117,15 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		// Customize the max record size to force splitting the WriteRequest into two records.
 		expectedReq := &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API}
-		writer.recordDataMaxBytes = int(float64(expectedReq.Size()) * 0.8)
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerMaxRecordSizeBytes = int(float64(expectedReq.Size()) * 0.8)
+
+		writer, reg := createTestWriter(t, cfg)
 
 		produceRequestProcessed := atomic.NewBool(false)
-
 		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
 			// Add a delay, so that if WriteSync() will not wait then the test will fail.
 			time.Sleep(time.Second)

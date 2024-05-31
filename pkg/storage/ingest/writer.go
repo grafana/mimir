@@ -31,11 +31,12 @@ const (
 	// producerBatchMaxBytes is the max allowed size of a batch of Kafka records.
 	producerBatchMaxBytes = 16_000_000
 
-	// producerRecordDataMaxBytes is the max allowed size of a single record data. Given we have a limit
-	// on the max batch size, a Kafka record data can't be bigger than the batch size minus some overhead
-	// required to serialise the batch and the record itself. We use 16KB as such overhead in the worst
-	// case scenario, which is expected to be way above the actual one.
-	producerRecordDataMaxBytes = producerBatchMaxBytes - 16384
+	// maxProducerRecordDataBytesLimit is the max allowed size of a single record data. Given we have a limit
+	// on the max batch size (producerBatchMaxBytes), a Kafka record data can't be bigger than the batch size
+	// minus some overhead required to serialise the batch and the record itself. We use 16KB as such overhead
+	// in the worst case scenario, which is expected to be way above the actual one.
+	maxProducerRecordDataBytesLimit = producerBatchMaxBytes - 16384
+	minProducerRecordDataBytesLimit = 1024 * 1024
 )
 
 // Writer is responsible to write incoming data to the ingest storage.
@@ -58,7 +59,6 @@ type Writer struct {
 
 	// The following settings can only be overridden in tests.
 	maxInflightProduceRequests int
-	recordDataMaxBytes         int
 }
 
 func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
@@ -68,7 +68,6 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		registerer:                 reg,
 		writers:                    make([]*kgo.Client, kafkaCfg.WriteClients),
 		maxInflightProduceRequests: 20,
-		recordDataMaxBytes:         producerRecordDataMaxBytes,
 
 		// Metrics.
 		writeLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
@@ -129,7 +128,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	}
 
 	// Create records out of the write request.
-	records, recordsSizeBytes, err := marshalWriteRequestToRecords(partitionID, userID, req, w.recordDataMaxBytes)
+	records, recordsSizeBytes, err := marshalWriteRequestToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
 	if err != nil {
 		return err
 	}
