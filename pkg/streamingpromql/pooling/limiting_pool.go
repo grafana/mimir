@@ -45,14 +45,12 @@ var (
 		return make(promql.Vector, 0, size)
 	})
 
-	float64SlicePool sizedPool[[]float64] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(_ int) []float64 {
-		// Don't allocate a new slice now - we'll allocate one in GetFloatSlice if we need it, so we can differentiate between reused and new slices.
-		return nil
+	float64SlicePool sizedPool[[]float64] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []float64 {
+		return make([]float64, 0, size)
 	})
 
-	boolSlicePool sizedPool[[]bool] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(_ int) []bool {
-		// Don't allocate a new slice now - we'll allocate one in GetBoolSlice if we need it, so we can differentiate between reused and new slices.
-		return nil
+	boolSlicePool sizedPool[[]bool] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []bool {
+		return make([]bool, 0, size)
 	})
 )
 
@@ -162,7 +160,16 @@ func (p *LimitingPool) PutVector(v promql.Vector) {
 //
 // Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
 func (p *LimitingPool) GetFloatSlice(size int) ([]float64, error) {
-	return getWithElementSize(p, float64SlicePool, size, float64Size)
+	s, err := getWithElementSize(p, float64SlicePool, size, float64Size)
+	if err != nil {
+		return nil, err
+	}
+
+	// This is not necessary if we've just created a new slice, it'll already have all elements reset.
+	// But we do it unconditionally for simplicity.
+	clear(s[:size])
+
+	return s, nil
 }
 
 // PutFloatSlice returns a slice of float64 to the pool and updates the current number of in-memory samples.
@@ -174,11 +181,20 @@ func (p *LimitingPool) PutFloatSlice(s []float64) {
 //
 // If the capacity of the returned slice would cause the max memory consumption limit to be exceeded, then an error is returned.
 //
-// Every element of the returned slice up to the requested size will have value 0.
+// Every element of the returned slice up to the requested size will have value false.
 //
 // Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
 func (p *LimitingPool) GetBoolSlice(size int) ([]bool, error) {
-	return getWithElementSize(p, boolSlicePool, size, boolSize)
+	s, err := getWithElementSize(p, boolSlicePool, size, boolSize)
+	if err != nil {
+		return nil, err
+	}
+
+	// This is not necessary if we've just created a new slice, it'll already have all elements reset.
+	// But we do it unconditionally for simplicity.
+	clear(s[:size])
+
+	return s, nil
 }
 
 // PutBoolSlice returns a slice of bool to the pool and updates the current number of in-memory samples.

@@ -149,6 +149,42 @@ func testLimitedPool[E any, S ~[]E](t *testing.T, get func(int) (S, error), put 
 	require.Equal(t, 10*elementSize, pool.PeakEstimatedMemoryConsumptionBytes)
 }
 
+func TestLimitingPool_ClearsReturnedSlices(t *testing.T) {
+	pool := NewLimitingPool(0)
+
+	// Get a slice, put it back in the pool and get it back again.
+	// Make sure all elements are zero or false when we get it back.
+	t.Run("[]float64", func(t *testing.T) {
+		floatSlice, err := pool.GetFloatSlice(2)
+		require.NoError(t, err)
+		floatSlice = floatSlice[:2]
+		floatSlice[0] = 123
+		floatSlice[1] = 456
+
+		pool.PutFloatSlice(floatSlice)
+
+		floatSlice, err = pool.GetFloatSlice(2)
+		require.NoError(t, err)
+		floatSlice = floatSlice[:2]
+		require.Equal(t, []float64{0, 0}, floatSlice)
+	})
+
+	t.Run("[]bool", func(t *testing.T) {
+		boolSlice, err := pool.GetBoolSlice(2)
+		require.NoError(t, err)
+		boolSlice = boolSlice[:2]
+		boolSlice[0] = false
+		boolSlice[1] = true
+
+		pool.PutBoolSlice(boolSlice)
+
+		boolSlice, err = pool.GetBoolSlice(2)
+		require.NoError(t, err)
+		boolSlice = boolSlice[:2]
+		require.Equal(t, []bool{false, false}, boolSlice)
+	})
+}
+
 // setupLimitingPoolFunctionsForTesting replaces the global slice pools used by LimitingPool
 // with fakes for testing.
 //
