@@ -272,7 +272,7 @@ replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-
 replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 
 // We are using our modified version of the upstream GO regexp (branch remotes/origin/speedup)
-replace github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20240530134236-9ba8e5eead92
+replace github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b
 
 // Replace goautoneg with a fork until https://github.com/munnerz/goautoneg/pull/5 is merged
 replace github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20231010094147-47ce5e72a9ae
