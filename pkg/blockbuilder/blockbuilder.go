@@ -25,11 +25,12 @@ import (
 type BlockBuilder struct {
 	services.Service
 
-	cfg         Config
-	logger      log.Logger
-	register    prometheus.Registerer
-	limits      *validation.Overrides
-	kafkaClient *kgo.Client
+	cfg              Config
+	logger           log.Logger
+	register         prometheus.Registerer
+	limits           *validation.Overrides
+	kafkaClient      *kgo.Client
+	kafkaAdminClient *kadm.Client
 
 	assignmentMu sync.Mutex
 	assignment   map[string][]int32
@@ -98,6 +99,8 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		return fmt.Errorf("creating kafka client: %w", err)
 	}
 
+	b.kafkaAdminClient = kadm.NewClient(b.kafkaClient)
+
 	level.Info(b.logger).Log("msg", "waiting until kafka brokers are reachable")
 	if err := b.waitKafka(ctx); err != nil {
 		return err
@@ -110,6 +113,7 @@ func (b *BlockBuilder) handlePartitionsAssigned(_ context.Context, _ *kgo.Client
 	level.Info(b.logger).Log("msg", "partition assigned", "assignment", fmt.Sprintf("%+v", assignment))
 
 	// Pause fetching for all assigned partitions. We manage the order and the pace of the consumption ourself.
+	// TODO(codesome): how does this behave when there is a block building cycle in progress?
 	assignment = b.kafkaClient.PauseFetchPartitions(assignment)
 
 	b.assignmentMu.Lock()
@@ -117,6 +121,7 @@ func (b *BlockBuilder) handlePartitionsAssigned(_ context.Context, _ *kgo.Client
 	b.assignmentMu.Unlock()
 }
 
+// TODO(codesome): question: is handlePartitionsAssigned also called by kafka client when partitions are revoked?
 func (b *BlockBuilder) handlePartitionsLost(_ context.Context, _ *kgo.Client, lostAssignment map[string][]int32) {
 	level.Info(b.logger).Log("msg", "partition lost", "lost", fmt.Sprintf("%+v", lostAssignment))
 
@@ -262,12 +267,16 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, mark time.Time) err
 }
 
 func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark time.Time) error {
-	// Keep an instance of a builder per partition.
-	checkpointOffset := int64(-1)
+	// TODO(codesome): consume from the last offset we committed to Kafka. We likely need a kafka
+	// client per partition to do this. We only need to move to the last commit when creating a new
+	// client for the partition (i.e. when the partition is newly assigned). After that we can
+	// simply use the resume-pause logic below when BB is running and don't need to get the commit
+	// for every cycle.
 
 	// TopicPartition to resume consuming on this iteration.
 	tp := map[string][]int32{b.cfg.Kafka.Topic: {part}}
 
+	// TODO(codesome): are these resume and pause safe against crashes?
 	b.kafkaClient.ResumeFetchPartitions(tp)
 	defer b.kafkaClient.PauseFetchPartitions(tp)
 
@@ -290,6 +299,7 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 	var (
 		consumptionItvl     = time.Hour        // TODO(codesome): get this from config
 		timeBuffer          = 15 * time.Minute // TODO(codesome): get this from config
+		checkpointOffset    = int64(-1)
 		resetBlockBuilderAt time.Time
 		builder             *tsdbBuilder
 		currEnd, lastEnd    int64
@@ -328,6 +338,7 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 					if err := builder.compactAndRemoveDBs(ctx); err != nil {
 						level.Error(b.logger).Log("msg", "failed to compact and remove dbs", "part", part, "err", err)
 						// TODO(codesome): return err?
+						// TODO(codesome): add metric
 					}
 					builder = nil
 				}
@@ -348,6 +359,7 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 				if err != nil {
 					level.Error(b.logger).Log("msg", "failed to process record", "part", part, "key", string(rec.Key), "err", err)
 					// TODO(codesome): do we just ignore this? What if it was Mimir's issue and this leading to data loss?
+					// TODO(codesome): add metric
 				}
 
 				lastOffset = rec.Offset
@@ -366,12 +378,37 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 	}
 
 	if err := builder.compactAndRemoveDBs(ctx); err != nil {
+		// TODO(codesome): add metric
 		return err
 	}
 
-	// TODO(codesome): create kafka checkpoint for checkpointOffset
-	// TODO(codesome): store the lastOffset as a metadata in the checkpoint
-	_ = lastOffset // temporary to avoid unused variable error
+	// TODO(codesome): store the lastOffset and currEnd as a metadata in the checkpoint
+	_ = lastOffset // to avoid unused error. TODO: remove this once used
+	return b.commitOffset(ctx, part, checkpointOffset)
+}
+
+func (b *BlockBuilder) commitOffset(ctx context.Context, part int32, offset int64) (returnErr error) {
+	defer func() {
+		if returnErr != nil {
+			level.Error(b.logger).Log("msg", "failed to commit offset to Kafka", "err", returnErr, "partition", part, "offset", offset)
+			// TODO(codesome): add metric
+		}
+	}()
+
+	toCommit := kadm.Offsets{}
+	toCommit.AddOffset(b.cfg.Kafka.Topic, part, offset, -1)
+
+	committed, err := b.kafkaAdminClient.CommitOffsets(ctx, b.cfg.Kafka.ConsumerGroup, toCommit)
+	if err != nil {
+		return err
+	} else if !committed.Ok() {
+		return committed.Error()
+	}
+
+	committedOffset, _ := committed.Lookup(b.cfg.Kafka.Topic, part)
+	level.Debug(b.logger).Log("msg", "offset successfully committed to Kafka", "offset", committedOffset.At)
+	// TODO(codesome): add this metric
+	// r.lastCommittedOffset.Set(float64(committedOffset.At))
 
 	return nil
 }
