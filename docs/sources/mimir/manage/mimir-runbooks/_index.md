@@ -1994,7 +1994,7 @@ How to **fix** it:
 
 ### err-mimir-max-estimated-memory-consumption-per-query
 
-This error occurs when execution of a query exceeds the limit on the total number of in-memory samples at a time.
+This error occurs when execution of a query exceeds the limit on the maximum estimated memory consumed by a single query.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
 This limit only applies when Mimir's query engine is used (ie. `-querier.promql-engine=streaming`).
