@@ -1465,8 +1465,16 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			expSamples := tc.req.Timeseries[0].Samples
-			expExemplars := tc.req.Timeseries[0].Exemplars
+			expectedSamples := tc.req.Timeseries[0].Samples
+			// During the call to Push, the labels of tc.req's exemplars are cleared, probably during request cleanup
+			// (in order to avoid retaining references to unmarshaled input bytes).
+			// Therefore, make a deep copy.
+			expectedExemplars := make([]mimirpb.Exemplar, len(tc.req.Timeseries[0].Exemplars))
+			copy(expectedExemplars, tc.req.Timeseries[0].Exemplars)
+			for i, e := range expectedExemplars {
+				expectedExemplars[i].Labels = make([]mimirpb.LabelAdapter, len(e.Labels))
+				copy(expectedExemplars[i].Labels, e.Labels)
+			}
 			limits := prepareDefaultLimits()
 			limits.MaxGlobalExemplarsPerUser = 10
 			ds, ingesters, _, _ := prepare(t, prepConfig{
@@ -1490,10 +1498,9 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 				ss := i.series()
 				require.Len(t, ss, 1)
 				for _, s := range ss {
-					require.Equal(t, expSamples, s.Samples)
+					require.Equal(t, expectedSamples, s.Samples)
 					if !tc.expectedDrop {
-						// Not sure why, but during the push, the request's exemplar labels become empty
-						require.Len(t, s.Exemplars, len(expExemplars))
+						require.Equal(t, expectedExemplars, s.Exemplars)
 					} else {
 						require.Empty(t, s.Exemplars)
 					}
