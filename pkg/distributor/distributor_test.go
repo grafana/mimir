@@ -1465,16 +1465,15 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
+			// Pass a copy of the reference request, since Push may modify it during cleanup.
+			reqBytes, err := tc.req.Marshal()
+			require.NoError(t, err)
+			reqCopy := &mimirpb.WriteRequest{}
+			require.NoError(t, reqCopy.Unmarshal(reqBytes))
+
 			expectedSamples := tc.req.Timeseries[0].Samples
-			// During the call to Push, the labels of tc.req's exemplars are cleared, probably during request cleanup
-			// (in order to avoid retaining references to unmarshaled input bytes).
-			// Therefore, make a deep copy.
-			expectedExemplars := make([]mimirpb.Exemplar, len(tc.req.Timeseries[0].Exemplars))
-			copy(expectedExemplars, tc.req.Timeseries[0].Exemplars)
-			for i, e := range expectedExemplars {
-				expectedExemplars[i].Labels = make([]mimirpb.LabelAdapter, len(e.Labels))
-				copy(expectedExemplars[i].Labels, e.Labels)
-			}
+			expectedExemplars := tc.req.Timeseries[0].Exemplars
+
 			limits := prepareDefaultLimits()
 			limits.MaxGlobalExemplarsPerUser = 10
 			ds, ingesters, _, _ := prepare(t, prepConfig{
@@ -1484,7 +1483,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 				numDistributors:  1,
 				shuffleShardSize: 0,
 			})
-			_, err := ds[0].Push(ctx, tc.req)
+			_, err = ds[0].Push(ctx, reqCopy)
 			if tc.expectedErrMsg != "" {
 				require.Error(t, err)
 				fromError, _ := grpcutil.ErrorToStatus(err)
