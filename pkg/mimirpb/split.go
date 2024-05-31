@@ -40,7 +40,7 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 		return nil
 	}
 
-	newPartialReq := func(preallocTimeseries int) (*WriteRequest, int) {
+	newPartialReq := func() (*WriteRequest, int) {
 		r := &WriteRequest{
 			Source:                  req.Source,
 			SkipLabelNameValidation: req.SkipLabelNameValidation,
@@ -53,7 +53,7 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 	// so we first compute the request size without it.
 	reqSizeWithoutMetadata := reqSize - req.MetadataSize()
 	if reqSizeWithoutMetadata <= maxSize {
-		partialReq, _ := newPartialReq(0)
+		partialReq, _ := newPartialReq()
 		partialReq.Timeseries = req.Timeseries
 		return []*WriteRequest{partialReq}
 	}
@@ -61,11 +61,10 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 	// We assume that different timeseries roughly have the same size (no huge outliers)
 	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up).
 	estimatedPartialReqs := (reqSizeWithoutMetadata / maxSize) + 2
-	estimatedTimeseriesPerPartialReq := (len(req.Timeseries) / estimatedPartialReqs) + 2
 	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
 
 	// Split timeseries into partial write requests.
-	nextReq, nextReqSize := newPartialReq(estimatedTimeseriesPerPartialReq)
+	nextReq, nextReqSize := newPartialReq()
 	nextReqTimeseriesStart := 0
 	nextReqTimeseriesLength := 0
 
@@ -81,7 +80,7 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 			partialReqs = append(partialReqs, nextReq)
 
 			// Initialize a new partial request.
-			nextReq, nextReqSize = newPartialReq(estimatedTimeseriesPerPartialReq)
+			nextReq, nextReqSize = newPartialReq()
 			nextReqTimeseriesStart = i
 			nextReqTimeseriesLength = 0
 		}
@@ -105,7 +104,7 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 		return nil
 	}
 
-	newPartialReq := func(preallocMetadata int) (*WriteRequest, int) {
+	newPartialReq := func() (*WriteRequest, int) {
 		r := &WriteRequest{
 			Source:                  req.Source,
 			SkipLabelNameValidation: req.SkipLabelNameValidation,
@@ -117,7 +116,7 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 	// so we first compute the request size without it.
 	reqSizeWithoutTimeseries := reqSize - req.TimeseriesSize()
 	if reqSizeWithoutTimeseries <= maxSize {
-		partialReq, _ := newPartialReq(0)
+		partialReq, _ := newPartialReq()
 		partialReq.Metadata = req.Metadata
 		return []*WriteRequest{partialReq}
 	}
@@ -125,11 +124,10 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 	// We assume that different metadata roughly have the same size (no huge outliers)
 	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up).
 	estimatedPartialReqs := (reqSizeWithoutTimeseries / maxSize) + 2
-	estimatedMetadataPerPartialReq := (len(req.Metadata) / estimatedPartialReqs) + 2
 	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
 
 	// Split metadata into partial write requests.
-	nextReq, nextReqSize := newPartialReq(estimatedMetadataPerPartialReq)
+	nextReq, nextReqSize := newPartialReq()
 	nextReqMetadataStart := 0
 	nextReqMetadataLength := 0
 
@@ -145,7 +143,7 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 			partialReqs = append(partialReqs, nextReq)
 
 			// Initialize a new partial request.
-			nextReq, nextReqSize = newPartialReq(estimatedMetadataPerPartialReq)
+			nextReq, nextReqSize = newPartialReq()
 			nextReqMetadataStart = i
 			nextReqMetadataLength = 0
 		}
