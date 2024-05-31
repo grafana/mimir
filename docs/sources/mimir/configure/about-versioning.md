@@ -131,6 +131,7 @@ The following features are currently experimental:
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
   - Streaming PromQL engine (`-querier.promql-engine=streaming` and `-querier.enable-promql-engine-fallback`)
+  - Maximum estimated memory consumption per query limit (`-querier.max_estimated_memory_consumption_per_query`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
