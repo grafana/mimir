@@ -15,27 +15,27 @@ func TestLimitingPool_Unlimited(t *testing.T) {
 
 	t.Run("[]promql.FPoint", func(t *testing.T) {
 		pool := NewLimitingPool(0)
-		testUnlimitedPool(t, pool.GetFPointSlice, pool.PutFPointSlice, pool, fPointSize)
+		testUnlimitedPool(t, pool.GetFPointSlice, pool.PutFPointSlice, pool, FPointSize)
 	})
 
 	t.Run("[]promql.HPoint", func(t *testing.T) {
 		pool := NewLimitingPool(0)
-		testUnlimitedPool(t, pool.GetHPointSlice, pool.PutHPointSlice, pool, hPointSize)
+		testUnlimitedPool(t, pool.GetHPointSlice, pool.PutHPointSlice, pool, HPointSize)
 	})
 
 	t.Run("promql.Vector", func(t *testing.T) {
 		pool := NewLimitingPool(0)
-		testUnlimitedPool(t, pool.GetVector, pool.PutVector, pool, vectorSampleSize)
+		testUnlimitedPool(t, pool.GetVector, pool.PutVector, pool, VectorSampleSize)
 	})
 
 	t.Run("[]float64", func(t *testing.T) {
 		pool := NewLimitingPool(0)
-		testUnlimitedPool(t, pool.GetFloatSlice, pool.PutFloatSlice, pool, float64Size)
+		testUnlimitedPool(t, pool.GetFloatSlice, pool.PutFloatSlice, pool, Float64Size)
 	})
 
 	t.Run("[]bool", func(t *testing.T) {
 		pool := NewLimitingPool(0)
-		testUnlimitedPool(t, pool.GetBoolSlice, pool.PutBoolSlice, pool, boolSize)
+		testUnlimitedPool(t, pool.GetBoolSlice, pool.PutBoolSlice, pool, BoolSize)
 	})
 }
 
@@ -83,28 +83,28 @@ func TestLimitingPool_Limited(t *testing.T) {
 	setupLimitingPoolFunctionsForTesting(t)
 
 	t.Run("[]promql.FPoint", func(t *testing.T) {
-		pool := NewLimitingPool(10 * fPointSize)
-		testLimitedPool(t, pool.GetFPointSlice, pool.PutFPointSlice, pool, fPointSize)
+		pool := NewLimitingPool(10 * FPointSize)
+		testLimitedPool(t, pool.GetFPointSlice, pool.PutFPointSlice, pool, FPointSize)
 	})
 
 	t.Run("[]promql.HPoint", func(t *testing.T) {
-		pool := NewLimitingPool(10 * hPointSize)
-		testLimitedPool(t, pool.GetHPointSlice, pool.PutHPointSlice, pool, hPointSize)
+		pool := NewLimitingPool(10 * HPointSize)
+		testLimitedPool(t, pool.GetHPointSlice, pool.PutHPointSlice, pool, HPointSize)
 	})
 
 	t.Run("promql.Vector", func(t *testing.T) {
-		pool := NewLimitingPool(10 * vectorSampleSize)
-		testLimitedPool(t, pool.GetVector, pool.PutVector, pool, vectorSampleSize)
+		pool := NewLimitingPool(10 * VectorSampleSize)
+		testLimitedPool(t, pool.GetVector, pool.PutVector, pool, VectorSampleSize)
 	})
 
 	t.Run("[]float64", func(t *testing.T) {
-		pool := NewLimitingPool(10 * float64Size)
-		testLimitedPool(t, pool.GetFloatSlice, pool.PutFloatSlice, pool, float64Size)
+		pool := NewLimitingPool(10 * Float64Size)
+		testLimitedPool(t, pool.GetFloatSlice, pool.PutFloatSlice, pool, Float64Size)
 	})
 
 	t.Run("[]bool", func(t *testing.T) {
-		pool := NewLimitingPool(10 * boolSize)
-		testLimitedPool(t, pool.GetBoolSlice, pool.PutBoolSlice, pool, boolSize)
+		pool := NewLimitingPool(10 * BoolSize)
+		testLimitedPool(t, pool.GetBoolSlice, pool.PutBoolSlice, pool, BoolSize)
 	})
 }
 

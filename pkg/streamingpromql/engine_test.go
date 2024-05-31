@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
@@ -451,14 +452,14 @@ func (q *contextCapturingQuerier) Close() error {
 	return q.inner.Close()
 }
 
-func TestInMemorySamplesLimit_RangeQueries(t *testing.T) {
+func TestMemoryConsumptionLimit(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 		load 1m
-			some_metric{idx="1"} 0+1x4
-			some_metric{idx="2"} 0+1x4
-			some_metric{idx="3"} 0+1x4
-			some_metric{idx="4"} 0+1x4
-			some_metric{idx="5"} 0+1x4
+			some_metric{idx="1"} 0+1x5
+			some_metric{idx="2"} 0+1x5
+			some_metric{idx="3"} 0+1x5
+			some_metric{idx="4"} 0+1x5
+			some_metric{idx="5"} 0+1x5
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
@@ -483,32 +484,36 @@ func TestInMemorySamplesLimit_RangeQueries(t *testing.T) {
 			shouldSucceed:     true,
 		},
 		"limit enabled, and query exceeds limit": {
-			expr:              "some_metric",
-			rangeQueryLimit:   10,
-			instantQueryLimit: 4,
-			shouldSucceed:     false,
+			expr:          "some_metric",
+			shouldSucceed: false,
+
+			// Allow only a single sample.
+			rangeQueryLimit:   pooling.FPointSize,
+			instantQueryLimit: pooling.FPointSize,
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is under limit": {
-			expr: "sum(some_metric)",
+			expr:          "sum(some_metric)",
+			shouldSucceed: true,
+
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
-			// At peak we'll hold two series' samples in memory: the running total for the sum(), and the next series from the selector.
-			rangeQueryLimit: 16,
+			// At peak we'll hold in memory: the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2), and the next series from the selector.
+			rangeQueryLimit: 8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize,
 
 			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold two series' samples in memory: the running total for the sum(), and the next series from the selector.
-			instantQueryLimit: 2,
-			shouldSucceed:     true,
+			// At peak we'll hold in memory: the running total for the sum() (a float and a bool), the next series from the selector, and the output sample.
+			instantQueryLimit: pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize,
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
-			expr: "sum(some_metric)",
+			expr:          "sum(some_metric)",
+			shouldSucceed: false,
+
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
-			// At peak we'll hold two series' samples in memory: the running total for the sum(), and the next series from the selector.
-			rangeQueryLimit: 15,
+			// At peak we'll hold in memory: the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2), and the next series from the selector.
+			rangeQueryLimit: 8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize - 1,
 
 			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold two series' samples in memory: the running total for the sum(), and the next series from the selector.
-			instantQueryLimit: 1,
-			shouldSucceed:     false,
+			// At peak we'll hold in memory: the running total for the sum() (a float and a bool), the next series from the selector, and the output sample.
+			instantQueryLimit: pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize - 1,
 		},
 	}
 

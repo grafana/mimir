@@ -20,11 +20,11 @@ const (
 	// Keep in mind that float sample = timestamp + float value, so 5x this is equivalent to five timestamps and five floats.
 	nativeHistogramSampleSizeFactor = 5
 
-	fPointSize       = uint64(unsafe.Sizeof(promql.FPoint{}))
-	hPointSize       = uint64(fPointSize * nativeHistogramSampleSizeFactor)
-	vectorSampleSize = uint64(unsafe.Sizeof(promql.Sample{})) // This assumes each sample is a float sample, not a histogram.
-	float64Size      = uint64(unsafe.Sizeof(float64(0)))
-	boolSize         = uint64(unsafe.Sizeof(false))
+	FPointSize       = uint64(unsafe.Sizeof(promql.FPoint{}))
+	HPointSize       = uint64(FPointSize * nativeHistogramSampleSizeFactor)
+	VectorSampleSize = uint64(unsafe.Sizeof(promql.Sample{})) // This assumes each sample is a float sample, not a histogram.
+	Float64Size      = uint64(unsafe.Sizeof(float64(0)))
+	BoolSize         = uint64(unsafe.Sizeof(false))
 )
 
 type sizedPool[S any] interface {
@@ -116,12 +116,12 @@ func putWithElementSize[E any, S ~[]E](p *LimitingPool, pool sizedPool[S], eleme
 //
 // Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
 func (p *LimitingPool) GetFPointSlice(size int) ([]promql.FPoint, error) {
-	return getWithElementSize(p, fPointSlicePool, size, fPointSize)
+	return getWithElementSize(p, fPointSlicePool, size, FPointSize)
 }
 
 // PutFPointSlice returns a slice of promql.FPoint to the pool and updates the current number of in-memory samples.
 func (p *LimitingPool) PutFPointSlice(s []promql.FPoint) {
-	putWithElementSize(p, fPointSlicePool, fPointSize, s)
+	putWithElementSize(p, fPointSlicePool, FPointSize, s)
 }
 
 // GetHPointSlice returns a slice of promql.HPoint of length 0 and capacity greater than or equal to size.
@@ -130,12 +130,12 @@ func (p *LimitingPool) PutFPointSlice(s []promql.FPoint) {
 //
 // Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
 func (p *LimitingPool) GetHPointSlice(size int) ([]promql.HPoint, error) {
-	return getWithElementSize(p, hPointSlicePool, size, hPointSize)
+	return getWithElementSize(p, hPointSlicePool, size, HPointSize)
 }
 
 // PutHPointSlice returns a slice of promql.HPoint to the pool and updates the current number of in-memory samples.
 func (p *LimitingPool) PutHPointSlice(s []promql.HPoint) {
-	putWithElementSize(p, hPointSlicePool, hPointSize, s)
+	putWithElementSize(p, hPointSlicePool, HPointSize, s)
 }
 
 // GetVector returns a promql.Vector of length 0 and capacity greater than or equal to size.
@@ -144,12 +144,12 @@ func (p *LimitingPool) PutHPointSlice(s []promql.HPoint) {
 //
 // Note that the capacity of the returned vector may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
 func (p *LimitingPool) GetVector(size int) (promql.Vector, error) {
-	return getWithElementSize(p, vectorPool, size, vectorSampleSize)
+	return getWithElementSize(p, vectorPool, size, VectorSampleSize)
 }
 
 // PutVector returns a promql.Vector to the pool and updates the current number of in-memory samples.
 func (p *LimitingPool) PutVector(v promql.Vector) {
-	putWithElementSize(p, vectorPool, vectorSampleSize, v)
+	putWithElementSize(p, vectorPool, VectorSampleSize, v)
 }
 
 // GetFloatSlice returns a slice of float64 of length 0 and capacity greater than or equal to size.
@@ -160,7 +160,7 @@ func (p *LimitingPool) PutVector(v promql.Vector) {
 //
 // Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
 func (p *LimitingPool) GetFloatSlice(size int) ([]float64, error) {
-	s, err := getWithElementSize(p, float64SlicePool, size, float64Size)
+	s, err := getWithElementSize(p, float64SlicePool, size, Float64Size)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +174,7 @@ func (p *LimitingPool) GetFloatSlice(size int) ([]float64, error) {
 
 // PutFloatSlice returns a slice of float64 to the pool and updates the current number of in-memory samples.
 func (p *LimitingPool) PutFloatSlice(s []float64) {
-	putWithElementSize(p, float64SlicePool, float64Size, s)
+	putWithElementSize(p, float64SlicePool, Float64Size, s)
 }
 
 // GetBoolSlice returns a slice of bool of length 0 and capacity greater than or equal to size.
@@ -185,7 +185,7 @@ func (p *LimitingPool) PutFloatSlice(s []float64) {
 //
 // Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
 func (p *LimitingPool) GetBoolSlice(size int) ([]bool, error) {
-	s, err := getWithElementSize(p, boolSlicePool, size, boolSize)
+	s, err := getWithElementSize(p, boolSlicePool, size, BoolSize)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func (p *LimitingPool) GetBoolSlice(size int) ([]bool, error) {
 
 // PutBoolSlice returns a slice of bool to the pool and updates the current number of in-memory samples.
 func (p *LimitingPool) PutBoolSlice(s []bool) {
-	putWithElementSize(p, boolSlicePool, boolSize, s)
+	putWithElementSize(p, boolSlicePool, BoolSize, s)
 }
 
 // PutInstantVectorSeriesData is equivalent to calling PutFPointSlice(d.Floats) and PutHPointSlice(d.Histograms).
