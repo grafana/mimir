@@ -9,6 +9,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
 	"github.com/uber/jaeger-client-go"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -28,6 +29,21 @@ func NewOpenTelemetryProviderBridge(tracer opentracing.Tracer) *OpenTelemetryPro
 	return &OpenTelemetryProviderBridge{
 		tracer: tracer,
 	}
+}
+
+// BridgeOpenTracingToOtel wraps ctx so that Otel-using code can link to an OpenTracing span.
+func BridgeOpenTracingToOtel(ctx context.Context) context.Context {
+	span := opentracing.SpanFromContext(ctx)
+	if span == nil {
+		return ctx
+	}
+	tracerBridge, ok := otel.Tracer("").(*OpenTelemetryTracerBridge)
+	if !ok {
+		return ctx
+
+	}
+	ctx, _ = tracerBridge.openTracingToOtel(ctx, span)
+	return ctx
 }
 
 // Tracer creates an implementation of the Tracer interface.
@@ -117,6 +133,10 @@ func (t *OpenTelemetryTracerBridge) Start(ctx context.Context, spanName string, 
 	}
 
 	span, ctx := opentracing.StartSpanFromContextWithTracer(ctx, t.tracer, spanName, mappedOptions...)
+	return t.openTracingToOtel(ctx, span)
+}
+
+func (t *OpenTelemetryTracerBridge) openTracingToOtel(ctx context.Context, span opentracing.Span) (context.Context, trace.Span) {
 	otelSpan := NewOpenTelemetrySpanBridge(span, t.provider)
 	return trace.ContextWithSpan(ctx, otelSpan), otelSpan
 }
