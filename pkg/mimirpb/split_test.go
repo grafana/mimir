@@ -164,7 +164,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 		fieldNames = append(fieldNames, typ.Field(i).Name)
 	}
 
-	// If the fields of WriteRequest haven't changed, then you will probably need to modify
+	// If the fields of WriteRequest have changed, then you will probably need to modify
 	// the SplitWriteRequestByMaxMarshalSize() implementation accordingly!
 	assert.ElementsMatch(t, []string{"Timeseries", "Source", "Metadata", "SkipLabelNameValidation"}, fieldNames)
 }

@@ -42,7 +42,6 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 
 	newPartialReq := func(preallocTimeseries int) (*WriteRequest, int) {
 		r := &WriteRequest{
-			Timeseries:              preallocSliceIfNeeded[PreallocTimeseries](preallocTimeseries),
 			Source:                  req.Source,
 			SkipLabelNameValidation: req.SkipLabelNameValidation,
 		}
@@ -108,7 +107,6 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 
 	newPartialReq := func(preallocMetadata int) (*WriteRequest, int) {
 		r := &WriteRequest{
-			Metadata:                preallocSliceIfNeeded[*MetricMetadata](preallocMetadata),
 			Source:                  req.Source,
 			SkipLabelNameValidation: req.SkipLabelNameValidation,
 		}
