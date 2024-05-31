@@ -389,10 +389,10 @@ func newMultitenantCompactor(
 			Name: "cortex_compactor_compaction_interval_seconds",
 			Help: "The configured interval on which compaction is run in seconds. Useful when compared to the last successful run metric to accurately detect multiple failed compaction runs.",
 		}),
-		outOfSpace:  promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+		outOfSpace: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_out_of_space_errors_total",
 			Help: "Number of times a compaction failed because the compactor was out of space.",
-		}),,
+		}),
 		blocksMarkedForDeletion: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name:        blocksMarkedForDeletionName,
 			Help:        blocksMarkedForDeletionHelp,
