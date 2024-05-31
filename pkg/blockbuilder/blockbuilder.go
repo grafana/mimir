@@ -166,28 +166,35 @@ func (b *BlockBuilder) stopping(_ error) error {
 
 func (b *BlockBuilder) running(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
-	err := b.nextConsumeCycle(ctx, time.Now())
+	// To avoid small blocks at startup, we consume until the last hour boundary + buffer.
+	consumptionItvl := time.Hour
+	timeBuffer := 15 * time.Minute
+	mark := time.Now().Truncate(consumptionItvl).Add(timeBuffer)
+	if mark.After(time.Now()) {
+		mark = mark.Add(-consumptionItvl)
+	}
+	err := b.nextConsumeCycle(ctx, mark)
 	if err != nil {
 		return err
 	}
 
 	// TODO(v): configure consumption interval
-	// TODO(codesome): validate the consumption interval. Must be <=2h and .
-	blockRange := time.Hour
-	nextBlockTime := time.Now().Truncate(blockRange).Add(blockRange + (15 * time.Minute))
+	// TODO(codesome): validate the consumption interval. Must be <=2h and can divide 2h into an integer.
+
+	nextBlockTime := time.Now().Truncate(consumptionItvl).Add(consumptionItvl + timeBuffer)
 	waitTime := time.Until(nextBlockTime)
 
 	for {
 		select {
 		case mark := <-time.After(waitTime):
 			_ = b.nextConsumeCycle(ctx, mark.Add(-time.Second))
-			// If we took more than blockRange time to consume the records, this
+			// If we took more than consumptionItvl time to consume the records, this
 			// will immediately start the next consumption.
-			nextBlockTime = nextBlockTime.Add(blockRange)
+			nextBlockTime = nextBlockTime.Add(consumptionItvl)
 			waitTime = time.Until(nextBlockTime)
 			if waitTime < 0 {
-				// TODO(codesome): track "-waitTime", which is the time we ran over.
-				// This probably needs to be alerted if it goes beyond a certain point consistently.
+				// TODO(codesome): track "-waitTime", which is the time we ran over. Or something better that lets us alert
+				// if it goes beyond a certain point consistently.
 			}
 		case <-ctx.Done():
 			return nil
@@ -256,7 +263,6 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, mark time.Time) err
 
 func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark time.Time) error {
 	// Keep an instance of a builder per partition.
-	builder := newTSDBBuilder(b.logger, "", b.limits, b.cfg.BlocksStorageConfig)
 	checkpointOffset := int64(-1)
 
 	// TopicPartition to resume consuming on this iteration.
@@ -281,7 +287,14 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 	var lastOffset int64
 
 	// TODO(v): signal to bail out from the consume loop, otherwise a busy partition will starve the consumer
-	var done bool
+	var (
+		consumptionItvl     = time.Hour        // TODO(codesome): get this from config
+		timeBuffer          = 15 * time.Minute // TODO(codesome): get this from config
+		resetBlockBuilderAt time.Time
+		builder             *tsdbBuilder
+		currEnd, lastEnd    int64
+		done                bool
+	)
 	for !done {
 		// Limit the time the client waits for new batch of records, otherwise, it will hang when landed to a inactive partition.
 		// TODO(v): configure fetch timeout
@@ -307,7 +320,28 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 			level.Info(b.logger).Log("msg", "consumed", "part", ftp.Partition, "hi", ftp.HighWatermark, "lo", ftp.LogStartOffset, "batch_size", len(ftp.Records))
 
 			for _, rec := range ftp.Records {
-				allSamplesProcessed, err := builder.process(ctx, rec, 0, 0, false)
+				// When BB is first deployed or if it is lagging behind, then it might consuming data from too much
+				// in the past. In which case if we try to consume all at once, it can overwhelm the system.
+				// So we break this into multiple block building cycles by resetting the block builder at intervals.
+				// TODO(codesome): the logic for this below is broken. Fix it. How can we determine the block ends when we are catching up?
+				if builder != nil && rec.Timestamp.After(resetBlockBuilderAt) {
+					if err := builder.compactAndRemoveDBs(ctx); err != nil {
+						level.Error(b.logger).Log("msg", "failed to compact and remove dbs", "part", part, "err", err)
+						// TODO(codesome): return err?
+					}
+					builder = nil
+				}
+				if builder == nil {
+					builder = newTSDBBuilder(b.logger, b.limits, b.cfg.BlocksStorageConfig)
+					resetBlockBuilderAt = rec.Timestamp.Truncate(consumptionItvl).Add(consumptionItvl + timeBuffer)
+
+					// TODO(codesome): verify. this can be wrong.
+					currEnd = rec.Timestamp.Truncate(consumptionItvl).UnixMilli()
+					lastEnd = currEnd - consumptionItvl.Milliseconds()
+				}
+
+				recordProcessedBefore := false // TODO(codesome): get this from checkpoint
+				allSamplesProcessed, err := builder.process(ctx, rec, lastEnd, currEnd, recordProcessedBefore)
 				if !allSamplesProcessed && checkpointOffset < 0 {
 					checkpointOffset = rec.Offset
 				}

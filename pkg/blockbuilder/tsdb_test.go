@@ -2,7 +2,6 @@ package blockbuilder
 
 import (
 	"context"
-	"github.com/prometheus/prometheus/tsdb"
 	"math"
 	"sort"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -55,7 +55,11 @@ func TestTSDBBuilder(t *testing.T) {
 		require.Equal(t, accepted, allProcessed)
 	}
 
-	builder := newTSDBBuilder(log.NewNopLogger(), t.TempDir(), overrides, mimir_tsdb.BlocksStorageConfig{})
+	builder := newTSDBBuilder(log.NewNopLogger(), overrides, mimir_tsdb.BlocksStorageConfig{
+		TSDB: mimir_tsdb.TSDBConfig{
+			Dir: t.TempDir(),
+		},
+	})
 
 	processingRange := time.Hour.Milliseconds()
 
@@ -132,7 +136,7 @@ func TestTSDBBuilder(t *testing.T) {
 	// Check the samples in the DB.
 	queryDB(db.db)
 
-	dbDir := builder.blocksDir(userID)
+	dbDir := builder.blocksStorageConfig.TSDB.BlocksDir(userID)
 	// This should create the appropriate blocks and close the DB.
 	err = builder.compactAndRemoveDBs(context.Background())
 	require.NoError(t, err)
@@ -169,7 +173,11 @@ func TestProcessingEmptyRequest(t *testing.T) {
 
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	builder := newTSDBBuilder(log.NewNopLogger(), t.TempDir(), overrides, mimir_tsdb.BlocksStorageConfig{})
+	builder := newTSDBBuilder(log.NewNopLogger(), overrides, mimir_tsdb.BlocksStorageConfig{
+		TSDB: mimir_tsdb.TSDBConfig{
+			Dir: t.TempDir(),
+		},
+	})
 
 	// Has a timeseries with no samples.
 	var rec kgo.Record

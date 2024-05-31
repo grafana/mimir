@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -25,8 +24,7 @@ import (
 )
 
 type tsdbBuilder struct {
-	logger  log.Logger
-	rootDir string
+	logger log.Logger
 
 	// tenant-to-tsdb
 	tsdbs   map[string]*userTSDB
@@ -36,18 +34,13 @@ type tsdbBuilder struct {
 	blocksStorageConfig mimir_tsdb.BlocksStorageConfig
 }
 
-func newTSDBBuilder(logger log.Logger, rootDir string, limits *validation.Overrides, blocksStorageConfig mimir_tsdb.BlocksStorageConfig) *tsdbBuilder {
+func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, blocksStorageConfig mimir_tsdb.BlocksStorageConfig) *tsdbBuilder {
 	return &tsdbBuilder{
-		rootDir:             rootDir,
 		tsdbs:               make(map[string]*userTSDB),
 		logger:              logger,
 		limits:              limits,
 		blocksStorageConfig: blocksStorageConfig,
 	}
-}
-
-func (b *tsdbBuilder) blocksDir(userID string) string {
-	return filepath.Join(b.rootDir, userID)
 }
 
 // process puts the samples in the TSDB. Some parts taken from (*Ingester).pushSamplesToAppender.
@@ -207,7 +200,7 @@ func (b *tsdbBuilder) getOrCreateTSDB(userID string) (*userTSDB, error) {
 }
 
 func (b *tsdbBuilder) newTSDB(userID string) (*userTSDB, error) {
-	udir := b.blocksDir(userID)
+	udir := b.blocksStorageConfig.TSDB.BlocksDir(userID)
 
 	userLogger := util_log.WithUserID(userID, b.logger)
 
