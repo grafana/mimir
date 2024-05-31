@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Build: `grafana/mimir` docker image is now based on `gcr.io/distroless/static-debian12` image. Alpine-based docker image is still available as `grafana/mimir-alpine`, until Mimir 2.15. #8204
 * [CHANGE] Ingester: `/ingester/flush` endpoint is now only allowed to execute only while the ingester is in `Running` state. The 503 status code is returned if the endpoint is called while the ingester is not in `Running` state. #7486
 * [CHANGE] Distributor: Include label name in `err-mimir-label-value-too-long` error message: #7740
 * [CHANGE] Ingester: enabled 1 out 10 errors log sampling by default. All the discarded samples will still be tracked by the `cortex_discarded_samples_total` metric. The feature can be configured via `-ingester.error-sample-rate` (0 to log all errors). #7807
@@ -43,6 +44,7 @@
 * [ENHANCEMENT] Ingester: active series are now updated along with owned series. They decrease when series change ownership between ingesters. This helps provide a more accurate total of active series when ingesters are added. This is only enabled when `-ingester.track-ingester-owned-series` or `-ingester.use-ingester-owned-series-for-limits` are enabled. #8084
 * [ENHANCEMENT] Query-frontend: include route name in query stats log lines. #8191
 * [ENHANCEMENT] OTLP: Speed up conversion from OTel to Mimir format by about 8% and reduce memory consumption by about 30%. Can be disabled via `-distributor.direct-otlp-translation-enabled=false` #7957
+* [ENHANCEMENT] Ingester/Querier: Optimise regexps with long lists of alternates. #8221
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 * [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
@@ -110,7 +112,7 @@
   * Querier: changed from `30` to `180`
   * Query-scheduler: changed from `30` to `180`
 * [CHANGE] Change TCP port exposed by `mimir-continuous-test` deployment to match with updated defaults of its container image (see changes below). #7958
-* [FEATURE] Add support to deploy Mimir with experimental ingest storage enabled. #8028
+* [FEATURE] Add support to deploy Mimir with experimental ingest storage enabled. #8028 #8222
 * [ENHANCEMENT] Compactor: add `$._config.cortex_compactor_concurrent_rollout_enabled` option (disabled by default) that makes use of rollout-operator to speed up the rollout of compactors. #7783 #7878
 * [ENHANCEMENT] Shuffle-sharding: add `$._config.shuffle_sharding.ingest_storage_partitions_enabled` and `$._config.shuffle_sharding.ingester_partitions_shard_size` options, that allow configuring partitions shard size in ingest-storage mode. #7804
 * [ENHANCEMENT] Rollout-operator: upgrade to v0.14.0.

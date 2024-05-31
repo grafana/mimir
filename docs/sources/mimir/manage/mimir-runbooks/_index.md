@@ -85,15 +85,19 @@ How to **fix** it:
           sum by (user) ( # total in-memory series for the tenant across ingesters
               cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}
           )
-          > 200000 # show only big tenants - with more than 200k series across ingesters
-          >
-          (
-              max by(user) (cortex_limits_overrides{namespace="<namespace>", limit_name="max_global_series_per_user"}) # global limit
-              *
-              scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"})) # with replication
-              *
-              0.5 # 50%
+          /
+          scalar( # Account for replication
+              ( # Classic storage
+                  max(cortex_distributor_replication_factor{namespace="<namespace>"})
+              )
+              or
+              ( # Ingest storage
+                  # count the number of zones processing writes
+                  count(group by (job) (cortex_ingester_memory_series{namespace="<namespace>"}))
+              )
           )
+          > 70000 # show only big tenants - with more than 70K series before replication
+          > 0.5 * max by(user) (cortex_limits_overrides{namespace="<namespace>", limit_name="max_global_series_per_user"}) # global limit
       )
       and on (pod) ( # intersection with top 3 ingesters by in-memory series
           topk(3,
@@ -1947,12 +1951,14 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, th
 This error occurs when execution of a query exceeds the limit on the number of series chunks fetched.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-To configure the limit on a per-tenant basis, use the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
+To configure the limit on a global basis, use the `-querier.max-fetched-chunks-per-query` option.
+To configure the limit on a per-tenant basis, set the `max_fetched_chunks_per_query` per-tenant override in the runtime configuration.
 
 How to **fix** it:
 
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
-- Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
+- Consider increasing the global limit by using the `-querier.max-fetched-chunks-per-query` option.
+- Consider increasing the limit on a per-tenant basis by using the `max_fetched_chunks_per_query` per-tenant override in the runtime configuration.
 
 ### err-mimir-max-estimated-chunks-per-query
 
@@ -1961,36 +1967,42 @@ This error occurs when execution of a query exceeds the limit on the estimated n
 The estimate is based on the actual number of chunks that will be sent from ingesters to queriers, and an estimate of the number of chunks that will be sent from store-gateways to queriers.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-To configure the limit on a per-tenant basis, use the `-querier.max-estimated-fetched-chunks-per-query-multiplier` option (or `max_estimated_fetched_chunks_per_query_multiplier` in the runtime configuration).
+To configure the limit on a global basis, use the `-querier.max-estimated-fetched-chunks-per-query-multiplier` option.
+To configure the limit on a per-tenant basis, set the `max_estimated_fetched_chunks_per_query_multiplier` per-tenant override in the runtime configuration.
 
 How to **fix** it:
 
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
-- Consider increasing the per-tenant limit by using the`-querier.max-estimated-fetched-chunks-per-query-multiplier` option (or `max_estimated_fetched_chunks_per_query_multiplier` in the runtime configuration).
+- Consider increasing the global limit by using the `-querier.max-estimated-fetched-chunks-per-query-multiplier` option.
+- Consider increasing the limit on a per-tenant basis by using the `max_estimated_fetched_chunks_per_query_multiplier` per-tenant override in the runtime configuration.
 
 ### err-mimir-max-series-per-query
 
 This error occurs when execution of a query exceeds the limit on the maximum number of series.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-To configure the limit on a per-tenant basis, use the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
+To configure the limit on a global basis, use the `-querier.max-fetched-series-per-query` option.
+To configure the limit on a per-tenant basis, set the `max_fetched_series_per_query` per-tenant override in the runtime configuration.
 
 How to **fix** it:
 
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
-- Consider increasing the per-tenant limit by using the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
+- Consider increasing the global limit by using the `-querier.max-fetched-series-per-query` option.
+- Consider increasing the limit on a per-tenant basis by using the `max_fetched_series_per_query` per-tenant override in the runtime configuration.
 
 ### err-mimir-max-chunks-bytes-per-query
 
 This error occurs when execution of a query exceeds the limit on aggregated size (in bytes) of fetched chunks.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-To configure the limit on a per-tenant basis, use the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
+To configure the limit on a global basis, use the `-querier.max-fetched-chunk-bytes-per-query` option.
+To configure the limit on a per-tenant basis, set the `max_fetched_chunk_bytes_per_query` per-tenant override in the runtime configuration.
 
 How to **fix** it:
 
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
-- Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
+- Consider increasing the global limit by using the `-querier.max-fetched-chunk-bytes-per-query` option.
+- Consider increasing the limit on a per-tenant basis by using the `max_fetched_chunk_bytes_per_query` per-tenant override in the runtime configuration.
 
 ### err-mimir-max-query-length
 
