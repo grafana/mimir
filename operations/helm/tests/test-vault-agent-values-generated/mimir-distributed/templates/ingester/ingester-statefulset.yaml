@@ -30,7 +30,9 @@ spec:
     type: OnDelete
   serviceName: test-vault-agent-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -169,7 +171,9 @@ spec:
     type: OnDelete
   serviceName: test-vault-agent-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -308,7 +312,9 @@ spec:
     type: OnDelete
   serviceName: test-vault-agent-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:

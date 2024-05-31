@@ -25,7 +25,9 @@ spec:
     type: RollingUpdate
   serviceName: metamonitoring-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
