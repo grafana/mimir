@@ -13,11 +13,46 @@ eval instant at 5m single_histogram
 eval range from 0 to 5m step 1m single_histogram
 	{__name__="single_histogram"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}}
 
+# histogram_count extracts the count property from the histogram.
+eval range from 0 to 5m step 1m  histogram_count(single_histogram)
+	{} 4 4 4 4 4 7
+
 clear
 
 # Test metric with mixed floats and histograms
 load 1m
 	mixed_metric 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}}
 
-eval range from 0 to 4m step 1m mixed_metric
-	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
+eval range from 0 to 5m step 1m mixed_metric
+	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
+
+eval range from 0 to 4m step 1m histogram_count(mixed_metric)
+{} _ _ _ 4 6
+
+# histogram_count ignores any float values
+eval instant at 3m histogram_count(mixed_metric)
+	{} 4
+
+# histogram_count ignores any float values
+eval instant at 4m histogram_count(mixed_metric)
+	{} 6
+
+clear
+
+# Test multiple histograms
+load 5m
+	route{path="one"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+	route{path="two"} {{schema:0 sum:10 count:20 buckets:[9 10 1]}}
+	route{path="three"} {{schema:0 sum:12 count:10 buckets:[3 2 5]}}
+
+eval instant at 5m route
+	route{path="one"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+	route{path="two"} {{schema:0 sum:10 count:20 buckets:[9 10 1]}}
+	route{path="three"} {{schema:0 sum:12 count:10 buckets:[3 2 5]}}
+
+eval instant at 5m histogram_count(route)
+	{path="one"} 4
+	{path="two"} 20
+	{path="three"} 10
+
+clear

@@ -163,24 +163,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 			Pool:     q.pool,
 		}, nil
 	case *parser.Call:
-		if e.Func.Name != "rate" {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
-		}
-
-		if len(e.Args) != 1 {
-			// Should be caught by the PromQL parser, but we check here for safety.
-			return nil, fmt.Errorf("expected exactly one argument for rate, got %v", len(e.Args))
-		}
-
-		inner, err := q.convertToRangeVectorOperator(e.Args[0])
-		if err != nil {
-			return nil, err
-		}
-
-		return &operator.RangeVectorFunction{
-			Inner: inner,
-			Pool:  q.pool,
-		}, nil
+		return q.handleFunction(e)
 	case *parser.BinaryExpr:
 		if e.LHS.Type() != parser.ValueTypeVector || e.RHS.Type() != parser.ValueTypeVector {
 			return nil, compat.NewNotSupportedError("binary expression with scalars")
@@ -208,6 +191,42 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 		return q.convertToInstantVectorOperator(e.Expr)
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
+	}
+}
+
+func (q *Query) handleFunction(e *parser.Call) (operator.InstantVectorOperator, error) {
+	switch e.Func.Name {
+	case "rate":
+		if len(e.Args) != 1 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly one argument for rate, got %v", len(e.Args))
+		}
+
+		inner, err := q.convertToRangeVectorOperator(e.Args[0])
+		if err != nil {
+			return nil, err
+		}
+
+		return &operator.RangeVectorFunction{
+			Inner: inner,
+			Pool:  q.pool,
+		}, nil
+	case "histogram_count":
+		if len(e.Args) != 1 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly one argument for histogram_count, got %v", len(e.Args))
+		}
+
+		inner, err := q.convertToInstantVectorOperator(e.Args[0])
+		if err != nil {
+			return nil, err
+		}
+
+		return &operator.InstantVectorFunction{
+			Inner: inner,
+		}, nil
+	default:
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 	}
 }
 

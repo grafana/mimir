@@ -45,12 +45,6 @@ func (m *RangeVectorFunction) SeriesMetadata(ctx context.Context) ([]types.Serie
 	return metadata, nil
 }
 
-func dropMetricName(l labels.Labels, lb *labels.Builder) labels.Labels {
-	lb.Reset(l)
-	lb.Del(labels.MetricName)
-	return lb.Labels()
-}
-
 func (m *RangeVectorFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if err := m.Inner.NextSeries(ctx); err != nil {
 		return types.InstantVectorSeriesData{}, err
