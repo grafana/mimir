@@ -1737,14 +1737,14 @@ Usage of ./cmd/mimir/mimir:
     	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. (default 20)
   -querier.max-estimated-fetched-chunks-per-query-multiplier float
     	[experimental] Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.
+  -querier.max-estimated-memory-consumption-per-query uint
+    	[experimental] The maximum estimated memory a single query can consume at once, in bytes. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.
   -querier.max-fetched-chunk-bytes-per-query int
     	The maximum size of all chunks in bytes that a query can fetch from ingesters and store-gateways. This limit is enforced in the querier and ruler. 0 to disable.
   -querier.max-fetched-chunks-per-query int
     	Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable. (default 2000000)
   -querier.max-fetched-series-per-query int
     	The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable
-  -querier.max-in-memory-samples-per-query int
-    	[experimental] The maximum number of samples a query can hold in memory at once. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.
   -querier.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429. (default 100)
   -querier.max-partial-query-length duration

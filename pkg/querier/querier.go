@@ -629,11 +629,11 @@ type tenantQueryLimitsProvider struct {
 	limits *validation.Overrides
 }
 
-func (p *tenantQueryLimitsProvider) GetMaxInMemorySamples(ctx context.Context) (int, error) {
+func (p *tenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return 0, err
 	}
 
-	return p.limits.MaxInMemorySamplesPerQuery(tenantID), nil
+	return p.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID), nil
 }

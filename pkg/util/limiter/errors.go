@@ -30,10 +30,10 @@ var (
 		cardinalityStrategy,
 		validation.MaxEstimatedChunksPerQueryMultiplierFlag,
 	)
-	maxInMemorySamplesPerQueryMsgFormat = globalerror.MaxInMemorySamplesPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
-		"the query exceeded the maximum allowed number of in-memory samples (limit: %d samples)",
+	maxEstimatedMemoryConsumptionPerQueryLimitMsgFormat = globalerror.MaxEstimatedMemoryConsumptionPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
+		"the query exceeded the maximum allowed estimated amount of memory consumed by a single query (limit: %d bytes)",
 		cardinalityStrategy,
-		validation.MaxInMemorySamplesPerQueryFlag,
+		validation.MaxEstimatedMemoryConsumptionPerQueryFlag,
 	)
 )
 
@@ -57,6 +57,6 @@ func NewMaxEstimatedChunksPerQueryLimitError(maxEstimatedChunksPerQuery uint64) 
 	return limitError(maxEstimatedChunksPerQueryLimitMsgFormat, maxEstimatedChunksPerQuery)
 }
 
-func NewMaxInMemorySamplesPerQueryLimitError(maxInMemorySamplesPerQuery uint64) validation.LimitError {
-	return limitError(maxInMemorySamplesPerQueryMsgFormat, maxInMemorySamplesPerQuery)
+func NewMaxEstimatedMemoryConsumptionPerQueryLimitError(maxEstimatedMemoryConsumptionPerQuery uint64) validation.LimitError {
+	return limitError(maxEstimatedMemoryConsumptionPerQueryLimitMsgFormat, maxEstimatedMemoryConsumptionPerQuery)
 }

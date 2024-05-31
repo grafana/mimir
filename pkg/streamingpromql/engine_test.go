@@ -466,8 +466,8 @@ func TestInMemorySamplesLimit_RangeQueries(t *testing.T) {
 
 	testCases := map[string]struct {
 		expr              string
-		rangeQueryLimit   int
-		instantQueryLimit int
+		rangeQueryLimit   uint64
+		instantQueryLimit uint64
 		shouldSucceed     bool
 	}{
 		"limit disabled": {
@@ -529,7 +529,7 @@ func TestInMemorySamplesLimit_RangeQueries(t *testing.T) {
 				if testCase.shouldSucceed {
 					require.NoError(t, res.Err)
 				} else {
-					require.ErrorContains(t, res.Err, globalerror.MaxInMemorySamplesPerQuery.Error())
+					require.ErrorContains(t, res.Err, globalerror.MaxEstimatedMemoryConsumptionPerQuery.Error())
 				}
 			})
 
@@ -548,7 +548,7 @@ func TestInMemorySamplesLimit_RangeQueries(t *testing.T) {
 				if testCase.shouldSucceed {
 					require.NoError(t, res.Err)
 				} else {
-					require.ErrorContains(t, res.Err, globalerror.MaxInMemorySamplesPerQuery.Error())
+					require.ErrorContains(t, res.Err, globalerror.MaxEstimatedMemoryConsumptionPerQuery.Error())
 				}
 			})
 		})

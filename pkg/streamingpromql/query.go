@@ -48,7 +48,7 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
-	maxInMemorySamples, err := engine.limitsProvider.GetMaxInMemorySamples(ctx)
+	maxInMemorySamples, err := engine.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -3547,12 +3547,12 @@
         },
         {
           "kind": "field",
-          "name": "max_in_memory_samples_per_query",
+          "name": "max_estimated_memory_consumption_per_query",
           "required": false,
-          "desc": "The maximum number of samples a query can hold in memory at once. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.",
+          "desc": "The maximum estimated memory a single query can consume at once, in bytes. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "querier.max-in-memory-samples-per-query",
+          "fieldFlag": "querier.max-estimated-memory-consumption-per-query",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },

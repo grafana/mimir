@@ -65,23 +65,23 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 }
 
 type QueryLimitsProvider interface {
-	// GetMaxInMemorySamples returns the maximum allowed number of in-memory samples, or 0 to disable the limit.
-	GetMaxInMemorySamples(ctx context.Context) (int, error)
+	// GetMaxEstimatedMemoryConsumptionPerQuery returns the maximum estimated memory allowed to be consumed by a query in bytes, or 0 to disable the limit.
+	GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error)
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
 //
 // This should generally only be used in tests.
-func NewStaticQueryLimitsProvider(maxInMemorySamples int) QueryLimitsProvider {
+func NewStaticQueryLimitsProvider(maxEstimatedMemoryConsumptionPerQuery uint64) QueryLimitsProvider {
 	return staticQueryLimitsProvider{
-		maxInMemorySamples: maxInMemorySamples,
+		maxEstimatedMemoryConsumptionPerQuery: maxEstimatedMemoryConsumptionPerQuery,
 	}
 }
 
 type staticQueryLimitsProvider struct {
-	maxInMemorySamples int
+	maxEstimatedMemoryConsumptionPerQuery uint64
 }
 
-func (p staticQueryLimitsProvider) GetMaxInMemorySamples(_ context.Context) (int, error) {
-	return p.maxInMemorySamples, nil
+func (p staticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
+	return p.maxEstimatedMemoryConsumptionPerQuery, nil
 }

@@ -3164,11 +3164,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-fetched-chunk-bytes-per-query
 [max_fetched_chunk_bytes_per_query: <int> | default = 0]
 
-# (experimental) The maximum number of samples a query can hold in memory at
-# once. This limit is only enforced when Mimir's query engine is in use. This
-# limit is enforced in the querier. 0 to disable.
-# CLI flag: -querier.max-in-memory-samples-per-query
-[max_in_memory_samples_per_query: <int> | default = 0]
+# (experimental) The maximum estimated memory a single query can consume at
+# once, in bytes. This limit is only enforced when Mimir's query engine is in
+# use. This limit is enforced in the querier. 0 to disable.
+# CLI flag: -querier.max-estimated-memory-consumption-per-query
+[max_estimated_memory_consumption_per_query: <int> | default = 0]
 
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
