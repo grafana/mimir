@@ -113,7 +113,8 @@ func (b *BlockBuilder) handlePartitionsAssigned(_ context.Context, _ *kgo.Client
 	level.Info(b.logger).Log("msg", "partition assigned", "assignment", fmt.Sprintf("%+v", assignment))
 
 	// Pause fetching for all assigned partitions. We manage the order and the pace of the consumption ourself.
-	// TODO(codesome): how does this behave when there is a block building cycle in progress?
+	// TODO(codesome): how does this behave when there is a block building cycle in progress? Should we not pause the
+	// ones being consumed at the moment by this BB?
 	assignment = b.kafkaClient.PauseFetchPartitions(assignment)
 
 	b.assignmentMu.Lock()
@@ -122,6 +123,7 @@ func (b *BlockBuilder) handlePartitionsAssigned(_ context.Context, _ *kgo.Client
 }
 
 // TODO(codesome): question: is handlePartitionsAssigned also called by kafka client when partitions are revoked?
+// TODO(codesome): how does this behave when there is a block building cycle in progress?
 func (b *BlockBuilder) handlePartitionsLost(_ context.Context, _ *kgo.Client, lostAssignment map[string][]int32) {
 	level.Info(b.logger).Log("msg", "partition lost", "lost", fmt.Sprintf("%+v", lostAssignment))
 

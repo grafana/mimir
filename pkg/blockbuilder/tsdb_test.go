@@ -3,7 +3,9 @@ package blockbuilder
 import (
 	"context"
 	"math"
+	"math/rand"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -18,150 +20,254 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestTSDBBuilder(t *testing.T) {
 	limits := defaultLimitsTestConfig()
 	limits.OutOfOrderTimeWindow = 2 * model.Duration(time.Hour)
+	limits.NativeHistogramsIngestionEnabled = true
 	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
 
-	userID := "1"
+	userID := strconv.Itoa(rand.Int())
+	// Add a sample for all the cases and check for correctness.
+	var expSamples []mimirpb.Sample
+	var expHistograms []mimirpb.Histogram
 
 	// val is int64 to make calling this function concise.
-	addSample := func(builder *tsdbBuilder, ts int64, lastEnd, currEnd int64, recordProcessedBefore, accepted bool) {
+	createRequest := func(ts int64, accepted, isHistogram bool) *kgo.Record {
 		var rec kgo.Record
 		rec.Key = []byte(userID)
 
 		req := mimirpb.WriteRequest{}
 
+		var samples []mimirpb.Sample
+		var histograms []mimirpb.Histogram
+		var seriesValue string
+		if isHistogram {
+			seriesValue = "histogram"
+			histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, test.GenerateTestHistogram(int(ts)))}
+			if accepted {
+				histograms[0].ResetHint = 0
+				expHistograms = append(expHistograms, histograms[0])
+			}
+		} else {
+			seriesValue = "float"
+			samples = []mimirpb.Sample{{TimestampMs: ts, Value: float64(ts)}}
+			if accepted {
+				expSamples = append(expSamples, samples[0])
+			}
+		}
 		req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
 				Labels: []mimirpb.LabelAdapter{
-					{Name: "foo", Value: "bar"},
+					{Name: "foo", Value: seriesValue},
 				},
-				Samples: []mimirpb.Sample{
-					{TimestampMs: ts, Value: float64(ts)},
-				},
+				Samples:    samples,
+				Histograms: histograms,
 			},
 		})
 
 		data, err := req.Marshal()
 		require.NoError(t, err)
 		rec.Value = data
-		allProcessed, err := builder.process(context.Background(), &rec, lastEnd, currEnd, recordProcessedBefore)
+
+		return &rec
+	}
+	addFloatSample := func(builder *tsdbBuilder, ts int64, lastEnd, currEnd int64, recordProcessedBefore, accepted bool) {
+		rec := createRequest(ts, accepted, false)
+
+		allProcessed, err := builder.process(context.Background(), rec, lastEnd, currEnd, recordProcessedBefore)
 		require.NoError(t, err)
 		require.Equal(t, accepted, allProcessed)
 	}
+	addHistogramSample := func(builder *tsdbBuilder, ts int64, lastEnd, currEnd int64, recordProcessedBefore, accepted bool) {
+		rec := createRequest(ts, accepted, true)
 
-	builder := newTSDBBuilder(log.NewNopLogger(), overrides, mimir_tsdb.BlocksStorageConfig{
-		TSDB: mimir_tsdb.TSDBConfig{
-			Dir: t.TempDir(),
-		},
-	})
-
-	processingRange := time.Hour.Milliseconds()
-
-	// TODO(codesome): try an odd hour as well
-	// TODO(codesome): test histograms
-	lastEnd := 2 * processingRange
-	currEnd := lastEnd + processingRange
-
-	// Add a sample for all the cases and check for correctness.
-	var expSamples []mimirpb.Sample
-
-	// 1. Processing records that were processed before (they come first in real world).
-	// a. This sample is already processed. So it should be ignored but say all processed
-	//    because it is already in a block.
-	addSample(builder, lastEnd-10, lastEnd, currEnd, true, true)
-	// b. This goes in this block.
-	addSample(builder, lastEnd+100, lastEnd, currEnd, true, true)
-	expSamples = append(expSamples, mimirpb.Sample{TimestampMs: lastEnd + 100, Value: float64(lastEnd + 100)})
-	// c. This sample should be processed in the future.
-	addSample(builder, currEnd+1, lastEnd, currEnd, true, false)
-
-	// 2. Processing records that were not processed before.
-	// a. Sample that belonged to previous processing period but came in late. Processed in current cycle.
-	addSample(builder, lastEnd-5, lastEnd, currEnd, false, true)
-	expSamples = append(expSamples, mimirpb.Sample{TimestampMs: lastEnd - 5, Value: float64(lastEnd - 5)})
-	// b. Sample that belongs to the current processing period.
-	addSample(builder, lastEnd+200, lastEnd, currEnd, false, true)
-	expSamples = append(expSamples, mimirpb.Sample{TimestampMs: lastEnd + 200, Value: float64(lastEnd + 200)})
-	// c. This sample should be processed in the future.
-	addSample(builder, currEnd+2, lastEnd, currEnd, false, false)
-
-	// 3. Out of order sample in a new record.
-	// a. In the current range but out of order w.r.t. the previous sample.
-	addSample(builder, lastEnd+20, lastEnd, currEnd, false, true)
-	expSamples = append(expSamples, mimirpb.Sample{TimestampMs: lastEnd + 20, Value: float64(lastEnd + 20)})
-	// b. Before current range and out of order w.r.t. the previous sample. Already covered above, but this
-	// exists to explicitly state the case.
-	addSample(builder, lastEnd-20, lastEnd, currEnd, false, true)
-	expSamples = append(expSamples, mimirpb.Sample{TimestampMs: lastEnd - 20, Value: float64(lastEnd - 20)})
-
-	// Query the TSDB for the expected samples.
-	db, err := builder.getOrCreateTSDB(userID)
-	require.NoError(t, err)
+		allProcessed, err := builder.process(context.Background(), rec, lastEnd, currEnd, recordProcessedBefore)
+		require.NoError(t, err)
+		require.Equal(t, accepted, allProcessed)
+	}
 
 	queryDB := func(db *tsdb.DB) {
 		querier, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		ss := querier.Select(
 			context.Background(), true, nil,
-			labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
+			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 		)
 
-		require.True(t, ss.Next())
-		series := ss.At()
-		require.False(t, ss.Next())
-
-		require.Equal(t, labels.FromStrings("foo", "bar"), series.Labels())
-		it := series.Iterator(nil)
 		var actSamples []mimirpb.Sample
-		for it.Next() == chunkenc.ValFloat {
-			ts, val := it.At()
-			actSamples = append(actSamples, mimirpb.Sample{TimestampMs: ts, Value: val})
+		var actHistograms []mimirpb.Histogram
+		for ss.Next() {
+			series := ss.At()
+
+			require.True(t, labels.Compare(labels.FromStrings("foo", "float"), series.Labels()) == 0 ||
+				labels.Compare(labels.FromStrings("foo", "histogram"), series.Labels()) == 0)
+
+			it := series.Iterator(nil)
+			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+				switch typ {
+				case chunkenc.ValFloat:
+					ts, val := it.At()
+					actSamples = append(actSamples, mimirpb.Sample{TimestampMs: ts, Value: val})
+				case chunkenc.ValHistogram:
+					ts, h := it.AtHistogram(nil)
+					hp := mimirpb.FromHistogramToHistogramProto(ts, h)
+					hp.ResetHint = 0
+					actHistograms = append(actHistograms, hp)
+				default:
+					t.Fatalf("unexpected sample type %v", typ)
+				}
+			}
+			require.NoError(t, it.Err())
 		}
-		require.NoError(t, it.Err())
+
 		require.NoError(t, ss.Err())
 		require.NoError(t, querier.Close())
 
 		sort.Slice(expSamples, func(i, j int) bool {
 			return expSamples[i].TimestampMs < expSamples[j].TimestampMs
 		})
+		sort.Slice(expHistograms, func(i, j int) bool {
+			return expHistograms[i].Timestamp < expHistograms[j].Timestamp
+		})
 		require.Equal(t, expSamples, actSamples)
+		require.Equal(t, expHistograms, actHistograms)
 	}
 
-	// Check the samples in the DB.
-	queryDB(db.db)
-
-	dbDir := builder.blocksStorageConfig.TSDB.BlocksDir(userID)
-	// This should create the appropriate blocks and close the DB.
-	err = builder.compactAndRemoveDBs(context.Background())
-	require.NoError(t, err)
-	require.Nil(t, builder.getTSDB(userID))
-
-	newDB, err := tsdb.Open(dbDir, log.NewNopLogger(), nil, nil, nil)
-	require.NoError(t, err)
-
-	// One for the in-order current range. Two for the out-of-order blocks: ont for current range
-	// and one for the previous range.
-	blocks := newDB.Blocks()
-	require.Len(t, blocks, 3)
-
+	processingRange := time.Hour.Milliseconds()
 	blockRange := 2 * time.Hour.Milliseconds()
-	// out of order block for the previous range.
-	require.Equal(t, lastEnd-blockRange, blocks[0].MinTime())
-	require.Equal(t, lastEnd, blocks[0].MaxTime())
-	// One in-order and one out-of-order block for the current range.
-	require.Equal(t, lastEnd, blocks[1].MinTime())
-	require.Equal(t, lastEnd+blockRange, blocks[1].MaxTime())
-	require.Equal(t, lastEnd, blocks[2].MinTime())
-	require.Equal(t, lastEnd+blockRange, blocks[2].MaxTime())
-	// Check correctness of samples in the blocks.
-	queryDB(newDB)
-	require.NoError(t, newDB.Close())
+	for _, tc := range []struct {
+		name                        string
+		lastEnd, currEnd            int64
+		verifyBlocksAfterCompaction func(blocks []*tsdb.Block)
+	}{
+		{
+			name:    "current start is at even hour",
+			lastEnd: 2 * processingRange,
+			currEnd: 3 * processingRange,
+			verifyBlocksAfterCompaction: func(blocks []*tsdb.Block) {
+				require.Len(t, blocks, 4)
+
+				lastEnd := 2 * processingRange
+				// One in-order and one out-of-order block for the previous range.
+				require.Equal(t, lastEnd-blockRange, blocks[0].MinTime())
+				require.Equal(t, lastEnd, blocks[0].MaxTime())
+				require.Equal(t, lastEnd-blockRange, blocks[1].MinTime())
+				require.Equal(t, lastEnd, blocks[1].MaxTime())
+				// One in-order and one out-of-order block for the current range.
+				require.Equal(t, lastEnd, blocks[3].MinTime())
+				require.Equal(t, lastEnd+blockRange, blocks[3].MaxTime())
+				require.Equal(t, lastEnd, blocks[2].MinTime())
+				require.Equal(t, lastEnd+blockRange, blocks[2].MaxTime())
+			},
+		},
+
+		{
+			name:    "current start is at odd hour",
+			lastEnd: 3 * processingRange,
+			currEnd: 4 * processingRange,
+			verifyBlocksAfterCompaction: func(blocks []*tsdb.Block) {
+				require.Len(t, blocks, 2)
+
+				currEnd := 4 * processingRange
+				// Both in-order and out-of-order blocks are in the same block range.
+				require.Equal(t, currEnd-blockRange, blocks[0].MinTime())
+				require.Equal(t, currEnd, blocks[0].MaxTime())
+				require.Equal(t, currEnd-blockRange, blocks[1].MinTime())
+				require.Equal(t, currEnd, blocks[1].MaxTime())
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expSamples = expSamples[:0]
+			expHistograms = expHistograms[:0]
+			builder := newTSDBBuilder(log.NewNopLogger(), overrides, mimir_tsdb.BlocksStorageConfig{
+				TSDB: mimir_tsdb.TSDBConfig{
+					Dir: t.TempDir(),
+				},
+			})
+
+			currEnd, lastEnd := tc.currEnd, tc.lastEnd
+			{ // Add float samples.
+				// 1. Processing records that were processed before (they come first in real world).
+				// A. This sample is already processed. So it should be ignored but say all processed
+				//    because it is already in a block.
+				addFloatSample(builder, lastEnd-10, lastEnd, currEnd, true, true)
+				// Since this is already processed, it should not be added to the expected samples.
+				expSamples = expSamples[:0]
+				// B. This goes in this block.
+				addFloatSample(builder, lastEnd+100, lastEnd, currEnd, true, true)
+				// C. This sample should be processed in the future.
+				addFloatSample(builder, currEnd+1, lastEnd, currEnd, true, false)
+
+				// 2. Processing records that were not processed before.
+				// A. Sample that belonged to previous processing period but came in late. Processed in current cycle.
+				addFloatSample(builder, lastEnd-5, lastEnd, currEnd, false, true)
+				// B. Sample that belongs to the current processing period.
+				addFloatSample(builder, lastEnd+200, lastEnd, currEnd, false, true)
+				// C. This sample should be processed in the future.
+				addFloatSample(builder, currEnd+2, lastEnd, currEnd, false, false)
+
+				// 3. Out of order sample in a new record.
+				// A. In the current range but out of order w.r.t. the previous sample.
+				addFloatSample(builder, lastEnd+20, lastEnd, currEnd, false, true)
+				// B. Before current range and out of order w.r.t. the previous sample. Already covered above, but this
+				// exists to explicitly state the case.
+				addFloatSample(builder, lastEnd-20, lastEnd, currEnd, false, true)
+			}
+			{ // Add native histogram samples.
+				// 1.A from above.
+				addHistogramSample(builder, lastEnd-10, lastEnd, currEnd, true, true)
+				expHistograms = expHistograms[:0]
+
+				// 2.A from above. Although in real world recordProcessedBefore=false will only come after all recordProcessedBefore=true
+				// are done, we are inserting it here because native histograms do not support out-of-order samples yet.
+				// This sample here goes in the in-order block unlike above where 2.A goes in out-of-order block.
+				addHistogramSample(builder, lastEnd-5, lastEnd, currEnd, false, true)
+
+				// 1.B from above.
+				addHistogramSample(builder, lastEnd+100, lastEnd, currEnd, true, true)
+				// 1.C from above.
+				addHistogramSample(builder, currEnd+1, lastEnd, currEnd, true, false)
+
+				// 2.B from above.
+				addHistogramSample(builder, lastEnd+200, lastEnd, currEnd, false, true)
+				// 2.C from above.
+				addHistogramSample(builder, currEnd+2, lastEnd, currEnd, false, false)
+
+				// 3.A and 3.B not done. TODO: do it when out-of-order histograms are supported.
+			}
+
+			// Query the TSDB for the expected samples.
+			db, err := builder.getOrCreateTSDB(userID)
+			require.NoError(t, err)
+
+			// Check the samples in the DB.
+			queryDB(db.db)
+
+			dbDir := builder.blocksStorageConfig.TSDB.BlocksDir(userID)
+			// This should create the appropriate blocks and close the DB.
+			err = builder.compactAndRemoveDBs(context.Background())
+			require.NoError(t, err)
+			require.Nil(t, builder.getTSDB(userID))
+
+			newDB, err := tsdb.Open(dbDir, log.NewNopLogger(), nil, nil, nil)
+			require.NoError(t, err)
+
+			// One for the in-order current range. Two for the out-of-order blocks: ont for current range
+			// and one for the previous range.
+			blocks := newDB.Blocks()
+			tc.verifyBlocksAfterCompaction(blocks)
+
+			// Check correctness of samples in the blocks.
+			queryDB(newDB)
+			require.NoError(t, newDB.Close())
+		})
+	}
 }
 
 // It is important that processing empty request is a success, as in says all samples were processed,
