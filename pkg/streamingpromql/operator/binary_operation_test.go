@@ -230,16 +230,16 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{6, 9, 4},
 			sourceSeriesMetadata: []types.SeriesMetadata{
-				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
-				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
-				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
-				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "d")},
-				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "e")},
-				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "f")},
-				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "g")},
-				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "h")},
-				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "i")},
-				{labels.FromStrings("__name__", "right_side", "env", "test", "pod", "j")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "d")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "e")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "f")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "g")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "h")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "i")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "j")},
 			},
 			expectedError: `found duplicate series for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z: {__name__="right_side", env="test", pod="g"} and {__name__="right_side", env="test", pod="j"}`,
 		},
@@ -461,7 +461,7 @@ func TestBinaryOperation_Sorting(t *testing.T) {
 
 			metadata := make([]types.SeriesMetadata, len(testCase.series))
 			for i := range testCase.series {
-				metadata[i] = types.SeriesMetadata{labels.FromStrings("series", strconv.Itoa(i))}
+				metadata[i] = types.SeriesMetadata{Labels: labels.FromStrings("series", strconv.Itoa(i))}
 			}
 
 			test := func(t *testing.T, series []*binaryOperationOutputSeries, metadata []types.SeriesMetadata, sorter sort.Interface, expectedOrder []int) {
