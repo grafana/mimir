@@ -261,13 +261,13 @@ func writeErrorToHTTPResponseBody(w http.ResponseWriter, httpCode int, grpcCode 
 
 	respBytes, err := proto.Marshal(grpcstatus.New(grpcCode, msg).Proto())
 	if err != nil {
-		level.Warn(logger).Log("msg", "response marshal failed", "err", err)
+		level.Error(logger).Log("msg", "otlp response marshal failed", "err", err)
 		_, _ = w.Write(writeResponseFailedBody)
 		return
 	}
 	_, err = w.Write(respBytes)
 	if err != nil {
-		level.Warn(logger).Log("msg", "write response failed", "err", err)
+		level.Error(logger).Log("msg", "write error to otlp response failed", "err", err)
 		_, _ = w.Write(writeResponseFailedBody)
 	}
 }
