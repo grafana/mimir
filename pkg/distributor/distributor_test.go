@@ -5773,7 +5773,7 @@ func makeWriteRequestFloatHistogram(seriesLabels []string, timestamp int64, hist
 }
 
 func makeExemplarTimeseries(seriesLabels []string, timestamp int64, numSamples int, exemplarLabels []string) mimirpb.PreallocTimeseries {
-	samples := make([]mimirpb.Sample, 0, numSamples)
+	var samples []mimirpb.Sample
 	for i := 0; i < numSamples; i++ {
 		samples = append(samples, mimirpb.Sample{
 			Value:       1,
