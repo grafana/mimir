@@ -158,20 +158,20 @@ func TestValidateLabels(t *testing.T) {
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
-	randomReason := validation.DiscardedSamplesCounter(reg, "random reason")
+	randomReason := validation.DiscardedSamplesCounter(reg, "test_component", "random reason")
 	randomReason.WithLabelValues("different user", "custom label").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{group="custom label",reason="label_invalid",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="label_name_too_long",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="label_value_too_long",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_series",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="metric_name_invalid",user="testUser"} 2
-			cortex_discarded_samples_total{group="custom label",reason="missing_metric_name",user="testUser"} 1
+			cortex_discarded_samples_total{component="distributor",group="custom label",reason="label_invalid",user="testUser"} 1
+			cortex_discarded_samples_total{component="distributor",group="custom label",reason="label_name_too_long",user="testUser"} 1
+			cortex_discarded_samples_total{component="distributor",group="custom label",reason="label_value_too_long",user="testUser"} 1
+			cortex_discarded_samples_total{component="distributor",group="custom label",reason="max_label_names_per_series",user="testUser"} 1
+			cortex_discarded_samples_total{component="distributor",group="custom label",reason="metric_name_invalid",user="testUser"} 2
+			cortex_discarded_samples_total{component="distributor",group="custom label",reason="missing_metric_name",user="testUser"} 1
 
-			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
+			cortex_discarded_samples_total{component="test_component",group="custom label",reason="random reason",user="different user"} 1
 	`), "cortex_discarded_samples_total"))
 
 	s.deleteUserMetrics(userID)
@@ -179,7 +179,7 @@ func TestValidateLabels(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
+			cortex_discarded_samples_total{component="test_component",group="custom label",reason="random reason",user="different user"} 1
 	`), "cortex_discarded_samples_total"))
 }
 
@@ -236,17 +236,17 @@ func TestValidateExemplars(t *testing.T) {
 		assert.NoError(t, validateExemplar(m, userID, []mimirpb.LabelAdapter{}, ve))
 	}
 
-	validation.DiscardedExemplarsCounter(reg, "random reason").WithLabelValues("different user").Inc()
+	validation.DiscardedExemplarsCounter(reg, "test_component", "random reason").WithLabelValues("different user").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
 			# TYPE cortex_discarded_exemplars_total counter
-			cortex_discarded_exemplars_total{reason="exemplar_labels_blank",user="testUser"} 2
-			cortex_discarded_exemplars_total{reason="exemplar_labels_missing",user="testUser"} 1
-			cortex_discarded_exemplars_total{reason="exemplar_labels_too_long",user="testUser"} 1
-			cortex_discarded_exemplars_total{reason="exemplar_timestamp_invalid",user="testUser"} 1
+			cortex_discarded_exemplars_total{component="distributor",reason="exemplar_labels_blank",user="testUser"} 2
+			cortex_discarded_exemplars_total{component="distributor",reason="exemplar_labels_missing",user="testUser"} 1
+			cortex_discarded_exemplars_total{component="distributor",reason="exemplar_labels_too_long",user="testUser"} 1
+			cortex_discarded_exemplars_total{component="distributor",reason="exemplar_timestamp_invalid",user="testUser"} 1
 
-			cortex_discarded_exemplars_total{reason="random reason",user="different user"} 1
+			cortex_discarded_exemplars_total{component="test_component",reason="random reason",user="different user"} 1
 		`), "cortex_discarded_exemplars_total"))
 
 	// Delete test user and verify only different remaining
@@ -254,7 +254,7 @@ func TestValidateExemplars(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
 			# TYPE cortex_discarded_exemplars_total counter
-			cortex_discarded_exemplars_total{reason="random reason",user="different user"} 1
+			cortex_discarded_exemplars_total{component="test_component",reason="random reason",user="different user"} 1
 	`), "cortex_discarded_exemplars_total"))
 }
 
@@ -325,16 +325,16 @@ func TestValidateMetadata(t *testing.T) {
 		})
 	}
 
-	validation.DiscardedMetadataCounter(reg, "random reason").WithLabelValues("different user").Inc()
+	validation.DiscardedMetadataCounter(reg, "test_component", "random reason").WithLabelValues("different user").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
 			# TYPE cortex_discarded_metadata_total counter
-			cortex_discarded_metadata_total{reason="metric_name_too_long",user="testUser"} 1
-			cortex_discarded_metadata_total{reason="missing_metric_name",user="testUser"} 1
-			cortex_discarded_metadata_total{reason="unit_too_long",user="testUser"} 1
+			cortex_discarded_metadata_total{component="distributor",reason="metric_name_too_long",user="testUser"} 1
+			cortex_discarded_metadata_total{component="distributor",reason="missing_metric_name",user="testUser"} 1
+			cortex_discarded_metadata_total{component="distributor",reason="unit_too_long",user="testUser"} 1
 
-			cortex_discarded_metadata_total{reason="random reason",user="different user"} 1
+			cortex_discarded_metadata_total{component="test_component",reason="random reason",user="different user"} 1
 	`), "cortex_discarded_metadata_total"))
 
 	m.deleteUserMetrics(userID)
@@ -342,7 +342,7 @@ func TestValidateMetadata(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
 			# TYPE cortex_discarded_metadata_total counter
-			cortex_discarded_metadata_total{reason="random reason",user="different user"} 1
+			cortex_discarded_metadata_total{component="test_component",reason="random reason",user="different user"} 1
 	`), "cortex_discarded_metadata_total"))
 }
 
@@ -541,7 +541,7 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{group="group-1",reason="max_native_histogram_buckets",user="user-1"} 8
+			cortex_discarded_samples_total{component="distributor",group="group-1",reason="max_native_histogram_buckets",user="user-1"} 8
 	`), "cortex_discarded_samples_total"))
 }
 
@@ -580,7 +580,7 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{group="group-1",reason="invalid_native_histogram_schema",user="user-1"} 2
+			cortex_discarded_samples_total{component="distributor",group="group-1",reason="invalid_native_histogram_schema",user="user-1"} 2
 	`), "cortex_discarded_samples_total"))
 }
 

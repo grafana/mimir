@@ -54,7 +54,7 @@ func OTLPHandler(
 	reg prometheus.Registerer,
 	logger log.Logger,
 ) http.Handler {
-	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
+	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, componentName, otelParseError)
 
 	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")

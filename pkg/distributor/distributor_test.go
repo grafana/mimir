@@ -1619,7 +1619,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			expectedMetrics: `
 			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
 			# TYPE cortex_discarded_exemplars_total counter
-			cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+			cortex_discarded_exemplars_total{component="distributor",reason="exemplar_too_old",user="user"} 1
 		`,
 		},
 		"should drop exemplars with timestamp lower than the accepted minimum, when multiple exemplars are specified for the same series": {
@@ -1650,7 +1650,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			expectedMetrics: `
 			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
 			# TYPE cortex_discarded_exemplars_total counter
-			cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+			cortex_discarded_exemplars_total{component="distributor",reason="exemplar_too_old",user="user"} 1
 		`,
 		},
 		"should drop exemplars with timestamp lower than the accepted minimum, when multiple exemplars are specified in the same series": {
@@ -1681,7 +1681,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			expectedMetrics: `
 			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
 			# TYPE cortex_discarded_exemplars_total counter
-			cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+			cortex_discarded_exemplars_total{component="distributor",reason="exemplar_too_old",user="user"} 1
 		`,
 		},
 		"should drop exemplars with timestamp greater than the accepted maximum, when multiple exemplars are specified in the same series": {
@@ -1712,7 +1712,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			expectedMetrics: `
 		        # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
 		        # TYPE cortex_discarded_exemplars_total counter
-		        cortex_discarded_exemplars_total{reason="exemplar_too_far_in_future",user="user"} 1
+		        cortex_discarded_exemplars_total{component="distributor",reason="exemplar_too_far_in_future",user="user"} 1
 		    `,
 		},
 		"should drop exemplars above the allowed exemplars per series limit, when multiple exemplars are specified in the same series": {
@@ -1746,7 +1746,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			expectedMetrics: `
                 # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
                 # TYPE cortex_discarded_exemplars_total counter
-                cortex_discarded_exemplars_total{reason="too_many_exemplars_per_series_per_request",user="user"} 1
+                cortex_discarded_exemplars_total{component="distributor",reason="too_many_exemplars_per_series_per_request",user="user"} 1
             `,
 		},
 		"should sort exemplars if they are not sorted": {

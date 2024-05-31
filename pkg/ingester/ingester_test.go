@@ -1258,7 +1258,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="invalid-native-histogram",user="test"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="invalid-native-histogram",user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
 				cortex_ingester_ingested_samples_failures_total{user="test"} 1
@@ -1299,7 +1299,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="invalid-native-histogram",user="test"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="invalid-native-histogram",user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
 				cortex_ingester_ingested_samples_failures_total{user="test"} 1
@@ -1340,7 +1340,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="invalid-native-histogram",user="test"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="invalid-native-histogram",user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
 				cortex_ingester_ingested_samples_failures_total{user="test"} 1
@@ -1381,7 +1381,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="invalid-native-histogram",user="test"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="invalid-native-histogram",user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
 				cortex_ingester_ingested_samples_failures_total{user="test"} 1
@@ -1422,7 +1422,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="invalid-native-histogram",user="test"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="invalid-native-histogram",user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
 				cortex_ingester_ingested_samples_failures_total{user="test"} 1
@@ -1678,7 +1678,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-out-of-order",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -1736,7 +1736,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-out-of-bounds",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -1795,7 +1795,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 3
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-out-of-bounds",user="test"} 3
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -1914,7 +1914,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-out-of-bounds",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -1976,7 +1976,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-too-far-in-future",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2031,7 +2031,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-too-far-in-future",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2167,7 +2167,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="new-value-for-timestamp",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2436,7 +2436,7 @@ func TestIngester_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
 				# TYPE cortex_discarded_metadata_total counter
-				cortex_discarded_metadata_total{reason="per_user_metadata_limit",user="test"} 1
+				cortex_discarded_metadata_total{component="ingester",reason="per_user_metadata_limit",user="test"} 1
 				# HELP cortex_ingester_ingested_metadata_failures_total The total number of metadata that errored on ingestion.
 				# TYPE cortex_ingester_ingested_metadata_failures_total counter
 				cortex_ingester_ingested_metadata_failures_total 1
@@ -2490,7 +2490,7 @@ func TestIngester_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
 				# TYPE cortex_discarded_metadata_total counter
-				cortex_discarded_metadata_total{reason="per_metric_metadata_limit",user="test"} 1
+				cortex_discarded_metadata_total{component="ingester",reason="per_metric_metadata_limit",user="test"} 1
 				# HELP cortex_ingester_ingested_metadata_failures_total The total number of metadata that errored on ingestion.
 				# TYPE cortex_ingester_ingested_metadata_failures_total counter
 				cortex_ingester_ingested_metadata_failures_total 1
@@ -9983,8 +9983,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 4
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="tset"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-out-of-order",user="test"} 4
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-out-of-order",user="tset"} 1
 			`,
 		},
 		"should soft fail on all samples out of bound in a write request": {
@@ -10016,8 +10016,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 8
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="tset"} 2
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-out-of-bounds",user="test"} 8
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-out-of-bounds",user="tset"} 2
 			`,
 		},
 		"should soft fail on all samples with histograms out of bound in a write request": {
@@ -10050,8 +10050,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 12
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="tset"} 3
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-out-of-bounds",user="test"} 12
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-out-of-bounds",user="tset"} 3
 			`,
 			nativeHistograms: true,
 		},
@@ -10087,8 +10087,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 8
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="tset"} 2
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-out-of-bounds",user="test"} 8
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-out-of-bounds",user="tset"} 2
 			`,
 		},
 		"should soft fail on some samples with timestamp too far in future in a write request": {
@@ -10121,8 +10121,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 4
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="tset"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-too-far-in-future",user="test"} 4
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-too-far-in-future",user="tset"} 1
 			`,
 		},
 		"should soft fail on some histograms with timestamp too far in future in a write request": {
@@ -10149,8 +10149,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 4
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="tset"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-too-far-in-future",user="test"} 4
+				cortex_discarded_samples_total{component="ingester",group="",reason="sample-too-far-in-future",user="tset"} 1
 			`,
 		},
 		"should soft fail on some exemplars with timestamp too far in future in a write request": {
@@ -10203,8 +10203,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 4
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="tset"} 1
+				cortex_discarded_samples_total{component="ingester",group="",reason="new-value-for-timestamp",user="test"} 4
+				cortex_discarded_samples_total{component="ingester",group="",reason="new-value-for-timestamp",user="tset"} 1
 			`,
 		},
 		"should soft fail on exemplar with unknown series": {
@@ -10437,7 +10437,7 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	expectedMetrics := `
 		# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 		# TYPE cortex_discarded_samples_total counter
-		cortex_discarded_samples_total{group="",reason="per_user_series_limit",user="1"} 10
+		cortex_discarded_samples_total{component="ingester",group="",reason="per_user_series_limit",user="1"} 10
 	`
 	err = testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...)
 	assert.NoError(t, err)
@@ -10541,7 +10541,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	expectedMetrics := `
 		# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 		# TYPE cortex_discarded_samples_total counter
-		cortex_discarded_samples_total{group="",reason="per_metric_series_limit",user="1"} 10
+		cortex_discarded_samples_total{component="ingester",group="",reason="per_metric_series_limit",user="1"} 10
 	`
 	err = testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...)
 	assert.NoError(t, err)

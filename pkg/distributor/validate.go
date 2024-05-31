@@ -155,16 +155,16 @@ func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string
 
 func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetrics {
 	return &sampleValidationMetrics{
-		missingMetricName:            validation.DiscardedSamplesCounter(r, reasonMissingMetricName),
-		invalidMetricName:            validation.DiscardedSamplesCounter(r, reasonInvalidMetricName),
-		maxLabelNamesPerSeries:       validation.DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
-		invalidLabel:                 validation.DiscardedSamplesCounter(r, reasonInvalidLabel),
-		labelNameTooLong:             validation.DiscardedSamplesCounter(r, reasonLabelNameTooLong),
-		labelValueTooLong:            validation.DiscardedSamplesCounter(r, reasonLabelValueTooLong),
-		maxNativeHistogramBuckets:    validation.DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
-		invalidNativeHistogramSchema: validation.DiscardedSamplesCounter(r, reasonInvalidNativeHistogramSchema),
-		duplicateLabelNames:          validation.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
-		tooFarInFuture:               validation.DiscardedSamplesCounter(r, reasonTooFarInFuture),
+		missingMetricName:            validation.DiscardedSamplesCounter(r, componentName, reasonMissingMetricName),
+		invalidMetricName:            validation.DiscardedSamplesCounter(r, componentName, reasonInvalidMetricName),
+		maxLabelNamesPerSeries:       validation.DiscardedSamplesCounter(r, componentName, reasonMaxLabelNamesPerSeries),
+		invalidLabel:                 validation.DiscardedSamplesCounter(r, componentName, reasonInvalidLabel),
+		labelNameTooLong:             validation.DiscardedSamplesCounter(r, componentName, reasonLabelNameTooLong),
+		labelValueTooLong:            validation.DiscardedSamplesCounter(r, componentName, reasonLabelValueTooLong),
+		maxNativeHistogramBuckets:    validation.DiscardedSamplesCounter(r, componentName, reasonMaxNativeHistogramBuckets),
+		invalidNativeHistogramSchema: validation.DiscardedSamplesCounter(r, componentName, reasonInvalidNativeHistogramSchema),
+		duplicateLabelNames:          validation.DiscardedSamplesCounter(r, componentName, reasonDuplicateLabelNames),
+		tooFarInFuture:               validation.DiscardedSamplesCounter(r, componentName, reasonTooFarInFuture),
 	}
 }
 
@@ -191,13 +191,13 @@ func (m *exemplarValidationMetrics) deleteUserMetrics(userID string) {
 
 func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMetrics {
 	return &exemplarValidationMetrics{
-		labelsMissing:    validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsMissing),
-		timestampInvalid: validation.DiscardedExemplarsCounter(r, reasonExemplarTimestampInvalid),
-		labelsTooLong:    validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsTooLong),
-		labelsBlank:      validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
-		tooOld:           validation.DiscardedExemplarsCounter(r, reasonExemplarTooOld),
-		tooFarInFuture:   validation.DiscardedExemplarsCounter(r, reasonExemplarTooFarInFuture),
-		tooManyExemplars: validation.DiscardedExemplarsCounter(r, reasonTooManyExemplarsPerSeriesPerRequest),
+		labelsMissing:    validation.DiscardedExemplarsCounter(r, componentName, reasonExemplarLabelsMissing),
+		timestampInvalid: validation.DiscardedExemplarsCounter(r, componentName, reasonExemplarTimestampInvalid),
+		labelsTooLong:    validation.DiscardedExemplarsCounter(r, componentName, reasonExemplarLabelsTooLong),
+		labelsBlank:      validation.DiscardedExemplarsCounter(r, componentName, reasonExemplarLabelsBlank),
+		tooOld:           validation.DiscardedExemplarsCounter(r, componentName, reasonExemplarTooOld),
+		tooFarInFuture:   validation.DiscardedExemplarsCounter(r, componentName, reasonExemplarTooFarInFuture),
+		tooManyExemplars: validation.DiscardedExemplarsCounter(r, componentName, reasonTooManyExemplarsPerSeriesPerRequest),
 	}
 }
 
@@ -402,9 +402,9 @@ func (m *metadataValidationMetrics) deleteUserMetrics(userID string) {
 
 func newMetadataValidationMetrics(r prometheus.Registerer) *metadataValidationMetrics {
 	return &metadataValidationMetrics{
-		missingMetricName: validation.DiscardedMetadataCounter(r, reasonMissingMetricName),
-		metricNameTooLong: validation.DiscardedMetadataCounter(r, reasonMetadataMetricNameTooLong),
-		unitTooLong:       validation.DiscardedMetadataCounter(r, reasonMetadataUnitTooLong),
+		missingMetricName: validation.DiscardedMetadataCounter(r, componentName, reasonMissingMetricName),
+		metricNameTooLong: validation.DiscardedMetadataCounter(r, componentName, reasonMetadataMetricNameTooLong),
+		unitTooLong:       validation.DiscardedMetadataCounter(r, componentName, reasonMetadataUnitTooLong),
 	}
 }
 

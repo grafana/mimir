@@ -86,6 +86,8 @@ const (
 	// Size of "slab" when using pooled buffers for marshaling write requests. When handling single Push request
 	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
 	writeRequestSlabPoolSize = 512 * 1024
+
+	componentName = "distributor"
 )
 
 // Distributor forwards appends and queries to individual ingesters.
@@ -411,11 +413,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help: "Unix timestamp of latest received sample per user.",
 		}, []string{"user"}),
 
-		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, reasonTooManyHAClusters),
-		discardedSamplesRateLimited:       validation.DiscardedSamplesCounter(reg, reasonRateLimited),
-		discardedRequestsRateLimited:      validation.DiscardedRequestsCounter(reg, reasonRateLimited),
-		discardedExemplarsRateLimited:     validation.DiscardedExemplarsCounter(reg, reasonRateLimited),
-		discardedMetadataRateLimited:      validation.DiscardedMetadataCounter(reg, reasonRateLimited),
+		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, componentName, reasonTooManyHAClusters),
+		discardedSamplesRateLimited:       validation.DiscardedSamplesCounter(reg, componentName, reasonRateLimited),
+		discardedRequestsRateLimited:      validation.DiscardedRequestsCounter(reg, componentName, reasonRateLimited),
+		discardedExemplarsRateLimited:     validation.DiscardedExemplarsCounter(reg, componentName, reasonRateLimited),
+		discardedMetadataRateLimited:      validation.DiscardedMetadataCounter(reg, componentName, reasonRateLimited),
 
 		rejectedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_instance_rejected_requests_total",

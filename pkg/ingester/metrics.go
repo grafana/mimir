@@ -18,6 +18,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+const componentName = "ingester"
+
 type ingesterMetrics struct {
 	ingestedSamples       *prometheus.CounterVec
 	ingestedExemplars     prometheus.Counter
@@ -368,8 +370,8 @@ func newIngesterMetrics(
 			Help: "Requests rejected for hitting per-instance limits",
 		}, []string{"reason"}),
 
-		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
-		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
+		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, componentName, perUserMetadataLimit),
+		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, componentName, perMetricMetadataLimit),
 
 		shutdownMarker: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_prepare_shutdown_requested",
@@ -432,14 +434,14 @@ type discardedMetrics struct {
 
 func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 	return &discardedMetrics{
-		sampleOutOfBounds:      validation.DiscardedSamplesCounter(r, reasonSampleOutOfBounds),
-		sampleOutOfOrder:       validation.DiscardedSamplesCounter(r, reasonSampleOutOfOrder),
-		sampleTooOld:           validation.DiscardedSamplesCounter(r, reasonSampleTooOld),
-		sampleTooFarInFuture:   validation.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture),
-		newValueForTimestamp:   validation.DiscardedSamplesCounter(r, reasonNewValueForTimestamp),
-		perUserSeriesLimit:     validation.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit),
-		perMetricSeriesLimit:   validation.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit),
-		invalidNativeHistogram: validation.DiscardedSamplesCounter(r, reasonInvalidNativeHistogram),
+		sampleOutOfBounds:      validation.DiscardedSamplesCounter(r, componentName, reasonSampleOutOfBounds),
+		sampleOutOfOrder:       validation.DiscardedSamplesCounter(r, componentName, reasonSampleOutOfOrder),
+		sampleTooOld:           validation.DiscardedSamplesCounter(r, componentName, reasonSampleTooOld),
+		sampleTooFarInFuture:   validation.DiscardedSamplesCounter(r, componentName, reasonSampleTooFarInFuture),
+		newValueForTimestamp:   validation.DiscardedSamplesCounter(r, componentName, reasonNewValueForTimestamp),
+		perUserSeriesLimit:     validation.DiscardedSamplesCounter(r, componentName, reasonPerUserSeriesLimit),
+		perMetricSeriesLimit:   validation.DiscardedSamplesCounter(r, componentName, reasonPerMetricSeriesLimit),
+		invalidNativeHistogram: validation.DiscardedSamplesCounter(r, componentName, reasonInvalidNativeHistogram),
 	}
 }
 

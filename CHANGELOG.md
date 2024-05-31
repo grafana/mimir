@@ -12,6 +12,7 @@
   * Query blocking can no longer be circumvented with an equivalent query in a different format; see [Configure queries to block](https://grafana.com/docs/mimir/latest/configure/configure-blocked-queries/)
 * [CHANGE] Query-frontend: stop using `-validation.create-grace-period` to clamp how far into the future a query can span.
 * [CHANGE] Clamp [`GOMAXPROCS`](https://pkg.go.dev/runtime#GOMAXPROCS) to [`runtime.NumCPU`](https://pkg.go.dev/runtime#NumCPU). #8201
+* [CHANGE] Add `component` label to `cortex_discarded_requests_total`, `cortex_discarded_samples_total`, `cortex_discarded_exemplars_total` and `cortex_discarded_metadata_total` metrics. This allows to distinguish which component did the discard and compute correct discard rates, by correctly adjusting for replication factor for discards from ingesters.
 * [FEATURE] Continuous-test: now runable as a module with `mimir -target=continuous-test`. #7747
 * [FEATURE] Store-gateway: Allow specific tenants to be enabled or disabled via `-store-gateway.enabled-tenants` or `-store-gateway.disabled-tenants` CLI flags or their corresponding YAML settings. #7653
 * [FEATURE] New `-<prefix>.s3.bucket-lookup-type` flag configures lookup style type, used to access bucket in s3 compatible providers. #7684
