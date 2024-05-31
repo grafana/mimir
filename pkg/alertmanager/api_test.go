@@ -1014,7 +1014,7 @@ receivers:
 	// Create the Multitenant Alertmanager.
 	reg := prometheus.NewPedanticRegistry()
 	cfg := mockAlertmanagerConfig(t)
-	am := setupSingleMultitenantAlertmanager(t, cfg, alertStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+	am := setupSingleMultitenantAlertmanager(t, cfg, alertStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
