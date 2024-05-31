@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
+	"github.com/prometheus/alertmanager/silence/silencepb"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -322,4 +323,87 @@ func testLimiter(t *testing.T, limits Limits, ops []callbackOp) {
 		assert.Equal(t, op.expectedCount, count, "wrong count, op %d", ix)
 		assert.Equal(t, op.expectedTotalSize, totalSize, "wrong total size, op %d", ix)
 	}
+}
+
+func TestSilenceLimits(t *testing.T) {
+	user := "test"
+
+	r := prometheus.NewPedanticRegistry()
+	am, err := New(&Config{
+		UserID: user,
+		Logger: log.NewNopLogger(),
+		Limits: &mockAlertManagerLimits{
+			maxSilencesCount:    1,
+			maxSilenceSizeBytes: 2 << 11, // 4KB,
+		},
+		Features:          featurecontrol.NoopFlags{},
+		TenantDataDir:     t.TempDir(),
+		ExternalURL:       &url.URL{Path: "/am"},
+		ShardingEnabled:   true,
+		Store:             prepareInMemoryAlertStore(),
+		Replicator:        &stubReplicator{},
+		ReplicationFactor: 1,
+		// We have to set this interval non-zero, though we don't need the persister to do anything.
+		PersisterConfig: PersisterConfig{Interval: time.Hour},
+	}, r)
+	require.NoError(t, err)
+	defer am.StopAndWait()
+
+	// Insert sil1 should succeed without error.
+	sil1 := &silencepb.Silence{
+		Matchers: []*silencepb.Matcher{{Name: "a", Pattern: "b"}},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(5 * time.Minute),
+	}
+	id1, err := am.silences.Set(sil1)
+	require.NoError(t, err)
+	require.NotEqual(t, "", id1)
+
+	// Insert sil2 should fail because maximum number of silences
+	// has been exceeded.
+	sil2 := &silencepb.Silence{
+		Matchers: []*silencepb.Matcher{{Name: "a", Pattern: "b"}},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(5 * time.Minute),
+	}
+	id2, err := am.silences.Set(sil2)
+	require.EqualError(t, err, "exceeded maximum number of silences: 1 (limit: 1)")
+	require.Equal(t, "", id2)
+
+	// Expire sil1. This should allow sil2 to be inserted.
+	require.NoError(t, am.silences.Expire(id1))
+	id2, err = am.silences.Set(sil2)
+	require.NoError(t, err)
+	require.NotEqual(t, "", id2)
+
+	// Should be able to update sil2 without hitting the limit.
+	_, err = am.silences.Set(sil2)
+	require.NoError(t, err)
+
+	// Expire sil2.
+	require.NoError(t, am.silences.Expire(id2))
+
+	// Insert sil3 should fail because it exceeds maximum size.
+	sil3 := &silencepb.Silence{
+		Matchers: []*silencepb.Matcher{
+			{
+				Name:    strings.Repeat("a", 2<<9),
+				Pattern: strings.Repeat("b", 2<<9),
+			},
+			{
+				Name:    strings.Repeat("c", 2<<9),
+				Pattern: strings.Repeat("d", 2<<9),
+			},
+		},
+		CreatedBy: strings.Repeat("e", 2<<9),
+		Comment:   strings.Repeat("f", 2<<9),
+		StartsAt:  time.Now(),
+		EndsAt:    time.Now().Add(5 * time.Minute),
+	}
+	id3, err := am.silences.Set(sil3)
+	require.Error(t, err)
+	// Do not check the exact size as it can change between consecutive runs
+	// due to padding.
+	require.Contains(t, err.Error(), "silence exceeded maximum size")
+	require.Equal(t, "", id3)
 }

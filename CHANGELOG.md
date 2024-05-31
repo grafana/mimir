@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [FEATURE] Alertmanager: Added `-alertmanager.max-silences-count` and `-alertmanager.max-silence-size-bytes` to set limits on per tenant silences. Disabled by default. #6898
 * [CHANGE] Build: `grafana/mimir` docker image is now based on `gcr.io/distroless/static-debian12` image. Alpine-based docker image is still available as `grafana/mimir-alpine`, until Mimir 2.15. #8204
 * [CHANGE] Ingester: `/ingester/flush` endpoint is now only allowed to execute only while the ingester is in `Running` state. The 503 status code is returned if the endpoint is called while the ingester is not in `Running` state. #7486
 * [CHANGE] Distributor: Include label name in `err-mimir-label-value-too-long` error message: #7740
