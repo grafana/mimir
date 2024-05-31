@@ -4054,6 +4054,26 @@
         },
         {
           "kind": "field",
+          "name": "alertmanager_max_silences_count",
+          "required": false,
+          "desc": "Maximum number of active and pending silences that a tenant can have at once. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "alertmanager.max-silences-count",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_max_silence_size_bytes",
+          "required": false,
+          "desc": "Maximum silence size in bytes. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "alertmanager.max-silence-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "alertmanager_max_templates_count",
           "required": false,
           "desc": "Maximum number of templates in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.",

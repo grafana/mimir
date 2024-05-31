@@ -218,6 +218,12 @@ type Limits interface {
 	// AlertmanagerMaxConfigSize returns max size of configuration file that user is allowed to upload. If 0, there is no limit.
 	AlertmanagerMaxConfigSize(tenant string) int
 
+	// AlertmanagerMaxSilencesCount returns the max number of active and pending silences. If negative or 0, there is no limit.
+	AlertmanagerMaxSilencesCount(tenant string) int
+
+	// AlertmanagerMaxSilenceSizeBytes returns the max silence size in bytes. If negative or 0, there is no limit.
+	AlertmanagerMaxSilenceSizeBytes(tenant string) int
+
 	// AlertmanagerMaxTemplatesCount returns max number of templates that tenant can use in the configuration. 0 = no limit.
 	AlertmanagerMaxTemplatesCount(tenant string) int
 
