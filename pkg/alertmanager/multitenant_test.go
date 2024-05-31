@@ -106,6 +106,9 @@ func setupSingleMultitenantAlertmanager(t *testing.T, cfg *MultitenantAlertmanag
 	amCfg, err := ComputeFallbackConfig("")
 	require.NoError(t, err)
 
+	if limits == nil {
+		limits = &mockAlertManagerLimits{}
+	}
 	am, err := createMultitenantAlertmanager(cfg, amCfg, store, ringStore, limits, features, logger, registerer)
 	require.NoError(t, err)
 
