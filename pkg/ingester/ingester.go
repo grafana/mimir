@@ -261,13 +261,7 @@ func (cfg *Config) Validate(logger log.Logger) error {
 		util.WarnDeprecatedConfig(deprecatedReturnOnlyGRPCErrorsFlag, logger)
 	}
 
-	err := cfg.IngesterRing.Validate()
-
-	if err != nil {
-		return err
-	}
-
-	return cfg.CircuitBreakerConfig.Validate()
+	return cfg.IngesterRing.Validate()
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -405,7 +399,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.activeGroups = activeGroupsCleanupService
 
 	if cfg.CircuitBreakerConfig.Enabled {
-		i.circuitBreaker = newCircuitBreaker(cfg.CircuitBreakerConfig, cfg.IngesterRing.InstanceID, logger, registerer)
+		i.circuitBreaker = newCircuitBreaker(cfg.CircuitBreakerConfig, logger, registerer)
 	}
 
 	if registerer != nil {
@@ -969,15 +963,16 @@ type ctxKey int
 var pushReqCtxKey ctxKey = 1
 
 type pushRequestState struct {
-	requestSize     int64
-	requestDuration time.Duration
-	err             error
+	requestSize                  int64
+	requestDuration              time.Duration
+	acquiredCircuitBreakerPermit bool
+	err                          error
 }
 
 // StartPushRequest checks if ingester can start push request, and increments relevant counters.
 // If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are updated.
 func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context.Context, error) {
-	ctx, _, err := i.startPushRequest(ctx, reqSize)
+	ctx, _, _, err := i.startPushRequest(ctx, reqSize)
 	return ctx, err
 }
 
@@ -986,7 +981,7 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 	if !ok {
 		return
 	}
-	i.finishPushRequest(ctx, st.requestSize, st.requestDuration, st.err)
+	i.finishPushRequest(ctx, st.requestSize, st.requestDuration, st.acquiredCircuitBreakerPermit, st.err)
 }
 
 // This method can be called in two ways: 1. Ingester.PushWithCleanup, or 2. Ingester.StartPushRequest via gRPC server's method limiter.
@@ -995,26 +990,30 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 // In the second case, returned errors will not be logged, because request will not reach any middleware.
 //
 // The shouldFinish flag tells if the caller must call finish on this request. If not, there is already someone in the call stack who will do that.
-func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ context.Context, shouldFinish bool, err error) {
+// The acquiredCircuitBreakerPermit flag tells to the caller if this call has acquired a circuit breaker permit,
+// and if the caller should take care of returning the permit back.
+func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ context.Context, shouldFinish, acquiredCircuitBreakerPermit bool, err error) {
 	if err := i.checkAvailableForPush(); err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
 
 	if _, ok := ctx.Value(pushReqCtxKey).(*pushRequestState); ok {
 		// If state is already in context, this means we already passed through StartPushRequest for this request.
-		return ctx, false, nil
+		return ctx, false, false, nil
 	}
 
 	// We try to acquire a permit from the circuit breaker.
 	// If it is not possible, it is because the circuit breaker is open, and a circuitBreakerOpenError is returned.
 	// If it is possible, a permit has to be released by recording either a success or a failure with the circuit
 	// breaker. This is done in finishPushRequest().
-	if err := i.circuitBreaker.tryAcquirePermit(); err != nil {
-		return nil, false, err
+	acquiredCircuitBreakerPermit, err = i.circuitBreaker.tryAcquirePermit()
+	if err != nil {
+		return nil, false, acquiredCircuitBreakerPermit, err
 	}
 
 	st := &pushRequestState{
-		requestSize: reqSize,
+		requestSize:                  reqSize,
+		acquiredCircuitBreakerPermit: acquiredCircuitBreakerPermit,
 	}
 	ctx = context.WithValue(ctx, pushReqCtxKey, st)
 
@@ -1036,7 +1035,7 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ conte
 			// it is because one the per-instance limits has been hit. In this case, the
 			// corresponding error has to be passed to finishPushRequest() in order to
 			// record the failure with the circuit breaker.
-			i.finishPushRequest(ctx, reqSize, 0, err)
+			i.finishPushRequest(ctx, reqSize, 0, acquiredCircuitBreakerPermit, err)
 		}
 	}()
 
@@ -1044,34 +1043,36 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ conte
 	if il != nil {
 		if il.MaxInflightPushRequests > 0 && inflight > il.MaxInflightPushRequests {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-			return nil, false, errMaxInflightRequestsReached
+			return nil, false, acquiredCircuitBreakerPermit, errMaxInflightRequestsReached
 		}
 
 		if il.MaxInflightPushRequestsBytes > 0 {
 			if (rejectEqualInflightBytes && inflightBytes >= il.MaxInflightPushRequestsBytes) || inflightBytes > il.MaxInflightPushRequestsBytes {
 				i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
-				return nil, false, errMaxInflightRequestsBytesReached
+				return nil, false, acquiredCircuitBreakerPermit, errMaxInflightRequestsBytesReached
 			}
 		}
 
 		if il.MaxIngestionRate > 0 {
 			if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 				i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
-				return nil, false, errMaxIngestionRateReached
+				return nil, false, acquiredCircuitBreakerPermit, errMaxIngestionRateReached
 			}
 		}
 	}
 
 	finishRequestInDefer = false
-	return ctx, true, nil
+	return ctx, true, acquiredCircuitBreakerPermit, nil
 }
 
-func (i *Ingester) finishPushRequest(ctx context.Context, reqSize int64, duration time.Duration, err error) {
+func (i *Ingester) finishPushRequest(ctx context.Context, reqSize int64, duration time.Duration, acquiredCircuitBreakerPermit bool, err error) {
 	i.inflightPushRequests.Dec()
 	if reqSize > 0 {
 		i.inflightPushRequestsBytes.Sub(reqSize)
 	}
-	_ = i.circuitBreaker.finishPushRequest(ctx, duration, err)
+	if acquiredCircuitBreakerPermit {
+		_ = i.circuitBreaker.finishPushRequest(ctx, duration, err)
+	}
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
@@ -1086,27 +1087,26 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// startPushRequest handles this.
 	if i.cfg.IngestStorageConfig.Enabled || !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
 		reqSize := int64(req.Size())
-		_, shouldFinish, startPushErr := i.startPushRequest(ctx, reqSize)
+		_, shouldFinish, acquiredCircuitBreakerPermit, startPushErr := i.startPushRequest(ctx, reqSize)
 		if startPushErr != nil {
 			return middleware.DoNotLogError{Err: startPushErr}
 		}
 		if shouldFinish {
 			defer func() {
-				i.finishPushRequest(ctx, reqSize, time.Since(start), err)
+				i.finishPushRequest(ctx, reqSize, time.Since(start), acquiredCircuitBreakerPermit, err)
 			}()
 		}
-	} else {
-		defer func() {
-			// We enrich the pushRequestState contained in the context with this PushWithCleanUp()
-			// call duration, and a possible error it returns. These data are needed during a
-			// successive call to FinishPushRequest().
-			if st, ok := ctx.Value(pushReqCtxKey).(*pushRequestState); ok {
-				st.requestDuration = time.Since(start)
-				st.err = err
-				ctx = context.WithValue(ctx, pushReqCtxKey, st)
-			}
-		}()
 	}
+
+	defer func() {
+		// We enrich the pushRequestState contained in the context with this PushWithCleanUp()
+		// call duration, and a possible error it returns. These data are needed during a
+		// successive call to FinishPushRequest().
+		if st, ok := ctx.Value(pushReqCtxKey).(*pushRequestState); ok {
+			st.requestDuration = time.Since(start)
+			st.err = err
+		}
+	}()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {

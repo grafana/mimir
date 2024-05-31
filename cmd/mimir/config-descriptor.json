@@ -3160,12 +3160,12 @@
             },
             {
               "kind": "field",
-              "name": "failure_threshold",
+              "name": "failure_threshold_percentage",
               "required": false,
               "desc": "Max percentage of requests that can fail over period before the circuit breaker opens",
               "fieldValue": null,
               "fieldDefaultValue": 10,
-              "fieldFlag": "ingester.circuit-breaker.failure-threshold",
+              "fieldFlag": "ingester.circuit-breaker.failure-threshold-percentage",
               "fieldType": "int",
               "fieldCategory": "experimental"
             },
@@ -3219,7 +3219,7 @@
               "required": false,
               "desc": "How long is execution of ingester's Push supposed to last before it is reported as timeout in a circuit breaker. This configuration is used for circuit breakers only, and timeout expirations are not reported as errors",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 2000000000,
               "fieldFlag": "ingester.circuit-breaker.push-timeout",
               "fieldType": "duration",
               "fieldCategory": "experiment"

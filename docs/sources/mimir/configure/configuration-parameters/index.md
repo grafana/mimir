@@ -1225,8 +1225,8 @@ circuit_breaker:
 
   # (experimental) Max percentage of requests that can fail over period before
   # the circuit breaker opens
-  # CLI flag: -ingester.circuit-breaker.failure-threshold
-  [failure_threshold: <int> | default = 10]
+  # CLI flag: -ingester.circuit-breaker.failure-threshold-percentage
+  [failure_threshold_percentage: <int> | default = 10]
 
   # (experimental) How many requests must have been executed in period for the
   # circuit breaker to be eligible to open for the rate of failures
@@ -1254,7 +1254,7 @@ circuit_breaker:
   # used for circuit breakers only, and timeout expirations are not reported as
   # errors
   # CLI flag: -ingester.circuit-breaker.push-timeout
-  [push_timeout: <duration> | default = 0s]
+  [push_timeout: <duration> | default = 2s]
 ```
 
 ### querier
