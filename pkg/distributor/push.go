@@ -255,7 +255,7 @@ func otlpHandler(
 func writeErrorToHTTPResponseBody(w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
 	// writeResponseFailedError would be returned when writeErrorToHTTPResponseBody fails to write the error to the response body.
 	writeResponseFailedBody, _ := proto.Marshal(grpcstatus.New(codes.Internal, "write error to response failed").Proto())
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(httpCode)
 
