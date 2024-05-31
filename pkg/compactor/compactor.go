@@ -286,7 +286,7 @@ type MultitenantCompactor struct {
 	compactionRunInterval          prometheus.Gauge
 	blocksMarkedForDeletion        prometheus.Counter
 
-	// outOfSpace is a separate metric for out-of-space errors because this is a common issue which is rarely transient,
+	// outOfSpace is a separate metric for out-of-space errors because this is a common issue which often requires an operator to investigate,
 	// so alerts need to be able to treat it with higher priority than other compaction errors.
 	outOfSpace prometheus.Counter
 
