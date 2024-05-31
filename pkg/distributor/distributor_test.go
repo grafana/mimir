@@ -1426,40 +1426,40 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		req       *mimirpb.WriteRequest
-		expDrop   bool
-		expErrMsg string
-		expErrID  globalerror.ID
+		req            *mimirpb.WriteRequest
+		expectedDrop   bool
+		expectedErrMsg string
+		expectedErrID  globalerror.ID
 	}{
 		"valid exemplar": {
 			req: makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, 1, []string{"foo", "bar"}),
 		},
 		"drops exemplar with no labels": {
-			req:     makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, 1, []string{}),
-			expDrop: true,
+			req:          makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, 1, []string{}),
+			expectedDrop: true,
 		},
 		"drops exemplar with no timestamp": {
-			req:     makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 0, 1, []string{"foo", "bar"}),
-			expDrop: true,
+			req:          makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 0, 1, []string{"foo", "bar"}),
+			expectedDrop: true,
 		},
 		"drops exemplar with too long labelset": {
-			req:     makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, 1, []string{"foo", strings.Repeat("0", 126)}),
-			expDrop: true,
+			req:          makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, 1, []string{"foo", strings.Repeat("0", 126)}),
+			expectedDrop: true,
 		},
 		"rejects exemplar with too many series labels": {
-			req:       makeWriteRequestExemplar(manyLabels, 0, 1, nil),
-			expErrMsg: "received a series whose number of labels exceeds the limit",
-			expErrID:  globalerror.MaxLabelNamesPerSeries,
+			req:            makeWriteRequestExemplar(manyLabels, 0, 1, nil),
+			expectedErrMsg: "received a series whose number of labels exceeds the limit",
+			expectedErrID:  globalerror.MaxLabelNamesPerSeries,
 		},
 		"rejects exemplar with duplicate series labels": {
-			req:       makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "foo", "bar", "foo", "bar"}, 0, 1, nil),
-			expErrMsg: "received a series with duplicate label name",
-			expErrID:  globalerror.SeriesWithDuplicateLabelNames,
+			req:            makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "foo", "bar", "foo", "bar"}, 0, 1, nil),
+			expectedErrMsg: "received a series with duplicate label name",
+			expectedErrID:  globalerror.SeriesWithDuplicateLabelNames,
 		},
 		"rejects exemplar with empty series label name": {
-			req:       makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "", "bar"}, 0, 1, nil),
-			expErrMsg: "received a series with an invalid label",
-			expErrID:  globalerror.SeriesInvalidLabel,
+			req:            makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "", "bar"}, 0, 1, nil),
+			expectedErrMsg: "received a series with an invalid label",
+			expectedErrID:  globalerror.SeriesInvalidLabel,
 		},
 	}
 
@@ -1477,11 +1477,11 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 				shuffleShardSize: 0,
 			})
 			_, err := ds[0].Push(ctx, tc.req)
-			if tc.expErrMsg != "" {
+			if tc.expectedErrMsg != "" {
 				require.Error(t, err)
 				fromError, _ := grpcutil.ErrorToStatus(err)
-				assert.Contains(t, fromError.Message(), tc.expErrMsg)
-				assert.Contains(t, fromError.Message(), tc.expErrID)
+				assert.Contains(t, fromError.Message(), tc.expectedErrMsg)
+				assert.Contains(t, fromError.Message(), tc.expectedErrID)
 				return
 			}
 
@@ -1491,7 +1491,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 				require.Len(t, ss, 1)
 				for _, s := range ss {
 					require.Equal(t, expSamples, s.Samples)
-					if !tc.expDrop {
+					if !tc.expectedDrop {
 						// Not sure why, but during the push, the request's exemplar labels become empty
 						require.Len(t, s.Exemplars, len(expExemplars))
 					} else {
