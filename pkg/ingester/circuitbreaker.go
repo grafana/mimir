@@ -124,8 +124,7 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, logger log.Logger, registerer p
 		OnHalfOpen(func(event circuitbreaker.StateChangedEvent) {
 			circuitBreakerTransitionsCounterFn(cb.metrics, circuitbreaker.HalfOpenState).Inc()
 			level.Info(logger).Log("msg", "circuit breaker is half-open", "previous", event.OldState, "current", event.NewState)
-		}).
-		HandleIf(func(_ any, err error) bool { return isFailure(err) })
+		})
 
 	if cfg.testModeEnabled {
 		// In case of testing purposes, we initialize the circuit breaker with count based failure thresholding,
