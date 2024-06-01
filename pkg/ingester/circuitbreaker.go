@@ -11,7 +11,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcutil"
-	"github.com/grafana/dskit/middleware"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -175,6 +174,7 @@ func (cb *circuitBreaker) isActive() bool {
 	return cb.startTime.Before(time.Now())
 }
 
+// TODO: fix the comment
 // tryAcquirePermit tries to acquire a permit to use the circuit breaker and returns whether a permit was acquired.
 // If the circuit breaker is not yet active, a status false and no error are returned.
 // If it was not possible to acquire a permit, this means that the circuit breaker is open. In this case, a status
@@ -187,7 +187,7 @@ func (cb *circuitBreaker) tryAcquirePermit() (bool, error) {
 	}
 	if !cb.cb.TryAcquirePermit() {
 		cb.metrics.circuitBreakerResults.WithLabelValues(resultOpen).Inc()
-		return false, middleware.DoNotLogError{Err: newCircuitBreakerOpenError(cb.cb.RemainingDelay())}
+		return false, newCircuitBreakerOpenError(cb.cb.RemainingDelay())
 	}
 	return true, nil
 }
@@ -197,7 +197,7 @@ func (cb *circuitBreaker) recordResult(err error) {
 		return
 	}
 	if err != nil && isFailure(err) {
-		cb.cb.RecordError(err)
+		cb.cb.RecordFailure()
 		cb.metrics.circuitBreakerResults.WithLabelValues(resultError).Inc()
 	} else {
 		cb.metrics.circuitBreakerResults.WithLabelValues(resultSuccess).Inc()
@@ -205,6 +205,7 @@ func (cb *circuitBreaker) recordResult(err error) {
 	}
 }
 
+// TODO: fix the comment
 // finishPushRequest records the result of a push request with this circuit breaker.
 // If the circuit breaker is not active, finishPushRequest does nothing.
 // If the passed duration of a push request exceeds the configured maximal push request duration,

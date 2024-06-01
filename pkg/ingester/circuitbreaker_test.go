@@ -12,7 +12,6 @@ import (
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
@@ -156,7 +155,6 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 			`,
 		},
 	}
-	ctx := context.Background()
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
@@ -166,7 +164,7 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 			status, err := cb.tryAcquirePermit()
 			require.Equal(t, testCase.expectedStatus, status)
 			if testCase.expectedCircuitBreakerError {
-				checkCircuitBreakerOpenErr(ctx, err, t)
+				require.ErrorAs(t, err, &circuitBreakerOpenError{})
 				assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testCase.expectedMetrics), metricNames...))
 			} else {
 				require.NoError(t, err)
@@ -446,7 +444,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 									require.ErrorAs(t, err, &testCase.expectedErrorWhenCircuitBreakerClosed)
 								}
 							} else {
-								checkCircuitBreakerOpenErr(ctx, err, t)
+								require.ErrorAs(t, err, &circuitBreakerOpenError{})
 							}
 						}
 					}
@@ -495,17 +493,6 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 			})
 		}
 	}
-}
-
-func checkCircuitBreakerOpenErr(ctx context.Context, err error, t *testing.T) {
-	var cbOpenErr circuitBreakerOpenError
-	require.ErrorAs(t, err, &cbOpenErr)
-
-	var optional middleware.OptionalLogging
-	require.ErrorAs(t, err, &optional)
-
-	shouldLog, _ := optional.ShouldLog(ctx)
-	require.False(t, shouldLog, "expected not to log via .ShouldLog()")
 }
 
 func TestIngester_StartPushRequest_CircuitBreakerOpen(t *testing.T) {
@@ -668,7 +655,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 		st := &pushRequestState{
 			requestDuration:              testCase.pushRequestDuration,
 			acquiredCircuitBreakerPermit: testCase.acquiredCircuitBreakerPermit,
-			err:                          testCase.err,
+			pushErr:                      testCase.err,
 		}
 		ctx = context.WithValue(ctx, pushReqCtxKey, st)
 
@@ -776,7 +763,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 					} else {
 						require.Equal(t, circuitbreaker.OpenState, i.circuitBreaker.cb.State())
 						require.Nil(t, ctx)
-						checkCircuitBreakerOpenErr(ctx, err, t)
+						require.ErrorAs(t, err, &circuitBreakerOpenError{})
 					}
 				}
 			}

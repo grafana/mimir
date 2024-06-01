@@ -966,7 +966,7 @@ type pushRequestState struct {
 	requestSize                  int64
 	requestDuration              time.Duration
 	acquiredCircuitBreakerPermit bool
-	err                          error
+	pushErr                      error
 }
 
 // StartPushRequest checks if ingester can start push request, and increments relevant counters.
@@ -981,7 +981,7 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 	if !ok {
 		return
 	}
-	i.finishPushRequest(ctx, st.requestSize, st.requestDuration, st.acquiredCircuitBreakerPermit, st.err)
+	i.finishPushRequest(ctx, st.requestSize, st.requestDuration, st.acquiredCircuitBreakerPermit, st.pushErr)
 }
 
 // This method can be called in two ways: 1. Ingester.PushWithCleanup, or 2. Ingester.StartPushRequest via gRPC server's method limiter.
@@ -1008,7 +1008,7 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ conte
 	// breaker. This is done in finishPushRequest().
 	acquiredCircuitBreakerPermit, err = i.circuitBreaker.tryAcquirePermit()
 	if err != nil {
-		return nil, false, acquiredCircuitBreakerPermit, err
+		return nil, false, false, err
 	}
 
 	st := &pushRequestState{
@@ -1027,42 +1027,42 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ conte
 		rejectEqualInflightBytes = true // if inflightBytes == limit, reject new request
 	}
 
-	finishRequestInDefer := true
+	err = i.checkInstanceLimits(inflight, inflightBytes, rejectEqualInflightBytes)
+	if err == nil {
+		return ctx, true, acquiredCircuitBreakerPermit, nil
+	}
 
-	defer func() {
-		if finishRequestInDefer {
-			// If startPushRequest() require finishPushRequest() to be executed in defer,
-			// it is because one the per-instance limits has been hit. In this case, the
-			// corresponding error has to be passed to finishPushRequest() in order to
-			// record the failure with the circuit breaker.
-			i.finishPushRequest(ctx, reqSize, 0, acquiredCircuitBreakerPermit, err)
-		}
-	}()
+	// In this case a per-instance limits has been hit, and the corresponding error has to be
+	// passed to finishPushRequest(), which finishes the push request, records the error with
+	// the circuit breaker, and gives it a possibly acquired permit back.
+	i.finishPushRequest(ctx, reqSize, 0, acquiredCircuitBreakerPermit, err)
+	return nil, false, false, err
+}
 
+func (i *Ingester) checkInstanceLimits(inflight int64, inflightBytes int64, rejectEqualInflightBytes bool) error {
 	il := i.getInstanceLimits()
-	if il != nil {
-		if il.MaxInflightPushRequests > 0 && inflight > il.MaxInflightPushRequests {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-			return nil, false, acquiredCircuitBreakerPermit, errMaxInflightRequestsReached
-		}
+	if il == nil {
+		return nil
+	}
+	if il.MaxInflightPushRequests > 0 && inflight > il.MaxInflightPushRequests {
+		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
+		return errMaxInflightRequestsReached
+	}
 
-		if il.MaxInflightPushRequestsBytes > 0 {
-			if (rejectEqualInflightBytes && inflightBytes >= il.MaxInflightPushRequestsBytes) || inflightBytes > il.MaxInflightPushRequestsBytes {
-				i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
-				return nil, false, acquiredCircuitBreakerPermit, errMaxInflightRequestsBytesReached
-			}
-		}
-
-		if il.MaxIngestionRate > 0 {
-			if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-				i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
-				return nil, false, acquiredCircuitBreakerPermit, errMaxIngestionRateReached
-			}
+	if il.MaxInflightPushRequestsBytes > 0 {
+		if (rejectEqualInflightBytes && inflightBytes >= il.MaxInflightPushRequestsBytes) || inflightBytes > il.MaxInflightPushRequestsBytes {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
+			return errMaxInflightRequestsBytesReached
 		}
 	}
 
-	finishRequestInDefer = false
-	return ctx, true, acquiredCircuitBreakerPermit, nil
+	if il.MaxIngestionRate > 0 {
+		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
+			return errMaxIngestionRateReached
+		}
+	}
+	return nil
 }
 
 func (i *Ingester) finishPushRequest(ctx context.Context, reqSize int64, duration time.Duration, acquiredCircuitBreakerPermit bool, err error) {
@@ -1081,19 +1081,28 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// retain anything from `req` past the exit from this function.
 	defer cleanUp()
 
-	start := time.Now()
+	var (
+		start                        = time.Now()
+		acquiredCircuitBreakerPermit bool
+	)
 	// Only start/finish request here when the request comes NOT from grpc handlers (i.e., from ingest.Store).
 	// NOTE: request coming from grpc handler may end up calling start multiple times during its lifetime (e.g., when migrating to ingest storage).
 	// startPushRequest handles this.
 	if i.cfg.IngestStorageConfig.Enabled || !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
 		reqSize := int64(req.Size())
-		_, shouldFinish, acquiredCircuitBreakerPermit, startPushErr := i.startPushRequest(ctx, reqSize)
+		var (
+			shouldFinish bool
+			startPushErr error
+		)
+		// We need to replace the original context with the context returned by startPushRequest,
+		// because the latter might store a new pushRequestState in the context.
+		ctx, shouldFinish, acquiredCircuitBreakerPermit, startPushErr = i.startPushRequest(ctx, reqSize)
 		if startPushErr != nil {
 			return middleware.DoNotLogError{Err: startPushErr}
 		}
 		if shouldFinish {
 			defer func() {
-				i.finishPushRequest(ctx, reqSize, time.Since(start), acquiredCircuitBreakerPermit, err)
+				i.FinishPushRequest(ctx)
 			}()
 		}
 	}
@@ -1104,7 +1113,14 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		// successive call to FinishPushRequest().
 		if st, ok := ctx.Value(pushReqCtxKey).(*pushRequestState); ok {
 			st.requestDuration = time.Since(start)
-			st.err = err
+			st.pushErr = err
+			// We change the value of st.acquiredCircuitBreakerPermit only if
+			// the permit was acquired during PushWithCleanup. Otherwise, we
+			// keep its previous value, because it might have already been
+			// set to true (for example during a call to StartPushRequest).
+			if acquiredCircuitBreakerPermit {
+				st.acquiredCircuitBreakerPermit = true
+			}
 		}
 	}()
 
