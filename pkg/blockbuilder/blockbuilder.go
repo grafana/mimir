@@ -25,12 +25,11 @@ import (
 type BlockBuilder struct {
 	services.Service
 
-	cfg              Config
-	logger           log.Logger
-	register         prometheus.Registerer
-	limits           *validation.Overrides
-	kafkaClient      *kgo.Client
-	kafkaAdminClient *kadm.Client
+	cfg         Config
+	logger      log.Logger
+	register    prometheus.Registerer
+	limits      *validation.Overrides
+	kafkaClient *kgo.Client
 
 	assignmentMu sync.Mutex
 	assignment   map[string][]int32
@@ -98,8 +97,6 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("creating kafka client: %w", err)
 	}
-
-	b.kafkaAdminClient = kadm.NewClient(b.kafkaClient)
 
 	level.Info(b.logger).Log("msg", "waiting until kafka brokers are reachable")
 	if err := b.waitKafka(ctx); err != nil {
@@ -219,7 +216,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, mark time.Time) err
 
 	assignmentParts, ok := assignment[b.cfg.Kafka.Topic]
 	if !ok || len(assignmentParts) == 0 {
-		return fmt.Errorf("no partitions assigned (%+v): topic %s", assignmentParts, b.cfg.Kafka.Topic)
+		return fmt.Errorf("no partitions assigned in %+v, topic %s", assignment, b.cfg.Kafka.Topic)
 	}
 
 	lags, err := kadm.NewClient(b.kafkaClient).Lag(ctx, b.cfg.Kafka.ConsumerGroup)
@@ -256,12 +253,13 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, mark time.Time) err
 
 	slices.Sort(parts)
 
-	// TODO(v): rebalancing can happen in-between the calls to consumePartitions; if that happens, the instace may loose
+	// TODO(v): rebalancing can happen between the calls to consumePartitions; if that happens, the instace may loose
 	// the ownership of some of its partitions
+	// TODO(v): test for this case
 	for _, part := range parts {
 		err := b.consumePartitions(ctx, part, mark)
 		if err != nil {
-			level.Error(b.logger).Log("msg", "failed to consume partition", "part", part)
+			level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "part", part)
 		}
 	}
 
@@ -269,18 +267,18 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, mark time.Time) err
 }
 
 func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark time.Time) error {
-	// TODO(codesome): consume from the last offset we committed to Kafka. We likely need a kafka
-	// client per partition to do this. We only need to move to the last commit when creating a new
-	// client for the partition (i.e. when the partition is newly assigned). After that we can
-	// simply use the resume-pause logic below when BB is running and don't need to get the commit
-	// for every cycle.
-
 	// TopicPartition to resume consuming on this iteration.
 	tp := map[string][]int32{b.cfg.Kafka.Topic: {part}}
 
-	// TODO(codesome): are these resume and pause safe against crashes?
+	// Note: pause/resume is a client-local state. On restart or a crash, the client will be assigned its share of partitions,
+	// during consumer group's rebalancing, and it will continue consuming as usual.
 	b.kafkaClient.ResumeFetchPartitions(tp)
 	defer b.kafkaClient.PauseFetchPartitions(tp)
+
+	// Make sure to unblock rebalance of the group after the very last poll AND after we (potentially) commited
+	// this partition's offset to the group.
+	// TODO(v): test for this case
+	defer b.kafkaClient.AllowRebalance()
 
 	level.Info(b.logger).Log(
 		"msg", "consume partition",
@@ -353,6 +351,10 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 					lastEnd = currEnd - consumptionItvl.Milliseconds()
 				}
 
+				// TODO(v): the allSamplesProcessed logic isn't seem right.
+				// I.e. kafka client consumes the log in one direction, thus skipped records will be skipped until either
+				// 1. we manually set the offset of the kafka client on every cycle (ref. kgo#Client.SetOffsets)
+				// 2. process was restarted, the client fetched last commited offset for the group+partition and started consuming from this (old) offset
 				recordProcessedBefore := false // TODO(codesome): get this from checkpoint
 				allSamplesProcessed, err := builder.process(ctx, rec, lastEnd, currEnd, recordProcessedBefore)
 				if !allSamplesProcessed && checkpointOffset < 0 {
@@ -376,6 +378,7 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 
 		// After the rebalance, if another instance took over the partition, the next poll
 		// will return empty fetches, and the loop will bail out.
+		// TODO(v): test for this case
 		b.kafkaClient.AllowRebalance()
 	}
 
@@ -400,7 +403,7 @@ func (b *BlockBuilder) commitOffset(ctx context.Context, part int32, offset int6
 	toCommit := kadm.Offsets{}
 	toCommit.AddOffset(b.cfg.Kafka.Topic, part, offset, -1)
 
-	committed, err := b.kafkaAdminClient.CommitOffsets(ctx, b.cfg.Kafka.ConsumerGroup, toCommit)
+	committed, err := kadm.NewClient(b.kafkaClient).CommitOffsets(ctx, b.cfg.Kafka.ConsumerGroup, toCommit)
 	if err != nil {
 		return err
 	} else if !committed.Ok() {
