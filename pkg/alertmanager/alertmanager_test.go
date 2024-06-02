@@ -343,8 +343,9 @@ func TestSilenceLimits(t *testing.T) {
 		Store:             prepareInMemoryAlertStore(),
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
-		// We have to set this interval non-zero, though we don't need the persister to do anything.
-		PersisterConfig: PersisterConfig{Interval: time.Hour},
+		// Set the interval to 1s as this test can trigger multiple broadcasts
+		// creating and expiring silences.
+		PersisterConfig: PersisterConfig{Interval: time.Second},
 	}, r)
 	require.NoError(t, err)
 	defer am.StopAndWait()
