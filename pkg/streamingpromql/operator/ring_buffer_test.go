@@ -173,35 +173,3 @@ func (p poolForRingBufferTesting) GetFPointSlice(size int) ([]promql.FPoint, err
 func (p poolForRingBufferTesting) PutFPointSlice(_ []promql.FPoint) {
 	// Drop slice on the floor - we don't need it.
 }
-
-func (p poolForRingBufferTesting) GetHPointSlice(size int) ([]promql.HPoint, error) {
-	return make([]promql.HPoint, 0, size), nil
-}
-
-func (p poolForRingBufferTesting) PutHPointSlice(_ []promql.HPoint) {
-	// Drop slice on the floor - we don't need it.
-}
-
-func (p poolForRingBufferTesting) GetVector(_ int) (promql.Vector, error) {
-	panic("not implemented")
-}
-
-func (p poolForRingBufferTesting) PutVector(_ promql.Vector) {
-	panic("not implemented")
-}
-
-func (p poolForRingBufferTesting) GetFloatSlice(_ int) ([]float64, error) {
-	panic("not implemented")
-}
-
-func (p poolForRingBufferTesting) PutFloatSlice(_ []float64) {
-	panic("not implemented")
-}
-
-func (p poolForRingBufferTesting) GetBoolSlice(_ int) ([]bool, error) {
-	panic("not implemented")
-}
-
-func (p poolForRingBufferTesting) PutBoolSlice(_ []bool) {
-	panic("not implemented")
-}
