@@ -399,7 +399,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.activeGroups = activeGroupsCleanupService
 
 	if cfg.CircuitBreakerConfig.Enabled {
-		i.circuitBreaker = newCircuitBreaker(cfg.CircuitBreakerConfig, logger, registerer)
+		// We create an inactive circuit breaker, which will be activated on a successful completion of starting.
+		i.circuitBreaker = newCircuitBreaker(cfg.CircuitBreakerConfig, false, logger, registerer)
 	}
 
 	if registerer != nil {
@@ -543,7 +544,15 @@ func (i *Ingester) startingForFlusher(ctx context.Context) error {
 
 func (i *Ingester) starting(ctx context.Context) (err error) {
 	defer func() {
-		if err != nil {
+		if err == nil {
+			if i.cfg.CircuitBreakerConfig.InitialDelay == 0 {
+				i.circuitBreaker.setActive()
+			} else {
+				time.AfterFunc(i.cfg.CircuitBreakerConfig.InitialDelay, func() {
+					i.circuitBreaker.setActive()
+				})
+			}
+		} else {
 			// if starting() fails for any reason (e.g., context canceled),
 			// the lifecycler must be stopped.
 			_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)

@@ -77,12 +77,15 @@ func TestCircuitBreaker_IsActive(t *testing.T) {
 
 	registry := prometheus.NewRegistry()
 	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 10 * time.Millisecond}
-	cb = newCircuitBreaker(cfg, log.NewNopLogger(), registry)
+	cb = newCircuitBreaker(cfg, false, log.NewNopLogger(), registry)
+	time.AfterFunc(cfg.InitialDelay, func() {
+		cb.setActive()
+	})
 	// When InitialDelay is set, circuit breaker is not immediately active.
 	require.False(t, cb.isActive())
 
 	// After InitialDelay passed, circuit breaker becomes active.
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(2 * cfg.InitialDelay)
 	require.True(t, cb.isActive())
 }
 
@@ -159,7 +162,7 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
 			cfg := CircuitBreakerConfig{Enabled: true, CooldownPeriod: 10 * time.Second, InitialDelay: testCase.initialDelay}
-			cb := newCircuitBreaker(cfg, log.NewNopLogger(), registry)
+			cb := newCircuitBreaker(cfg, cfg.InitialDelay == 0, log.NewNopLogger(), registry)
 			testCase.circuitBreakerSetup(cb)
 			status, err := cb.tryAcquirePermit()
 			require.Equal(t, testCase.expectedStatus, status)
@@ -216,7 +219,7 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
-			cb := newCircuitBreaker(cfg, log.NewNopLogger(), registry)
+			cb := newCircuitBreaker(cfg, true, log.NewNopLogger(), registry)
 			cb.recordResult(testCase.err)
 			assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testCase.expectedMetrics), metricNames...))
 		})
@@ -317,7 +320,7 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 				InitialDelay: testCase.initialDelay,
 				PushTimeout:  2 * time.Second,
 			}
-			cb := newCircuitBreaker(cfg, log.NewNopLogger(), registry)
+			cb := newCircuitBreaker(cfg, cfg.InitialDelay == 0, log.NewNopLogger(), registry)
 			err := cb.finishPushRequest(ctx, testCase.pushRequestDuration, testCase.err)
 			if testCase.expectedErr == nil {
 				require.NoError(t, err)

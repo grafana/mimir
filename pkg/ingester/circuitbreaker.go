@@ -14,6 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -92,18 +93,19 @@ func (cfg *CircuitBreakerConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 type circuitBreaker struct {
-	cfg       CircuitBreakerConfig
-	logger    log.Logger
-	metrics   *circuitBreakerMetrics
-	startTime time.Time
-	cb        circuitbreaker.CircuitBreaker[any]
+	cfg     CircuitBreakerConfig
+	logger  log.Logger
+	metrics *circuitBreakerMetrics
+	active  atomic.Bool
+	cb      circuitbreaker.CircuitBreaker[any]
 }
 
-func newCircuitBreaker(cfg CircuitBreakerConfig, logger log.Logger, registerer prometheus.Registerer) *circuitBreaker {
+func newCircuitBreaker(cfg CircuitBreakerConfig, isActive bool, logger log.Logger, registerer prometheus.Registerer) *circuitBreaker {
+	active := atomic.NewBool(isActive)
 	cb := circuitBreaker{
-		cfg:       cfg,
-		logger:    logger,
-		startTime: time.Now().Add(cfg.InitialDelay),
+		cfg:    cfg,
+		logger: logger,
+		active: *active,
 	}
 
 	circuitBreakerTransitionsCounterFn := func(metrics *circuitBreakerMetrics, state circuitbreaker.State) prometheus.Counter {
@@ -170,7 +172,14 @@ func (cb *circuitBreaker) isActive() bool {
 	if cb == nil {
 		return false
 	}
-	return cb.startTime.Before(time.Now())
+	return cb.active.Load()
+}
+
+func (cb *circuitBreaker) setActive() {
+	if cb == nil {
+		return
+	}
+	cb.active.Store(true)
 }
 
 // tryAcquirePermit tries to acquire a permit to use the circuit breaker and returns whether a permit was acquired.
@@ -206,6 +215,7 @@ func (cb *circuitBreaker) recordResult(err error) {
 // successfully acquired circuit breaker permit.
 // It records the result of the push request with the circuit breaker. Push requests
 // that lasted longer than the configured timeout are treated as a failure.
+// The returned error is only used for testing purposes.
 func (cb *circuitBreaker) finishPushRequest(ctx context.Context, duration time.Duration, pushErr error) error {
 	if !cb.isActive() {
 		return nil
