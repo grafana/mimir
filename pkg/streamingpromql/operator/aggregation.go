@@ -27,7 +27,7 @@ type Aggregation struct {
 	End      time.Time
 	Interval time.Duration
 	Grouping []string
-	Pool     types.SampleSlicePool
+	Pool     *pooling.LimitingPool
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*group // One entry per group, in the order we want to return them

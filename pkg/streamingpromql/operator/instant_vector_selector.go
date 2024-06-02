@@ -15,12 +15,13 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type InstantVectorSelector struct {
 	Selector *Selector
-	Pool     types.SampleSlicePool
+	Pool     *pooling.LimitingPool
 
 	numSteps int
 

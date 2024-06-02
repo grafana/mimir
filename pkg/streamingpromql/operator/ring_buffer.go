@@ -4,18 +4,21 @@ package operator
 
 import (
 	"github.com/prometheus/prometheus/promql"
-
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type RingBuffer struct {
-	pool       types.SampleSlicePool
+	pool       RingBufferPool
 	points     []promql.FPoint
 	firstIndex int // Index into 'points' of first point in this buffer.
 	size       int // Number of points in this buffer.
 }
 
-func NewRingBuffer(pool types.SampleSlicePool) *RingBuffer {
+type RingBufferPool interface {
+	GetFPointSlice(size int) ([]promql.FPoint, error)
+	PutFPointSlice(s []promql.FPoint)
+}
+
+func NewRingBuffer(pool RingBufferPool) *RingBuffer {
 	return &RingBuffer{pool: pool}
 }
 

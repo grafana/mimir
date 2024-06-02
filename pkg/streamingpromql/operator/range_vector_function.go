@@ -12,13 +12,14 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // RangeVectorFunction performs a rate calculation over a range vector.
 type RangeVectorFunction struct {
 	Inner RangeVectorOperator
-	Pool  types.SampleSlicePool
+	Pool  *pooling.LimitingPool
 
 	numSteps     int
 	rangeSeconds float64
