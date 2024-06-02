@@ -27,29 +27,24 @@ const (
 	BoolSize         = uint64(unsafe.Sizeof(false))
 )
 
-type sizedPool[S any] interface {
-	Get(size int) S
-	Put(s S)
-}
-
 var (
-	fPointSlicePool sizedPool[[]promql.FPoint] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.FPoint {
+	fPointSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.FPoint {
 		return make([]promql.FPoint, 0, size)
 	})
 
-	hPointSlicePool sizedPool[[]promql.HPoint] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.HPoint {
+	hPointSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.HPoint {
 		return make([]promql.HPoint, 0, size)
 	})
 
-	vectorPool sizedPool[promql.Vector] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) promql.Vector {
+	vectorPool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) promql.Vector {
 		return make(promql.Vector, 0, size)
 	})
 
-	float64SlicePool sizedPool[[]float64] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []float64 {
+	float64SlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []float64 {
 		return make([]float64, 0, size)
 	})
 
-	boolSlicePool sizedPool[[]bool] = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []bool {
+	boolSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []bool {
 		return make([]bool, 0, size)
 	})
 )
@@ -74,22 +69,19 @@ func NewLimitingPool(maxEstimatedMemoryConsumptionBytes uint64) *LimitingPool {
 	}
 }
 
-func getWithElementSize[E any, S ~[]E](p *LimitingPool, pool sizedPool[S], size int, elementSize uint64) (S, error) {
-	estimatedBytes := uint64(size) * elementSize
-
-	// Check that the requested size fits under the limit.
-	// If not, we can stop right now without taking a slice from the pool.
-	if p.MaxEstimatedMemoryConsumptionBytes > 0 && p.CurrentEstimatedMemoryConsumptionBytes+estimatedBytes > p.MaxEstimatedMemoryConsumptionBytes {
-		return nil, limiter.NewMaxEstimatedMemoryConsumptionPerQueryLimitError(p.MaxEstimatedMemoryConsumptionBytes)
-	}
+func getWithElementSize[E any, S ~[]E](p *LimitingPool, pool *pool.BucketedPool[S, E], size int, elementSize uint64) (S, error) {
+	// We don't bother checking the limit before we get the slice for a couple of reasons:
+	// - we prefer to enforce the limit based on the capacity of the returned slices, not the requested size, to more accurately capture the true memory utilisation
+	// - we expect that the vast majority of the time, the limit won't be hit, so the extra caution just slows things down
+	// - we assume that allocating a single slice won't consume an enormous amount of memory and therefore risk this process OOMing.
 
 	s := pool.Get(size)
 
-	// We must use the capacity of the slice, not 'size', as there's no guarantee the slice will have size 'size' when it's returned to us in putWithElementSize.
-	estimatedBytes = uint64(cap(s)) * elementSize
+	// We use the capacity of the slice, not 'size', for two reasons:
+	// - it more accurately reflects the true memory utilisation, as BucketedPool will always round up to the next nearest bucket, to make reuse of slices easier
+	// - there's no guarantee the slice will have size 'size' when it's returned to us in putWithElementSize, so using 'size' would make the accounting below impossible
+	estimatedBytes := uint64(cap(s)) * elementSize
 
-	// Check that the capacity of the slice fits under the limit.
-	// (There's no guarantee that the slice has capacity equal to the size we requested.)
 	if p.MaxEstimatedMemoryConsumptionBytes > 0 && p.CurrentEstimatedMemoryConsumptionBytes+estimatedBytes > p.MaxEstimatedMemoryConsumptionBytes {
 		pool.Put(s)
 		return nil, limiter.NewMaxEstimatedMemoryConsumptionPerQueryLimitError(p.MaxEstimatedMemoryConsumptionBytes)
@@ -101,7 +93,7 @@ func getWithElementSize[E any, S ~[]E](p *LimitingPool, pool sizedPool[S], size 
 	return s, nil
 }
 
-func putWithElementSize[E any, S ~[]E](p *LimitingPool, pool sizedPool[S], elementSize uint64, s S) {
+func putWithElementSize[E any, S ~[]E](p *LimitingPool, pool *pool.BucketedPool[S, E], elementSize uint64, s S) {
 	if s == nil {
 		return
 	}
