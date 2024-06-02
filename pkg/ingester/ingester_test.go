@@ -80,6 +80,150 @@ func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[str
 	return m
 }
 
+func TestIngester_StartPushRequest(t *testing.T) {
+	instanceLimits := &InstanceLimits{}
+	pushReqState := &pushRequestState{
+		requestSize:                  10,
+		acquiredCircuitBreakerPermit: true,
+	}
+	ctx := context.Background()
+	ctxWithPushReqState := context.WithValue(ctx, pushReqCtxKey, pushReqState)
+
+	type testCase struct {
+		ctx                            context.Context
+		failingIngester                bool
+		cbOpen                         bool
+		cbInitialDelay                 time.Duration
+		instanceLimitReached           bool
+		expectedStatus                 bool
+		expectedFinishPushRequestCalls int
+		verifyCtxFn                    func(context.Context, context.Context)
+		verifyErr                      func(error)
+	}
+
+	setupIngester := func(tc testCase) *failingIngester {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.CircuitBreakerConfig = CircuitBreakerConfig{
+			Enabled:        true,
+			InitialDelay:   tc.cbInitialDelay,
+			CooldownPeriod: 10 * time.Second,
+		}
+		cfg.InstanceLimitsFn = func() *InstanceLimits {
+			return instanceLimits
+		}
+		var (
+			failingCause  error
+			expectedState services.State
+		)
+		if tc.failingIngester {
+			expectedState = services.Terminated
+			failingCause = newUnavailableError(expectedState)
+		} else {
+			expectedState = services.Running
+		}
+		failingIng := setupFailingIngester(t, cfg, failingCause)
+		failingIng.startWaitAndCheck(ctx, t)
+		require.Equal(t, expectedState, failingIng.lifecycler.State())
+
+		if tc.cbOpen {
+			failingIng.circuitBreaker.cb.Open()
+		} else {
+			failingIng.circuitBreaker.cb.Close()
+		}
+
+		if tc.instanceLimitReached {
+			instanceLimits.MaxInflightPushRequestsBytes = 1
+		} else {
+			instanceLimits.MaxInflightPushRequestsBytes = 0
+		}
+
+		return failingIng
+	}
+
+	testCases := map[string]testCase{
+		"fail if ingester is not available for push": {
+			failingIngester:                true,
+			ctx:                            ctx,
+			expectedStatus:                 false,
+			expectedFinishPushRequestCalls: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &unavailableError{})
+			},
+		},
+		"fail if circuit breaker is open": {
+			ctx:                            ctx,
+			cbOpen:                         true,
+			expectedStatus:                 false,
+			expectedFinishPushRequestCalls: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+			},
+		},
+		"fail if instance limit is reached": {
+			ctx:                            ctx,
+			instanceLimitReached:           true,
+			expectedStatus:                 false,
+			expectedFinishPushRequestCalls: 1,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &instanceLimitReachedError{})
+			},
+		},
+		"do not fail if circuit breaker is not active": {
+			ctx:                            ctx,
+			cbInitialDelay:                 1 * time.Minute,
+			expectedStatus:                 true,
+			expectedFinishPushRequestCalls: 0,
+			verifyCtxFn: func(inCtx, outCtx context.Context) {
+				require.NotEqual(t, inCtx, outCtx)
+			},
+		},
+		"do not fail and return the same context if it already contains a pushRequestState": {
+			ctx:                            ctxWithPushReqState,
+			expectedStatus:                 false,
+			expectedFinishPushRequestCalls: 0,
+			verifyCtxFn: func(inCtx, outCtx context.Context) {
+				require.Equal(t, inCtx, outCtx)
+			},
+		},
+		"do not fail and add pushRequestState to the context if everything is ok": {
+			ctx:                            ctx,
+			expectedStatus:                 true,
+			expectedFinishPushRequestCalls: 0,
+			verifyCtxFn: func(inCtx, outCtx context.Context) {
+				require.NotEqual(t, inCtx, outCtx)
+			},
+		},
+	}
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			failingIng := setupIngester(tc)
+			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
+
+			finishPushRequestCount := 0
+			finishPushRequestFn := func(ctx context.Context) {
+				failingIng.FinishPushRequest(ctx)
+				finishPushRequestCount++
+			}
+
+			ctx, shouldFinish, err := failingIng.startPushRequest(tc.ctx, 10, finishPushRequestFn)
+			require.Equal(t, tc.expectedStatus, shouldFinish)
+
+			if err == nil {
+				pushReqState := getPushRequestState(ctx)
+				require.NotNil(t, pushReqState)
+
+				if tc.verifyCtxFn != nil {
+					tc.verifyCtxFn(tc.ctx, ctx)
+				}
+			} else {
+				require.Nil(t, ctx)
+				require.NotNil(t, tc.verifyErr)
+				tc.verifyErr(err)
+			}
+		})
+	}
+}
+
 func TestIngester_Push(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)

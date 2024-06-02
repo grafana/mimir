@@ -173,13 +173,11 @@ func (cb *circuitBreaker) isActive() bool {
 	return cb.startTime.Before(time.Now())
 }
 
-// TODO: fix the comment
 // tryAcquirePermit tries to acquire a permit to use the circuit breaker and returns whether a permit was acquired.
-// If the circuit breaker is not yet active, a status false and no error are returned.
-// If it was not possible to acquire a permit, this means that the circuit breaker is open. In this case, a status
-// false and an circuitBreakerOpenError are returned.
-// If it was possible to acquire a permit, a status true and no error are returned. In this case, the permission
-// will be automatically released once when a result is recorded by calling resultRecorded.
+// If it was possible to acquire a permit, a status true and no error are returned. The acquired permit must be
+// returned by a call to finishPushRequest.
+// If it was not possible to acquire a permit, a status false is returned. In this case no call to finishPushRequest
+// is needed. If the permit was not acquired because of an error, that causing error is returned as well.
 func (cb *circuitBreaker) tryAcquirePermit() (bool, error) {
 	if !cb.isActive() {
 		return false, nil
@@ -204,14 +202,10 @@ func (cb *circuitBreaker) recordResult(err error) {
 	}
 }
 
-// TODO: fix the comment
-// finishPushRequest records the result of a push request with this circuit breaker.
-// If the circuit breaker is not active, finishPushRequest does nothing.
-// If the passed duration of a push request exceeds the configured maximal push request duration,
-// a context.DeadlineExceeded error is recorded and returned, independently of the passed pushErr,
-// the actual error that occurred during the push request.
-// Otherwise, the given pushErr is recorded and returned.
-// The returned error is needed only for testing purposes.
+// finishPushRequest should be called to complete the push request executed upon a
+// successfully acquired circuit breaker permit.
+// It records the result of the push request with the circuit breaker. Push requests
+// that lasted longer than the configured timeout are treated as a failure.
 func (cb *circuitBreaker) finishPushRequest(ctx context.Context, duration time.Duration, pushErr error) error {
 	if !cb.isActive() {
 		return nil
