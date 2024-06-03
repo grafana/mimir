@@ -544,15 +544,7 @@ func (i *Ingester) startingForFlusher(ctx context.Context) error {
 
 func (i *Ingester) starting(ctx context.Context) (err error) {
 	defer func() {
-		if err == nil {
-			if i.cfg.CircuitBreakerConfig.InitialDelay == 0 {
-				i.circuitBreaker.setActive()
-			} else {
-				time.AfterFunc(i.cfg.CircuitBreakerConfig.InitialDelay, func() {
-					i.circuitBreaker.setActive()
-				})
-			}
-		} else {
+		if err != nil {
 			// if starting() fails for any reason (e.g., context canceled),
 			// the lifecycler must be stopped.
 			_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
@@ -648,7 +640,18 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 
 	i.subservicesAfterIngesterRingLifecycler, err = createManagerThenStartAndAwaitHealthy(ctx, servs...)
-	return errors.Wrap(err, "failed to start ingester subservices after ingester ring lifecycler")
+	if err != nil {
+		return errors.Wrap(err, "failed to start ingester subservices after ingester ring lifecycler")
+	}
+
+	if i.cfg.CircuitBreakerConfig.InitialDelay == 0 {
+		i.circuitBreaker.setActive()
+	} else {
+		time.AfterFunc(i.cfg.CircuitBreakerConfig.InitialDelay, func() {
+			i.circuitBreaker.setActive()
+		})
+	}
+	return nil
 }
 
 func (i *Ingester) stoppingForFlusher(_ error) error {
@@ -988,7 +991,7 @@ func getPushRequestState(ctx context.Context) *pushRequestState {
 // StartPushRequest checks if ingester can start push request, and increments relevant counters.
 // If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are updated.
 func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context.Context, error) {
-	ctx, _, err := i.startPushRequest(ctx, reqSize, nil)
+	ctx, _, err := i.startPushRequest(ctx, reqSize)
 	return ctx, err
 }
 
@@ -1011,13 +1014,10 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 // In the first case, returned errors can be inspected/logged by middleware. Ingester.PushWithCleanup will wrap the error in util_log.DoNotLogError wrapper.
 // In the second case, returned errors will not be logged, because request will not reach any middleware.
 //
-// Parameter finishPushRequestFn is used for testing purposes, and represents the function that finishes the push request that startPushRequest initialize,
-// in case of an error during the execution of the latter. It defaults to FinishPushRequest.
-//
 // If startPushRequest ends with no error, the resulting context includes a *pushRequestState object
 // containing relevant information about the push request started by this method.
 // The resulting boolean flag tells if the caller must call finish on this request. If not, there is already someone in the call stack who will do that.
-func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64, finishPushRequestFn func(ctx context.Context)) (context.Context, bool, error) {
+func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context.Context, bool, error) {
 	if err := i.checkAvailableForPush(); err != nil {
 		return nil, false, err
 	}
@@ -1051,25 +1051,16 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64, finishPu
 		inflightBytes = i.inflightPushRequestsBytes.Load()
 		rejectEqualInflightBytes = true // if inflightBytes == limit, reject new request
 	}
-	var instanceLimitsErr error
-	defer func() {
-		if instanceLimitsErr != nil {
-			// In this case a per-instance limit has been hit, and the corresponding error has to be passed
-			// to the function  which finishes the push request, records the error with the circuit breaker,
-			// and gives it a possibly acquired permit back.
-			if finishPushRequestFn != nil {
-				finishPushRequestFn(ctx)
-			} else {
-				i.FinishPushRequest(ctx)
-			}
-		}
-	}()
 
-	instanceLimitsErr = i.checkInstanceLimits(inflight, inflightBytes, rejectEqualInflightBytes)
+	instanceLimitsErr := i.checkInstanceLimits(inflight, inflightBytes, rejectEqualInflightBytes)
 	if instanceLimitsErr == nil {
 		return ctx, true, nil
 	}
 
+	// In this case a per-instance limit has been hit, and the corresponding error has to be passed
+	// to FinishPushRequest, which finishes the push request, records the error with the circuit breaker,
+	// and gives it a possibly acquired permit back.
+	i.FinishPushRequest(ctx)
 	return nil, false, instanceLimitsErr
 }
 
@@ -1117,7 +1108,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		)
 		// We need to replace the original context with the context returned by startPushRequest,
 		// because the latter might store a new pushRequestState in the context.
-		ctx, shouldFinish, startPushErr = i.startPushRequest(ctx, reqSize, nil)
+		ctx, shouldFinish, startPushErr = i.startPushRequest(ctx, reqSize)
 		if startPushErr != nil {
 			return middleware.DoNotLogError{Err: startPushErr}
 		}

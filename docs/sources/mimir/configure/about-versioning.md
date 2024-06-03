@@ -119,7 +119,7 @@ The following features are currently experimental:
     - `-ingester.owned-series-update-interval`
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.circuit-breaker.enabled`
-    - `-ingester.circuit-breaker.failure-threshold`
+    - `-ingester.circuit-breaker.failure-threshold-percentage`
     - `-ingester.circuit-breaker.failure-execution-threshold`
     - `-ingester.circuit-breaker.thresholding-period`
     - `-ingester.circuit-breaker.cooldown-period`

@@ -88,7 +88,7 @@ func (cfg *CircuitBreakerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.UintVar(&cfg.FailureExecutionThreshold, prefix+"failure-execution-threshold", 100, "How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures")
 	f.DurationVar(&cfg.ThresholdingPeriod, prefix+"thresholding-period", time.Minute, "Moving window of time that the percentage of failed requests is computed over")
 	f.DurationVar(&cfg.CooldownPeriod, prefix+"cooldown-period", 10*time.Second, "How long the circuit breaker will stay in the open state before allowing some requests")
-	f.DurationVar(&cfg.InitialDelay, prefix+"initial-delay", 0, "How long the circuit breaker should wait between creation and starting up. During that time both failures and successes will not be counted.")
+	f.DurationVar(&cfg.InitialDelay, prefix+"initial-delay", 0, "How long the circuit breaker should wait to start up after the corresponding ingester started. During that time both failures and successes will not be counted.")
 	f.DurationVar(&cfg.PushTimeout, prefix+"push-timeout", defaultPushTimeout, "How long is execution of ingester's Push supposed to last before it is reported as timeout in a circuit breaker. This configuration is used for circuit breakers only, and timeout expirations are not reported as errors")
 }
 
@@ -183,9 +183,9 @@ func (cb *circuitBreaker) setActive() {
 }
 
 // tryAcquirePermit tries to acquire a permit to use the circuit breaker and returns whether a permit was acquired.
-// If it was possible to acquire a permit, a status true and no error are returned. The acquired permit must be
+// If it was possible to acquire a permit, success flag true and no error are returned. The acquired permit must be
 // returned by a call to finishPushRequest.
-// If it was not possible to acquire a permit, a status false is returned. In this case no call to finishPushRequest
+// If it was not possible to acquire a permit, success flag false is returned. In this case no call to finishPushRequest
 // is needed. If the permit was not acquired because of an error, that causing error is returned as well.
 func (cb *circuitBreaker) tryAcquirePermit() (bool, error) {
 	if !cb.isActive() {

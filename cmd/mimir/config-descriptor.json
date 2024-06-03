@@ -3206,7 +3206,7 @@
               "kind": "field",
               "name": "initial_delay",
               "required": false,
-              "desc": "How long the circuit breaker should wait between creation and starting up. During that time both failures and successes will not be counted.",
+              "desc": "How long the circuit breaker should wait to start up after the corresponding ingester started. During that time both failures and successes will not be counted.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "ingester.circuit-breaker.initial-delay",

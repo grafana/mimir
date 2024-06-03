@@ -85,8 +85,9 @@ func TestCircuitBreaker_IsActive(t *testing.T) {
 	require.False(t, cb.isActive())
 
 	// After InitialDelay passed, circuit breaker becomes active.
-	time.Sleep(2 * cfg.InitialDelay)
-	require.True(t, cb.isActive())
+	require.Eventually(t, func() bool {
+		return cb.isActive()
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
@@ -98,24 +99,24 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 	testCases := map[string]struct {
 		initialDelay                time.Duration
 		circuitBreakerSetup         func(*circuitBreaker)
-		expectedStatus              bool
+		expectedSuccess             bool
 		expectedCircuitBreakerError bool
 		expectedMetrics             string
 	}{
 		"if circuit breaker is not active, status false and no error are returned": {
 			initialDelay:                1 * time.Minute,
 			circuitBreakerSetup:         func(cb *circuitBreaker) { cb.cb.Close() },
-			expectedStatus:              false,
+			expectedSuccess:             false,
 			expectedCircuitBreakerError: false,
 		},
 		"if circuit breaker closed, status true and no error are returned": {
 			circuitBreakerSetup:         func(cb *circuitBreaker) { cb.cb.Close() },
-			expectedStatus:              true,
+			expectedSuccess:             true,
 			expectedCircuitBreakerError: false,
 		},
 		"if circuit breaker open, status false and a circuitBreakerErrorOpen are returned": {
 			circuitBreakerSetup:         func(cb *circuitBreaker) { cb.cb.Open() },
-			expectedStatus:              false,
+			expectedSuccess:             false,
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
@@ -137,7 +138,7 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 		},
 		"if circuit breaker half-open, status false and a circuitBreakerErrorOpen are returned": {
 			circuitBreakerSetup:         func(cb *circuitBreaker) { cb.cb.HalfOpen() },
-			expectedStatus:              false,
+			expectedSuccess:             false,
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
@@ -165,7 +166,7 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 			cb := newCircuitBreaker(cfg, cfg.InitialDelay == 0, log.NewNopLogger(), registry)
 			testCase.circuitBreakerSetup(cb)
 			status, err := cb.tryAcquirePermit()
-			require.Equal(t, testCase.expectedStatus, status)
+			require.Equal(t, testCase.expectedSuccess, status)
 			if testCase.expectedCircuitBreakerError {
 				require.ErrorAs(t, err, &circuitBreakerOpenError{})
 				assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testCase.expectedMetrics), metricNames...))
@@ -635,34 +636,34 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 		},
 	}
 	for testName, testCase := range testCases {
-		reg := prometheus.NewPedanticRegistry()
-		cfg := defaultIngesterTestConfig(t)
-		cfg.CircuitBreakerConfig = CircuitBreakerConfig{
-			Enabled:     true,
-			PushTimeout: 2 * time.Second,
-		}
-
-		i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
-		require.NoError(t, err)
-
-		require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-		defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
-
-		// Wait until the ingester is healthy
-		test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-			return i.lifecycler.HealthyInstancesCount()
-		})
-
-		ctx := user.InjectOrgID(context.Background(), "test")
-
-		st := &pushRequestState{
-			requestDuration:              testCase.pushRequestDuration,
-			acquiredCircuitBreakerPermit: testCase.acquiredCircuitBreakerPermit,
-			pushErr:                      testCase.err,
-		}
-		ctx = context.WithValue(ctx, pushReqCtxKey, st)
-
 		t.Run(testName, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			cfg := defaultIngesterTestConfig(t)
+			cfg.CircuitBreakerConfig = CircuitBreakerConfig{
+				Enabled:     true,
+				PushTimeout: 2 * time.Second,
+			}
+
+			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+			require.NoError(t, err)
+
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+			// Wait until the ingester is healthy
+			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+				return i.lifecycler.HealthyInstancesCount()
+			})
+
+			ctx := user.InjectOrgID(context.Background(), "test")
+
+			st := &pushRequestState{
+				requestDuration:              testCase.pushRequestDuration,
+				acquiredCircuitBreakerPermit: testCase.acquiredCircuitBreakerPermit,
+				pushErr:                      testCase.err,
+			}
+			ctx = context.WithValue(ctx, pushReqCtxKey, st)
+
 			i.FinishPushRequest(ctx)
 			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), metricNames...))
 		})

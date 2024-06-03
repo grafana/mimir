@@ -81,6 +81,7 @@ func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[str
 }
 
 func TestIngester_StartPushRequest(t *testing.T) {
+	const reqSize = 10
 	instanceLimits := &InstanceLimits{}
 	pushReqState := &pushRequestState{
 		requestSize:                  10,
@@ -90,15 +91,16 @@ func TestIngester_StartPushRequest(t *testing.T) {
 	ctxWithPushReqState := context.WithValue(ctx, pushReqCtxKey, pushReqState)
 
 	type testCase struct {
-		ctx                            context.Context
-		failingIngester                bool
-		cbOpen                         bool
-		cbInitialDelay                 time.Duration
-		instanceLimitReached           bool
-		expectedStatus                 bool
-		expectedFinishPushRequestCalls int
-		verifyCtxFn                    func(context.Context, context.Context)
-		verifyErr                      func(error)
+		ctx                               context.Context
+		failingIngester                   bool
+		cbOpen                            bool
+		cbInitialDelay                    time.Duration
+		instanceLimitReached              bool
+		expectedStatus                    bool
+		expectedInFlightPushRequests      int64
+		expectedInflightPushRequestsBytes int64
+		verifyCtxFn                       func(context.Context, context.Context)
+		verifyErr                         func(error)
 	}
 
 	setupIngester := func(tc testCase) *failingIngester {
@@ -142,53 +144,59 @@ func TestIngester_StartPushRequest(t *testing.T) {
 
 	testCases := map[string]testCase{
 		"fail if ingester is not available for push": {
-			failingIngester:                true,
-			ctx:                            ctx,
-			expectedStatus:                 false,
-			expectedFinishPushRequestCalls: 0,
+			failingIngester:                   true,
+			ctx:                               ctx,
+			expectedStatus:                    false,
+			expectedInFlightPushRequests:      0,
+			expectedInflightPushRequestsBytes: 0,
 			verifyErr: func(err error) {
 				require.ErrorAs(t, err, &unavailableError{})
 			},
 		},
 		"fail if circuit breaker is open": {
-			ctx:                            ctx,
-			cbOpen:                         true,
-			expectedStatus:                 false,
-			expectedFinishPushRequestCalls: 0,
+			ctx:                               ctx,
+			cbOpen:                            true,
+			expectedStatus:                    false,
+			expectedInFlightPushRequests:      0,
+			expectedInflightPushRequestsBytes: 0,
 			verifyErr: func(err error) {
 				require.ErrorAs(t, err, &circuitBreakerOpenError{})
 			},
 		},
 		"fail if instance limit is reached": {
-			ctx:                            ctx,
-			instanceLimitReached:           true,
-			expectedStatus:                 false,
-			expectedFinishPushRequestCalls: 1,
+			ctx:                               ctx,
+			instanceLimitReached:              true,
+			expectedStatus:                    false,
+			expectedInFlightPushRequests:      0,
+			expectedInflightPushRequestsBytes: 0,
 			verifyErr: func(err error) {
 				require.ErrorAs(t, err, &instanceLimitReachedError{})
 			},
 		},
 		"do not fail if circuit breaker is not active": {
-			ctx:                            ctx,
-			cbInitialDelay:                 1 * time.Minute,
-			expectedStatus:                 true,
-			expectedFinishPushRequestCalls: 0,
+			ctx:                               ctx,
+			cbInitialDelay:                    1 * time.Minute,
+			expectedStatus:                    true,
+			expectedInFlightPushRequests:      1,
+			expectedInflightPushRequestsBytes: reqSize,
 			verifyCtxFn: func(inCtx, outCtx context.Context) {
 				require.NotEqual(t, inCtx, outCtx)
 			},
 		},
 		"do not fail and return the same context if it already contains a pushRequestState": {
-			ctx:                            ctxWithPushReqState,
-			expectedStatus:                 false,
-			expectedFinishPushRequestCalls: 0,
+			ctx:                               ctxWithPushReqState,
+			expectedStatus:                    false,
+			expectedInFlightPushRequests:      0,
+			expectedInflightPushRequestsBytes: 0,
 			verifyCtxFn: func(inCtx, outCtx context.Context) {
 				require.Equal(t, inCtx, outCtx)
 			},
 		},
 		"do not fail and add pushRequestState to the context if everything is ok": {
-			ctx:                            ctx,
-			expectedStatus:                 true,
-			expectedFinishPushRequestCalls: 0,
+			ctx:                               ctx,
+			expectedStatus:                    true,
+			expectedInFlightPushRequests:      1,
+			expectedInflightPushRequestsBytes: reqSize,
 			verifyCtxFn: func(inCtx, outCtx context.Context) {
 				require.NotEqual(t, inCtx, outCtx)
 			},
@@ -199,14 +207,10 @@ func TestIngester_StartPushRequest(t *testing.T) {
 			failingIng := setupIngester(tc)
 			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
 
-			finishPushRequestCount := 0
-			finishPushRequestFn := func(ctx context.Context) {
-				failingIng.FinishPushRequest(ctx)
-				finishPushRequestCount++
-			}
-
-			ctx, shouldFinish, err := failingIng.startPushRequest(tc.ctx, 10, finishPushRequestFn)
+			ctx, shouldFinish, err := failingIng.startPushRequest(tc.ctx, reqSize)
 			require.Equal(t, tc.expectedStatus, shouldFinish)
+			require.Equal(t, tc.expectedInFlightPushRequests, failingIng.inflightPushRequests.Load())
+			require.Equal(t, tc.expectedInflightPushRequestsBytes, failingIng.inflightPushRequestsBytes.Load())
 
 			if err == nil {
 				pushReqState := getPushRequestState(ctx)

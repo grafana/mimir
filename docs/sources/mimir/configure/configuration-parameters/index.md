@@ -1243,9 +1243,9 @@ circuit_breaker:
   # CLI flag: -ingester.circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 10s]
 
-  # (experimental) How long the circuit breaker should wait between creation and
-  # starting up. During that time both failures and successes will not be
-  # counted.
+  # (experimental) How long the circuit breaker should wait to start up after
+  # the corresponding ingester started. During that time both failures and
+  # successes will not be counted.
   # CLI flag: -ingester.circuit-breaker.initial-delay
   [initial_delay: <duration> | default = 0s]
 
