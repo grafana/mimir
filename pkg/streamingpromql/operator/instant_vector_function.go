@@ -8,6 +8,7 @@ package operator
 
 import (
 	"context"
+	"math"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -57,8 +58,31 @@ func (m *InstantVectorFunction) Close() {
 type functionCall func(seriesData types.InstantVectorSeriesData, args parser.Expressions, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error)
 
 var InstantVectorFunctionCalls = map[string]functionCall{
+	"acos":            acos,
 	"histogram_count": histogramCount,
 	"histogram_sum":   histogramSum,
+}
+
+func simpleFunc(series types.InstantVectorSeriesData, pool *pooling.LimitingPool, f func(float64) float64) (types.InstantVectorSeriesData, error) {
+	floats, err := pool.GetFPointSlice(len(series.Floats))
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	data := types.InstantVectorSeriesData{
+		Floats: floats,
+	}
+	for _, Float := range series.Floats {
+		data.Floats = append(data.Floats, promql.FPoint{
+			T: Float.T,
+			F: f(Float.F),
+		})
+	}
+	return data, nil
+}
+
+func acos(series types.InstantVectorSeriesData, _ parser.Expressions, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
+	return simpleFunc(series, pool, math.Acos)
 }
 
 func histogramCount(series types.InstantVectorSeriesData, _ parser.Expressions, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
