@@ -2042,11 +2042,11 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_distributor_cpu_hpa_default
       query: |
-        max_over_time(
+        quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="distributor",namespace="default"}[5m]))
             and
-            max by (pod) (up{container="distributor",namespace="default"}) > 0
+            max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
         and
@@ -2065,12 +2065,12 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_distributor_memory_hpa_default
       query: |
-        max_over_time(
+        quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="distributor",namespace="default"})
               and
-              max by (pod) (up{container="distributor",namespace="default"}) > 0
+              max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
             ) or vector(0)
           )[15m:]
         )
