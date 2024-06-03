@@ -171,6 +171,7 @@ func main() {
 	if mainFlags.blockProfileRate > 0 {
 		runtime.SetBlockProfileRate(mainFlags.blockProfileRate)
 	}
+	clampGOMAXPROCS()
 
 	reg := prometheus.DefaultRegisterer
 	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, mainFlags.useBufferedLogger, util_log.RateLimitedLoggerCfg{
@@ -229,6 +230,18 @@ func main() {
 
 	runtime.KeepAlive(ballast)
 	util_log.CheckFatal("running application", err)
+}
+
+func clampGOMAXPROCS() {
+	if runtime.GOMAXPROCS(0) <= runtime.NumCPU() {
+		return
+	}
+	level.Warn(util_log.Logger).Log(
+		"msg", "GOMAXPROCS is higher than the number of CPUs; clamping it to NumCPU; please report if this doesn't fit your use case",
+		"GOMAXPROCS", runtime.GOMAXPROCS(0),
+		"NumCPU", runtime.NumCPU(),
+	)
+	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
 func exit(code int) {

@@ -200,7 +200,7 @@ func TestPusherConsumer(t *testing.T) {
 			})
 
 			logs := &concurrency.SyncBuffer{}
-			c := newPusherConsumer(pusher, prometheus.NewPedanticRegistry(), log.NewLogfmtLogger(logs))
+			c := newPusherConsumer(pusher, nil, prometheus.NewPedanticRegistry(), log.NewLogfmtLogger(logs))
 			err := c.consume(context.Background(), tc.records)
 			if tc.expErr == "" {
 				assert.NoError(t, err)
@@ -213,6 +213,55 @@ func TestPusherConsumer(t *testing.T) {
 				logLines = strings.Split(strings.TrimSpace(logsStr), "\n")
 			}
 			assert.Equal(t, tc.expectedLogLines, logLines)
+		})
+	}
+}
+
+func TestPusherConsumer_clientErrorSampling(t *testing.T) {
+	type testCase struct {
+		sampler         *util_log.Sampler
+		err             error
+		expectedSampled bool
+		expectedReason  string
+	}
+
+	plainError := fmt.Errorf("plain")
+
+	for name, tc := range map[string]testCase{
+		"nil sampler, plain error": {
+			sampler:         nil,
+			err:             plainError,
+			expectedSampled: true,
+			expectedReason:  "",
+		},
+
+		"nil sampler, sampled error": {
+			sampler:         nil,
+			err:             util_log.NewSampler(20).WrapError(plainError), // need to use new sampler to make sure it samples the error
+			expectedSampled: true,
+			expectedReason:  "sampled 1/20",
+		},
+
+		"fallback sampler, plain error": {
+			sampler:         util_log.NewSampler(5),
+			err:             plainError,
+			expectedSampled: true,
+			expectedReason:  "sampled 1/5",
+		},
+
+		"fallback sampler, sampled error": {
+			sampler:         util_log.NewSampler(5),
+			err:             util_log.NewSampler(20).WrapError(plainError), // need to use new sampler to make sure it samples the error
+			expectedSampled: true,
+			expectedReason:  "sampled 1/20",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := newPusherConsumer(nil, tc.sampler, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+
+			sampled, reason := c.shouldLogClientError(context.Background(), tc.err)
+			assert.Equal(t, tc.expectedSampled, sampled)
+			assert.Equal(t, tc.expectedReason, reason)
 		})
 	}
 }
@@ -237,7 +286,7 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 
 		reg := prometheus.NewPedanticRegistry()
 		logs := &concurrency.SyncBuffer{}
-		consumer := newPusherConsumer(pusher, reg, log.NewLogfmtLogger(logs))
+		consumer := newPusherConsumer(pusher, nil, reg, log.NewLogfmtLogger(logs))
 
 		return consumer, logs, reg
 	}
@@ -323,7 +372,7 @@ func TestPusherConsumer_consume_ShouldHonorContextCancellation(t *testing.T) {
 		<-ctx.Done()
 		return context.Cause(ctx)
 	})
-	consumer := newPusherConsumer(pusher, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+	consumer := newPusherConsumer(pusher, nil, prometheus.NewPedanticRegistry(), log.NewNopLogger())
 
 	wantCancelErr := cancellation.NewErrorf("stop")
 

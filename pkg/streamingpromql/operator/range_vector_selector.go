@@ -13,6 +13,8 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type RangeVectorSelector struct {
@@ -27,7 +29,7 @@ type RangeVectorSelector struct {
 
 var _ RangeVectorOperator = &RangeVectorSelector{}
 
-func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
+func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Compute value we need on every call to NextSeries() once, here.
 	m.rangeMilliseconds = m.Selector.Range.Milliseconds()
 	m.numSteps = stepCount(m.Selector.Start, m.Selector.End, m.Selector.Interval)
@@ -43,9 +45,9 @@ func (m *RangeVectorSelector) Range() time.Duration {
 	return m.Selector.Range
 }
 
-func (m *RangeVectorSelector) NextSeries(_ context.Context) error {
+func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	var err error
-	m.chunkIterator, err = m.Selector.Next(m.chunkIterator)
+	m.chunkIterator, err = m.Selector.Next(ctx, m.chunkIterator)
 	if err != nil {
 		return err
 	}
@@ -54,9 +56,9 @@ func (m *RangeVectorSelector) NextSeries(_ context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) NextStepSamples(floats *RingBuffer) (RangeVectorStepData, error) {
+func (m *RangeVectorSelector) NextStepSamples(floats *RingBuffer) (types.RangeVectorStepData, error) {
 	if m.nextT > m.Selector.End {
-		return RangeVectorStepData{}, EOS
+		return types.RangeVectorStepData{}, EOS
 	}
 
 	stepT := m.nextT
@@ -70,12 +72,12 @@ func (m *RangeVectorSelector) NextStepSamples(floats *RingBuffer) (RangeVectorSt
 	floats.DiscardPointsBefore(rangeStart)
 
 	if err := m.fillBuffer(floats, rangeStart, rangeEnd); err != nil {
-		return RangeVectorStepData{}, err
+		return types.RangeVectorStepData{}, err
 	}
 
 	m.nextT += m.Selector.Interval
 
-	return RangeVectorStepData{
+	return types.RangeVectorStepData{
 		StepT:      stepT,
 		RangeStart: rangeStart,
 		RangeEnd:   rangeEnd,
@@ -100,7 +102,9 @@ func (m *RangeVectorSelector) fillBuffer(floats *RingBuffer, rangeStart, rangeEn
 			// We might append a sample beyond the range end, but this is OK:
 			// - callers of NextStepSamples are expected to pass the same RingBuffer to subsequent calls, so the point is not lost
 			// - callers of NextStepSamples are expected to handle the case where the buffer contains points beyond the end of the range
-			floats.Append(promql.FPoint{T: t, F: f})
+			if err := floats.Append(promql.FPoint{T: t, F: f}); err != nil {
+				return err
+			}
 
 			if t >= rangeEnd {
 				return nil

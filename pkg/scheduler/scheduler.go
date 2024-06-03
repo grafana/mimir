@@ -372,7 +372,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	maxQueriers := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limits.MaxQueriersPerUser)
 
 	s.activeUsers.UpdateUserTimestamp(userID, now)
-	return s.requestQueue.EnqueueRequestToDispatcher(userID, req, maxQueriers, func() {
+	return s.requestQueue.SubmitRequestToEnqueue(userID, req, maxQueriers, func() {
 		shouldCancel = false
 
 		s.inflightRequestsMu.Lock()
@@ -411,7 +411,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 
 	// In stopping state scheduler is not accepting new queries, but still dispatching queries in the queues.
 	for s.isRunningOrStopping() {
-		req, idx, err := s.requestQueue.GetNextRequestForQuerier(querier.Context(), lastUserIndex, querierID)
+		req, idx, err := s.requestQueue.WaitForRequestForQuerier(querier.Context(), lastUserIndex, querierID)
 		if err != nil {
 			// Return a more clear error if the queue is stopped because the query-scheduler is not running.
 			if errors.Is(err, queue.ErrStopped) && !s.isRunning() {

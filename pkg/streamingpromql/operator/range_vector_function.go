@@ -11,11 +11,15 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // RangeVectorFunction performs a rate calculation over a range vector.
 type RangeVectorFunction struct {
 	Inner RangeVectorOperator
+	Pool  *pooling.LimitingPool
 
 	numSteps     int
 	rangeSeconds float64
@@ -24,7 +28,7 @@ type RangeVectorFunction struct {
 
 var _ InstantVectorOperator = &RangeVectorFunction{}
 
-func (m *RangeVectorFunction) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
+func (m *RangeVectorFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	metadata, err := m.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -47,19 +51,24 @@ func dropMetricName(l labels.Labels, lb *labels.Builder) labels.Labels {
 	return lb.Labels()
 }
 
-func (m *RangeVectorFunction) NextSeries(ctx context.Context) (InstantVectorSeriesData, error) {
+func (m *RangeVectorFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if err := m.Inner.NextSeries(ctx); err != nil {
-		return InstantVectorSeriesData{}, err
+		return types.InstantVectorSeriesData{}, err
 	}
 
 	if m.buffer == nil {
-		m.buffer = &RingBuffer{}
+		m.buffer = NewRingBuffer(m.Pool)
 	}
 
 	m.buffer.Reset()
 
-	data := InstantVectorSeriesData{
-		Floats: GetFPointSlice(m.numSteps), // TODO: only allocate this if we have any floats (once we support native histograms)
+	floats, err := m.Pool.GetFPointSlice(m.numSteps) // TODO: only allocate this if we have any floats (once we support native histograms)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	data := types.InstantVectorSeriesData{
+		Floats: floats,
 	}
 
 	for {
@@ -69,7 +78,7 @@ func (m *RangeVectorFunction) NextSeries(ctx context.Context) (InstantVectorSeri
 		if err == EOS {
 			return data, nil
 		} else if err != nil {
-			return InstantVectorSeriesData{}, err
+			return types.InstantVectorSeriesData{}, err
 		}
 
 		head, tail := m.buffer.UnsafePoints(step.RangeEnd)

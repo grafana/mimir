@@ -11,6 +11,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestSeriesList_BasicListOperations(t *testing.T) {
@@ -76,9 +78,9 @@ func TestSeriesList_OperationsNearBatchBoundaries(t *testing.T) {
 func requireSeriesListContents(t *testing.T, list *seriesList, series ...storage.Series) {
 	require.Equal(t, len(series), list.Len())
 
-	expectedMetadata := make([]SeriesMetadata, 0, len(series))
+	expectedMetadata := make([]types.SeriesMetadata, 0, len(series))
 	for _, s := range series {
-		expectedMetadata = append(expectedMetadata, SeriesMetadata{Labels: s.Labels()})
+		expectedMetadata = append(expectedMetadata, types.SeriesMetadata{Labels: s.Labels()})
 	}
 
 	require.Equal(t, expectedMetadata, list.ToSeriesMetadata())

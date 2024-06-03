@@ -234,7 +234,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 	lastTenantIndex := queue.FirstTenant()
 
 	for {
-		reqWrapper, idx, err := f.requestQueue.GetNextRequestForQuerier(server.Context(), lastTenantIndex, querierID)
+		reqWrapper, idx, err := f.requestQueue.WaitForRequestForQuerier(server.Context(), lastTenantIndex, querierID)
 		if err != nil {
 			return err
 		}
@@ -358,7 +358,7 @@ func (f *Frontend) queueRequest(ctx context.Context, req *request) error {
 	joinedTenantID := tenant.JoinTenantIDs(tenantIDs)
 	f.activeUsers.UpdateUserTimestamp(joinedTenantID, now)
 
-	err = f.requestQueue.EnqueueRequestToDispatcher(joinedTenantID, req, maxQueriers, nil)
+	err = f.requestQueue.SubmitRequestToEnqueue(joinedTenantID, req, maxQueriers, nil)
 	if errors.Is(err, queue.ErrTooManyRequests) {
 		return errTooManyRequest
 	}

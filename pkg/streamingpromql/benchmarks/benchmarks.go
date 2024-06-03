@@ -69,12 +69,17 @@ func (c BenchCase) Run(ctx context.Context, t testing.TB, start, end time.Time, 
 	return res, qry.Close
 }
 
-// These test cases are taken from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
+// These test cases are taken from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go
+// and enhanced/added to.
 func TestCases(metricSizes []int) []BenchCase {
 	cases := []BenchCase{
 		// Plain retrieval.
 		{
 			Expr: "a_X",
+		},
+		// Histogram retrieval
+		{
+			Expr: "nh_X",
 		},
 		// Range vector selector.
 		{
