@@ -2566,10 +2566,6 @@ after they have been added to a pod. This includes not being able to delete them
 If the process in the debug container has finished (for example, the shell has exited), the container
 will remain in the `Terminated` state. This is harmless and will remain there until the pod is deleted (eg. due to a rollout).
 
-However, if you wish to clean up the ephemeral containers, then re-creating the pod is necessary.
-This can be done by deleting the (target) pod and allowing the Deployment or
-StatefulSet to recreate it. Proceed with caution, particularly around StatefulSet's and un-zoned deployments.
-
 ## Log lines
 
 ### Log line containing 'sample with repeated timestamp but different value'
