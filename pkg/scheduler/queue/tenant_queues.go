@@ -6,6 +6,7 @@
 package queue
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -155,13 +156,21 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	qb.treeShuffleShardState.sharedQueuePosition = lastTenantIndex
 
 	queuePath, queueElement := qb.queueTree.rootNode.dequeue()
+	fmt.Println("path: ", queuePath)
+	fmt.Println("elt: ", queueElement)
 
-	// TODO (casie): hacky - hardcoding second elt in queuePath to tenant ID
+	var request *tenantRequest
 	var tenantID TenantID
-	if len(queuePath) > 1 {
-		tenantID = TenantID(queuePath[1])
+	if queueElement != nil {
+		// re-casting to same type it was enqueued as; panic would indicate a bug
+		request = queueElement.(*tenantRequest)
+		tenantID = request.tenantID
 	}
-	tenant := qb.tenantQuerierAssignments.tenantsByID[tenantID]
+
+	var tenant *queueTenant
+	if tenantID != "" {
+		tenant = qb.tenantQuerierAssignments.tenantsByID[tenantID]
+	}
 
 	// dequeue returns the full path including root, but getNode expects the path _from_ root
 	queueNodeAfterDequeue := qb.queueTree.rootNode.getNode(queuePath[1:])
@@ -170,13 +179,6 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		qb.tenantQuerierAssignments.removeTenant(tenantID)
 	}
 
-	var request *tenantRequest
-	if queueElement != nil {
-		// re-casting to same type it was enqueued as; panic would indicate a bug
-		request = queueElement.(*tenantRequest)
-	}
-
-	//return request, tenant, tenantIndex, nil
 	return request, tenant, qb.treeShuffleShardState.sharedQueuePosition, nil
 }
 
