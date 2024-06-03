@@ -2506,13 +2506,13 @@ attaching it to the same namespace as other containers in that pod. More detail 
 how to debug running pods is available in [the Kubernetes docs](https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/#ephemeral-container).
 
 ```bash
-kubectl --namespace mimir debug -it pod/compactor-0 --image=ubuntu:latest --target=compactor -c mimir-debug-container
+kubectl --namespace mimir debug -it pod/compactor-0 --image=ubuntu:latest --target=compactor --container=mimir-debug-container
 ```
 
 - `pod/name` is the pod to attach to.
 - `--target=` is the container within that pod with which to share a kernel namespace.
 - `--image=` is the image of the debug container you wish to use.
-- `-c` is the name to use for the ephemeral container. This is optional, but useful if you want to re-use it.
+- `--container` is the name to use for the ephemeral container. This is optional, but useful if you want to re-use it.
 
 You can now see all of the processes running in this space. For example:
 
