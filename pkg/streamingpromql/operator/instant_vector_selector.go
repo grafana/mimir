@@ -29,7 +29,7 @@ type InstantVectorSelector struct {
 	memoizedIterator *storage.MemoizedSeriesIterator
 }
 
-var _ InstantVectorOperator = &InstantVectorSelector{}
+var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
 func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Compute value we need on every call to NextSeries() once, here.

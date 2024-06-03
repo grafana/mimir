@@ -22,7 +22,7 @@ func (t *testOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata
 
 func (t *testOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {
 	if len(t.data) == 0 {
-		return types.InstantVectorSeriesData{}, EOS
+		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
 	d := t.data[0]
