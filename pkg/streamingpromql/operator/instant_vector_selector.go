@@ -7,7 +7,6 @@ package operator
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -15,10 +14,14 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type InstantVectorSelector struct {
 	Selector *Selector
+	Pool     *pooling.LimitingPool
 
 	numSteps int
 
@@ -28,33 +31,31 @@ type InstantVectorSelector struct {
 
 var _ InstantVectorOperator = &InstantVectorSelector{}
 
-func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
+func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Compute value we need on every call to NextSeries() once, here.
 	v.numSteps = stepCount(v.Selector.Start, v.Selector.End, v.Selector.Interval)
 
 	return v.Selector.SeriesMetadata(ctx)
 }
 
-func (v *InstantVectorSelector) NextSeries(_ context.Context) (InstantVectorSeriesData, error) {
+func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if v.memoizedIterator == nil {
 		v.memoizedIterator = storage.NewMemoizedEmptyIterator(v.Selector.LookbackDelta.Milliseconds())
 	}
 
 	var err error
-	v.chunkIterator, err = v.Selector.Next(v.chunkIterator)
+	v.chunkIterator, err = v.Selector.Next(ctx, v.chunkIterator)
 	if err != nil {
-		return InstantVectorSeriesData{}, err
+		return types.InstantVectorSeriesData{}, err
 	}
 
 	v.memoizedIterator.Reset(v.chunkIterator)
 
-	data := InstantVectorSeriesData{
-		Floats: GetFPointSlice(v.numSteps), // TODO: only allocate this if we have any floats (once we support native histograms)
-	}
+	data := types.InstantVectorSeriesData{}
 
 	for stepT := v.Selector.Start; stepT <= v.Selector.End; stepT += v.Selector.Interval {
 		var t int64
-		var val float64
+		var f float64
 		var h *histogram.FloatHistogram
 
 		ts := stepT
@@ -67,33 +68,55 @@ func (v *InstantVectorSelector) NextSeries(_ context.Context) (InstantVectorSeri
 		switch valueType {
 		case chunkenc.ValNone:
 			if v.memoizedIterator.Err() != nil {
-				return InstantVectorSeriesData{}, v.memoizedIterator.Err()
+				return types.InstantVectorSeriesData{}, v.memoizedIterator.Err()
 			}
 		case chunkenc.ValFloat:
-			t, val = v.memoizedIterator.At()
+			t, f = v.memoizedIterator.At()
+		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			t, h = v.memoizedIterator.AtFloatHistogram()
 		default:
-			return InstantVectorSeriesData{}, fmt.Errorf("streaming PromQL engine: unknown value type %s", valueType.String())
+			return types.InstantVectorSeriesData{}, fmt.Errorf("streaming PromQL engine: unknown value type %s", valueType.String())
 		}
 
 		if valueType == chunkenc.ValNone || t > ts {
 			var ok bool
-			t, val, h, ok = v.memoizedIterator.PeekPrev()
-			if h != nil {
-				return InstantVectorSeriesData{}, errors.New("streaming PromQL engine doesn't support histograms yet")
-			}
+			t, f, h, ok = v.memoizedIterator.PeekPrev()
 			if !ok || t < ts-v.Selector.LookbackDelta.Milliseconds() {
 				continue
 			}
 		}
-		if value.IsStaleNaN(val) || (h != nil && value.IsStaleNaN(h.Sum)) {
+		if value.IsStaleNaN(f) || (h != nil && value.IsStaleNaN(h.Sum)) {
 			continue
 		}
 
-		data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: val})
+		// if (f, h) have been set by PeekPrev, we do not know if f is 0 because that's the actual value, or because
+		// the previous value had a histogram.
+		// PeekPrev will set the histogram to nil, or the value to 0 if the other type exists.
+		// So check if histograms is nil first. If we don't have a histogram, then we should have a value and vice-versa.
+		if h != nil {
+			if len(data.Histograms) == 0 {
+				// Only create the slice once we know the series is a histogram or not.
+				// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
+				var err error
+				if data.Histograms, err = v.Pool.GetHPointSlice(v.numSteps); err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+			}
+			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
+		} else {
+			if len(data.Floats) == 0 {
+				// Only create the slice once we know the series is a histogram or not
+				var err error
+				if data.Floats, err = v.Pool.GetFPointSlice(v.numSteps); err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+			}
+			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
+		}
 	}
 
 	if v.memoizedIterator.Err() != nil {
-		return InstantVectorSeriesData{}, v.memoizedIterator.Err()
+		return types.InstantVectorSeriesData{}, v.memoizedIterator.Err()
 	}
 
 	return data, nil

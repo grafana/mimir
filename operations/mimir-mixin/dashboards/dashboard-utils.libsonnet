@@ -226,17 +226,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // shows all values on tooltip, descending. Also turns on exemplars, unless 4th parameter is false.
   hiddenLegendQueryPanel(queries, legends, legendLink=null, exemplars=true)::
     $.queryPanel(queries, legends, legendLink) +
+    $.showAllTooltip +
     {
-      options: {
+      options+: {
         legend+: {
           showLegend: false,
           // Work round Grafana turning showLegend back on when we have
           // schemaVersion<37. https://github.com/grafana/grafana/issues/54472
           displayMode: 'hidden',
-        },
-        tooltip+: {
-          mode: 'multi',
-          sort: 'desc',
         },
       },
       fieldConfig+: {
@@ -335,6 +332,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerCPUUsagePanel(instanceName, containerName)::
     $.timeseriesPanel('CPU') +
     $.queryPanel($.resourceUtilizationAndLimitQueries('cpu', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.showAllTooltip +
     {
       fieldConfig+: {
         overrides+: [
@@ -348,12 +346,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
       },
-      options+: {
-        tooltip: {
-          mode: 'multi',
-          sort: 'desc',
-        },
-      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -365,6 +357,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerMemoryWorkingSetPanel(instanceName, containerName)::
     $.timeseriesPanel('Memory (workingset)') +
     $.queryPanel($.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.showAllTooltip +
     {
       fieldConfig+: {
         overrides+: [
@@ -376,12 +369,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           custom+: {
             fillOpacity: 0,
           },
-        },
-      },
-      options+: {
-        tooltip: {
-          mode: 'multi',
-          sort: 'desc',
         },
       },
     },
@@ -395,6 +382,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerMemoryRSSPanel(instanceName, containerName)::
     $.timeseriesPanel('Memory (RSS)') +
     $.queryPanel($.resourceUtilizationAndLimitQueries('memory_rss', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.showAllTooltip +
     {
       fieldConfig+: {
         overrides+: [
@@ -408,12 +396,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
       },
-      options+: {
-        tooltip: {
-          mode: 'multi',
-          sort: 'desc',
-        },
-      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -425,6 +407,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerGoHeapInUsePanel(instanceName, containerName)::
     $.timeseriesPanel('Memory (go heap inuse)') +
     $.queryPanel($.resourceUtilizationQuery('memory_go_heap', instanceName, containerName), '{{%s}}' % $._config.per_instance_label) +
+    $.showAllTooltip +
     {
       fieldConfig+: {
         defaults+: {
@@ -432,12 +415,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           custom+: {
             fillOpacity: 0,
           },
-        },
-      },
-      options+: {
-        tooltip: {
-          mode: 'multi',
-          sort: 'desc',
         },
       },
     },
@@ -933,6 +910,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
             mode: 'normal',
           },
         },
+      },
+    },
+  },
+
+  // Shows all series' values in the tooltip and sorts them in descending order.
+  showAllTooltip:: {
+    options+: {
+      tooltip+: {
+        mode: 'multi',
+        sort: 'desc',
       },
     },
   },

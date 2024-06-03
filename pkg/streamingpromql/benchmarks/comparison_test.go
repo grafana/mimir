@@ -44,7 +44,7 @@ func BenchmarkQuery(b *testing.B) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts)
-	streamingEngine, err := streamingpromql.NewEngine(opts)
+	streamingEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0))
 	require.NoError(b, err)
 
 	// Important: the names below must remain in sync with the names used in tools/benchmark-query-engine.
@@ -96,7 +96,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts)
-	streamingEngine, err := streamingpromql.NewEngine(opts)
+	streamingEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0))
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
@@ -123,7 +123,7 @@ func TestBenchmarkSetup(t *testing.T) {
 	q := createBenchmarkQueryable(t, []int{1})
 
 	opts := streamingpromql.NewTestEngineOpts()
-	streamingEngine, err := streamingpromql.NewEngine(opts)
+	streamingEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0))
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
@@ -163,6 +163,28 @@ func TestBenchmarkSetup(t *testing.T) {
 	}
 
 	require.Equal(t, expectedPoints, series.Floats)
+
+	// Check native histograms are set up correctly
+	query, err = streamingEngine.NewRangeQuery(ctx, q, nil, "nh_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
+	require.NoError(t, err)
+
+	t.Cleanup(query.Close)
+	result = query.Exec(ctx)
+	require.NoError(t, result.Err)
+
+	matrix, err = result.Matrix()
+	require.NoError(t, err)
+
+	require.Len(t, matrix, 1)
+	series = matrix[0]
+	require.Equal(t, labels.FromStrings("__name__", "nh_1"), series.Metric)
+	require.Len(t, series.Floats, 0)
+	require.Len(t, series.Histograms, 16)
+
+	// Check one histogram point is as expected
+	require.Equal(t, int64(0), series.Histograms[0].T)
+	require.Equal(t, 12.0, series.Histograms[0].H.Count)
+	require.Equal(t, 18.4, series.Histograms[0].H.Sum)
 }
 
 // Why do we do this rather than require.Equal(t, expected, actual)?
@@ -194,7 +216,11 @@ func requireEqualResults(t testing.TB, expected, actual *promql.Result) {
 			require.Equal(t, expectedSample.Metric, actualSample.Metric)
 			require.Equal(t, expectedSample.T, actualSample.T)
 			require.Equal(t, expectedSample.H, actualSample.H)
-			require.InEpsilon(t, expectedSample.F, actualSample.F, 1e-10)
+			if expectedSample.F == 0 {
+				require.Equal(t, expectedSample.F, actualSample.F)
+			} else {
+				require.InEpsilon(t, expectedSample.F, actualSample.F, 1e-10)
+			}
 		}
 	case parser.ValueTypeMatrix:
 		expectedMatrix, err := expected.Matrix()
@@ -214,7 +240,11 @@ func requireEqualResults(t testing.TB, expected, actual *promql.Result) {
 				actualPoint := actualSeries.Floats[j]
 
 				require.Equal(t, expectedPoint.T, actualPoint.T)
-				require.InEpsilonf(t, expectedPoint.F, actualPoint.F, 1e-10, "expected series %v to have points %v, but result is %v", expectedSeries.Metric.String(), expectedSeries.Floats, actualSeries.Floats)
+				if expectedPoint.F == 0 {
+					require.Equal(t, expectedPoint.F, actualPoint.F)
+				} else {
+					require.InEpsilonf(t, expectedPoint.F, actualPoint.F, 1e-10, "expected series %v to have points %v, but result is %v", expectedSeries.Metric.String(), expectedSeries.Floats, actualSeries.Floats)
+				}
 			}
 		}
 	default:

@@ -226,8 +226,12 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	am.silences, err = silence.New(silence.Options{
 		SnapshotFile: silencesFile,
 		Retention:    cfg.Retention,
-		Logger:       log.With(am.logger, "component", "silences"),
-		Metrics:      am.registry,
+		Limits: silence.Limits{
+			MaxSilences:        cfg.Limits.AlertmanagerMaxSilencesCount(cfg.UserID),
+			MaxPerSilenceBytes: cfg.Limits.AlertmanagerMaxSilenceSizeBytes(cfg.UserID),
+		},
+		Logger:  log.With(am.logger, "component", "silences"),
+		Metrics: am.registry,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create silences: %v", err)
