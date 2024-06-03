@@ -3558,6 +3558,17 @@
         },
         {
           "kind": "field",
+          "name": "max_estimated_memory_consumption_per_query",
+          "required": false,
+          "desc": "The maximum estimated memory a single query can consume at once, in bytes. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-estimated-memory-consumption-per-query",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_query_lookback",
           "required": false,
           "desc": "Limit how long back data (series and metadata) can be queried, up until \u003clookback\u003e duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.",
@@ -4050,6 +4061,26 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-config-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_max_silences_count",
+          "required": false,
+          "desc": "Maximum number of active and pending silences that a tenant can have at once. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "alertmanager.max-silences-count",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_max_silence_size_bytes",
+          "required": false,
+          "desc": "Maximum silence size in bytes. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "alertmanager.max-silence-size-bytes",
           "fieldType": "int"
         },
         {

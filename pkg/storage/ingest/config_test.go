@@ -77,6 +77,24 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: ErrInvalidWriteClients,
 		},
+		"should fail if ingest storage is enabled and producer max record size bytes is set too low": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ProducerMaxRecordSizeBytes = minProducerRecordDataBytesLimit - 1
+			},
+			expectedErr: ErrInvalidProducerMaxRecordSizeBytes,
+		},
+		"should fail if ingest storage is enabled and producer max record size bytes is set too high": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ProducerMaxRecordSizeBytes = maxProducerRecordDataBytesLimit + 1
+			},
+			expectedErr: ErrInvalidProducerMaxRecordSizeBytes,
+		},
 	}
 
 	for testName, testData := range tests {
