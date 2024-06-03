@@ -4067,7 +4067,7 @@
           "kind": "field",
           "name": "alertmanager_max_silences_count",
           "required": false,
-          "desc": "Maximum number of active and pending silences that a tenant can have at once. 0 = no limit.",
+          "desc": "Maximum number of silences, including expired silences, that a tenant can have at once. 0 = no limit.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-silences-count",
