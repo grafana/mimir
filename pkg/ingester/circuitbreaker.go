@@ -20,14 +20,11 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-type testCtxKey string
-
 const (
-	resultSuccess                 = "success"
-	resultError                   = "error"
-	resultOpen                    = "circuit_breaker_open"
-	defaultPushTimeout            = 2 * time.Second
-	testDelayKey       testCtxKey = "test-delay"
+	resultSuccess      = "success"
+	resultError        = "error"
+	resultOpen         = "circuit_breaker_open"
+	defaultPushTimeout = 2 * time.Second
 )
 
 type circuitBreakerMetrics struct {
@@ -98,6 +95,9 @@ type circuitBreaker struct {
 	metrics *circuitBreakerMetrics
 	active  atomic.Bool
 	cb      circuitbreaker.CircuitBreaker[any]
+
+	// testRequestDelay is needed for testing purposes to simulate long lasting requests
+	testRequestDelay time.Duration
 }
 
 func newCircuitBreaker(cfg CircuitBreakerConfig, isActive bool, logger log.Logger, registerer prometheus.Registerer) *circuitBreaker {
@@ -216,14 +216,12 @@ func (cb *circuitBreaker) recordResult(err error) {
 // It records the result of the push request with the circuit breaker. Push requests
 // that lasted longer than the configured timeout are treated as a failure.
 // The returned error is only used for testing purposes.
-func (cb *circuitBreaker) finishPushRequest(ctx context.Context, duration time.Duration, pushErr error) error {
+func (cb *circuitBreaker) finishPushRequest(duration time.Duration, pushErr error) error {
 	if !cb.isActive() {
 		return nil
 	}
 	if cb.cfg.testModeEnabled {
-		if testDelay, ok := ctx.Value(testDelayKey).(time.Duration); ok {
-			duration += testDelay
-		}
+		duration += cb.testRequestDelay
 	}
 	if cb.cfg.PushTimeout < duration {
 		pushErr = context.DeadlineExceeded

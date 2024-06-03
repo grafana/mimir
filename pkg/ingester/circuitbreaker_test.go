@@ -315,14 +315,13 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
-			ctx := context.Background()
 			cfg := CircuitBreakerConfig{
 				Enabled:      true,
 				InitialDelay: testCase.initialDelay,
 				PushTimeout:  2 * time.Second,
 			}
 			cb := newCircuitBreaker(cfg, cfg.InitialDelay == 0, log.NewNopLogger(), registry)
-			err := cb.finishPushRequest(ctx, testCase.pushRequestDuration, testCase.err)
+			err := cb.finishPushRequest(testCase.pushRequestDuration, testCase.err)
 			if testCase.expectedErr == nil {
 				require.NoError(t, err)
 			} else {
@@ -337,15 +336,13 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 	pushTimeout := 100 * time.Millisecond
 	tests := map[string]struct {
 		expectedErrorWhenCircuitBreakerClosed error
-		ctx                                   func(context.Context) context.Context
+		pushRequestDelay                      time.Duration
 		limits                                InstanceLimits
 	}{
 		"deadline exceeded": {
 			expectedErrorWhenCircuitBreakerClosed: nil,
 			limits:                                InstanceLimits{MaxInMemoryTenants: 3},
-			ctx: func(ctx context.Context) context.Context {
-				return context.WithValue(ctx, testDelayKey, 2*pushTimeout)
-			},
+			pushRequestDelay:                      pushTimeout,
 		},
 		"instance limit hit": {
 			expectedErrorWhenCircuitBreakerClosed: instanceLimitReachedError{},
@@ -432,9 +429,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 					for _, req := range reqs {
 						ctx := user.InjectOrgID(context.Background(), userID)
 						count++
-						if testCase.ctx != nil {
-							ctx = testCase.ctx(ctx)
-						}
+						i.circuitBreaker.testRequestDelay = testCase.pushRequestDelay
 						err = i.PushToStorage(ctx, req)
 						if initialDelayEnabled {
 							if testCase.expectedErrorWhenCircuitBreakerClosed != nil {
@@ -746,7 +741,8 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 
 				for _, req := range reqs {
 					ctx := user.InjectOrgID(context.Background(), userID)
-					ctx = context.WithValue(ctx, testDelayKey, 2*pushTimeout)
+					// Configure circuit breaker to delay push requests.
+					i.circuitBreaker.testRequestDelay = pushTimeout
 					count++
 
 					ctx, err = i.StartPushRequest(ctx, int64(req.Size()))

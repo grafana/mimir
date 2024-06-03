@@ -1005,7 +1005,7 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 		i.inflightPushRequestsBytes.Sub(st.requestSize)
 	}
 	if st.acquiredCircuitBreakerPermit {
-		_ = i.circuitBreaker.finishPushRequest(ctx, st.requestDuration, st.pushErr)
+		_ = i.circuitBreaker.finishPushRequest(st.requestDuration, st.pushErr)
 	}
 }
 
