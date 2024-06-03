@@ -620,7 +620,7 @@ func (r *PartitionReader) manualFetch(ctx context.Context) kgo.Fetches {
 	}}
 	req.MinBytes = 1
 	req.Version = 13
-	req.MaxWaitMillis = 500
+	req.MaxWaitMillis = 5000
 	req.MaxBytes = 100_000_000
 
 	req.SessionEpoch = 0
@@ -652,6 +652,8 @@ func (r *PartitionReader) manualFetch(ctx context.Context) kgo.Fetches {
 	if len(partition.Records) > 0 {
 		r.startOffset = partition.Records[len(partition.Records)-1].Offset + 1
 	}
+
+	// TODO dimitarvdimitrov handle OFFSET_OUT_OF_RANGE errors
 	return fetches
 }
 
@@ -929,6 +931,7 @@ func decompress(src []byte, codec byte) ([]byte, error) {
 	switch codecType(codec) {
 	case codecNone:
 		return src, nil
+		// TODO dimitarvdimitrov handle more codecs
 	case codecLZ4:
 		unlz4 := lz4.NewReader(nil)
 		unlz4.Reset(bytes.NewReader(src))
