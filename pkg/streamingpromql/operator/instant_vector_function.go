@@ -58,6 +58,7 @@ type functionCall func(seriesData types.InstantVectorSeriesData, args parser.Exp
 
 var InstantVectorFunctionCalls = map[string]functionCall{
 	"histogram_count": histogramCount,
+	"histogram_sum":   histogramSum,
 }
 
 func histogramCount(series types.InstantVectorSeriesData, _ parser.Expressions, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
@@ -73,6 +74,24 @@ func histogramCount(series types.InstantVectorSeriesData, _ parser.Expressions, 
 		data.Floats = append(data.Floats, promql.FPoint{
 			T: Histogram.T,
 			F: Histogram.H.Count,
+		})
+	}
+	return data, nil
+}
+
+func histogramSum(series types.InstantVectorSeriesData, _ parser.Expressions, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
+	floats, err := pool.GetFPointSlice(len(series.Histograms))
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	data := types.InstantVectorSeriesData{
+		Floats: floats,
+	}
+	for _, Histogram := range series.Histograms {
+		data.Floats = append(data.Floats, promql.FPoint{
+			T: Histogram.T,
+			F: Histogram.H.Sum,
 		})
 	}
 	return data, nil

@@ -13,9 +13,8 @@ eval instant at 5m empty_histogram
 eval instant at 5m histogram_count(empty_histogram)
 	{} 0
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_sum(empty_histogram)
-# 	{} 0
+eval instant at 5m histogram_sum(empty_histogram)
+	{} 0
 
 # Unsupported by streaming engine.
 # eval instant at 5m histogram_avg(empty_histogram)
@@ -40,9 +39,8 @@ eval instant at 5m histogram_count(single_histogram)
 	{} 4
 
 # histogram_sum extracts the sum property from the histogram.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_sum(single_histogram)
-# 	{} 5
+eval instant at 5m histogram_sum(single_histogram)
+	{} 5
 
 # histogram_avg calculates the average from sum and count properties.
 # Unsupported by streaming engine.
@@ -73,9 +71,8 @@ load 5m
 eval instant at 5m histogram_count(multi_histogram)
 	{} 4
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_sum(multi_histogram)
-# 	{} 5
+eval instant at 5m histogram_sum(multi_histogram)
+	{} 5
 
 # Unsupported by streaming engine.
 # eval instant at 5m histogram_avg(multi_histogram)
@@ -94,9 +91,8 @@ eval instant at 5m histogram_count(multi_histogram)
 eval instant at 50m histogram_count(multi_histogram)
 	{} 4
 
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_sum(multi_histogram)
-# 	{} 5
+eval instant at 50m histogram_sum(multi_histogram)
+	{} 5
 
 # Unsupported by streaming engine.
 # eval instant at 50m histogram_avg(multi_histogram)
@@ -121,9 +117,8 @@ load 5m
 eval instant at 5m histogram_count(incr_histogram)
 	{} 5
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_sum(incr_histogram)
-# 	{} 6
+eval instant at 5m histogram_sum(incr_histogram)
+	{} 6
 
 # Unsupported by streaming engine.
 # eval instant at 5m histogram_avg(incr_histogram)
@@ -145,9 +140,8 @@ eval instant at 50m incr_histogram
 eval instant at 50m histogram_count(incr_histogram)
 	{} 14
 
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_sum(incr_histogram)
-# 	{} 24
+eval instant at 50m histogram_sum(incr_histogram)
+	{} 24
 
 # Unsupported by streaming engine.
 # eval instant at 50m histogram_avg(incr_histogram)
@@ -188,9 +182,8 @@ eval instant at 5m low_res_histogram
 eval instant at 5m histogram_count(low_res_histogram)
 	{} 5
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_sum(low_res_histogram)
-# 	{} 8
+eval instant at 5m histogram_sum(low_res_histogram)
+	{} 8
 
 # Unsupported by streaming engine.
 # eval instant at 5m histogram_avg(low_res_histogram)
@@ -211,9 +204,8 @@ load 5m
 eval instant at 5m histogram_count(single_zero_histogram)
 	{} 1
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_sum(single_zero_histogram)
-# 	{} 0.25
+eval instant at 5m histogram_sum(single_zero_histogram)
+	{} 0.25
 
 # Unsupported by streaming engine.
 # eval instant at 5m histogram_avg(single_zero_histogram)
@@ -240,9 +232,8 @@ load 5m
 eval instant at 5m histogram_count(negative_histogram)
 	{} 4
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_sum(negative_histogram)
-# 	{} -5
+eval instant at 5m histogram_sum(negative_histogram)
+	{} -5
 
 # Unsupported by streaming engine.
 # eval instant at 5m histogram_avg(negative_histogram)
@@ -267,9 +258,8 @@ load 5m
 eval instant at 10m histogram_count(two_samples_histogram)
 	{} 4
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_sum(two_samples_histogram)
-# 	{} -4
+eval instant at 10m histogram_sum(two_samples_histogram)
+	{} -4
 
 # Unsupported by streaming engine.
 # eval instant at 10m histogram_avg(two_samples_histogram)
@@ -292,9 +282,8 @@ load 5m
 eval instant at 5m histogram_count(balanced_histogram)
 	{} 8
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_sum(balanced_histogram)
-# 	{} 0
+eval instant at 5m histogram_sum(balanced_histogram)
+	{} 0
 
 # Unsupported by streaming engine.
 # eval instant at 5m histogram_avg(balanced_histogram)

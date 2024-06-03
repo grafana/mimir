@@ -17,6 +17,10 @@ eval range from 0 to 5m step 1m single_histogram
 eval range from 0 to 5m step 1m  histogram_count(single_histogram)
 	{} 4 4 4 4 4 7
 
+# histogram_sum extracts the sum property from the histogram.
+eval range from 0 to 5m step 1m  histogram_sum(single_histogram)
+	{} 5 5 5 5 5 20
+
 clear
 
 # Test metric with mixed floats and histograms
@@ -29,6 +33,9 @@ eval range from 0 to 5m step 1m mixed_metric
 eval range from 0 to 4m step 1m histogram_count(mixed_metric)
 {} _ _ _ 4 6
 
+eval range from 0 to 4m step 1m histogram_sum(mixed_metric)
+{} _ _ _ 5 8
+
 # histogram_count ignores any float values
 eval instant at 3m histogram_count(mixed_metric)
 	{} 4
@@ -36,6 +43,14 @@ eval instant at 3m histogram_count(mixed_metric)
 # histogram_count ignores any float values
 eval instant at 4m histogram_count(mixed_metric)
 	{} 6
+
+# histogram_sum ignores any float values
+eval instant at 3m histogram_sum(mixed_metric)
+	{} 5
+
+# histogram_sum ignores any float values
+eval instant at 4m histogram_sum(mixed_metric)
+	{} 8
 
 clear
 
@@ -55,6 +70,11 @@ eval instant at 5m histogram_count(route)
 	{path="two"} 20
 	{path="three"} 10
 
+eval instant at 5m histogram_sum(route)
+	{path="one"} 5
+	{path="two"} 10
+	{path="three"} 12
+
 clear
 
 # TODO: Verify if these tests are correct. At the moment they match promql engine.
@@ -71,11 +91,17 @@ load 1m
 # eval range from 0 to 8m step 1m histogram_count(mixed_metric)
 # {} _ _ _ 4 6 _ _ 10 10
 
+# eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
+# {} _ _ _ 5 8 _ _ 18 18
+
 # Instead this is what we get from both engines.
 eval range from 0 to 8m step 1m mixed_metric
 	{__name__="mixed_metric"} 1 2 3 3 3 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
 
 eval range from 0 to 8m step 1m histogram_count(mixed_metric)
 {} _ _ _ _ _ _ _ 10 10
+
+eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
+{} _ _ _ _ _ _ _ 18 18
 
 clear
