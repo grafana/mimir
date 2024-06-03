@@ -2489,21 +2489,21 @@ done < full-deleted-file-list
 
 Mimir publishes "distroless" container images. A [distroless image](https://github.com/GoogleContainerTools/distroless/blob/main/README.md)
 contains very little outside of what is needed to run a single binary.
-They don't tend to include any text editors, process managers, package managers, or other debugging tools.
+They don't include any text editors, process managers, package managers, or other debugging tools, unless the application itself requires these.
 
-This can pose a challenge when diagnosing potential problems. There exists no shell inside the container
+This can pose a challenge when diagnosing problems. There exists no shell inside the container
 to attach to or any tools to inspect configuration files and so on.
 
-However, for debugging distroless containers we can take the approach of attaching a more complete
-container to the existing containers namespace. This allows us to bring in all of the
+However, to debug distroless containers we can take the approach of attaching a more complete
+container to the existing container's namespace. This allows us to bring in all of the
 tools we may need and to not disturb the existing environment.
 That is, we do not need to restart the running container to attach our debug tools.
 
 ## Creating a debug container
 
-Kubernetes gives us a command that allows us to start an ephemeral debug container in a pre-existing pod
-attaching it to the same namespace as other containers in that pod. More detail can be read about the command and
-[how to debug running pods in the Kubernetes docs](https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/#ephemeral-container).
+Kubernetes gives us a command that allows us to start an ephemeral debug container in a pre-existing pod,
+attaching it to the same namespace as other containers in that pod. More detail about the command and
+how to debug running pods is available in [the Kubernetes docs](https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/#ephemeral-container).
 
 ```bash
 kubectl --namespace mimir debug -it pod/compactor-0 --image=ubuntu:latest --target=compactor -c mimir-debug-container
@@ -2524,24 +2524,24 @@ PID   USER     TIME  COMMAND
    36 root      0:00 ps aux
 ```
 
-The PID 1 is the process that is executed in the target container. You can now use
+PID 1 is the process that is executed in the target container. You can now use
 tools within your debug image to interact with the running process. However, note
 that your root path and important environment variables like $PATH will be different to
 that of the target container.
 
-To access the root filesystem of the target container, you can find it in `/proc/1/root`. For
-example, the commonly used data directory would be found at `/proc/1/root/data`, and
+The root filesystem of the target container is available in `/proc/1/root`. For
+example, `/data` would be found at `/proc/1/root/data`, and
 binaries of the target container would be somewhere like `/proc/1/root/usr/bin/mimir`.
 
 ## Copying files from a distroless container
 
 Because distroless images do not have `tar` in them, it is not possible to copy files using `kubectl cp`.
 
-To work around this, we can create a debug container attached to the pod (as per above) and then use `kubectl cp` against that.
+To work around this, you can create a debug container attached to the pod (as per above) and then use `kubectl cp` against that.
 The debug container cannot have terminated in order for us to be able to use it. This means if you run a debug container to get a shell,
 you need to keep the shell open in order to do the following.
 
-For example, after having created a debug container called `mimir-debug-container` for the `compactor-0` pod:
+For example, after having created a debug container called `mimir-debug-container` for the `compactor-0` pod, run the following to copy `/etc/hostname` from the compactor pod to `./hostname` on your local machine:
 
 ```bash
 kubectl --namespace mimir cp compactor-0:/proc/1/root/etc/hostname -c mimir-debug-container ./hostname
@@ -2552,7 +2552,7 @@ kubectl --namespace mimir cp compactor-0:/proc/1/root/etc/hostname -c mimir-debu
 Note, however, that there is a limitation with `kubectl cp` wherein it cannot follow symlinks. To get around this, we can similarly use `exec`
 to create a tar.
 
-For example, can create a tar of the path we are interested in, and extract it to the pwd:
+For example, you can create a tar of the path you are interested in, and then extract it locally:
 
 ```bash
 kubectl --namespace mimir exec compactor-0 -c mimir-debug-container -- tar cf - "/proc/1/root/etc/cortex" | tar xf -
@@ -2563,8 +2563,8 @@ kubectl --namespace mimir exec compactor-0 -c mimir-debug-container -- tar cf - 
 One downside of using [ephemeral containers](https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/#understanding-ephemeral-containers)
 (which is what `kubectl debug` is a wrapper around), is that they cannot be changed
 after they have been added to a pod. This includes not being able to delete them.
-If the process in the debug container has finished (for example, the shell has been exited), the container
-will remain in the `Terminated` state. This is harmless and will remain there until the next rollout.
+If the process in the debug container has finished (for example, the shell has exited), the container
+will remain in the `Terminated` state. This is harmless and will remain there until the pod is deleted (eg. due to a rollout).
 
 However, if you wish to clean up the ephemeral containers, then re-creating the pod is necessary.
 This can be done by deleting the (target) pod and allowing the Deployment or
