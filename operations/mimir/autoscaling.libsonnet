@@ -268,7 +268,11 @@
 
   local cpuHPAQuery(with_ready_trigger) = (
     if with_ready_trigger then
-      // TODO doc
+      // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
+      // per replica over 5m (rolling window) and then we pick the 95th percentile value over the last 15m.
+      // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
+      //
+      // When computing the actual CPU utilization, We only take in account ready pods.
       |||
         quantile_over_time(0.95,
           sum(
@@ -282,6 +286,7 @@
       // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
       // per replica over 5m (rolling window) and then we pick the highest value over the last 15m.
       // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
+      //
       // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
       // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the CPU utilization
       // of containers there are running at any given time, without suffering the PromQL lookback period.
@@ -312,7 +317,10 @@
   local memoryHPAQuery(with_ready_trigger) =
     (
       if with_ready_trigger then
-        // TODO doc
+        // To scale out relatively quickly, but scale in slower, we look at the 95th memory utilization across
+        // all replicas over 15m.
+        //
+        // When computing the actual memory utilization, We only take in account ready pods.
         |||
           quantile_over_time(0.95,
             sum(
@@ -327,6 +335,7 @@
       else
         // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across
         // all replicas over 15m.
+        //
         // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
         // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
         // of containers there are running at any given time, without suffering the PromQL lookback period.
