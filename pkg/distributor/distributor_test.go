@@ -77,6 +77,10 @@ var (
 	generateTestFloatHistogram = util_test.GenerateTestFloatHistogram
 )
 
+const (
+	testPastGracePeriod = 100 * 365 * 24 * time.Hour // 100 years, as many tests push samples around unix time 0 and we don't want to keep fixing this tests again and again.
+)
+
 func TestConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
 		initLimits func(*validation.Limits)
@@ -1010,8 +1014,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var limits validation.Limits
-			flagext.DefaultValues(&limits)
+			limits := prepareDefaultLimits()
 			limits.AcceptHASamples = true
 			limits.MaxLabelValueLength = 15
 
@@ -1019,7 +1022,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 				numIngesters:    3,
 				happyIngesters:  3,
 				numDistributors: 1,
-				limits:          &limits,
+				limits:          limits,
 				enableTracker:   tc.enableTracker,
 			})
 
@@ -1268,8 +1271,7 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 
 	for _, tc := range cases {
 		var err error
-		var limits validation.Limits
-		flagext.DefaultValues(&limits)
+		limits := prepareDefaultLimits()
 		limits.DropLabels = tc.removeLabels
 		limits.AcceptHASamples = tc.removeReplica
 
@@ -1277,7 +1279,7 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 			numIngesters:    2,
 			happyIngesters:  2,
 			numDistributors: 1,
-			limits:          &limits,
+			limits:          limits,
 		})
 
 		// Push the series to the distributor
@@ -1333,8 +1335,7 @@ func TestDistributor_Push_ShouldGuaranteeShardingTokenConsistencyOverTheTime(t *
 		},
 	}
 
-	var limits validation.Limits
-	flagext.DefaultValues(&limits)
+	limits := prepareDefaultLimits()
 	limits.DropLabels = []string{"dropped"}
 	limits.AcceptHASamples = true
 
@@ -1344,7 +1345,7 @@ func TestDistributor_Push_ShouldGuaranteeShardingTokenConsistencyOverTheTime(t *
 				numIngesters:    2,
 				happyIngesters:  2,
 				numDistributors: 1,
-				limits:          &limits,
+				limits:          limits,
 			})
 
 			// Push the series to the distributor
@@ -2087,6 +2088,26 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				return metrics, samples
 			},
 			expectedErr: "received a sample whose timestamp is too far in the future",
+		},
+		"timestamp too far in the past": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.PastGracePeriod = model.Duration(7 * 24 * time.Hour)
+			},
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
+				samples := make([]mimirpb.Sample, numSeriesPerRequest)
+
+				for i := 0; i < numSeriesPerRequest; i++ {
+					metrics[i] = mkLabels(10)
+					samples[i] = mimirpb.Sample{
+						Value:       float64(i),
+						TimestampMs: time.Now().Add(-200*time.Hour).UnixNano() / int64(time.Millisecond),
+					}
+				}
+
+				return metrics, samples
+			},
+			expectedErr: "received a sample whose timestamp is too far in the past",
 		},
 		"all samples go to metric_relabel_configs": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -3346,14 +3367,13 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
 
 					// Create distributor
-					limits := validation.Limits{}
-					flagext.DefaultValues(&limits)
+					limits := prepareDefaultLimits()
 					limits.LabelNamesAndValuesResultsMaxSizeBytes = testData.sizeLimitBytes
 					ds, _, _, _ := prepare(t, prepConfig{
 						numIngesters:         3,
 						happyIngesters:       3,
 						numDistributors:      1,
-						limits:               &limits,
+						limits:               limits,
 						ingestStorageEnabled: ingestStorageEnabled,
 					})
 
@@ -4505,14 +4525,13 @@ func TestDistributor_LabelValuesCardinality_Limit(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Create distributor
-			limits := validation.Limits{}
-			flagext.DefaultValues(&limits)
+			limits := prepareDefaultLimits()
 			limits.LabelValuesMaxCardinalityLabelNamesPerRequest = testData.maxLabelNamesPerRequest
 			ds, _, _, _ := prepare(t, prepConfig{
 				numIngesters:    3,
 				happyIngesters:  3,
 				numDistributors: 1,
-				limits:          &limits,
+				limits:          limits,
 			})
 
 			// Push fixtures
@@ -4740,15 +4759,14 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	}
 
 	// Setup limits with HA enabled and forwarding rules for the metric "foo".
-	var limits validation.Limits
-	flagext.DefaultValues(&limits)
+	limits := prepareDefaultLimits()
 	limits.AcceptHASamples = true
 	limits.MaxLabelValueLength = 15
 
 	// Prepare distributor and wrap the mock push function with its middlewares.
 	ds, _, _, _ := prepare(t, prepConfig{
 		numDistributors: 1,
-		limits:          &limits,
+		limits:          limits,
 		enableTracker:   true,
 		configure: func(config *Config) {
 			config.DefaultLimits.MaxInflightPushRequests = 1
@@ -5358,6 +5376,7 @@ func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.Part
 func prepareDefaultLimits() *validation.Limits {
 	limits := &validation.Limits{}
 	flagext.DefaultValues(limits)
+	limits.PastGracePeriod = model.Duration(testPastGracePeriod)
 	return limits
 }
 
@@ -6799,6 +6818,15 @@ func TestDistributorValidation(t *testing.T) {
 			expectedErr: status.New(codes.FailedPrecondition, fmt.Sprintf(sampleTimestampTooNewMsgFormat, future, "testmetric")),
 		},
 
+		"validation fails for samples from the past": {
+			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			samples: []mimirpb.Sample{{
+				TimestampMs: int64(past.Add(-testPastGracePeriod)),
+				Value:       4,
+			}},
+			expectedErr: status.New(codes.FailedPrecondition, fmt.Sprintf(sampleTimestampTooOldMsgFormat, past.Add(-testPastGracePeriod), "testmetric")),
+		},
+
 		"exceeds maximum labels per series": {
 			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}}},
 			samples: []mimirpb.Sample{{
@@ -6928,15 +6956,14 @@ func TestDistributor_Push_Relabel(t *testing.T) {
 
 	for _, tc := range cases {
 		var err error
-		var limits validation.Limits
-		flagext.DefaultValues(&limits)
+		limits := prepareDefaultLimits()
 		limits.MetricRelabelConfigs = tc.metricRelabelConfigs
 
 		ds, ingesters, _, _ := prepare(t, prepConfig{
 			numIngesters:    2,
 			happyIngesters:  2,
 			numDistributors: 1,
-			limits:          &limits,
+			limits:          limits,
 		})
 
 		// Push the series to the distributor
@@ -6974,12 +7001,11 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		return user.InjectOrgID(context.Background(), tenant)
 	}
 	getDefaultConfig := func() prepConfig {
-		var limits validation.Limits
-		flagext.DefaultValues(&limits)
+		limits := prepareDefaultLimits()
 		limits.MaxGlobalExemplarsPerUser = 1000
 
 		return prepConfig{
-			limits:            &limits,
+			limits:            limits,
 			numIngesters:      1,
 			happyIngesters:    1,
 			replicationFactor: 1,
@@ -7768,13 +7794,9 @@ func TestStartFinishRequest(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			pushReq := makeWriteRequestForGenerators(1, uniqueMetricsGen, nil, nil)
 
-			var limits validation.Limits
-			flagext.DefaultValues(&limits)
-
 			// Prepare distributor and wrap the mock push function with its middlewares.
 			ds, _, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
-				limits:          &limits,
 				enableTracker:   true,
 				configure: func(config *Config) {
 					config.DefaultLimits.MaxIngestionRate = ingestionRateLimit

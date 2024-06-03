@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc"
 
@@ -153,6 +154,7 @@ func defaultIngesterTestConfig() (ingester.Config, io.Closer) {
 func defaultLimitsTestConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
+	limits.PastGracePeriod = model.Duration(100 * 365 * 24 * time.Hour) // 100 years
 	return limits
 }
 

@@ -1324,6 +1324,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	var (
 		nativeHistogramsIngestionEnabled = i.limits.NativeHistogramsIngestionEnabled(userID)
 		maxTimestampMs                   = startAppend.Add(i.limits.CreationGracePeriod(userID)).UnixMilli()
+		minTimestampMs                   = startAppend.Add(-i.limits.PastGracePeriod(userID)).Add(-i.limits.OutOfOrderTimeWindow(userID)).UnixMilli()
 	)
 
 	var builder labels.ScratchBuilder
@@ -1392,6 +1393,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			if s.TimestampMs > maxTimestampMs {
 				handleAppendError(globalerror.SampleTooFarInFuture, s.TimestampMs, ts.Labels)
 				continue
+			} else if s.TimestampMs < minTimestampMs {
+				handleAppendError(globalerror.SampleTooFarInPast, s.TimestampMs, ts.Labels)
+				continue
 			}
 
 			// If the cached reference exists, we try to use it.
@@ -1431,6 +1435,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				if h.Timestamp > maxTimestampMs {
 					handleAppendError(globalerror.SampleTooFarInFuture, h.Timestamp, ts.Labels)
+					continue
+				} else if h.Timestamp < minTimestampMs {
+					handleAppendError(globalerror.SampleTooFarInPast, h.Timestamp, ts.Labels)
 					continue
 				}
 
@@ -1498,6 +1505,12 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 						stats.failedExemplarsCount++
 						updateFirstPartial(nil, func() softError {
 							return newExemplarTimestampTooFarInFutureError(model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
+						})
+						continue
+					} else if ex.TimestampMs < minTimestampMs {
+						stats.failedExemplarsCount++
+						updateFirstPartial(nil, func() softError {
+							return newExemplarTimestampTooFarInPastError(model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 						})
 						continue
 					}

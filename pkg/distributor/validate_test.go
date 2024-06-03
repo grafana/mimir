@@ -394,9 +394,9 @@ type sampleValidationCfg struct {
 	reduceNativeHistogramOverMaxBuckets bool
 }
 
-func (c sampleValidationCfg) CreationGracePeriod(_ string) time.Duration {
-	return 0
-}
+func (c sampleValidationCfg) CreationGracePeriod(_ string) time.Duration { return 0 }
+
+func (c sampleValidationCfg) PastGracePeriod(_ string) time.Duration { return testPastGracePeriod }
 
 func (c sampleValidationCfg) MaxNativeHistogramBuckets(_ string) int {
 	return c.maxNativeHistogramBuckets
@@ -405,6 +405,8 @@ func (c sampleValidationCfg) MaxNativeHistogramBuckets(_ string) int {
 func (c sampleValidationCfg) ReduceNativeHistogramOverMaxBuckets(_ string) bool {
 	return c.reduceNativeHistogramOverMaxBuckets
 }
+
+func (c sampleValidationCfg) OutOfOrderTimeWindow(_ string) time.Duration { return 0 }
 
 func TestMaxNativeHistorgramBuckets(t *testing.T) {
 	// All will have 2 buckets, one negative and one positive

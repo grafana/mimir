@@ -45,6 +45,7 @@ const (
 	maxNativeHistogramBucketsFlag             = "validation.max-native-histogram-buckets"
 	ReduceNativeHistogramOverMaxBucketsFlag   = "validation.reduce-native-histogram-over-max-buckets"
 	CreationGracePeriodFlag                   = "validation.create-grace-period"
+	PastGracePeriodFlag                       = "validation.past-grace-period"
 	MaxPartialQueryLengthFlag                 = "querier.max-partial-query-length"
 	MaxTotalQueryLengthFlag                   = "query-frontend.max-total-query-length"
 	MaxQueryExpressionSizeBytesFlag           = "query-frontend.max-query-expression-size-bytes"
@@ -115,6 +116,7 @@ type Limits struct {
 	MaxExemplarsPerSeriesPerRequest             int                 `yaml:"max_exemplars_per_series_per_request" json:"max_exemplars_per_series_per_request" category:"experimental"`
 	ReduceNativeHistogramOverMaxBuckets         bool                `yaml:"reduce_native_histogram_over_max_buckets" json:"reduce_native_histogram_over_max_buckets"`
 	CreationGracePeriod                         model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
+	PastGracePeriod                             model.Duration      `yaml:"past_grace_period" json:"past_grace_period" category:"advanced"`
 	EnforceMetadataMetricName                   bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
 	IngestionTenantShardSize                    int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
 	MetricRelabelConfigs                        []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
@@ -251,7 +253,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxExemplarsPerSeriesPerRequest, "distributor.max-exemplars-per-series-per-request", 0, "Maximum number of exemplars per series per request. 0 to disable limit in request. The exceeding exemplars are dropped.")
 	f.BoolVar(&l.ReduceNativeHistogramOverMaxBuckets, ReduceNativeHistogramOverMaxBucketsFlag, true, "Whether to reduce or reject native histogram samples with more buckets than the configured limit.")
 	_ = l.CreationGracePeriod.Set("10m")
-	f.Var(&l.CreationGracePeriod, CreationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor and ingester.")
+	f.Var(&l.CreationGracePeriod, CreationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester.")
+	_ = l.PastGracePeriod.Set("1w")
+	f.Var(&l.PastGracePeriod, PastGracePeriodFlag, "Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - ooo window - past_grace_period)'. This configuration is enforced in the distributor and ingester.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 	f.BoolVar(&l.MetricRelabelingEnabled, "distributor.metric-relabeling-enabled", true, "Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis.")
 	f.BoolVar(&l.ServiceOverloadStatusCodeOnRateLimitEnabled, "distributor.service-overload-status-code-on-rate-limit-enabled", false, "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.")
@@ -578,6 +582,11 @@ func (o *Overrides) ReduceNativeHistogramOverMaxBuckets(userID string) bool {
 // we should accept samples.
 func (o *Overrides) CreationGracePeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).CreationGracePeriod)
+}
+
+// PastGracePeriod is similar to CreationGracePeriod but looking into the past.
+func (o *Overrides) PastGracePeriod(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).PastGracePeriod)
 }
 
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
@@ -1062,24 +1071,6 @@ func SmallestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string)
 	for _, tenantID := range tenantIDs {
 		v := f(tenantID)
 		if v > 0 && (result == nil || v < *result) {
-			result = &v
-		}
-	}
-	if result == nil {
-		return 0
-	}
-	return *result
-}
-
-// LargestPositiveNonZeroDurationPerTenant is returning the maximum positive
-// and non-zero value of the supplied limit function for all given tenants. In
-// many limits a value of 0 means unlimited so the method will return 0 only if
-// all inputs have a limit of 0 or an empty tenant list is given.
-func LargestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
-	var result *time.Duration
-	for _, tenantID := range tenantIDs {
-		v := f(tenantID)
-		if v > 0 && (result == nil || v > *result) {
 			result = &v
 		}
 	}

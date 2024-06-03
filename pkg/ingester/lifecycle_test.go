@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -27,7 +28,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const userID = "1"
+const (
+	userID              = "1"
+	testPastGracePeriod = 100 * 365 * 24 * time.Hour // 100 years, as many tests push samples around unix time 0 and we don't want to keep fixing this tests again and again.
+)
 
 func defaultIngesterTestConfig(t testing.TB) Config {
 	t.Helper()
@@ -60,6 +64,7 @@ func defaultClientTestConfig() client.Config {
 func defaultLimitsTestConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
+	limits.PastGracePeriod = model.Duration(testPastGracePeriod)
 	return limits
 }
 

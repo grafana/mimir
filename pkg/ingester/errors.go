@@ -194,6 +194,9 @@ func newExemplarMissingSeriesError(timestamp model.Time, seriesLabels, exemplarL
 func newExemplarTimestampTooFarInFutureError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
 	return newExemplarError(globalerror.ExemplarTooFarInFuture, "received an exemplar whose timestamp is too far in the future", timestamp, seriesLabels, exemplarLabels)
 }
+func newExemplarTimestampTooFarInPastError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
+	return newExemplarError(globalerror.ExemplarTooFarInPast, "received an exemplar whose timestamp is too far in the past", timestamp, seriesLabels, exemplarLabels)
+}
 
 // tsdbIngestExemplarErr is an ingesterError indicating a problem with an exemplar.
 type tsdbIngestExemplarErr struct {
