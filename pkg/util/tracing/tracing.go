@@ -13,14 +13,12 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"go.opentelemetry.io/otel/trace/noop"
+	"go.opentelemetry.io/otel/trace/embedded"
 )
 
 type OpenTelemetryProviderBridge struct {
-	// TracerProvider is the fallback trace.TracerProvider used for functions not implemented
-	// by our custom one (even if we aim to implement all of them). OpenTelemetry library
-	// requires one (compilation fails without it).
-	noop.TracerProvider
+	// See https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations.
+	embedded.TracerProvider
 
 	tracer opentracing.Tracer
 }
@@ -59,10 +57,8 @@ func (p *OpenTelemetryProviderBridge) Tracer(_ string, _ ...trace.TracerOption) 
 }
 
 type OpenTelemetryTracerBridge struct {
-	// Tracer is the fallback trace.Tracer used for functions not implemented
-	// by our custom one (even if we aim to implement all of them). OpenTelemetry library
-	// requires one (compilation fails without it).
-	noop.Tracer
+	// See https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations.
+	embedded.Tracer
 
 	tracer   opentracing.Tracer
 	provider trace.TracerProvider
@@ -142,10 +138,8 @@ func (t *OpenTelemetryTracerBridge) openTracingToOtel(ctx context.Context, span 
 }
 
 type OpenTelemetrySpanBridge struct {
-	// Span is the fallback trace.Span used for functions not implemented
-	// by our custom one (even if we aim to implement all of them). OpenTelemetry library
-	// requires one (compilation fails without it).
-	noop.Span
+	// See https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations.
+	embedded.Span
 
 	span     opentracing.Span
 	provider trace.TracerProvider
@@ -182,6 +176,11 @@ func (s *OpenTelemetrySpanBridge) AddEvent(name string, options ...trace.EventOp
 
 func (s *OpenTelemetrySpanBridge) addEvent(name string, attributes []attribute.KeyValue) {
 	s.logFieldWithAttributes(log.Event(name), attributes)
+}
+
+// AddLink adds a link.
+func (s *OpenTelemetrySpanBridge) AddLink(link trace.Link) {
+	// Ignored: OpenTracing only lets you link spans together at creation time.
 }
 
 // IsRecording returns the recording state of the Span. It will return
