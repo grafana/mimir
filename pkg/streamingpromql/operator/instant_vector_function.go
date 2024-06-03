@@ -9,6 +9,8 @@ package operator
 import (
 	"context"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
@@ -16,11 +18,12 @@ import (
 // InstantVectorFunction performs a histogram_count over a range vector.
 type InstantVectorFunction struct {
 	Inner InstantVectorOperator
+	Pool  *pooling.LimitingPool
 }
 
 var _ InstantVectorOperator = &InstantVectorFunction{}
 
-func (m *InstantVectorFunction) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
+func (m *InstantVectorFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	metadata, err := m.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -34,13 +37,19 @@ func (m *InstantVectorFunction) SeriesMetadata(ctx context.Context) ([]SeriesMet
 	return metadata, nil
 }
 
-func (m *InstantVectorFunction) NextSeries(ctx context.Context) (InstantVectorSeriesData, error) {
+func (m *InstantVectorFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	series, err := m.Inner.NextSeries(ctx)
 	if err != nil {
-		return InstantVectorSeriesData{}, err
+		return types.InstantVectorSeriesData{}, err
 	}
-	data := InstantVectorSeriesData{
-		Floats: GetFPointSlice(len(series.Histograms)),
+
+	floats, err := m.Pool.GetFPointSlice(len(series.Histograms))
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	data := types.InstantVectorSeriesData{
+		Floats: floats,
 	}
 	for _, Histogram := range series.Histograms {
 		data.Floats = append(data.Floats, promql.FPoint{

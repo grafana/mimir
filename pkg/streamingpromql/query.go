@@ -224,6 +224,7 @@ func (q *Query) handleFunction(e *parser.Call) (operator.InstantVectorOperator, 
 
 		return &operator.InstantVectorFunction{
 			Inner: inner,
+			Pool:  q.pool,
 		}, nil
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
