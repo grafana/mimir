@@ -2983,6 +2983,10 @@ nginx:
             set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
             proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
+          location = /multitenant_alertmanager/configs {
+            set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
           location = /api/v1/alerts {
             set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
             proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
@@ -3047,6 +3051,7 @@ ingress:
     alertmanager-headless:
       - path: /alertmanager
       - path: /multitenant_alertmanager/status
+      - path: /multitenant_alertmanager/configs
       - path: /api/v1/alerts
     ruler:
       - path: /prometheus/config/v1/rules
@@ -3382,6 +3387,10 @@ gateway:
               proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
             }
             location = /multitenant_alertmanager/status {
+              set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+              proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+            }
+            location = /multitenant_alertmanager/configs {
               set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
               proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
             }
