@@ -187,6 +187,8 @@ func OTLPHandler(
 			"exemplar_count", exemplarCount,
 		)
 
+		pushMetrics.ObserveOtlpIncomingSamplesPerBatch(tenantID, float64(sampleCount))
+
 		req.Timeseries = metrics
 
 		if enableOtelMetadataStorage {

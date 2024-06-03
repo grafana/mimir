@@ -264,8 +264,9 @@ const (
 )
 
 type PushMetrics struct {
-	otlpRequestCounter   *prometheus.CounterVec
-	uncompressedBodySize *prometheus.HistogramVec
+	otlpRequestCounter          *prometheus.CounterVec
+	uncompressedBodySize        *prometheus.HistogramVec
+	otlpIncomingSamplesPerBatch *prometheus.HistogramVec
 }
 
 func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
@@ -278,6 +279,13 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 			Name:                            "cortex_distributor_uncompressed_request_body_size_bytes",
 			Help:                            "Size of uncompressed request body in bytes.",
 			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
+		otlpIncomingSamplesPerBatch: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_otlp_samples_per_batch",
+			Help:                            "Number of samples per batch in otlp request.",
+			NativeHistogramBucketFactor:     2,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
 		}, []string{"user"}),
@@ -296,9 +304,16 @@ func (m *PushMetrics) ObserveUncompressedBodySize(user string, size float64) {
 	}
 }
 
+func (m *PushMetrics) ObserveOtlpIncomingSamplesPerBatch(user string, count float64) {
+	if m != nil {
+		m.otlpIncomingSamplesPerBatch.WithLabelValues(user).Observe(count)
+	}
+}
+
 func (m *PushMetrics) deleteUserMetrics(user string) {
 	m.otlpRequestCounter.DeleteLabelValues(user)
 	m.uncompressedBodySize.DeleteLabelValues(user)
+	m.otlpIncomingSamplesPerBatch.DeleteLabelValues(user)
 }
 
 // New constructs a new Distributor
