@@ -593,18 +593,18 @@ func (r *PartitionReader) pollFetches(ctx context.Context) kgo.Fetches {
 }
 
 func (r *PartitionReader) manualFetch(ctx context.Context) kgo.Fetches {
-	err, topicID, k, done, _, _ := r.findTopicID(ctx)
-	if done {
-		return k
+	topicID, startOffset, endOffset, err := r.findTopicID(ctx)
+	if err != nil {
+		level.Error(r.logger).Log("msg", "failed to find topic id", "err", err)
+		return kgo.Fetches{}
 	}
 	switch r.startOffset {
-	// TODO dimitarvdimitrov
 	case kafkaOffsetStart:
-		r.startOffset = 0
+		r.startOffset = startOffset
 	case kafkaOffsetEnd:
-		r.startOffset = 0
+		r.startOffset = endOffset
 	}
-	level.Info(r.logger).Log("msg", "polling fetches", "offset", r.startOffset, "partition", r.partitionID, "topic", r.kafkaCfg.Topic)
+	level.Debug(r.logger).Log("msg", "polling fetches", "offset", r.startOffset, "partition", r.partitionID, "topic", r.kafkaCfg.Topic)
 	req := kmsg.NewFetchRequest()
 	req.Topics = []kmsg.FetchRequestTopic{{
 		Topic:   r.kafkaCfg.Topic,
@@ -655,36 +655,33 @@ func (r *PartitionReader) manualFetch(ctx context.Context) kgo.Fetches {
 	return fetches
 }
 
-func (r *PartitionReader) findTopicID(ctx context.Context) (_ error, _ kadm.TopicID, _ kgo.Fetches, _ bool, startOffset, endOffset int64) {
+func (r *PartitionReader) findTopicID(ctx context.Context) (_ kadm.TopicID, startOffset, endOffset int64, _ error) {
 	client := kadm.NewClient(r.client)
 	topics, err := client.ListTopics(ctx, r.kafkaCfg.Topic)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return nil, kadm.TopicID{}, kgo.Fetches{}, true, 0, 0
+			return kadm.TopicID{}, 0, 0, nil
 		}
-		return fmt.Errorf("find topic id list topics: %w", err), kadm.TopicID{}, kgo.Fetches{}, false, 0, 0
+		return kadm.TopicID{}, 0, 0, fmt.Errorf("find topic id list topics: %w", err)
 	}
 	topic := topics[r.kafkaCfg.Topic]
 	topicID := topic.ID
 
-	//offsets, err := client.ListStartOffsets(ctx, r.kafkaCfg.Topic)
-	//if err != nil {
-	//	if errors.Is(err, context.Canceled) {
-	//		return nil, kadm.TopicID{}, kgo.Fetches{}, true, 0, 0
-	//	}
-	//	return fmt.Errorf("find topic id list start offset: %w", err), kadm.TopicID{}, kgo.Fetches{}, false, 0, 0
-	//}
-	//startOffset = offsets[r.kafkaCfg.Topic][r.partitionID].Offset
-	//
-	//offsets, err = client.ListEndOffsets(ctx, r.kafkaCfg.Topic)
-	//if err != nil {
-	//	if errors.Is(err, context.Canceled) {
-	//		return nil, kadm.TopicID{}, kgo.Fetches{}, true, 0, 0
-	//	}
-	//	return fmt.Errorf("find topic id list end: %w", err), kadm.TopicID{}, kgo.Fetches{}, false, 0, 0
-	//}
-	//endOffset = offsets[r.kafkaCfg.Topic][r.partitionID].Offset
-	return nil, topicID, nil, false, endOffset, startOffset
+	offsets, err := client.ListStartOffsets(ctx, r.kafkaCfg.Topic)
+	if err != nil {
+		return kadm.TopicID{}, 0, 0, fmt.Errorf("find topic id list start offset: %w", err)
+	}
+	startOffset = offsets[r.kafkaCfg.Topic][r.partitionID].Offset
+
+	offsets, err = client.ListEndOffsets(ctx, r.kafkaCfg.Topic)
+	if err != nil {
+		return kadm.TopicID{}, 0, 0, fmt.Errorf("find topic id list end: %w", err)
+	}
+	endOffset = offsets[r.kafkaCfg.Topic][r.partitionID].Offset
+
+	level.Debug(r.logger).Log("msg", "found topic id", "topic_id", topicID, "start_offset", startOffset, "end_offset", endOffset)
+
+	return topicID, startOffset, endOffset, nil
 }
 
 type readerFrom interface {
