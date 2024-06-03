@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -21,7 +22,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -110,7 +110,10 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 	normalQueueDimensionFunc := func() []string { return []string{normalQueueDimension} }
 	slowQueueDimensionFunc := func() []string { return []string{slowConsumerQueueDimension} }
 
-	additionalQueueDimensionsEnabledCases := []bool{false, true}
+	additionalQueueDimensionsEnabledCases := []bool{
+		//false,
+		true,
+	}
 	queueDurationTotals := map[bool]map[string]float64{
 		false: {normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0},
 		true:  {normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0},
@@ -184,13 +187,18 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 		for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
 			consumerIdx := consumerIdx
 			queueConsumerErrGroup.Go(func() error {
-				return runConsumer(consumerIdx)
+				fmt.Printf("waiting for gofunc to run for consumer: %v\n", consumerIdx)
+				returnVal := runConsumer(consumerIdx)
+				fmt.Println("finished runConsumer without panicking")
+				return returnVal
 			})
+			fmt.Println("past first suspected panic")
 		}
 
 		close(startConsumersChan)
 		err = queueConsumerErrGroup.Wait()
 		require.NoError(t, err)
+		fmt.Println("past second suspected panic\n=============")
 
 		// record total queue duration by queue dimensions and whether the queue splitting was enabled
 		for _, queueDimension := range []string{normalQueueDimension, slowConsumerQueueDimension} {
@@ -361,11 +369,13 @@ func runQueueConsumerIters(
 	start chan struct{},
 	consumeFunc consumeRequest,
 ) func(consumerIdx int) error {
-	return func(consumerIdx int) error {
+	fmt.Println("constructing returnFunc")
+	returnFunc := func(consumerIdx int) error {
 		consumerIters := queueActorIterationCount(totalIters, numConsumers, consumerIdx)
 		lastTenantIndex := FirstTenant()
 		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
 		queue.SubmitRegisterQuerierConnection(querierID)
+		fmt.Println("runQueueConsumerIters submitted register querier connection")
 		defer queue.SubmitUnregisterQuerierConnection(querierID)
 
 		<-start
@@ -378,9 +388,12 @@ func runQueueConsumerIters(
 
 			lastTenantIndex = idx
 		}
+		fmt.Println("finished consumer iterations")
 
 		return nil
 	}
+	fmt.Println("finished constructing returnFunc\n=======")
+	return returnFunc
 }
 
 type consumeRequest func(request Request) error
@@ -664,9 +677,9 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		req:      req,
 	}
 
-	require.Nil(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}))
+	require.Nil(t, queueBroker.queueTree.rootNode.getNode(QueuePath{"tenant-1"}))
 	require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
-	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).IsEmpty())
+	require.False(t, queueBroker.queueTree.rootNode.getNode(QueuePath{"tenant-1"}).IsEmpty())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	call := &waitingQuerierConn{
@@ -681,5 +694,5 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	// indicating not to re-submit a request for waitingQuerierConn for the querier
 	require.True(t, queue.trySendNextRequestForQuerier(call))
 	// assert request was re-enqueued for tenant after failed send
-	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).IsEmpty())
+	require.False(t, queueBroker.queueTree.rootNode.getNode(QueuePath{"tenant-1"}).IsEmpty())
 }

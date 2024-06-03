@@ -31,11 +31,13 @@ type queueBroker struct {
 	maxTenantQueueSize               int
 	additionalQueueDimensionsEnabled bool
 	currentQuerier                   QuerierID
+
+	treeShuffleShardState *shuffleShardState
 }
 
 func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled bool, forgetDelay time.Duration) *queueBroker {
 	currentQuerier := QuerierID("")
-	tqas := tenantQuerierAssignments{
+	tqas := &tenantQuerierAssignments{
 		queriersByID:       map[QuerierID]*querierConn{},
 		querierIDsSorted:   nil,
 		querierForgetDelay: forgetDelay,
@@ -43,19 +45,25 @@ func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled boo
 		tenantsByID:        map[TenantID]*queueTenant{},
 		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
 	}
+
+	sss := &shuffleShardState{
+		tenantQuerierMap: tqas.tenantQuerierIDs,
+		currentQuerier:   &currentQuerier,
+	}
 	// TODO (casie): Maybe set this using a flag, so we can also change how we build queue path accordingly
 	tree := NewTree(
-		&shuffleShardState{tenantQuerierMap: tqas.tenantQuerierIDs, currentQuerier: &currentQuerier}, // root
+		sss,                // root
 		&roundRobinState{}, // tenants
 		&roundRobinState{}, // query components
 	)
 	qb := &queueBroker{
 		tenantQueuesTree:                 NewTreeQueue("root"),
 		queueTree:                        tree,
-		tenantQuerierAssignments:         tqas,
+		tenantQuerierAssignments:         *tqas,
 		maxTenantQueueSize:               maxTenantQueueSize,
 		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
 		currentQuerier:                   currentQuerier,
+		treeShuffleShardState:            sss,
 	}
 
 	return qb
@@ -86,12 +94,6 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		}
 	}
 
-	//if tenantQueueNode := qb.tenantQueuesTree.getNode(queuePath[:1]); tenantQueueNode != nil {
-	//	if tenantQueueNode.ItemCount()+1 > qb.maxTenantQueueSize {
-	//		return ErrTooManyRequests
-	//	}
-	//}
-
 	//err = qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
 	err = qb.queueTree.rootNode.enqueueBackByPath(qb.queueTree, queuePath, request)
 	return err
@@ -112,7 +114,8 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 	if err != nil {
 		return err
 	}
-	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, request)
+	return qb.queueTree.rootNode.enqueueFrontByPath(qb.queueTree, queuePath, request)
+	//return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, request)
 }
 
 func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {
@@ -127,18 +130,18 @@ func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) 
 }
 
 func (qb *queueBroker) dequeueRequestForQuerier(
-	//lastTenantIndex int,
+	lastTenantIndex int,
 	querierID QuerierID,
 ) (
 	*tenantRequest,
 	*queueTenant,
-	//int,
+	int,
 	error,
 ) {
 	//tenant, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndex, querierID)
 	// check if querier is registered and is not shutting down
 	if q := qb.tenantQuerierAssignments.queriersByID[querierID]; q == nil || q.shuttingDown {
-		return nil, nil, ErrQuerierShuttingDown
+		return nil, nil, qb.treeShuffleShardState.sharedQueuePosition, ErrQuerierShuttingDown
 	}
 	//if tenant == nil || err != nil {
 	//	return nil, tenant, tenantIndex, err
@@ -149,6 +152,8 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	//queueElement := qb.tenantQueuesTree.DequeueByPath(queuePath)
 
 	qb.currentQuerier = querierID
+	qb.treeShuffleShardState.sharedQueuePosition = lastTenantIndex
+
 	queuePath, queueElement := qb.queueTree.rootNode.dequeue()
 
 	// TODO (casie): hacky - hardcoding second elt in queuePath to tenant ID
@@ -172,7 +177,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	}
 
 	//return request, tenant, tenantIndex, nil
-	return request, tenant, nil
+	return request, tenant, qb.treeShuffleShardState.sharedQueuePosition, nil
 }
 
 func (qb *queueBroker) addQuerierConnection(querierID QuerierID) (resharded bool) {
