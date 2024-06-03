@@ -2502,6 +2502,87 @@ gsutil cp $file ${file%#*}
 done < full-deleted-file-list
 ```
 
+### Debugging distroless container images (in Kubernetes)
+
+Mimir publishes "distroless" container images. A [distroless image](https://github.com/GoogleContainerTools/distroless/blob/main/README.md)
+contains very little outside of what is needed to run a single binary.
+They don't include any text editors, process managers, package managers, or other debugging tools, unless the application itself requires these.
+
+This can pose a challenge when diagnosing problems. There exists no shell inside the container
+to attach to or any tools to inspect configuration files and so on.
+
+However, to debug distroless containers we can take the approach of attaching a more complete
+container to the existing container's namespace. This allows us to bring in all of the
+tools we may need and to not disturb the existing environment.
+That is, we do not need to restart the running container to attach our debug tools.
+
+## Creating a debug container
+
+Kubernetes gives us a command that allows us to start an ephemeral debug container in a pre-existing pod,
+attaching it to the same namespace as other containers in that pod. More detail about the command and
+how to debug running pods is available in [the Kubernetes docs](https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/#ephemeral-container).
+
+```bash
+kubectl --namespace mimir debug -it pod/compactor-0 --image=ubuntu:latest --target=compactor --container=mimir-debug-container
+```
+
+- `pod/name` is the pod to attach to.
+- `--target=` is the container within that pod with which to share a kernel namespace.
+- `--image=` is the image of the debug container you wish to use.
+- `--container` is the name to use for the ephemeral container. This is optional, but useful if you want to re-use it.
+
+You can now see all of the processes running in this space. For example:
+
+```
+/ # ps aux
+PID   USER     TIME  COMMAND
+    1 root      5:36 /usr/bin/mimir -flags
+   31 root      0:00 /bin/bash
+   36 root      0:00 ps aux
+```
+
+PID 1 is the process that is executed in the target container. You can now use
+tools within your debug image to interact with the running process. However, note
+that your root path and important environment variables like $PATH will be different to
+that of the target container.
+
+The root filesystem of the target container is available in `/proc/1/root`. For
+example, `/data` would be found at `/proc/1/root/data`, and
+binaries of the target container would be somewhere like `/proc/1/root/usr/bin/mimir`.
+
+## Copying files from a distroless container
+
+Because distroless images do not have `tar` in them, it is not possible to copy files using `kubectl cp`.
+
+To work around this, you can create a debug container attached to the pod (as per above) and then use `kubectl cp` against that.
+The debug container cannot have terminated in order for us to be able to use it. This means if you run a debug container to get a shell,
+you need to keep the shell open in order to do the following.
+
+For example, after having created a debug container called `mimir-debug-container` for the `compactor-0` pod, run the following to copy `/etc/hostname` from the compactor pod to `./hostname` on your local machine:
+
+```bash
+kubectl --namespace mimir cp compactor-0:/proc/1/root/etc/hostname -c mimir-debug-container ./hostname
+```
+
+- `-c` is the debug container to execute in.
+
+Note, however, that there is a limitation with `kubectl cp` wherein it cannot follow symlinks. To get around this, we can similarly use `exec`
+to create a tar.
+
+For example, you can create a tar of the path you are interested in, and then extract it locally:
+
+```bash
+kubectl --namespace mimir exec compactor-0 -c mimir-debug-container -- tar cf - "/proc/1/root/etc/cortex" | tar xf -
+```
+
+## Cleanup and Limitations
+
+One downside of using [ephemeral containers](https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/#understanding-ephemeral-containers)
+(which is what `kubectl debug` is a wrapper around), is that they cannot be changed
+after they have been added to a pod. This includes not being able to delete them.
+If the process in the debug container has finished (for example, the shell has exited), the container
+will remain in the `Terminated` state. This is harmless and will remain there until the pod is deleted (eg. due to a rollout).
+
 ## Log lines
 
 ### Log line containing 'sample with repeated timestamp but different value'
