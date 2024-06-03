@@ -10,11 +10,12 @@ import (
 	"context"
 	"math"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // InstantVectorFunction performs a histogram_count over a range vector.
