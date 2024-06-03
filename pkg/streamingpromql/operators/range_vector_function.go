@@ -4,7 +4,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package operator
+package operators
 
 import (
 	"context"

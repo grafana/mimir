@@ -21,7 +21,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/operator"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -121,9 +121,9 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, compat.NewNotSupportedError("instant vector selector with 'offset'")
 		}
 
-		return &operator.InstantVectorSelector{
+		return &operators.InstantVectorSelector{
 			Pool: q.pool,
-			Selector: &operator.Selector{
+			Selector: &operators.Selector{
 				Queryable:     q.queryable,
 				Start:         timestamp.FromTime(q.statement.Start),
 				End:           timestamp.FromTime(q.statement.End),
@@ -154,7 +154,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, err
 		}
 
-		return &operator.Aggregation{
+		return &operators.Aggregation{
 			Inner:    inner,
 			Start:    q.statement.Start,
 			End:      q.statement.End,
@@ -177,7 +177,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, err
 		}
 
-		return &operator.RangeVectorFunction{
+		return &operators.RangeVectorFunction{
 			Inner: inner,
 			Pool:  q.pool,
 		}, nil
@@ -200,7 +200,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, err
 		}
 
-		return operator.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.pool)
+		return operators.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.pool)
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToInstantVectorOperator(e.Expr)
@@ -230,8 +230,8 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 			interval = time.Millisecond
 		}
 
-		return &operator.RangeVectorSelector{
-			Selector: &operator.Selector{
+		return &operators.RangeVectorSelector{
+			Selector: &operators.Selector{
 				Queryable: q.queryable,
 				Start:     timestamp.FromTime(q.statement.Start),
 				End:       timestamp.FromTime(q.statement.End),
