@@ -3440,8 +3440,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -alertmanager.max-config-size-bytes
 [alertmanager_max_config_size_bytes: <int> | default = 0]
 
-# Maximum number of active and pending silences that a tenant can have at once.
-# 0 = no limit.
+# Maximum number of silences, including expired silences, that a tenant can have
+# at once. 0 = no limit.
 # CLI flag: -alertmanager.max-silences-count
 [alertmanager_max_silences_count: <int> | default = 0]
 
