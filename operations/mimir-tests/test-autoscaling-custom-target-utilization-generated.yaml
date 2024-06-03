@@ -2029,9 +2029,19 @@ spec:
       behavior:
         scaleDown:
           policies:
-          - periodSeconds: 600
+          - periodSeconds: 120
             type: Percent
             value: 10
+          stabilizationWindowSeconds: 1800
+        scaleUp:
+          policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 50
+          - periodSeconds: 120
+            type: Pods
+            value: 15
+          stabilizationWindowSeconds: 120
   maxReplicaCount: 30
   minReplicaCount: 3
   pollingInterval: 10
