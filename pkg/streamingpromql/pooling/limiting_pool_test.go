@@ -139,12 +139,20 @@ func testLimitedPool[E any, S ~[]E](t *testing.T, get func(int) (S, error), put 
 	require.Equal(t, 8*elementSize, pool.CurrentEstimatedMemoryConsumptionBytes)
 	require.Equal(t, 9*elementSize, pool.PeakEstimatedMemoryConsumptionBytes)
 
-	// Get another slice from the pool that would take us right up to the limit.
-	s1, err = get(1)
-	require.NoError(t, err)
-	require.Equal(t, 1, cap(s1))
-	require.Equal(t, 9*elementSize, pool.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 9*elementSize, pool.PeakEstimatedMemoryConsumptionBytes)
+	// Keep getting more slices from the pool up to the limit of 11 to make sure the failed allocations weren't counted.
+	for i := 0; i < 3; i++ {
+		s1, err = get(1)
+		require.NoError(t, err)
+		require.Equal(t, 1, cap(s1))
+		require.Equal(t, uint64(9+i)*elementSize, pool.CurrentEstimatedMemoryConsumptionBytes)
+		require.Equal(t, uint64(9+i)*elementSize, pool.PeakEstimatedMemoryConsumptionBytes)
+	}
+
+	// Try to get another slice while we're already at the limit.
+	_, err = get(1)
+	require.ErrorContains(t, err, expectedError)
+	require.Equal(t, 11*elementSize, pool.CurrentEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 11*elementSize, pool.PeakEstimatedMemoryConsumptionBytes)
 }
 
 func TestLimitingPool_ClearsReturnedSlices(t *testing.T) {
